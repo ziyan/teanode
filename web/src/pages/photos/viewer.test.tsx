@@ -1138,3 +1138,38 @@ describe('zooming and panning the photo', () => {
     expect(screen.queryByRole('button', { name: 'Zoom in' })).toBeNull()
   })
 })
+
+it('offers Change location beside the place of the photos that are the person\u2019s own', async () => {
+  const onChangeLocation = vi.fn()
+  show(vi.fn(), { photo: { ...photo, placeName: 'Lisbon, Portugal' }, onChangeLocation })
+  expect(await screen.findByText('Lisbon, Portugal')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Change location' }))
+  expect(onChangeLocation).toHaveBeenCalledWith(expect.objectContaining({ id: 'photo-1' }))
+})
+
+it('shows a Place row with None and the button for an own photo that has no place yet', async () => {
+  show(vi.fn(), { onChangeLocation: vi.fn() })
+  const label = await screen.findByText('Place')
+  expect(label.parentElement?.textContent).toContain('None')
+  expect(screen.getByRole('button', { name: 'Change location' })).toBeTruthy()
+})
+
+it('offers no Change location for somebody else\u2019s photo, one in the Trash, or without the prop', async () => {
+  const onChangeLocation = vi.fn()
+  show(vi.fn(), { photo: { ...photo, placeName: 'Lisbon, Portugal', isOwnedByCaller: false }, onChangeLocation })
+  await screen.findByText('Lisbon, Portugal')
+  expect(screen.queryByRole('button', { name: 'Change location' })).toBeNull()
+  cleanup()
+  show(vi.fn(), { photo: { ...photo, placeName: 'Lisbon, Portugal' }, isTrashed: true, onChangeLocation })
+  await screen.findByText('Lisbon, Portugal')
+  expect(screen.queryByRole('button', { name: 'Change location' })).toBeNull()
+  cleanup()
+  show(vi.fn(), { photo: { ...photo, placeName: 'Lisbon, Portugal' } })
+  await screen.findByText('Lisbon, Portugal')
+  expect(screen.queryByRole('button', { name: 'Change location' })).toBeNull()
+  // Nothing is said about a place that cannot be set.
+  cleanup()
+  show(vi.fn(), { photo: { ...photo, isOwnedByCaller: false }, onChangeLocation })
+  await screen.findByText('Date')
+  expect(screen.queryByText('Place')).toBeNull()
+})

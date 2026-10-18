@@ -155,6 +155,7 @@ export function PhotoViewer({
   onRemoveFaceFromGroup,
   onSaveToLibrary,
   onChangeDate,
+  onChangeLocation,
 }: {
   photo: Photo
   previousPhoto: Photo | null
@@ -204,6 +205,9 @@ export function PhotoViewer({
   // Corrects the date of one of the person's own photos; takenAt is RFC 3339
   // at the offset it is shown at. Rejects with what went wrong.
   onChangeDate?: (photo: Photo, takenAt: string) => Promise<void>
+  // Opens the dialog that says where one of the person's own photos was taken.
+  // The caller refreshes the photo once the place has changed.
+  onChangeLocation?: (photo: Photo) => void
 }) {
   const { t, plural, language } = useTranslation()
   const altText = usePhotoAltText()
@@ -482,6 +486,7 @@ export function PhotoViewer({
   // about their own: it reads it by reference.
   const canAskAssistant = Boolean(onAskAssistant && fittedSource)
   const canChangeDate = isOwn && !isTrashed && onChangeDate !== undefined
+  const canChangeLocation = isOwn && !isTrashed && onChangeLocation !== undefined
   // What is not offered on the bar itself, because it is done once in a while
   // and the bar is for what is done to most photos: choosing the album's cover,
   // taking the photo out of the album, making its thumbnails again.
@@ -490,7 +495,7 @@ export function PhotoViewer({
   const daysLeftInTrash = trashDaysLeft(photo.trashedAt, photoLibrary?.trashRetentionDays ?? 0, new Date())
   const details: [string, string][] = [
     [t('photos.detailDate'), photoDateTime(photo, language, personTimeZone())],
-    [t('photos.detailPlace'), photo.placeName],
+    [t('photos.detailPlace'), photo.placeName || (canChangeLocation ? t('photos.noPlace') : '')],
     [t('photos.detailCamera'), cameraText],
     [
       t('photos.detailKind'),
@@ -957,6 +962,18 @@ export function PhotoViewer({
                       <dt>{label}</dt>
                       <dd>
                         {value}
+                        {canChangeLocation && label === t('photos.detailPlace') && (
+                          <Tooltip label={t('photos.changeLocation')}>
+                            <button
+                              type="button"
+                              className="icon-action photo-change-location"
+                              aria-label={t('photos.changeLocation')}
+                              onClick={() => onChangeLocation(photo)}
+                            >
+                              <PencilIcon size={14} />
+                            </button>
+                          </Tooltip>
+                        )}
                         {label === t('photos.detailPlace') &&
                           onShowNearby &&
                           typeof photo.latitude === 'number' &&

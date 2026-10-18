@@ -231,6 +231,11 @@ export const PHOTO_DOCUMENTS = {
     'query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) { id clientPhotoId trashedAt } }',
   UpdatePhoto: `mutation ($photoId: String!, $isFavorite: Boolean) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite) { ${PHOTO_FIELDS} } }`,
   UpdatePhotoTakenAt: `mutation ($photoId: String!, $takenAt: DateTime) { UpdatePhoto(photoId: $photoId, takenAt: $takenAt) { ${PHOTO_FIELDS} } }`,
+  SearchPhotoPlaces:
+    'query ($query: String!, $nearLatitude: Float, $nearLongitude: Float, $limitCount: Int) { SearchPhotoPlaces(query: $query, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, limitCount: $limitCount) { placeName latitude longitude distanceKilometers } }',
+  SetPhotoLocation:
+    'mutation ($photoIds: [String!]!, $latitude: Float!, $longitude: Float!) { SetPhotoLocation(photoIds: $photoIds, latitude: $latitude, longitude: $longitude) }',
+  RemovePhotoLocation: 'mutation ($photoIds: [String!]!) { RemovePhotoLocation(photoIds: $photoIds) }',
   SavePhotoToLibrary: `mutation ($photoId: String!) { SavePhotoToLibrary(photoId: $photoId) { ${PHOTO_FIELDS} } }`,
   SavePhotoFromAttachment: `mutation ($agentAttachmentId: String!) { SavePhotoFromAttachment(agentAttachmentId: $agentAttachmentId) { ${PHOTO_FIELDS} } }`,
   DescribePhoto: `mutation ($photoId: String!, $isRedescribed: Boolean) { DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) { ${PHOTO_DETAIL_FIELDS} } }`,
@@ -380,6 +385,31 @@ export async function setPhotoTakenAt(photoId: string, takenAt: string): Promise
   return answer.UpdatePhoto
 }
 
+// A city the server found for the words typed: its name as a photo's place
+// is named, where it is, and how far that is from the point the search was
+// asked to stay near (null when it was not asked to).
+export interface PhotoPlace {
+  placeName: string
+  latitude: number
+  longitude: number
+  distanceKilometers: number | null
+}
+
+// Looks for cities by name, best match first. With a point, the nearest of
+// equal matches come first.
+export async function searchPhotoPlaces(
+  query: string,
+  near?: { latitude: number; longitude: number },
+  signal?: AbortSignal,
+): Promise<PhotoPlace[]> {
+  const answer = await graphql<{ SearchPhotoPlaces: PhotoPlace[] }>(
+    PHOTO_DOCUMENTS.SearchPhotoPlaces,
+    { query, nearLatitude: near?.latitude ?? null, nearLongitude: near?.longitude ?? null },
+    signal,
+  )
+  return answer.SearchPhotoPlaces
+}
+
 // Keeps a photo of an album shared with the person as a photo of their own.
 export async function savePhotoToLibrary(photoId: string): Promise<Photo> {
   const answer = await graphql<{ SavePhotoToLibrary: Photo }>(PHOTO_DOCUMENTS.SavePhotoToLibrary, { photoId })
@@ -417,6 +447,30 @@ export const retryPhotoProcessing = (photoIds: string[]) => changePhotos('RetryP
 export const trashPhotos = (photoIds: string[]) => changePhotos('TrashPhotos', photoIds)
 export const restorePhotos = (photoIds: string[]) => changePhotos('RestorePhotos', photoIds)
 export const deletePhotosForever = (photoIds: string[]) => changePhotos('DeletePhotos', photoIds)
+
+// Says where photos were taken, or that they were taken nowhere the library
+// should place them, in batches the server accepts. Both answer how many
+// photos changed: the ones that are not the person's, or are in the Trash, are
+// skipped.
+async function changePhotoLocations(
+  name: 'SetPhotoLocation' | 'RemovePhotoLocation',
+  photoIds: string[],
+  coordinates: { latitude?: number; longitude?: number },
+): Promise<number> {
+  let changedCount = 0
+  for (let start = 0; start < photoIds.length; start += MOST_PHOTO_IDS_PER_CALL) {
+    const answer = await graphql<Record<string, number>>(PHOTO_DOCUMENTS[name], {
+      photoIds: photoIds.slice(start, start + MOST_PHOTO_IDS_PER_CALL),
+      ...coordinates,
+    })
+    changedCount += answer[name]
+  }
+  return changedCount
+}
+
+export const setPhotoLocation = (photoIds: string[], latitude: number, longitude: number) =>
+  changePhotoLocations('SetPhotoLocation', photoIds, { latitude, longitude })
+export const removePhotoLocation = (photoIds: string[]) => changePhotoLocations('RemovePhotoLocation', photoIds, {})
 
 export async function emptyPhotoTrash(): Promise<number> {
   const answer = await graphql<{ EmptyPhotoTrash: number }>(PHOTO_DOCUMENTS.EmptyPhotoTrash)
