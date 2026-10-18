@@ -113,7 +113,9 @@ results. Strings in en, zh-Hans, ja.
 
 - A photo's description is written with its place name in the prompt, and the
   vector is read from the description and the place, so both can name a place
-  the person removed. Moving a described photo clears both and asks again.
+  the person removed. Moving a described photo clears both; it is described again when somebody
+  looks at it or asks, as the photo-description decision says, and a
+  description being written when the photo moves is dropped.
 - A reader's saved copy of a shared photo is processed from the owner's
   original file, so it carries `is_location_removed` too.
 - Two cities can share a name and a country; where no distance tells them

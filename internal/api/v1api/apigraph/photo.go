@@ -897,30 +897,13 @@ func (self *graph) RemovePhotoLocation(ctx context.Context, arguments PhotoIDsAr
 
 // changePhotoLocation moves photos, or removes their location with a nil
 // one, and says how many it changed. A photo that had a description loses it,
-// since it was written knowing the old place, and is described again with the
-// new one where photos can be described.
+// since it was written knowing the old place; it is described again only when
+// somebody looks at it or asks, as any photo is
+// (docs/decisions/20261016-a-photo-is-described-when-somebody-looks-at-it.md).
 func (self *graph) changePhotoLocation(ctx context.Context, userId string, photoIds []string, location *db.PhotoLocation) (int, error) {
-	transaction := self.transaction(ctx)
-	change, err := transaction.SetPhotoLocation(userId, photoIds, location)
+	change, err := self.transaction(ctx).SetPhotoLocation(userId, photoIds, location)
 	if err != nil {
 		return 0, translateError(err)
-	}
-	if len(change.DescribedPhotoIDs) > 0 {
-		unavailableMessage, err := self.photoDescriptionUnavailableMessage(ctx, userId)
-		if err != nil {
-			return 0, translateError(err)
-		}
-		if unavailableMessage == "" {
-			assistant, err := transaction.GetAgentByUser(userId)
-			if err != nil {
-				return 0, translateError(err)
-			}
-			for _, photoId := range change.DescribedPhotoIDs {
-				if _, err := self.agentWorker().QueuePhotoDescription(transaction, assistant.ID, photoId); err != nil {
-					return 0, translateError(err)
-				}
-			}
-		}
 	}
 	return len(change.ChangedPhotoIDs), nil
 }

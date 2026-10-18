@@ -250,8 +250,10 @@ documents, so the library's search finds a corrected photo by its new city.
 
 A photo that had a description loses it, with the vector read from it: the
 description was written knowing the old place and may name it, which a removed
-location must not leave behind. Where photos can be described, it is asked for
-again (`describe_photo`), and is written with the new place. A copy a reader
+location must not leave behind. It is not asked for again on its own, since a
+photo is described only when somebody looks at it or asks; the next
+description is written with the new place. A `describe_photo` job that was
+looking at the photo when it moved keeps nothing and ends its request. A copy a reader
 saved from a shared album keeps the owner's `is_location_removed`, since it is
 made from the owner's original file.
 
