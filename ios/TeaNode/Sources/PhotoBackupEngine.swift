@@ -548,8 +548,9 @@ final class PhotoBackupEngine {
     /// stopped, the uploads the background session holds are cancelled so that
     /// the phone stops sending, and no pass, background task or retry starts
     /// until `resume()`. What went up, the index and the place the listing got
-    /// to are kept. A file that was part way up starts again from its first
-    /// byte after the pause, since the app starts each file as a new upload.
+    /// to are kept. A file that was part way up goes on from the byte the
+    /// server has: the index keeps the address of its upload, and the pass after
+    /// the pause asks the server where it is and sends the rest.
     func pause() async {
         guard isEnabled, !isPaused, !isTurningOff else { return }
         isPaused = true
@@ -668,7 +669,8 @@ final class PhotoBackupEngine {
         Self.excludeFromDeviceBackup(outgoing)
         let connection = Self.makeConnection(accountKey: accountKey)
         let made = PhotoBackupCoordinator(
-            index: try makeIndex(), library: PhotoKitLibrary(), transfer: PhotoBackupSession.shared, lookup: connection, network: DeviceNetwork(),
+            index: try makeIndex(), library: PhotoKitLibrary(), transfer: PhotoBackupSession.shared, uploads: Self.makeUploadClient(),
+            lookup: connection, network: DeviceNetwork(),
             outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential,
             freeSpaceBytes: { Self.freeSpaceBytes(at: outgoing) }, isPaused: isPaused)
         coordinator = made
@@ -684,6 +686,17 @@ final class PhotoBackupEngine {
             }
         }
         return made
+    }
+
+    /// The two small requests that come before a file's bytes (creating its
+    /// upload, asking where it is) are made while the app runs, on a session of
+    /// their own: the background session takes upload tasks only, and shows an
+    /// answer only when its task ends. Nothing is cached: the answer to where an
+    /// upload is changes as bytes arrive.
+    private static func makeUploadClient() -> PhotoBackupUploadClient {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return PhotoBackupUploadClient(transport: URLSessionTransport(session: URLSession(configuration: configuration)))
     }
 
     /// An upload finished in the background session, perhaps while the app was
