@@ -62544,22 +62544,6 @@
         }
       }
     },
-    "Your agent remembers this chat": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "あなたのエージェントがこのチャットを記憶中"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的助手记住了这个聊天"
-          }
-        }
-      }
-    },
     "Use the three-letter code, such as usd.": {
       "localizations": {
         "ja": {
@@ -62604,22 +62588,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ 已保存到%2$@"
-          }
-        }
-      }
-    },
-    "Others may ask your agent": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "他の人もあなたのエージェントに頼めます"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "其他人可以呼叫你的助手"
           }
         }
       }

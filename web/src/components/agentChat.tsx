@@ -1088,14 +1088,22 @@ export function ChatMembersDialog({
               return (
                 <li key={member.userId || name}>
                   <Avatar name={name} avatarUrl={member.avatarUrl} colorIndex={member.avatarColorIndex} size={28} />
-                  <span className="chat-member-name">{name}</span>
-                  {member.memberRole === 'admin' && chat.chatKind === 'group' ? <Tag value={t('chat.admin')} /> : null}
-                  {member.isAgentReading ? (
-                    <Tag value={member.userId === ownUserId ? t('chat.agentRemembersOwnTag') : t('chat.agentRemembersTag')} />
-                  ) : null}
-                  {member.isAgentAskableByOthers ? (
-                    <Tag value={member.userId === ownUserId ? t('chat.agentAskableOwnTag') : t('chat.agentAskableTag')} />
-                  ) : null}
+                  {/* The name, then what tells this member apart, wrapping
+                      under it when the dialog is narrow. The person's own
+                      agent is said by the switches below, not here. */}
+                  <span className="chat-member-text">
+                    <span className="chat-member-name">{name}</span>
+                    {member.userId === ownUserId ? <span className="muted">{t('circles.you')}</span> : null}
+                    {member.memberRole === 'admin' && chat.chatKind === 'group' ? (
+                      <Tag value={t('chat.admin')} />
+                    ) : null}
+                    {member.userId !== ownUserId && member.isAgentReading ? (
+                      <Tag value={t('chat.agentRemembersTag')} />
+                    ) : null}
+                    {member.userId !== ownUserId && member.isAgentAskableByOthers ? (
+                      <Tag value={t('chat.agentAskableTag')} />
+                    ) : null}
+                  </span>
                   {canChange && member.userId !== ownUserId ? (
                     <Tooltip label={t('chat.removeMember')}>
                       <button
