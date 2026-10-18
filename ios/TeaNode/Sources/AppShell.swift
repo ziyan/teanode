@@ -538,14 +538,18 @@ struct SideMenu: View {
             }
         case .mail:
             NavigationStack {
-                MailboxesList(
-                    mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections)
-                ) { chosen in
-                    mailPlace = chosen
-                    onClose()
+                ScrollViewReader { scroller in
+                    MailboxesList(
+                        mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections),
+                        lastRowId: Self.partItemId(Self.mailLastRowName)
+                    ) { chosen in
+                        mailPlace = chosen
+                        onClose()
+                    }
+                    .menuListStyle()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .task(id: [availableSectionCount, mail.folders.count]) { await showPartItems(scroller, lastItemId: Self.mailLastRowName) }
                 }
-                .menuListStyle()
-                .navigationBarTitleDisplayMode(.inline)
             }
         case .finance:
             NavigationStack {
@@ -645,6 +649,11 @@ struct SideMenu: View {
     /// it runs the agent, has coding computers, keeps recordings), and each one that appears
     /// pushes the items of the part on screen further down.
     private var availableSectionCount: Int { AppSection.allCases.filter { app.isSectionAvailable($0) }.count }
+
+    /// The name of the mail list's last row, which the menu scrolls to as it does to the
+    /// last item of the other parts. The menu is kept while closed, so it opens where the
+    /// person left it, and the scroll runs only when the list first appears or grows.
+    private static let mailLastRowName = "mailLastRow"
 
     /// The id of a row that lists one of the items of the part on screen, under the list of the parts.
     private static func partItemId(_ itemId: some Hashable) -> String { "partItem \(itemId)" }
