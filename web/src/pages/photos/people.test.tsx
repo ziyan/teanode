@@ -138,6 +138,26 @@ it('offers Show hidden only when somebody is hidden', async () => {
   expect(await screen.findByRole('link', { name: /Hidden Person/ })).toBeTruthy()
 })
 
+it('says everyone found is hidden, not that there are no people, and how to show them', async () => {
+  serve([group({ isHidden: true, contactName: 'Hidden Person' })])
+  showPeoplePage()
+  expect(await screen.findByText(/Everyone found is hidden/)).toBeTruthy()
+  expect(screen.queryByText(/No people yet/)).toBeNull()
+  fireEvent.click(screen.getByLabelText('Show hidden people'))
+  expect(await screen.findByRole('link', { name: /Hidden Person/ })).toBeTruthy()
+  expect(screen.queryByText(/Everyone found is hidden/)).toBeNull()
+})
+
+it('keeps the Show hidden switch while it is on, even when nobody is hidden', async () => {
+  serve([group({})])
+  showPeoplePage('/photos/people?hidden=1')
+  await screen.findByRole('link', { name: /Sample Person/ })
+  const toggle = screen.getByLabelText('Show hidden people') as HTMLInputElement
+  expect(toggle.checked).toBe(true)
+  fireEvent.click(toggle)
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/photos/people'))
+})
+
 it('keeps the height of the toolbar row while the people load, so the grid does not move when Show hidden appears', async () => {
   let release: (answer: unknown) => void = () => {}
   vi.mocked(graphql).mockImplementation(async (document: string) => {

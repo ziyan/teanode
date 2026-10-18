@@ -5487,6 +5487,7 @@ export const zh: Catalog = {
   'photos.notThisPerson': '不是这个人',
   'photos.faceRemoved': '已将这张照片从此人物中移除。',
   'photos.showHidden': '显示已隐藏的人物',
+  'photos.everyoneHidden': '找到的人物都已隐藏。打开“显示已隐藏的人物”即可查看。',
   'photos.hiddenHint': '已隐藏的人物以淡色显示。',
   'photos.emptyPeople': '还没有人物。某个人出现在至少三张照片中后，就会显示在这里。',
   'photos.emptyPeopleOff': '查找人物已关闭。打开后即可看到照片中的人物。',

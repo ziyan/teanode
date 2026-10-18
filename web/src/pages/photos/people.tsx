@@ -46,7 +46,8 @@ function AccountPeoplePage() {
   const library = useQuery(() => readPhotoLibrary(), [])
   // Everybody is asked for, hidden people included, so that the page knows
   // whether there is anybody hidden: the switch is only drawn when it would
-  // reveal somebody, and a library where everybody is hidden still has it.
+  // reveal somebody, and a library where everybody is hidden still has it. It
+  // also stays while it is on, so that an address with ?hidden=1 can be undone.
   const groups = useQuery(() => listPhotoFaceGroups(true), [])
   const everybody = groups.data ?? []
   const hiddenCount = everybody.filter((group) => group.isHidden).length
@@ -60,7 +61,10 @@ function AccountPeoplePage() {
       ? t('photos.facesUnavailable')
       : !info.isPhotoFaceRecognitionEnabled
         ? t('photos.emptyPeopleOff')
-        : t('photos.emptyPeople')
+        : // People were found but every one is hidden, which is not the same as none found.
+          hiddenCount > 0 && !isHiddenShown
+          ? t('photos.everyoneHidden')
+          : t('photos.emptyPeople')
 
   return (
     <div className="photos-page">
@@ -74,7 +78,7 @@ function AccountPeoplePage() {
       ) : (
         <PhotoToolbar
           tools={
-            hiddenCount > 0 && (
+            (hiddenCount > 0 || isHiddenShown) && (
               <label className="checkbox is-plain photo-show-hidden">
                 <input
                   type="checkbox"

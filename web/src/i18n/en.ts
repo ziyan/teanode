@@ -5767,6 +5767,8 @@ export const en = {
   'photos.notThisPerson': 'Not this person',
   'photos.faceRemoved': 'Removed this photo from this person.',
   'photos.showHidden': 'Show hidden people',
+  'photos.everyoneHidden':
+    'Everyone found is hidden. Turn on "Show hidden people" to see them.',
   'photos.hiddenHint': 'The people you hid are shown dimmed.',
   'photos.emptyPeople': 'No people yet. A person appears here once they are in at least three photos.',
   'photos.emptyPeopleOff': 'Finding people is off. Turn it on to see the people in your photos.',
