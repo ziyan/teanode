@@ -308,32 +308,76 @@ struct FileCard: View {
     /// Whether the file is a picture or video that can be kept as a photo.
     private var canBeKept: Bool { photoId == nil && (file.isImage || file.isVideo) && !file.isArtifact && app.isPhotosOffered }
 
-    var body: some View {
-        AgentBubble {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label {
-                        Text(verbatim: file.size > 0 ? "\(file.name) · \(file.size.formatted(.byteCount(style: .file)))" : file.name)
-                    } icon: {
-                        Image(systemName: "paperclip")
-                    }
-                    .font(.subheadline)
-                    .lineLimit(1)
-                    Spacer(minLength: 8)
-                    if let photoId {
-                        // A photo the agent showed opens in the app's photo
-                        // viewer, where it can be favorited, saved or shared.
-                        Button("Open in Photos") { openedPhotoId = OpenedPhoto(id: photoId) }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                    } else {
-                        Button("Open") {
-                            Task { await app.preview(file.path, name: file.name) }
-                        }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                    }
+    /// The file's name, and its size when the server says it.
+    private var headerText: String {
+        file.size > 0 ? "\(file.name) · \(file.size.formatted(.byteCount(style: .file)))" : file.name
+    }
+
+    /// What can be done with the file, one full-width button each, the main
+    /// one first: keeping a picture or video in the library when that is
+    /// offered, otherwise opening it.
+    private var actionButtons: some View {
+        VStack(spacing: 10) {
+            if canBeKept {
+                keepButton
+                    .buttonStyle(.borderedProminent)
+                openButton
+                    .buttonStyle(.bordered)
+            } else {
+                openButton
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+    }
+
+    @ViewBuilder
+    private var openButton: some View {
+        if let photoId {
+            // A photo the agent showed opens in the app's photo viewer, where
+            // it can be favorited, saved or shared.
+            Button {
+                openedPhotoId = OpenedPhoto(id: photoId)
+            } label: {
+                Text("Open in Photos")
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+        } else {
+            Button {
+                Task { await app.preview(file.path, name: file.name) }
+            } label: {
+                Text("Open")
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// Keeps the picture or video as a photo in TeaNode's library.
+    private var keepButton: some View {
+        Button {
+            Task { await keepInLibrary() }
+        } label: {
+            Group {
+                if isSavingToLibrary {
+                    ProgressView()
+                } else {
+                    Label("Save to my library", systemImage: "photo.badge.plus")
+                        .multilineTextAlignment(.center)
                 }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .disabled(isSavingToLibrary)
+    }
+
+    var body: some View {
+        // The cards' shared surface, as wide as the other cards in the conversation, with the
+        // actions below the file as full-width buttons rather than small capsules beside its name.
+        CardSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                CardHeader(systemImage: "paperclip", title: headerText)
                 if file.isImage {
                     RemotePicture(path: file.path, name: file.name)
                 } else if file.isVideo || file.isAudio {
@@ -345,26 +389,12 @@ struct FileCard: View {
                         ProgressView()
                     }
                 }
-                if canBeKept {
-                    // Keeps the picture or video as a photo in TeaNode's library.
-                    Button {
-                        Task { await keepInLibrary() }
-                    } label: {
-                        if isSavingToLibrary {
-                            ProgressView()
-                        } else {
-                            Label("Save to my library", systemImage: "photo.badge.plus")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                    .disabled(isSavingToLibrary)
-                }
                 if !file.caption.isEmpty {
                     Text(file.caption)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                actionButtons
             }
         }
         .sensoryFeedback(.success, trigger: savedPhotoId)

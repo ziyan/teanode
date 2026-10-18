@@ -243,11 +243,18 @@ enum PhotoPersonWords {
 struct PhotoPersonNameText: View {
     let name: String
     let isOwnContact: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// At the accessibility sizes a name wraps instead of being cut short,
+    /// since a name cut after two letters no longer says who it is.
+    private var nameLineLimit: Int {
+        dynamicTypeSize.isAccessibilitySize ? 3 : 1
+    }
 
     var body: some View {
         HStack(spacing: 4) {
             Text(name)
-                .lineLimit(1)
+                .lineLimit(nameLineLimit)
             if isOwnContact {
                 Text("You")
                     .foregroundStyle(.secondary)
@@ -264,6 +271,16 @@ struct PhotoPersonNameText: View {
 /// their name under it, and what to do when there is nobody to show.
 struct PhotoPeopleView: View {
     let model: PhotosModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// At the accessibility sizes the columns are two, wide enough for a name
+    /// and a count to be read whole, and each face grows with its column.
+    private var gridColumns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+        }
+        return [GridItem(.adaptive(minimum: 104), spacing: 16)]
+    }
 
     var body: some View {
         Group {
@@ -275,7 +292,7 @@ struct PhotoPeopleView: View {
                     }
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 16)], spacing: 20) {
+                        LazyVGrid(columns: gridColumns, spacing: 20) {
                             ForEach(groups) { group in
                                 NavigationLink {
                                     PhotoPersonScreen(model: model, photoFaceGroupId: group.id)
@@ -339,6 +356,13 @@ struct PhotoPeopleView: View {
 struct PhotoPersonCell: View {
     let group: PhotoFaceGroup
     let connection: Connection
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// A count such as "6 photos" wraps rather than ending in an ellipsis at
+    /// the accessibility sizes.
+    private var countLineLimit: Int {
+        dynamicTypeSize.isAccessibilitySize ? 2 : 1
+    }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -350,16 +374,17 @@ struct PhotoPersonCell: View {
             Text(PhotoAlbumWords.photoCount(group.photoCount))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(countLineLimit)
             // A hidden person is dimmed, and says so in words too: dimming alone
             // is not seen by everybody.
             if group.isHidden {
                 Label("Hidden", systemImage: "eye.slash")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(countLineLimit)
             }
         }
+        .multilineTextAlignment(.center)
         .opacity(group.isHidden ? 0.5 : 1)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
