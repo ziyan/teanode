@@ -278,6 +278,8 @@ jobs:
           shoot location-place-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
           shoot location-place-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
           shoot location-place-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-address-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-address
+          shoot location-address-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-address
           shoot location-settings-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-settings
           # Sharing, a person chosen on the map, many people sharing, the check-in sheet, and setting Location up.
           for location_screen in location-sharing location-person location-people location-checkin location-setup; do

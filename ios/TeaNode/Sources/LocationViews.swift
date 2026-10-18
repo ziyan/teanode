@@ -203,7 +203,8 @@ struct LocationScreen: View {
         /// `location-places`, `location-place`, `location-settings`,
         /// `location-sharing`, `location-person`, `location-people` (more
         /// people than fit under the map), `location-checkin` (the check-in
-        /// sheet); `location-setup` is the server having no position yet.
+        /// sheet), `location-address` (the address search of a place);
+        /// `location-setup` is the server having no position yet.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty else { return }
             switch DemoServer.screen {
@@ -213,7 +214,7 @@ struct LocationScreen: View {
             case "location-person": model.select(userId: LocationDemo.historyPersonId)
             case "location-people": path = [.people]
             case "location-checkin": isCheckingIn = true
-            case "location-place":
+            case "location-place", "location-address":
                 segment = .places
                 if let place = model.places.first(where: { $0.id == LocationDemo.parkPlaceId }) { path = [.place(place)] }
             case "location-settings": path = [.settings]

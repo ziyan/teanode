@@ -12,6 +12,8 @@ final class LocationModel {
     nonisolated static let visitPageSize = 50
     nonisolated static let placePageSize = 50
     nonisolated static let searchPageSize = 20
+    /// How many address matches one search lists.
+    nonisolated static let addressSearchLimit = 8
 
     let connection: Connection
 
@@ -311,6 +313,20 @@ final class LocationModel {
         }
     }
 
+    /// Moves a place to an address the person chose, or makes the place there
+    /// (labeled, when the change says so). The reason is returned, not
+    /// toasted, for the address screen to say itself.
+    func saveAddress(_ change: PlaceChange) async -> (saved: LocationPlace?, refusalText: String?) {
+        do {
+            let saved = try await connection.savePlace(change)
+            replace(saved)
+            LocationRecorder.shared.placesDidChange()
+            return (saved, nil)
+        } catch {
+            return (nil, error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again.")))
+        }
+    }
+
     private func replace(_ saved: LocationPlace) {
         if let index = places.firstIndex(where: { $0.id == saved.id }) { places[index] = saved }
         visits = visits.map { visit in
@@ -381,6 +397,11 @@ final class LocationModel {
         try await connection.searchPlaces(
             query: words, latitudeDegrees: position.latitudeDegrees, longitudeDegrees: position.longitudeDegrees, offset: offset,
             limitCount: Self.searchPageSize)
+    }
+
+    /// Addresses matching the words typed, best first, anywhere.
+    func searchAddresses(words: String) async throws -> [FoundPlace] {
+        try await connection.searchAddresses(query: words, limitCount: Self.addressSearchLimit)
     }
 
     /// Records that the person is at a place now. Nil when it worked, else
@@ -690,6 +711,20 @@ final class LocationModel {
         guard await save(change) != nil else { return }
         doneText = String(localized: "This place is now labeled Home")
         await load()
+    }
+
+    /// "Type my address": labels Home at the address the person chose. The
+    /// server uses their own place there or makes one, so no place is named
+    /// here. Nil when it worked, else the reason, for the address screen.
+    func markHome(atAddress address: FoundPlace) async -> String? {
+        let result = await saveAddress(
+            PlaceChange(
+                placeLabel: PlaceLabel.home.rawValue, latitudeDegrees: address.latitudeDegrees, longitudeDegrees: address.longitudeDegrees,
+                addressText: address.chosenAddressText))
+        guard result.saved != nil else { return result.refusalText }
+        doneText = String(localized: "This place is now labeled Home")
+        await load()
+        return nil
     }
 
     /// Shares the person's location with one of their family circles from

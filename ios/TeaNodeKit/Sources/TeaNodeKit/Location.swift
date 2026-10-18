@@ -392,10 +392,13 @@ public struct PlaceChange: Sendable, Equatable {
     public var latitudeDegrees: Double?
     public var longitudeDegrees: Double?
     public var radiusMeters: Double?
+    /// The address the person chose, sent with the position it belongs to:
+    /// the server moves the place there and keeps this text as its address.
+    public var addressText: String?
 
     public init(
         placeId: String? = nil, placeName: String? = nil, placeLabel: String? = nil, latitudeDegrees: Double? = nil,
-        longitudeDegrees: Double? = nil, radiusMeters: Double? = nil
+        longitudeDegrees: Double? = nil, radiusMeters: Double? = nil, addressText: String? = nil
     ) {
         self.placeId = placeId
         self.placeName = placeName
@@ -403,6 +406,7 @@ public struct PlaceChange: Sendable, Equatable {
         self.latitudeDegrees = latitudeDegrees
         self.longitudeDegrees = longitudeDegrees
         self.radiusMeters = radiusMeters
+        self.addressText = addressText
     }
 
     var variables: [String: JSONValue] {
@@ -413,6 +417,7 @@ public struct PlaceChange: Sendable, Equatable {
         if let latitudeDegrees { variables["latitudeDegrees"] = .number(latitudeDegrees) }
         if let longitudeDegrees { variables["longitudeDegrees"] = .number(longitudeDegrees) }
         if let radiusMeters { variables["radiusMeters"] = .number(radiusMeters) }
+        if let addressText { variables["addressText"] = .string(addressText.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return variables
     }
 }
@@ -505,6 +510,11 @@ extension Documents {
           }
         }
         """
+    public static let searchAddresses = """
+        query ($query: String!, $limitCount: Int) {
+          SearchAddresses(query: $query, limitCount: $limitCount) { \(foundPlaceFields) }
+        }
+        """
     public static let locationPoints = """
         query ($userId: String, $from: DateTime!, $until: DateTime!) {
           ListLocationPoints(userId: $userId, from: $from, until: $until) { \(locationPointFields) }
@@ -516,8 +526,8 @@ extension Documents {
         }
         """
     public static let savePlace = """
-        mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float) {
-          SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters) {
+        mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float, $addressText: String) {
+          SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters, addressText: $addressText) {
             \(locationPlaceFields)
           }
         }
@@ -565,7 +575,7 @@ extension Documents {
     /// The location documents, for the server's schema check.
     public static let locationDocuments: [String: String] = [
         "location": location, "locationVisits": locationVisits, "locationPlaces": locationPlaces, "nearbyPlaces": nearbyPlaces,
-        "searchPlaces": searchPlaces, "locationPoints": locationPoints, "reportLocation": reportLocation, "savePlace": savePlace,
+        "searchPlaces": searchPlaces, "searchAddresses": searchAddresses, "locationPoints": locationPoints, "reportLocation": reportLocation, "savePlace": savePlace,
         "forgetPlace": forgetPlace, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory,
         "sharedLocations": sharedLocations, "locationShares": locationShares, "shareLocation": shareLocation,
         "unshareLocation": unshareLocation, "locationEvents": locationEvents,
@@ -637,6 +647,16 @@ extension Connection {
         if offset > 0 { variables["offset"] = .number(Double(offset)) }
         if let limitCount { variables["limitCount"] = .number(Double(limitCount)) }
         return try await execute(Documents.searchPlaces, variables: variables, as: Answer.self).SearchPlaces
+    }
+
+    /// Addresses matching words, best first, from the place provider and
+    /// anywhere in the world, not near a position. `distanceMeters` is from
+    /// the person's latest position when the server has one, else 0.
+    public func searchAddresses(query: String, limitCount: Int? = nil) async throws -> [FoundPlace] {
+        struct Answer: Decodable, Sendable { let SearchAddresses: [FoundPlace] }
+        var variables: [String: JSONValue] = ["query": .string(query)]
+        if let limitCount { variables["limitCount"] = .number(Double(limitCount)) }
+        return try await execute(Documents.searchAddresses, variables: variables, as: Answer.self).SearchAddresses
     }
 
     /// The points of a stretch of at most two days, for drawing the path.

@@ -250,6 +250,10 @@
                 return
                     #"{"data":{"SearchPlaces":{"foundPlaces":[{"placeName":"Riverside Park Kiosk","osmType":"node","osmId":1004,"osmCategory":"shop=kiosk","addressText":"","latitudeDegrees":10.5042,"longitudeDegrees":20.5062,"distanceMeters":55,"placeId":null},{"placeName":"Riverside Park","osmType":"way","osmId":1001,"osmCategory":"leisure=park","addressText":"","latitudeDegrees":10.5040,"longitudeDegrees":20.5060,"distanceMeters":35,"placeId":"place-park"}],"nextOffset":null}}}"#
             }
+            if query.contains("SearchAddresses(") {
+                return
+                    #"{"data":{"SearchAddresses":[{"placeName":"12 Elm Street","osmType":"way","osmId":2001,"osmCategory":"building=house","addressText":"12 Elm Street, Exampleton","latitudeDegrees":10.5012,"longitudeDegrees":20.5031,"distanceMeters":0,"placeId":null,"placeLabel":"","isNamedByPerson":false},{"placeName":"12 Elm Street","osmType":"way","osmId":2002,"osmCategory":"building=apartments","addressText":"12 Elm Street, Sampleford","latitudeDegrees":11.2200,"longitudeDegrees":21.1100,"distanceMeters":0,"placeId":null,"placeLabel":"","isNamedByPerson":false},{"placeName":"12 Elm Street","osmType":"way","osmId":2003,"osmCategory":"building=house","addressText":"12 Elm Street, Mockton","latitudeDegrees":9.8800,"longitudeDegrees":19.7700,"distanceMeters":0,"placeId":null,"placeLabel":"","isNamedByPerson":false}]}}"#
+            }
             if query.contains("ListLocationPoints(") {
                 var from = Date.distantPast
                 var until = Date.distantFuture

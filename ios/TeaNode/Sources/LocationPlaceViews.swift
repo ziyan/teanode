@@ -14,6 +14,7 @@ struct LocationPlaceScreen: View {
     @State private var visits: [PlaceVisit] = []
     @State private var nextVisitOffset: Int?
     @State private var isConfirmingForget = false
+    @State private var isChangingAddress = false
     @State private var isLoadingVisits = false
     @Environment(\.dismiss) private var dismiss
 
@@ -40,8 +41,21 @@ struct LocationPlaceScreen: View {
                         Label(label.title, systemImage: label.symbolName).tag(label.rawValue)
                     }
                 }
-            } footer: {
-                if !place.addressText.isEmpty { Text(verbatim: place.addressText) }
+            }
+            Section {
+                LabeledContent("Address") {
+                    if place.addressText.isEmpty {
+                        Text("No address").foregroundStyle(.secondary)
+                    } else {
+                        Text(verbatim: place.addressText).multilineTextAlignment(.trailing)
+                    }
+                }
+                Button {
+                    isChangingAddress = true
+                } label: {
+                    Label("Change address", systemImage: "magnifyingglass")
+                }
+                .frame(minHeight: 44)
             }
             Section {
                 Map(position: $position, interactionModes: []) {
@@ -102,8 +116,17 @@ struct LocationPlaceScreen: View {
         }
         .navigationTitle(place.shownName)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $isChangingAddress) {
+            LocationAddressScreen(model: model) { address in
+                await moveHere(to: address)
+            }
+        }
         .task {
             focusMap()
+            #if DEBUG
+                // `-TeaNodeScreen location-address`: the address screen over this one.
+                if DemoServer.isRequested, DemoServer.screen == "location-address" { isChangingAddress = true }
+            #endif
             visits = []
             nextVisitOffset = nil
             await loadVisits()
@@ -139,6 +162,20 @@ struct LocationPlaceScreen: View {
             place = saved
             nameText = saved.placeName
         }
+    }
+
+    /// Moves the place to the address the person chose and gives it that
+    /// address; the map then shows the new position. Nil when it worked, else
+    /// the reason, for the address screen to say.
+    private func moveHere(to address: FoundPlace) async -> String? {
+        let result = await model.saveAddress(
+            PlaceChange(
+                placeId: place.id, latitudeDegrees: address.latitudeDegrees, longitudeDegrees: address.longitudeDegrees,
+                addressText: address.chosenAddressText))
+        guard let saved = result.saved else { return result.refusalText }
+        place = saved
+        focusMap()
+        return nil
     }
 
     private func saveRadius() async {
