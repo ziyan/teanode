@@ -3504,34 +3504,20 @@ body,
   }
 
   /* A row whose actions are icons, up to three of them, keeps them beside
-     the title: on a line of their own they sat alone under an empty band, the
-     row twice its height, and with the name and the badge above them they
+     the title (SettingsRow adds has-icon-actions): on a line of their own
+     they sat alone under an empty band, the row twice its height, and with the name and the badge above them they
      read as belonging to nothing. Four or more (the people page) do not fit
      beside a name, and a word button does not either, so those still drop. */
-  .settings-row:has(> .settings-row-actions .icon-action):not(
-      :has(> .settings-row-actions > :not(.icon-action, .row-actions, .tooltip-anchor))
-    ):not(:has(> .settings-row-actions > :nth-child(4))):not(
-      :has(> .settings-row-actions > .row-actions > :nth-child(4))
-    ) {
+  .settings-row.has-icon-actions {
     flex-wrap: nowrap;
     align-items: flex-start;
   }
 
-  .settings-row:has(> .settings-row-actions .icon-action):not(
-      :has(> .settings-row-actions > :not(.icon-action, .row-actions, .tooltip-anchor))
-    ):not(:has(> .settings-row-actions > :nth-child(4))):not(
-      :has(> .settings-row-actions > .row-actions > :nth-child(4))
-    )
-    > .settings-row-body {
+  .settings-row.has-icon-actions > .settings-row-body {
     min-width: 0;
   }
 
-  .settings-row:has(> .settings-row-actions .icon-action):not(
-      :has(> .settings-row-actions > :not(.icon-action, .row-actions, .tooltip-anchor))
-    ):not(:has(> .settings-row-actions > :nth-child(4))):not(
-      :has(> .settings-row-actions > .row-actions > :nth-child(4))
-    )
-    > .settings-row-actions {
+  .settings-row.has-icon-actions > .settings-row-actions {
     width: auto;
     flex-wrap: nowrap;
   }
