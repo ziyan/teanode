@@ -39,6 +39,17 @@ describe('homePath', () => {
       '/agent',
     )
   })
+  it('sends an operator with Photos running and setup unfinished home, not to setup', () => {
+    const session = operator({ isPhotosEnabled: true })
+    session.permissions = { everywhere: ['server:manage', 'photos:use'], byDomain: [] }
+    expect(homePath(session)).toBe('/photos')
+  })
+  it('keeps an operator on setup while Photos is waiting for a restart', () => {
+    expect(homePath(operator({ isPhotosEnabled: true, hasPendingServiceRestart: true }))).toBe('/welcome')
+  })
+  it('keeps an operator on setup when mail was chosen too, whose next step is a domain', () => {
+    expect(homePath(operator({ isPhotosEnabled: true, isMailRoutingEnabled: true }))).toBe('/manage/server/setup')
+  })
 })
 
 describe('photos', () => {

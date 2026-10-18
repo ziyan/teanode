@@ -36,8 +36,14 @@ export function isPathAvailable(pathname: string, services?: ServiceCapabilities
 
 export function homePath(session: Session): string {
   // A new server's first operator: straight to the one page that starts the
-  // assistant, unless mail was chosen, whose next step is a domain.
-  if (!session.services?.hasCompletedSetup && hasPermission(session.permissions, 'server:manage'))
+  // assistant, unless mail was chosen, whose next step is a domain. Photos
+  // switched on and running, with no mail to set up, is already a working
+  // service, so a server set up for Photos does not keep sending its operator
+  // back here on every sign-in until somebody presses "Finish setup"; the
+  // welcome and setup pages stay reachable under Manage, Server, Setup.
+  const isPhotosRunningWithoutMailToSetUp =
+    session.services?.isPhotosEnabled === true && !session.services.hasPendingServiceRestart && !session.services.isMailRoutingEnabled
+  if (!session.services?.hasCompletedSetup && !isPhotosRunningWithoutMailToSetUp && hasPermission(session.permissions, 'server:manage'))
     return !session.services?.hasModelProvider && !session.services?.isMailRoutingEnabled
       ? '/welcome'
       : '/manage/server/setup'
