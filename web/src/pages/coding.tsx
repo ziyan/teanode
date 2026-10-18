@@ -402,8 +402,9 @@ export function CodingPage() {
   }
 
   const openButton = (
-    <button type="button" onClick={() => setOpening(true)}>
-      <PlusIcon size={16} /> {t('herdr.open')}
+    <button type="button" className="with-icon" onClick={() => setOpening(true)}>
+      <PlusIcon size={16} />
+      {t('herdr.open')}
     </button>
   )
 
