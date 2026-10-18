@@ -385,6 +385,7 @@ struct ThreadList: View {
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                            .tint(.red)
                         }
                         .contextMenu {
                             rowMenu([thread])
@@ -511,6 +512,7 @@ struct ThreadList: View {
                 } label: {
                     Label(folder?.kind == "trash" ? LocalizedStringKey("Delete forever") : "Delete", systemImage: "trash")
                 }
+                .tint(.red)
                 .disabled(selection.isEmpty)
             }
         } else {
@@ -585,6 +587,7 @@ struct ThreadList: View {
         Button(folder?.kind == "trash" ? LocalizedStringKey("Delete forever") : "Delete", systemImage: "trash", role: .destructive) {
             Task { await delete(threads) }
         }
+        .tint(.red)
     }
 
     private func folderName(of thread: MailThread) -> String? {

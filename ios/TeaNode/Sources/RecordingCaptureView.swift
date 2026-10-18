@@ -192,6 +192,7 @@ struct RecordingCaptureView: View {
                     Button(role: .destructive, action: onStop) {
                         Label("Stop", systemImage: "stop.fill").lineLimit(1).frame(maxWidth: .infinity)
                     }
+                    .tint(.red)
                     .buttonStyle(.glass)
                     .accessibilityLabel("Stop recording")
                 }

@@ -302,6 +302,7 @@ struct KnowledgeSourcesView: View {
             }
             .swipeActions {
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                    .tint(.red)
                 pauseButton(source).tint(.orange)
             }
             .contextMenu {
@@ -309,6 +310,7 @@ struct KnowledgeSourcesView: View {
                 syncButton(source)
                 pauseButton(source)
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                    .tint(.red)
             }
         } else {
             Button {
@@ -321,6 +323,7 @@ struct KnowledgeSourcesView: View {
             }
             .swipeActions {
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                    .tint(.red)
                 pauseButton(source).tint(.orange)
             }
             .contextMenu {
@@ -331,6 +334,7 @@ struct KnowledgeSourcesView: View {
                     Button("Files it decided against opening", systemImage: "doc.badge.ellipsis") { declinedSource = source }
                 }
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                    .tint(.red)
             }
         }
     }
@@ -1120,6 +1124,7 @@ struct AgentMemorySettingsView: View {
                 }
                 .swipeActions {
                     Button("Forget", systemImage: "trash", role: .destructive) { forgetting = learned }
+                        .tint(.red)
                 }
             }
         } header: {
@@ -1983,6 +1988,7 @@ struct SchedulesView: View {
                     }
                     .swipeActions {
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = schedule }
+                            .tint(.red)
                         Button(schedule.enabled ? LocalizedStringKey("Turn off") : "Turn on", systemImage: schedule.enabled ? "pause" : "play") {
                             Task {
                                 await act(saying: nil) { try await connection.saveAgentSchedule(scheduleId: schedule.id, isEnabled: !schedule.enabled) }
@@ -1994,6 +2000,7 @@ struct SchedulesView: View {
                         Button("Edit", systemImage: "pencil") { editing = ScheduleEditing(schedule: schedule) }
                         runButton(schedule)
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = schedule }
+                            .tint(.red)
                     }
                 }
             } header: {
@@ -2795,6 +2802,7 @@ struct ConnectionsView: View {
                 .swipeActions {
                     if server.isPersonal && server.isConnected {
                         Button("Disconnect", systemImage: "bolt.slash", role: .destructive) { disconnecting = server }
+                            .tint(.red)
                     } else if server.isPersonal && !server.doesAuthorizeInBrowser && server.enabled {
                         Button("Connect", systemImage: "bolt") {
                             credential = ""
@@ -2806,6 +2814,7 @@ struct ConnectionsView: View {
                 .contextMenu {
                     if server.isPersonal && server.isConnected {
                         Button("Disconnect", systemImage: "bolt.slash", role: .destructive) { disconnecting = server }
+                            .tint(.red)
                     } else if server.isPersonal && !server.doesAuthorizeInBrowser && server.enabled {
                         Button("Connect", systemImage: "bolt") {
                             credential = ""
@@ -2895,6 +2904,7 @@ struct ConnectionsView: View {
                 .swipeActions {
                     if secret.set {
                         Button("Forget it", systemImage: "trash", role: .destructive) { forgettingSecret = secret }
+                            .tint(.red)
                     }
                     fillButton(secret).tint(.indigo)
                 }
@@ -2902,6 +2912,7 @@ struct ConnectionsView: View {
                     fillButton(secret)
                     if secret.set {
                         Button("Forget it", systemImage: "trash", role: .destructive) { forgettingSecret = secret }
+                            .tint(.red)
                     }
                 }
             }
@@ -3084,6 +3095,7 @@ struct ConnectionsView: View {
                 .swipeActions {
                     if let channel {
                         Button("Remove", systemImage: "trash", role: .destructive) { removingChannel = channel }
+                            .tint(.red)
                         switchButton(channel).tint(.orange)
                     }
                 }
@@ -3098,6 +3110,7 @@ struct ConnectionsView: View {
                             Button("Unlink", systemImage: "link") { unlinking = channel }
                         }
                         Button("Remove", systemImage: "trash", role: .destructive) { removingChannel = channel }
+                            .tint(.red)
                     }
                 }
             }
@@ -3392,6 +3405,7 @@ struct AgentActivityView: View {
                 .swipeActions {
                     if work.isStoppable {
                         Button("Stop", systemImage: "stop.circle", role: .destructive) { stopping = work }
+                            .tint(.red)
                     }
                 }
                 .contextMenu {
@@ -3400,6 +3414,7 @@ struct AgentActivityView: View {
                     }
                     if work.isStoppable {
                         Button("Stop", systemImage: "stop.circle", role: .destructive) { stopping = work }
+                            .tint(.red)
                     }
                 }
             }
@@ -3495,6 +3510,7 @@ struct AgentActivityView: View {
                 .swipeActions {
                     if reply.isHeld {
                         Button("Cancel", systemImage: "xmark.circle", role: .destructive) { cancelling = reply }
+                            .tint(.red)
                     }
                 }
             }

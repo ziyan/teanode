@@ -43,6 +43,7 @@ struct MailRulesView: View {
                         Button("Remove rule", systemImage: "trash", role: .destructive) {
                             removing = RemovedRule(index: index, name: words.ruleName(rule))
                         }
+                        .tint(.red)
                         Button(rule.enabled ? "Turn off" : "Turn on", systemImage: rule.enabled ? "pause" : "play") {
                             var next = rules
                             next[index].enabled.toggle()

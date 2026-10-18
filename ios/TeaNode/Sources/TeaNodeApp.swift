@@ -456,6 +456,7 @@ struct ConversationsSheet: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                .tint(.red)
             }
         }
         .confirmationDialog(

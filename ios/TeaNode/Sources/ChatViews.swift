@@ -291,6 +291,7 @@ struct ChatMenu: View {
                     } label: {
                         Label("Leave group", systemImage: "rectangle.portrait.and.arrow.right")
                     }
+                    .tint(.red)
                 }
             } label: {
                 Label("Chat options", systemImage: "ellipsis.circle")
@@ -477,6 +478,7 @@ struct ChatMembersSheet: View {
                 } label: {
                     Label("Remove", systemImage: "person.badge.minus")
                 }
+                .tint(.red)
             }
         }
         .contextMenu {
@@ -486,6 +488,7 @@ struct ChatMembersSheet: View {
                 } label: {
                     Label("Remove", systemImage: "person.badge.minus")
                 }
+                .tint(.red)
             }
         }
         .confirmationDialog(
