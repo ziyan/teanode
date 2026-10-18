@@ -139,6 +139,8 @@ struct ConversationView: View {
                             .font(.headline)
                             .frame(minWidth: 44, minHeight: 44)
                     }
+                    // Mostly solid, so the words under it are not read through it.
+                    .background(Color(.systemBackground).opacity(0.85), in: .circle)
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("Jump to the end")
                     .padding()
@@ -1216,7 +1218,8 @@ struct PersonBubble: View {
                         Text(String(line.text.prefix(Self.shownCharacterCount)))
                             .lineLimit(Self.shownLineCount)
                         Button("Show all", action: onShowAll)
-                            .font(.subheadline.weight(.semibold))
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
                     } else {
                         Text(line.text)
                     }
@@ -1462,11 +1465,13 @@ struct EmptyConversation: View {
 }
 
 /// TodoPanel is the agent's own list of steps for this conversation, while
-/// it works through them: a card behind the composer, narrower than it, its
-/// foot under the composer's top.
+/// it works through them: a card behind the composer, as wide as the cards
+/// above it, its foot under the composer's top.
 struct TodoPanel: View {
     let todos: [AgentTodo]
-    @State private var expanded: Set<String> = []
+    /// The most the card shows before it scrolls, growing with the text size
+    /// so a few wrapped steps are not squeezed into a strip.
+    @ScaledMetric(relativeTo: .footnote) private var shownHeightPoints: CGFloat = 120
 
     /// How far the card reaches under the composer.
     static let tuckedUnder: CGFloat = 20
@@ -1479,29 +1484,28 @@ struct TodoPanel: View {
                         Image(systemName: todo.isDone ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(todo.isDone ? Color.accentColor : Color.secondary)
                             .accessibilityLabel(todo.isDone ? Text("Done") : Text("Still to do"))
+                        // A step is shown whole, wrapping onto more lines, as a
+                        // step cut short cannot be read at a large text size.
                         Text(todo.text)
                             .strikethrough(todo.isDone)
                             .foregroundStyle(todo.isDone ? .secondary : .primary)
-                            .lineLimit(expanded.contains(todo.id) ? nil : 1)
-                            .onTapGesture {
-                                if expanded.contains(todo.id) { expanded.remove(todo.id) } else { expanded.insert(todo.id) }
-                            }
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .font(.footnote)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 12 + Self.tuckedUnder)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: 120 + Self.tuckedUnder)
+        .frame(maxHeight: shownHeightPoints + Self.tuckedUnder)
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5)
         }
-        .padding(.horizontal, 28)
+        .padding(.horizontal)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("The agent's steps")
     }
@@ -2064,8 +2068,8 @@ struct CodingQuestionCard: View {
                     Button(isShowingDetails ? "Hide details" : "Details") {
                         withAnimation { isShowingDetails.toggle() }
                     }
-                    .font(.footnote)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
                 }
                 Text(verbatim: question.headline)
                     .lineLimit(3)
@@ -2192,6 +2196,14 @@ struct Composer: View {
     /// Pictures picked and still being read from the library.
     @State private var loadingPictureCount = 0
     @FocusState private var isFocused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The width and height of each round button, growing with the text size
+    /// so its symbol is never larger than the circle that holds it.
+    @ScaledMetric(relativeTo: .body) private var scaledButtonDiameterPoints: CGFloat = 36
+
+    /// The scaled size, held at what the buttons' symbols reach at the
+    /// largest size they follow (see the cap on the row of buttons).
+    private var buttonDiameterPoints: CGFloat { min(scaledButtonDiameterPoints, 60) }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -2260,7 +2272,7 @@ struct Composer: View {
                         Image(systemName: "plus")
                             .font(.body.weight(.medium))
                             .foregroundStyle(.secondary)
-                            .frame(width: 36, height: 36)
+                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
                             .background(Color(.tertiarySystemFill), in: .circle)
                             .frame(minWidth: 44, minHeight: 44)
                             .contentShape(.rect)
@@ -2274,7 +2286,7 @@ struct Composer: View {
                             Image(systemName: "waveform")
                                 .font(.body.weight(.medium))
                                 .foregroundStyle(.secondary)
-                                .frame(width: 36, height: 36)
+                                .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
                                 .frame(minWidth: 44, minHeight: 44)
                         }
                         .accessibilityLabel("Call your agent")
@@ -2286,7 +2298,7 @@ struct Composer: View {
                             Image(systemName: "stop.fill")
                                 .font(.footnote)
                                 .foregroundStyle(Color(.systemBackground))
-                                .frame(width: 36, height: 36)
+                                .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
                                 .background(Color.primary, in: .circle)
                                 .frame(minWidth: 44, minHeight: 44)
                         }
@@ -2304,7 +2316,7 @@ struct Composer: View {
                                         .foregroundStyle(.white)
                                 }
                             }
-                            .frame(width: 36, height: 36)
+                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
                             .background(model.canSend || model.isSending ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
                             .frame(minWidth: 44, minHeight: 44)
                         }
@@ -2312,6 +2324,9 @@ struct Composer: View {
                         .accessibilityLabel(model.isSending ? Text("Sending…") : Text("Send"))
                     }
                 }
+                // Past a point the buttons stop growing with the text: three
+                // of them in the biggest size would fill the whole row.
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .padding(.horizontal, 6)
                 .padding(.bottom, 4)
             }
@@ -2325,6 +2340,11 @@ struct Composer: View {
                     .contentShape(.rect(cornerRadius: 26, style: .continuous))
                     .onTapGesture { isFocused = true }
             }
+            // The glass alone lets the messages behind it show through as
+            // blurred words under the placeholder, so the field has a
+            // mostly solid surface of its own and the glass gives it the edge
+            // and the light.
+            .background(Color(.systemBackground).opacity(0.85), in: .rect(cornerRadius: 26, style: .continuous))
             .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
         }
         .padding(.horizontal)
@@ -2351,6 +2371,9 @@ struct Composer: View {
     }
 
     private var placeholder: String {
+        // The longer prompts do not fit the width left at the accessibility
+        // sizes and were cut off in the middle of a word.
+        if dynamicTypeSize.isAccessibilitySize, model.freshQuestion == nil { return String(localized: "Message…") }
         if model.isChat {
             // Where an agent can be asked, the box says how.
             if !model.addressableAgents.isEmpty { return String(localized: "Message, or @ to ask an agent") }
