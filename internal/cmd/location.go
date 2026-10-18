@@ -460,9 +460,13 @@ func runLocationPlaces(ctx context.Context, command *cli.Command) error {
 		if found.LastVisitAt != nil {
 			last = timeCell(found.LastVisitAt)
 		}
-		rows = append(rows, []string{placeLine(found), fmt.Sprintf("%d", found.VisitCount), last, fmt.Sprintf("%.0f m", found.RadiusMeters), found.ID})
+		address := found.AddressText
+		if found.IsAddressTyped && address != "" {
+			address += " (typed)"
+		}
+		rows = append(rows, []string{placeLine(found), address, fmt.Sprintf("%d", found.VisitCount), last, fmt.Sprintf("%.0f m", found.RadiusMeters), found.ID})
 	}
-	if err := printTable([]string{"place", "visits", "last visit", "radius", "id"}, rows); err != nil {
+	if err := printTable([]string{"place", "address", "visits", "last visit", "radius", "id"}, rows); err != nil {
 		return err
 	}
 	noteNextPage(page.NextOffset, first)
@@ -754,8 +758,12 @@ func runLocationSave(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(saved)
 	}
 	fmt.Printf("%s (%s)\n", forTerminal(placeLine(saved)), saved.ID)
-	if words != "" {
+	if saved.IsAddressTyped {
+		fmt.Printf("address: %s (typed)\n", forTerminal(saved.AddressText))
+	} else if words != "" {
 		fmt.Printf("address: %s\n", forTerminal(saved.AddressText))
+	}
+	if words != "" {
 		if len(otherMatches) > 0 {
 			fmt.Println("if that was the wrong address, rerun with --latitude, --longitude and --address-text from one of these:")
 			return printTable([]string{"address", "latitude", "longitude", "distance"}, addressRows(otherMatches))

@@ -204,13 +204,14 @@ type PlaceChanges struct {
 	RadiusMeters *float64
 
 	// AddressText is an address the person typed; empty takes a typed address
-	// away, and the place waits to be named again. With the coordinates of a
-	// match the person picked from the provider, the place moves there and
-	// what a provider said about the old position (object, name, category) is
-	// dropped; without coordinates the place stays where it is and keeps what
-	// the provider said about it. Either way the place keeps this address: it
-	// counts as named already, so the naming job does not replace it. A place
-	// the person did not name is called by the first part of the address.
+	// away, and the place waits to be named again. Typing one drops what a
+	// provider said about the spot (object, name, category) whether or not the
+	// place moves: the person said the place is at this address, and the map's
+	// name for the spot is not this place. With the coordinates of a match the
+	// person picked, the place moves there; without, it stays where it is.
+	// Either way the place keeps this address: it counts as named already, so
+	// the naming job does not replace it. A place the person did not name is
+	// called by the first part of the address.
 	AddressText *string
 
 	// MovedPlaceName is the name a place the person did not name takes when it
@@ -795,16 +796,13 @@ func (self *transaction) SavePlace(userId, placeId string, changes PlaceChanges)
 				updates["place_name"] = cleanPlaceText(placeName, placeNameMaximumLength)
 			}
 		} else {
-			if changes.LatitudeDegrees != nil {
-				// The address was said about the new position, so nothing the
-				// provider said about the old one stays, however short the
-				// move. Without coordinates the place stays where it is, and
-				// what the provider said about it stays too.
-				updates["osm_type"] = ""
-				updates["osm_id"] = nil
-				updates["osm_name"] = ""
-				updates["osm_category"] = ""
-			}
+			// The person said the place is at this address. What the map called
+			// the spot (a car park, a neighbor's shop) is not this place, so it
+			// goes with or without a move.
+			updates["osm_type"] = ""
+			updates["osm_id"] = nil
+			updates["osm_name"] = ""
+			updates["osm_category"] = ""
 			updates["is_address_typed"] = true
 			updates["address_text"] = addressText
 			updates["named_at"] = time.Now()
