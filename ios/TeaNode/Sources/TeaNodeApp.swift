@@ -900,15 +900,17 @@ struct AccountsSection: View {
                 Button {
                     Task { await app.switchTo(account) }
                 } label: {
+                    // The person as their server shows them: picture and name,
+                    // with the username beside the server it signs in to.
+                    let profile = app.accountProfiles[account.accountKey]
                     HStack(spacing: 12) {
-                        Text(String(account.username.prefix(1)).uppercased())
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.accentColor, in: .circle)
+                        AvatarView(
+                            name: profile?.displayName ?? account.username, avatarUrl: profile?.avatarUrl,
+                            colorIndex: profile?.avatarColorIndex, size: 36, account: account
+                        )
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(account.username).foregroundStyle(.primary)
-                            Text(account.server.host).font(.footnote).foregroundStyle(.secondary)
+                            Text(profile?.displayName ?? account.username).foregroundStyle(.primary)
+                            Text(verbatim: "\(account.username) · \(account.server.host)").font(.footnote).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if account.accountKey == app.account?.accountKey {
@@ -916,6 +918,7 @@ struct AccountsSection: View {
                         }
                     }
                 }
+                .task(id: account.accountKey) { await app.loadProfile(of: account) }
                 .swipeActions {
                     if account.accountKey != app.account?.accountKey {
                         Button("Sign out", role: .destructive) { signingOut = account }

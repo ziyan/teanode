@@ -266,6 +266,28 @@ final class AppModel {
         return picture
     }
 
+    /// Each signed-in account's own profile, by account key, for the list of
+    /// accounts: the name and picture it goes by on its server.
+    private(set) var accountProfiles: [String: AccountProfile] = [:]
+
+    /// Reads an account's profile from its own server, through the connection
+    /// kept for it, so an account not in use shows its name and picture too.
+    func loadProfile(of chosen: Account) async {
+        guard let profile = try? await connection(for: chosen).accountProfile() else { return }
+        accountProfiles[chosen.accountKey] = profile
+    }
+
+    /// Reads a picture from an account's own server, once. Two servers may use
+    /// the same path, so the account is part of what it is kept under.
+    func picture(_ path: String, of chosen: Account) async -> UIImage? {
+        if chosen.accountKey == account?.accountKey { return await picture(path) }
+        let key = chosen.accountKey + " " + path
+        if let known = pictures[key] { return known }
+        guard let data = try? await connection(for: chosen).download(path), let picture = UIImage(data: data) else { return nil }
+        pictures[key] = picture
+        return picture
+    }
+
     /// Shows a file the server keeps in Quick Look: read, written to a
     /// place of the app's own under its name, then opened.
     func preview(_ path: String, name: String) async {
@@ -741,6 +763,7 @@ final class AppModel {
         }
         account = nil
         accounts = []
+        accountProfiles = [:]
         connection = nil
         forgetAccountFacts()
         self.signedOutText = signedOutText
@@ -769,6 +792,7 @@ final class AppModel {
         await PhotoBackupEngine.shared.accountRemoved(accountKey: other.accountKey, connection: otherConnections[other.accountKey])
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
+        accountProfiles[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)
         ConversationDraft.forget(accountKey: other.accountKey)
         try? store.remove(other.accountKey)

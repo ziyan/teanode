@@ -12,15 +12,19 @@ struct AvatarView: View {
     /// The color the server chose. When it has not said, one is worked out from
     /// the name, which is the same function the server runs over an id.
     let colorIndex: Int?
+    /// The account whose server keeps the picture, when it is not the one in
+    /// use: the list of accounts draws each from its own server.
+    let account: Account?
     @ScaledMetric private var diameter: CGFloat
     @Environment(AppModel.self) private var app
     @Environment(\.displayScale) private var displayScale
     @State private var picture: UIImage?
 
-    init(name: String, avatarUrl: String?, colorIndex: Int?, size: CGFloat) {
+    init(name: String, avatarUrl: String?, colorIndex: Int?, size: CGFloat, account: Account? = nil) {
         self.name = name
         self.avatarUrl = avatarUrl
         self.colorIndex = colorIndex
+        self.account = account
         // Grows with the text size, like the row it sits in.
         _diameter = ScaledMetric(wrappedValue: size, relativeTo: .headline)
     }
@@ -47,7 +51,12 @@ struct AvatarView: View {
         .task(id: avatarUrl) {
             picture = nil
             guard let avatarUrl, !avatarUrl.isEmpty else { return }
-            picture = await app.picture(Self.sized(avatarUrl, pixels: diameter * displayScale))
+            let path = Self.sized(avatarUrl, pixels: diameter * displayScale)
+            if let account {
+                picture = await app.picture(path, of: account)
+            } else {
+                picture = await app.picture(path)
+            }
         }
     }
 
