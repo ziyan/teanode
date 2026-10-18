@@ -67760,22 +67760,6 @@
         }
       }
     },
-    "Taxpayer number, last 4": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "納税者番号の下 4 桁"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "纳税人号码末 4 位"
-          }
-        }
-      }
-    },
     "The form's PDF or picture. The server does not keep its text, which holds a taxpayer number.": {
       "localizations": {
         "ja": {
@@ -70494,6 +70478,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "它们将进入新账户 %@。"
+          }
+        }
+      }
+    },
+    "Taxpayer number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "納税者番号"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "纳税人号码"
+          }
+        }
+      }
+    },
+    "Last 4, optional": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下 4 桁、任意"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "末 4 位，可选"
           }
         }
       }
