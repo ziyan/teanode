@@ -19082,14 +19082,30 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   cursor: pointer;
 }
 
+/* People are drawn above places, so a person at one of their places shows
+   their picture on top of its pin; the one chosen is above the rest of its
+   kind. The minimum height the phone gives every button would stretch a
+   place's round pin into a pill: the marker has its own press area (below),
+   so it keeps its size. */
 .location-marker-person {
+  z-index: 3;
   width: 40px;
   height: 40px;
 }
 
+.location-marker-person.is-selected {
+  z-index: 4;
+}
+
 .location-marker-place {
+  z-index: 1;
   width: 28px;
   height: 28px;
+  min-height: 0;
+}
+
+.location-marker-place.is-selected {
+  z-index: 2;
 }
 
 /* A marker is drawn small and pressed at 44px: the pseudo-element is part of
