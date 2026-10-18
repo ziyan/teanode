@@ -120,6 +120,24 @@ it('lists the hidden people only after Show hidden is chosen', async () => {
   expect(listed.some(([, variables]) => variables?.isHiddenIncluded === true)).toBe(true)
 })
 
+it('offers Show hidden only when somebody is hidden', async () => {
+  serve([])
+  showPeoplePage()
+  await screen.findByText(/No people yet/)
+  expect(screen.queryByLabelText('Show hidden people')).toBeNull()
+  cleanup()
+  serve([group({})])
+  showPeoplePage()
+  await screen.findByRole('link', { name: /Sample Person/ })
+  expect(screen.queryByLabelText('Show hidden people')).toBeNull()
+  cleanup()
+  // Everybody hidden: the list is empty, and the switch is the way to them.
+  serve([group({ isHidden: true, contactName: 'Hidden Person' })])
+  showPeoplePage()
+  fireEvent.click(await screen.findByLabelText('Show hidden people'))
+  expect(await screen.findByRole('link', { name: /Hidden Person/ })).toBeTruthy()
+})
+
 it('keeps Show hidden in the address, so that a reload and a copied link keep it', async () => {
   serve([group({}), group({ id: 'group-2', contactName: 'Hidden Person', isHidden: true })])
   showPeoplePage()

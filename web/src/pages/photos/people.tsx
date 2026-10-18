@@ -44,9 +44,14 @@ function AccountPeoplePage() {
   const canNamePeople =
     session.services?.isContactsEnabled === true && hasPermission(session.permissions, 'contacts:use')
   const library = useQuery(() => readPhotoLibrary(), [])
-  const groups = useQuery(() => listPhotoFaceGroups(isHiddenShown), [isHiddenShown])
-  const list = groups.data ?? []
-  const hasHiddenOnes = isHiddenShown && list.some((group) => group.isHidden)
+  // Everybody is asked for, hidden people included, so that the page knows
+  // whether there is anybody hidden: the switch is only drawn when it would
+  // reveal somebody, and a library where everybody is hidden still has it.
+  const groups = useQuery(() => listPhotoFaceGroups(true), [])
+  const everybody = groups.data ?? []
+  const hiddenCount = everybody.filter((group) => group.isHidden).length
+  const list = isHiddenShown ? everybody : everybody.filter((group) => !group.isHidden)
+  const hasHiddenOnes = isHiddenShown && hiddenCount > 0
   const info = library.data
   const emptyText = !info
     ? t('photos.emptyPeople')
@@ -62,14 +67,16 @@ function AccountPeoplePage() {
       <PhotoSections current="people" onSelect={(section) => navigate(sectionAddress(section))} />
       <PhotoToolbar
         tools={
-          <label className="checkbox is-plain photo-show-hidden">
-            <input
-              type="checkbox"
-              checked={isHiddenShown}
-              onChange={(event) => setIsHiddenShown(event.target.checked)}
-            />
-            <span>{t('photos.showHidden')}</span>
-          </label>
+          hiddenCount > 0 && (
+            <label className="checkbox is-plain photo-show-hidden">
+              <input
+                type="checkbox"
+                checked={isHiddenShown}
+                onChange={(event) => setIsHiddenShown(event.target.checked)}
+              />
+              <span>{t('photos.showHidden')}</span>
+            </label>
+          )
         }
       />
 
