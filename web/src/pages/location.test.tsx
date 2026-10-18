@@ -132,6 +132,25 @@ function answerWith(shown: {
     if (document.includes('ListLocationShares')) return { ListLocationShares: [] } as never
     if (document.includes('ListCirclePeople')) return { ListCirclePeople: shown.people ?? [] } as never
     if (document.includes('ListCircles')) return { ListCircles: [] } as never
+    if (document.includes('SearchAddresses')) {
+      return {
+        SearchAddresses: [
+          {
+            placeName: '',
+            osmType: 'way',
+            osmId: 77,
+            osmCategory: 'building',
+            addressText: '12 Elm Street, Exampleton',
+            latitudeDegrees: 11.25,
+            longitudeDegrees: 21.75,
+            distanceMeters: 340,
+            placeId: null,
+            placeLabel: '',
+            isNamedByPerson: false,
+          },
+        ],
+      } as never
+    }
     if (document.includes('EraseLocationHistory')) {
       return { EraseLocationHistory: { pointCount: 3, visitCount: 2, placeCount: 1 } } as never
     }
@@ -747,4 +766,69 @@ it('does not label the browser position as home when the browser is only sure to
   fireEvent.click(await screen.findByRole('button', { name: 'Use where I am now' }))
   expect(await screen.findByText(/only knows where you are to within 1500 m/)).toBeTruthy()
   expect(calls('SavePlace')).toHaveLength(0)
+})
+
+it('shows the address of a place and moves the place to a typed address', async () => {
+  answerWith({ places: [place({ addressText: '1 Old Road, Exampleton' })] })
+  renderAt('/location?tab=places')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
+  const editor = await screen.findByRole('dialog')
+  expect(within(editor).getByText('1 Old Road, Exampleton')).toBeTruthy()
+  fireEvent.click(within(editor).getByRole('button', { name: 'Change address' }))
+
+  const chooser = await screen.findByRole('alertdialog')
+  fireEvent.change(within(chooser).getByLabelText('Type an address'), { target: { value: '12 Elm' } })
+  fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
+  expect(calls('SearchAddresses')[0][1]).toEqual({ query: '12 Elm' })
+  fireEvent.click(await within(chooser).findByRole('button', { name: /12 Elm Street, Exampleton/ }))
+
+  await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
+  expect(calls('SavePlace')[0][1]).toEqual({
+    placeId: 'place-one',
+    latitudeDegrees: 11.25,
+    longitudeDegrees: 21.75,
+    addressText: '12 Elm Street, Exampleton',
+  })
+  expect(await screen.findByText('Moved to 12 Elm Street, Exampleton')).toBeTruthy()
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+})
+
+it('says there is no address for a place without one, and shows a failed address search in the chooser', async () => {
+  answerWith({ places: [place()] })
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SearchAddresses')) throw new Error('place provider is off')
+    return base!(document, variables)
+  })
+  renderAt('/location?tab=places')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
+  const editor = await screen.findByRole('dialog')
+  expect(within(editor).getByText('No address')).toBeTruthy()
+  fireEvent.click(within(editor).getByRole('button', { name: 'Change address' }))
+  const chooser = await screen.findByRole('alertdialog')
+  fireEvent.change(within(chooser).getByLabelText('Type an address'), { target: { value: 'nowhere' } })
+  fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
+  expect(await screen.findByText('place provider is off')).toBeTruthy()
+  expect(calls('SavePlace')).toHaveLength(0)
+})
+
+it('makes home at a typed address from the setup', async () => {
+  answerWith({ own: { latestPoint: null } })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Type my address' }))
+  const chooser = await screen.findByRole('alertdialog')
+  fireEvent.change(within(chooser).getByLabelText('Type an address'), { target: { value: '12 Elm' } })
+  fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
+  fireEvent.click(await within(chooser).findByRole('button', { name: /12 Elm Street, Exampleton/ }))
+
+  await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
+  expect(calls('SavePlace')[0][1]).toEqual({
+    latitudeDegrees: 11.25,
+    longitudeDegrees: 21.75,
+    placeLabel: 'home',
+    addressText: '12 Elm Street, Exampleton',
+  })
 })

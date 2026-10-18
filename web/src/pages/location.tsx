@@ -8,6 +8,7 @@ import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { MoreIcon } from '../components/icons'
 import { isLocationPermissionGranted, readFreshBrowserLocation } from '../components/browserLocation'
+import { LocationAddressChooser } from '../components/locationAddressChooser'
 import { LocationCheckInDialog } from '../components/locationCheckIn'
 import {
   dayKeyOf,
@@ -89,8 +90,10 @@ const LIST_PLACES = `query ($userId: String, $placeLabel: String, $query: String
     places { ${PLACE_FIELDS} } nextOffset
   }
 }`
-const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $radiusMeters: Float) {
-  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, radiusMeters: $radiusMeters) { id }
+const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $radiusMeters: Float,
+  $latitudeDegrees: Float, $longitudeDegrees: Float, $addressText: String) {
+  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, radiusMeters: $radiusMeters,
+    latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, addressText: $addressText) { id }
 }`
 const FORGET_PLACE = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
 const ERASE_LOCATION_HISTORY = `mutation ($from: DateTime, $until: DateTime) {
@@ -194,6 +197,7 @@ function LocationContent({ userId }: { userId: string }) {
   const [isReadingBrowser, setIsReadingBrowser] = useState(false)
   const [editingPlace, setEditingPlace] = useState<Place | null>(null)
   const [forgettingPlace, setForgettingPlace] = useState<Place | null>(null)
+  const [addressPlace, setAddressPlace] = useState<Place | null>(null)
   // What the person is asked to erase: one day, or everything.
   const [erasing, setErasing] = useState<{ range: DayRange | null } | null>(null)
   const [placesSearchText, setPlacesSearchText] = useState(placesQuery)
@@ -964,6 +968,11 @@ function LocationContent({ userId }: { userId: string }) {
             setForgettingPlace(editingPlace)
             setEditingPlace(null)
           }}
+          onChangeAddress={() => {
+            setDialogProblem(null)
+            setAddressPlace(editingPlace)
+            setEditingPlace(null)
+          }}
           onSave={async (variables) => {
             const isDone = await act(
               () => graphql(SAVE_PLACE, { placeId: editingPlace.id, ...variables }),
@@ -973,6 +982,24 @@ function LocationContent({ userId }: { userId: string }) {
               t('location.placeFailed'),
             )
             if (isDone) setEditingPlace(null)
+          }}
+        />
+      )}
+
+      {addressPlace && (
+        <LocationAddressChooser
+          title={t('location.changeAddress')}
+          onClose={() => setAddressPlace(null)}
+          onChoose={async (match) => {
+            await graphql(SAVE_PLACE, {
+              placeId: addressPlace.id,
+              latitudeDegrees: match.latitudeDegrees,
+              longitudeDegrees: match.longitudeDegrees,
+              addressText: match.addressText,
+            })
+            toast.done(t('location.addressMoved', { address: match.addressText }))
+            setAddressPlace(null)
+            reloadAll()
           }}
         />
       )}
@@ -1036,6 +1063,7 @@ function PlaceEditor({
   error,
   onClose,
   onForget,
+  onChangeAddress,
   onSave,
 }: {
   place: Place
@@ -1043,6 +1071,7 @@ function PlaceEditor({
   error: string | null
   onClose: () => void
   onForget: () => void
+  onChangeAddress: () => void
   onSave: (changes: PlaceChanges) => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -1082,6 +1111,15 @@ function PlaceEditor({
           onChange={(event) => setPlaceName(event.target.value)}
         />
       </label>
+      <div className="location-address-row">
+        <span className="location-address-text">
+          <span className="muted">{t('location.address')}</span>
+          <span>{place.addressText.trim() || t('location.noAddress')}</span>
+        </span>
+        <button type="button" onClick={onChangeAddress}>
+          {t('location.changeAddress')}
+        </button>
+      </div>
       <label>
         {t('location.placeLabel')}
         <select value={placeLabel} onChange={(event) => setPlaceLabel(event.target.value)}>

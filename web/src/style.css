@@ -18440,3 +18440,17 @@ label.checkbox.is-plain > span > .muted {
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
 }
+
+.location-address-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.location-address-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

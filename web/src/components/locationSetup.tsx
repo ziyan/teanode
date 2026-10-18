@@ -6,7 +6,8 @@ import { useTranslation } from '../i18n/i18n'
 import { hasPermission, useSession } from '../session'
 import { COARSE_ACCURACY_METERS, readFreshBrowserLocation } from './browserLocation'
 import { Tag } from './common'
-import { nearestPlaceHolding } from './locationData'
+import { LocationAddressChooser } from './locationAddressChooser'
+import { FoundPlace, nearestPlaceHolding } from './locationData'
 import { SettingsRow, SettingsSection } from './settingsList'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
@@ -29,8 +30,10 @@ const LIST_CIRCLES = `query { ListCircles { id name circleKind } }`
 const LIST_OWN_PLACES = `query {
   ListPlaces(limitCount: 200) { places { id latitudeDegrees longitudeDegrees radiusMeters } }
 }`
-const SAVE_HOME = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeLabel: String) {
-  SavePlace(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeLabel: $placeLabel) { id }
+const SAVE_HOME = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeLabel: String,
+  $addressText: String) {
+  SavePlace(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees,
+    placeLabel: $placeLabel, addressText: $addressText) { id }
 }`
 const SHARE = `mutation ($granteeCircleId: String, $shareLevel: String!) {
   ShareLocation(granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
@@ -44,6 +47,7 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
   const session = useSession()
   const canUseCircles = hasPermission(session.permissions, 'circle:use')
   const [isBusy, setIsBusy] = useState(false)
+  const [isTypingAddress, setIsTypingAddress] = useState(false)
 
   const home = useQuery(
     async () => (await graphql<{ ListPlaces: { places: { id: string }[] } }>(LIST_HOME_PLACES)).ListPlaces.places,
@@ -115,6 +119,20 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
     }
   }
 
+  // A typed address makes or labels home there: no placeId, since the server
+  // uses the person's own place that holds the position.
+  async function saveHomeAt(match: FoundPlace) {
+    await graphql(SAVE_HOME, {
+      latitudeDegrees: match.latitudeDegrees,
+      longitudeDegrees: match.longitudeDegrees,
+      placeLabel: 'home',
+      addressText: match.addressText,
+    })
+    toast.done(t('location.setupHomeSaved'))
+    setIsTypingAddress(false)
+    await home.reload(true)
+  }
+
   const badge = (isDone: boolean) =>
     isDone ? <Tag value={t('location.setupDone')} tone="good" /> : <Tag value={t('location.setupToDo')} tone="warn" />
 
@@ -144,9 +162,14 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
         badge={badge(isHomeDone)}
         actions={
           !isHomeDone && (
-            <button type="button" disabled={isBusy} onClick={() => void markHome()}>
-              {t('location.setupHomeButton')}
-            </button>
+            <>
+              <button type="button" disabled={isBusy} onClick={() => void markHome()}>
+                {t('location.setupHomeButton')}
+              </button>
+              <button type="button" disabled={isBusy} onClick={() => setIsTypingAddress(true)}>
+                {t('location.setupHomeTypeButton')}
+              </button>
+            </>
           )
         }
       />
@@ -192,6 +215,13 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
         )
       })}
       <p className="muted">{t('location.placeNamesNote')}</p>
+      {isTypingAddress && (
+        <LocationAddressChooser
+          title={t('location.setupHomeTypeTitle')}
+          onChoose={saveHomeAt}
+          onClose={() => setIsTypingAddress(false)}
+        />
+      )}
     </SettingsSection>
   )
 }
