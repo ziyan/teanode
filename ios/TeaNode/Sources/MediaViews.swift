@@ -391,6 +391,15 @@ struct FileCard: View {
         .accessibilityActions { accessibilityActionButtons }
     }
 
+    /// What a tap on the picture does. A picture that is not in the library opens in
+    /// the full-screen view at once, from the bytes already read (nil leaves that to
+    /// the picture); the menu's Open is the one that reads the file again for Quick
+    /// Look. A photo opens in the photo viewer.
+    private var pictureOpenAction: (() -> Void)? {
+        guard photoId != nil else { return nil }
+        return { openMainFile() }
+    }
+
     /// What a tap on the picture, or on a card with nothing else to tap, does.
     private func openMainFile() {
         if let photoId {
@@ -481,10 +490,7 @@ struct FileCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 if file.isImage {
-                    // A picture that is not in the library opens in the full-screen view at once,
-                    // from the bytes already read; the menu's Open is the one that reads the
-                    // file again for Quick Look. A photo opens in the photo viewer.
-                    RemotePicture(path: file.path, name: file.name, onOpen: photoId == nil ? nil : openMainFile)
+                    RemotePicture(path: file.path, name: file.name, onOpen: pictureOpenAction)
                 } else if file.isVideo || file.isAudio {
                     if let shareAddress {
                         VideoPlayer(player: AVPlayer(url: shareAddress))
