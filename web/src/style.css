@@ -15419,17 +15419,49 @@ button.idea-history-title {
   margin-bottom: 0;
 }
 
+/* As the drawer's box is: one row, everything in it 36px tall, the
+   paperclip, the box on one line and a round send mark. The box grows with
+   the words from the bottom, and scrolls only past its tallest, so an empty
+   one never shows a scrollbar for a rounding pixel. */
 .herdr-send {
   display: flex;
-  gap: var(--space-2);
+  gap: 8px;
   align-items: flex-end;
 }
 
 .herdr-send textarea {
   flex: 1;
   min-width: 0;
-  max-height: 40vh;
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  max-height: 160px;
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 20px;
   resize: none;
+  overflow-y: hidden;
+}
+
+.herdr-send textarea.is-overflowing {
+  overflow-y: auto;
+}
+
+.herdr-send .icon-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+}
+
+.herdr-send .herdr-send-button {
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.herdr-send .herdr-send-button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* One line a session, the pane first and how it stands beside it: on a

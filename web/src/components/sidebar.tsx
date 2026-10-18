@@ -233,9 +233,18 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/recordings', '/coding', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/circles'].some(
-      (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
-    ) ||
+    [
+      '/agent',
+      '/knowledge',
+      '/recordings',
+      '/coding',
+      '/finance',
+      '/calendar',
+      '/contacts',
+      '/reminders',
+      '/photos',
+      '/circles',
+    ].some((path) => location.pathname === path || location.pathname.startsWith(path + '/')) ||
     location.pathname === '/mailbox' ||
     location.pathname.startsWith('/mailbox/') ||
     (hasMailbox && (location.pathname === '/agent' || surface?.rail === 'mailbox'))
@@ -250,7 +259,16 @@ export function Sidebar({
   const finance = useAgentFinancePresence(inAccount || inMailbox)
   // Coding is a row only where a computer reports herdr, asked under the
   // same condition.
-  const hasCoding = useHerdrPresence((inAccount || inMailbox) && hasPermission(session.permissions, 'agent:use'))
+  const coding = useHerdrPresence((inAccount || inMailbox) && hasPermission(session.permissions, 'agent:use'))
+  const hasCoding = coding.isPresent
+  // The Coding row counts the sessions that ask something, as the mail rows
+  // count what is unread: a number there is a question waiting.
+  const codingCount = (to: string) =>
+    to === '/coding' && coding.askingCount > 0 ? (
+      <span className="sidebar-count" aria-label={t('herdr.askingCount', { count: coding.askingCount })}>
+        {coding.askingCount}
+      </span>
+    ) : null
   const permitted = (item: Item) =>
     isPathAvailable(item.to, session.services) &&
     (item.to !== '/recordings' || hasPermission(session.permissions, 'agent:use')) &&
@@ -508,6 +526,7 @@ export function Sidebar({
                   <NavLink key={item.to} to={item.to} title={collapsed ? label : undefined}>
                     <span className="sidebar-icon">{item.icon}</span>
                     <span className="sidebar-label">{label}</span>
+                    {codingCount(item.to)}
                   </NavLink>
                 )
               })}
@@ -558,6 +577,7 @@ export function Sidebar({
                 <NavLink to="/coding">
                   <CodeIcon />
                   <span className="sidebar-label">{t('nav.coding')}</span>
+                  {codingCount('/coding')}
                 </NavLink>
               )}
               {session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use') && (
@@ -594,6 +614,7 @@ export function Sidebar({
                         label should not have to be re-read when the rail
                         reopens. */}
                     <span className="sidebar-label">{label}</span>
+                    {codingCount(item.to)}
                     {marked && (
                       <Tooltip label={t('nav.upgradeAvailable')}>
                         <span className="sidebar-dot">

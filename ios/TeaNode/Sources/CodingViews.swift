@@ -231,6 +231,11 @@ struct CodingScreen: View {
                 }
             }
             .refreshable { await model.load() }
+            // The side menu's Coding row counts what asks, from each read
+            // here too, so an answered question leaves it at once.
+            .onChange(of: model.list.map { $0.sessions.filter(\.isAsking).count }) { _, askingCount in
+                if let askingCount { app.noteCodingAsking(askingCount) }
+            }
             .sheet(isPresented: $isOpening) {
                 CodingOpenSheet(model: model) { session in
                     model.upsert(session)
