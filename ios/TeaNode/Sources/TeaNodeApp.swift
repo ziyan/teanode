@@ -77,9 +77,10 @@ struct ConversationsSheet: View {
     /// Rows shown above the conversations, as the side menu puts its
     /// sections there.
     var leading: AnyView?
-    /// How far the list is scrolled, kept by whoever shows it so that the
-    /// side menu, which is drawn anew each time it opens, comes back to it.
-    var scrollOffsetPoints: Binding<CGFloat?> = .constant(nil)
+    /// How many times the side menu has been opened. The menu is kept while
+    /// it is closed, so the list stays where it was scrolled; it reads its
+    /// conversations again each time this goes up.
+    var openingCount = 0
     let onChoose: (AgentConversation?) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -207,16 +208,16 @@ struct ConversationsSheet: View {
                     .task(id: app.canChat) {
                         // `-TeaNodeScreen conversations`: the side menu scrolled to its chats,
                         // to show the rows that start one, once the session says they are there.
-                        guard DemoServer.isRequested, DemoServer.screen == "conversations", leading != nil, app.canChat else { return }
+                        // `conversations-restored` too, which then closes and opens the menu.
+                        guard DemoServer.isRequested, DemoServer.screen == "conversations" || DemoServer.screen == "conversations-restored",
+                            leading != nil, app.canChat
+                        else { return }
                         try? await Task.sleep(for: .seconds(2))
                         withAnimation { scroller.scrollTo(Self.messageSomeoneRowId, anchor: .top) }
                     }
                 #endif
             }
             .menuListStyle(isPanel)
-            // Ready once the rows were read: a failed read leaves no rows, and
-            // giving up on the kept place then would lose it.
-            .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isLoaded && problemText == nil, isPaused: !words.isEmpty)
             .contentMargins(.bottom, isPanel ? searchFieldClearance : 0, for: .scrollContent)
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
@@ -245,7 +246,7 @@ struct ConversationsSheet: View {
                 }
             }
             .refreshable { await load() }
-            .task { await load() }
+            .task(id: openingCount) { await load() }
             .navigationTitle(isPanel ? "" : String(localized: "Conversations"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -526,6 +527,11 @@ struct ConversationsSheet: View {
     private func load() async {
         do {
             conversations = try await connection.conversations()
+            // The archived ones too, if they were read before, so an opened
+            // list of them is not left as it was.
+            if archived != nil {
+                archived = (try? await connection.conversations(isArchived: true))?.filter { !$0.isMain } ?? archived
+            }
             problemText = nil
             // The list reads without it; only the marks are missing.
             waitingByConversation = (try? await connection.waiting(first: 50))?.countByConversation ?? [:]

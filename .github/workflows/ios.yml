@@ -467,7 +467,7 @@ jobs:
           shoot conversations-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
           shoot conversations-dark dark large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
           shoot conversations-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
-          # The same menu opened again 120 points down, as a place it kept: set beside the one above, its rows sit 120 points higher.
+          # The same menu scrolled to its chats, then closed and opened again: it should look like the one above, not start at the top.
           shoot conversations-restored-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations-restored
           for chat_screen in chat-direct chat-group chat-members chat-mention; do
             shoot "$chat_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
