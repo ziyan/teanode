@@ -571,7 +571,7 @@ struct SideMenu: View {
                     .menuListStyle()
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { MenuBrand() }
-                    .task { await showPartItems(scroller, lastItemId: FinancePart.allCases.last?.id) }
+                    .task(id: [availableSectionCount, FinancePart.allCases.count]) { await showPartItems(scroller, lastItemId: FinancePart.allCases.last?.id) }
                 }
             }
         case .location:
@@ -598,7 +598,7 @@ struct SideMenu: View {
                     .menuListStyle()
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { MenuBrand() }
-                    .task { await showPartItems(scroller, lastItemId: LocationSegment.allCases.last?.id) }
+                    .task(id: [availableSectionCount, LocationSegment.allCases.count]) { await showPartItems(scroller, lastItemId: LocationSegment.allCases.last?.id) }
                 }
             }
         case .photos:
@@ -625,7 +625,7 @@ struct SideMenu: View {
                     .menuListStyle()
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { MenuBrand() }
-                    .task { await showPartItems(scroller, lastItemId: photos.sections.last?.id) }
+                    .task(id: [availableSectionCount, photos.sections.count]) { await showPartItems(scroller, lastItemId: photos.sections.last?.id) }
                 }
             }
         default:
@@ -641,14 +641,20 @@ struct SideMenu: View {
         }
     }
 
+    /// How many parts the menu lists. Some are known only once the server has answered (whether
+    /// it runs the agent, has coding computers, keeps recordings), and each one that appears
+    /// pushes the items of the part on screen further down.
+    private var availableSectionCount: Int { AppSection.allCases.filter { app.isSectionAvailable($0) }.count }
+
     /// The id of a row that lists one of the items of the part on screen, under the list of the parts.
     private static func partItemId(_ itemId: some Hashable) -> String { "partItem \(itemId)" }
 
     /// Scrolls the menu down to the items of the part on screen: they are what the person opened
     /// the menu for, and under all the parts they would otherwise start below the bottom of the
     /// screen. The last item is brought to the bottom, so the parts stay in view above the items
-    /// for as long as there is room. It runs when the part's list first appears; after that the
-    /// menu, kept while closed, opens where it was left. A scroll asked for before the list has
+    /// for as long as there is room. It runs when the part's list first appears, and again when
+    /// a part or an item appears and pushes the items down; otherwise the menu, kept while
+    /// closed, opens where it was left. A scroll asked for before the list has
     /// laid out its rows finds nothing to scroll to, and the menu slides in as it opens, so the
     /// scroll is asked for once the rows are there and again once the menu is in place.
     private func showPartItems(_ scroller: ScrollViewProxy, lastItemId: (some Hashable)?) async {
