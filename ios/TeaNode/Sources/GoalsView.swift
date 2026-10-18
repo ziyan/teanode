@@ -235,7 +235,7 @@ struct GoalStarter: View {
                         .lineLimit(4...)
                 }
                 if let problemText {
-                    Text(problemText).foregroundStyle(.red)
+                    Text(problemText.asReasonSentence).foregroundStyle(.red)
                 }
             }
             .navigationTitle("New goal")

@@ -609,7 +609,7 @@ struct SkillShareCallCard: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if let problemText {
-                Text(verbatim: problemText).font(.footnote).foregroundStyle(.red)
+                Text(verbatim: problemText.asReasonSentence).font(.footnote).foregroundStyle(.red)
             }
         }
         .accessibilityElement(children: .contain)

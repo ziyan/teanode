@@ -132,7 +132,7 @@ struct KnowledgeFolder: View {
         .toast(done: .constant(nil), problem: $toastProblemText)
         .overlay {
             if let problemText {
-                ContentUnavailableView("This could not be read", systemImage: "exclamationmark.triangle", description: Text(problemText))
+                ContentUnavailableView("This could not be read", systemImage: "exclamationmark.triangle", description: Text(problemText.asReasonSentence))
             } else if !isLoaded {
                 ProgressView()
             } else if rows.isEmpty, searchText.isEmpty {
@@ -528,11 +528,13 @@ struct KnowledgePageView: View {
                     )
                     .font(.footnote)
                 }
+                .fullWidthRowSeparator()
             }
             if node.kind == "person", !node.isSelf {
                 Button(page.contact == nil ? LocalizedStringKey("Link contact") : LocalizedStringKey("Change contact"), systemImage: "person.crop.circle.badge.plus") {
                     isLinkingContact = true
                 }
+                .fullWidthRowSeparator()
             }
             if node.summary.isEmpty {
                 Text("No summary yet.").foregroundStyle(.secondary)
@@ -624,6 +626,10 @@ struct KnowledgePageView: View {
                     FactRow(fact: fact, attachments: page.attachments(of: fact))
                 }
                 .buttonStyle(.plain)
+                // A fact with a file ends with a link with a symbol, and the
+                // record its evidence names is a row with one: every line
+                // here starts at the row's edge, as under a fact without.
+                .fullWidthRowSeparator()
                 .swipeActions {
                     Button("Forget", systemImage: "trash", role: .destructive) { forgettingFact = fact }
                     Button("Move", systemImage: "arrow.right.doc.on.clipboard") {
@@ -1227,7 +1233,7 @@ struct RecallSheet: View {
                     ProgressView()
                 }
                 if let problemText {
-                    Text(problemText).foregroundStyle(.red)
+                    Text(problemText.asReasonSentence).foregroundStyle(.red)
                 }
                 if let recall {
                     if recall.pages.compactMap({ $0 }).isEmpty {
@@ -1301,7 +1307,7 @@ struct DocumentsSheet: View {
                     Button("Search") { search(isMore: false) }.disabled(words.trimmed.isEmpty || isSearching)
                 }
                 if let problemText {
-                    Text(problemText).foregroundStyle(.red)
+                    Text(problemText.asReasonSentence).foregroundStyle(.red)
                 }
                 if let found {
                     if !found.meaningful {
@@ -1502,6 +1508,7 @@ struct EvidenceRecordRow: View {
             .font(.footnote)
         }
         .disabled(!record.canOpen)
+        .fullWidthRowSeparator()
     }
 }
 
@@ -1521,6 +1528,7 @@ struct ContactPickerSheet: View {
             List {
                 if !currentContactId.isEmpty {
                     Button("Unlink contact", systemImage: "person.crop.circle.badge.minus", role: .destructive) { onChoose("") }
+                        .fullWidthRowSeparator()
                 }
                 ForEach(contacts) { contact in
                     Button {

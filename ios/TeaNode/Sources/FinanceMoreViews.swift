@@ -1103,7 +1103,7 @@ struct FinanceSetupView: View {
                             Text("Synced \(lastRun.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.secondary)
                         }
                         if let error = source.lastError, !error.isEmpty {
-                            Text(error).font(.caption).foregroundStyle(.red)
+                            Text(error.asReasonSentence).font(.caption).foregroundStyle(.red)
                         }
                     }
                     .swipeActions {

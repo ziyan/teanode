@@ -28,7 +28,9 @@ enum PhotoWords {
     /// Why a photo has no picture, as the dashboard says it.
     static func failure(of photo: Photo) -> String {
         let reason = photo.processingErrorMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        return reason.isEmpty ? String(localized: "This photo could not be read.") : String(localized: "This photo could not be read: \(reason)")
+        return reason.isEmpty
+            ? String(localized: "This photo could not be read.")
+            : String(localized: "This photo could not be read: \(reason)").asReasonSentence
     }
 
     static func videoCount(_ count: Int) -> String { String(localized: "\(count) videos") }

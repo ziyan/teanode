@@ -1173,14 +1173,16 @@ struct ServerAboutView: View {
                 }
             }
             if let checkError = upgrade.checkError, !checkError.isEmpty {
-                Label(checkError, systemImage: "exclamationmark.triangle")
+                Label(checkError.asReasonSentence, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.orange)
+                    .fullWidthRowSeparator()
             }
             if upgrade.isAvailable, let url = upgrade.url, let address = URL(string: url) {
                 Link(destination: address) {
                     Label("Release page", systemImage: "safari")
                 }
+                .fullWidthRowSeparator()
             }
             // Shown whenever there are notes, not only when behind: a
             // development build is ahead of every release and still has a
@@ -1192,11 +1194,16 @@ struct ServerAboutView: View {
                 } label: {
                     Label("What changed in \(latestText)", systemImage: "doc.text")
                 }
+                .fullWidthRowSeparator()
             }
             if let errorMessage = upgrade.errorMessage, !errorMessage.isEmpty {
-                Label("The last upgrade did not finish: \(errorMessage)", systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
+                Label(
+                    String(localized: "The last upgrade did not finish: \(errorMessage)").asReasonSentence,
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.footnote)
+                .foregroundStyle(.orange)
+                .fullWidthRowSeparator()
             }
             Button {
                 Task { await checkForUpgrade() }
@@ -1204,6 +1211,7 @@ struct ServerAboutView: View {
                 Label(isChecking ? LocalizedStringKey("Checking…") : "Check now", systemImage: "arrow.triangle.2.circlepath")
             }
             .disabled(isChecking || isUpgrading || upgrade.isEnabled == false)
+            .fullWidthRowSeparator()
             if upgrade.canUpgrade {
                 let latestText = upgrade.latest ?? ""
                 Button {
@@ -1268,6 +1276,7 @@ struct ServerAboutView: View {
                     systemImage: "exclamationmark.triangle"
                 )
                 .foregroundStyle(.red)
+                .fullWidthRowSeparator()
             }
             if isRestarting {
                 HStack(spacing: 8) {
@@ -1490,7 +1499,7 @@ struct ServerSetupView: View {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
                         if let errorMessage = addresses.errorMessage, !errorMessage.isEmpty {
-                            Text(verbatim: errorMessage)
+                            Text(verbatim: errorMessage.asReasonSentence)
                         } else {
                             Text("The external address could not be determined.")
                         }
@@ -1521,7 +1530,7 @@ struct ServerSetupView: View {
     private func outgoingSection(_ identity: OutgoingIdentity) -> some View {
         Section {
             if let uncheckableReason = identity.uncheckableReason, !uncheckableReason.isEmpty {
-                Text(verbatim: uncheckableReason).foregroundStyle(Color(.secondaryLabel))
+                Text(verbatim: uncheckableReason.asReasonSentence).foregroundStyle(Color(.secondaryLabel))
             } else {
                 let address = identity.address ?? ""
                 LabeledContent("Sends from") {
@@ -2658,6 +2667,7 @@ private struct AgentRunsAdminView: View {
                 Button("All runs", systemImage: "line.3.horizontal.decrease.circle") {
                     filter.jobId = nil
                 }
+                .fullWidthRowSeparator()
             }
             if let runs, runs.isEmpty {
                 Text("Nothing yet.").foregroundStyle(Color(.secondaryLabel))
@@ -3179,7 +3189,7 @@ struct AgentProviderForm: View {
                 let changedText = billingCheck.changed.count.formatted()
                 Text("Prices checked against the bill \(whenText): \(changedText) changed")
             } else {
-                Label(billingCheck.errorMessage, systemImage: "exclamationmark.triangle")
+                Label(billingCheck.errorMessage.asReasonSentence, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
         } else {
@@ -4386,7 +4396,7 @@ private struct InstalledSkillView: View {
                         LabeledContent("Publisher") { Text(verbatim: skill.publisher) }
                     }
                     if !skill.isReadable {
-                        Label(skill.problem ?? String(localized: "cannot be read"), systemImage: "exclamationmark.triangle")
+                        Label(skill.problem?.asReasonSentence ?? String(localized: "cannot be read"), systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
                     }
                 }

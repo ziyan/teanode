@@ -37,6 +37,7 @@ struct PreferencesView: View {
                             Label("Choose a picture", systemImage: "photo")
                         }
                         .disabled(isChangingPicture)
+                        .fullWidthRowSeparator()
                         if pictureProfile.avatarUrl?.isEmpty == false {
                             Button("Remove picture", systemImage: "trash", role: .destructive) {
                                 Task { await removePicture() }
@@ -270,6 +271,7 @@ struct ChangePasswordView: View {
             } footer: {
                 if draft.doesConfirmationDiffer {
                     Label("These do not match.", systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.red)
                 }
             }
         }

@@ -40,7 +40,7 @@ struct AskAgentIntent: AppIntent {
         case .waitingForPerson:
             said = String(localized: "Your agent needs you to look at something in TeaNode first.")
         case .failed(let problem):
-            said = problem.isEmpty ? String(localized: "That turn failed.") : problem
+            said = problem.isEmpty ? String(localized: "That turn failed.") : problem.asReasonSentence
         case .stillWorking:
             said = String(localized: "Still working on it. The answer comes as a notification.")
         }

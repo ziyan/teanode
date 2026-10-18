@@ -384,7 +384,7 @@ struct ContactDetailView: View {
                     }
                 }
             } else if let problemText {
-                ContentUnavailableView("That contact could not be read", systemImage: "person.crop.circle.badge.exclamationmark", description: Text(problemText))
+                ContentUnavailableView("That contact could not be read", systemImage: "person.crop.circle.badge.exclamationmark", description: Text(problemText.asReasonSentence))
             } else {
                 ProgressView()
             }
@@ -502,7 +502,7 @@ struct ContactEditor: View {
                 }
                 if let problemText {
                     Section {
-                        Label(problemText, systemImage: "exclamationmark.triangle")
+                        Label(problemText.asReasonSentence, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
                     }
                 }

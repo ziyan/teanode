@@ -653,7 +653,7 @@ struct RecordingLibraryPlaceholder: View {
             ContentUnavailableView(
                 "No recordings", systemImage: "waveform", description: Text("Tap + to start a recording or import audio or video."))
         case .failed(let failureText):
-            ContentUnavailableView("Cannot load recordings", systemImage: "exclamationmark.triangle", description: Text(failureText))
+            ContentUnavailableView("Cannot load recordings", systemImage: "exclamationmark.triangle", description: Text(failureText.asReasonSentence))
         }
     }
 }
@@ -736,7 +736,7 @@ struct RecordingPlaybackScreen: View {
                                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                         VideoPlayer(player: player)
-                        if let problemText { Text(problemText).font(.caption).foregroundStyle(.secondary) }
+                        if let problemText { Text(problemText.asReasonSentence).font(.caption).foregroundStyle(.secondary) }
                         if isCompatibleAudioPreview && hasPlayableOriginal {
                             Button {
                                 guard !isChangingPlayback else { return }
@@ -767,7 +767,7 @@ struct RecordingPlaybackScreen: View {
                         }
                     }
                 } else if let problemText {
-                    ContentUnavailableView("Cannot play recording", systemImage: "exclamationmark.triangle", description: Text(problemText))
+                    ContentUnavailableView("Cannot play recording", systemImage: "exclamationmark.triangle", description: Text(problemText.asReasonSentence))
                 } else {
                     ProgressView(progressText)
                 }
@@ -986,7 +986,7 @@ private struct RecordingLocalPlaybackScreen: View {
                         }
                     }
                 }
-                if let problemText { Text(problemText).foregroundStyle(.secondary) }
+                if let problemText { Text(problemText.asReasonSentence).foregroundStyle(.secondary) }
             }
             .navigationTitle("Local original")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }

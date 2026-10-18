@@ -415,7 +415,7 @@ struct KnowledgeSourceRow: View {
                     )
                 }
                 if !source.enabled { Text("Paused; nothing it found is lost, and resuming reads it again.") }
-                if !source.lastError.isEmpty { Text(verbatim: source.lastError) }
+                if !source.lastError.isEmpty { Text(verbatim: source.lastError.asReasonSentence) }
             }
             .font(.footnote)
             .foregroundStyle(Color(.secondaryLabel))
@@ -1897,7 +1897,7 @@ struct AgentDreamRow: View {
                     Text(verbatim: headlineText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
                 }
                 if let lastError = dream.lastError, !lastError.isEmpty {
-                    Text(verbatim: lastError).font(.footnote).foregroundStyle(.red)
+                    Text(verbatim: lastError.asReasonSentence).font(.footnote).foregroundStyle(.red)
                 }
                 if !moreText.isEmpty {
                     Text(verbatim: moreText).font(.caption).foregroundStyle(Color(.secondaryLabel))
@@ -2041,10 +2041,12 @@ struct SchedulesView: View {
                 if hasBriefChanged {
                     Button("Save the new time and days", systemImage: "checkmark.circle") { Task { await saveBrief(isEnabled: true) } }
                         .disabled(briefDayNumbers.isEmpty)
+                        .fullWidthRowSeparator()
                 }
                 Button("Send one now", systemImage: "paperplane") {
                     Task { await act(saying: String(localized: "Sending one now; it will arrive in a moment.")) { try await connection.runDailyBrief() } }
                 }
+                .fullWidthRowSeparator()
                 Button("Stop", role: .destructive) { Task { await saveBrief(isEnabled: false) } }
             } else {
                 Button("Send me a brief", systemImage: "sun.max") { Task { await saveBrief(isEnabled: true) } }
@@ -2436,6 +2438,9 @@ struct MutedAlertsView: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
+                // Some of these rows end with a link that has a symbol and
+                // some do not: the line under each starts at the row's edge.
+                .fullWidthRowSeparator()
                 .swipeActions {
                     stopFollowUpButton(followUp).tint(.orange)
                 }
@@ -3420,8 +3425,11 @@ struct AgentActivityView: View {
         Section {
             if let dreamJobId {
                 Label(
-                    String(localized: "Dream at \(dreamStartedAt.map { UpkeepWords.when($0) } ?? dreamJobId)"), systemImage: "moon.stars")
+                    String(localized: "Dream at \(dreamStartedAt.map { UpkeepWords.when($0) } ?? dreamJobId)"), systemImage: "moon.stars"
+                )
+                .fullWidthRowSeparator()
                 Button("Show all", systemImage: "xmark.circle") { self.dreamJobId = nil }
+                    .fullWidthRowSeparator()
             }
             if let runs, runs.isEmpty {
                 Text("Nothing yet.").foregroundStyle(.secondary)
