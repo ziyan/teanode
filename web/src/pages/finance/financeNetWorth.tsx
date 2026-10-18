@@ -187,7 +187,6 @@ function NetWorthChart() {
     <SettingsSection
       card
       title={t('finance.netWorthTitle')}
-      description={t('finance.netWorthHint')}
       action={
         <div className="segmented" role="group" aria-label={t('finance.range')}>
           {RANGES.map((candidate) => (

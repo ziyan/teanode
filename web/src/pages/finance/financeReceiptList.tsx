@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../components/dialog'
 import { LinkIcon, UnlinkIcon } from '../../components/icons'
 import { usePageInAddress } from '../../components/pager'
 import { SettingsSection } from '../../components/settingsList'
+import { useIsDesktop } from '../../components/sidebar'
 import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
@@ -48,6 +49,7 @@ import {
   useReceiptCheckDirection,
   useReceiptSourceNote,
 } from './financeReceipts'
+import { ReceiptEntryDialog } from './financeReceiptEntry'
 import { FinanceTransactionDialog } from './financeTransactionDialog'
 import { useSpendingCategoryDisplayName } from './spendingCategoryName'
 
@@ -93,6 +95,7 @@ function transactionName(financeTransaction: FinanceTransaction): string {
 export function FinanceReceiptListSection() {
   const { t, plural, language } = useTranslation()
   const toast = useToast()
+  const isDesktop = useIsDesktop()
   const categoryName = useSpendingCategoryDisplayName()
   const sourceNote = useReceiptSourceNote()
   const fallbackName = t('finance.receiptWithoutMerchant')
@@ -176,6 +179,7 @@ export function FinanceReceiptListSection() {
   const receipts = useMemo(() => shownPage?.financeReceipts ?? [], [shownPage])
 
   const [opened, setOpened] = useState<Opened | null>(null)
+  const [isAddingReceipt, setIsAddingReceipt] = useState(false)
   // The opened receipt as last seen, kept for when it leaves the page: a
   // receipt matched with only the unmatched ones listed is still open,
   // and shows the charge it now explains.
@@ -548,8 +552,23 @@ export function FinanceReceiptListSection() {
     )
   }
 
-  return (
-    <SettingsSection card title={t('finance.receiptsTitle')} description={t('finance.receiptsListHint')}>
+  // The filters that hold, said in a line: what the closed filters say on
+  // a phone, where the fields would fill the first screen.
+  const filterWords = [
+    filters.from && filters.to
+      ? t('finance.dayRange', { from: formatDay(filters.from), to: formatDay(filters.to) })
+      : filters.from
+        ? t('finance.fromDay', { day: formatDay(filters.from) })
+        : filters.to
+          ? t('finance.untilDay', { day: formatDay(filters.to) })
+          : '',
+    filters.text ? t('finance.containingWords', { text: filters.text }) : '',
+    filters.isUnmatched ? t('finance.onlyUnmatchedReceipts') : '',
+    isUndated ? t('finance.onlyUndatedReceipts') : '',
+  ].filter(Boolean)
+
+  const filterControls = (
+    <>
       <div className="row finance-filters">
         <label>
           <span>{t('finance.from')}</span>
@@ -574,23 +593,50 @@ export function FinanceReceiptListSection() {
           <input type="search" value={typed} onChange={(event) => setTyped(event.target.value)} />
         </label>
       </div>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={filters.isUnmatched}
-          onChange={(event) => setFilters({ isUnmatched: event.target.checked })}
-        />
-        {t('finance.onlyUnmatchedReceipts')}
-      </label>
-      {hasDays ? null : (
+      <div className="finance-filter-ticks">
         <label className="checkbox">
           <input
             type="checkbox"
-            checked={isUndated}
-            onChange={(event) => setFilters({ isUndated: event.target.checked })}
+            checked={filters.isUnmatched}
+            onChange={(event) => setFilters({ isUnmatched: event.target.checked })}
           />
-          {t('finance.onlyUndatedReceipts')}
+          {t('finance.onlyUnmatchedReceipts')}
         </label>
+        {hasDays ? null : (
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={isUndated}
+              onChange={(event) => setFilters({ isUndated: event.target.checked })}
+            />
+            {t('finance.onlyUndatedReceipts')}
+          </label>
+        )}
+      </div>
+    </>
+  )
+
+  return (
+    <SettingsSection
+      card
+      title={t('finance.receiptsTitle')}
+      description={t('finance.receiptsListHint')}
+      action={
+        <button type="button" onClick={() => setIsAddingReceipt(true)}>
+          {t('finance.addReceipt')}
+        </button>
+      }
+    >
+      {isDesktop ? (
+        filterControls
+      ) : (
+        <details className="finance-filter-disclosure">
+          <summary>
+            <strong>{t('finance.filtersLabel')}</strong>
+            <span className="muted">{filterWords.length > 0 ? filterWords.join(' · ') : t('finance.noFilters')}</span>
+          </summary>
+          {filterControls}
+        </details>
       )}
       {shownPage ? <p className="muted finance-transaction-count">{receiptCountWords(totalCount)}</p> : null}
       <ErrorMessage error={receiptsQuery.error} />
@@ -618,6 +664,9 @@ export function FinanceReceiptListSection() {
         />
       </div>
       {dialog}
+      {isAddingReceipt ? (
+        <ReceiptEntryDialog onRecorded={() => void reload()} onClose={() => setIsAddingReceipt(false)} />
+      ) : null}
     </SettingsSection>
   )
 }

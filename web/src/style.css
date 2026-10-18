@@ -8182,6 +8182,39 @@ button.agent-reaction:focus-visible {
   font-size: var(--text-label);
 }
 
+/* The finance tables' last column is the one the agent's floating button
+   covers where a window is narrow, so it keeps the button's width of room
+   at its end; scrolling to the end brings it clear. */
+@media (max-width: 900px) {
+  .finance-credit-table th:last-child,
+  .finance-credit-table td:last-child,
+  .finance-transactions-table .table-surface th:last-child,
+  .finance-transactions-table .table-surface td:last-child {
+    padding-right: 64px;
+  }
+}
+
+/* On a phone the credit table gives its card name two lines and its cells
+   less padding, so the Used column is reached with a short scroll. */
+@media (max-width: 600px) {
+  .finance-credit-table th,
+  .finance-credit-table td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .finance-credit-table td:first-child {
+    min-width: 7rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .finance-credit-table th:last-child,
+  .finance-credit-table td:last-child {
+    padding-right: 64px;
+  }
+}
+
 /* A table wider than its panel scrolls sideways inside it, staying a
    table. Without this the usage table pushed its card, and then the whole
    page, wider than the window. */
@@ -14056,6 +14089,23 @@ button.idea-history-title {
    two to a line and then one on a phone. */
 .finance-filters {
   margin-bottom: var(--space-3);
+  /* Top-aligned, so the words over each field sit on one line: a dropdown
+     is a little taller than a date, and aligned by their bottoms its words
+     rode higher than the date's. */
+  align-items: flex-start;
+}
+
+/* The ticks under the filters: side by side while they fit, each box kept
+   with its words, wrapping between ticks rather than inside one. */
+.finance-filter-ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+}
+
+.finance-filter-ticks > label.checkbox {
+  margin-bottom: 0;
+  white-space: nowrap;
 }
 
 .finance-filters > label {
@@ -15305,6 +15355,19 @@ button.idea-history-title {
     overflow-wrap: anywhere;
     line-height: 1.35;
   }
+
+  /* The charges a receipt matched take two or three short lines, so the
+     Matched column is read without scrolling to the end of a long one. */
+  .finance-receipt-matched {
+    min-width: 8rem;
+    max-width: 10rem;
+  }
+
+  .finance-receipt-matched .link {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
 }
 
 /* What it is matched to is its own part of the receipt, set apart from
@@ -15434,10 +15497,26 @@ button.idea-history-title {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
-    min-width: 9rem;
-    max-width: 14rem;
+    min-width: 7rem;
+    max-width: 10rem;
     white-space: normal;
     line-height: 1.35;
+  }
+
+  /* Width reclaimed for the category, the column the row is for: the cells
+     pad less and the dropdown is only as wide as its words need. */
+  .finance-transactions-table .table-surface th,
+  .finance-transactions-table .table-surface td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .finance-category-cell {
+    min-width: 9rem;
+  }
+
+  .finance-category-cell .select {
+    min-width: 0;
   }
 }
 
@@ -16213,6 +16292,123 @@ body.has-recording-bar .content {
   white-space: nowrap;
 }
 
+/* --- recording by hand -------------------------------------------------
+   The dialogs that record a receipt, a paystub, a tax form or the rows of
+   a statement. Their fields sit in a grid that folds to one column on a
+   phone; a repeated line (a receipt line, a box, a row) is a bordered group
+   of its own fields with its remove button at the end. */
+.finance-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dialog.dialog-wide:has(.finance-entry-fields) {
+  max-width: min(780px, calc(100vw - 32px));
+}
+
+.finance-entry-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  column-gap: var(--space-3);
+}
+
+.finance-entry-label {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.finance-entry-fields > div {
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-rate {
+  margin-top: var(--space-1);
+}
+
+.finance-entry-lines {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  min-width: 0;
+}
+
+.finance-entry-lines legend {
+  padding: 0 var(--space-1);
+  font-weight: 600;
+}
+
+.finance-entry-line {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  column-gap: var(--space-2);
+  align-items: end;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-line .finance-entry-wide {
+  grid-column: span 2;
+}
+
+.finance-entry-line .finance-entry-line-number {
+  grid-column: 1 / -1;
+  margin-bottom: var(--space-1);
+}
+
+.finance-entry-line .finance-entry-line-remove {
+  justify-self: end;
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-preview {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-preview p {
+  margin: var(--space-1) 0;
+}
+
+.finance-entry-candidates {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+}
+
+.finance-entry-candidates li {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) 0;
+}
+
+.finance-entry-rows-table {
+  margin-top: var(--space-2);
+}
+
+.finance-entry-rows-table caption {
+  text-align: left;
+  color: var(--muted);
+  font-size: 13px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.finance-entry-rows-table td,
+.finance-entry-rows-table th {
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .finance-entry-line .finance-entry-wide {
+    grid-column: span 1;
+  }
+}
+
 /* --- the Coding page -------------------------------------------------------
    The frame takes the height left on the page, as the knowledge and the mail
    pages do, so the transcript scrolls inside it and the box to type into
@@ -16287,20 +16483,31 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  align-items: stretch;
   margin: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--field);
   font-size: inherit;
+}
+
+/* The computer's menu sits at the end of its header, on the same ground. */
+.coding-computer h3 .menu-button {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-right: 6px;
 }
 
 .coding-computer-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 40px;
   padding: 8px 10px;
   border: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--field);
+  background: transparent;
   color: inherit;
   font: inherit;
   font-weight: 600;

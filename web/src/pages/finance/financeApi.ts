@@ -917,6 +917,19 @@ export type FinanceTaxForm = {
   modifiedAt: string
 }
 
+// taxFormKindName is a form's kind as it is titled: W-2, 1099-INT.
+export function taxFormKindName(taxFormKind: string): string {
+  return TAX_FORM_KIND_NAMES[taxFormKind] ?? taxFormKind
+}
+
+const TAX_FORM_KIND_NAMES: Record<string, string> = {
+  w2: 'W-2',
+  '1099_int': '1099-INT',
+  '1099_div': '1099-DIV',
+  '1099_b': '1099-B',
+  '1098': '1098',
+}
+
 // One of a tax form's checks of itself: Social Security tax against its
 // wages, Medicare tax against its wages, the wage base.
 export type TaxFormFinding = {
