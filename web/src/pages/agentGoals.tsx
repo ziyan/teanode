@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql, openAgentConversation, sendToAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatTime } from '../components/common'
+import { FormDialog } from '../components/dialog'
+import { Select } from '../components/select'
 import { IdeaList, LIST_IDEAS } from '../components/ideaRow'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
 import { useToast } from '../components/toast'
@@ -74,6 +76,11 @@ const GOAL = `
   }`
 
 const SCHEDULES = `query { ListAgentSchedules { id name cron enabled conversationId nextRunAt } }`
+
+const MOVE_SCHEDULE_TO_GOAL = `
+  mutation ($scheduleId: String!, $conversationId: String!) {
+    MoveAgentScheduleToGoal(scheduleId: $scheduleId, conversationId: $conversationId) { id }
+  }`
 
 const START_GOAL = `
   mutation ($goalTitle: String!, $goalDescription: String!) {
@@ -395,6 +402,10 @@ function GoalPage({ conversationId, onBack }: { conversationId: string; onBack: 
   const toast = useToast()
   const [answer, setAnswer] = useState('')
   const [busy, setBusy] = useState(false)
+  // The schedules that could be this goal's, once the person asks to pick
+  // one; null while the dialog is closed.
+  const [usableSchedules, setUsableSchedules] = useState<Schedule[] | null>(null)
+  const [chosenScheduleId, setChosenScheduleId] = useState('')
   const goal = useQuery(() => graphql<{ GetAgentGoal: GoalDetails }>(GOAL, { conversationId }), [conversationId], {
     refresh: true,
   })
@@ -410,6 +421,25 @@ function GoalPage({ conversationId, onBack }: { conversationId: string; onBack: 
       await run()
       toast.done(t(done))
       await goal.reload()
+      return true
+    } catch (caught) {
+      toast.failure(caught, t('goals.failed'))
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // The list is read when the dialog opens, not with the page, so it is the
+  // schedules as they are now. A schedule that already runs this goal is not
+  // offered again.
+  async function chooseSchedule() {
+    setBusy(true)
+    try {
+      const response = await graphql<{ ListAgentSchedules: Schedule[] }>(SCHEDULES, {})
+      const usable = response.ListAgentSchedules.filter((schedule) => schedule.conversationId !== conversationId)
+      setChosenScheduleId(usable[0]?.id ?? '')
+      setUsableSchedules(usable)
     } catch (caught) {
       toast.failure(caught, t('goals.failed'))
     } finally {
@@ -511,12 +541,53 @@ function GoalPage({ conversationId, onBack }: { conversationId: string; onBack: 
                 {t('goals.reopen')}
               </button>
             )}
+            {isOpen ? (
+              <button type="button" disabled={busy} onClick={() => void chooseSchedule()}>
+                {t('goals.useSchedule')}
+              </button>
+            ) : null}
             <button type="button" onClick={() => openAgentConversation(conversationId)}>
               {t('goals.openConversation')}
             </button>
           </div>
         </div>
       </SettingsSection>
+      {usableSchedules ? (
+        <FormDialog
+          title={t('goals.useScheduleTitle')}
+          submitLabel={t('goals.useScheduleSubmit')}
+          busy={busy}
+          canSubmit={chosenScheduleId !== ''}
+          onClose={() => setUsableSchedules(null)}
+          onSubmit={() =>
+            void act(
+              () => graphql(MOVE_SCHEDULE_TO_GOAL, { scheduleId: chosenScheduleId, conversationId }),
+              'goals.scheduleTaken',
+            ).then((isDone) => {
+              if (isDone) setUsableSchedules(null)
+            })
+          }
+        >
+          <p className="muted">{t('goals.useScheduleHint')}</p>
+          {usableSchedules.length === 0 ? (
+            <SettingsEmpty>{t('goals.useScheduleNone')}</SettingsEmpty>
+          ) : (
+            <label>
+              <span>{t('goals.useScheduleLabel')}</span>
+              <Select
+                block
+                value={chosenScheduleId}
+                label={t('goals.useScheduleLabel')}
+                options={usableSchedules.map((schedule) => ({
+                  value: schedule.id,
+                  label: `${schedule.name} (${schedule.cron})`,
+                }))}
+                onChange={setChosenScheduleId}
+              />
+            </label>
+          )}
+        </FormDialog>
+      ) : null}
       {madeCount > 0 ? (
         <SettingsSection card title={t('goals.artifacts')} description={t('goals.artifactsHint')}>
           <div className="goal-list">

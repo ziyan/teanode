@@ -4,7 +4,10 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { graphql } from '../api'
 import { TranslationProvider } from '../i18n/i18n'
 import {
+  addFollowUpVariables,
   AgentAlert,
+  canAddFollowUp,
+  EMPTY_NEW_FOLLOW_UP,
   AlertsCard,
   FollowUp,
   followUpDay,
@@ -214,4 +217,65 @@ it('names the weekly look around plainly in the list of what is muted', async ()
   }))
   renderCard()
   expect(await screen.findByText('Anything of this kind: what is on near you')).toBeTruthy()
+})
+
+it('needs what the server needs before a follow-up can be added', () => {
+  const bill = { ...EMPTY_NEW_FOLLOW_UP, followUpTitle: 'Water bill' }
+  expect(canAddFollowUp(bill)).toBe(false)
+  expect(canAddFollowUp({ ...bill, dueOn: '2026-11-03' })).toBe(false)
+  expect(canAddFollowUp({ ...bill, dueOn: '2026-11-03', amount: '84.20' })).toBe(true)
+  // A parcel can do without a day.
+  expect(canAddFollowUp({ ...EMPTY_NEW_FOLLOW_UP, followUpKind: 'parcel', followUpTitle: 'Garden shears' })).toBe(true)
+  expect(canAddFollowUp({ ...EMPTY_NEW_FOLLOW_UP, followUpKind: 'event', followUpTitle: 'Street fair' })).toBe(false)
+})
+
+it('sends only the fields the kind uses', () => {
+  const typed = {
+    ...EMPTY_NEW_FOLLOW_UP,
+    followUpTitle: ' Garden shears ',
+    carrier: 'Example Post',
+    trackingNumber: 'EX123456789',
+    // Typed while the kind was a bill, then the kind was changed.
+    payee: 'Example Water',
+    amount: '84.20',
+  }
+  expect(addFollowUpVariables({ ...typed, followUpKind: 'parcel' })).toEqual({
+    followUpKind: 'parcel',
+    followUpTitle: 'Garden shears',
+    carrier: 'Example Post',
+    trackingNumber: 'EX123456789',
+  })
+})
+
+it('adds a follow-up by hand and lists it', async () => {
+  let listed: FollowUp[] = []
+  vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    if (document.includes('AddAgentFollowUp')) {
+      listed = [followUp({ followUpTitle: String(variables?.followUpTitle), dueOn: String(variables?.dueOn) })]
+      return { AddAgentFollowUp: { id: 'follow-1', followUpTitle: variables?.followUpTitle } }
+    }
+    return { ListAgentAlerts: [], ListAgentAlertMutes: [], ListAgentFollowUps: listed }
+  })
+  renderCard()
+  expect(await screen.findByText('Your agent is not following anything right now.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+  const dialog = screen.getByRole('dialog')
+  const submit = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+  expect(submit.disabled).toBe(true)
+  const [title, day, , amount] = Array.from(dialog.querySelectorAll('input'))
+  fireEvent.change(title, { target: { value: 'Water bill' } })
+  fireEvent.change(day, { target: { value: '2026-11-03' } })
+  fireEvent.change(amount, { target: { value: '84.20' } })
+  expect(submit.disabled).toBe(false)
+  fireEvent.click(submit)
+  await waitFor(() =>
+    expect(vi.mocked(graphql)).toHaveBeenCalledWith(expect.stringContaining('AddAgentFollowUp'), {
+      followUpKind: 'bill',
+      followUpTitle: 'Water bill',
+      dueOn: '2026-11-03',
+      amount: '84.20',
+    }),
+  )
+  expect(await screen.findByText('Now following: Water bill')).toBeTruthy()
+  expect(await screen.findByLabelText('Water bill: stop following')).toBeTruthy()
 })

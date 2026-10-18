@@ -8,6 +8,7 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from './settingsList'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
+import { CurrencyPicker } from '../pages/finance/financeCommon'
 import { useSpendingCategoryDisplayName } from '../pages/finance/spendingCategoryName'
 
 // The Alerts card on the agent's Overview: what the agent told the person
@@ -41,6 +42,8 @@ export type MuteChoice = { muteScope: MuteScope; muteTarget: string }
 export type AlertMute = { id: string; muteScope: MuteScope; muteTarget: string; createdAt: string }
 
 export type FollowUpKind = 'bill' | 'parcel' | 'deadline' | 'event'
+
+const FOLLOW_UP_KINDS: FollowUpKind[] = ['bill', 'parcel', 'deadline', 'event']
 
 // A follow-up as the server sends it: what a kind does not use is null. Only
 // open ones are listed here, so followUpState is open, overdue or stalled.
@@ -79,6 +82,10 @@ const MUTE_ALERT_KIND = `mutation ($muteTarget: String) {
 
 const STOP_FOLLOW_UP = `mutation ($followUpId: String!) { StopAgentFollowUp(followUpId: $followUpId) { id followUpState } }`
 
+const ADD_FOLLOW_UP = `mutation ($followUpKind: String!, $followUpTitle: String!, $dueOn: String, $payee: String, $amount: String, $currencyCode: String, $carrier: String, $trackingNumber: String, $place: String) {
+  AddAgentFollowUp(followUpKind: $followUpKind, followUpTitle: $followUpTitle, dueOn: $dueOn, payee: $payee, amount: $amount, currencyCode: $currencyCode, carrier: $carrier, trackingNumber: $trackingNumber, place: $place) { id followUpTitle }
+}`
+
 const UNMUTE_ALERT = `mutation ($muteId: String!) { UnmuteAgentAlert(muteId: $muteId) }`
 
 // The names of the person's spending categories, for a mute of one
@@ -96,6 +103,62 @@ export function muteTargets(alert: AgentAlert): MuteChoice[] {
 // The kinds of alert about what the agent follows that a person can mute,
 // all of them first.
 export const FOLLOW_UP_MUTE_KINDS = ['follow_up', 'bill', 'parcel', 'deadline', 'event', 'nearby'] as const
+
+// What a person types to have the agent follow something. The fields a kind
+// does not use are kept while the kind is changed, so a slip of the mouse
+// does not lose what was typed, and are left out of what is sent.
+export type NewFollowUp = {
+  followUpKind: FollowUpKind
+  followUpTitle: string
+  dueOn: string
+  payee: string
+  amount: string
+  currencyCode: string
+  carrier: string
+  trackingNumber: string
+  place: string
+}
+
+export const EMPTY_NEW_FOLLOW_UP: NewFollowUp = {
+  followUpKind: 'bill',
+  followUpTitle: '',
+  dueOn: '',
+  payee: '',
+  amount: '',
+  currencyCode: '',
+  carrier: '',
+  trackingNumber: '',
+  place: '',
+}
+
+// canAddFollowUp is the server's own rule: a title, a day unless it is a
+// parcel, and an amount for a bill.
+export function canAddFollowUp(form: NewFollowUp): boolean {
+  if (form.followUpTitle.trim() === '') return false
+  if (form.followUpKind !== 'parcel' && form.dueOn === '') return false
+  if (form.followUpKind === 'bill' && form.amount.trim() === '') return false
+  return true
+}
+
+// addFollowUpVariables is what the mutation is given: only the fields the
+// kind uses, and none that were left empty.
+export function addFollowUpVariables(form: NewFollowUp): Record<string, string> {
+  const kindFields: Record<FollowUpKind, (keyof NewFollowUp)[]> = {
+    bill: ['payee', 'amount', 'currencyCode'],
+    parcel: ['carrier', 'trackingNumber'],
+    deadline: [],
+    event: ['place'],
+  }
+  const variables: Record<string, string> = {
+    followUpKind: form.followUpKind,
+    followUpTitle: form.followUpTitle.trim(),
+  }
+  for (const field of ['dueOn', ...kindFields[form.followUpKind]] as (keyof NewFollowUp)[]) {
+    const given = form[field].trim()
+    if (given !== '') variables[field] = given
+  }
+  return variables
+}
 
 // orderedFollowUps is the nearest day first, with the ones that have no day
 // last, and the server's order within a day.
@@ -161,6 +224,7 @@ export function AlertsCard() {
   const [muting, setMuting] = useState<AgentAlert | null>(null)
   const [muteScope, setMuteScope] = useState<MuteScope>('subjectKey')
   const [isMutingFollowUps, setIsMutingFollowUps] = useState(false)
+  const [newFollowUp, setNewFollowUp] = useState<NewFollowUp | null>(null)
   const [followUpMuteKind, setFollowUpMuteKind] = useState<(typeof FOLLOW_UP_MUTE_KINDS)[number]>('follow_up')
   const { data, error, loading, reload } = useQuery(
     () =>
@@ -314,6 +378,9 @@ export function AlertsCard() {
           ))
         )}
         <div className="page-actions-end">
+          <button type="button" disabled={busy} onClick={() => setNewFollowUp(EMPTY_NEW_FOLLOW_UP)}>
+            {t('alerts.followUpAdd')}
+          </button>
           <button type="button" disabled={busy} onClick={() => setIsMutingFollowUps(true)}>
             {t('alerts.followUpMute')}
           </button>
@@ -349,6 +416,112 @@ export function AlertsCard() {
           ))
         )}
       </div>
+      {newFollowUp ? (
+        <FormDialog
+          title={t('alerts.followUpAddTitle')}
+          submitLabel={t('alerts.followUpAdd')}
+          busy={busy}
+          canSubmit={canAddFollowUp(newFollowUp)}
+          onClose={() => setNewFollowUp(null)}
+          onSubmit={() =>
+            void act(
+              () => graphql(ADD_FOLLOW_UP, addFollowUpVariables(newFollowUp)),
+              t('alerts.followUpAdded', { title: newFollowUp.followUpTitle.trim() }),
+            ).then((isDone) => {
+              if (isDone) setNewFollowUp(null)
+            })
+          }
+        >
+          <label>
+            <span>{t('alerts.followUpKindLabel')}</span>
+            <Select
+              block
+              value={newFollowUp.followUpKind}
+              label={t('alerts.followUpKindLabel')}
+              options={FOLLOW_UP_KINDS.map((kind) => ({ value: kind, label: t(`alerts.followUpKind.${kind}` as Key) }))}
+              onChange={(value) => setNewFollowUp({ ...newFollowUp, followUpKind: value as FollowUpKind })}
+            />
+          </label>
+          <label>
+            <span>{t('alerts.followUpTitleLabel')}</span>
+            <input
+              type="text"
+              autoFocus
+              value={newFollowUp.followUpTitle}
+              onChange={(event) => setNewFollowUp({ ...newFollowUp, followUpTitle: event.target.value })}
+            />
+          </label>
+          <label>
+            <span>{t('alerts.followUpDayLabel')}</span>
+            <input
+              type="date"
+              value={newFollowUp.dueOn}
+              onChange={(event) => setNewFollowUp({ ...newFollowUp, dueOn: event.target.value })}
+            />
+          </label>
+          {newFollowUp.followUpKind === 'parcel' ? (
+            <p className="muted field-hint">{t('alerts.followUpDayOptional')}</p>
+          ) : null}
+          {newFollowUp.followUpKind === 'bill' ? (
+            <>
+              <label>
+                <span>{t('alerts.followUpPayee')}</span>
+                <input
+                  type="text"
+                  value={newFollowUp.payee}
+                  onChange={(event) => setNewFollowUp({ ...newFollowUp, payee: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>{t('alerts.followUpAmount')}</span>
+                <input
+                  inputMode="decimal"
+                  value={newFollowUp.amount}
+                  onChange={(event) => setNewFollowUp({ ...newFollowUp, amount: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>{t('alerts.followUpCurrency')}</span>
+                <CurrencyPicker
+                  value={newFollowUp.currencyCode}
+                  label={t('alerts.followUpCurrency')}
+                  onChange={(value) => setNewFollowUp({ ...newFollowUp, currencyCode: value })}
+                />
+              </label>
+            </>
+          ) : null}
+          {newFollowUp.followUpKind === 'parcel' ? (
+            <>
+              <label>
+                <span>{t('alerts.followUpCarrier')}</span>
+                <input
+                  type="text"
+                  value={newFollowUp.carrier}
+                  onChange={(event) => setNewFollowUp({ ...newFollowUp, carrier: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>{t('alerts.followUpTracking')}</span>
+                <input
+                  type="text"
+                  value={newFollowUp.trackingNumber}
+                  onChange={(event) => setNewFollowUp({ ...newFollowUp, trackingNumber: event.target.value })}
+                />
+              </label>
+            </>
+          ) : null}
+          {newFollowUp.followUpKind === 'event' ? (
+            <label>
+              <span>{t('alerts.followUpPlace')}</span>
+              <input
+                type="text"
+                value={newFollowUp.place}
+                onChange={(event) => setNewFollowUp({ ...newFollowUp, place: event.target.value })}
+              />
+            </label>
+          ) : null}
+        </FormDialog>
+      ) : null}
       {isMutingFollowUps ? (
         <FormDialog
           title={t('alerts.followUpMuteTitle')}
