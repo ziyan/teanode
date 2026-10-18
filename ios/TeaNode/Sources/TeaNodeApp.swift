@@ -908,9 +908,12 @@ struct AccountsSection: View {
                             name: profile?.displayName ?? account.username, avatarUrl: profile?.avatarUrl,
                             colorIndex: profile?.avatarColorIndex, size: 36, account: account
                         )
+                        let displayName = profile?.displayName ?? account.username
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(profile?.displayName ?? account.username).foregroundStyle(.primary)
-                            Text(verbatim: "\(account.username) · \(account.server.host)").font(.footnote).foregroundStyle(.secondary)
+                            Text(displayName).foregroundStyle(.primary)
+                            // The username only when the name above is not it.
+                            Text(verbatim: displayName == account.username ? account.server.host : "\(account.username) · \(account.server.host)")
+                                .font(.footnote).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if account.accountKey == app.account?.accountKey {
