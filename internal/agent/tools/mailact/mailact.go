@@ -19,12 +19,13 @@ func init() {
 			{
 				Name: "mail_act", Family: tools.FamilyMailbox, Core: true, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionMailWrite},
-				Description: "Act on messages: mark_read, mark_unread, star, unstar, archive, move (to a folder), junk, not_junk, trash, delete_forever. Give item_ids, or thread_item_id for every message of a conversation. A message moved to another folder gets a new item_id, given back in the result. A draft sent to trash is discarded for good, as the Discard button does; a message it was a reply to stays where it is.",
+				Description: "Act on messages: mark_read, mark_unread, star, unstar, archive, move (to a folder), junk, not_junk, trash, delete_forever, answer_invitation (say accepted, tentative or declined to the calendar invitation one message carried; it writes to the organizer, so it always asks the person first). Give item_ids, or thread_item_id for every message of a conversation. A message moved to another folder gets a new item_id, given back in the result. A draft sent to trash is discarded for good, as the Discard button does; a message it was a reply to stays where it is.",
 				Parameters: tools.Object(map[string]any{
-					"action":         tools.EnumProperty("what to do", "mark_read", "mark_unread", "star", "unstar", "archive", "move", "junk", "not_junk", "trash", "delete_forever"),
+					"action":         tools.EnumProperty("what to do", "mark_read", "mark_unread", "star", "unstar", "archive", "move", "junk", "not_junk", "trash", "delete_forever", "answer_invitation"),
 					"item_ids":       tools.ArrayProperty("the messages", tools.StringProperty("item id")),
 					"thread_item_id": tools.StringProperty("any message of the conversation, to act on all of it"),
 					"folder":         tools.StringProperty("for move: the folder, by name"),
+					"answer":         tools.EnumProperty("for answer_invitation: whether the person is coming", "accepted", "tentative", "declined"),
 				}, "action"),
 				// What is about to happen to the mail, in the words the
 				// reader uses for it. "delete_forever 3 message(s)" is the
@@ -39,6 +40,7 @@ func init() {
 						"archive": "Archive %s", "move": "Move %s",
 						"junk": "Move %s to Junk", "not_junk": "Take %s out of Junk",
 						"trash": "Move %s to Trash", "delete_forever": "Delete %s for good, which cannot be undone",
+						"answer_invitation": "Answer the invitation in %s",
 					}[call.Action]
 					if said == "" {
 						said = "Change %s"
@@ -57,6 +59,9 @@ func init() {
 					if call.Action == "move" && strings.TrimSpace(call.Folder) != "" {
 						return fmt.Sprintf(said, what) + " to " + call.Folder
 					}
+					if call.Action == "answer_invitation" && call.Answer != "" {
+						return fmt.Sprintf(said, what) + ": " + call.Answer
+					}
 					return fmt.Sprintf(said, what)
 				},
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
@@ -64,6 +69,11 @@ func init() {
 					_ = json.Unmarshal(arguments, &call)
 					if call.Action == "delete_forever" {
 						return tools.RiskDestructive
+					}
+					// The answer is mailed to the organizer in the person's
+					// name, so it is held to the standard of a send.
+					if call.Action == "answer_invitation" {
+						return tools.RiskOutward
 					}
 					return tools.RiskWrite
 				},
@@ -78,6 +88,7 @@ type mailActArguments struct {
 	ItemIDs      []string `json:"item_ids"`
 	ThreadItemID string   `json:"thread_item_id"`
 	Folder       string   `json:"folder"`
+	Answer       string   `json:"answer"`
 }
 
 func runMailAct(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -90,6 +101,9 @@ func runMailAct(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	operations := run.Operations()
+	if arguments.Action == "answer_invitation" {
+		return runAnswerInvitation(ctx, call, operations, arguments)
+	}
 	itemIds := append([]string{}, arguments.ItemIDs...)
 	var thread *mailbox.ThreadView
 	if arguments.ThreadItemID != "" {
@@ -231,6 +245,43 @@ func runMailAct(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	result.Note = fmt.Sprintf("%s: %d message(s)", arguments.Action, len(itemIds))
+	return result, nil
+}
+
+// runAnswerInvitation answers the invitation one message carried. It takes a
+// single message because an answer is about one invitation, and it goes
+// through AnswerMailInvitation so the refusals are the dashboard's: a message
+// that carried none, one that is only a reply or a cancellation, and a person
+// without the right to send.
+func runAnswerInvitation(ctx context.Context, call *tools.Call, operations tools.Operations, arguments mailActArguments) (*tools.Result, error) {
+	if len(arguments.ItemIDs) != 1 || arguments.ThreadItemID != "" {
+		return nil, fmt.Errorf("answer_invitation takes exactly one message in item_ids")
+	}
+	answer := strings.ToUpper(strings.TrimSpace(arguments.Answer))
+	if !slices.Contains([]string{"ACCEPTED", "TENTATIVE", "DECLINED"}, answer) {
+		return nil, fmt.Errorf("answer must be accepted, tentative or declined")
+	}
+	if !call.Confirmed {
+		return nil, fmt.Errorf("answering an invitation writes to its organizer and needs the person's confirmation")
+	}
+	// Only a mailbox the person granted: the item id names any of theirs.
+	views, err := mailbox.GrantedMailboxes(ctx, operations)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, err := mailbox.MailboxOfItem(ctx, operations, views, arguments.ItemIDs[0]); err != nil {
+		return nil, err
+	}
+	invitation, err := mailbox.AnswerInvitation(ctx, operations, arguments.ItemIDs[0], answer)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(map[string]any{"action": arguments.Action, "answer": strings.ToLower(answer), "invitation": invitation})
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = true
+	result.Note = "answered the invitation: " + strings.ToLower(answer)
 	return result, nil
 }
 

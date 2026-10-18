@@ -23,7 +23,7 @@ import (
 func NewMailboxCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "mailbox",
-		Usage: "mailboxes: folders, rules, contacts, subscriptions, devices, out of office",
+		Usage: "mailboxes: messages, invitations, folders, rules, subscriptions, devices, out of office",
 		Commands: []*cli.Command{
 			{
 				Name:   "list",
@@ -49,6 +49,8 @@ func NewMailboxCommand() *cli.Command {
 				Action: runMailboxUpdate,
 			},
 			newFolderCommand(),
+			newMessageCommand(),
+			newInvitationCommand(),
 			newRuleCommand(),
 			newDeviceCommand(),
 			{
