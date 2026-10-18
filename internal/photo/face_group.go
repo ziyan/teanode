@@ -63,41 +63,62 @@ func nearestFaceGroup(vector []float32, groups []*db.PhotoFaceGroupVector, exclu
 //
 // Two faces of one photo are never put in one group: a photo does not hold
 // the same person twice, and two people who look alike would otherwise be
-// pulled together by a group that already took the first.
+// pulled together by a group that already took the first. So the faces are
+// placed best match first, not in the order the detector found them: a face
+// that only somewhat resembles a person cannot take that person's group from
+// the face in the same photo that is them.
 func groupFaces(transaction db.Transaction, userId string, stored []*models.PhotoFace, widthPixels, heightPixels int) (int, error) {
 	groups, err := transaction.ListPhotoFaceGroupVectors(userId)
 	if err != nil {
 		return 0, err
 	}
-	groupedCount := 0
 	groupIdsOfPhoto := map[string]bool{}
+	var waiting []*models.PhotoFace
 	for _, face := range stored {
 		if face.PhotoFaceGroupID != "" {
 			// The person confirmed this face where it is.
 			groupIdsOfPhoto[face.PhotoFaceGroupID] = true
 			continue
 		}
-		if !isFaceGroupable(face, widthPixels, heightPixels) {
-			continue
+		if isFaceGroupable(face, widthPixels, heightPixels) {
+			waiting = append(waiting, face)
 		}
-		groupId, _ := nearestFaceGroup(face.FaceVector, groups, groupIdsOfPhoto)
-		if groupId == "" {
-			if groupId, err = transaction.StartPhotoFaceGroup(userId, face.ID); err != nil {
-				return groupedCount, err
+	}
+	groupedCount := 0
+	for len(waiting) > 0 {
+		// The face whose nearest group is nearest of all goes first.
+		bestIndex, bestGroupId, bestSimilarity := -1, "", 0.0
+		for index, face := range waiting {
+			if groupId, similarity := nearestFaceGroup(face.FaceVector, groups, groupIdsOfPhoto); groupId != "" && (bestIndex < 0 || similarity > bestSimilarity) {
+				bestIndex, bestGroupId, bestSimilarity = index, groupId, similarity
 			}
-			groups = append(groups, &db.PhotoFaceGroupVector{ID: groupId, VectorSum: append([]float32(nil), face.FaceVector...)})
-		} else {
-			if err := transaction.JoinPhotoFaceGroup(userId, face.ID, groupId); err != nil {
-				return groupedCount, err
-			}
-			for _, group := range groups {
-				if group.ID == groupId {
-					for index, number := range face.FaceVector {
-						group.VectorSum[index] += number
-					}
+		}
+		if bestIndex < 0 {
+			break
+		}
+		face := waiting[bestIndex]
+		waiting = append(waiting[:bestIndex], waiting[bestIndex+1:]...)
+		if err := transaction.JoinPhotoFaceGroup(userId, face.ID, bestGroupId); err != nil {
+			return groupedCount, err
+		}
+		for _, group := range groups {
+			if group.ID == bestGroupId {
+				for index, number := range face.FaceVector {
+					group.VectorSum[index] += number
 				}
 			}
 		}
+		face.PhotoFaceGroupID = bestGroupId
+		groupIdsOfPhoto[bestGroupId] = true
+		groupedCount++
+	}
+	// What is like no group, or like none left to this photo, is somebody new.
+	for _, face := range waiting {
+		groupId, err := transaction.StartPhotoFaceGroup(userId, face.ID)
+		if err != nil {
+			return groupedCount, err
+		}
+		groups = append(groups, &db.PhotoFaceGroupVector{ID: groupId, VectorSum: append([]float32(nil), face.FaceVector...)})
 		face.PhotoFaceGroupID = groupId
 		groupIdsOfPhoto[groupId] = true
 		groupedCount++

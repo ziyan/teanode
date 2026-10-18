@@ -66,6 +66,8 @@ const (
 }`
 
 	DocumentDeleteContact = `mutation ($id: String!) { DeleteContact(id: $id) }`
+
+	DocumentRemoveContactPicture = `mutation ($id: String!) { RemoveContactPicture(id: $id) { id uid name emails phones hasPhoto } }`
 )
 
 // ListAddressBooks are the caller's. An account that has never had one is
@@ -170,4 +172,16 @@ func DeleteContact(ctx context.Context, connection *Client, id string) error {
 		DeleteContact bool `json:"DeleteContact"`
 	}
 	return connection.Execute(ctx, DocumentDeleteContact, map[string]any{"id": id}, &result)
+}
+
+// RemoveContactPicture takes the picture off a contact and leaves the rest of
+// the card as it was.
+func RemoveContactPicture(ctx context.Context, executor Executor, id string) (*Contact, error) {
+	var result struct {
+		RemoveContactPicture *Contact `json:"RemoveContactPicture"`
+	}
+	if err := executor.Execute(ctx, DocumentRemoveContactPicture, map[string]any{"id": id}, &result); err != nil {
+		return nil, err
+	}
+	return result.RemoveContactPicture, nil
 }

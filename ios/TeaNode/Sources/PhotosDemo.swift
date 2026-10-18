@@ -4,7 +4,11 @@
     import UIKit
 
     /// What the demo server answers for Photos, for `-TeaNodeTab photos` with
-    /// `-TeaNodeScreen photos-library`, `photos-viewer`, `photos-viewer-described`, `photos-trash`,
+    /// `-TeaNodeScreen photos-library` (every photo under Library, All), `photos-library-months` and
+    /// `photos-library-years` (the same under Months and Years), `photos-viewer`, `photos-viewer-info`
+    /// and `photos-viewer-described` (Info over the viewer), `photos-viewer-hidden` (the viewer after a
+    /// tap, with the bars gone), `photos-video-viewer` (a video, stopped a third of the way in, with its
+    /// controls), `photos-trash`,
     /// `photos-empty`, `photos-select`, `photos-trash-select`, `photos-search`, `photos-viewer-failed`,
     /// `photos-albums`, `photos-album`, `photos-people`, `photos-person`,
     /// `photos-shared-albums`, `photos-share`, `photos-shared-album`, `photos-shared-viewer`,
@@ -87,6 +91,12 @@
             DemoPhoto(id: "demo-18", kind: "picture", takenAt: "2026-10-01T08:00:00Z", offsetMinutes: -240),
             DemoPhoto(id: "demo-19", kind: "picture", takenAt: "2026-09-30T19:00:00Z", offsetMinutes: -240),
             DemoPhoto(id: "demo-20", kind: "picture", takenAt: "2026-09-30T18:00:00Z", offsetMinutes: -240),
+            // Older photos, so that Months and Years have more than one picture each.
+            DemoPhoto(id: "demo-21", kind: "picture", takenAt: "2026-08-14T17:00:00Z", offsetMinutes: -240, isPortrait: true),
+            DemoPhoto(id: "demo-22", kind: "picture", takenAt: "2026-08-02T10:00:00Z", offsetMinutes: -240),
+            DemoPhoto(id: "demo-23", kind: "picture", takenAt: "2026-03-02T12:00:00Z", offsetMinutes: -240),
+            DemoPhoto(id: "demo-24", kind: "video", takenAt: "2025-11-23T09:00:00Z", offsetMinutes: -300, durationMS: 12_000),
+            DemoPhoto(id: "demo-25", kind: "picture", takenAt: "2025-07-04T15:00:00Z", offsetMinutes: -240, isPortrait: true),
             DemoPhoto(id: "demo-s1", kind: "picture", takenAt: "2026-09-20T10:00:00Z", offsetMinutes: -240, isPortrait: true, ownerName: "Sam Placeholder"),
             DemoPhoto(id: "demo-s2", kind: "picture", takenAt: "2026-09-20T09:00:00Z", offsetMinutes: -240, ownerName: "Sam Placeholder"),
             DemoPhoto(id: "demo-s3", kind: "video", takenAt: "2026-09-19T16:00:00Z", offsetMinutes: -240, durationMS: 41_000, ownerName: "Sam Placeholder"),
@@ -249,6 +259,9 @@
                 json = #"{"data":{"RemovePhotoAlbumShare":true}}"#
             } else if body.contains("SavePhotoToLibrary") || body.contains("SavePhotoFromAttachment") {
                 json = #"{"data":{"\#(body.contains("SavePhotoToLibrary") ? "SavePhotoToLibrary" : "SavePhotoFromAttachment")":\#(photoJSON(demoPhotos[0]))}}"#
+            } else if body.contains("PhotoPlaybackAddress") {
+                // The one demo video, for any photo that asks to be played.
+                json = #"{"data":{"PhotoPlaybackAddress":"\#(PhotosDemoVideo.fileURL().absoluteString)"}}"#
             } else if body.contains("ReadPhotoLibrary") {
                 let inLibrary = isEmpty ? 0 : demoPhotos.filter { !$0.isTrashed && !$0.isForeign }.count
                 let trashed = isEmpty ? 0 : demoPhotos.filter(\.isTrashed).count
@@ -277,7 +290,7 @@
                 json = #"{"data":{"UnnamePhotoFaceGroup":\#(faceGroupJSON(DemoFaceGroup(id: person.id, name: "", photoIds: person.photoIds)))}}"#
             } else if body.contains("NamePhotoFaceGroup") {
                 let person = demoFaceGroups.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoFaceGroups[0]
-                json = #"{"data":{"NamePhotoFaceGroup":\#(faceGroupJSON(DemoFaceGroup(id: person.id, name: "Chris Placeholder", photoIds: person.photoIds)))}}"#
+                json = #"{"data":{"NamePhotoFaceGroup":{"photoFaceGroup":\#(faceGroupJSON(DemoFaceGroup(id: person.id, name: "Chris Placeholder", photoIds: person.photoIds))),"mergedPhotoFaceGroupId":"","isContactPictureSet":false}}}"#
             } else if body.contains("MergePhotoFaceGroups") {
                 json = #"{"data":{"MergePhotoFaceGroups":\#(faceGroupJSON(demoFaceGroups[0]))}}"#
             } else if body.contains("RemovePhotoFaceFromGroup") {

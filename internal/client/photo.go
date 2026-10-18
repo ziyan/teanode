@@ -393,6 +393,15 @@ func PhotoCountText(library *PhotoLibrary) string {
 	return fmt.Sprintf("%d (%d videos)", total, library.VideoCount)
 }
 
+// PhotosCountText is a number of photos in words, "1 photo" or "3 photos", for
+// a line that says how many a call touched.
+func PhotosCountText(count int) string {
+	if count == 1 {
+		return "1 photo"
+	}
+	return fmt.Sprintf("%d photos", count)
+}
+
 // TrashPhotos moves photos to the trash and says how many it moved.
 func TrashPhotos(ctx context.Context, executor Executor, photoIds []string) (int, error) {
 	var result struct {

@@ -263,6 +263,7 @@ struct PhotoAlbumShareSheet: View {
     let model: PhotosModel
     let album: PhotoAlbum
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var shares: [PhotoAlbumShare] = []
     @State private var people: [ChatPerson] = []
     @State private var circles: [PeopleCircle] = []
@@ -275,6 +276,11 @@ struct PhotoAlbumShareSheet: View {
     @State private var shareToStop: PhotoAlbumShare?
 
     private var connection: Connection { model.connection }
+
+    /// One share: who, then the options button beside them, or under them at the accessibility sizes.
+    private var shareRowLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 12))
+    }
 
     /// The circles and people not shared with yet.
     private var availableCircles: [PeopleCircle] {
@@ -341,23 +347,14 @@ struct PhotoAlbumShareSheet: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(shares) { share in
-                HStack(spacing: 12) {
-                    if share.isWithCircle {
-                        Image(systemName: "person.2.circle.fill")
-                            .font(.title)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 32, height: 32)
-                            .accessibilityHidden(true)
-                    } else {
-                        AvatarView(name: share.granteeDisplayName, avatarUrl: share.granteeAvatarUrl, colorIndex: share.granteeAvatarColorIndex, size: 32)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(share.granteeDisplayName)
-                        Text(PhotoWords.line(of: share))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
+                // At the accessibility sizes the options button goes under the words rather
+                // than taking width from them.
+                shareRowLayout {
+                    PhotoGranteeLabel(
+                        name: share.granteeDisplayName,
+                        detailText: PhotoWords.line(of: share),
+                        kind: share.isWithCircle ? .circle : .person(avatarUrl: share.granteeAvatarUrl, avatarColorIndex: share.granteeAvatarColorIndex))
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
                     Menu {
                         shareOptions(share)
                     } label: {
@@ -420,7 +417,7 @@ struct PhotoAlbumShareSheet: View {
                     chooseRow(isChosen: draft.target == .circle(circleId: circle.id)) {
                         draft.target = .circle(circleId: circle.id)
                     } label: {
-                        Label(circle.name, systemImage: "person.2")
+                        PhotoGranteeLabel(name: circle.name, detailText: nil, kind: .circle)
                     }
                 }
             }
@@ -431,10 +428,9 @@ struct PhotoAlbumShareSheet: View {
                     chooseRow(isChosen: draft.target == .person(userId: person.userId)) {
                         draft.target = .person(userId: person.userId)
                     } label: {
-                        HStack(spacing: 12) {
-                            AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 28)
-                            Text(person.displayName)
-                        }
+                        PhotoGranteeLabel(
+                            name: person.displayName, detailText: nil,
+                            kind: .person(avatarUrl: person.avatarUrl, avatarColorIndex: person.avatarColorIndex))
                     }
                 }
             }
@@ -466,18 +462,20 @@ struct PhotoAlbumShareSheet: View {
         }
     }
 
-    /// A row that chooses one of the people or circles, with a check on the
-    /// chosen. Plain, like the other rows of a form that choose.
+    /// A row that chooses one of the people or circles: a check on the chosen
+    /// and a plus on the others, so a row that can be picked looks like one.
+    /// Plain, like the other rows of a form that choose.
     private func chooseRow<RowLabel: View>(isChosen: Bool, action: @escaping () -> Void, @ViewBuilder label: () -> RowLabel) -> some View {
         Button(action: action) {
             HStack {
                 label()
                 Spacer(minLength: 8)
-                if isChosen {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(.tint)
-                        .accessibilityHidden(true)
-                }
+                // The selected trait below says which one is chosen, so the symbol is
+                // only for the eye.
+                Image(systemName: isChosen ? "checkmark" : "plus.circle")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
             }
             .contentShape(.rect)
         }
@@ -691,3 +689,92 @@ struct PhotoDateChangeSheet: View {
         PhotoLibrarySummary(library: PhotoLibrary(photoCount: 12, videoCount: 0, favoriteCount: 0, trashedCount: 0, usedBytes: 0, trashRetentionDays: 30))
     }
 #endif
+
+/// PhotoGranteeLabel is who an album is shared with, or can be: a round
+/// picture and a name, and under it a line of detail when there is one. Every
+/// row of the share screen is drawn by this one view, so a circle and a person
+/// get a picture of the same size and a name that starts at the same place.
+/// At the accessibility sizes the picture goes above the words, which then have
+/// the whole width of the row: the name stays on one line and shrinks a little
+/// before it is cut, and the detail line wraps between words only, since a long
+/// word that does not fit is otherwise broken in the middle with a hyphen.
+private struct PhotoGranteeLabel: View {
+    enum Kind {
+        case circle
+        case person(avatarUrl: String?, avatarColorIndex: Int?)
+    }
+
+    let name: String
+    let detailText: String?
+    let kind: Kind
+    /// Scales with the text size, like the picture of a person does.
+    @ScaledMetric(relativeTo: .headline) private var circleDiameter: CGFloat = 32
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        // Beside the picture the words would be squeezed to a few letters a line.
+        let layout =
+            dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
+            avatar
+            VStack(alignment: .leading, spacing: 2) {
+                nameText
+                if let detailText {
+                    detailLine(detailText)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailLine(_ detailText: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            // The shrinking lets the longest word of the line fit its width, so that the
+            // line breaks between words and never inside one.
+            Text(detailText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.7)
+                .truncationMode(.tail)
+        } else {
+            Text(detailText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.tail)
+        }
+    }
+
+    @ViewBuilder
+    private var avatar: some View {
+        switch kind {
+        case .circle:
+            Image(systemName: "person.2.fill")
+                .resizable()
+                .scaledToFit()
+                .padding(circleDiameter * 0.24)
+                .foregroundStyle(.secondary)
+                .frame(width: circleDiameter, height: circleDiameter)
+                .background(Color(.secondarySystemFill), in: .circle)
+                .accessibilityHidden(true)
+        case .person(let avatarUrl, let avatarColorIndex):
+            AvatarView(name: name, avatarUrl: avatarUrl, colorIndex: avatarColorIndex, size: 32)
+        }
+    }
+
+    @ViewBuilder
+    private var nameText: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text(name)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .truncationMode(.tail)
+        } else {
+            Text(name)
+                .lineLimit(2)
+                .truncationMode(.tail)
+        }
+    }
+}

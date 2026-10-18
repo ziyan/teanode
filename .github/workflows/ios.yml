@@ -331,13 +331,29 @@ jobs:
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
-          # Photos, from invented photos drawn by the demo server: the library by day, the viewer on its
+          # The side menu on Photos: the collections and the photo backup under the parts.
+          shoot photos-menu-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
+          shoot photos-menu-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
+          # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its
           # first photo, the Trash, and a library with nothing in it.
           shoot photos-library-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-library-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-library-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
           shoot photos-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
+          shoot photos-viewer-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
+          # The viewer as the Photos app lays it out: Info over it, and after a tap with the bars and the strip gone.
+          shoot photos-viewer-info-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-info
+          shoot photos-viewer-info-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-info
+          shoot photos-viewer-hidden-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-hidden
+          # A video in the viewer, stopped a third of the way in so that its controls are on screen.
+          shoot photos-video-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-video-viewer
+          shoot photos-video-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-video-viewer
+          # The library under Months and Years (Library, All is photos-library above).
+          shoot photos-library-months-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-months
+          shoot photos-library-months-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-months
+          shoot photos-library-years-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-years
+          shoot photos-library-years-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-years
           shoot photos-trash-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-trash-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-trash-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
@@ -349,10 +365,12 @@ jobs:
           shoot photos-album-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-album-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
+          shoot photos-select-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
           # Search over the library, Select mode in the Trash, and Info over a photo that could not be made ready.
           shoot photos-search-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-search
           shoot photos-search-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-search
           shoot photos-trash-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash-select
+          shoot photos-trash-select-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash-select
           shoot photos-viewer-failed-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
           shoot photos-viewer-failed-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
           shoot photos-viewer-failed-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
@@ -400,6 +418,7 @@ jobs:
           # A picture the agent sent, with Save to my library (opened from Settings).
           shoot photos-conversation-card-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           shoot photos-conversation-card-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
+          shoot photos-conversation-card-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           # Photo backup, off and part way through a library, with invented counts (opened from Settings).
           shoot photos-backup-off-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
           shoot photos-backup-off-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off

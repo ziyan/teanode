@@ -1712,7 +1712,6 @@ public actor PhotoBackupCoordinator {
         // then the same file may have been queued again under the same key.
         if outstanding[job.key]?.outgoingFilename == job.outgoingFilename { outstanding[job.key] = nil }
         removeTemporaryFile(named: job.outgoingFilename)
-        completionCount += 1
         switch outcome {
         case .cancelled:
             break
@@ -1749,6 +1748,11 @@ public actor PhotoBackupCoordinator {
         // and when the session has delivered its events or the app goes to the
         // background, so a pass does not rewrite it for every file.
         if !isRunning { await index.flush() }
+        // Counted in the same step that wakes the waiters, with no await in
+        // between. The awaits above let the pass run: if it began a wait after
+        // the count had moved but before the wake, it would see no change when
+        // woken, take that for a timeout and end the pass idle with files left.
+        completionCount += 1
         resumeWaiters()
         await publish()
         guard hasMadeProgress, !isRunning, !isStopRequested, pendingRetryTime == nil else { return false }
@@ -1807,6 +1811,11 @@ public actor PhotoBackupCoordinator {
         timer.cancel()
         return isStopRequested || completionCount != completionCountBefore
     }
+
+    /// Whether the pass is suspended until an upload finishes. Tests wait on
+    /// this instead of a delay, since it is the moment the pass has decided it
+    /// has no room for the next file and will not look again until one ends.
+    var isWaitingForAnUploadToFinish: Bool { !waiters.isEmpty }
 
     private func resumeWaiters() {
         let resumed = waiters

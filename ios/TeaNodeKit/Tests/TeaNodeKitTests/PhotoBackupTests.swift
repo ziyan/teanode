@@ -1921,12 +1921,21 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         rig.library.set(bytes: 60, for: "b|original")
         let coordinator = rig.coordinator
         let pass = Task { await coordinator.runPass(settings: settings) }
-        try await waitUntil("two uploads queued and the third exported") { rig.transfer.startedJobs.count == 2 && rig.library.exportCount == 3 }
+        // Waiting for the pass itself, not for the third export to begin: an
+        // upload that finishes while that export is still running is seen by
+        // the pass before or after it has decided there is no room, and the
+        // test must not depend on which.
+        try await waitUntil("two uploads queued, the third exported and held back") {
+            let isWaiting = await coordinator.isWaitingForAnUploadToFinish
+            return isWaiting && rig.transfer.startedJobs.count == 2 && rig.library.exportCount == 3
+        }
         let jobs = rig.transfer.startedJobs
         let small = try XCTUnwrap(jobs.first { $0.localIdentifier == "c" })
         rig.transfer.release(small)
         await coordinator.finished(small, outcome: .uploaded(serverPhotoId: "p"))
-        try await Task.sleep(nanoseconds: 150_000_000)
+        // The pass wakes, finds there is still no room and waits again, which
+        // is the point at which a second export would already have happened.
+        try await waitUntil("the pass waiting again after the small file") { await coordinator.isWaitingForAnUploadToFinish }
         XCTAssertEqual(rig.library.exportCount, 3, "there is still no room for it, and it is not exported again to find out")
         let large = try XCTUnwrap(jobs.first { $0.localIdentifier == "a" })
         rig.transfer.release(large)

@@ -23,6 +23,8 @@ func facePreviewOf(asked arguments) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
 	case "people":
 		return "List the people found in the photos", true
+	case "person-read":
+		return "Read one person found in the photos", true
 	case "person-photos":
 		return "List the photos of a person", true
 	case "person-name":
@@ -61,7 +63,7 @@ func facePreviewOf(asked arguments) (string, bool) {
 // groups are called and which are listed, and the person can change them back.
 func faceRiskOf(asked arguments) (tools.Risk, bool) {
 	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
-	case "people", "person-photos":
+	case "people", "person-read", "person-photos":
 		return tools.RiskRead, true
 	case "person-name", "person-merge", "person-unname", "person-hide", "person-remove-face":
 		return tools.RiskWrite, true
@@ -86,6 +88,9 @@ func groupRow(group *models.PhotoFaceGroup) map[string]any {
 		row["contact_id"], row["contact_name"] = group.ContactID, group.ContactName
 	} else {
 		row["contact_name"] = nil
+	}
+	if group.IsOwnContact {
+		row["is_you"] = true
 	}
 	if group.IsHidden {
 		row["is_hidden"] = true
@@ -118,6 +123,30 @@ func people(ctx context.Context, current tools.Run, asked *arguments) (*tools.Re
 	return result, nil
 }
 
+// personRead gives one group of faces: who it is named by, how many faces and
+// photos it has and the face it is shown by. Its photos are person-photos.
+func personRead(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	faceGroupId := strings.TrimSpace(asked.FaceGroupID)
+	if faceGroupId == "" {
+		return nil, errors.New("person-read needs face_group_id; people gives them")
+	}
+	group, err := client.ReadPhotoFaceGroup(ctx, executor, faceGroupId)
+	if err != nil {
+		return nil, err
+	}
+	row := groupRow(group)
+	if group.CoverPhotoFaceID != "" {
+		row["cover_photo_face_id"] = group.CoverPhotoFaceID
+	}
+	row["note"] = "person-photos with this face_group_id lists their photos"
+	result, err := tools.JSONResult(row)
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = true
+	return result, nil
+}
+
 // personPhotos lists the photos of one group of faces or of one contact, in
 // the pages list gives.
 func personPhotos(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
@@ -133,16 +162,40 @@ func personName(ctx context.Context, executor client.Executor, asked *arguments)
 	if faceGroupId == "" || contactId == "" {
 		return nil, errors.New("person-name needs face_group_id and contact_id: the contact the person chose or confirmed. Do not guess a name from a face; ask the person who it is")
 	}
-	group, err := client.NamePhotoFaceGroup(ctx, executor, faceGroupId, contactId)
+	named, err := client.NamePhotoFaceGroup(ctx, executor, faceGroupId, contactId)
 	if err != nil {
 		return nil, err
 	}
-	result, err := tools.JSONResult(groupRow(group))
+	row := groupRow(named.PhotoFaceGroup)
+	result, err := tools.JSONResult(namedGroupRow(row, named))
 	if err != nil {
 		return nil, err
 	}
-	result.Note = "named a group of faces " + tools.Named(group.ContactName, "after a contact")
+	result.Note = "named a group of faces " + tools.Named(named.PhotoFaceGroup.ContactName, "after a contact")
+	switch {
+	case named.MergedPhotoFaceGroupID != "" && named.IsContactPictureSet:
+		result.Note += ", put it together with the group that contact already named, and used a face as their picture"
+	case named.MergedPhotoFaceGroupID != "":
+		result.Note += " and put it together with the group that contact already named"
+	case named.IsContactPictureSet:
+		result.Note += " and used a face as their picture"
+	}
 	return result, nil
+}
+
+// namedGroupRow is the group naming left, with what else the naming did. A
+// contact names one person: face_group_id is the group left, merged_into says
+// the group that was named is part of it now (merged_face_group_id is the id
+// that is gone), and contact_picture_set says the contact had no picture and
+// was given one cut from a face.
+func namedGroupRow(row map[string]any, named *client.NamedPhotoFaceGroup) map[string]any {
+	if named.MergedPhotoFaceGroupID != "" {
+		row["merged_into"], row["merged_face_group_id"] = named.PhotoFaceGroup.ID, named.MergedPhotoFaceGroupID
+	}
+	if named.IsContactPictureSet {
+		row["contact_picture_set"] = true
+	}
+	return row
 }
 
 func personMerge(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
@@ -265,6 +318,9 @@ func peopleOf(view *client.PhotoView) []map[string]any {
 		}
 		if face.ContactID != "" {
 			row["contact_id"], row["contact_name"] = face.ContactID, face.ContactName
+		}
+		if face.IsOwnContact {
+			row["is_you"] = true
 		}
 		rows = append(rows, row)
 	}
