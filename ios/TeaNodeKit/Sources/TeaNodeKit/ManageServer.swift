@@ -617,6 +617,16 @@ public struct ServerSettings: Codable, Hashable, Sendable {
         }
     }
 
+    /// Places is where the names of the places people go to come from, and
+    /// the map style the dashboard draws them on. An empty provider kind is
+    /// off.
+    public struct Places: Codable, Hashable, Sendable {
+        /// "nominatim", "photon", or empty for no provider.
+        public let providerKind: String
+        public let providerUrl: String?
+        public let mapStyleUrl: String?
+    }
+
     /// SSOProvider is one identity provider people may sign in through.
     public struct SSOProvider: Codable, Hashable, Sendable {
         public let id: String
@@ -654,6 +664,7 @@ public struct ServerSettings: Codable, Hashable, Sendable {
     public let identity: Identity
     public let storage: MessageStorage
     public let geoip: GeoIP
+    public let places: Places
 }
 
 /// RelayPreset is a provider whose SMTP endpoint people point the relay
@@ -870,6 +881,28 @@ public struct GeoIPDraft: Hashable, Sendable {
 
     public var variables: [String: JSONValue] {
         ["geoip": .object(["enabled": .bool(isEnabled), "databaseFile": .string(databaseFile)])]
+    }
+}
+
+/// PlacesDraft is where place names come from, and the map style, as the form
+/// holds them.
+public struct PlacesDraft: Hashable, Sendable {
+    /// The kinds of provider the server knows, by what the form shows: empty
+    /// is off.
+    public static let providerKinds = ["", "nominatim", "photon"]
+
+    public var providerKind: String
+    public var providerUrl: String
+    public var mapStyleUrl: String
+
+    public init(_ places: ServerSettings.Places) {
+        providerKind = places.providerKind
+        providerUrl = places.providerUrl ?? ""
+        mapStyleUrl = places.mapStyleUrl ?? ""
+    }
+
+    public var variables: [String: JSONValue] {
+        ["places": .object(["providerKind": .string(providerKind), "providerUrl": .string(providerUrl), "mapStyleUrl": .string(mapStyleUrl)])]
     }
 }
 
@@ -2591,6 +2624,7 @@ extension Documents {
         identity { name mailServers externalAddresses logLevel dataDirectory }
         storage { directory spoolRetention }
         geoip { enabled databaseFile }
+        places { providerKind providerUrl mapStyleUrl }
         """
     /// What every read and change of the operator's agent settings answers
     /// with.
@@ -2708,6 +2742,7 @@ extension Documents {
           $identity: IdentityParametersInput
           $storage: StorageParametersInput
           $geoip: GeoIPParametersInput
+          $places: PlacesParametersInput
         ) {
           UpdateSettings(
             s3: $s3
@@ -2726,6 +2761,7 @@ extension Documents {
             identity: $identity
             storage: $storage
             geoip: $geoip
+            places: $places
           ) {
             \(manageServerSettingsFields)
           }

@@ -165,6 +165,19 @@ func Exec(test testing.TB, database db.Database, statement string) {
 	}
 }
 
+// GrantPermission gives a person a permission through a role and a group of
+// their own, as the ordinary roles give it.
+func GrantPermission(test testing.TB, tx db.Transaction, userId string, permission models.Permission) {
+	test.Helper()
+	role, err := tx.CreateRole(&models.Role{Name: "Role of " + userId, Permissions: []models.Permission{permission}})
+	if err != nil {
+		test.Fatalf("failed to store a role: %s", err)
+	}
+	if _, err := tx.CreateGroup(&models.Group{Name: "Group of " + userId, RoleIDs: []string{role.ID}, UserIDs: []string{userId}}); err != nil {
+		test.Fatalf("failed to store a group: %s", err)
+	}
+}
+
 // photoClaimedAt is when the photo was last claimed by a worker, claiming it
 // first by a statement when nobody has, as the claim a worker makes would.
 func photoClaimedAt(test testing.TB, database db.Database, photoId string) time.Time {

@@ -176,7 +176,8 @@ final class ManageServerTests: XCTestCase {
            "hasClientSecret":true,"groupsClaim":null,"createUsers":false}]},
          "identity":{"name":"mail.example.com","mailServers":null,"externalAddresses":null,"logLevel":"notice","dataDirectory":"/var/lib/example"},
          "storage":{"directory":"mail","spoolRetention":"30d"},
-         "geoip":{"enabled":false,"databaseFile":null}}
+         "geoip":{"enabled":false,"databaseFile":null},
+         "places":{"providerKind":"nominatim","providerUrl":"https://nominatim.example.net","mapStyleUrl":null}}
         """#
 
     private func serverSettings() throws -> ServerSettings {
@@ -195,6 +196,20 @@ final class ManageServerTests: XCTestCase {
         XCTAssertEqual(try sentVariables(saved.sent[0]), ["session": .object(["lifetime": .string("720h")])])
         XCTAssertTrue(try sentDocument(saved.sent[0]).contains("UpdateSettings("))
         XCTAssertTrue(try sentDocument(fake.sent[0]).contains("geoip { enabled databaseFile }"))
+        XCTAssertTrue(try sentDocument(fake.sent[0]).contains("places { providerKind providerUrl mapStyleUrl }"))
+        XCTAssertTrue(try sentDocument(saved.sent[0]).contains("$places: PlacesParametersInput"))
+        XCTAssertTrue(try sentDocument(saved.sent[0]).contains("places: $places"))
+    }
+
+    func testThePlacesSectionIsSavedWithItsThreeFieldsAndAnEmptyKindTurnsNamingOff() throws {
+        let settings = try serverSettings()
+        var draft = PlacesDraft(settings.places)
+        XCTAssertEqual(draft.providerKind, "nominatim")
+        XCTAssertEqual(draft.mapStyleUrl, "", "a missing address is an empty box")
+        draft.providerKind = ""
+        XCTAssertEqual(
+            draft.variables,
+            ["places": .object(["providerKind": .string(""), "providerUrl": .string("https://nominatim.example.net"), "mapStyleUrl": .string("")])])
     }
 
     func testASecretIsKeptReplacedOrClearedButNeverSentBack() throws {

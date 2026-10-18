@@ -13,6 +13,13 @@ type AgentHerdrSession struct {
 	Computer          string              `json:"computer"`
 	PaneID            string              `json:"paneId"`
 	PaneName          string              `json:"paneName"`
+	WorkspaceID       string              `json:"workspaceId"`
+	WorkspaceLabel    string              `json:"workspaceLabel"`
+	WorkspaceNumber   int                 `json:"workspaceNumber"`
+	TabID             string              `json:"tabId"`
+	TabLabel          string              `json:"tabLabel"`
+	TabNumber         int                 `json:"tabNumber"`
+	IsTabFocused      bool                `json:"isTabFocused"`
 	CodingAgentKind   string              `json:"codingAgentKind"`
 	CodingSessionID   string              `json:"codingSessionId"`
 	HerdrSessionState string              `json:"herdrSessionState"`
@@ -51,9 +58,11 @@ type AgentHerdrList struct {
 
 // AgentHerdrTurn is one thing said or done in a session.
 type AgentHerdrTurn struct {
-	HerdrTurnRole string     `json:"herdrTurnRole"`
-	TurnText      string     `json:"turnText"`
-	TurnAt        *time.Time `json:"turnAt"`
+	HerdrTurnRole  string     `json:"herdrTurnRole"`
+	TurnText       string     `json:"turnText"`
+	TurnAt         *time.Time `json:"turnAt"`
+	ToolInputText  string     `json:"toolInputText"`
+	ToolResultText string     `json:"toolResultText"`
 }
 
 // AgentHerdrRead is a session's last turns.
@@ -94,7 +103,7 @@ type AgentHerdrSetup struct {
 
 // HerdrSessionFields are a session's fields, with its question, for every
 // document that answers with one; the dashboard asks for the same.
-const HerdrSessionFields = `computer paneId paneName codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
+const HerdrSessionFields = `computer paneId paneName workspaceId workspaceLabel workspaceNumber tabId tabLabel tabNumber isTabFocused codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
 	question { questionFingerprint herdrQuestionKind questionText isMultipleChoice isFromTranscript options { optionNumber optionLabel optionDescription herdrOptionKind } }`
 
 // The documents the command line sends, exported so a test can check them
@@ -103,13 +112,13 @@ const (
 	DocumentListAgentHerdrSessions = `query ($computer: String) {
 		ListAgentHerdrSessions(computer: $computer) { computerNames failedComputerNames sessions { ` + HerdrSessionFields + ` } }
 	}`
-	DocumentReadAgentHerdrSession = `query ($computer: String, $paneId: String!, $turnCount: Int) {
-		ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount) {
-			herdrSession { ` + HerdrSessionFields + ` } turns { herdrTurnRole turnText turnAt } isTruncated
+	DocumentReadAgentHerdrSession = `query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
+		ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
+			herdrSession { ` + HerdrSessionFields + ` } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated
 		}
 	}`
-	DocumentReadAgentHerdrScreen = `query ($computer: String, $paneId: String!, $lineCount: Int) {
-		ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount) {
+	DocumentReadAgentHerdrScreen = `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
+		ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount, shouldKeepColor: $shouldKeepColor) {
 			herdrSession { ` + HerdrSessionFields + ` } screenText
 		}
 	}`
@@ -129,8 +138,11 @@ const (
 	DocumentWatchAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $conversationId: String) {
 		WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ` + HerdrSessionFields + ` }
 	}`
-	DocumentOpenAgentHerdrSession = `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String, $shouldSkipPermissions: Boolean) {
-		OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName, shouldSkipPermissions: $shouldSkipPermissions) { ` + HerdrSessionFields + ` }
+	DocumentOpenAgentHerdrSession = `mutation ($computer: String, $directory: String, $codingAgentKind: String, $agentName: String, $shouldSkipPermissions: Boolean, $paneId: String) {
+		OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName, shouldSkipPermissions: $shouldSkipPermissions, paneId: $paneId) { ` + HerdrSessionFields + ` }
+	}`
+	DocumentFocusAgentHerdrSession = `mutation ($computer: String, $paneId: String!) {
+		FocusAgentHerdrSession(computer: $computer, paneId: $paneId) { ` + HerdrSessionFields + ` }
 	}`
 	DocumentCloseAgentHerdrSession = `mutation ($computer: String, $paneId: String!) {
 		CloseAgentHerdrSession(computer: $computer, paneId: $paneId) { ` + HerdrSessionFields + ` }
@@ -162,8 +174,9 @@ func ListAgentHerdrSessions(ctx context.Context, connection *Client, computer st
 }
 
 // ReadAgentHerdrSession is a session's last turnCount turns; zero leaves
-// the count to the server.
-func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string, turnCount int) (*AgentHerdrRead, error) {
+// the count to the server. shouldIncludeToolDetail gives each tool turn its
+// whole input and what the tool answered.
+func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string, turnCount int, shouldIncludeToolDetail bool) (*AgentHerdrRead, error) {
 	var result struct {
 		ReadAgentHerdrSession *AgentHerdrRead `json:"ReadAgentHerdrSession"`
 	}
@@ -171,20 +184,27 @@ func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, pa
 	if turnCount > 0 {
 		variables["turnCount"] = turnCount
 	}
+	if shouldIncludeToolDetail {
+		variables["shouldIncludeToolDetail"] = true
+	}
 	if err := connection.Execute(ctx, DocumentReadAgentHerdrSession, variables, &result); err != nil {
 		return nil, err
 	}
 	return result.ReadAgentHerdrSession, nil
 }
 
-// ReadAgentHerdrScreen is a session's screen, or its last lineCount lines.
-func ReadAgentHerdrScreen(ctx context.Context, connection *Client, computer, paneId string, lineCount int) (*AgentHerdrScreen, error) {
+// ReadAgentHerdrScreen is a session's screen, or its last lineCount lines,
+// with its colors when shouldKeepColor says so.
+func ReadAgentHerdrScreen(ctx context.Context, connection *Client, computer, paneId string, lineCount int, shouldKeepColor bool) (*AgentHerdrScreen, error) {
 	var result struct {
 		ReadAgentHerdrScreen *AgentHerdrScreen `json:"ReadAgentHerdrScreen"`
 	}
 	variables := herdrVariables(computer, map[string]any{"paneId": paneId})
 	if lineCount > 0 {
 		variables["lineCount"] = lineCount
+	}
+	if shouldKeepColor {
+		variables["shouldKeepColor"] = true
 	}
 	if err := connection.Execute(ctx, DocumentReadAgentHerdrScreen, variables, &result); err != nil {
 		return nil, err
@@ -265,12 +285,23 @@ func WatchAgentHerdrSession(ctx context.Context, connection *Client, computer, p
 
 // OpenAgentHerdrSession starts a coding agent, "claude" or "codex", in a new
 // herdr pane in a directory; agentName may be empty. shouldSkipPermissions
-// starts it without asking before it acts.
-func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, directory, codingAgentKind, agentName string, shouldSkipPermissions bool) (*AgentHerdrSession, error) {
+// starts it without asking before it acts. Given paneId, it opens beside
+// that pane, and directory and codingAgentKind may be empty: they default
+// to that pane's.
+func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, directory, codingAgentKind, agentName string, shouldSkipPermissions bool, paneId string) (*AgentHerdrSession, error) {
 	var result struct {
 		OpenAgentHerdrSession *AgentHerdrSession `json:"OpenAgentHerdrSession"`
 	}
-	variables := herdrVariables(computer, map[string]any{"directory": directory, "codingAgentKind": codingAgentKind, "shouldSkipPermissions": shouldSkipPermissions})
+	variables := herdrVariables(computer, map[string]any{"shouldSkipPermissions": shouldSkipPermissions})
+	if directory != "" {
+		variables["directory"] = directory
+	}
+	if codingAgentKind != "" {
+		variables["codingAgentKind"] = codingAgentKind
+	}
+	if paneId != "" {
+		variables["paneId"] = paneId
+	}
 	if agentName != "" {
 		variables["agentName"] = agentName
 	}
@@ -278,6 +309,18 @@ func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, di
 		return nil, err
 	}
 	return result.OpenAgentHerdrSession, nil
+}
+
+// FocusAgentHerdrSession brings a session's tab forward in herdr on its
+// computer.
+func FocusAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string) (*AgentHerdrSession, error) {
+	var result struct {
+		FocusAgentHerdrSession *AgentHerdrSession `json:"FocusAgentHerdrSession"`
+	}
+	if err := connection.Execute(ctx, DocumentFocusAgentHerdrSession, herdrVariables(computer, map[string]any{"paneId": paneId}), &result); err != nil {
+		return nil, err
+	}
+	return result.FocusAgentHerdrSession, nil
 }
 
 // CloseAgentHerdrSession ends a session's coding agent and closes its pane.

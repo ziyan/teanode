@@ -447,17 +447,18 @@ struct ChatMembersSheet: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                // On the person's own row it is their agent, not somebody's.
-                let isOwn = member.userId == model.ownUserId
-                if member.isAgentReading {
-                    Text(isOwn ? LocalizedStringKey("Your agent remembers this chat") : LocalizedStringKey("Their agent remembers this chat"))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                if member.isAgentAskableByOthers == true {
-                    Text(isOwn ? LocalizedStringKey("Others may ask your agent") : LocalizedStringKey("Others may ask their agent"))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                // The person's own agent is said by the switches below.
+                if member.userId != model.ownUserId {
+                    if member.isAgentReading {
+                        Text("Their agent remembers this chat")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    if member.isAgentAskableByOthers == true {
+                        Text("Others may ask their agent")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             Spacer(minLength: 0)

@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode the side menu leads to, as the
 /// dashboard's sidebar does.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, goals, ideas, mail, calendar, contacts, photos, knowledge, finance, recordings, settings
+    case agent, goals, ideas, mail, calendar, contacts, photos, location, knowledge, finance, recordings, coding, settings
 
     var id: String { rawValue }
 
@@ -15,11 +15,13 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .ideas: String(localized: "Ideas")
         case .mail: String(localized: "Mail")
         case .calendar: String(localized: "Calendar")
+        case .location: String(localized: "Location")
         case .contacts: String(localized: "Contacts")
         case .photos: String(localized: "Photos")
         case .knowledge: String(localized: "Knowledge")
         case .finance: String(localized: "Finance")
         case .recordings: String(localized: "Recordings")
+        case .coding: String(localized: "Coding")
         case .settings: String(localized: "Settings")
         }
     }
@@ -31,11 +33,13 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .ideas: "lightbulb"
         case .mail: "envelope"
         case .calendar: "calendar"
+        case .location: "location"
         case .contacts: "person"
         case .photos: "photo.on.rectangle"
         case .knowledge: "brain"
         case .finance: "creditcard"
         case .recordings: "record.circle"
+        case .coding: "chevron.left.forwardslash.chevron.right"
         case .settings: "gearshape"
         }
     }
@@ -130,7 +134,7 @@ struct MainView: View {
     }
 
     var body: some View {
-        SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail) {
+        SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail && section != .location) {
             SideMenu(
                 connection: connection, mail: mail, section: $section, conversation: $conversation, mailPlace: $mailPlace,
                 financePart: $financePart, composing: $composing
@@ -156,6 +160,7 @@ struct MainView: View {
                 if let tab = DemoServer.tab, let chosen = AppSection(rawValue: tab) { section = chosen }
                 if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
                 if DemoServer.isMenuRequested { isMenuOpen = true }
+                if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
                 // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`).
                 if let chat = DemoServer.openedChat { conversation = chat }
             #endif
@@ -183,7 +188,8 @@ struct MainView: View {
             }
         }
         .onChange(of: app.services) {
-            if !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
+            // Location is judged when the permissions have been read, not by services.
+            if section != .coding, section != .location, !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
         }
         .onChange(of: mail.currentMailboxId) {
             if let inbox = mail.folder(kind: "inbox") { mailPlace = .folder(inbox.id) }
@@ -266,6 +272,26 @@ struct MainView: View {
         .task(id: "\(scenePhase)-\(section)-\(conversation?.id ?? "")") {
             await refreshPresence()
         }
+        // Which computers run herdr is asked in a task of its own, so a slow
+        // computer never holds up the mail above.
+        .task(id: "\(scenePhase)-\(app.account?.accountKey ?? "")") {
+            await refreshCodingPresenceSlowly()
+        }
+    }
+
+    /// Asks at launch, when the app comes to the front and when the account
+    /// changes, then every half minute, so a question shows on the Coding
+    /// row soon after it comes. Not while the Coding section is on screen: it reads the list
+    /// itself and says what it finds.
+    private func refreshCodingPresenceSlowly() async {
+        guard scenePhase == .active else { return }
+        // Whether the assistant is on decides it, and at launch that is not
+        // known yet.
+        if app.services == nil { await app.refreshServices() }
+        repeat {
+            if section != .coding { await app.refreshCodingPresence() }
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+        } while !Task.isCancelled && scenePhase == .active
     }
 
     private func refreshPresence() async {
@@ -297,6 +323,19 @@ struct MainView: View {
                         // when the server cannot be reached.
                         if app.hasServicesFailedToLoad { MenuButton() }
                     }
+            }
+        } else if section == .location, !app.hasReadPermissions {
+            // Whether the account may use Location is read with the chats; a
+            // Location link opened at launch waits for it rather than being
+            // told it is refused.
+            NavigationStack {
+                ServicesLoadingView(isWaitingForPermissions: true)
+                    .toolbar { MenuButton() }
+            }
+        } else if section == .location, !app.canUseLocation {
+            NavigationStack {
+                LocationNotAllowedView()
+                    .toolbar { MenuButton() }
             }
         } else if !app.isSectionAvailable(section) {
             NavigationStack {
@@ -339,6 +378,8 @@ struct MainView: View {
                 .environment(mail)
         case .calendar:
             CalendarScreen(connection: connection, username: app.account?.username ?? "")
+        case .location:
+            LocationScreen(connection: connection)
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:
@@ -361,6 +402,8 @@ struct MainView: View {
             #else
             RecordingsScreen(connection: connection)
             #endif
+        case .coding:
+            CodingScreen(connection: connection)
         case .settings:
             NavigationStack {
                 SettingsForm()
@@ -522,7 +565,8 @@ struct SideMenu: View {
             // The chats are in the agent's part: what waits in them is the
             // number on its entry. Before menuRow, so the row's hidden
             // separator stays the outermost of its modifiers.
-            .badge(part == .agent ? app.unreadChatCount : 0)
+            // The Coding row counts the sessions that ask something.
+            .badge(part == .agent ? app.unreadChatCount : part == .coding ? app.codingAskingCount : 0)
             .menuRow(isSelected: false)
             .accessibilityAddTraits(section == part ? .isSelected : [])
         }
@@ -562,23 +606,45 @@ struct ServiceOffView: View {
     }
 }
 
+/// LocationNotAllowedView is what Location says to an account that may not
+/// use it: that is a permission, not a service the server has turned off.
+struct LocationNotAllowedView: View {
+    var body: some View {
+        ContentUnavailableView {
+            Label("Location is not available to you", systemImage: AppSection.location.systemImage)
+        } description: {
+            Text("Your account is not allowed to record or share where you go. Whoever manages your TeaNode server can allow it.")
+        }
+    }
+}
+
 /// ServicesLoadingView is the app asking the server which services it runs,
 /// at launch, and what it says when the server cannot be reached.
 struct ServicesLoadingView: View {
     @Environment(AppModel.self) private var app
     @State private var isRetrying = false
 
+    /// Waiting for the account's permissions rather than the services: the
+    /// failure and the retry are about reading those.
+    var isWaitingForPermissions = false
+
+    private var hasFailed: Bool { isWaitingForPermissions ? app.hasPermissionReadFailed : app.hasServicesFailedToLoad }
+
     var body: some View {
-        if app.hasServicesFailedToLoad {
+        if hasFailed {
             ContentUnavailableView {
                 Label("Cannot reach your server", systemImage: "wifi.exclamationmark")
             } description: {
-                Text("TeaNode could not ask your server what it runs. Check the connection and try again.")
+                if isWaitingForPermissions {
+                    Text("TeaNode could not ask your server what your account may use. Check the connection and try again.")
+                } else {
+                    Text("TeaNode could not ask your server what it runs. Check the connection and try again.")
+                }
             } actions: {
                 Button {
                     isRetrying = true
                     Task {
-                        await app.refreshServices()
+                        if isWaitingForPermissions { await app.refreshChats() } else { await app.refreshServices() }
                         isRetrying = false
                     }
                 } label: {

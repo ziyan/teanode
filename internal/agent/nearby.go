@@ -12,6 +12,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/place"
 )
 
 // The look around: once a week, on the day and at the time the person set
@@ -24,8 +25,9 @@ import (
 // mail brought, in one message; the Sunday roundup (follow_up_sweep.go)
 // tells the rest of the week's.
 //
-// The town is read from memory. When memory does not say, the run searches
-// for nothing and asks once, as an idea the agent offers unasked.
+// The town is the one of the person's place labeled home, when they have one,
+// and otherwise read from memory. When neither says, the run searches for
+// nothing and asks once, as an idea the agent offers unasked.
 
 const (
 	// nearbyCatchUpUntilHour is the hour, on the day after the run's day,
@@ -227,6 +229,31 @@ func cleanHomeArea(text string) string {
 		}
 	}
 	return cutRunes(strings.Join(kept, ", "), 80)
+}
+
+// nearbyTownOf is the town of a place, to search for what is on near it. An
+// address of three parts is "street, city, country" as Photon writes it, and
+// its middle part is the city. Any other address is not taken apart: Photon
+// leaves out the parts it does not have, so with two parts the first can be a
+// street as well as a city, and a long one, as Nominatim writes, differs from
+// country to country in which part is the town. The nearest city to the
+// coordinates is used instead. Empty when there is no city near.
+func nearbyTownOf(home *models.Place) string {
+	var parts []string
+	for _, part := range strings.Split(home.AddressText, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	town := ""
+	if len(parts) == 3 {
+		town = cleanHomeArea(parts[1])
+	}
+	if town != "" {
+		return town
+	}
+	town, _ = place.Nearest(home.LatitudeDegrees, home.LongitudeDegrees)
+	return town
 }
 
 // nearbyMemoryLines is what memory says that could name the town and the
@@ -501,6 +528,7 @@ func (self *Agent) lookAround(ctx context.Context, run *Run, now time.Time) erro
 		return nil
 	}
 	var memory []string
+	homeTown := ""
 	isMuted := false
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := RequireBudget(tx, configuration, run.Agent, run.Owner, now); err != nil {
@@ -514,6 +542,15 @@ func (self *Agent) lookAround(ctx context.Context, run *Run, now time.Time) erro
 		if isMuted = mutedBy(mutes, &alertFacts{kinds: []string{models.AlertKindFollowUp, models.AlertKindNearby}}) != nil; isMuted {
 			return nil
 		}
+		// Where they say they live, in the place they labeled home, comes
+		// before what memory happens to hold.
+		homes, _, err := tx.ListPlaces(run.Owner.ID, db.PlaceFilter{PlaceLabel: models.PlaceLabelHome, LimitCount: 1})
+		if err != nil {
+			return err
+		}
+		if len(homes) > 0 {
+			homeTown = nearbyTownOf(homes[0])
+		}
 		memory, err = nearbyMemoryLines(tx, run.Agent.ID)
 		return err
 	}); err != nil || isMuted {
@@ -526,6 +563,9 @@ func (self *Agent) lookAround(ctx context.Context, run *Run, now time.Time) erro
 		if home, err = self.readNearbyHome(ctx, run, memory); err != nil {
 			return err
 		}
+	}
+	if homeTown != "" {
+		home.HomeArea = homeTown
 	}
 	if home.HomeArea == "" {
 		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {

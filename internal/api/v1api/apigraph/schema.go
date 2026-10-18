@@ -30,6 +30,7 @@ type Query interface {
 	AddressBookQuery
 	CalendarQuery
 	CircleQuery
+	LocationQuery
 	ReminderQuery
 	NoteQuery
 	CalendarInvitationQuery
@@ -109,6 +110,7 @@ type Mutation interface {
 	AddressBookMutation
 	CalendarMutation
 	CircleMutation
+	LocationMutation
 	ChatMutation
 	ReminderMutation
 	NoteMutation
@@ -177,6 +179,7 @@ var _ Mutation = &graph{}
 // the endpoint waited for a real one.
 type Subscription interface {
 	AgentSubscription
+	LocationSubscription
 }
 
 var _ Subscription = &graph{}

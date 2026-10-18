@@ -183,12 +183,13 @@ func init() {
 					if err != nil {
 						return nil, err
 					}
-					if _, err := operator.Execute(ctx, `mutation ($invitationId: String!, $isAccepted: Boolean!) { AnswerCircleInvitation(invitationId: $invitationId, isAccepted: $isAccepted) { id } }`,
-						map[string]any{"invitationId": strings.TrimSpace(arguments.InvitationID), "isAccepted": arguments.IsAccepted}); err != nil {
+					result, err := operator.Execute(ctx, `mutation ($invitationId: String!, $isAccepted: Boolean!) { AnswerCircleInvitation(invitationId: $invitationId, isAccepted: $isAccepted) { id name circleKind } }`,
+						map[string]any{"invitationId": strings.TrimSpace(arguments.InvitationID), "isAccepted": arguments.IsAccepted})
+					if err != nil {
 						return nil, err
 					}
 					if arguments.IsAccepted {
-						return tools.TextResult("joined the circle"), nil
+						return tools.TextResult("%s", joinedText(tools.MustRun(ctx).Operations().Permissions(), result["AnswerCircleInvitation"])), nil
 					}
 					return tools.TextResult("declined the invitation"), nil
 				},
@@ -278,6 +279,30 @@ func init() {
 			},
 		)
 	})
+}
+
+// joinedText is what a person is told on joining a circle. A family circle is
+// where people share their calendar and where they are, and a circle of
+// colleagues where they share their calendar, so the answer says that they
+// can, and how, for what the person is allowed to use. Nothing is shared by
+// saying so: the share is the person's word, asked for after this.
+func joinedText(permissions *models.EffectivePermissions, joined any) string {
+	circle, _ := joined.(map[string]any)
+	kind, _ := circle["circleKind"].(string)
+	circleId, _ := circle["id"].(string)
+	var sharing []string
+	if (kind == string(models.CircleKindFamily) || kind == string(models.CircleKindColleagues)) && permissions.Has(models.PermissionCalendarUse) {
+		sharing = append(sharing, "their calendar, with the calendar tool's share action")
+	}
+	if kind == string(models.CircleKindFamily) && permissions.Has(models.PermissionLocationUse) {
+		sharing = append(sharing, "where they are, with the location tool's share action (now only, or with where they have been)")
+	}
+	text := "joined the circle"
+	if len(sharing) == 0 {
+		return text
+	}
+	return text + ". They can share " + strings.Join(sharing, " and ") + " with it, using the circle's id " + circleId +
+		" as the one to share with. Offer once, and share only if they say yes."
 }
 
 // untrusted is an answer holding names other people chose.

@@ -27,8 +27,9 @@ type queryExecution struct {
 // that do, and so read in phases of their own rather than inside one
 // transaction held open while the model answers: recall for a question
 // embeds it, and a survey is minutes of runs. A photo search embeds its words,
-// and the listing and the count both do, so both are here.
-var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true}
+// and the listing and the count both do, so both are here. A search for
+// places waits on the place provider, which answers one request a second.
+var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true, "SearchPlaces": true, "SearchAddresses": true, "ListNearbyPlaces": true}
 
 // isTransactionFreeMutation is the mutations that do slow work, such as reading
 // and storing a file as large as a video, and so are not run inside the
@@ -199,5 +200,23 @@ func (self *graph) inShortTransaction(ctx context.Context, read func(ctx context
 			return err
 		}
 		return read(api.ContextWithPrincipal(api.ContextWithTransaction(ctx, transaction), principal))
+	})
+}
+
+// readInPhase runs one short read phase of a query that waits on the network:
+// a transaction of its own, with the caller's principal read afresh in it, so
+// that a permission taken away while the wait lasted is seen by the phase
+// after it.
+func (self *graph) readInPhase(ctx context.Context, read func(phaseContext context.Context) error) error {
+	return self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		phaseContext := ctx
+		if execution, isQuery := ctx.Value(queryExecutionKey{}).(*queryExecution); isQuery {
+			principal, err := self.queryPrincipal(transaction, execution)
+			if err != nil {
+				return err
+			}
+			phaseContext = api.ContextWithPrincipal(phaseContext, principal)
+		}
+		return read(api.ContextWithTransaction(phaseContext, transaction))
 	})
 }
