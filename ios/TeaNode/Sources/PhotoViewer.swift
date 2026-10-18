@@ -4,9 +4,12 @@ import SwiftUI
 import TeaNodeKit
 import UniformTypeIdentifiers
 
-/// PhotoViewer shows the photos of a list one at a time, full screen, and
-/// pages between them with a swipe: a picture can be zoomed, a video plays.
-/// The bar under it has what can be done to the photo on screen.
+/// PhotoViewer shows the photos of a list one at a time, full screen on black,
+/// and pages between them with a swipe: a picture can be zoomed, a video plays.
+/// The date and time of the photo are at the top, a strip of the neighboring
+/// photos and a bar with what can be done to the photo on screen are at the
+/// bottom, a tap on the picture hides all of them, and a drag down on a picture
+/// that is not zoomed closes the viewer.
 struct PhotoViewer: View {
     let model: PhotosModel
     /// The list the photos paged through come from: a list of the library, or
@@ -22,8 +25,21 @@ struct PhotoViewer: View {
     @State private var isShowingInfo = false
     @State private var isConfirmingTrash = false
     @State private var isConfirmingDelete = false
+    /// Whether a tap on the picture has hidden the bars and the strip.
+    @State private var isChromeHidden = false
+    /// How far the picture has been pulled down on its way to closing the viewer.
+    @State private var closeDragOffsetPoints: CGFloat = 0
+    /// Whether the drag in progress is the one that closes the viewer: it began
+    /// going down, not sideways, and the picture was not zoomed.
+    @State private var isDraggingToClose = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
     @Environment(AppModel.self) private var app
+
+    /// A drag down this far, or one this fast, closes the viewer; less lets the
+    /// picture spring back.
+    private static let closeDistancePoints: CGFloat = 140
+    private static let closePredictedDistancePoints: CGFloat = 400
 
     init(model: PhotosModel, listKey: PhotoListKey, openedPhotoId: String, canShowNearby: Bool = true) {
         self.model = model
@@ -31,18 +47,26 @@ struct PhotoViewer: View {
         self.canShowNearby = canShowNearby
         _currentPhotoId = State(initialValue: openedPhotoId)
         #if DEBUG
-            // `-TeaNodeScreen photos-viewer-described`, `photos-viewer-failed` and `photos-shared-info` open Info over the viewer.
+            // `-TeaNodeScreen photos-viewer-described`, `photos-viewer-info`, `photos-viewer-failed` and `photos-shared-info` open Info over the viewer.
             if DemoServer.isRequested,
-                DemoServer.screen == "photos-viewer-described" || DemoServer.screen == "photos-viewer-failed" || DemoServer.screen == "photos-change-date"
-                    || DemoServer.screen == "photos-shared-info"
+                DemoServer.screen == "photos-viewer-described" || DemoServer.screen == "photos-viewer-info" || DemoServer.screen == "photos-viewer-failed"
+                    || DemoServer.screen == "photos-change-date" || DemoServer.screen == "photos-shared-info"
             {
                 _isShowingInfo = State(initialValue: true)
+            }
+            // `photos-viewer-hidden` is the viewer after a tap on the picture: the bars and the strip are gone.
+            if DemoServer.isRequested, DemoServer.screen == "photos-viewer-hidden" {
+                _isChromeHidden = State(initialValue: true)
             }
         #endif
     }
 
     private var photos: [Photo] { model.photos(in: listKey) }
     private var current: Photo? { photos.first { $0.id == currentPhotoId } }
+
+    /// Whether the bars show: not after a tap that hid them, and not while the
+    /// picture is being pulled down.
+    private var areBarsVisible: Bool { !isChromeHidden && closeDragOffsetPoints == 0 }
 
     /// "Photos taken near here", when this viewer can show the library it
     /// filters; spelled out with its type, which the compiler could not work out
@@ -54,17 +78,22 @@ struct PhotoViewer: View {
 
     var body: some View {
         NavigationStack {
-            pager
-                .background(Color(.systemBackground))
-                .navigationTitle(titleText)
-                .navigationSubtitle(subtitleText)
+            viewerContent
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
+                .toolbarVisibility(areBarsVisible ? .visible : .hidden, for: .navigationBar, .bottomBar)
+                // The picture is on black, as in the Photos app, so the bars are dark over it
+                // whatever the appearance of the phone is.
+                .toolbarColorScheme(.dark, for: .navigationBar, .bottomBar)
+                .statusBarHidden(isChromeHidden)
                 .sheet(isPresented: $isShowingInfo) {
                     if let current { PhotoInfoView(photo: current, model: model, listKey: listKey, onAskAgent: askAgent, onShowNearby: showNearbyAction) }
                 }
                 .albumTitleAlert(model: model, scope: .viewer)
         }
+        // Clear, so that the black behind the picture can fade away while it is pulled
+        // down and show the library under the viewer.
+        .presentationBackground(.clear)
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
         .onChange(of: currentPhotoId) { _, photoId in
             isZoomed = false
@@ -74,11 +103,35 @@ struct PhotoViewer: View {
         .onDisappear { model.dropPhotosNoLongerFavorite() }
     }
 
+    /// The picture on black, with the strip of neighbors under it. Black is not
+    /// one of the semantic colors: a photograph is looked at on black in both
+    /// appearances, as the Photos app does.
+    private var viewerContent: some View {
+        VStack(spacing: 0) {
+            pager
+                .offset(y: closeDragOffsetPoints)
+                .scaleEffect(closeDragScale)
+            if !isChromeHidden {
+                PhotoThumbnailStrip(photos: photos, currentPhotoId: $currentPhotoId, model: model)
+                    .opacity(closeDragOffsetPoints == 0 ? 1 : 0)
+                    .transition(.opacity)
+            }
+        }
+        .background {
+            Color.black
+                .opacity(closeDragBackgroundOpacity)
+                .ignoresSafeArea()
+        }
+        .simultaneousGesture(closeDrag)
+        // VoiceOver closes the viewer with the escape gesture, as it does a sheet.
+        .accessibilityAction(.escape) { dismiss() }
+    }
+
     private var pager: some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(photos) { photo in
-                    PhotoPage(photo: photo, model: model, isCurrent: photo.id == currentPhotoId, isZoomed: $isZoomed)
+                    PhotoPage(photo: photo, model: model, isCurrent: photo.id == currentPhotoId, isZoomed: $isZoomed, onSingleTap: { toggleChrome() })
                         .containerRelativeFrame([.horizontal, .vertical])
                         .id(photo.id)
                 }
@@ -90,29 +143,89 @@ struct PhotoViewer: View {
         .scrollIndicators(.hidden)
         // A zoomed picture is panned with the same drag that pages.
         .scrollDisabled(isZoomed)
-        .ignoresSafeArea(edges: .bottom)
     }
 
-    private var titleText: String {
-        guard let current, let moment = PhotoTimeline.moment(of: current) else { return "" }
-        return moment.date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: moment.timeZone))
+    /// The animation of the bars going and coming; none when Reduce Motion is on.
+    private var barsAnimation: Animation? {
+        isReduceMotionEnabled ? nil : Animation.default
     }
 
-    private var subtitleText: String {
-        guard let current, let moment = PhotoTimeline.moment(of: current) else { return "" }
-        return moment.date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: moment.timeZone))
+    private var springBackAnimation: Animation? {
+        isReduceMotionEnabled ? nil : Animation.spring(duration: 0.3)
+    }
+
+    private func toggleChrome() {
+        withAnimation(barsAnimation) { isChromeHidden.toggle() }
+    }
+
+    // MARK: Drag down to close
+
+    /// The picture follows the finger down, shrinks a little and lets the black
+    /// fade. Let go past a distance, or fast, and the viewer closes; otherwise
+    /// the picture springs back. It does nothing while the picture is zoomed in,
+    /// where the same drag moves around the picture, and a drag that begins
+    /// mostly sideways is left to the pager.
+    private var closeDrag: some Gesture {
+        DragGesture(minimumDistance: 16)
+            .onChanged { value in
+                guard !isZoomed else { return }
+                if !isDraggingToClose {
+                    guard value.translation.height > abs(value.translation.width) else { return }
+                    isDraggingToClose = true
+                }
+                closeDragOffsetPoints = max(0, value.translation.height)
+            }
+            .onEnded { value in
+                guard isDraggingToClose else { return }
+                isDraggingToClose = false
+                if value.translation.height > Self.closeDistancePoints || value.predictedEndTranslation.height > Self.closePredictedDistancePoints {
+                    dismiss()
+                } else {
+                    withAnimation(springBackAnimation) { closeDragOffsetPoints = 0 }
+                }
+            }
+    }
+
+    private var closeDragScale: CGFloat { max(0.7, 1 - closeDragOffsetPoints / 1000) }
+    private var closeDragBackgroundOpacity: Double { max(0, 1 - Double(closeDragOffsetPoints) / 400) }
+
+    // MARK: The bars
+
+    /// The day over the time, in a capsule at the top. It is the zone the photo
+    /// was taken in that the clock is read in.
+    private func dateCapsule(dayText: String, timeText: String?) -> some View {
+        VStack(spacing: 0) {
+            Text(dayText)
+                .font(.subheadline.weight(.semibold))
+            if let timeText {
+                Text(timeText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
+        .glassEffect(.regular, in: .capsule)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button("Close", systemImage: "xmark") { dismiss() }
+            Button("Close", systemImage: "chevron.backward") { dismiss() }
+        }
+        if let current, let dayText = PhotoTimeline.viewerDayText(of: current) {
+            ToolbarItem(placement: .principal) {
+                dateCapsule(dayText: dayText, timeText: PhotoTimeline.viewerTimeText(of: current))
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
         if let current, !current.isTrashed, moreMenuHasItems(for: current) {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     if current.isOwnedByCaller {
-                        AddToAlbumMenu(model: model, photos: [current], scope: .viewer, hiddenAlbumId: listKey.albumId)
+                        saveToPhoneMenuItems(for: current)
                     }
                     if let albumId = listKey.albumId, let album = model.album(in: listKey) {
                         if album.canCallerManage {
@@ -165,9 +278,19 @@ struct PhotoViewer: View {
                         }
                 }
             } else if !current.isOwnedByCaller {
-                // Somebody else's photo, seen through a shared album: keep it,
-                // save it to the phone, share it. Favorites and the Trash are
-                // its owner's.
+                // Somebody else's photo, seen through a shared album: share it at the left,
+                // save it to the phone and see its Info in the capsule, keep it at the right.
+                // Favorites and the Trash are its owner's.
+                ToolbarItem(placement: .bottomBar) {
+                    PhotoShareLink(photo: current, connection: model.connection)
+                        .labelStyle(.iconOnly)
+                }
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button("Info", systemImage: "info.circle") { isShowingInfo = true }
+                    saveToPhoneControl(for: current)
+                }
+                ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
                     if model.savingPhotoIds.contains(current.id) {
                         ProgressView()
@@ -178,21 +301,16 @@ struct PhotoViewer: View {
                         }
                     }
                 }
-                ToolbarSpacer(.flexible, placement: .bottomBar)
+            } else {
+                // The person's own photo, as the Photos app lays it out: Share at the left, one
+                // capsule with Favorite, Info and Add to album, the Trash at the right. Saving to
+                // the phone, the album cover and taking it out of an album are under More.
                 ToolbarItem(placement: .bottomBar) {
                     PhotoShareLink(photo: current, connection: model.connection)
                         .labelStyle(.iconOnly)
                 }
                 ToolbarSpacer(.flexible, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    saveToPhoneControl(for: current)
-                }
-                ToolbarSpacer(.flexible, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    Button("Info", systemImage: "info.circle") { isShowingInfo = true }
-                }
-            } else {
-                ToolbarItem(placement: .bottomBar) {
+                ToolbarItemGroup(placement: .bottomBar) {
                     Button(
                         current.isFavorite ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"),
                         systemImage: current.isFavorite ? "heart.fill" : "heart"
@@ -200,19 +318,8 @@ struct PhotoViewer: View {
                         Task { await model.toggleFavorite(current, in: listKey) }
                     }
                     .sensoryFeedback(.selection, trigger: current.isFavorite)
-                }
-                ToolbarSpacer(.flexible, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    PhotoShareLink(photo: current, connection: model.connection)
-                        .labelStyle(.iconOnly)
-                }
-                ToolbarSpacer(.flexible, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
-                    saveToPhoneControl(for: current)
-                }
-                ToolbarSpacer(.flexible, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
                     Button("Info", systemImage: "info.circle") { isShowingInfo = true }
+                    AddToAlbumMenu(model: model, photos: [current], scope: .viewer, hiddenAlbumId: listKey.albumId)
                 }
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
@@ -230,12 +337,47 @@ struct PhotoViewer: View {
         }
     }
 
-    /// Whether the viewer's More menu has anything for the photo: albums to
-    /// add it to, or the album it is shown in to take it out of.
+    /// Whether the More menu has anything for the photo: the person's own photo
+    /// can be saved to the phone, and an album has its cover and taking the
+    /// photo out of it.
     private func moreMenuHasItems(for photo: Photo) -> Bool {
         if photo.isOwnedByCaller { return true }
         guard let album = model.album(in: listKey) else { return false }
         return album.canCallerManage || album.canCallerRemove(photo)
+    }
+
+    /// What of the photo can be saved to the phone: the original, the edited
+    /// version, a Live Photo's video together with its picture.
+    @ViewBuilder
+    private func saveChoices(for photo: Photo) -> some View {
+        Button("Save original", systemImage: "photo") { Task { await model.saveToPhotos(photo) } }
+        if photo.hasEditedFile {
+            Button("Save edited version", systemImage: "slider.horizontal.3") { Task { await model.saveToPhotos(photo, saving: .edited) } }
+        }
+        if photo.hasLiveVideoFile {
+            Button("Save as Live Photo", systemImage: "livephoto") { Task { await model.saveToPhotos(photo, saving: .livePhoto) } }
+        }
+    }
+
+    /// Adds the photo to the phone's own Photos app, for the More menu: one
+    /// item, or a submenu when the photo has an edited version or a Live Photo's
+    /// video to choose from.
+    @ViewBuilder
+    private func saveToPhoneMenuItems(for photo: Photo) -> some View {
+        if model.savingPhotoIds.contains(photo.id) {
+            Button("Saving to the Photos app", systemImage: "square.and.arrow.down") {}
+                .disabled(true)
+        } else if photo.hasEditedFile || photo.hasLiveVideoFile {
+            Menu {
+                saveChoices(for: photo)
+            } label: {
+                Label("Save to the Photos app", systemImage: "square.and.arrow.down")
+            }
+        } else {
+            Button("Save to the Photos app", systemImage: "square.and.arrow.down") {
+                Task { await model.saveToPhotos(photo) }
+            }
+        }
     }
 
     /// Adds the photo to the phone's own Photos app: one button, or a menu when
@@ -247,13 +389,7 @@ struct PhotoViewer: View {
                 .accessibilityLabel("Saving to the Photos app")
         } else if photo.hasEditedFile || photo.hasLiveVideoFile {
             Menu {
-                Button("Save original", systemImage: "photo") { Task { await model.saveToPhotos(photo) } }
-                if photo.hasEditedFile {
-                    Button("Save edited version", systemImage: "slider.horizontal.3") { Task { await model.saveToPhotos(photo, saving: .edited) } }
-                }
-                if photo.hasLiveVideoFile {
-                    Button("Save as Live Photo", systemImage: "livephoto") { Task { await model.saveToPhotos(photo, saving: .livePhoto) } }
-                }
+                saveChoices(for: photo)
             } label: {
                 Label("Save to the Photos app", systemImage: "square.and.arrow.down")
             }
@@ -301,12 +437,130 @@ struct PhotoViewer: View {
     }
 }
 
+/// PhotoThumbnailStrip is the row of small squares under the picture: the
+/// photos around the one on screen, which is a little larger. A tap shows that
+/// photo, and the strip keeps the one on screen in the middle as the pager
+/// moves.
+struct PhotoThumbnailStrip: View {
+    let photos: [Photo]
+    @Binding var currentPhotoId: String?
+    let model: PhotosModel
+    @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
+
+    private static let thumbnailSidePoints: CGFloat = 44
+    private static let currentThumbnailSidePoints: CGFloat = 56
+
+    private var scrollAnimation: Animation? {
+        isReduceMotionEnabled ? nil : Animation.default
+    }
+
+    private var growAnimation: Animation? {
+        isReduceMotionEnabled ? nil : Animation.snappy
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 2) {
+                    ForEach(photos) { photo in
+                        thumbnailButton(for: photo)
+                            .id(photo.id)
+                    }
+                }
+                .padding(.horizontal)
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: Self.currentThumbnailSidePoints + 8)
+            .onAppear {
+                guard let currentPhotoId else { return }
+                proxy.scrollTo(currentPhotoId, anchor: .center)
+            }
+            .onChange(of: currentPhotoId) { _, photoId in
+                guard let photoId else { return }
+                withAnimation(scrollAnimation) { proxy.scrollTo(photoId, anchor: .center) }
+            }
+        }
+    }
+
+    private func thumbnailButton(for photo: Photo) -> some View {
+        let isCurrent = photo.id == currentPhotoId
+        let side = isCurrent ? Self.currentThumbnailSidePoints : Self.thumbnailSidePoints
+        return Button {
+            currentPhotoId = photo.id
+        } label: {
+            PhotoThumbnailImage(photo: photo, model: model)
+                .frame(width: side, height: side)
+                .clipShape(.rect(cornerRadius: 3))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .animation(growAnimation, value: isCurrent)
+        .accessibilityLabel(accessibilityText(of: photo))
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+
+    private func accessibilityText(of photo: Photo) -> String {
+        let kind = PhotoWords.kind(of: photo)
+        guard let taken = PhotoTimeline.takenText(of: photo) else { return kind }
+        return "\(kind), \(taken)"
+    }
+}
+
+/// PhotoThumbnailImage is the preview of a photo, filling the space it is
+/// given: the small one for a thumbnail in the viewer's strip, and with
+/// `isLarge` the large one for a picture of a month or a year, which shows the
+/// small one until the large one has been read.
+struct PhotoThumbnailImage: View {
+    let photo: Photo
+    let model: PhotosModel
+    var isLarge = false
+    @State private var picture: UIImage?
+
+    init(photo: Photo, model: PhotosModel, isLarge: Bool = false) {
+        self.photo = photo
+        self.model = model
+        self.isLarge = isLarge
+        _picture = State(initialValue: photo.gridPreviewPath.flatMap { PhotoImages.cachedPicture(path: $0, accountKey: model.connection.accountKey) })
+    }
+
+    /// The addresses the picture is read from, the small one and then the large
+    /// one: what the loading starts again for when a photo is given other previews.
+    private var previewPaths: [String?] { [photo.gridPreviewPath, isLarge ? photo.viewerPreviewPath : nil] }
+
+    var body: some View {
+        Color(.tertiarySystemFill)
+            .overlay {
+                if let picture {
+                    Image(uiImage: picture)
+                        .resizable()
+                        .scaledToFill()
+                }
+            }
+            .clipped()
+            .task(id: previewPaths) {
+                let paths = previewPaths
+                guard let smallPath = paths[0] else {
+                    picture = nil
+                    return
+                }
+                if picture == nil, let small = await PhotoImages.picture(path: smallPath, connection: model.connection) {
+                    picture = small
+                }
+                if let largePath = paths[1], let large = await PhotoImages.picture(path: largePath, connection: model.connection) {
+                    picture = large
+                }
+            }
+    }
+}
+
 /// PhotoPage is one photo in the viewer.
 struct PhotoPage: View {
     let photo: Photo
     let model: PhotosModel
     let isCurrent: Bool
     @Binding var isZoomed: Bool
+    /// What a tap on the picture does, such as hiding the bars around it.
+    var onSingleTap: (() -> Void)?
     @State private var picture: UIImage?
     @State private var player: AVPlayer?
     @State private var videoProblemText: String?
@@ -322,7 +576,7 @@ struct PhotoPage: View {
                 // A new picture, the large one in place of the small, is a new
                 // zooming view: the old one keeps showing what it was made with.
                 // A page that is not the one on screen goes back to its whole size.
-                ZoomablePicture(picture: picture, isZoomed: $isZoomed, isCurrent: isCurrent)
+                ZoomablePicture(picture: picture, isZoomed: $isZoomed, isCurrent: isCurrent, onSingleTap: onSingleTap)
                     .id(ObjectIdentifier(picture))
                     .accessibilityLabel(accessibilityText)
                     .accessibilityAddTraits(.isImage)

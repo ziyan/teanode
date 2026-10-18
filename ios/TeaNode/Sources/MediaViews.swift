@@ -152,6 +152,9 @@ struct ZoomablePicture: UIViewRepresentable {
     /// (the person paged to another) goes back to its whole size, so that it is
     /// not still zoomed when it is paged back to.
     var isCurrent = true
+    /// What a single tap does, such as hiding the bars around the picture. A
+    /// double tap zooms instead, and does not count as one.
+    var onSingleTap: (() -> Void)?
 
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
@@ -179,6 +182,10 @@ struct ZoomablePicture: UIViewRepresentable {
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.zoomOnDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
         scrollView.addGestureRecognizer(doubleTap)
+        let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapOnce(_:)))
+        singleTap.numberOfTapsRequired = 1
+        singleTap.require(toFail: doubleTap)
+        scrollView.addGestureRecognizer(singleTap)
         return scrollView
     }
 
@@ -188,22 +195,29 @@ struct ZoomablePicture: UIViewRepresentable {
         // nothing, and would keep it: a zoomed photo then pages instead of
         // panning. Every update hands it the binding as it is now.
         context.coordinator.isZoomed = $isZoomed
+        context.coordinator.onSingleTap = onSingleTap
         if !isCurrent, scrollView.zoomScale > 1 {
             scrollView.setZoomScale(1, animated: false)
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isZoomed: $isZoomed)
+        Coordinator(isZoomed: $isZoomed, onSingleTap: onSingleTap)
     }
 
     @MainActor
     final class Coordinator: NSObject, UIScrollViewDelegate {
         var isZoomed: Binding<Bool>
+        var onSingleTap: (() -> Void)?
         weak var imageView: UIImageView?
 
-        init(isZoomed: Binding<Bool>) {
+        init(isZoomed: Binding<Bool>, onSingleTap: (() -> Void)?) {
             self.isZoomed = isZoomed
+            self.onSingleTap = onSingleTap
+        }
+
+        @objc func tapOnce(_ recognizer: UITapGestureRecognizer) {
+            onSingleTap?()
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
