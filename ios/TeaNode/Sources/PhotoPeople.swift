@@ -38,17 +38,53 @@ extension PhotosModel {
     }
 
     /// Names a group by a contact the person chose; the group as it now is,
-    /// or nil when that failed.
+    /// or nil when that failed. A contact names one person, so a contact that
+    /// names another group already merges the two: the group that is left is
+    /// the one answered, and the one that was named is gone from the people.
+    /// A contact with no picture is given a face of the person, and the toast
+    /// offers to change it or take it off.
     func name(_ group: PhotoFaceGroup, contactId: String) async -> PhotoFaceGroup? {
         do {
-            let named = try await connection.namePhotoFaceGroup(group.id, contactId: contactId)
+            let answer = try await connection.namePhotoFaceGroup(group.id, contactId: contactId)
+            let named = answer.photoFaceGroup
+            if answer.isMerged {
+                faceGroups?.removeAll { $0.id == answer.mergedPhotoFaceGroupId }
+                forgetListing(.faceGroup(answer.mergedPhotoFaceGroupId))
+            }
             replaceFaceGroup(named)
-            doneText = String(localized: "Named “\(named.trimmedContactName)”")
+            var sentences = [
+                answer.isMerged
+                    ? String(localized: "Merged with “\(named.trimmedContactName)”")
+                    : String(localized: "Named “\(named.trimmedContactName)”")
+            ]
+            if answer.isContactPictureSet {
+                sentences.append(String(localized: "Used this face as their picture"))
+            }
+            showDone(sentences.joined(separator: " "), buttons: answer.isContactPictureSet ? contactPictureButtons(contactId: contactId) : [])
             return named
         } catch {
             problemText = describe(error)
             return nil
         }
+    }
+
+    /// Change opens the contact whose picture was just made; Remove takes the
+    /// picture off again.
+    private func contactPictureButtons(contactId: String) -> [ToastButton] {
+        [
+            ToastButton(title: String(localized: "Change")) {
+                AppModel.shared.openedContactId = contactId
+            },
+            ToastButton(title: String(localized: "Remove")) { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.connection.removeContactPicture(contactId)
+                    self.doneText = String(localized: "Removed their picture")
+                } catch {
+                    self.problemText = self.describe(error)
+                }
+            },
+        ]
     }
 
     /// Makes a contact with a name the address book does not have, and names
@@ -192,6 +228,41 @@ enum PhotoPersonWords {
     static func name(of group: PhotoFaceGroup) -> String {
         PhotoNaming.shownName(of: group) ?? String(localized: "Unnamed person")
     }
+
+    /// What goes under a person's name on their own screen: how many photos
+    /// they are in, after "You" when the person is the one looking.
+    static func subtitle(of group: PhotoFaceGroup) -> String {
+        let photoCountText = PhotoAlbumWords.photoCount(group.photoCount)
+        return group.isOwnContact ? String(localized: "You") + " · " + photoCountText : photoCountText
+    }
+}
+
+/// PhotoPersonNameText is a person's name and, after it in secondary text,
+/// "You" when the person is the one looking. The caller sets the font and the
+/// color of the name; the name gives way before "You" when the line is short.
+struct PhotoPersonNameText: View {
+    let name: String
+    let isOwnContact: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// At the accessibility sizes a name wraps instead of being cut short,
+    /// since a name cut after two letters no longer says who it is.
+    private var nameLineLimit: Int {
+        dynamicTypeSize.isAccessibilitySize ? 3 : 1
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(name)
+                .lineLimit(nameLineLimit)
+            if isOwnContact {
+                Text("You")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+        }
+    }
 }
 
 // MARK: The people
@@ -200,6 +271,16 @@ enum PhotoPersonWords {
 /// their name under it, and what to do when there is nobody to show.
 struct PhotoPeopleView: View {
     let model: PhotosModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// At the accessibility sizes the columns are two, wide enough for a name
+    /// and a count to be read whole, and each face grows with its column.
+    private var gridColumns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+        }
+        return [GridItem(.adaptive(minimum: 104), spacing: 16)]
+    }
 
     var body: some View {
         Group {
@@ -211,7 +292,7 @@ struct PhotoPeopleView: View {
                     }
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 16)], spacing: 20) {
+                        LazyVGrid(columns: gridColumns, spacing: 20) {
                             ForEach(groups) { group in
                                 NavigationLink {
                                     PhotoPersonScreen(model: model, photoFaceGroupId: group.id)
@@ -275,28 +356,35 @@ struct PhotoPeopleView: View {
 struct PhotoPersonCell: View {
     let group: PhotoFaceGroup
     let connection: Connection
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// A count such as "6 photos" wraps rather than ending in an ellipsis at
+    /// the accessibility sizes.
+    private var countLineLimit: Int {
+        dynamicTypeSize.isAccessibilitySize ? 2 : 1
+    }
 
     var body: some View {
         VStack(spacing: 4) {
             FacePictureView(facePictureUrl: group.facePictureUrl, name: PhotoPersonWords.name(of: group), connection: connection)
                 .padding(.bottom, 4)
-            Text(PhotoPersonWords.name(of: group))
+            PhotoPersonNameText(name: PhotoPersonWords.name(of: group), isOwnContact: group.isOwnContact)
                 .font(.subheadline.weight(group.isNamed ? .semibold : .regular))
                 .foregroundStyle(group.isNamed ? .primary : .secondary)
-                .lineLimit(1)
             Text(PhotoAlbumWords.photoCount(group.photoCount))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(countLineLimit)
             // A hidden person is dimmed, and says so in words too: dimming alone
             // is not seen by everybody.
             if group.isHidden {
                 Label("Hidden", systemImage: "eye.slash")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(countLineLimit)
             }
         }
+        .multilineTextAlignment(.center)
         .opacity(group.isHidden ? 0.5 : 1)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
@@ -310,7 +398,9 @@ struct PhotoPersonCell: View {
 /// merges them with another, or hides them from People.
 struct PhotoPersonScreen: View {
     let model: PhotosModel
-    let photoFaceGroupId: String
+    /// The group shown. It is the one that was opened until naming it puts it
+    /// into a group the contact named already, which is shown from then on.
+    @State private var photoFaceGroupId: String
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var group: PhotoFaceGroup?
@@ -322,6 +412,11 @@ struct PhotoPersonScreen: View {
     @State private var isMerging = false
     @State private var isExplainingContacts = false
 
+    init(model: PhotosModel, photoFaceGroupId: String) {
+        self.model = model
+        _photoFaceGroupId = State(initialValue: photoFaceGroupId)
+    }
+
     private var key: PhotoListKey { .faceGroup(photoFaceGroupId) }
     private var photos: [Photo] { model.photos(in: key) }
     private var selectedPhotos: [Photo] { photos.filter { selectedPhotoIds.contains($0.id) } }
@@ -332,11 +427,11 @@ struct PhotoPersonScreen: View {
     var body: some View {
         content
             .navigationTitle(isSelecting ? selectionTitle : (current.map { PhotoPersonWords.name(of: $0) } ?? ""))
-            .navigationSubtitle(isSelecting ? "" : (current.map { PhotoAlbumWords.photoCount($0.photoCount) } ?? ""))
+            .navigationSubtitle(isSelecting ? "" : (current.map { PhotoPersonWords.subtitle(of: $0) } ?? ""))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .task { await model.load(key) }
-            .task { await readGroup() }
+            .task(id: photoFaceGroupId) { await model.load(key) }
+            .task(id: photoFaceGroupId) { await readGroup() }
             .task(id: model.hasWaitingPhotos(in: key)) {
                 if model.hasWaitingPhotos(in: key) { await model.followWaitingPhotos(in: key) }
             }
@@ -350,7 +445,11 @@ struct PhotoPersonScreen: View {
             .albumTitleAlert(model: model, scope: .album, isActive: opened == nil)
             .sheet(isPresented: $isNaming) {
                 if let current {
-                    NamePersonSheet(model: model, group: current) { group = $0 }
+                    NamePersonSheet(model: model, group: current) { named in
+                        // Merged into the group the contact named already, that group is this person now.
+                        group = named
+                        photoFaceGroupId = named.id
+                    }
                 }
             }
             .sheet(isPresented: $isMerging) {
@@ -509,6 +608,11 @@ struct NamePersonSheet: View {
     @State private var failureText: String?
     @Environment(\.dismiss) private var dismiss
 
+    /// The contacts that name some other person: choosing one merges the two.
+    private var linkedContactIds: Set<String> {
+        Set((model.faceGroups ?? []).filter { $0.id != group.id && !$0.contactId.isEmpty }.map(\.contactId))
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -536,6 +640,11 @@ struct NamePersonSheet: View {
                                         .foregroundStyle(.primary)
                                     if let email = contact.emails?.first, email != contact.shownName {
                                         Text(email)
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if linkedContactIds.contains(contact.id) {
+                                        Text("Already names another person; choosing it merges the two")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
                                     }

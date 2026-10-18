@@ -34,8 +34,9 @@ export type SettingsSurface = {
   category: SettingsCategory
   // Shown in the rail only when the person has what it is about: 'finance'
   // is there when their agent is on and a provider is offered or something
-  // is linked already, 'mailbox' when they have a mailbox.
-  shownWhen?: 'finance' | 'mailbox'
+  // is linked already, 'mailbox' when they have a mailbox, 'coding' when a
+  // computer of theirs reports herdr.
+  shownWhen?: 'finance' | 'mailbox' | 'coding'
   // 'mailbox' puts the row in the mailbox's rail rather than the account's:
   // a place somebody reads every day, beside the calendar, rather than a
   // setting. The page keeps its path and its name in the breadcrumb.
@@ -102,6 +103,18 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     label: 'recordings.title',
     description: 'recordings.hint',
     category: 'account',
+    rail: 'mailbox',
+  },
+  // The Claude Code and Codex sessions in herdr on the person's computers:
+  // read and typed into here, so a row of the rail, there only when some
+  // computer reports herdr.
+  {
+    segment: 'coding',
+    path: '/coding',
+    label: 'nav.coding',
+    description: 'herdr.hint',
+    category: 'account',
+    shownWhen: 'coding',
     rail: 'mailbox',
   },
   // What the institutions a person linked report: spending, budgets, net

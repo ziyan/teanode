@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { FormDialog } from '../../components/dialog'
 import { EyeIcon, EyeOffIcon, MergeIcon, PencilIcon, UnlinkIcon } from '../../components/icons'
 import { useDebounced } from '../../components/preview'
@@ -13,6 +14,8 @@ import {
   listPhotoFaceGroups,
   namePhotoFaceGroup,
   personName,
+  removeContactPicture,
+  type NamedPhotoFaceGroup,
   type PhotoFaceGroup,
 } from '../../photos/people'
 import { PhotoIconAction } from './toolbar'
@@ -31,6 +34,13 @@ export function personAddress(photoFaceGroupId: string) {
 export function useDisplayedPersonName() {
   const { t } = useTranslation()
   return (group: Pick<PhotoFaceGroup, 'contactName'>) => personName(group) || t('photos.unnamedPerson')
+}
+
+// "You", in muted text, after the name of the person's own group, so that the
+// one person in the list who is the reader is told apart from the others.
+export function YouMark() {
+  const { t } = useTranslation()
+  return <span className="photo-you muted">{t('photos.you')}</span>
 }
 
 // A face, round. The picture is cut from the photo by the server; until it
@@ -64,9 +74,9 @@ const MOST_CONTACT_NAME_CHARACTERS = 255
 
 // NamePersonDialog names a person by choosing a contact from the address
 // book, as the server asks, or by typing a name the address book does not
-// have yet: that makes a contact with it first. A contact that already names
-// another person is marked, since two people with one name are usually one
-// person who should be merged.
+// have yet: that makes a contact with it first. A contact names one person, so
+// a contact that already names another person is marked, and choosing it
+// merges the two.
 export function NamePersonDialog({
   currentName,
   linkedContactIds = new Set<string>(),
@@ -175,8 +185,13 @@ export function NamePersonDialog({
 
 // NamePersonFlow is the naming dialog with what happens when it is answered:
 // the contact is made when a new name was typed, the group is named, and a
-// toast says so. The people page and a person's page both name people, and
-// both are done when this calls back.
+// toast says so. A contact names one person, so naming with a contact that
+// names another group merges the two, and the toast says "Merged with": when
+// the group that was named is the person whose page is open, the page goes to
+// the group that is left. A contact with no picture is given a face of the
+// person, and a second toast says so, with the way to change or remove it.
+// The people page and a person's page both name people, and both are done
+// when this calls back.
 export function NamePersonFlow({
   group,
   onClose,
@@ -184,10 +199,12 @@ export function NamePersonFlow({
 }: {
   group: PhotoFaceGroup
   onClose: () => void
-  onNamed: (named: PhotoFaceGroup) => void
+  onNamed: (named: NamedPhotoFaceGroup) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
+  const { photoFaceGroupId: openPhotoFaceGroupId, photoId: openPhotoId } = useParams()
   const displayedName = useDisplayedPersonName()
   const [isBusy, setIsBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -203,9 +220,35 @@ export function NamePersonFlow({
     setError(null)
     try {
       const contactId = naming.kind === 'new' ? (await createContact(naming.contactName)).id : naming.contactId
-      const named = await namePhotoFaceGroup(group.id, contactId)
-      toast.done(t('photos.personNamed', { name: displayedName(named) }))
-      onNamed(named)
+      const answer = await namePhotoFaceGroup(group.id, contactId)
+      const named = answer.photoFaceGroup
+      toast.done(
+        answer.mergedPhotoFaceGroupId
+          ? t('photos.mergedWith', { name: displayedName(named) })
+          : t('photos.personNamed', { name: displayedName(named) }),
+      )
+      if (answer.isContactPictureSet) {
+        toast.done(t('photos.contactPictureSet'), [
+          {
+            label: t('photos.contactPictureChange'),
+            run: () => navigate(`/contacts?contact=${encodeURIComponent(contactId)}`),
+          },
+          {
+            label: t('photos.contactPictureRemove'),
+            run: async () => {
+              await removeContactPicture(contactId)
+              toast.done(t('photos.contactPictureRemoved'))
+            },
+          },
+        ])
+      }
+      if (answer.mergedPhotoFaceGroupId !== '' && answer.mergedPhotoFaceGroupId === openPhotoFaceGroupId) {
+        // The page that is open belongs to a group that is gone.
+        navigate(`${personAddress(named.id)}${openPhotoId ? `/${encodeURIComponent(openPhotoId)}` : ''}`, {
+          replace: true,
+        })
+      }
+      onNamed(answer)
       onClose()
     } catch (caught) {
       setError(

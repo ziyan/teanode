@@ -24,11 +24,11 @@ func init() {
 			{
 				Name: "contact_book", Family: tools.FamilyMailbox, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionContactsUse},
-				Description: "The person's own address book: the contacts they keep, which their phone and computer synchronize over CardDAV. Use list to see them or to search by name, organization, address or number; get for one contact with everything on it; save to keep a new one or change one that is kept; remove to forget one.",
+				Description: "The person's own address book: the contacts they keep, which their phone and computer synchronize over CardDAV. Use list to see them or to search by name, organization, address or number; get for one contact with everything on it; save to keep a new one or change one that is kept; remove to forget one; remove-picture to take only the picture off one.",
 				Parameters: tools.Object(map[string]any{
-					"action":       tools.EnumProperty("what to do", "list", "get", "save", "remove"),
+					"action":       tools.EnumProperty("what to do", "list", "get", "save", "remove", "remove-picture"),
 					"query":        tools.StringProperty("for list: narrow to contacts whose name, organization, address or number matches"),
-					"id":           tools.StringProperty("for get, remove, and for changing one that is kept: the contact's id, as list gives it"),
+					"id":           tools.StringProperty("for get, remove, remove-picture, and for changing one that is kept: the contact's id, as list gives it"),
 					"name":         tools.StringProperty("for save: what to call them"),
 					"organization": tools.StringProperty("for save: where they work"),
 					"title":        tools.StringProperty("for save: what they do there"),
@@ -36,7 +36,7 @@ func init() {
 					"phones":       tools.ArrayProperty("for save: their telephone numbers, replacing what is there", tools.StringProperty("a number")),
 					"note":         tools.StringProperty("for save: anything else worth keeping about them"),
 				}, "action"),
-				Guidance: "contact_book: this is the person's own list of people, and the only one there is -- to answer whether somebody has written before, search the mail instead. To keep a sender -- \"save that sender to my contacts\" -- save them here with their name and address; there is no separate action for it, because a contact kept from a message is an ordinary contact. Saving without an id keeps a new contact; saving with one changes that contact, and anything you leave out is left as it was, so correcting a name does not throw away the address. A contact is stored as the card a phone would send, so a photograph or a birthday put there by a device survives an edit made here. Removing one removes it from the person's devices too, so say who it is and wait to be told to go ahead.",
+				Guidance: "contact_book: this is the person's own list of people, and the only one there is -- to answer whether somebody has written before, search the mail instead. To keep a sender -- \"save that sender to my contacts\" -- save them here with their name and address; there is no separate action for it, because a contact kept from a message is an ordinary contact. Saving without an id keeps a new contact; saving with one changes that contact, and anything you leave out is left as it was, so correcting a name does not throw away the address. A contact is stored as the card a phone would send, so a photograph or a birthday put there by a device survives an edit made here. Removing one removes it from the person's devices too, so say who it is and wait to be told to go ahead. A contact may have a picture, which the server sometimes cuts from a face in the person's photos when they name somebody; remove-picture takes just the picture off and leaves the rest of the contact.",
 				Preview: func(arguments json.RawMessage) string {
 					var call contactBookArguments
 					if err := json.Unmarshal(arguments, &call); err != nil {
@@ -50,6 +50,8 @@ func init() {
 						return fmt.Sprintf("Keep %s in the address book", strings.TrimSpace(call.Name+" "+strings.Join(call.Emails, " ")))
 					case "remove":
 						return "Forget a contact, on every device too"
+					case "remove-picture":
+						return "Take the picture off a contact, on every device too"
 					}
 					return "The address book"
 				},
@@ -61,7 +63,7 @@ func init() {
 					switch call.Action {
 					case "list", "get":
 						return tools.RiskRead
-					case "remove":
+					case "remove", "remove-picture":
 						// It reaches the person's phone, and there is no
 						// tombstone to undo it with.
 						return tools.RiskDestructive
@@ -106,6 +108,8 @@ const (
 }`
 
 	documentBookRemove = `mutation ($id: String!) { DeleteContact(id: $id) }`
+
+	documentBookRemovePicture = `mutation ($id: String!) { RemoveContactPicture(id: $id) { id name } }`
 )
 
 type bookView struct {
@@ -251,6 +255,20 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		}
 		result := tools.TextResult("forgot that contact, here and on the person's devices")
 		result.Note = "removed a contact"
+		return result, nil
+
+	case "remove-picture":
+		if strings.TrimSpace(arguments.ID) == "" {
+			return nil, fmt.Errorf("which contact: list gives their ids")
+		}
+		var answer struct {
+			RemoveContactPicture *contactView `json:"RemoveContactPicture"`
+		}
+		if err := operations.Execute(ctx, documentBookRemovePicture, map[string]any{"id": arguments.ID}, &answer); err != nil {
+			return nil, err
+		}
+		result := tools.TextResult("took the picture off that contact; the rest of the contact is as it was")
+		result.Note = "removed a contact's picture"
 		return result, nil
 	}
 	return nil, fmt.Errorf("%q is not an action of contact_book", arguments.Action)

@@ -2,6 +2,7 @@ package photo
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -11,7 +12,74 @@ import (
 const (
 	namedGroupJson   = `{"id":"group-one","contactId":"contact-one","contactName":"Example Aunt","faceCount":12,"photoCount":9}`
 	unnamedGroupJson = `{"id":"group-two","contactId":"","contactName":"","faceCount":4,"photoCount":4,"isHidden":false}`
+	ownGroupJson     = `{"id":"group-three","contactId":"contact-own","contactName":"Example Self","isOwnContact":true,"faceCount":30,"photoCount":25}`
 )
+
+func TestAGroupNamedByThePersonsOwnContactIsSaidToBeThem(test *testing.T) {
+	current := newRun(test, map[string]string{"ListPhotoFaceGroups": `[` + ownGroupJson + `,` + namedGroupJson + `,` + unnamedGroupJson + `]`, "NamePhotoFaceGroup": namingJson(ownGroupJson, "", false)})
+	result, err := current.call(map[string]any{"operation": "people"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	var answer struct {
+		People []map[string]any `json:"people"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+		test.Fatal(err)
+	}
+	if len(answer.People) != 3 || answer.People[0]["is_you"] != true {
+		test.Fatalf("%s", result.Content)
+	}
+	for _, other := range answer.People[1:] {
+		if _, isThere := other["is_you"]; isThere {
+			test.Fatalf("only the person's own contact is them: %s", result.Content)
+		}
+	}
+	// Naming answers with the same row.
+	named, err := current.call(map[string]any{"operation": "person-name", "face_group_id": "group-three", "contact_id": "contact-own"})
+	if err != nil || !strings.Contains(named.Content, `"is_you":true`) {
+		test.Fatalf("%v %v", named, err)
+	}
+}
+
+// namingJson is what naming a group answers.
+func namingJson(groupJson, mergedPhotoFaceGroupId string, isContactPictureSet bool) string {
+	return fmt.Sprintf(`{"photoFaceGroup":%s,"mergedPhotoFaceGroupId":%q,"isContactPictureSet":%t}`, groupJson, mergedPhotoFaceGroupId, isContactPictureSet)
+}
+
+// A contact names one person: naming a group with a contact that names another
+// group answers with the group left, and says the group named is part of it.
+// A contact without a picture is given a face, and the answer says so.
+func TestNamingAGroupSaysWhenItWasMergedAndWhenTheContactWasGivenAPicture(test *testing.T) {
+	current := newRun(test, map[string]string{"NamePhotoFaceGroup": namingJson(namedGroupJson, "group-two", true)})
+	result, err := current.call(map[string]any{"operation": "person-name", "face_group_id": "group-two", "contact_id": "contact-one"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	var answer map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+		test.Fatal(err)
+	}
+	if answer["face_group_id"] != "group-one" || answer["merged_into"] != "group-one" || answer["merged_face_group_id"] != "group-two" || answer["contact_picture_set"] != true {
+		test.Fatalf("%s", result.Content)
+	}
+	for _, want := range []string{"put it together", "used a face as their picture"} {
+		if !strings.Contains(result.Note, want) {
+			test.Fatalf("%q lacks %q", result.Note, want)
+		}
+	}
+	// Merged only, and picture only.
+	current = newRun(test, map[string]string{"NamePhotoFaceGroup": namingJson(namedGroupJson, "group-two", false)})
+	result, err = current.call(map[string]any{"operation": "person-name", "face_group_id": "group-two", "contact_id": "contact-one"})
+	if err != nil || !strings.Contains(result.Content, `"merged_into":"group-one"`) || strings.Contains(result.Content, "contact_picture_set") {
+		test.Fatalf("%v %v", result, err)
+	}
+	current = newRun(test, map[string]string{"NamePhotoFaceGroup": namingJson(namedGroupJson, "", true)})
+	result, err = current.call(map[string]any{"operation": "person-name", "face_group_id": "group-one", "contact_id": "contact-one"})
+	if err != nil || strings.Contains(result.Content, "merged_into") || !strings.Contains(result.Content, `"contact_picture_set":true`) {
+		test.Fatalf("%v %v", result, err)
+	}
+}
 
 func TestPeopleListsGroupsWithTheirNamesAndSaysAnUnnamedOneIsNobodyYet(test *testing.T) {
 	current := newRun(test, map[string]string{"ListPhotoFaceGroups": `[` + namedGroupJson + `,` + unnamedGroupJson + `]`})
@@ -47,6 +115,29 @@ func TestPeopleListsGroupsWithTheirNamesAndSaysAnUnnamedOneIsNobodyYet(test *tes
 	}
 }
 
+// person-read is the one group, as teanode photo people read gives it: who
+// names it, its counts and the face it is shown by.
+func TestPersonReadGivesOneGroupWithItsNameCountsAndCover(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"ReadPhotoFaceGroup": `{"id":"group-one","contactId":"contact-one","contactName":"Ada Example","faceCount":9,"photoCount":7,"coverPhotoFaceId":"face-cover"}`,
+	})
+	result, err := current.call(map[string]any{"operation": "person-read", "face_group_id": " group-one "})
+	if err != nil || !result.Untrusted {
+		test.Fatalf("%v %v", result, err)
+	}
+	for _, want := range []string{`"face_group_id":"group-one"`, `"contact_name":"Ada Example"`, `"face_count":9`, `"photo_count":7`, `"cover_photo_face_id":"face-cover"`} {
+		if !strings.Contains(result.Content, want) {
+			test.Errorf("the answer lacks %s: %s", want, result.Content)
+		}
+	}
+	if asked := current.operations.asked("ReadPhotoFaceGroup"); len(asked) != 1 || asked[0]["photoFaceGroupId"] != "group-one" {
+		test.Fatalf("%v", asked)
+	}
+	if _, err := current.call(map[string]any{"operation": "person-read"}); err == nil || !strings.Contains(err.Error(), "face_group_id") {
+		test.Fatalf("%v", err)
+	}
+}
+
 func TestAPersonsPhotosAreAskedForByGroupOrByContact(test *testing.T) {
 	current := newRun(test, map[string]string{"ListPhotos": `[` + pictureRow + `]`})
 	if _, err := current.call(map[string]any{"operation": "person-photos", "face_group_id": " group-one "}); err != nil {
@@ -69,10 +160,14 @@ func TestAPersonsPhotosAreAskedForByGroupOrByContact(test *testing.T) {
 }
 
 func TestNamingAGroupNeedsTheGroupAndAContactAndSaysNotToGuess(test *testing.T) {
-	current := newRun(test, map[string]string{"NamePhotoFaceGroup": namedGroupJson})
+	current := newRun(test, map[string]string{"NamePhotoFaceGroup": namingJson(namedGroupJson, "", false)})
 	result, err := current.call(map[string]any{"operation": "person-name", "face_group_id": "group-one", "contact_id": "contact-one"})
 	if err != nil || !strings.Contains(result.Content, `"contact_name":"Example Aunt"`) || !strings.Contains(result.Note, "Example Aunt") {
 		test.Fatalf("%v %v", result, err)
+	}
+	// Nothing was merged and no picture was made, so the answer says neither.
+	if strings.Contains(result.Content, "merged_into") || strings.Contains(result.Content, "contact_picture_set") {
+		test.Fatalf("%s", result.Content)
 	}
 	if asked := current.operations.asked("NamePhotoFaceGroup"); len(asked) != 1 || asked[0]["photoFaceGroupId"] != "group-one" || asked[0]["contactId"] != "contact-one" {
 		test.Fatalf("%v", asked)
@@ -204,6 +299,7 @@ func TestSwitchingFacesOnOrOffAsksFirstAndTheRestOfThePeopleOperationsDoNot(test
 		line      string
 	}{
 		{map[string]any{"operation": "people"}, tools.RiskRead, "List the people found in the photos"},
+		{map[string]any{"operation": "person-read", "face_group_id": "x"}, tools.RiskRead, "Read one person found in the photos"},
 		{map[string]any{"operation": "person-photos", "face_group_id": "x"}, tools.RiskRead, "List the photos of a person"},
 		{map[string]any{"operation": "person-name"}, tools.RiskWrite, "Say who a group of faces is, by a contact"},
 		{map[string]any{"operation": "person-merge"}, tools.RiskWrite, "Put groups of faces together as one person"},
@@ -236,7 +332,8 @@ func TestReadSaysWhoIsInAPhoto(test *testing.T) {
 		"photo-one": `{"photo":` + pictureRow + `,"photoFiles":[],"photoPreviews":[],"albums":[],"faces":[` +
 			`{"id":"face-one","photoFaceGroupId":"group-one","contactId":"contact-one","contactName":"Example Aunt"},` +
 			`{"id":"face-two","photoFaceGroupId":"group-two","contactId":"","contactName":""},` +
-			`{"id":"face-three","photoFaceGroupId":"","contactId":"","contactName":""}]}`,
+			`{"id":"face-three","photoFaceGroupId":"","contactId":"","contactName":""},` +
+			`{"id":"face-four","photoFaceGroupId":"group-three","contactId":"contact-own","contactName":"Example Self","isOwnContact":true}]}`,
 		"photo-two": `{"photo":` + videoRow + `,"photoFiles":[],"photoPreviews":[]}`,
 	}}
 	result, err := current.call(map[string]any{"operation": "read", "photo_id": "photo-one"})
@@ -249,9 +346,18 @@ func TestReadSaysWhoIsInAPhoto(test *testing.T) {
 	if err := json.Unmarshal([]byte(result.Content), &details); err != nil {
 		test.Fatal(err)
 	}
-	if len(details.People) != 3 || details.People[0]["contact_name"] != "Example Aunt" || details.People[0]["face_group_id"] != "group-one" || details.People[0]["contact_id"] != "contact-one" ||
+	if len(details.People) != 4 || details.People[0]["contact_name"] != "Example Aunt" || details.People[0]["face_group_id"] != "group-one" || details.People[0]["contact_id"] != "contact-one" ||
 		details.People[1]["face_group_id"] != "group-two" || details.People[1]["contact_name"] != nil || details.People[2]["face_group_id"] != nil {
 		test.Fatalf("%s", result.Content)
+	}
+	// Only the face of the person's own contact says it is them.
+	if details.People[3]["is_you"] != true || details.People[3]["contact_name"] != "Example Self" {
+		test.Fatalf("the person's own face should say is_you: %s", result.Content)
+	}
+	for _, other := range details.People[:3] {
+		if _, isThere := other["is_you"]; isThere {
+			test.Fatalf("only the person's own face is them: %s", result.Content)
+		}
 	}
 	if result, err := current.call(map[string]any{"operation": "read", "photo_id": "photo-two"}); err != nil || !strings.Contains(result.Content, `"people":[]`) {
 		test.Fatalf("a photo with no faces should say so: %v %v", result, err)
@@ -279,7 +385,7 @@ func TestTheToolDeclaresEveryParameterItsOperationsTakeAndTellsTheAgentNotToGues
 			enum = append(enum, name.(string))
 		}
 	}
-	for _, name := range []string{"people", "person-photos", "person-name", "person-unname", "person-hide", "person-remove-face", "person-merge", "faces", "album-cover"} {
+	for _, name := range []string{"people", "person-read", "person-photos", "person-name", "person-unname", "person-hide", "person-remove-face", "person-merge", "faces", "album-cover"} {
 		found := false
 		for _, candidate := range enum {
 			found = found || candidate == name
@@ -288,7 +394,7 @@ func TestTheToolDeclaresEveryParameterItsOperationsTakeAndTellsTheAgentNotToGues
 			test.Errorf("the tool has no %s", name)
 		}
 	}
-	for _, words := range []string{"never guess who somebody is from their face", "ask the person who it is", "always asks the person first"} {
+	for _, words := range []string{"never guess who somebody is from their face", "is_you true is the person themselves", "ask the person who it is", "always asks the person first"} {
 		if !strings.Contains(photoTool.Description, words) {
 			test.Errorf("the description does not say %q", words)
 		}

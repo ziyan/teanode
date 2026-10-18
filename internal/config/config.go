@@ -71,6 +71,10 @@ type Configuration struct {
 	// Optional sender geolocation through a MaxMind database
 	GeoIP GeoIP `yaml:"geoip"`
 
+	// Where the names of the spots a person goes to come from, and the map
+	// they are drawn on
+	Places Places `yaml:"places"`
+
 	// Optional off-box copies of stored messages
 	Storage Storage `yaml:"storage"`
 

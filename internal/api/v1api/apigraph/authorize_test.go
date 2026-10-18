@@ -82,6 +82,10 @@ var authorizing = map[string]bool{
 	"requireCirclePerson": true,
 	"requireCircleMember": true,
 	"requireCircleAdmin":  true,
+	// requirePermission(location:use), plus the caller's account. Whose
+	// location a call is about is then settled by reachLocation, the one
+	// place that decides.
+	"requireLocationPerson": true,
 	// requirePermission(circle:use), plus the caller's account and its agent,
 	// made switched off for a person who has none; the chat their
 	// conversation is for, refused unless the caller is, or was, in it; and

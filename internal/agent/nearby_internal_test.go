@@ -954,3 +954,94 @@ func TestAlertTextKeepsOnlyTheFollowUpsPages(t *testing.T) {
 		t.Fatal("with nothing kept, every address goes")
 	}
 }
+
+// The town of the place labeled home is read from its address when the address
+// has exactly three parts (street, city, country), and otherwise from the
+// nearest city to its coordinates; a street or a number never goes in. Two
+// parts can be a city and a country or a street and a country, so they say
+// nothing about which part is the city.
+func TestNearbyTownOf(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		place models.Place
+		want  string
+	}{
+		{"street, city, country", models.Place{AddressText: "12 Elm Street, Foxglove Hollow, Exampleland"}, "Foxglove Hollow"},
+		{"city, country", models.Place{AddressText: "Foxglove Hollow, Exampleland", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
+		{"street, country", models.Place{AddressText: "12 Elm Street, Exampleland", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
+		{"street, city", models.Place{AddressText: "12 Elm Street, Foxglove Hollow", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
+		{"a street that reads as a street", models.Place{AddressText: "Elm Street, Elm Road, Exampleland", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
+		{"a long address", models.Place{AddressText: "4, Elm Street, Quarter, Foxglove Hollow, County, Region, 12345, Exampleland", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
+		{"no address", models.Place{LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
+		{"no address and no city near", models.Place{LatitudeDegrees: 10.5, LongitudeDegrees: 20.5}, ""},
+	} {
+		if got := nearbyTownOf(&test.place); got != test.want {
+			t.Errorf("%s: %q, want %q", test.name, got, test.want)
+		}
+	}
+}
+
+// A person with a place labeled home and nothing in memory is searched for
+// without being asked which town: the run reads no memory and puts no
+// question, and the search is for the town of the place.
+func TestLookAroundTakesTheTownFromThePlaceLabeledHome(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	now := time.Date(2026, 10, 15, 17, 5, 0, 0, time.UTC)
+	provider := newNearbyProvider(t, saidByModel(`{"items":[]}`))
+	worker, run, _ := nearbyWorld(t, database, provider)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.CreatePlace(run.Owner.ID, &models.Place{
+			PlaceName: "Elm Street 4", PlaceLabel: models.PlaceLabelHome, IsNamedByPerson: true,
+			AddressText: "4 Elm Street, Foxglove Hollow, Exampleland", LatitudeDegrees: 10.5, LongitudeDegrees: 20.5,
+		}); err != nil {
+			t.Fatalf("CreatePlace: %s", err)
+		}
+	})
+
+	if err := worker.lookAround(t.Context(), run, now); err != nil {
+		t.Fatalf("lookAround: %s", err)
+	}
+	asked := provider.asked()
+	if len(asked) != 1 {
+		t.Fatalf("one call, the search, and none to read memory: %d", len(asked))
+	}
+	if message := userMessagesOf(t, asked[0]); !strings.Contains(message, "Look around Foxglove Hollow for") || strings.Contains(message, "Elm Street") {
+		t.Fatalf("the search is for the town and not the street: %s", message)
+	}
+	if ideas := nearbyIdeas(t, database, run); len(ideas) != 0 {
+		t.Fatalf("the town is known, so it is not asked: %+v", ideas)
+	}
+}
+
+// With memory that says another town, the place labeled home still wins, and
+// memory is still read for the household.
+func TestLookAroundTakesTheHouseholdFromMemoryAndTheTownFromThePlace(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	now := time.Date(2026, 10, 15, 17, 5, 0, 0, time.UTC)
+	provider := newNearbyProvider(t, homeAnswer("Cedar Falls", "a dog"), saidByModel(`{"items":[]}`))
+	worker, run, _ := nearbyWorld(t, database, provider)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.CreatePlace(run.Owner.ID, &models.Place{
+			PlaceName: "Elm Street 4", PlaceLabel: models.PlaceLabelHome, IsNamedByPerson: true,
+			AddressText: "4 Elm Street, Foxglove Hollow, Exampleland", LatitudeDegrees: 10.5, LongitudeDegrees: 20.5,
+		}); err != nil {
+			t.Fatalf("CreatePlace: %s", err)
+		}
+	})
+	rememberOnSelfPage(t, database, run, "Moved to Cedar Falls last spring.", "Has a dog.")
+
+	if err := worker.lookAround(t.Context(), run, now); err != nil {
+		t.Fatalf("lookAround: %s", err)
+	}
+	asked := provider.asked()
+	if len(asked) != 2 {
+		t.Fatalf("memory is read for the household, then the search: %d", len(asked))
+	}
+	if message := userMessagesOf(t, asked[1]); !strings.Contains(message, "Look around Foxglove Hollow for") || !strings.Contains(message, "a dog") || strings.Contains(message, "Cedar Falls") {
+		t.Fatalf("the place's town, and the household from memory: %s", message)
+	}
+}

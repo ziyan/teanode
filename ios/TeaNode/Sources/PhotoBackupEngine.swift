@@ -44,6 +44,10 @@ final class PhotoBackupEngine {
     /// How much of the library the app may read, when that is not enough.
     private(set) var accessProblem: PhotoBackupAccess?
     private(set) var isWorking = false
+    /// How many times backup has finished something (a pass ended, or the app
+    /// queued more files after being woken). The Photo backup screen reads the
+    /// size of the library from the server when this changes, and not otherwise.
+    private(set) var finishedWorkCount = 0
     var problemText: String?
     var doneText: String?
 
@@ -223,6 +227,7 @@ final class PhotoBackupEngine {
         guard isEnabled, !isTurningOff, let coordinator = try? makeCoordinator() else { return }
         await coordinator.topUp(settings: currentSettings, until: Date().addingTimeInterval(Self.wakeTopUpSeconds))
         await refresh()
+        finishedWorkCount += 1
     }
 
     /// Writes the index, if there is one yet. The background session asks for
@@ -563,6 +568,7 @@ final class PhotoBackupEngine {
     private func passesEnded(generation: Int) async {
         if generation == passGeneration { passTask = nil }
         await refresh()
+        finishedWorkCount += 1
         scheduleOvernightPass()
         await scheduleRetryPass()
     }
@@ -684,35 +690,59 @@ final class PhotoBackupEngine {
             return
         }
         task.expirationHandler = {
-            Task { @MainActor in PhotoBackupEngine.shared.stopPasses() }
+            Task { @MainActor in
+                PhotoBackupEngine.shared.stopPasses()
+                await PhotoBackupEngine.shared.flushIndex()
+            }
         }
         scheduleOvernightPass()
         await startPasses()?.value
         task.setTaskCompleted(success: true)
     }
 
+    /// The units the continued processing task's progress is counted in: a
+    /// thousandth of the pass each, so that the listing of a library and the
+    /// files after it can share one bar.
+    private static let continuedProgressUnitCount: Int64 = 1_000
+
     private func runContinued(_ task: BGContinuedProcessingTask) async {
         guard isEnabled else {
             task.setTaskCompleted(success: true)
             return
         }
+        // iOS ends a task whose progress stays where it was. When it does, the
+        // pass is stopped and the index written, so that the next pass goes on
+        // from where this one got to: the listing from its resume point, the
+        // files from the order they are in.
         task.expirationHandler = {
-            Task { @MainActor in PhotoBackupEngine.shared.stopPasses() }
+            Task { @MainActor in
+                PhotoBackupEngine.shared.stopPasses()
+                await PhotoBackupEngine.shared.flushIndex()
+            }
         }
-        task.progress.totalUnitCount = 1
+        task.progress.totalUnitCount = Self.continuedProgressUnitCount
         task.progress.completedUnitCount = 0
         progressSink = { [weak task] status in
             guard let task else { return }
-            // Items done out of items planned in this run.
-            task.progress.totalUnitCount = Int64(max(status.plannedFileCount, 1))
-            task.progress.completedUnitCount = Int64(min(status.finishedFileCount, max(status.plannedFileCount, 1)))
-            task.updateTitle(
-                String(localized: "Backing up photos"),
-                subtitle: String(localized: "\(status.finishedFileCount) of \(status.plannedFileCount) files"))
+            // The listing of the library counts as a share of the work and the
+            // files as the rest, so the bar moves while the library is read. It
+            // does not go back when the files planned grow with each batch.
+            let completedUnitCount = Int64(status.progressFraction * Double(Self.continuedProgressUnitCount))
+            task.progress.completedUnitCount = max(task.progress.completedUnitCount, min(completedUnitCount, Self.continuedProgressUnitCount))
+            task.updateTitle(String(localized: "Backing up photos"), subtitle: Self.progressSubtitle(for: status))
         }
         await startPasses()?.value
         progressSink = nil
         task.setTaskCompleted(success: status.phase != .needsSignIn)
+    }
+
+    /// What the system shows under the title of the task: how far the listing
+    /// of the library has got while it lists, the files after that.
+    private static func progressSubtitle(for status: PhotoBackupStatus) -> String {
+        if status.phase == .listing, let listedItemCount = status.listedItemCount {
+            return String(localized: "Reading your photo library: \(listedItemCount.formatted()) of \(status.libraryItemCount.formatted())")
+        }
+        return String(localized: "\(status.finishedFileCount) of \(status.plannedFileCount) files")
     }
 
     // MARK: Demo

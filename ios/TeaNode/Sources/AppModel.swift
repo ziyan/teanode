@@ -31,6 +31,12 @@ final class AppModel {
     /// Whether the server could not be asked which services it runs, and
     /// none are known yet: the app says so rather than calling them off.
     private(set) var hasServicesFailedToLoad = false
+    /// Whether the person has a computer attached that runs herdr, which is
+    /// what the Coding section is for.
+    private(set) var hasCodingComputers = false
+    /// How many of the person's coding sessions ask something, a question
+    /// or an approval: the number on the side menu's Coding row.
+    private(set) var codingAskingCount = 0
 
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
@@ -91,6 +97,13 @@ final class AppModel {
 
     /// A part of the app the agent asked to show.
     var openedSection: AppSection?
+    /// The person whose location the Location screen opens with selected: a
+    /// pressed notification, or a link, names them. The screen takes it and
+    /// clears it.
+    var openedLocationUserId: String?
+    /// The day the Location screen opens on the map of, from a link such as
+    /// `/location?day=2030-01-15`. The screen takes it and clears it.
+    var openedLocationDay: Date?
     /// The section to open again after the app is drawn anew, as it is when
     /// the display language changes.
     var keptSection: AppSection?
@@ -151,6 +164,28 @@ final class AppModel {
         }
     }
 
+    /// The Location page's address, `/location`, with the day it may name
+    /// (`?day=2030-01-15`); nil for any other address. The day is nil when it
+    /// is absent or not a date.
+    static func locationLink(_ written: String) -> LocationLink? {
+        let parts = written.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let pathText = parts.first, pathText == "/location" || pathText == "/location/" else { return nil }
+        guard parts.count == 2 else { return LocationLink(day: nil) }
+        for pair in parts[1].split(separator: "&") {
+            let sides = pair.split(separator: "=", maxSplits: 1)
+            guard sides.count == 2, sides[0] == "day" else { continue }
+            let numbers = sides[1].split(separator: "-", omittingEmptySubsequences: false).compactMap { Int($0) }
+            guard numbers.count == 3 else { continue }
+            let calendar = Calendar.current
+            guard let day = calendar.date(from: DateComponents(year: numbers[0], month: numbers[1], day: numbers[2])) else { continue }
+            // A date that does not exist (month 13) rolls over into the next
+            // one in a calendar; it is not the day that was written.
+            let read = calendar.dateComponents([.year, .month, .day], from: day)
+            if read.year == numbers[0], read.month == numbers[1], read.day == numbers[2] { return LocationLink(day: day) }
+        }
+        return LocationLink(day: nil)
+    }
+
     /// Goes to the dashboard path the agent's open_page names, checked as
     /// the dashboard checks it: the person's own pages, in plain segments.
     func show(path written: String) {
@@ -158,6 +193,11 @@ final class AppModel {
             openedRecordingAccountKey = account.accountKey
             openedRecordingLink = citation
             openedSection = .recordings
+            return
+        }
+        if let location = Self.locationLink(written) {
+            openedLocationDay = location.day
+            openedSection = .location
             return
         }
         let path = written.count > 1 && written.hasSuffix("/") ? String(written.dropLast()) : written
@@ -326,6 +366,19 @@ final class AppModel {
     /// read.
     private(set) var ownUserId: String?
 
+    /// Whether the account may record where the person goes and look back
+    /// on it (the server's location:use), as far as the server has said.
+    private(set) var canUseLocation = false
+
+    /// Whether the permissions of the account in use have been read once
+    /// (`canUseLocation` and `canChat` are only true after that). Until
+    /// then, a screen that needs one of them is not known to be refused.
+    private(set) var hasReadPermissions = false
+
+    /// Whether the last try to read the permissions failed, so that a screen
+    /// waiting for them can offer to try again instead of waiting for ever.
+    private(set) var hasPermissionReadFailed = false
+
     /// Reads whether the person can chat, and how much is waiting for them
     /// in their chats.
     func refreshChats() async {
@@ -333,6 +386,11 @@ final class AppModel {
         let session = try? await connection.accessSession()
         guard !Task.isCancelled, self.connection === connection else { return }
         if let userId = session?.userId { ownUserId = userId }
+        hasPermissionReadFailed = session == nil && !hasReadPermissions
+        if let session {
+            canUseLocation = session.holds("location:use")
+            hasReadPermissions = true
+        }
         let canUseCircles = session?.holds("circle:use") ?? false
         canChat = canUseCircles
         guard canUseCircles else {
@@ -365,6 +423,8 @@ final class AppModel {
                 transport = DemoServer()
                 account = DemoServer.account
                 connection = Connection(account: DemoServer.account, transport: transport)
+                canUseLocation = true
+                hasReadPermissions = true
                 return
             }
         #endif
@@ -388,6 +448,9 @@ final class AppModel {
     private func forgetAccountFacts() {
         ownUserId = nil
         canChat = false
+        canUseLocation = false
+        hasReadPermissions = false
+        hasPermissionReadFailed = false
         unreadChatCount = 0
         isAgentEnabledByPerson = true
         hasAgent = true
@@ -401,6 +464,8 @@ final class AppModel {
         let isChanged = account.accountKey != self.account?.accountKey
         if isChanged {
             services = nil
+            hasCodingComputers = false
+            codingAskingCount = 0
             accessSession = nil
             forgetAccountFacts()
             openedRecordingLink = nil
@@ -412,6 +477,8 @@ final class AppModel {
         if let connection { RecordingUploads.shared.activate(connection: connection) }
         // The widgets read the account in use; one that changed is read again.
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
+        // What the phone noticed belongs to the account that was in use.
+        LocationRecorder.shared.accountDidChange(accountKey: account.accountKey)
     }
 
     /// Puts another sign-in to use: the whole app is drawn again for it.
@@ -662,6 +729,10 @@ final class AppModel {
                 // An invitation is answered on Circles, in the settings.
                 openedSection = .settings
                 isCirclesOpened = true
+            } else if info.notificationKind == "location" {
+                // Somebody arrived or left: Location, with them selected.
+                openedLocationUserId = info.locationUserId.isEmpty ? nil : info.locationUserId
+                openedSection = .location
             } else if !info.conversationId.isEmpty {
                 openedConversationId = info.conversationId
             }
@@ -727,6 +798,7 @@ final class AppModel {
         if let account {
             try? PayloadKey.keyring.forget(for: account.accountKey)
             ConversationDraft.forget(accountKey: account.accountKey)
+            LocationRecorder.shared.accountWasRemoved(accountKey: account.accountKey)
         }
         try? store.delete()
         phone = nil
@@ -744,6 +816,7 @@ final class AppModel {
         connection = nil
         forgetAccountFacts()
         self.signedOutText = signedOutText
+        LocationRecorder.shared.accountDidChange(accountKey: nil)
     }
 
     /// Signs out of the account in use when its own connection found the
@@ -771,6 +844,7 @@ final class AppModel {
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)
         ConversationDraft.forget(accountKey: other.accountKey)
+        LocationRecorder.shared.accountWasRemoved(accountKey: other.accountKey)
         try? store.remove(other.accountKey)
         accounts = (try? store.accounts().accounts) ?? accounts
     }
@@ -881,6 +955,22 @@ extension AppModel {
         PhotosAvailability.isOffered(isServiceEnabled: services?.isPhotosEnabled == true, session: accessSession)
     }
 
+    func noteCodingComputers() { hasCodingComputers = true }
+
+    /// The Coding section read the sessions: how many ask, at once, rather
+    /// than at the next slow ask.
+    func noteCodingAsking(_ askingCount: Int) { codingAskingCount = askingCount }
+
+    /// Asks which computers run herdr, and how many sessions ask. A server
+    /// that cannot be asked leaves what is known.
+    func refreshCodingPresence() async {
+        guard let connection, services?.isAssistantEnabled == true,
+            let list = try? await connection.herdrSessions()
+        else { return }
+        hasCodingComputers = !list.computerNames.isEmpty
+        codingAskingCount = list.sessions.filter(\.isAsking).count
+    }
+
     func isSectionAvailable(_ section: AppSection) -> Bool {
         let services = services ?? .unavailable
         switch section {
@@ -895,7 +985,15 @@ extension AppModel {
         // agent.
         case .agent: return services.isAssistantEnabled || canChat
         case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        case .coding: return services.isAssistantEnabled && hasCodingComputers
+        case .location: return canUseLocation
         case .settings: return true
         }
     }
+}
+
+/// LocationLink is what an address of the Location page asks for.
+struct LocationLink: Equatable {
+    /// The day to open on the map, when the address names one.
+    let day: Date?
 }

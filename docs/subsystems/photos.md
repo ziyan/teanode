@@ -54,8 +54,10 @@ Everything known about a photo is a row; the bytes are blobs in the store
   picture uploaded twice, or by two people, is stored once. Each person's
   quota still counts every file they own.
 - `photo_preview` is a smaller copy made for showing: `small` (400 pixels on
-  the long side), `large` (2048) and, for a video, `video` (H.264, 1280).
-  Previews can always be made again; nothing depends on them being kept.
+  the long side), `large` (2048) and, for a video or a Live Photo (from its
+  video, which an iPhone records as HEVC that many browsers cannot play),
+  `video` (H.264, 1280). Previews can always be made again; nothing depends
+  on them being kept.
 - `photo_client_alias` is another name an uploader has for a photo that is
   there already (see Uploads).
 - `photo_upload` and `photo_upload_part` are a file on its way in.
@@ -251,7 +253,31 @@ nobody until the person names it by choosing a contact, or making one; the
 agent never names a face by guessing. A group nobody has named is listed as a
 person once it has at least three faces
 (`MinimumUnnamedPhotoFaceGroupFaceCount`); a pair is more often a chance
-likeness. A named group is always listed. The agent's photo tool can take a name off a
+likeness. A named group is always listed. When the contact that names a group
+is the person's own card (`users.contact_id`, the card the agent knows as
+them), the group is them: `PhotoFaceGroup.isOwnContact` and
+`PhotoFace.isOwnContact` say so, the agent's tool rows carry `is_you`, the
+command line writes "(you)" after the name, and the iPhone shows "You".
+It is set per request from the caller's own user row, and is false for an
+unnamed group and for a face in somebody else's shared photo, whose names are
+the owner's. A contact names one person. Naming a group
+with a contact that already names another of the person's groups merges the two
+inside `NamePhotoFaceGroup`: the group already named stays, with the faces of
+both and its own cover, and the person is hidden only if both were. A group never holds two faces of one photo, so when two groups each had a different face of one photo, the face the person confirmed stays, else the one whose vector is most like the merged group's sum (cosine), and the other is in no group and not confirmed (the face is still in the photo, but no pass groups it again until the photo's faces are found again); this holds for `person-merge` and the merge button as well. The answer
+carries the group left, `mergedPhotoFaceGroupId` (the one that went into it;
+the tool says `merged_into`, the command line "merged with") and
+`isContactPictureSet`. Groups that were named with one contact before this was
+so were merged once by migration 0242. When the contact has no picture it is
+given one: the face of the group with the highest detection confidence among
+those whose box covers at least `MinimumContactPictureFaceAreaFraction` (3
+percent) of their photo, in the person's own photos out of the Trash, cut square
+from the large preview with 40 percent of room on each side, at most 512 pixels,
+as a JPEG set as the card's `PHOTO` (so CardDAV clients see it; `contact_picture_set`
+in the tool, "used a face as their picture" on the command line). A picture a
+contact has is never replaced, and a photo that cannot be read leaves the naming
+done and the contact as it was. `RemoveContactPicture` takes a picture off; it is
+the toast's Remove and is on every surface of the address book. The agent's photo
+tool can take a name off a
 group (`person-unname`), hide a group or list it again (`person-hide`, with
 `is_hidden`; `people` with `is_hidden_included` finds the hidden ones), say one
 face is not that person (`person-remove-face`, with the `photo_face_id` that
@@ -347,17 +373,37 @@ nothing into the person's library unless they ask (`save-shared`).
 Every operation of the tool that answers a list (`list`, `album-list`,
 `album-read`, which gives the album's photos, `people`, `person-photos` and
 `album-shares`) gives a page at a time: `page_size` and `offset` in, and when
-there is more `next_offset` out (with the count, `matching_photo_count` for photos,
-`total_count` for the rest), as the mail and memory tools do. `library` gives
-`photo_count` for all items, videos among them, as albums count them, and `video_count` for the
-videos in it. `set-date` (a write) corrects the date a photo was taken, from an
-RFC 3339 time with an offset, as `teanode photo date` and the viewer's change of
-date do. Turning faces on is of the risk class granting and turning them off is
-destructive: finding faces is a privacy choice either way, so both ask.
+there is more `next_offset` out (with the count, `matching_photo_count` for
+photos, `total_count` for the rest), as the mail and memory tools do. `library`
+gives `photo_count` for all items, videos among them, as albums count them, and
+`video_count` for the videos in it. `set-date` (a write) corrects the date a
+photo was taken, from an RFC 3339 time with an offset, as `teanode photo
+set-date` and the viewer's change of date do. `delete` (photos that are in the
+Trash) and `empty-trash` delete forever, as `teanode photo delete` and
+`empty-trash` do, and are destructive: they ask the person every time. `delete`
+says how many went and, when some did not, that the others were not in the Trash
+and were left alone. `person-read` gives one group of faces, as `teanode photo
+people read` does, and `person-photos` its photos. Turning faces on is of the
+risk class granting and turning them off is destructive: finding faces is a
+privacy choice either way, so both ask.
+
 `album-share` and `album-unshare` are of the risk class granting, as the
-calendar's share is, so they ask the person unless they allowed it, and the
-card names the album and the people. `look` does not queue a description of
-somebody else's photo: a description belongs to the library of its owner.
+calendar's share is, so they ask the person unless they allowed it, and the card
+names the album and the people. `album-share-update` changes one share (`teanode
+photo album share-update`, the same `UpdatePhotoAlbumShare` the dashboard and
+the phone use). It takes the album as well as the share, reads the album's
+shares, and changes only the settings the call names, `share_level` and
+`is_location_included`: the operation writes both, so the one left out is sent
+as the share has it, and stopping somebody adding photos does not take the
+places away. A call that names what the share already has makes no request and
+says that nothing changed. The risk class is judged from the arguments alone,
+since the share is not known at that point: a call that names `contribute` or
+places on is granting, even when the share has that setting already, and any
+other call can only keep or take away access, so it is an ordinary write with no
+card. The card for a granting call reads the album and the share, names the
+album and the person or circle, and says what changes and what stays, or that
+nothing changes. `look` does not queue a description of somebody else's photo: a
+description belongs to the library of its owner.
 
 ## The iPhone
 
@@ -374,8 +420,10 @@ app's build, which a self-hosted server does not have.
 ### How the backup keeps going
 
 A pass (`PhotoBackupCoordinator.runPass`) reads the library, notes every file
-still to send in the index, and hands files to the background URLSession. The
-queue it hands over is long, up to 200 files and 10 GB, because iOS goes on
+still to send in the index, and hands files to the background URLSession. A
+library is read in batches, so that a library of 35,000 items starts uploading
+in seconds, resumes where it left off, and reports progress while it is read
+(see "Reading a large library" below). The queue the pass hands over is long, up to 200 files and 10 GB, because iOS goes on
 sending whatever is queued after the person has left the app, and a short queue
 runs dry within minutes. Every queued file is an exported copy in the app's
 outgoing folder, so the bytes queued may not pass a quarter of the free space
@@ -412,6 +460,53 @@ What continues and what waits:
   on with the next file. Before this, one such file held up the pass and every
   later attempt to start one, because a pass already running is joined, not
   started twice.
+
+### Reading a large library
+
+The first pass, and a pass after the library's change token expired, lists the
+whole library. It does not read it whole and then start:
+
+- The library gives only identifiers and creation dates (`listBatch`), newest
+  photo first, 300 at a time. Items (the files of each photo, and iCloud's
+  identifier for it) are built only for the 300 at hand, and only for photos the
+  index has no record of. No more than a batch of items is in memory.
+- For each batch the pass asks the server which photos it has (`FindPhotos`),
+  plans, writes the files to the index as still to send, and queues what the
+  budget allows, before it reads the next batch. The first upload is queued
+  after one batch. What the budget does not take stays in the index and is sent
+  after the listing, from the index's own line (`sendOrder` in each record, so
+  newest photo first), read 300 items at a time. Photos that come into the
+  library later go to the front of that line.
+- The index keeps where the listing stopped (`PhotoBackupListingProgress`: the
+  creation date, to the fraction of a second, and identifier of the last item,
+  the number listed, and the change token as it was when the listing began). A
+  pass that stops (iOS ends the continued processing task, the person leaves,
+  the app is killed) is followed by one that goes on from there and does not
+  begin another listing. The library's change token is stored only when the last
+  batch is done, so changes made during the listing are read afterwards.
+- The index file is replaced whole, so it is not written for each batch: a
+  listing writes it when it begins and ends, and otherwise at most every 30
+  seconds, when a pass ends, and when the app goes to the background or the
+  continued processing task is ended by iOS. Writing it after every batch of
+  35,000 items took 14 s in the test build, against 0.4 s for the batches and
+  0.2 s for the one write at the end. A pass killed without notice loses at most
+  those 30 seconds of listing.
+- The status says how far the listing has got ("Reading your photo library:
+  1,200 of 35,103"). The continued processing task's progress counts the
+  listing as 30 percent of the work and the files as the rest, and never goes
+  back, so iOS does not end the task as stalled.
+- A file that has to come down from iCloud is given 60 seconds while the
+  library is being listed, so that one slow download does not hold the listing.
+  It stays in the index and the pass tries it again afterwards with the full time.
+- A pass tries each file once. The files read again after the listing skip the
+  ones the pass already queued, refused or left for later.
+
+The backup screen asks the server for the library's size (`photoLibrary`) when
+it appears, when the app comes to the foreground and when backup finishes
+something, and at most once every 15 seconds. The numbers it shows for backup
+come from the phone. The rest of the traffic seen while the screen is open is
+the app's presence report: `AppShell.refreshPresence` repeats every 30 seconds
+on every screen (services, access session, chats, presence).
 
 Players cannot send a sign-in, so `PhotoPlaybackAddress` answers a signed
 address, valid for six hours, that streams one preview or file with ranges.

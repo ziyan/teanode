@@ -558,9 +558,13 @@ func (self *Store) requeuePhotosWithoutPreviews(ctx context.Context) error {
 	if now := self.now(); !self.lastRequeueAt.IsZero() && now.Sub(self.lastRequeueAt) < requeueInterval {
 		return nil
 	}
+	// Without the programs a video is read with, a Live Photo put back would
+	// be worked on without making its video preview, and would not be put
+	// back for it again once they are installed.
+	isLiveVideoIncluded := self.videoProgramsMissing() == nil
 	var requeuedCount int
 	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-		requeuedCount, err = transaction.RequeuePhotosWithoutPreviews(requeueBatchSize)
+		requeuedCount, err = transaction.RequeuePhotosWithoutPreviews(requeueBatchSize, isLiveVideoIncluded)
 		return err
 	}); err != nil {
 		return err
@@ -644,12 +648,13 @@ func (self *Store) processPhoto(ctx context.Context, processed *processedPhoto) 
 			processed.releaseWorkSpace()
 		}
 	}()
-	hasLiveVideo := false
+	var liveVideo *models.PhotoFile
 	for _, file := range files {
 		if file.PhotoFileRole == models.PhotoFileRoleLiveVideo {
-			hasLiveVideo = true
+			liveVideo = file
 		}
 	}
+	hasLiveVideo := liveVideo != nil
 	processed.source = previewSourceOf(files)
 	if processed.source == nil {
 		return &processingFailure{Cause: errors.New("the photo has no picture or video to read"), IsFileAtFault: true}
@@ -661,7 +666,13 @@ func (self *Store) processPhoto(ctx context.Context, processed *processedPhoto) 
 	if processed.isVideo {
 		return self.processVideo(ctx, processed)
 	}
-	return self.processPicture(ctx, processed)
+	if err := self.processPicture(ctx, processed); err != nil {
+		return err
+	}
+	if liveVideo != nil {
+		return self.keepLiveVideoPreview(ctx, processed, liveVideo)
+	}
+	return nil
 }
 
 // previewSourceOf is the file a photo's previews are made from: the edited
@@ -764,9 +775,17 @@ func (self *Store) readFile(ctx context.Context, file *models.PhotoFile) ([]byte
 	return buffer.Bytes(), nil
 }
 
-// copyFileToDirectory writes a file where a tool that needs a path can read
-// it, and returns the path.
+// copyFileToDirectory writes the photo's source file where a tool that needs a
+// path can read it, and returns the path.
 func (self *Store) copyFileToDirectory(ctx context.Context, processed *processedPhoto) (string, error) {
+	return self.copyPhotoFileToDirectory(ctx, processed, processed.source, "source")
+}
+
+// copyPhotoFileToDirectory writes one of the photo's files, under the given
+// name, where a tool that needs a path can read it, and returns the path. The
+// room it is promised is given back with the room of any other copy when
+// processing ends.
+func (self *Store) copyPhotoFileToDirectory(ctx context.Context, processed *processedPhoto, photoFile *models.PhotoFile, name string) (string, error) {
 	directory, err := self.workDirectoryOf(processed)
 	if err != nil {
 		return "", err
@@ -775,17 +794,24 @@ func (self *Store) copyFileToDirectory(ctx context.Context, processed *processed
 	// made from it, twice its size, with a reserve left over, after the room
 	// promised to the files being worked on already: it would fill the disk the
 	// server's other files are on.
-	release, err := self.workSpace.promise(self.freeBytesOf, directory, processed.source.FileSizeBytes)
+	release, err := self.workSpace.promise(self.freeBytesOf, directory, photoFile.FileSizeBytes)
 	if err != nil {
 		return "", err
 	}
-	processed.releaseWorkSpace = release
-	stream, err := self.openFile(ctx, processed.source)
+	if releaseEarlierCopy := processed.releaseWorkSpace; releaseEarlierCopy != nil {
+		processed.releaseWorkSpace = func() {
+			release()
+			releaseEarlierCopy()
+		}
+	} else {
+		processed.releaseWorkSpace = release
+	}
+	stream, err := self.openFile(ctx, photoFile)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = stream.Close() }()
-	path := filepath.Join(directory, "source")
+	path := filepath.Join(directory, name)
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("a file to work on could not be made: %w", err)
@@ -1120,7 +1146,14 @@ func (self *Store) processVideo(ctx context.Context, processed *processedPhoto) 
 	if probed.DurationMS > maximumVideoPreviewDuration.Milliseconds() {
 		return nil
 	}
-	previewPath := filepath.Join(processed.directory, "preview.mp4")
+	return self.keepVideoPreview(ctx, processed, path, "preview.mp4", probed)
+}
+
+// keepVideoPreview makes the H.264 copy of the video at path, in the photo's
+// work directory under the given name, and stores it as the photo's video
+// preview.
+func (self *Store) keepVideoPreview(ctx context.Context, processed *processedPhoto, path, previewName string, probed *picture.VideoMetadata) error {
+	previewPath := filepath.Join(processed.directory, previewName)
 	if err := picture.VideoPreview(ctx, path, previewPath); err != nil {
 		return readFailure(err)
 	}
@@ -1135,6 +1168,41 @@ func (self *Store) processVideo(ctx context.Context, processed *processedPhoto) 
 	}
 	widthPixels, heightPixels := fitLongSide(probed.WidthPixels, probed.HeightPixels, picture.VideoPreviewLongSidePixels)
 	return self.keepPreview(ctx, processed, models.PhotoPreviewVideo, "video/mp4", previewFile, info.Size(), widthPixels, heightPixels)
+}
+
+// keepLiveVideoPreview makes the video preview of a Live Photo from its video,
+// which the iPhone records as HEVC in a QuickTime container that many browsers
+// cannot play. The picture is the photo: when the preview cannot be made, the
+// reason is logged and the photo is ready without it. Only the end of the
+// work (the server stopping, the photo deleted) is passed on.
+func (self *Store) keepLiveVideoPreview(ctx context.Context, processed *processedPhoto, liveVideo *models.PhotoFile) error {
+	err := self.makeLiveVideoPreview(ctx, processed, liveVideo)
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil || errors.Is(err, errPhotoGone) {
+		return err
+	}
+	log.Warningf("the video preview of the Live Photo %s could not be made, the photo is ready without it: %s", processed.photo.ID, err)
+	return nil
+}
+
+func (self *Store) makeLiveVideoPreview(ctx context.Context, processed *processedPhoto, liveVideo *models.PhotoFile) error {
+	if err := self.videoProgramsMissing(); err != nil {
+		return err
+	}
+	path, err := self.copyPhotoFileToDirectory(ctx, processed, liveVideo, "live")
+	if err != nil {
+		return err
+	}
+	probed, err := picture.ProbeVideo(ctx, path)
+	if err != nil {
+		return err
+	}
+	if probed.DurationMS > maximumVideoPreviewDuration.Milliseconds() {
+		return nil
+	}
+	return self.keepVideoPreview(ctx, processed, path, "live-preview.mp4", probed)
 }
 
 // fitLongSide is the size a picture of the given size has once its longest

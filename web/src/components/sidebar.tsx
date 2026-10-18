@@ -8,12 +8,14 @@ import {
   CalendarIcon,
   PictureIcon,
   ChevronRightIcon,
+  CodeIcon,
   ComposeIcon,
   DomainsIcon,
   GridIcon,
   KeyIcon,
   LinkIcon,
   ListIcon,
+  LocationIcon,
   LogoutIcon,
   MailIcon,
   RecordIcon,
@@ -32,6 +34,7 @@ import {
 } from './icons'
 import { Logo } from './logo'
 import { useAgentFinancePresence } from '../pages/finance/financePresence'
+import { useHerdrPresence } from './herdrPresence'
 import { useAgentIdentity } from '../agentPreferences'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
@@ -51,7 +54,7 @@ type Item = {
   to: string
   icon: React.ReactNode
   anyOf?: string[]
-  shownWhen?: 'finance' | 'mailbox'
+  shownWhen?: 'finance' | 'mailbox' | 'coding'
   rail?: 'mailbox'
 }
 type Group = { label?: Key; items: Item[] }
@@ -72,6 +75,7 @@ export const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   knowledge: <GridIcon />,
   finance: <WalletIcon />,
   recordings: <RecordIcon />,
+  coding: <CodeIcon />,
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
@@ -230,7 +234,7 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/circles'].some(
+    ['/agent', '/knowledge', '/recordings', '/coding', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/location', '/circles'].some(
       (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
     ) ||
     location.pathname === '/mailbox' ||
@@ -245,10 +249,23 @@ export function Sidebar({
   // Finance is a row only for somebody who has finance, asked only while a
   // rail that can hold it is the one shown.
   const finance = useAgentFinancePresence(inAccount || inMailbox)
+  // Coding is a row only where a computer reports herdr, asked under the
+  // same condition.
+  const coding = useHerdrPresence((inAccount || inMailbox) && hasPermission(session.permissions, 'agent:use'))
+  const hasCoding = coding.isPresent
+  // The Coding row counts the sessions that ask something, as the mail rows
+  // count what is unread: a number there is a question waiting.
+  const codingCount = (to: string) =>
+    to === '/coding' && coding.askingCount > 0 ? (
+      <span className="sidebar-count" aria-label={t('herdr.askingCount', { count: coding.askingCount })}>
+        {coding.askingCount}
+      </span>
+    ) : null
   const permitted = (item: Item) =>
     isPathAvailable(item.to, session.services) &&
     (item.to !== '/recordings' || hasPermission(session.permissions, 'agent:use')) &&
     (item.shownWhen !== 'finance' || finance.isShown === true) &&
+    (item.shownWhen !== 'coding' || (hasCoding === true && hasPermission(session.permissions, 'agent:use'))) &&
     (item.shownWhen !== 'mailbox' || hasMailbox) &&
     (!item.anyOf ||
       item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key)))
@@ -491,6 +508,14 @@ export function Sidebar({
                   <span className="sidebar-label">{t('nav.photos')}</span>
                 </NavLink>
               )}
+              {hasPermission(session.permissions, 'location:use') && (
+                <NavLink to="/location" title={collapsed ? t('location.title') : undefined}>
+                  <span className="sidebar-icon">
+                    <LocationIcon />
+                  </span>
+                  <span className="sidebar-label">{t('location.title')}</span>
+                </NavLink>
+              )}
               {/* What the agent knows and what the person's money did, under
                   the calendar: pages read often, not settings. The mailbox's
                   own settings are with the rest of the person's, in the
@@ -501,6 +526,7 @@ export function Sidebar({
                   <NavLink key={item.to} to={item.to} title={collapsed ? label : undefined}>
                     <span className="sidebar-icon">{item.icon}</span>
                     <span className="sidebar-label">{label}</span>
+                    {codingCount(item.to)}
                   </NavLink>
                 )
               })}
@@ -541,10 +567,23 @@ export function Sidebar({
                     <span className="sidebar-label">{t('services.remindersLabel')}</span>
                   </NavLink>
                 )}
+              {hasPermission(session.permissions, 'location:use') && (
+                <NavLink to="/location">
+                  <LocationIcon />
+                  <span className="sidebar-label">{t('location.title')}</span>
+                </NavLink>
+              )}
               {session.services?.isContactsEnabled && hasPermission(session.permissions, 'contacts:use') && (
                 <NavLink to="/contacts">
                   <UserIcon />
                   <span className="sidebar-label">{t('nav.contacts')}</span>
+                </NavLink>
+              )}
+              {hasCoding === true && hasPermission(session.permissions, 'agent:use') && (
+                <NavLink to="/coding">
+                  <CodeIcon />
+                  <span className="sidebar-label">{t('nav.coding')}</span>
+                  {codingCount('/coding')}
                 </NavLink>
               )}
               {session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use') && (
@@ -581,6 +620,7 @@ export function Sidebar({
                         label should not have to be re-read when the rail
                         reopens. */}
                     <span className="sidebar-label">{label}</span>
+                    {codingCount(item.to)}
                     {marked && (
                       <Tooltip label={t('nav.upgradeAvailable')}>
                         <span className="sidebar-dot">

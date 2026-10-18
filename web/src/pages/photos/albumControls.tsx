@@ -184,19 +184,28 @@ export function AddToAlbumMenu({
   onChooseAlbum,
   onNewAlbum,
   hiddenAlbumId,
+  placement = 'below',
+  isRound = false,
 }: {
   onChooseAlbum: (album: PhotoAlbum) => void
   onNewAlbum: () => void
   // The album the photos are being looked at in: they are in it already.
   hiddenAlbumId?: string
+  // Which side of the button the menu opens on: above it, for a button at the
+  // foot of the window.
+  placement?: 'below' | 'above'
+  // The round button of the viewer's action bar rather than the plain icon of
+  // the selection bar.
+  isRound?: boolean
 }) {
   const { t } = useTranslation()
   return (
     <Tooltip label={t('photos.addToAlbum')}>
       <MenuButton
         label={t('photos.addToAlbum')}
-        className="icon-button"
-        icon={<AlbumAddIcon size={18} />}
+        className={isRound ? 'icon-button photo-round-button' : 'icon-button'}
+        icon={<AlbumAddIcon size={isRound ? 20 : 18} />}
+        placement={placement}
         render={(close) => (
           <AlbumChoices
             hiddenAlbumId={hiddenAlbumId}

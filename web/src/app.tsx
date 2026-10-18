@@ -20,6 +20,7 @@ import { AccountMenu } from './components/accountMenu'
 import { CircleInvitationMark } from './components/circleInvitationMark'
 import { useLabelWithInvitationCount } from './components/circleInvitations'
 import { Sidebar, useIsDesktop, useSidebar } from './components/sidebar'
+import { useEdgeSwipe } from './components/edgeSwipe'
 import { MenuIcon, ShieldIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
 import { PasskeyNudge } from './components/passkeyNudge'
@@ -56,6 +57,9 @@ const MailboxSettingsPage = lazyPage(async () => ({
 }))
 const CalendarPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "calendar" */ './pages/calendar')).CalendarPage,
+}))
+const LocationPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "location" */ './pages/location')).LocationPage,
 }))
 const MailDetailPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "operations" */ './pages/mailDetail')).MailDetailPage,
@@ -101,6 +105,9 @@ const AgentConversationsPage = lazyPage(async () => ({
 }))
 const RecordingsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "recordings" */ './pages/recordings')).RecordingsPage,
+}))
+const CodingPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "coding" */ './pages/coding')).CodingPage,
 }))
 const PhotosLayout = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "photos" */ './pages/photos/layout')).PhotosLayout,
@@ -204,6 +211,13 @@ export function App() {
   const [collapsed, toggleSidebar] = useSidebar()
   const desktop = useIsDesktop()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // On a phone the side menu also opens with a swipe in from the left edge.
+  useEdgeSwipe(
+    !desktop,
+    drawerOpen,
+    () => setDrawerOpen(true),
+    () => setDrawerOpen(false),
+  )
   const [session, setSession] = useState<Session | null>(null)
   const location = useLocation()
 
@@ -487,6 +501,7 @@ export function App() {
                       <Route path="/contacts" element={<AddressBookPage />} />
                       <Route path="/calendar" element={<CalendarPage />} />
                       <Route path="/reminders" element={<CalendarPage />} />
+                      <Route path="/location" element={<LocationPage />} />
                       <Route path="/mailbox/contacts" element={<AddressBookPage />} />
                       <Route path="/mailbox/calendar" element={<CalendarPage />} />
                       <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
@@ -593,6 +608,7 @@ export function App() {
                       </Route>
                       <Route path="/recordings" element={<RecordingsPage />} />
                       <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
+                      <Route path="/coding" element={<CodingPage />} />
                       {/* What the linked institutions report, a page of its own
                       in the account's rail after Knowledge; linking them is
                       the agent page's Finance tab. */}
