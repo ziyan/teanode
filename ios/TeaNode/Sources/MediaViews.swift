@@ -646,10 +646,12 @@ struct AgentPhotoViewer: View {
 }
 
 /// ArtifactCard is something the agent made: a page, a picture drawn in SVG,
-/// or a Markdown document, shown in place. Its name opens it whole on a tap;
-/// that and what else it offers are in the long-press menu too, which VoiceOver
-/// reaches as the name's actions. A long press on a page that is running is
-/// the page's own, so the name is where the menu is sure to open.
+/// or a Markdown document, shown in place. Its name opens it whole on a tap,
+/// and so does a document shown in place; a page that is running keeps its
+/// taps for itself. That and what else it offers are in the long-press menu
+/// too, which VoiceOver reaches as the name's actions. A long press on a page
+/// that is running is the page's own, so the name is where the menu is sure
+/// to open.
 struct ArtifactCard: View {
     let file: AgentFile
     @Environment(AppModel.self) private var app
@@ -715,7 +717,11 @@ struct ArtifactCard: View {
                 }
                 Group {
                     if let markdown {
+                        // A document has nothing else to tap, so a tap on it opens it like the
+                        // name does. A page or drawing below is not given this: it runs, and a
+                        // tap on it belongs to the page (its buttons and links).
                         ScrollView { MarkdownView(text: markdown) }
+                            .onTapGesture { isOpen = true }
                     } else if let address {
                         ArtifactWebView(address: address)
                     } else {
