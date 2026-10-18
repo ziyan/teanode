@@ -208,25 +208,45 @@ func parseFlag(request *http.Request, header string) (bool, *headerError) {
 // before that Upload-Incomplete, ?0 for the end. A request that says
 // neither is a plain upload and is the whole file.
 func parseCompleteness(request *http.Request) (bool, *headerError) {
-	if value := request.Header.Get(headerUploadComplete); value != "" {
-		switch value {
-		case "?1":
-			return true, nil
-		case "?0":
-			return false, nil
+	for _, flag := range []struct{ header, endValue string }{
+		{headerUploadComplete, "?1"},
+		{headerUploadIncomplete, "?0"},
+	} {
+		agreed, problem := parseAgreedFlag(flag.header, request.Header.Values(flag.header))
+		if problem != nil {
+			return false, problem
 		}
-		return false, &headerError{headerUploadComplete, "must be ?1 or ?0"}
-	}
-	if value := request.Header.Get(headerUploadIncomplete); value != "" {
-		switch value {
-		case "?0":
-			return true, nil
-		case "?1":
-			return false, nil
+		if agreed != "" {
+			return agreed == flag.endValue, nil
 		}
-		return false, &headerError{headerUploadIncomplete, "must be ?1 or ?0"}
 	}
 	return true, nil
+}
+
+// parseAgreedFlag reads a structured boolean header and answers "?1" or "?0",
+// or "" when the header is absent or empty. Every item of every line counts,
+// because URLSession on iOS 17 and later adds resumable upload headers of its
+// own to a background upload, so the one the app set can arrive as "?1, ?1".
+// Items that agree are one answer; items that disagree are refused, since
+// neither can be believed over the other.
+func parseAgreedFlag(header string, lines []string) (string, *headerError) {
+	var agreed string
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		for _, item := range strings.Split(line, ",") {
+			item = strings.TrimSpace(item)
+			if item != "?0" && item != "?1" {
+				return "", &headerError{header, "must be ?1 or ?0"}
+			}
+			if agreed != "" && item != agreed {
+				return "", &headerError{header, "must not say both ?1 and ?0"}
+			}
+			agreed = item
+		}
+	}
+	return agreed, nil
 }
 
 // parseInteropVersion reads the draft revision the client speaks, which
