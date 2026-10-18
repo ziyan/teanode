@@ -190,6 +190,94 @@ func TestPersonPhotosPageWithOffset(test *testing.T) {
 	}
 }
 
+func TestSearchPlacesAsksForTheCitiesNearAPoint(test *testing.T) {
+	current := newRun(test, map[string]string{"SearchPhotoPlaces": `[{"placeName":"Harborview, Exampleland","latitude":10.5,"longitude":20.25,"distanceKilometers":3.14159}]`})
+	result, err := current.call(map[string]any{"operation": "search-places", "query": "harbor", "near_latitude": 10.0, "near_longitude": 20.0})
+	if err != nil || !strings.Contains(result.Content, `"place_name":"Harborview, Exampleland"`) || !strings.Contains(result.Content, `"distance_kilometers":3.1`) {
+		test.Fatalf("%v %v", result, err)
+	}
+	asked := current.operations.asked("SearchPhotoPlaces")
+	if len(asked) != 1 || asked[0]["query"] != "harbor" || asked[0]["nearLatitude"] != 10.0 || asked[0]["nearLongitude"] != 20.0 || asked[0]["limitCount"] != 10 {
+		test.Fatalf("%v", asked)
+	}
+	for name, arguments := range map[string]map[string]any{
+		"no words":     {"operation": "search-places"},
+		"half a point": {"operation": "search-places", "query": "harbor", "near_latitude": 10.0},
+		"blank words":  {"operation": "search-places", "query": "   "},
+		"other half":   {"operation": "search-places", "query": "harbor", "near_longitude": 20.0},
+	} {
+		if _, err := current.call(arguments); err == nil {
+			test.Fatalf("%s was accepted", name)
+		}
+	}
+	if len(current.operations.asked("SearchPhotoPlaces")) != 1 {
+		test.Fatal("a search that was refused was sent")
+	}
+}
+
+func TestSetLocationUsesTheBestMatchOrAPositionAndNeverBoth(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"SearchPhotoPlaces": `[{"placeName":"Harborview, Exampleland","latitude":10.5,"longitude":20.25}]`,
+		"SetPhotoLocation":  `2`,
+	})
+	result, err := current.call(map[string]any{"operation": "set-location", "photo_ids": []string{"photo-one", "photo-two", "photo-three"}, "place": "harborview"})
+	if err != nil || !strings.Contains(result.Content, "2 of 3 photos were set to Harborview, Exampleland") {
+		test.Fatalf("%v %v", result, err)
+	}
+	asked := current.operations.asked("SetPhotoLocation")
+	if len(asked) != 1 || asked[0]["latitude"] != 10.5 || asked[0]["longitude"] != 20.25 || len(asked[0]["photoIds"].([]string)) != 3 {
+		test.Fatalf("%v", asked)
+	}
+	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 1 || searched[0]["query"] != "harborview" || searched[0]["limitCount"] != 1 {
+		test.Fatalf("%v", searched)
+	}
+
+	// A position is looked up for its name, then set.
+	result, err = current.call(map[string]any{"operation": "set-location", "photo_id": "photo-one", "latitude": 10.5, "longitude": 20.25})
+	if err != nil || !strings.Contains(result.Content, "were set to Harborview, Exampleland") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 2 || searched[1]["query"] != "10.5, 20.25" {
+		test.Fatalf("%v", searched)
+	}
+
+	sent := len(current.operations.asked("SetPhotoLocation"))
+	for name, arguments := range map[string]map[string]any{
+		"no photos":       {"operation": "set-location", "place": "harborview"},
+		"neither":         {"operation": "set-location", "photo_id": "photo-one"},
+		"both":            {"operation": "set-location", "photo_id": "photo-one", "place": "harborview", "latitude": 10.5, "longitude": 20.25},
+		"half a position": {"operation": "set-location", "photo_id": "photo-one", "latitude": 10.5},
+		"too many photos": {"operation": "set-location", "photo_ids": make([]string, 101), "place": "harborview"},
+	} {
+		if _, err := current.call(arguments); err == nil {
+			test.Fatalf("%s was accepted", name)
+		}
+	}
+	if len(current.operations.asked("SetPhotoLocation")) != sent {
+		test.Fatal("a location that was refused was sent")
+	}
+
+	// Words no city matches set nothing.
+	none := newRun(test, map[string]string{"SearchPhotoPlaces": `[]`, "SetPhotoLocation": `1`})
+	if _, err := none.call(map[string]any{"operation": "set-location", "photo_id": "photo-one", "place": "atlantis"}); err == nil || !strings.Contains(err.Error(), "no city matches") {
+		test.Fatalf("%v", err)
+	}
+	if len(none.operations.asked("SetPhotoLocation")) != 0 {
+		test.Fatal("a place that matched nothing was sent")
+	}
+}
+
+func TestRemoveLocationNamesPhotosAndSendsThem(test *testing.T) {
+	current := newRun(test, map[string]string{"RemovePhotoLocation": `1`})
+	result, err := current.call(map[string]any{"operation": "remove-location", "photo_ids": []string{"photo-one", "photo-two"}})
+	if err != nil || !strings.Contains(result.Content, "1 of 2 photos had their location removed") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if _, err := current.call(map[string]any{"operation": "remove-location"}); err == nil {
+		test.Fatal("no photos were accepted")
+	}
+}
+
 func TestSetDateSendsTheTimeWithItsOffsetAndRefusesOneWithout(test *testing.T) {
 	current := newRun(test, map[string]string{"UpdatePhoto": `{"id":"photo-one","photoKind":"picture","takenAt":"2025-07-12T05:30:00Z","takenAtOffsetMinutes":540}`})
 	result, err := current.call(map[string]any{"operation": "set-date", "photo_id": "photo-one", "taken_at": "2025-07-12T14:30:00+09:00"})

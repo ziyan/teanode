@@ -228,6 +228,12 @@ const (
 
 	DocumentUpdatePhoto = `mutation ($photoId: String!, $isFavorite: Boolean, $takenAt: DateTime) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite, takenAt: $takenAt) ` + photoSelection + ` }`
 
+	DocumentSearchPhotoPlaces = `query ($query: String!, $nearLatitude: Float, $nearLongitude: Float, $limitCount: Int) { SearchPhotoPlaces(query: $query, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, limitCount: $limitCount) { placeName latitude longitude distanceKilometers } }`
+
+	DocumentSetPhotoLocation = `mutation ($photoIds: [String!]!, $latitude: Float!, $longitude: Float!) { SetPhotoLocation(photoIds: $photoIds, latitude: $latitude, longitude: $longitude) }`
+
+	DocumentRemovePhotoLocation = `mutation ($photoIds: [String!]!) { RemovePhotoLocation(photoIds: $photoIds) }`
+
 	DocumentTrashPhotos = `mutation ($photoIds: [String!]!) { TrashPhotos(photoIds: $photoIds) }`
 
 	DocumentRestorePhotos = `mutation ($photoIds: [String!]!) { RestorePhotos(photoIds: $photoIds) }`
@@ -400,6 +406,61 @@ func PhotosCountText(count int) string {
 		return "1 photo"
 	}
 	return fmt.Sprintf("%d photos", count)
+}
+
+// PhotoPlace is a city a photo can be said to be taken in. PlaceName is the
+// text a photo's place name is. DistanceKilometers is how far the city is from
+// the point the search was asked to be near, and nil when it was not asked.
+type PhotoPlace struct {
+	PlaceName          string   `json:"placeName"`
+	Latitude           float64  `json:"latitude"`
+	Longitude          float64  `json:"longitude"`
+	DistanceKilometers *float64 `json:"distanceKilometers"`
+}
+
+// SearchPhotoPlaces finds cities by name, best match first, nearest first
+// within one kind of match when a point is given and largest first when not.
+// Text that is a latitude and a longitude answers the one position it says.
+// A limitCount of zero asks for the server's default.
+func SearchPhotoPlaces(ctx context.Context, executor Executor, query string, nearLatitude, nearLongitude *float64, limitCount int) ([]*PhotoPlace, error) {
+	variables := map[string]any{"query": query}
+	if nearLatitude != nil && nearLongitude != nil {
+		variables["nearLatitude"], variables["nearLongitude"] = *nearLatitude, *nearLongitude
+	}
+	if limitCount > 0 {
+		variables["limitCount"] = limitCount
+	}
+	var result struct {
+		SearchPhotoPlaces []*PhotoPlace `json:"SearchPhotoPlaces"`
+	}
+	if err := executor.Execute(ctx, DocumentSearchPhotoPlaces, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SearchPhotoPlaces, nil
+}
+
+// SetPhotoLocation says where photos were taken, and how many it changed. The
+// server names the place after the nearest city.
+func SetPhotoLocation(ctx context.Context, executor Executor, photoIds []string, latitude, longitude float64) (int, error) {
+	var result struct {
+		SetPhotoLocation int `json:"SetPhotoLocation"`
+	}
+	if err := executor.Execute(ctx, DocumentSetPhotoLocation, map[string]any{"photoIds": photoIds, "latitude": latitude, "longitude": longitude}, &result); err != nil {
+		return 0, err
+	}
+	return result.SetPhotoLocation, nil
+}
+
+// RemovePhotoLocation removes the location from photos, for good: reading
+// the file again does not bring it back. It says how many it changed.
+func RemovePhotoLocation(ctx context.Context, executor Executor, photoIds []string) (int, error) {
+	var result struct {
+		RemovePhotoLocation int `json:"RemovePhotoLocation"`
+	}
+	if err := executor.Execute(ctx, DocumentRemovePhotoLocation, map[string]any{"photoIds": photoIds}, &result); err != nil {
+		return 0, err
+	}
+	return result.RemovePhotoLocation, nil
 }
 
 // TrashPhotos moves photos to the trash and says how many it moved.

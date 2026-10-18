@@ -10,11 +10,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/photo"
+	"github.com/ziyan/teanode/internal/place"
 )
 
 // PhotoQuery reads the person's photo library, and the photos of the albums
@@ -32,6 +34,11 @@ type PhotoQuery interface {
 	ReadPhotoLibrary(context.Context) (*PhotoLibraryView, error)
 	FindPhotos(context.Context, FindPhotosArguments) ([]*models.Photo, error)
 
+	// SearchPhotoPlaces finds cities in the table that names every photo, for
+	// a person to pick where a photo was taken. Text that is two numbers, a
+	// latitude and a longitude, answers the one position it says.
+	SearchPhotoPlaces(context.Context, SearchPhotoPlacesArguments) ([]*PhotoPlace, error)
+
 	// An address for one preview or one file of a photo that a player can
 	// fetch by itself, with ranges, because it carries a signature instead
 	// of the person's sign-in. Good for a few hours; the caller must be able to
@@ -45,6 +52,13 @@ type PhotoQuery interface {
 // resumable upload endpoint, not through here.
 type PhotoMutation interface {
 	UpdatePhoto(context.Context, UpdatePhotoArguments) (*models.Photo, error)
+
+	// SetPhotoLocation says where the named photos were taken, for the ones
+	// the caller owns that are not in the Trash, and gives how many it
+	// changed. The photos are named after the nearest city. RemovePhotoLocation
+	// removes the location, and it stays removed when the file is read again.
+	SetPhotoLocation(context.Context, SetPhotoLocationArguments) (int, error)
+	RemovePhotoLocation(context.Context, PhotoIDsArguments) (int, error)
 	TrashPhotos(context.Context, PhotoIDsArguments) (int, error)
 	RestorePhotos(context.Context, PhotoIDsArguments) (int, error)
 	DeletePhotos(context.Context, PhotoIDsArguments) (int, error)
@@ -140,6 +154,36 @@ type DescribePhotoArguments struct {
 // PhotoIDsArguments names photos, at most 500.
 type PhotoIDsArguments struct {
 	PhotoIDs []string `json:"photoIds"`
+}
+
+// SearchPhotoPlacesArguments asks for the cities that some words name. The
+// words are 1 to 100 characters. NearLatitude and NearLongitude come together
+// and put the nearest first; without them the largest comes first. LimitCount
+// is 10 when left out, at most 50.
+type SearchPhotoPlacesArguments struct {
+	Query         string   `json:"query"`
+	NearLatitude  *float64 `json:"nearLatitude"`
+	NearLongitude *float64 `json:"nearLongitude"`
+	LimitCount    *int     `json:"limitCount"`
+}
+
+// PhotoPlace is a city a photo can be said to be taken in. PlaceName is the
+// text a photo's place name is, "City, Country". DistanceKilometers is how far
+// it is from the point the search was asked to be near, and null when it was
+// not asked.
+type PhotoPlace struct {
+	PlaceName          string   `json:"placeName"`
+	Latitude           float64  `json:"latitude"`
+	Longitude          float64  `json:"longitude"`
+	DistanceKilometers *float64 `json:"distanceKilometers" graphapi:"nullable"`
+}
+
+// SetPhotoLocationArguments names photos, at most 500, and the position they
+// were taken at.
+type SetPhotoLocationArguments struct {
+	PhotoIDs  []string `json:"photoIds"`
+	Latitude  float64  `json:"latitude"`
+	Longitude float64  `json:"longitude"`
 }
 
 // FindPhotosArguments asks which of an uploader's photos are already here.
@@ -783,6 +827,74 @@ func (self *graph) UpdatePhoto(ctx context.Context, arguments UpdatePhotoArgumen
 		return nil, translateError(err)
 	}
 	return updated, nil
+}
+
+// photoPlaceQueryMostRunes, photoPlaceLimitDefault and photoPlaceLimitMost are
+// how long the words of a place search may be and how many cities it answers.
+const (
+	photoPlaceQueryMostRunes = 100
+	photoPlaceLimitDefault   = 10
+	photoPlaceLimitMost      = 50
+)
+
+func (self *graph) SearchPhotoPlaces(ctx context.Context, arguments SearchPhotoPlacesArguments) ([]*PhotoPlace, error) {
+	if _, err := self.requirePhotosPerson(ctx); err != nil {
+		return nil, err
+	}
+	query := strings.TrimSpace(arguments.Query)
+	if query == "" {
+		return nil, fmt.Errorf("%w: type some of the place", api.ErrInvalidArguments)
+	}
+	if utf8.RuneCountInString(query) > photoPlaceQueryMostRunes {
+		return nil, fmt.Errorf("%w: search for at most %d characters", api.ErrInvalidArguments, photoPlaceQueryMostRunes)
+	}
+	limitCount := photoPlaceLimitDefault
+	if arguments.LimitCount != nil {
+		limitCount = *arguments.LimitCount
+	}
+	if limitCount < 1 || limitCount > photoPlaceLimitMost {
+		return nil, fmt.Errorf("%w: ask for 1 to %d places", api.ErrInvalidArguments, photoPlaceLimitMost)
+	}
+	var near *place.Point
+	if arguments.NearLatitude != nil || arguments.NearLongitude != nil {
+		if arguments.NearLatitude == nil || arguments.NearLongitude == nil {
+			return nil, fmt.Errorf("%w: give both nearLatitude and nearLongitude, or neither", api.ErrInvalidArguments)
+		}
+		if !place.IsOnEarth(*arguments.NearLatitude, *arguments.NearLongitude) {
+			return nil, fmt.Errorf("%w: nearLatitude is -90 to 90 and nearLongitude is -180 to 180", api.ErrInvalidArguments)
+		}
+		near = &place.Point{Latitude: *arguments.NearLatitude, Longitude: *arguments.NearLongitude}
+	}
+	matches := place.Search(query, near, limitCount)
+	places := make([]*PhotoPlace, 0, len(matches))
+	for _, match := range matches {
+		places = append(places, &PhotoPlace{PlaceName: match.PlaceName, Latitude: match.Latitude, Longitude: match.Longitude, DistanceKilometers: match.DistanceKilometers})
+	}
+	return places, nil
+}
+
+func (self *graph) SetPhotoLocation(ctx context.Context, arguments SetPhotoLocationArguments) (int, error) {
+	principal, err := self.requirePhotosPerson(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if !place.IsOnEarth(arguments.Latitude, arguments.Longitude) {
+		return 0, fmt.Errorf("%w: latitude is -90 to 90 and longitude is -180 to 180", api.ErrInvalidArguments)
+	}
+	// A position with no city near it has no name; the photo then shows its
+	// coordinates only.
+	placeName, _ := place.Nearest(arguments.Latitude, arguments.Longitude)
+	changedCount, err := self.transaction(ctx).SetPhotoLocation(principal.User.ID, arguments.PhotoIDs, &db.PhotoLocation{Latitude: arguments.Latitude, Longitude: arguments.Longitude, PlaceName: placeName})
+	return changedCount, translateError(err)
+}
+
+func (self *graph) RemovePhotoLocation(ctx context.Context, arguments PhotoIDsArguments) (int, error) {
+	principal, err := self.requirePhotosPerson(ctx)
+	if err != nil {
+		return 0, err
+	}
+	changedCount, err := self.transaction(ctx).SetPhotoLocation(principal.User.ID, arguments.PhotoIDs, nil)
+	return changedCount, translateError(err)
 }
 
 func (self *graph) TrashPhotos(ctx context.Context, arguments PhotoIDsArguments) (int, error) {

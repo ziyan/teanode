@@ -87,6 +87,13 @@ type PhotoOperation interface {
 	// came with it, in the same statement, so a date never keeps the offset of
 	// the one it replaced.
 	UpdatePhoto(userId, photoId string, update *PhotoUpdate) (*models.Photo, error)
+
+	// SetPhotoLocation says where the named photos were taken, for the ones
+	// the person owns that are not in the Trash, and gives the number it
+	// changed. A nil location removes the location and remembers that
+	// it was taken away, so that reading the file again does not bring it back.
+	SetPhotoLocation(userId string, photoIds []string, location *PhotoLocation) (int, error)
+
 	TrashPhotos(userId string, photoIds []string) (int, error)
 	RestorePhotos(userId string, photoIds []string) (int, error)
 
@@ -369,6 +376,14 @@ type PhotoUpdate struct {
 	// with it; they are stored together. An offset needs a date.
 	TakenAt              *time.Time
 	TakenAtOffsetMinutes *int
+}
+
+// PhotoLocation is a place a person says a photo was taken. PlaceName is the
+// text the photo shows for it, empty where no city is near.
+type PhotoLocation struct {
+	Latitude  float64
+	Longitude float64
+	PlaceName string
 }
 
 // PhotoMetadata is what is read from a photo's file. Zero values say the file
@@ -896,6 +911,29 @@ func (self *transaction) UpdatePhoto(userId, photoId string, update *PhotoUpdate
 // is room for any error.
 func isPlausibleOffsetMinutes(offsetMinutes int) bool {
 	return offsetMinutes >= -24*60 && offsetMinutes <= 24*60
+}
+
+func (self *transaction) SetPhotoLocation(userId string, photoIds []string, location *PhotoLocation) (int, error) {
+	if userId == "" || len(photoIds) > 500 {
+		return 0, ErrInvalidArguments
+	}
+	changes := map[string]any{"updated_at": photoNow()}
+	if location == nil {
+		changes["latitude"], changes["longitude"] = gorm.Expr("NULL"), gorm.Expr("NULL")
+		changes["place_name"], changes["is_location_removed"] = "", true
+	} else {
+		if math.IsNaN(location.Latitude) || location.Latitude < -90 || location.Latitude > 90 ||
+			math.IsNaN(location.Longitude) || location.Longitude < -180 || location.Longitude > 180 || len(location.PlaceName) > 255 {
+			return 0, ErrInvalidArguments
+		}
+		changes["latitude"], changes["longitude"] = location.Latitude, location.Longitude
+		changes["place_name"], changes["is_location_removed"] = location.PlaceName, false
+	}
+	count, err := self.changePhotoTrash(userId, photoIds, "trashed_at IS NULL", nil, changes)
+	if err != nil || count == 0 {
+		return count, err
+	}
+	return count, self.refreshPhotoSearchDocumentsOf(photoIds)
 }
 
 func (self *transaction) TrashPhotos(userId string, photoIds []string) (int, error) {
@@ -1579,11 +1617,14 @@ func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMeta
 	// said, and the kind is whatever the caller settled on.
 	changes := map[string]any{
 		"updated_at":   photoNow(),
-		"latitude":     gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude),
-		"longitude":    gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude),
-		"place_name":   gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName),
 		"camera_make":  gorm.Expr("CASE WHEN camera_make = '' THEN ? ELSE camera_make END", metadata.CameraMake),
 		"camera_model": gorm.Expr("CASE WHEN camera_model = '' THEN ? ELSE camera_model END", metadata.CameraModel),
+	}
+	// A location the person removed stays removed: the file still has it.
+	if !current.IsLocationRemoved {
+		changes["latitude"] = gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude)
+		changes["longitude"] = gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude)
+		changes["place_name"] = gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName)
 	}
 	if takenAt != nil {
 		changes["taken_at"] = takenAt.UTC()

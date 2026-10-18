@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -1013,6 +1014,94 @@ func TestPhotoMetadataKeepsWhatThePhotoAlreadyHas(test *testing.T) {
 		found, _ := transaction.GetPhoto(ownerId, empty.ID)
 		if found.TakenAt == nil || !found.TakenAt.Equal(fileTakenAt) || found.TakenAtOffsetMinutes == nil || *found.TakenAtOffsetMinutes != -300 || found.Latitude == nil || *found.Latitude != 10.0 {
 			test.Fatalf("the file's reading was not taken: %+v", found)
+		}
+	})
+}
+
+func TestAPhotosLocationIsSetRemovedAndKeptWhenTheFileIsReadAgain(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-location-owner")
+	otherId := dbtest.CreateUser(test, database, "photo-location-other")
+	fileLatitude, fileLongitude := 10.0, 20.0
+	fileMetadata := &db.PhotoMetadata{Latitude: &fileLatitude, Longitude: &fileLongitude, PlaceName: "Filetown, Exampleland"}
+
+	set := newTestPhoto(test, database, ownerId, "set", nil)
+	removed := newTestPhoto(test, database, ownerId, "removed", nil)
+	trashed := newTestPhoto(test, database, ownerId, "trashed", nil)
+	foreign := newTestPhoto(test, database, otherId, "foreign", nil)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if _, err := transaction.TrashPhotos(ownerId, []string{trashed.ID}); err != nil {
+			test.Fatal(err)
+		}
+		// Only the photos the person owns that are not in the Trash are counted.
+		count, err := transaction.SetPhotoLocation(ownerId, []string{set.ID, trashed.ID, foreign.ID, "no-such-photo"}, &db.PhotoLocation{Latitude: 35.5, Longitude: 135.25, PlaceName: "Harborview, Exampleland"})
+		if err != nil || count != 1 {
+			test.Fatalf("set location counted %d: %v", count, err)
+		}
+		count, err = transaction.SetPhotoLocation(ownerId, []string{removed.ID, trashed.ID, foreign.ID}, nil)
+		if err != nil || count != 1 {
+			test.Fatalf("remove location counted %d: %v", count, err)
+		}
+		if count, err := transaction.SetPhotoLocation(ownerId, nil, nil); err != nil || count != 0 {
+			test.Fatalf("an empty list counted %d: %v", count, err)
+		}
+		if _, err := transaction.SetPhotoLocation(ownerId, make([]string, 501), nil); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("501 photos were accepted: %v", err)
+		}
+		if _, err := transaction.SetPhotoLocation(ownerId, []string{set.ID}, &db.PhotoLocation{Latitude: 91, Longitude: 0}); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("a latitude past the pole was accepted: %v", err)
+		}
+		if _, err := transaction.SetPhotoLocation(ownerId, []string{set.ID}, &db.PhotoLocation{Latitude: 0, Longitude: math.NaN()}); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("a longitude that is not a number was accepted: %v", err)
+		}
+		found, err := transaction.GetPhoto(otherId, foreign.ID)
+		if err != nil || found.Latitude != nil || found.IsLocationRemoved {
+			test.Fatalf("another person's photo was changed: %+v %v", found, err)
+		}
+		found, err = transaction.GetPhoto(ownerId, trashed.ID)
+		if err != nil || found.Latitude != nil || found.IsLocationRemoved || found.PlaceName != "" {
+			test.Fatalf("a trashed photo was changed: %+v %v", found, err)
+		}
+	})
+
+	// The file is read again, as when a Live Photo's video arrives or a retry runs.
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		for _, photoId := range []string{set.ID, removed.ID} {
+			if err := transaction.UpdatePhotoMetadata(photoId, fileMetadata); err != nil {
+				test.Fatal(err)
+			}
+		}
+		found, err := transaction.GetPhoto(ownerId, set.ID)
+		if err != nil || found.Latitude == nil || *found.Latitude != 35.5 || *found.Longitude != 135.25 || found.PlaceName != "Harborview, Exampleland" || found.IsLocationRemoved {
+			test.Fatalf("the location the person set was replaced by the file's: %+v %v", found, err)
+		}
+		found, err = transaction.GetPhoto(ownerId, removed.ID)
+		if err != nil || found.Latitude != nil || found.Longitude != nil || found.PlaceName != "" || !found.IsLocationRemoved {
+			test.Fatalf("the location the person removed came back from the file: %+v %v", found, err)
+		}
+	})
+
+	// The search follows the place: the removed place no longer finds the photo.
+	if found := searchPhotoIds(test, database, ownerId, "harborview", nil); !equalIds(found, []string{set.ID}) {
+		test.Fatalf("the new place finds %v", found)
+	}
+	if found := searchPhotoIds(test, database, ownerId, "filetown", nil); len(found) != 0 {
+		test.Fatalf("the file's place still finds %v", found)
+	}
+
+	// Setting a location after removing one gives the photo a place again, and
+	// reading the file leaves it alone from then on.
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if count, err := transaction.SetPhotoLocation(ownerId, []string{removed.ID}, &db.PhotoLocation{Latitude: -12.5, Longitude: 77.5}); err != nil || count != 1 {
+			test.Fatalf("set location counted %d: %v", count, err)
+		}
+		if err := transaction.UpdatePhotoMetadata(removed.ID, fileMetadata); err != nil {
+			test.Fatal(err)
+		}
+		found, err := transaction.GetPhoto(ownerId, removed.ID)
+		if err != nil || found.Latitude == nil || *found.Latitude != -12.5 || found.IsLocationRemoved {
+			test.Fatalf("a location set after removing one is gone: %+v %v", found, err)
 		}
 	})
 }

@@ -91,6 +91,25 @@ func NewPhotoCommand() *cli.Command {
 				Name: "set-date", Usage: "correct the date a photo was taken: an RFC 3339 time whose offset is the place's, such as 2025-07-12T14:30:00+09:00", ArgsUsage: "<id> <time>",
 				Flags: []cli.Flag{JSONFlag()}, Action: runPhotoSetDate,
 			},
+			{
+				Name: "search-places", Usage: "find cities by name, to say where photos were taken: best match first, nearest first when --near is given, otherwise the largest; two numbers (35.0116, 135.7681) give that position", ArgsUsage: "<words>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "near", Usage: "put the cities nearest this point first: <latitude>,<longitude>, such as 10.5,20.25"},
+					&cli.IntFlag{Name: "limit", Value: 10, Usage: "cities to list, 1 to 50"},
+				},
+				Action: runPhotoSearchPlaces,
+			},
+			{
+				Name: "set-location", Usage: "say where photos were taken: the best match for some words (--place), or a position (--at); the photo is named after the nearest city, and the date it was taken is not changed", ArgsUsage: "<id>...",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "place", Usage: "a city, by name, such as \"kyoto japan\": the best match for these words is used (teanode photo search-places shows the choices)"},
+					&cli.StringFlag{Name: "at", Usage: "a position: <latitude>,<longitude>, such as 10.5,20.25"},
+				},
+				Action: runPhotoSetLocation,
+			},
+			{Name: "remove-location", Usage: "remove the location from photos, for good: reading the file again does not bring it back (the file itself is not changed)", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRemoveLocation},
 			{Name: "favorite", Usage: "make a photo a favorite", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "off", Usage: "take it out of the favorites"}}, Action: runPhotoFavorite},
 			{Name: "trash", Usage: "move photos to the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoTrash},
 			{Name: "restore", Usage: "restore photos from the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRestore},
@@ -152,6 +171,26 @@ func parsePhotoNear(text string) (latitude, longitude, kilometers *float64, err 
 		return nil, nil, nil, usage("--near: the distance is more than 0 kilometers")
 	}
 	return &numbers[0], &numbers[1], &numbers[2], nil
+}
+
+// parsePhotoPoint reads "<latitude>,<longitude>", a position on the earth.
+func parsePhotoPoint(flag, text string) (latitude, longitude float64, err error) {
+	parts := strings.Split(strings.TrimSpace(text), ",")
+	if len(parts) != 2 {
+		return 0, 0, usage(fmt.Sprintf("--%s must be <latitude>,<longitude>, such as 10.5,20.25, not %q", flag, text))
+	}
+	latitude, latitudeErr := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	longitude, longitudeErr := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if latitudeErr != nil || longitudeErr != nil || math.IsNaN(latitude) || math.IsNaN(longitude) {
+		return 0, 0, usage(fmt.Sprintf("--%s must be <latitude>,<longitude>, such as 10.5,20.25, not %q", flag, text))
+	}
+	if latitude < -90 || latitude > 90 {
+		return 0, 0, usage(fmt.Sprintf("--%s: the latitude is from -90 to 90 degrees", flag))
+	}
+	if longitude < -180 || longitude > 180 {
+		return 0, 0, usage(fmt.Sprintf("--%s: the longitude is from -180 to 180 degrees", flag))
+	}
+	return latitude, longitude, nil
 }
 
 func photoFilterOf(command *cli.Command) (*client.PhotoFilter, error) {
@@ -872,6 +911,102 @@ func parsePhotoTakenAt(text string) (time.Time, error) {
 		return time.Time{}, usage(err.Error())
 	}
 	return takenAt, nil
+}
+
+func runPhotoSearchPlaces(ctx context.Context, command *cli.Command) error {
+	words := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
+	if words == "" {
+		return usage("usage: teanode photo search-places <words> [--near <latitude>,<longitude>]")
+	}
+	limit := int(command.Int("limit"))
+	if limit < 1 || limit > 50 {
+		return usage("--limit is from 1 to 50")
+	}
+	var nearLatitude, nearLongitude *float64
+	if near := command.String("near"); strings.TrimSpace(near) != "" {
+		latitude, longitude, err := parsePhotoPoint("near", near)
+		if err != nil {
+			return err
+		}
+		nearLatitude, nearLongitude = &latitude, &longitude
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	places, err := client.SearchPhotoPlaces(ctx, connection, words, nearLatitude, nearLongitude, limit)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(places)
+	}
+	if len(places) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "no city matches")
+		return nil
+	}
+	rows := make([][]string, 0, len(places))
+	for _, found := range places {
+		row := []string{forTerminal(found.PlaceName), strconv.FormatFloat(found.Latitude, 'f', 4, 64), strconv.FormatFloat(found.Longitude, 'f', 4, 64)}
+		if found.DistanceKilometers != nil {
+			row = append(row, strconv.FormatFloat(*found.DistanceKilometers, 'f', 1, 64))
+		}
+		rows = append(rows, row)
+	}
+	headers := []string{"place", "latitude", "longitude"}
+	if nearLatitude != nil {
+		headers = append(headers, "kilometers")
+	}
+	return printTable(headers, rows)
+}
+
+// runPhotoSetLocation says where photos were taken. A place given as words is
+// the best match for them, looked up first, so that what is stored is a
+// position the person can see the name of.
+func runPhotoSetLocation(ctx context.Context, command *cli.Command) error {
+	photoIds := command.Args().Slice()
+	placeWords, positionText := strings.TrimSpace(command.String("place")), strings.TrimSpace(command.String("at"))
+	if len(photoIds) == 0 || (placeWords == "") == (positionText == "") {
+		return usage("usage: teanode photo set-location <id>... --place <words>, or --at <latitude>,<longitude> (exactly one of them)")
+	}
+	if len(photoIds) > client.MaximumPhotoIDs {
+		return usage(fmt.Sprintf("name at most %d photos at once", client.MaximumPhotoIDs))
+	}
+	// A position is looked up as well, to say the name the photos will have:
+	// the server names it after the nearest city.
+	query := placeWords
+	if positionText != "" {
+		latitude, longitude, err := parsePhotoPoint("at", positionText)
+		if err != nil {
+			return err
+		}
+		query = strconv.FormatFloat(latitude, 'f', -1, 64) + ", " + strconv.FormatFloat(longitude, 'f', -1, 64)
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	places, err := client.SearchPhotoPlaces(ctx, connection, query, nil, nil, 1)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if len(places) == 0 {
+		return usage(fmt.Sprintf("no city matches %q; teanode photo search-places shows what the table has, or give a position with --at", placeWords))
+	}
+	latitude, longitude, placeName := places[0].Latitude, places[0].Longitude, places[0].PlaceName
+	changedCount, err := client.SetPhotoLocation(ctx, connection, photoIds, latitude, longitude)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"changedCount": changedCount, "latitude": latitude, "longitude": longitude, "placeName": placeName})
+	}
+	_, _ = fmt.Fprintf(command.Writer, "set the location of %d of %d photos to %s\n", changedCount, len(photoIds), forTerminal(placeName))
+	return nil
+}
+
+func runPhotoRemoveLocation(ctx context.Context, command *cli.Command) error {
+	return runPhotoMove(ctx, command, client.RemovePhotoLocation, "changedCount", "removed the location from")
 }
 
 func runPhotoFavorite(ctx context.Context, command *cli.Command) error {
