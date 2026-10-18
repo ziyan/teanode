@@ -602,7 +602,7 @@ export function App() {
                       from the account menu rather than the rail. */}
                       <Route path="/circles" element={<CirclesPage />} />
                       <Route path="/circles/:circleId" element={<CirclePage />} />
-                      <Route path="/settings/password" element={<ChangePasswordPage />} />
+                      <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                       <Route path="/settings/passkeys" element={<PasskeysPage />} />
                       <Route path="/settings/tokens" element={<TokensPage />} />
                       <Route path="/settings/devices" element={<DevicesPage />} />

@@ -6,7 +6,7 @@ import { useTranslation } from '../i18n/i18n'
 
 // The current password is asked for even though the caller is already signed
 // in, because a session can be an unattended browser.
-export function ChangePassword() {
+export function ChangePassword({ username }: { username: string }) {
   const { t } = useTranslation()
   const [current, setCurrent] = useState('')
   const [replacement, setReplacement] = useState('')
@@ -39,8 +39,23 @@ export function ChangePassword() {
   return (
     <form className="card" onSubmit={submit}>
       <h3>{t('password.title')}</h3>
+      {/* Whose password this is: an operator signed in as somebody else
+          changes that person's, and this is the one place that says so. */}
+      <p className="muted field-standalone">{t('password.signedInAs', { username })}</p>
 
       <div className="form-narrow">
+        {/* Not shown, but in the form, so that a password manager ties the
+            new password to the account rather than to whatever it guesses. */}
+        <input
+          className="visually-hidden"
+          type="text"
+          name="username"
+          value={username}
+          autoComplete="username"
+          readOnly
+          tabIndex={-1}
+          aria-hidden="true"
+        />
         <label>
           <span>{t('password.current')}</span>
           <input

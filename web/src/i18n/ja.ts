@@ -114,6 +114,7 @@ export const ja: Catalog = {
     '作成するまでは、このページに到達できる人なら誰でもこのサーバーを乗っ取れます。今すぐ作成するか、localhost だけで待ち受けてください。',
 
   'password.title': 'パスワード',
+  'password.signedInAs': '{username} でサインイン中。',
   'password.current': '現在のパスワード',
   'password.new': '新しいパスワード',
   'password.newAgain': '新しいパスワード（確認）',

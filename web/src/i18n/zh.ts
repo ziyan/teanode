@@ -112,6 +112,7 @@ export const zh: Catalog = {
   'setupAccount.warning': '在此之前，任何能打开此页面的人都可以占用这台服务器。请立即创建，或者只监听 localhost。',
 
   'password.title': '密码',
+  'password.signedInAs': '当前登录：{username}。',
   'password.current': '当前密码',
   'password.new': '新密码',
   'password.newAgain': '再次输入新密码',

@@ -113,6 +113,7 @@ export const en = {
     'Until this is done, anyone who can reach this page can claim the server. Do it now, or bind it to localhost.',
 
   'password.title': 'Password',
+  'password.signedInAs': 'Signed in as {username}.',
   'password.current': 'Current password',
   'password.new': 'New password',
   'password.newAgain': 'New password again',
