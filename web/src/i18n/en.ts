@@ -2640,6 +2640,9 @@ export const en = {
   'calendar.level.details': 'Details',
   'calendar.level.edit': 'Details, and can edit',
   'calendar.share': 'Share',
+  'calendar.renameTitle': 'Rename your calendar',
+  'calendar.name': 'Name',
+  'calendar.renamed': 'Calendar renamed.',
   'calendar.findTime': 'Find a time',
   'calendar.findTimeTitle': 'Find a time together',
   'calendar.findTimeIntro':
