@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.172.1] - 2026-10-18
+
+### Fixed
+
+- Chat members panel: your own row shows your name, tags wrap instead of running off, and the heading no longer overlaps its line. (#542)
+
 ## [0.172.0] - 2026-10-18
 
 ### Added
