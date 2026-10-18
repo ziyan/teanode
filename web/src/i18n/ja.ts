@@ -5527,7 +5527,7 @@ export const ja: Catalog = {
   'services.openPhotosReady': '写真が動いています。写真をアップロードするか、TeaNode アプリで iPhone をバックアップしてください。',
   'services.openPhotosWaiting': 'サーバーを再起動すると写真を開けます。',
   'services.restartStarting': '{services}は再起動後に使えるようになります。',
-  'services.savedRestartBelow': '下の手順でサーバーを再起動してください。',
+  'services.savedRestartBelow': '{note}下の手順でサーバーを再起動してください。',
   'services.waitingTitle': '{service}は再起動後に開始します',
   'services.waitingDetail': 'サービス設定で選択済みで、サーバーの再起動時に開始します。再起動は1分もかかりません。',
   'services.openSetup': 'サービス設定',

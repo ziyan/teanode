@@ -312,11 +312,7 @@ export function SetupPage() {
             <p>{t('services.saved')}</p>
             {/* The button for the restart is in the step list below, where a
                 person looks for what to do next; one place for it, not two. */}
-            {isWaitingForRestart && (
-              <p className="muted">
-                {restartNote} {t('services.savedRestartBelow')}
-              </p>
-            )}
+            {isWaitingForRestart && <p className="muted">{t('services.savedRestartBelow', { note: restartNote })}</p>}
           </div>
         )}
         <ErrorMessage error={problem} />
@@ -410,9 +406,7 @@ export function SetupPage() {
         </div>
         {isAssistantWanted && <p className="muted">{t('services.modelDetail')}</p>}
         {setup.selectedServices.isMailRoutingEnabled && (
-          <p role="status">
-            {t(setup.hasMailDomain ? 'services.domainReady' : 'services.domainMissing')}
-          </p>
+          <p role="status">{t(setup.hasMailDomain ? 'services.domainReady' : 'services.domainMissing')}</p>
         )}
         {setup.selectedServices.isMailRoutingEnabled && (
           <p>

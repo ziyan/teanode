@@ -5313,7 +5313,7 @@ export const zh: Catalog = {
   'services.openPhotosReady': '照片已在运行。上传照片，或用 TeaNode 应用备份 iPhone。',
   'services.openPhotosWaiting': '服务器重启后即可打开照片。',
   'services.restartStarting': '{services}将在重启后可用。',
-  'services.savedRestartBelow': '请在下面的步骤中重启服务器。',
+  'services.savedRestartBelow': '{note}请在下面的步骤中重启服务器。',
   'services.waitingTitle': '{service}将在重启后启动',
   'services.waitingDetail': '它已在服务设置中选中，服务器重启时会启动它。重启不到一分钟。',
   'services.openSetup': '服务设置',
