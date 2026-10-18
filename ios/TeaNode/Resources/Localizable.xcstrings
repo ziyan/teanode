@@ -65294,22 +65294,6 @@
         }
       }
     },
-    "Shows your own location": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自分の位置を表示します"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示你自己的位置"
-          }
-        }
-      }
-    },
     "Shows them on the map": {
       "localizations": {
         "ja": {
@@ -65326,18 +65310,18 @@
         }
       }
     },
-    "Back to my location": {
+    "Shown on the map": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "自分の位置に戻る"
+            "value": "地図に表示中"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "回到我的位置"
+            "value": "已在地图上显示"
           }
         }
       }
