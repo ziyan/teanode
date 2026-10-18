@@ -798,6 +798,10 @@ public actor PhotoBackupCoordinator {
     /// is given up on when the test says and not after a stretch of real time
     /// that a slow machine can overrun for the files that are not stuck.
     private let sleepForSeconds: @Sendable (TimeInterval) async -> Void
+    /// Waits out the idle time of a pass that nothing is finishing in. A test
+    /// replaces it for the same reason as `sleepForSeconds`: the pass should
+    /// end idle when the test says so, not after a stretch of real time.
+    private let sleepForIdleSeconds: @Sendable (TimeInterval) async -> Void
     private let fileManager: FileManager
     private let tailWriter: any PhotoBackupTailWriter
 
@@ -860,14 +864,19 @@ public actor PhotoBackupCoordinator {
     /// goes up starts its count again.
     private var uploadMovedOnCountByKey: [String: Int] = [:]
 
+    /// Waits for the given time on the clock; what both waits use unless a test
+    /// replaces them. It returns early when the task is cancelled.
+    public static let sleepInRealTime: @Sendable (TimeInterval) async -> Void = { seconds in
+        try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+    }
+
     public init(
         index: PhotoBackupIndex, library: any PhotoBackupLibrary, transfer: any PhotoBackupTransfer, uploads: any PhotoBackupUploads,
         lookup: (any PhotoBackupServerLookup)?, network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String,
         credential: PhotoBackupCredential, budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, exportTimeoutSeconds: TimeInterval = 30 * 60,
         freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, now: @escaping @Sendable () -> Date = { Date() },
-        sleepForSeconds: @escaping @Sendable (TimeInterval) async -> Void = { seconds in
-            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-        },
+        sleepForSeconds: @escaping @Sendable (TimeInterval) async -> Void = PhotoBackupCoordinator.sleepInRealTime,
+        sleepForIdleSeconds: @escaping @Sendable (TimeInterval) async -> Void = PhotoBackupCoordinator.sleepInRealTime,
         fileManager: FileManager = .default, batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false,
         tailWriter: any PhotoBackupTailWriter = PhotoBackupFileTailWriter()
     ) {
@@ -889,6 +898,7 @@ public actor PhotoBackupCoordinator {
         self.freeSpaceBytes = freeSpaceBytes
         self.now = now
         self.sleepForSeconds = sleepForSeconds
+        self.sleepForIdleSeconds = sleepForIdleSeconds
         self.fileManager = fileManager
         self.tailWriter = tailWriter
     }
@@ -1954,8 +1964,9 @@ public actor PhotoBackupCoordinator {
         if isStopRequested || outstanding.isEmpty { return true }
         let completionCountBefore = completionCount
         let seconds = idleTimeoutSeconds
+        let sleepForIdleSeconds = sleepForIdleSeconds
         let timer = Task {
-            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+            await sleepForIdleSeconds(seconds)
             guard !Task.isCancelled else { return }
             await self.resumeWaiters()
         }
