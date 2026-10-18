@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -142,6 +143,58 @@ func (self *database) NotifyChatEvent(payload string) error {
 // event reads the chat again when it follows it again.
 func (self *database) ListenChatEvents(ctx context.Context) (<-chan string, error) {
 	return self.listen(ctx, ChatEventChannel)
+}
+
+// LocationEventChannel is what an instance LISTENs on to hear that somebody's
+// location was reported on another instance, so that a live map open on this
+// one moves. A channel of its own, because reports arrive whether or not the
+// server runs an agent.
+const LocationEventChannel = "location_event"
+
+// LocationEvent is what travels on LocationEventChannel: whose location
+// changed and nothing else. Coordinates never go through NOTIFY; a listener
+// reads the latest position from the tables, checking what the viewer may see.
+type LocationEvent struct {
+	UserID string `json:"userId"`
+
+	// EndedForUserIDs are people who could read this person's location until
+	// now and cannot any longer, because a share ended. They are told too,
+	// though they may not see the location any more, so that a map they have
+	// open reads it again and drops it.
+	EndedForUserIDs []string `json:"endedForUserIds,omitempty"`
+}
+
+// NotifyLocationEvent is outside any transaction, like NotifyChatEvent: the
+// report itself is stored already, and this is only a word to the instances
+// listening now. A viewer that missed the word reads the location again.
+func (self *database) NotifyLocationEvent(userId string, endedForUserIds ...string) error {
+	// A notice carries at most 8000 bytes and an ID is 32 characters, so the
+	// people a share stopped reaching go in as many notices as it takes, each
+	// naming the owner. Every notice also moves the owner's own maps.
+	for start := 0; start == 0 || start < len(endedForUserIds); start += locationEventEndedMost {
+		end := min(start+locationEventEndedMost, len(endedForUserIds))
+		payload, err := json.Marshal(&LocationEvent{UserID: userId, EndedForUserIDs: endedForUserIds[start:end]})
+		if err != nil {
+			return err
+		}
+		if err := self.db.Exec("SELECT pg_notify(?, ?)", LocationEventChannel, string(payload)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// locationEventEndedMost is how many people one location event names, so that
+// its payload stays far below the 8000 bytes a notice may carry.
+const locationEventEndedMost = 100
+
+// ListenLocationEvents delivers the payload (a LocationEvent as JSON) of every
+// report any instance announces, for as long as the context lives. A listener
+// that lost its connection reconnects on its own, and what was said while it
+// was away is gone: a map that missed an event shows the old position until
+// the next report or its next read.
+func (self *database) ListenLocationEvents(ctx context.Context) (<-chan string, error) {
+	return self.listen(ctx, LocationEventChannel)
 }
 
 // listenConnectWait is how long listen waits for the LISTEN to be in place

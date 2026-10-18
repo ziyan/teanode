@@ -14,6 +14,7 @@ import {
   KeyIcon,
   LinkIcon,
   ListIcon,
+  LocationIcon,
   LogoutIcon,
   MailIcon,
   RecordIcon,
@@ -230,7 +231,7 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/circles'].some(
+    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/location', '/circles'].some(
       (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
     ) ||
     location.pathname === '/mailbox' ||
@@ -491,6 +492,14 @@ export function Sidebar({
                   <span className="sidebar-label">{t('nav.photos')}</span>
                 </NavLink>
               )}
+              {hasPermission(session.permissions, 'location:use') && (
+                <NavLink to="/location" title={collapsed ? t('location.title') : undefined}>
+                  <span className="sidebar-icon">
+                    <LocationIcon />
+                  </span>
+                  <span className="sidebar-label">{t('location.title')}</span>
+                </NavLink>
+              )}
               {/* What the agent knows and what the person's money did, under
                   the calendar: pages read often, not settings. The mailbox's
                   own settings are with the rest of the person's, in the
@@ -541,6 +550,12 @@ export function Sidebar({
                     <span className="sidebar-label">{t('services.remindersLabel')}</span>
                   </NavLink>
                 )}
+              {hasPermission(session.permissions, 'location:use') && (
+                <NavLink to="/location">
+                  <LocationIcon />
+                  <span className="sidebar-label">{t('location.title')}</span>
+                </NavLink>
+              )}
               {session.services?.isContactsEnabled && hasPermission(session.permissions, 'contacts:use') && (
                 <NavLink to="/contacts">
                   <UserIcon />

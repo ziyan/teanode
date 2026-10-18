@@ -112,11 +112,6 @@ type Tool struct {
 	// anywhere else there is none to move.
 	DashboardOnly bool
 
-	// BrowserOnly says it is offered only where the person writes in the
-	// dashboard in a browser, which it asks something of: the location
-	// tool. Anywhere else the prompt says there is no browser to ask.
-	BrowserOnly bool
-
 	// Guidance is put in the prompt when the tool is in the request, so a
 	// person who cannot manage domains is not told how to.
 	Guidance string
@@ -569,6 +564,10 @@ func EnumProperty(description string, values ...string) map[string]any {
 
 func IntegerProperty(description string) map[string]any {
 	return map[string]any{"type": "integer", "description": description}
+}
+
+func NumberProperty(description string) map[string]any {
+	return map[string]any{"type": "number", "description": description}
 }
 
 func BooleanProperty(description string) map[string]any {

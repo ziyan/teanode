@@ -135,6 +135,7 @@ type Agent struct {
 	lastRecordingReferenceReconciliation time.Time
 	lastDescribe                         time.Time
 	lastPriceCheck                       time.Time
+	lastPlaceNaming                      time.Time
 	lastRemember                         time.Time
 	lastIngest                           time.Time
 	lastDream                            time.Time
@@ -143,6 +144,7 @@ type Agent struct {
 	lastFollowUpSweep                    time.Time
 	lastFollowUpBackfill                 time.Time
 	lastNearbyQueue                      time.Time
+	lastLocationJournal                  time.Time
 
 	// watchesQueuedAt is when a look was last queued for each person's
 	// watch, by agent and skill/watch; see queueWatching.
@@ -155,6 +157,7 @@ type Agent struct {
 	lastEvaluate    time.Time
 	describing      atomic.Bool
 	checkingPrices  atomic.Bool
+	namingPlaces    atomic.Bool
 
 	// presence is who has a dashboard open; see presence.go.
 	presence *Presence
@@ -506,6 +509,9 @@ func (self *Agent) tick(ctx context.Context) error {
 func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	configuration := self.settings.Configuration()
 	self.reconcileRecordingReferences(ctx, now)
+	// Places are named whether or not the agent is on: they are the
+	// person's, and naming them asks a provider, not a model.
+	self.namePlacesInBackground(ctx, now)
 	if !configuration.Agent.Enabled {
 		return nil
 	}
@@ -543,6 +549,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueFollowUpSweeps(ctx, now)
 	self.queueFollowUpBackfills(ctx, now)
 	self.queueNearbyRuns(ctx, now)
+	self.queueLocationJournals(ctx, now)
 	self.queueEvaluating(ctx, now)
 	self.sweepBackgroundWork(ctx, now)
 	self.sweepSkillShareCalls(ctx, now)

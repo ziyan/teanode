@@ -17,11 +17,15 @@ import Foundation
 /// it for this phone (`push.Content` in internal/push/payload.go).
 public struct NotificationContent: Codable, Equatable, Sendable {
     /// alert, herdr_question, goal_needs_you, speak_first, message,
-    /// approval, question, answer, circle, chat, skill_share_call, photo or test.
+    /// approval, question, answer, circle, chat, skill_share_call, photo, location or test.
     public let notificationKind: String
     public let conversationId: String?
     public let runId: String?
     public let callId: String?
+    /// For a location notification, the person whose arrival or departure it
+    /// is (`locationUserId` in `push.Content`), so that tapping it opens
+    /// Location with them.
+    public let locationUserId: String?
     public let title: String
     public let body: String
     public let buttons: [NotificationButton]?

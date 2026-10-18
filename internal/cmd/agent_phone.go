@@ -23,9 +23,9 @@ func newAgentPhoneCommand() *cli.Command {
 			"to nobody else. A phone connected with a code drawn here works for everything but approving a\n" +
 			"call that spends your money, or lending it: for that, connect it with the dashboard's Connect\n" +
 			"page. 'list' shows your phones, 'notify' chooses what each is told about (message,\n" +
-			"approval, question, answer, circle, chat, skill_share_call, photo), 'test' sends one a notification, and 'remove' signs it out.\n" +
+			"approval, question, answer, circle, chat, skill_share_call, photo, location), 'test' sends one a notification, and 'remove' signs it out.\n" +
 			"skill_share_call is 'Skill calls waiting for your approval', as the dashboard and the app word it; approval is\n" +
-			"for what your own agent asks.",
+			"for what your own agent asks. location is 'People who share their location arriving at and leaving places'.",
 		Commands: []*cli.Command{
 			{
 				Name:   "list",
@@ -41,7 +41,7 @@ func newAgentPhoneCommand() *cli.Command {
 			},
 			{
 				Name:      "notify",
-				Usage:     "choose what a phone is told about: any of message, approval, question, answer, circle, chat, skill_share_call (skill calls waiting for your approval), photo; 'all' for every kind",
+				Usage:     "choose what a phone is told about: any of message, approval, question, answer, circle, chat, skill_share_call (skill calls waiting for your approval), photo, location (people who share their location arriving at and leaving places); 'all' for every kind",
 				ArgsUsage: "<phone-id> <kind>...",
 				Action:    runAgentPhoneNotify,
 			},
