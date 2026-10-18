@@ -6,7 +6,7 @@ import { useTranslation } from '../i18n/i18n'
 
 // The current password is asked for even though the caller is already signed
 // in, because a session can be an unattended browser.
-export function ChangePassword({ username }: { username: string }) {
+export function ChangePassword() {
   const { t } = useTranslation()
   const [current, setCurrent] = useState('')
   const [replacement, setReplacement] = useState('')
@@ -39,39 +39,40 @@ export function ChangePassword({ username }: { username: string }) {
   return (
     <form className="card" onSubmit={submit}>
       <h3>{t('password.title')}</h3>
-      <p className="muted">{t('password.signedInAs', { username })}</p>
 
-      <label>
-        <span>{t('password.current')}</span>
-        <input
-          type="password"
-          value={current}
-          onChange={(event) => setCurrent(event.target.value)}
-          autoComplete="current-password"
-        />
-      </label>
-      <label>
-        <span>{t('password.new')}</span>
-        <input
-          type="password"
-          value={replacement}
-          onChange={(event) => setReplacement(event.target.value)}
-          autoComplete="new-password"
-        />
-      </label>
-      <label>
-        <span>{t('password.newAgain')}</span>
-        <input
-          type="password"
-          value={confirmation}
-          onChange={(event) => setConfirmation(event.target.value)}
-          autoComplete="new-password"
-        />
-        {mismatch && <span className="error">{t('common.passwordsDoNotMatch')}</span>}
-      </label>
+      <div className="form-narrow">
+        <label>
+          <span>{t('password.current')}</span>
+          <input
+            type="password"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+            autoComplete="current-password"
+          />
+        </label>
+        <label>
+          <span>{t('password.new')}</span>
+          <input
+            type="password"
+            value={replacement}
+            onChange={(event) => setReplacement(event.target.value)}
+            autoComplete="new-password"
+          />
+        </label>
+        <label>
+          <span>{t('password.newAgain')}</span>
+          <input
+            type="password"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            autoComplete="new-password"
+          />
+          {mismatch && <span className="error">{t('common.passwordsDoNotMatch')}</span>}
+        </label>
 
-      <ErrorMessage error={error} />
-      {done && <p style={{ color: 'var(--good)' }}>{t('password.changed')}</p>}
+        <ErrorMessage error={error} />
+        {done && <p className="success">{t('password.changed')}</p>}
+      </div>
 
       <button className="primary" type="submit" disabled={busy || !ready}>
         {busy ? t('password.changing') : t('password.change')}

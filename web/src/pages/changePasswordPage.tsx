@@ -5,6 +5,6 @@ import { ChangePassword } from '../components/changePassword'
 //
 // It does not name itself in the breadcrumb: that comes from the settings
 // surface list, which every page under /settings is in.
-export function ChangePasswordPage({ username }: { username: string }) {
-  return <ChangePassword username={username} />
+export function ChangePasswordPage() {
+  return <ChangePassword />
 }

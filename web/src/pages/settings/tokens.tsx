@@ -134,7 +134,7 @@ export function TokensPage() {
           <SettingsRow
             key={token.id}
             title={token.name || t('tokens.unnamed')}
-            badge={<Tag value={describeExpiry(token, t)} tone={expiryTone(token)} />}
+            badge={tokenBadge(token, t)}
             subtitle={
               <>
                 <div className="mono">{token.id}</div>
@@ -149,6 +149,7 @@ export function TokensPage() {
                   ) : (
                     t('tokens.neverUsed')
                   )}
+                  {` · ${describeExpiry(token, t)}`}
                   {token.username ? ` · ${t('tokens.actsAsName', { username: token.username })}` : ''}
                 </div>
               </>
@@ -315,7 +316,7 @@ type Translate = ReturnType<typeof useTranslation>['t']
 
 function describeExpiry(token: Token, t: Translate): string {
   if (!token.expires) {
-    return t('common.never')
+    return t('tokens.neverExpires')
   }
   if (new Date(token.expires).getTime() < Date.now()) {
     return t('common.expired')
@@ -323,11 +324,15 @@ function describeExpiry(token: Token, t: Translate): string {
   return t('tokens.expiresAt', { time: formatTime(token.expires) })
 }
 
-// An expired token is spent rather than broken, and a token that never expires
-// is a standing risk worth a color that says so quietly.
-function expiryTone(token: Token): 'good' | 'bad' | 'warn' | undefined {
-  if (!token.expires) {
-    return 'warn'
+// A badge only for what is not the ordinary state: a token that is revoked or
+// has expired. A live one says when it expires in its details, because the
+// same badge on every row of a list says nothing about any of them.
+function tokenBadge(token: Token, t: Translate): React.ReactNode {
+  if (token.revoked) {
+    return <Tag value={t('tokens.revoked')} tone="bad" />
   }
-  return new Date(token.expires).getTime() < Date.now() ? 'bad' : undefined
+  if (token.expires && new Date(token.expires).getTime() < Date.now()) {
+    return <Tag value={t('common.expired')} tone="bad" />
+  }
+  return undefined
 }

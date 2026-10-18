@@ -96,7 +96,7 @@ export function SessionsPage({ onSignedOut }: { onSignedOut: () => void }) {
             >
               {includeRevoked ? t('sessions.hideRevoked') : t('sessions.showRevoked')}
             </button>
-            <button className="primary danger" type="button" disabled={busy} onClick={() => setRevokingAll(true)}>
+            <button className="danger" type="button" disabled={busy} onClick={() => setRevokingAll(true)}>
               {t('sessions.revokeAll')}
             </button>
           </>
