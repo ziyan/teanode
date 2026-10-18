@@ -667,6 +667,56 @@ func TestAHeicClaimingAHugePictureIsFailedAtOnceAndHeifDecIsNeverRun(test *testi
 	}
 }
 
+// A phone sends a picture saved from a message as image.jpeg whatever its
+// format: it is kept as what its bytes are, and read that way.
+func TestAPictureSentAsTheWrongTypeIsKeptAndReadAsWhatItsBytesAre(test *testing.T) {
+	ranMarker := installFakeHeifDec(test, exifJpeg(test, 64, 32, 1))
+	fixture := newFixture(test)
+	jpegAsHeic := fixture.uploadAndProcess("jpeg-as-heic", map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": "jpeg-as-heic", "X-Photo-Filename": "image.heic"}, smallJpeg(test, 10))
+	if jpegAsHeic.PhotoProcessingState != models.PhotoProcessingReady {
+		test.Fatalf("%+v", jpegAsHeic)
+	}
+	if files := fixture.photoFiles(jpegAsHeic.ID); len(files) != 1 || files[0].ContentType != "image/jpeg" {
+		test.Fatalf("%+v", files)
+	}
+	if _, err := os.Stat(ranMarker); err == nil {
+		test.Fatal("heif-dec was run on a JPEG")
+	}
+	heicAsJpeg := fixture.uploadAndProcess("heic-as-jpeg", map[string]string{"Content-Type": "image/jpeg", "X-Photo-Client-ID": "heic-as-jpeg", "X-Photo-Filename": "image.jpeg"}, heicOfSize(64, 32))
+	if heicAsJpeg.PhotoProcessingState != models.PhotoProcessingReady || heicAsJpeg.WidthPixels != 64 {
+		test.Fatalf("%+v", heicAsJpeg)
+	}
+	if files := fixture.photoFiles(heicAsJpeg.ID); len(files) != 1 || files[0].ContentType != "image/heic" {
+		test.Fatalf("%+v", files)
+	}
+}
+
+// A file kept as the wrong type before its bytes were looked at is read as
+// what they are.
+func TestAPictureKeptAsTheWrongTypeIsReadAsWhatItsBytesAre(test *testing.T) {
+	ranMarker := installFakeHeifDec(test, exifJpeg(test, 64, 32, 1))
+	fixture := newFixture(test)
+	keptAs := func(clientPhotoId, sentContentType, keptContentType string, content []byte) *models.Photo {
+		test.Helper()
+		got := fixture.send(http.MethodPost, fixture.collectionUrl(), map[string]string{"Content-Type": sentContentType, "X-Photo-Client-ID": clientPhotoId}, content)
+		fixture.expect(got, http.StatusCreated)
+		dbtest.Exec(test, fixture.database, "UPDATE photo_file SET content_type = '"+keptContentType+"' WHERE photo_id = '"+got.header.Get("X-Photo-ID")+"'")
+		if err := fixture.store.Process(test.Context(), 4); err != nil {
+			test.Fatal(err)
+		}
+		return fixture.photoByClientId(clientPhotoId)
+	}
+	if found := keptAs("jpeg-kept-as-heic", "image/jpeg", "image/heic", smallJpeg(test, 10)); found.PhotoProcessingState != models.PhotoProcessingReady || found.WidthPixels != 16 {
+		test.Fatalf("%+v", found)
+	}
+	if _, err := os.Stat(ranMarker); err == nil {
+		test.Fatal("heif-dec was run on a JPEG")
+	}
+	if found := keptAs("heic-kept-as-jpeg", "image/heic", "image/jpeg", heicOfSize(64, 32)); found.PhotoProcessingState != models.PhotoProcessingReady || found.WidthPixels != 64 {
+		test.Fatalf("%+v", found)
+	}
+}
+
 // A HEIC is turned by its own boxes, which heif-dec applies, and not by the
 // orientation of its EXIF block, which describes the pixels the camera stored:
 // the size read before decoding is swapped for a JPEG on its side and for no

@@ -800,6 +800,18 @@ func (self *Store) copyFileToDirectory(ctx context.Context, processed *processed
 	return path, nil
 }
 
+// pictureContentType is the type a picture is read as: the one its bytes say,
+// and the one it was kept as when they say nothing. An iPhone sends a picture
+// saved from a message as image.jpeg whatever it is, so a HEIC can come as a
+// JPEG and a JPEG as a HEIC, and the decoder the type it came with picks
+// cannot read it.
+func pictureContentType(keptContentType string, firstBytes []byte) string {
+	if formatContentType := picture.FormatContentType(firstBytes); formatContentType != "" {
+		return formatContentType
+	}
+	return keptContentType
+}
+
 // isHeifContentType says whether the picture is one libheif reads.
 func isHeifContentType(contentType string) bool {
 	switch contentType {
@@ -821,12 +833,10 @@ func isGoDecodableContentType(contentType string) bool {
 
 func (self *Store) processPicture(ctx context.Context, processed *processedPhoto) error {
 	source := processed.source
-	isHeif := isHeifContentType(source.ContentType)
-	hasReadableMetadata := isHeif || source.ContentType == "image/jpeg"
 
 	if source.FileSizeBytes > maximumPictureBytes {
 		// Too big to decode, but not too big to ask its date and place of.
-		if hasReadableMetadata {
+		if source.ContentType == "image/jpeg" || isHeifContentType(source.ContentType) {
 			path, err := self.copyFileToDirectory(ctx, processed)
 			if err != nil {
 				return err
@@ -835,7 +845,12 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 			if err != nil {
 				return err
 			}
-			self.readPictureMetadata(processed, file, source.FileSizeBytes, source.ContentType)
+			firstBytes := make([]byte, picture.FormatBytes)
+			readCount, _ := file.ReadAt(firstBytes, 0)
+			contentType := pictureContentType(source.ContentType, firstBytes[:readCount])
+			if contentType == "image/jpeg" || isHeifContentType(contentType) {
+				self.readPictureMetadata(processed, file, source.FileSizeBytes, contentType)
+			}
 			_ = file.Close()
 		}
 		processed.namePlace()
@@ -852,8 +867,10 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 	if err != nil {
 		return err
 	}
-	if hasReadableMetadata {
-		self.readPictureMetadata(processed, bytes.NewReader(content), source.FileSizeBytes, source.ContentType)
+	contentType := pictureContentType(source.ContentType, content)
+	isHeif := isHeifContentType(contentType)
+	if isHeif || contentType == "image/jpeg" {
+		self.readPictureMetadata(processed, bytes.NewReader(content), source.FileSizeBytes, contentType)
 	}
 	processed.namePlace()
 	if err := self.saveMetadata(ctx, processed); err != nil {
@@ -880,9 +897,9 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 				IsFileAtFault: true,
 			}
 		}
-		if !isHeif && !isGoDecodableContentType(source.ContentType) {
+		if !isHeif && !isGoDecodableContentType(contentType) {
 			return &processingFailure{
-				Cause:         fmt.Errorf("%w: %s files cannot be made into previews (%s)", errUnsupportedFile, source.ContentType, err),
+				Cause:         fmt.Errorf("%w: %s files cannot be made into previews (%s)", errUnsupportedFile, contentType, err),
 				Message:       unsupportedFailureMessage,
 				IsFileAtFault: true,
 			}
