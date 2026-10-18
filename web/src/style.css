@@ -10781,7 +10781,7 @@ button.with-icon {
    a list is not a month -- and scrolls sideways instead, wide enough that a
    day is still a day. The day view and the agenda are the ones worth reaching
    for on a phone, and neither needs sideways room. */
-@media (max-width: 640px) {
+@media (max-width: 600px) {
   /* Seven columns of a phone's width cannot hold a chip with a time and a
      title, so an event is a dot in its calendar's color here and the day,
      which a press on it opens, writes them out. */

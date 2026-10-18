@@ -137,3 +137,42 @@ it('opens a private event with the box ticked and lets the person take the mark 
   await waitFor(() => expect(savedVariables()).toBeTruthy())
   expect(savedVariables()).toMatchObject({ id: 'checkup', isPrivate: false })
 })
+
+function stubPhone(isPhone: boolean) {
+  const listeners = new Set<() => void>()
+  let matches = isPhone
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    get matches() {
+      return query === '(max-width: 600px)' && matches
+    },
+    media: query,
+    addEventListener: (_name: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_name: string, listener: () => void) => listeners.delete(listener),
+  }))
+  window.matchMedia = (globalThis as unknown as { matchMedia: typeof window.matchMedia }).matchMedia
+  return (next: boolean) => {
+    matches = next
+    listeners.forEach((listener) => listener())
+  }
+}
+
+it('on a phone opens on the agenda, names the month dots and opens the day on a tap', async () => {
+  const setPhone = stubPhone(true)
+  show('/calendar')
+  await screen.findByText('Checkup')
+  expect(document.querySelector('.calendar-agenda-row')).toBeTruthy()
+
+  cleanup()
+  show('/calendar?view=month&on=2030-01-03')
+  const dot = await screen.findByRole('button', { name: /^Checkup/ })
+  expect(dot.getAttribute('tabindex')).toBe('-1')
+  // A rotation to a wide window brings the dots back into the tab order.
+  setPhone(false)
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Checkup/ }).getAttribute('tabindex')).toBeNull())
+  setPhone(true)
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Checkup/ }).getAttribute('tabindex')).toBe('-1'))
+
+  // A press on an empty day opens the day, it does not start a new event.
+  fireEvent.click(screen.getAllByRole('button', { name: /^Open / })[0])
+  expect(screen.queryByRole('dialog')).toBeNull()
+})

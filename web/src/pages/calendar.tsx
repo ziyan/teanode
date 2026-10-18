@@ -446,7 +446,7 @@ export function CalendarPage() {
 }
 // The width at which the month's seven columns no longer hold a day's events:
 // the same breakpoint the stylesheet turns them into dots at.
-const PHONE_QUERY = '(max-width: 640px)'
+const PHONE_QUERY = '(max-width: 600px)'
 
 function useIsPhone(): boolean {
   // matchMedia is not there under every test environment, and a missing one
@@ -477,9 +477,10 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   const isPhone = useIsPhone()
   // A phone opens on the agenda, a list that needs no sideways room; the
   // month is a tab away and keeps working there, with dots for the events.
-  const [opensOnAgenda] = useState(isPhone)
+  // This follows the window (a rotation changes it) until the person picks a
+  // view, which puts it in the address.
   const requestedView =
-    (parameters.get('view') as View) || (isRemindersAddress ? 'reminders' : opensOnAgenda ? 'agenda' : 'month')
+    (parameters.get('view') as View) || (isRemindersAddress ? 'reminders' : isPhone ? 'agenda' : 'month')
   const view =
     serviceCapabilities?.isCalendarEnabled === false
       ? 'reminders'
@@ -884,6 +885,11 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           className={`calendar-entry${event.allDay ? ' all-day' : ''}${opening === event.id ? ' busy' : ''} ${tone.className}`}
           style={tone.style}
           onClick={() => void edit(event)}
+          // The month draws an event as a dot on a phone, with no text, so
+          // the name is given here (the other views have the words); on a phone the day opens the list, so the dot is
+          // left out of the tab order.
+          aria-label={view === 'month' ? titleWithOwner(event) : undefined}
+          tabIndex={isPhone && view === 'month' ? -1 : undefined}
           aria-disabled={!!submission.pending || submission.isWorking || busy}
         >
           {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
