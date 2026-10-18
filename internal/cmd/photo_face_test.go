@@ -124,7 +124,7 @@ func TestPeopleListPrintsATableOrJSON(test *testing.T) {
 	}
 }
 
-func TestPeopleShowSaysWhenThePersonIsYou(test *testing.T) {
+func TestPeopleReadSaysWhenThePersonIsYou(test *testing.T) {
 	server := newPhotoFaceServer(test)
 	_, table, err := server.run(test, "people", "read", "group-4")
 	if err != nil || !strings.Contains(table, "Ada Example (you)") {
@@ -136,7 +136,7 @@ func TestPeopleShowSaysWhenThePersonIsYou(test *testing.T) {
 	}
 }
 
-func TestPeopleShowListsThePersonAndTheirPhotos(test *testing.T) {
+func TestPeopleReadListsThePersonAndTheirPhotos(test *testing.T) {
 	server := newPhotoFaceServer(test)
 	_, table, err := server.run(test, "people", "read", "group-1", "--limit", "7", "--continue-after", "photo-9")
 	if err != nil {
@@ -273,7 +273,7 @@ func TestFacesOffDeletesWhatWasFoundSoItAsksFirst(test *testing.T) {
 	}
 }
 
-func TestShowNamesThePeopleInAPhotoAndLibrarySaysWhetherFacesAreFound(test *testing.T) {
+func TestReadNamesThePeopleInAPhotoAndLibrarySaysWhetherFacesAreFound(test *testing.T) {
 	server := newPhotoFaceServer(test)
 	_, shown, err := server.run(test, "read", "photo-1")
 	if err != nil {

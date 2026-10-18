@@ -382,10 +382,15 @@ func TestDeleteAndEmptyTrashDeleteForeverAndAskFirst(test *testing.T) {
 	current := newRun(test, nil)
 	operations := &fakeOperations{answers: map[string]string{"DeletePhotos": `1`, "EmptyPhotoTrash": `3`}}
 	current.operations = operations
-	if result, err := current.call(map[string]any{"operation": "delete", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "1 of 2 photos deleted forever") {
+	if result, err := current.call(map[string]any{"operation": "delete", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "1 of 2 photos deleted forever; the others were not in the Trash and were left alone") {
 		test.Fatalf("%v %v", result, err)
 	}
-	if asked := operations.asked("DeletePhotos"); len(asked) != 1 || len(asked[0]["photoIds"].([]string)) != 2 {
+	// When every photo went there is nothing to explain.
+	operations.answers["DeletePhotos"] = `2`
+	if result, err := current.call(map[string]any{"operation": "delete", "photo_ids": []string{"a", "b"}}); err != nil || result.Content != "2 of 2 photos deleted forever" {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := operations.asked("DeletePhotos"); len(asked) != 2 || len(asked[0]["photoIds"].([]string)) != 2 {
 		test.Fatalf("%v", asked)
 	}
 	if _, err := current.call(map[string]any{"operation": "delete"}); err == nil {
@@ -394,7 +399,11 @@ func TestDeleteAndEmptyTrashDeleteForeverAndAskFirst(test *testing.T) {
 	if result, err := current.call(map[string]any{"operation": "empty-trash"}); err != nil || !strings.Contains(result.Content, "deleted 3 photos forever") {
 		test.Fatalf("%v %v", result, err)
 	}
-	if asked := operations.asked("EmptyPhotoTrash"); len(asked) != 1 {
+	operations.answers["EmptyPhotoTrash"] = `1`
+	if result, err := current.call(map[string]any{"operation": "empty-trash"}); err != nil || result.Content != "deleted 1 photo forever" {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := operations.asked("EmptyPhotoTrash"); len(asked) != 2 {
 		test.Fatalf("%v", asked)
 	}
 	for operation, want := range map[string]string{

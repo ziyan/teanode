@@ -57,11 +57,12 @@ func newPhotoAlbumCommand() *cli.Command {
 				Action: runPhotoAlbumShare,
 			},
 			{
-				Name: "share-update", Usage: "change one share of an album: what its people may do, and whether they see where the photos were taken; both are set to what you give, so leaving a flag out takes that away", ArgsUsage: "<share id>",
+				Name: "share-update", Usage: "change one share of an album: what its people may do, and whether they see where the photos were taken; only what you name changes, the rest stays as the share has it", ArgsUsage: "<album id> <share id>",
 				Flags: []cli.Flag{
 					JSONFlag(),
-					&cli.BoolFlag{Name: "contribute", Usage: "let them add photos of their own and take out the ones they added (otherwise they view and save)"},
-					&cli.BoolFlag{Name: "with-location", Usage: "let them see where the photos were taken and download the original files (otherwise they get a picture that carries no place)"},
+					&cli.StringFlag{Name: "level", Usage: "view (they view and save) or contribute (they also add photos of their own and take out the ones they added)"},
+					&cli.BoolFlag{Name: "with-location", Usage: "let them see where the photos were taken and download the original files"},
+					&cli.BoolFlag{Name: "without-location", Usage: "show them a picture that carries no place, and no original files"},
 				},
 				Action: runPhotoAlbumShareUpdate,
 			},
@@ -308,24 +309,61 @@ func photoShareLocationText(share *client.PhotoAlbumShare) string {
 	return ", without where the photos were taken"
 }
 
-// runPhotoAlbumShareUpdate changes one share by its id, as the dashboard's
-// sheet of shares does: the level and the places are both set to what the
-// flags say.
+// runPhotoAlbumShareUpdate changes one share of an album, and only what the
+// flags name. The server writes the level and the places together, so the share
+// is read first and a setting the flags leave out is sent as the share has it:
+// stopping somebody adding photos must not take the places away. A change that
+// would leave the share as it is sends nothing.
 func runPhotoAlbumShareUpdate(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() != 1 {
-		return usage("usage: teanode photo album share-update <share id> [--contribute] [--with-location]; 'teanode photo album shares' lists the ids")
+	const usageText = "usage: teanode photo album share-update <album id> <share id> [--level view|contribute] [--with-location | --without-location]; 'teanode photo album shares' lists the ids"
+	if command.Args().Len() != 2 {
+		return usage(usageText)
+	}
+	shareLevel := strings.ToLower(strings.TrimSpace(command.String("level")))
+	if shareLevel != "" && !models.PhotoAlbumShareLevel(shareLevel).IsValid() {
+		return usage("--level is view or contribute, not " + command.String("level"))
+	}
+	if command.Bool("with-location") && command.Bool("without-location") {
+		return usage("--with-location and --without-location say opposite things; give one")
+	}
+	if shareLevel == "" && !command.Bool("with-location") && !command.Bool("without-location") {
+		return usage("name what to change: --level, --with-location or --without-location. " + usageText)
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	shareLevel := string(models.PhotoAlbumShareLevelView)
-	if command.Bool("contribute") {
-		shareLevel = string(models.PhotoAlbumShareLevelContribute)
-	}
-	share, err := client.UpdatePhotoAlbumShare(ctx, connection, command.Args().First(), shareLevel, command.Bool("with-location"))
+	albumId, shareId := command.Args().Get(0), command.Args().Get(1)
+	shares, err := client.ListPhotoAlbumShares(ctx, connection, albumId)
 	if err != nil {
-		return describeNotFound(command, err, "the share "+command.Args().First())
+		return describeNotFound(command, err, "the album "+albumId)
+	}
+	var share *client.PhotoAlbumShare
+	for _, listed := range shares {
+		if listed.ID == shareId {
+			share = listed
+		}
+	}
+	if share == nil {
+		return fmt.Errorf("the album has no share %s; 'teanode photo album shares %s' lists its shares", shareId, albumId)
+	}
+	isChanged := false
+	if shareLevel != "" && shareLevel != string(share.ShareLevel) {
+		isChanged = true
+	} else {
+		shareLevel = string(share.ShareLevel)
+	}
+	isLocationIncluded := share.IsLocationIncluded
+	if command.Bool("with-location") || command.Bool("without-location") {
+		if command.Bool("with-location") != isLocationIncluded {
+			isChanged = true
+		}
+		isLocationIncluded = command.Bool("with-location")
+	}
+	if isChanged {
+		if share, err = client.UpdatePhotoAlbumShare(ctx, connection, shareId, shareLevel, isLocationIncluded); err != nil {
+			return describeNotFound(command, err, "the share "+shareId)
+		}
 	}
 	if command.Bool("json") {
 		return PrintJSON(share)
@@ -333,6 +371,10 @@ func runPhotoAlbumShareUpdate(ctx context.Context, command *cli.Command) error {
 	with := share.GranteeUsername
 	if share.GranteeCircleID != nil {
 		with = "everyone in " + share.GranteeCircleName
+	}
+	if !isChanged {
+		_, _ = fmt.Fprintf(command.Writer, "nothing changed: shared with %s at %s%s (share %s)\n", forTerminal(with), share.ShareLevel, photoShareLocationText(share), share.ID)
+		return nil
 	}
 	_, _ = fmt.Fprintf(command.Writer, "shared with %s at %s%s (share %s)\n", forTerminal(with), share.ShareLevel, photoShareLocationText(share), share.ID)
 	return nil

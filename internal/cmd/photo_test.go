@@ -687,9 +687,10 @@ func TestTheLibraryCommandUsesTheDashboardsWords(test *testing.T) {
 	}
 }
 
-// A date is corrected with an RFC 3339 time whose offset is the place's, which is
-// sent as it was given: the offset is the one the photo is shown at.
-func TestDateCorrectsWhenAPhotoWasTakenAndRefusesATimeWithoutAnOffset(test *testing.T) {
+// set-date corrects the date with an RFC 3339 time whose offset is the
+// place's, which is sent as it was given: the offset is the one the photo is
+// shown at.
+func TestSetDateCorrectsWhenAPhotoWasTakenAndRefusesATimeWithoutAnOffset(test *testing.T) {
 	server := newPhotoServer(test)
 	output, _, err := server.run(test, "set-date", "photo-1", "2025-07-12T14:30:00+09:00")
 	if err != nil || !strings.Contains(output, "photo-1 was taken 2025-07-12 14:30 (UTC+09:00)") {

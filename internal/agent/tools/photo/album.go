@@ -235,33 +235,52 @@ func albumSuggest(ctx context.Context, current tools.Run, asked *arguments) (*to
 	return tools.JSONResult(answer)
 }
 
-// albumCardPreview names the album on the cards the person must read before
-// they answer them, deleting an album and sharing one: an identifier would
-// mean nothing to them. Any other operation is described by previewOf.
-func albumCardPreview(ctx context.Context, arguments json.RawMessage) string {
+// albumCardPreview names the album, and for a change of a share the person,
+// on the cards the person must read before they answer them: deleting an
+// album, sharing one and changing a share. An identifier would mean nothing to
+// them. Any other operation is described by previewOf, and so is a change of a
+// share whose album or share cannot be read here.
+func albumCardPreview(ctx context.Context, callArguments json.RawMessage) string {
 	var asked struct {
 		Operation string `json:"operation"`
 		AlbumID   string `json:"album_id"`
+		ShareID   string `json:"share_id"`
 		Person    string `json:"person"`
 		Circle    string `json:"circle"`
 		Level     string `json:"share_level"`
-		Location  bool   `json:"is_location_included"`
+		Location  *bool  `json:"is_location_included"`
 	}
-	if err := json.Unmarshal(arguments, &asked); err != nil {
+	if err := json.Unmarshal(callArguments, &asked); err != nil {
 		return ""
 	}
 	operation := strings.ToLower(strings.TrimSpace(asked.Operation))
-	if operation != "album-delete" && operation != "album-share" {
+	if operation != "album-delete" && operation != "album-share" && operation != "album-share-update" {
 		return ""
 	}
 	named := "an album"
-	if run, err := tools.RunFrom(ctx); err == nil && strings.TrimSpace(asked.AlbumID) != "" {
+	var run tools.Run
+	if current, err := tools.RunFrom(ctx); err == nil && strings.TrimSpace(asked.AlbumID) != "" {
+		run = current
 		if album, err := client.ReadPhotoAlbum(ctx, run.Operations(), strings.TrimSpace(asked.AlbumID)); err == nil {
 			named = tools.Named(album.AlbumTitle, "an album")
 		}
 	}
 	if operation == "album-delete" {
 		return "Delete " + named + "; its photos stay in the library"
+	}
+	if operation == "album-share-update" {
+		if run == nil || strings.TrimSpace(asked.ShareID) == "" {
+			return ""
+		}
+		share, err := shareOf(ctx, run.Operations(), strings.TrimSpace(asked.AlbumID), strings.TrimSpace(asked.ShareID))
+		if err != nil {
+			return ""
+		}
+		after, err := settingsAfter(share, &arguments{ShareLevel: asked.Level, IsLocationIncluded: asked.Location})
+		if err != nil {
+			return ""
+		}
+		return shareUpdateCardText(named, share, after)
 	}
 	with := tools.Named(asked.Person, "")
 	if with == "" {
@@ -272,7 +291,7 @@ func albumCardPreview(ctx context.Context, arguments json.RawMessage) string {
 		level = "view and add photos"
 	}
 	text := "Share " + named + " with " + with + ", to " + level
-	if asked.Location {
+	if asked.Location != nil && *asked.Location {
 		text += ", including where the photos were taken"
 	}
 	return text
@@ -338,7 +357,8 @@ func albumShare(ctx context.Context, executor client.Executor, asked *arguments)
 	if err != nil {
 		return nil, err
 	}
-	share, err := client.SharePhotoAlbum(ctx, executor, albumId, granteeUserId, granteeCircleId, shareLevel, asked.IsLocationIncluded)
+	isLocationIncluded := asked.IsLocationIncluded != nil && *asked.IsLocationIncluded
+	share, err := client.SharePhotoAlbum(ctx, executor, albumId, granteeUserId, granteeCircleId, shareLevel, isLocationIncluded)
 	if err != nil {
 		return nil, err
 	}
@@ -352,20 +372,135 @@ func albumShare(ctx context.Context, executor client.Executor, asked *arguments)
 	return result, nil
 }
 
-// albumShareUpdate changes one share by its id: what the people it names may
-// do, and whether they see where the photos were taken. Both are set to what
-// is asked, as the dashboard's sheet of shares does: share_level is required
-// and is_location_included is false when it is left out.
+// shareSettings is what a share lets the people it names do.
+type shareSettings struct {
+	shareLevel         string
+	isLocationIncluded bool
+}
+
+// settingsOf is the settings a share has now.
+func settingsOf(share *client.PhotoAlbumShare) shareSettings {
+	return shareSettings{shareLevel: string(share.ShareLevel), isLocationIncluded: share.IsLocationIncluded}
+}
+
+// settingsAfter is the settings a share has once a call is done. A setting the
+// call does not name stays as the share has it: both are written together,
+// so filling in the one that was left out is what keeps "stop them adding
+// photos" from also taking the places away.
+func settingsAfter(share *client.PhotoAlbumShare, asked *arguments) (shareSettings, error) {
+	after := settingsOf(share)
+	if shareLevel := strings.ToLower(strings.TrimSpace(asked.ShareLevel)); shareLevel != "" {
+		if !models.PhotoAlbumShareLevel(shareLevel).IsValid() {
+			return after, fmt.Errorf("share_level is view or contribute, not %q", asked.ShareLevel)
+		}
+		after.shareLevel = shareLevel
+	}
+	if asked.IsLocationIncluded != nil {
+		after.isLocationIncluded = *asked.IsLocationIncluded
+	}
+	return after, nil
+}
+
+// shareOf is the share a call names, among the shares of its album.
+func shareOf(ctx context.Context, executor client.Executor, albumId, shareId string) (*client.PhotoAlbumShare, error) {
+	shares, err := client.ListPhotoAlbumShares(ctx, executor, albumId)
+	if err != nil {
+		return nil, err
+	}
+	for _, share := range shares {
+		if share.ID == shareId {
+			return share, nil
+		}
+	}
+	return nil, fmt.Errorf("the album has no share %q; album-shares gives the shares of an album", shareId)
+}
+
+// granteeText is who a share is with, as the person knows them. Names are
+// what other people called themselves.
+func granteeText(share *client.PhotoAlbumShare) string {
+	if share.GranteeCircleID != nil {
+		return "everyone in " + tools.Named(share.GranteeCircleName, "a circle")
+	}
+	return tools.Named(share.GranteeName, tools.Named(share.GranteeUsername, "somebody"))
+}
+
+// shareSettingsText is " to ..." and the settings a change names, in the
+// words the cards use. A setting that is not named is left out.
+func shareSettingsText(isLevelNamed bool, shareLevel string, isLocationNamed, isLocationIncluded bool) string {
+	var parts []string
+	if isLevelNamed {
+		if strings.EqualFold(strings.TrimSpace(shareLevel), string(models.PhotoAlbumShareLevelContribute)) {
+			parts = append(parts, "view and add photos")
+		} else {
+			parts = append(parts, "view only")
+		}
+	}
+	if isLocationNamed {
+		if isLocationIncluded {
+			parts = append(parts, "show where the photos were taken")
+		} else {
+			parts = append(parts, "hide where the photos were taken")
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " to " + strings.Join(parts, ", and ")
+}
+
+// shareUpdateCardText is the card for album-share-update once the share and the
+// album are known: whose share of which album, what it becomes, and what stays.
+func shareUpdateCardText(albumText string, share *client.PhotoAlbumShare, after shareSettings) string {
+	before := settingsOf(share)
+	text := "Change the share of " + albumText + " with " + granteeText(share)
+	if after == before {
+		return text + ": it is already like that, so nothing changes"
+	}
+	isLevelChanged := after.shareLevel != before.shareLevel
+	isLocationChanged := after.isLocationIncluded != before.isLocationIncluded
+	text += shareSettingsText(isLevelChanged, after.shareLevel, isLocationChanged, after.isLocationIncluded)
+	if isLevelChanged && !isLocationChanged && after.isLocationIncluded {
+		text += ", keeping where the photos were taken"
+	}
+	return text
+}
+
+// albumShareUpdate changes one share, by its id and its album: only what the
+// call names. UpdatePhotoAlbumShare writes the level and the places together,
+// as the dashboard's sheet of shares does, so the share is read first and the
+// setting left out is sent as it is. A call that would change nothing makes no
+// request.
+//
+// The question the person is asked before a call comes from riskOf, which sees
+// only the arguments, so it asks whenever the call names contribute or places
+// on, even for a share that has them already. The card, made by
+// albumCardPreview, reads the share and says what really changes.
 func albumShareUpdate(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, "album-share-update")
+	if err != nil {
+		return nil, err
+	}
 	shareId := strings.TrimSpace(asked.ShareID)
 	if shareId == "" {
 		return nil, errors.New("album-share-update needs share_id; album-shares gives them")
 	}
-	shareLevel := strings.ToLower(strings.TrimSpace(asked.ShareLevel))
-	if !models.PhotoAlbumShareLevel(shareLevel).IsValid() {
-		return nil, fmt.Errorf("album-share-update needs share_level, view or contribute, not %q", asked.ShareLevel)
+	if strings.TrimSpace(asked.ShareLevel) == "" && asked.IsLocationIncluded == nil {
+		return nil, errors.New("album-share-update needs share_level (view or contribute), is_location_included, or both: it changes only what is named")
 	}
-	share, err := client.UpdatePhotoAlbumShare(ctx, executor, shareId, shareLevel, asked.IsLocationIncluded)
+	share, err := shareOf(ctx, executor, albumId, shareId)
+	if err != nil {
+		return nil, err
+	}
+	after, err := settingsAfter(share, asked)
+	if err != nil {
+		return nil, fmt.Errorf("album-share-update: %w", err)
+	}
+	if after == settingsOf(share) {
+		result := tools.TextResult("nothing changed: the share with %s already has share_level %s and is_location_included %t", granteeText(share), after.shareLevel, after.isLocationIncluded)
+		result.Untrusted = true
+		return result, nil
+	}
+	share, err = client.UpdatePhotoAlbumShare(ctx, executor, shareId, after.shareLevel, after.isLocationIncluded)
 	if err != nil {
 		return nil, err
 	}

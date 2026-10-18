@@ -1,10 +1,12 @@
 // Package photo is the person's library of photos and videos, as the agent
 // sees it: finding photos by date, place, camera and file name, looking at
 // them (which also gets them described, so that a later search finds them by
-// what is in them), showing them to the person in the conversation, marking favorites,
-// moving them to the Trash and deleting them from it for good, correcting the date a photo was taken, keeping a picture from a conversation, a
-// message or the person's computer, and organizing photos into albums. Every operation calls the operation the
-// dashboard's Photos page and teanode photo call, so the three agree.
+// what is in them), showing them to the person in the conversation, marking
+// favorites, moving them to the Trash and deleting them from it for good,
+// correcting the date a photo was taken, keeping a picture from a
+// conversation, a message or the person's computer, and organizing photos
+// into albums. Every operation calls the operation the dashboard's Photos
+// page and teanode photo call, so the three agree.
 package photo
 
 import (
@@ -45,7 +47,7 @@ func init() {
 				"`save` keeps a picture or video as a photo: from this conversation (source conversation, attachment_id), a message (source mail, item_id and attachment as mail_read lists them) or their computer (source computer, path). " +
 				"Albums are named sets of photos, and a photo can be in several: `album-list` and `album-read` (album_id) show them, `list` with album_id lists an album's photos, and `read` says which albums a photo is in. " +
 				"`album-list` also gives the albums of the person's circles and the albums other people shared with them, each with its owner (owner_name, or circle_name for a circle's album) and level (owner, contribute or view). You read those where they are: `list` with album_id, `read`, `look` and `show` work on their photos as on the person's own, each photo says whose it is (owner), and a photo that is not the person's comes without its place unless the share includes it, so do not guess where it was taken. Never copy a photo into the person's library unless they ask; `save-shared` (photo_ids) does, and the copy is theirs. " +
-				"`album-share` shares one of the person's own albums (album_id) with a person they share a circle with (person, the username) or with everyone in one of their circles (circle, by name or id), at share_level view (the default: see and save) or contribute (also add photos of their own); is_location_included true also lets them see where the photos were taken and download the originals, which the person must have asked for. Sharing again changes the level. `album-shares` (album_id) says who an album is shared with, and gives the share_id `album-unshare` takes to stop and `album-share-update` takes to change: it sets the share_level (view or contribute, required) and is_location_included (false, the default, takes places and originals away) of that one share. Sharing, stopping and changing a share change who can see the person's photos, so they ask the person first unless the person allowed it. `album-create` with circle makes an album that belongs to that circle, which every member adds their own photos to. " +
+				"`album-share` shares one of the person's own albums (album_id) with a person they share a circle with (person, the username) or with everyone in one of their circles (circle, by name or id), at share_level view (the default: see and save) or contribute (also add photos of their own); is_location_included true also lets them see where the photos were taken and download the originals, which the person must have asked for. Sharing again changes the level. `album-shares` (album_id) says who an album is shared with, and gives the share_id `album-unshare` takes to stop and `album-share-update` takes to change. `album-share-update` (album_id, share_id) changes only the settings you name, share_level (view or contribute) and is_location_included, and leaves the other as the share has it; one that changes nothing makes no change. Sharing, stopping a share, giving a share more (contribute, or places on) and changing one without saying which it does ask the person first unless the person allowed it; a change that only takes access away does not ask. `album-create` with circle makes an album that belongs to that circle, which every member adds their own photos to. " +
 				"Organize photos into albums when the person asks: `album-create` (album_title, and photo_ids to put in it), `album-rename`, `album-add` and `album-remove` (album_id, photo_ids; removing leaves the photos in the library). " +
 				"`album-suggest` finds trips and events among the photos that are in no album (runs of at least 12 photos), with their dates, places and a proposed title; offer them to the person and create an album only when they agree, by listing the photos between the suggestion's taken_after and taken_before and giving their ids to `album-create`. " +
 				"`album-cover` (album_id, photo_id) chooses which photo of the album stands for it. `album-delete` deletes an album, never its photos, and always asks the person first. " +
@@ -71,12 +73,12 @@ func init() {
 				"taken_at":                 tools.StringProperty("set-date: when the photo was taken, an RFC 3339 time with the offset of the place it was taken, such as 2025-07-12T14:30:00+09:00 (Z for a place on UTC)"),
 				"offset":                   tools.IntegerProperty("list, album-list, album-read, people, person-photos and album-shares: how many rows to pass over, the next_offset of the page before, to read the next page; 0 for the first"),
 				"page_size":                tools.IntegerProperty("list, album-list, album-read, people, person-photos and album-shares: rows to a page, 1 to 100; 25 photos or 50 other rows by default"),
-				"album_id":                 tools.StringProperty("list, album-read, album-rename, album-delete, album-add, album-remove, album-cover, album-share and album-shares: which album, by the id album-list gives"),
+				"album_id":                 tools.StringProperty("list, album-read, album-rename, album-delete, album-add, album-remove, album-cover, album-share, album-shares and album-share-update: which album, by the id album-list gives"),
 				"person":                   tools.StringProperty("album-share: the username of a person the owner shares a circle with, to share with; leave out when sharing with a circle"),
 				"circle":                   tools.StringProperty("album-share: a circle the owner is in, by name or id, to share with everyone in it. album-create: make the album that circle's, which every member adds photos to"),
 				"share_id":                 tools.StringProperty("album-share-update and album-unshare: the share, by the id album-shares gives"),
-				"share_level":              tools.EnumProperty("album-share: what they may do; view when left out. album-share-update: what they may do from now on, required", "view", "contribute"),
-				"is_location_included":     tools.BooleanProperty("album-share and album-share-update: true lets them see where the photos were taken and download the original files; false (the default) shows them a picture that carries no place"),
+				"share_level":              tools.EnumProperty("album-share: what they may do; view when left out. album-share-update: what they may do from now on; leave out to keep the share's level", "view", "contribute"),
+				"is_location_included":     tools.BooleanProperty("album-share: true lets them see where the photos were taken and download the original files; false (the default) shows them a picture that carries no place. album-share-update: the same, from now on; leave out to keep the share's setting"),
 				"album_title":              tools.StringProperty("album-create and album-rename: the album's title, 1 to 255 characters"),
 				"face_group_id":            tools.StringProperty("list, person-read, person-photos, person-name, person-unname and person-hide: which group of faces, by the id people gives"),
 				"face_group_ids":           tools.ArrayProperty("person-merge: the groups to put into one (2 to 50); the first is the one that stays", map[string]any{"type": "string"}),
@@ -143,7 +145,7 @@ type arguments struct {
 	Circle                 string   `json:"circle"`
 	ShareID                string   `json:"share_id"`
 	ShareLevel             string   `json:"share_level"`
-	IsLocationIncluded     bool     `json:"is_location_included"`
+	IsLocationIncluded     *bool    `json:"is_location_included"`
 }
 
 // The most photos one call names, and a page of a listing.
@@ -182,10 +184,13 @@ func riskOf(raw json.RawMessage) tools.Risk {
 		// the person is asked about unless they allowed it.
 		return tools.RiskGranting
 	case "album-share-update":
-		// Raising a share to contribute or turning places on lets somebody
-		// do more with the person's photos, which is a grant. Anything else
-		// is a share that stays or shrinks, and the person can widen it again.
-		if strings.EqualFold(strings.TrimSpace(asked.ShareLevel), string(models.PhotoAlbumShareLevelContribute)) || asked.IsLocationIncluded {
+		// The arguments are all that is known here, not the share, so this
+		// asks whenever the call could give somebody more: contribute, or
+		// places on. It also asks when the share already has that setting,
+		// which is the safe side. A call that names view or places off, or
+		// only one of them, can only keep or take access away, and the
+		// person can widen it again.
+		if strings.EqualFold(strings.TrimSpace(asked.ShareLevel), string(models.PhotoAlbumShareLevelContribute)) || (asked.IsLocationIncluded != nil && *asked.IsLocationIncluded) {
 			return tools.RiskGranting
 		}
 		return tools.RiskWrite
@@ -200,12 +205,7 @@ func riskOf(raw json.RawMessage) tools.Risk {
 
 func previewOf(asked arguments) string {
 	count := len(asked.PhotoIDs)
-	photos := func() string {
-		if count == 1 {
-			return "1 photo"
-		}
-		return fmt.Sprintf("%d photos", count)
-	}
+	photos := func() string { return client.PhotosCountText(count) }
 	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
 	case "trash":
 		return "Move " + photos() + " to the Trash"
@@ -235,14 +235,10 @@ func previewOf(asked arguments) string {
 		}
 		return "Share an album with " + with + ", at " + tools.Named(asked.ShareLevel, "view")
 	case "album-share-update":
-		text := "Change an album share to view and add photos"
-		if !strings.EqualFold(strings.TrimSpace(asked.ShareLevel), string(models.PhotoAlbumShareLevelContribute)) {
-			text = "Change an album share to view only"
-		}
-		if asked.IsLocationIncluded {
-			return text + ", including where the photos were taken"
-		}
-		return text + ", without where the photos were taken"
+		// The names of the album and the person are on the card made by
+		// albumCardPreview, which can look them up; this is the line when it
+		// cannot, and says only what the call names.
+		return "Change an album share" + shareSettingsText(strings.TrimSpace(asked.ShareLevel) != "", asked.ShareLevel, asked.IsLocationIncluded != nil, asked.IsLocationIncluded != nil && *asked.IsLocationIncluded)
 	case "album-unshare":
 		return "Stop sharing an album with somebody"
 	case "album-shares":
@@ -963,7 +959,13 @@ func move(ctx context.Context, executor client.Executor, asked *arguments, chang
 	if err != nil {
 		return nil, err
 	}
-	return tools.TextResult("%d of %d photos %s", count, len(photoIds), done), nil
+	result := tools.TextResult("%d of %d photos %s", count, len(photoIds), done)
+	// Only photos in the Trash are deleted, and the server leaves the rest
+	// alone, so a lower count needs saying why.
+	if strings.EqualFold(strings.TrimSpace(asked.Operation), "delete") && count < len(photoIds) {
+		result = tools.TextResult("%d of %d photos %s; the others were not in the Trash and were left alone", count, len(photoIds), done)
+	}
+	return result, nil
 }
 
 // emptyTrash deletes forever everything in the Trash, as teanode photo
@@ -973,7 +975,7 @@ func emptyTrash(ctx context.Context, executor client.Executor) (*tools.Result, e
 	if err != nil {
 		return nil, err
 	}
-	return tools.TextResult("deleted %d photos forever", count), nil
+	return tools.TextResult("deleted %s forever", client.PhotosCountText(count)), nil
 }
 
 func save(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
