@@ -320,6 +320,9 @@ jobs:
           shoot photos-viewer-info-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-info
           shoot photos-viewer-info-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-info
           shoot photos-viewer-hidden-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-hidden
+          # A video in the viewer, stopped a third of the way in so that its controls are on screen.
+          shoot photos-video-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-video-viewer
+          shoot photos-video-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-video-viewer
           # The library under Months and Years (Library, All is photos-library above).
           shoot photos-library-months-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-months
           shoot photos-library-months-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-months

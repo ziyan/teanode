@@ -1021,12 +1021,18 @@ struct PhotosScreen: View {
             }
             // `-TeaNodeScreen photos-viewer` opens the viewer on the first photo,
             // `photos-viewer-described` and `photos-viewer-info` open it with Info over it,
-            // `photos-viewer-hidden` opens it with the bars hidden, and
+            // `photos-viewer-hidden` opens it with the bars hidden,
+            // `photos-video-viewer` opens it on a video, and
             // `photos-viewer-failed` opens Info over a photo that could not be made ready.
             .task(id: model.photos(in: .library).first?.id) {
                 let screen = DemoServer.screen
-                guard DemoServer.isRequested, ["photos-viewer", "photos-viewer-described", "photos-viewer-info", "photos-viewer-hidden", "photos-viewer-failed", "photos-change-date"].contains(screen ?? ""), !isDemoViewerOpened else { return }
-                let photoId = screen == "photos-viewer-failed" ? "demo-08" : model.photos(in: .library).first?.id
+                guard DemoServer.isRequested, ["photos-viewer", "photos-viewer-described", "photos-viewer-info", "photos-viewer-hidden", "photos-video-viewer", "photos-viewer-failed", "photos-change-date"].contains(screen ?? ""), !isDemoViewerOpened else { return }
+                let photoId: String?
+                switch screen {
+                case "photos-viewer-failed": photoId = "demo-08"
+                case "photos-video-viewer": photoId = "demo-03"
+                default: photoId = model.photos(in: .library).first?.id
+                }
                 if let photoId {
                     isDemoViewerOpened = true
                     opened = OpenedPhoto(id: photoId)
