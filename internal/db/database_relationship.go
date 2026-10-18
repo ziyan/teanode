@@ -3,14 +3,16 @@ package db
 import (
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/ziyan/teanode/internal/models"
 )
 
 // RelationshipOperation is what people who share a circle are to each other.
 // There is one row for a pair, from the side of whoever said it last; see
-// migration 0243. A relationship is read only while the two share a circle,
-// so leaving the last circle in common hides it without deleting it, and it
-// is back if they are in one together again.
+// migration 0243. It goes in the transaction in which the two stop sharing
+// any circle (endRelationshipsOutsideCircles), and is read only while they
+// share one all the same.
 type RelationshipOperation interface {
 	// ListPersonRelationships returns every relationship a person is in with
 	// somebody they share a circle with.
@@ -28,6 +30,11 @@ type RelationshipOperation interface {
 	// RemovePersonRelationship takes away the relationship between two
 	// people, whichever of them said it, and says whether there was one.
 	RemovePersonRelationship(userId, otherUserId string) (bool, error)
+
+	// TakeRelationshipNotice says whether one person may tell another about
+	// a relationship between them now, and if so records that they did: at
+	// most once in each interval, whatever was said and taken back between.
+	TakeRelationshipNotice(userId, toldUserId string, now time.Time, interval time.Duration) (bool, error)
 }
 
 type personRelationshipModel struct {
@@ -127,4 +134,30 @@ func (self *transaction) RemovePersonRelationship(userId, otherUserId string) (b
 		return false, result.Error
 	}
 	return result.RowsAffected > 0, nil
+}
+
+func (self *transaction) TakeRelationshipNotice(userId, toldUserId string, now time.Time, interval time.Duration) (bool, error) {
+	if userId == "" || toldUserId == "" || userId == toldUserId {
+		return false, ErrInvalidArguments
+	}
+	// One statement, so that two changes at once cannot both find room: the
+	// row is written only when there was none or it is old enough, and
+	// RETURNING says which.
+	var toldAts []time.Time
+	if err := self.tx.Raw(`INSERT INTO "person_relationship_notice" ("user_id", "told_user_id", "told_at") VALUES (?, ?, ?)
+		ON CONFLICT ("user_id", "told_user_id") DO UPDATE SET "told_at" = EXCLUDED."told_at"
+		WHERE "person_relationship_notice"."told_at" <= ?
+		RETURNING "told_at"`, userId, toldUserId, now, now.Add(-interval)).Pluck("told_at", &toldAts).Error; err != nil {
+		return false, err
+	}
+	return len(toldAts) > 0, nil
+}
+
+// endRelationshipsOutsideCircles deletes every relationship between this
+// person and somebody they no longer share any circle with, in the
+// transaction that changed the circles, as endSharesOutsideCircles does for
+// shares: a relationship is between people in a circle together, and does not
+// come back unannounced if they are in one again.
+func endRelationshipsOutsideCircles(tx *gorm.DB, userId string) error {
+	return tx.Exec(`DELETE FROM "person_relationship" WHERE ("user_id" = ? OR "related_user_id" = ?) AND NOT `+sharedCircleCondition, userId, userId).Error
 }

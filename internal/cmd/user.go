@@ -70,7 +70,7 @@ func NewUserCommand() *cli.Command {
 					},
 					&cli.StringFlag{
 						Name:  "pronoun",
-						Usage: "how they are described: he, she, they or none; it words what the people in their circles are to them (a son rather than a child) and how their agent speaks of them",
+						Usage: "how you are described: he, she, they or none; your own account only. The people who share a circle with you see it, as they see your name; it words what you are to them (a son rather than a child) and how your agent speaks of you",
 					},
 					&cli.StringFlag{
 						Name:  "rename",

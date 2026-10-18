@@ -542,17 +542,18 @@ func TestUnrelateTakesAwayWhatWasSaid(t *testing.T) {
 	mustContain(t, circleTool(t).Preview([]byte(`{"action":"unrelate","username":"sam"}`)), `"sam"`, "they are told")
 }
 
-// Both are writes, as the circle's other changes to the person's own
-// arrangements are: no confirmation card. They need the permission to use
-// circles, and the list of people holds what each is to the person.
-func TestRelateAndUnrelateAreWritesThatNeedCircleUse(t *testing.T) {
+// They need the permission to use circles, and the list of people holds what
+// each is to the person. Relating tells the other person, in their conversation and on their phone,
+// so it is outward: the person sees a card, and a run nobody is present for
+// cannot do it.
+func TestRelateAndUnrelateAreOutwardAndNeedCircleUse(t *testing.T) {
 	tool := circleTool(t)
 	for _, arguments := range []string{
 		`{"action":"relate","username":"sam","relationship":"father"}`,
 		`{"action":"unrelate","username":"sam"}`,
 	} {
-		if risk := tool.RiskFor([]byte(arguments)); risk != tools.RiskWrite {
-			t.Errorf("%s is %v, not a write", arguments, risk)
+		if risk := tool.RiskFor([]byte(arguments)); risk != tools.RiskOutward {
+			t.Errorf("%s is %v, not outward", arguments, risk)
 		}
 		operations := &circleOperations{grants: nil}
 		if _, err := callAs(t, operations, arguments); err == nil || !strings.Contains(err.Error(), "not something they may do") {

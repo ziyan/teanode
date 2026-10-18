@@ -71,7 +71,7 @@ struct PreferencesView: View {
                     }
                     .pickerStyle(.menu)
                 } footer: {
-                    Text("Used for how you appear to people in your circles, such as son or daughter, and how your agent speaks of you.")
+                    Text("Shown to the people who share a circle with you, as your name is. It words how you appear to them, such as son or daughter, and how your agent speaks of you.")
                 }
                 Section {
                     TextField("Username", text: draft.username)

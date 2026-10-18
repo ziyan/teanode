@@ -22,16 +22,18 @@ A relationship is **one fact between two people who share a circle**, kept as
 one row for the pair (`person_relationship`), written from the side of whoever
 said it last. The other side is the opposite kind (a parent's child) and is not
 stored. Either of the two may change it or remove it, and that changes it for
-both, so the two can never disagree. The other person is told each time, in
-their agent's main conversation and on their phones, with where to change it.
+both, so the two can never disagree. The other person is told, in their
+agent's main conversation and on their phones, with where to change it, at
+most once a day from the same person.
 
 It is seen only by the two people and their own agents, and only while they
-share a circle. It is read through the list of people the caller shares a
-circle with, so leaving the last circle in common hides it, and it is back if
-they are in one together again.
+share a circle: it is deleted when they stop sharing any, as a share between
+them is.
 
 Each person may say **how they are described**: he, she or they
-(`user.pronoun`). Nobody else sets it. Words for a person follow it. Until it
+(`user.pronoun`). Nobody else sets it. It is profile information, seen by the
+people who share a circle with them as their name is, since the word anybody
+uses for them follows it. Words for a person follow it. Until it
 is said, words for them are neutral (spouse, child) and their agent speaks of
 them as they, never from a guess. A word somebody chose for another person
 ("my wife") keeps its gender for the one who chose it until that person says

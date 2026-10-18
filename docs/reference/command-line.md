@@ -333,9 +333,9 @@ that the circle was not found.
 `relate` says what somebody you share a circle with is to you, so that "ask my
 father" or "where is my wife" reaches the right account. It prints what the two
 of you now are to each other: `Sam Lee is your father; they will see you as
-their son.` The other person is told, sees you as the opposite, and can change
-or remove it, for both of you. Only the two of you see it, and your agent
-knows it. `teanode circle relate --help` lists the words: the neutral one
+their son.` The other person is told (at most once a day), sees you as the
+opposite, and can change or remove it, for both of you. Only the two of you
+see it, it ends if you stop sharing any circle, and your agent knows it. `teanode circle relate --help` lists the words: the neutral one
 first, then the masculine and the feminine (`spouse, husband, wife`;
 `parent_in_law, father_in_law, mother_in_law`; `friend`; `colleague`). The
 word shown for the other person follows how they say they are described, and
@@ -344,10 +344,11 @@ described yourself with:
 
     teanode user update robin --pronoun she              # he, she, they, or none to clear it
 
-It is refused for any account but your own, whoever asks. That is the word
-the other side of a relationship uses for you (`son` rather than `child`) and
-how your agent speaks of you; without it, you are spoken of
-as they and never guessed at from a name. `circle relate` and `circle
+It is refused for any account but your own, whoever asks, and the people who
+share a circle with you see it, as they see your name. That is the word the
+other side of a relationship uses for you (`son` rather than `child`) and how
+your agent speaks of you; without it, you are spoken of as they and never
+guessed at from a name. `circle relate` and `circle
 unrelate` need a circle in common with the person, and say that nobody by that
 name shares one otherwise.
 
@@ -358,8 +359,8 @@ subcommand under the same word: `list`, `show`, `people`, `relate`, `unrelate`,
 `remove` and `leave`, and for somebody who manages accounts `add`. Deleting a
 circle, removing a member and leaving are asked about as destructive, a role
 change, accepting or declining an invitation and inviting as granting, and
-renaming, taking back an invitation, `relate` and `unrelate` as an ordinary
-write. The agent relates people only on your word, never from mail or memory,
+`relate` and `unrelate` as outward, since the other person is told, and
+renaming and taking back an invitation as an ordinary write. The agent relates people only on your word, never from mail or memory,
 and sets your pronoun, with the `account` tool's `update` and its `pronoun`
 argument, only on your word too. At the start of each of your turns it is told
 how you are described and who in your life is what to you.

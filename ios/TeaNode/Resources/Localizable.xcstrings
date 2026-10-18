@@ -70402,18 +70402,18 @@
         }
       }
     },
-    "Used for how you appear to people in your circles, such as son or daughter, and how your agent speaks of you.": {
+    "Shown to the people who share a circle with you, as your name is. It words how you appear to them, such as son or daughter, and how your agent speaks of you.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サークルの人にあなたがどう見えるか(息子か娘かなど)と、エージェントがあなたをどう呼ぶかに使われます。"
+            "value": "同じサークルの人には、名前と同じように表示されます。サークルの人からどう見えるか（息子や娘など）と、エージェントがあなたをどう呼ぶかに使われます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用于你在圈子里的人眼中如何称呼，例如儿子或女儿，以及你的助手如何谈到你。"
+            "value": "和你同在一个圈子的人能看到它，就像能看到你的名字一样。它决定你在他们那里的称呼（例如儿子或女儿），以及你的助手如何谈到你。"
           }
         }
       }

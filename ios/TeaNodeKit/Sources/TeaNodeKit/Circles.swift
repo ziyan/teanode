@@ -257,7 +257,13 @@ public struct PersonRelationshipDraft: Hashable, Sendable {
     /// how the person is described.
     public var oppositeTermGender: RelationshipTermGender { pronoun.termGender }
 
-    public var isRemoving: Bool { selectedTerm.isEmpty }
+    /// Whether another term was picked. The term shown at first follows how
+    /// the member is described, which may not be the word the person chose
+    /// ("mother" where they said "parent"), so it is saved again only when the
+    /// person picked another one.
+    public var isTermChanged: Bool { selectedTerm != originalTerm }
+
+    public var isRemoving: Bool { isTermChanged && selectedTerm.isEmpty }
 
     /// Whether the sheet asks how the person should be described: they have
     /// not said, and the word the member will see has genders.
@@ -270,7 +276,7 @@ public struct PersonRelationshipDraft: Hashable, Sendable {
         isPronounAsked && pronoun != .notSet ? pronoun : nil
     }
 
-    public var hasChanges: Bool { selectedTerm != originalTerm || pronounToSet != nil }
+    public var hasChanges: Bool { isTermChanged || pronounToSet != nil }
 
     public var canSave: Bool { hasChanges }
 }
@@ -678,6 +684,7 @@ extension Connection {
         if let pronoun = draft.pronounToSet {
             _ = try await setAccountPronoun(ownUserId, pronoun: pronoun)
         }
+        guard draft.isTermChanged else { return }
         if draft.isRemoving {
             _ = try await removePersonRelationship(draft.memberUserId)
         } else {

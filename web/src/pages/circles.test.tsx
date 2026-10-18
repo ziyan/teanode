@@ -594,6 +594,21 @@ it('leaves the pronoun alone when the question is left unanswered', async () => 
   expect(mutationCalls('UpdateUser')).toHaveLength(0)
 })
 
+it('keeps the word the person chose when only the pronoun question is answered', async () => {
+  // Person B is shown as "mother" because of how they are described; the
+  // person may have said "parent", which re-saving the shown term would undo.
+  answerWith({ read: circleWithB({ kind: 'parent', gender: 'feminine', word: 'mother' }), pronoun: '' })
+  renderAt('/circles/circle-one')
+
+  const dialog = await openRelationshipDialog()
+  fireEvent.change(within(dialog).getByLabelText('How should people describe you?'), { target: { value: 'he' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(mutationCalls('UpdateUser')).toHaveLength(1))
+  expect(mutationCalls('SetPersonRelationship')).toHaveLength(0)
+  expect(mutationCalls('RemovePersonRelationship')).toHaveLength(0)
+})
+
 it('shows the term the person has now, and None removes it', async () => {
   answerWith({ read: circleWithB({ kind: 'parent', gender: 'masculine', word: 'father' }) })
   renderAt('/circles/circle-one')

@@ -360,7 +360,7 @@ final class CirclesTests: XCTestCase {
         let none = try XCTUnwrap(try JSONDecoder().decode(PeopleCircle.self, from: Data(circleAnswer.utf8)).member("user-2"))
         let untouched = PersonRelationshipDraft(member: none, terms: terms, ownPronoun: .notSet)
         XCTAssertEqual(untouched.selectedTerm, "")
-        XCTAssertTrue(untouched.isRemoving)
+        XCTAssertFalse(untouched.isRemoving, "there is nothing to remove")
         XCTAssertFalse(untouched.canSave)
     }
 
@@ -410,6 +410,29 @@ final class CirclesTests: XCTestCase {
         XCTAssertEqual(fake.sent.count, 2)
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["userId": .string("user-1"), "pronoun": .string("she")])
         XCTAssertEqual(try sentVariables(fake.sent[1]), ["userId": .string("user-2"), "relationshipTerm": .string("mother")])
+    }
+
+    func testAnsweringOnlyThePronounKeepsTheWordThePersonChose() async throws {
+        // The member is shown as "mother" because of how they are described;
+        // the person may have said "parent", which saving the shown term again
+        // would undo.
+        let (connection, fake) = connection(answering: #"{"data":{"UpdateUser":{"id":"user-1","username":"robin","pronoun":"he"}}}"#)
+        let terms = [
+            RelationshipTerm(term: "parent", relationshipKind: "parent", termGender: "neutral", word: "parent"),
+            RelationshipTerm(term: "mother", relationshipKind: "parent", termGender: "feminine", word: "mother"),
+        ]
+        let mother = try related(kind: "parent", termGender: "feminine", word: "mother")
+        var draft = PersonRelationshipDraft(member: mother, terms: terms, ownPronoun: .notSet)
+        XCTAssertTrue(draft.isPronounAsked)
+        draft.pronoun = .he
+        XCTAssertTrue(draft.canSave)
+        XCTAssertFalse(draft.isTermChanged)
+        XCTAssertFalse(draft.isRemoving)
+
+        try await connection.saveRelationship(draft, ownUserId: "user-1")
+
+        XCTAssertEqual(fake.sent.count, 1)
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["userId": .string("user-1"), "pronoun": .string("he")])
     }
 
     func testSavingNoneRemovesTheRelationshipAndLeavesThePronounAlone() async throws {

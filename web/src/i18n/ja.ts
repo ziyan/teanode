@@ -6344,7 +6344,7 @@ export const ja: Catalog = {
   'profile.pronounShe': '彼女',
   'profile.pronounThey': '性別を指定しない',
   'profile.pronounHint':
-    'サークルの人からどう見えるか（息子や娘など）と、エージェントがあなたをどう呼ぶかに使われます。',
+    '同じサークルの人には、名前と同じように表示されます。サークルの人からどう見えるか（息子や娘など）と、エージェントがあなたをどう呼ぶかに使われます。',
   'agentDrawer.note.relationshipSet':
     '{personName}さんがあなたとの関係を設定しました。{personName}さんはあなたの{word}です。変更はサークルのページからできます。',
   'agentDrawer.note.relationshipRemoved': '{personName}さんがあなたとの関係を削除しました。',

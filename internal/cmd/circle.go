@@ -572,7 +572,7 @@ func runCircleUnrelate(ctx context.Context, command *cli.Command) error {
 		fmt.Printf("nothing was said between you and %s\n", forTerminal(username))
 		return nil
 	}
-	fmt.Printf("took away how you and %s are related; they were told\n", forTerminal(username))
+	fmt.Printf("took away how you and %s are related; they are told, at most once a day\n", forTerminal(username))
 	return nil
 }
 

@@ -50,8 +50,10 @@ func TestThePersonRelationshipMigrationKeepsOnePerPairAndReverses(t *testing.T) 
 		t.Fatalf("ReadFile: %s", err)
 	}
 	dbtest.Exec(t, database, string(reverse))
-	if got := dbtest.QueryString(t, database, `SELECT coalesce(to_regclass('"person_relationship"')::text, '')`); got != "" {
-		t.Errorf("the person_relationship table is still there: %q", got)
+	for _, table := range []string{"person_relationship", "person_relationship_notice"} {
+		if got := dbtest.QueryString(t, database, `SELECT coalesce(to_regclass('"`+table+`"')::text, '')`); got != "" {
+			t.Errorf("the %s table is still there: %q", table, got)
+		}
 	}
 	if got := dbtest.QueryString(t, database, `SELECT count(*) FROM information_schema.columns WHERE table_name = 'user' AND column_name = 'pronoun'`); got != "0" {
 		t.Errorf("the pronoun column is still there")

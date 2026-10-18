@@ -119,17 +119,11 @@ func TestARelationshipIsSeenFromBothSidesAndWordedByHowEachIsDescribed(t *testin
 		t.Errorf("after carol's change, carol sees alice as %q", got)
 	}
 
-	// Changing it back and forth within the hour tells carol once.
-	world.relate(t, world.alice, world.carol, "mother")
+	// After the first note, carol is told no more that day, whatever alice
+	// changes, takes back and says again; the page shows each change at once.
 	toldCount := len(world.carolNotes(t))
-	world.relate(t, world.alice, world.carol, "aunt")
 	world.relate(t, world.alice, world.carol, "mother")
-	if notes := world.carolNotes(t); len(notes) != toldCount {
-		t.Errorf("changing it again within the hour told carol %q", notes[toldCount-1:])
-	}
-
-	// Either of the two takes it away. Alice taking back within the hour what
-	// she said is not told again; later, carol is told.
+	world.relate(t, world.alice, world.carol, "aunt")
 	removed := world.call(t, world.alice, fmt.Sprintf(`mutation { RemovePersonRelationship(userId: %q) }`, world.carol.ID))
 	if removed["RemovePersonRelationship"] != true {
 		t.Errorf("removing answered %v", removed["RemovePersonRelationship"])
@@ -137,14 +131,15 @@ func TestARelationshipIsSeenFromBothSidesAndWordedByHowEachIsDescribed(t *testin
 	if got := world.seenAs(t, world.carol, world.alice); got != "//" {
 		t.Errorf("after removing, carol sees alice as %q", got)
 	}
-	if notes := world.carolNotes(t); len(notes) != toldCount {
-		t.Errorf("taking it back at once told carol %q", notes[toldCount-1:])
-	}
 	world.relate(t, world.alice, world.carol, "mother")
-	dbtest.Exec(t, world.database, `UPDATE "person_relationship" SET "modified_at" = now() - interval '2 hours'`)
+	if notes := world.carolNotes(t); len(notes) != toldCount {
+		t.Errorf("within the day carol was told again %q", notes[toldCount-1:])
+	}
+	// A day later she is told again.
+	dbtest.Exec(t, world.database, `UPDATE "person_relationship_notice" SET "told_at" = now() - interval '2 days'`)
 	world.call(t, world.alice, fmt.Sprintf(`mutation { RemovePersonRelationship(userId: %q) }`, world.carol.ID))
 	notes := world.carolNotes(t)
-	if len(notes) == 0 || notes[len(notes)-1] != "Circle-alice removed how you are related." {
+	if len(notes) != toldCount+1 || notes[len(notes)-1] != "Circle-alice removed how you are related." {
 		t.Errorf("carol was told %q", notes)
 	}
 	again := world.call(t, world.carol, fmt.Sprintf(`mutation { RemovePersonRelationship(userId: %q) }`, world.alice.ID))
@@ -168,7 +163,16 @@ func TestARelationshipIsOnlyBetweenPeopleInACircleTogether(t *testing.T) {
 		t.Errorf("an unknown word said %q", said)
 	}
 
-	// Leaving the last circle in common hides it; joining again shows it.
+	// A relationship with somebody since disabled can still be taken away.
+	world.call(t, world.operator, fmt.Sprintf(`mutation { UpdateUser(userId: %q, disabled: true) { id } }`, world.bob.ID))
+	if removed := world.call(t, world.alice, fmt.Sprintf(`mutation { RemovePersonRelationship(userId: %q) }`, world.bob.ID)); removed["RemovePersonRelationship"] != true {
+		t.Errorf("removing it with a disabled bob answered %v", removed["RemovePersonRelationship"])
+	}
+	world.call(t, world.operator, fmt.Sprintf(`mutation { UpdateUser(userId: %q, disabled: false) { id } }`, world.bob.ID))
+	world.relate(t, world.alice, world.bob, "brother")
+
+	// Leaving the last circle in common ends it; joining again does not bring
+	// it back.
 	world.call(t, world.bob, fmt.Sprintf(`mutation { LeaveCircle(circleId: %q) }`, circleId))
 	world.join(t, world.alice, world.makeCircle(t, world.alice, "Friends", "friends"), world.erin, "member")
 	if got := world.seenAs(t, world.alice, world.bob); got != "" {
@@ -176,7 +180,7 @@ func TestARelationshipIsOnlyBetweenPeopleInACircleTogether(t *testing.T) {
 	}
 	world.refused(t, world.bob, fmt.Sprintf(`mutation { RemovePersonRelationship(userId: %q) }`, world.alice.ID))
 	world.join(t, world.alice, circleId, world.bob, "member")
-	if got := world.seenAs(t, world.alice, world.bob); got != "sibling/masculine/brother" {
+	if got := world.seenAs(t, world.alice, world.bob); got != "//" {
 		t.Errorf("after bob joined again, alice sees him as %q", got)
 	}
 	// And erin, who is in a circle with alice but not with bob, sees none of it.

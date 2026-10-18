@@ -274,7 +274,12 @@ function RelationshipDialog({
     ? relationshipWord(t, oppositeKind(selected.relationshipKind), termGenderOfPronoun(effectivePronoun))
     : ''
 
-  const isChanged = selectedTerm !== currentTerm || (isPronounAsked && chosenPronoun !== '')
+  // The term shown is worded by the other person's pronoun, which may not be
+  // the word the person chose ("mother" for somebody who said she, where the
+  // person said "parent"); it is saved again only when the person picked
+  // another, so answering the pronoun question alone keeps what they said.
+  const isTermChanged = selectedTerm !== currentTerm
+  const isChanged = isTermChanged || (isPronounAsked && chosenPronoun !== '')
   const groups = (['family', 'friends', 'colleagues'] as const).map((group) => ({
     group,
     terms: termList.filter((found) => relationshipGroup(found.relationshipKind) === group),
@@ -289,7 +294,7 @@ function RelationshipDialog({
       canSubmit={terms.data !== null && isChanged}
       onClose={onClose}
       onSubmit={async () => {
-        const isRemoving = selectedTerm === ''
+        const isRemoving = isTermChanged && selectedTerm === ''
         const isSaved = await act(
           async () => {
             // The pronoun first: if the relationship then fails, trying again
@@ -297,6 +302,7 @@ function RelationshipDialog({
             if (isPronounAsked && chosenPronoun !== '') {
               await graphql(UPDATE_PRONOUN, { userId: ownUserId, pronoun: chosenPronoun })
             }
+            if (!isTermChanged) return
             if (isRemoving) {
               await graphql(REMOVE_PERSON_RELATIONSHIP, { userId: member.userId })
             } else {
@@ -335,17 +341,20 @@ function RelationshipDialog({
         <p className="muted">{t('circles.relationship.removeNote', { name: memberName })}</p>
       )}
       {isPronounAsked && (
-        <label>
-          {t('circles.relationship.pronounQuestion')}
-          <select value={chosenPronoun} onChange={(event) => setChosenPronoun(event.target.value)}>
-            <option value="">{t('profile.pronounNone')}</option>
-            {PRONOUNS.map((pronoun) => (
-              <option key={pronoun} value={pronoun}>
-                {t(PRONOUN_LABELS[pronoun])}
-              </option>
-            ))}
-          </select>
-        </label>
+        <>
+          <label>
+            {t('circles.relationship.pronounQuestion')}
+            <select value={chosenPronoun} onChange={(event) => setChosenPronoun(event.target.value)}>
+              <option value="">{t('profile.pronounNone')}</option>
+              {PRONOUNS.map((pronoun) => (
+                <option key={pronoun} value={pronoun}>
+                  {t(PRONOUN_LABELS[pronoun])}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="muted">{t('profile.pronounHint')}</p>
+        </>
       )}
     </FormDialog>
   )

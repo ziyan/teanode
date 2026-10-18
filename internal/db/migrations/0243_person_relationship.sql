@@ -9,8 +9,9 @@
 -- described is theirs to say, in user.pronoun, and when they have said it that
 -- is what their words follow.
 --
--- Only the two of them see it, and only while they share a circle, which is
--- checked when it is read and when it is said.
+-- Only the two of them see it, and only while they share a circle: it is
+-- deleted in the transaction in which they stop sharing any, as a share
+-- between them is, and checked when it is read and when it is said.
 CREATE TABLE "person_relationship" (
     "id"                       character varying(32) NOT NULL PRIMARY KEY,
     "created_at"               timestamp with time zone NOT NULL,
@@ -34,6 +35,19 @@ CREATE UNIQUE INDEX "person_relationship_pair" ON "person_relationship"
 CREATE INDEX "person_relationship_user" ON "person_relationship" ("user_id");
 CREATE INDEX "person_relationship_related_user" ON "person_relationship" ("related_user_id");
 
--- How a person is described: he, she or they. NULL until they say.
+-- When one person last told another about a relationship between them, so
+-- that saying it, taking it back and saying it again tells the other at most
+-- once a day. It is kept apart from the relationship, which taking back
+-- deletes.
+CREATE TABLE "person_relationship_notice" (
+    "user_id"      character varying(32) NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
+    "told_user_id" character varying(32) NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
+    "told_at"      timestamp with time zone NOT NULL,
+    PRIMARY KEY ("user_id", "told_user_id")
+);
+CREATE INDEX "person_relationship_notice_told_user" ON "person_relationship_notice" ("told_user_id");
+
+-- How a person is described: he, she or they. NULL until they say. It is
+-- shown to the people who share a circle with them, as their name is.
 ALTER TABLE "user" ADD COLUMN "pronoun" character varying(8)
     CHECK ("pronoun" IN ('he', 'she', 'they'));

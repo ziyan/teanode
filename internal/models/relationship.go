@@ -228,11 +228,12 @@ func ParseRelationshipTerm(word string) (RelationshipTerm, error) {
 	return RelationshipTerm{}, fmt.Errorf("%q is not a relationship; say one of %s", strings.TrimSpace(word), strings.Join(known, ", "))
 }
 
-// RelationshipTellingInterval is how soon after saying a relationship the
-// same person can change it again without the other being told a second
-// time: a slip corrected at once is one note, and changing it back and forth
-// is not a way to fill somebody's conversation and phone.
-const RelationshipTellingInterval = time.Hour
+// RelationshipNoticeInterval is how often one person tells another about a
+// relationship between them: what they say, change and take back in between
+// is shown on the Circles page at once but told no more, so that saying it
+// and taking it back over and over is not a way to fill somebody's
+// conversation and phone.
+const RelationshipNoticeInterval = 24 * time.Hour
 
 // PersonRelationship is what one person is to another who shares a circle
 // with them. It is one fact between the two: UserID said, last, that

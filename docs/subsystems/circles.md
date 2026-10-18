@@ -184,17 +184,27 @@ chose for them when it was they who said it, and otherwise neutral. A kind with
 one word for everybody (cousin, friend, colleague) is always neutral.
 
 Only the two people see it, and only while they share a circle: it is read with
-the people the caller shares a circle with, and setting or removing it needs a
-circle in common (otherwise not found, as anybody unknown). Leaving the last
-circle in common hides it without deleting it.
+the people the caller shares a circle with, setting it needs a circle in common
+(otherwise not found, as anybody unknown), and it is deleted in the transaction
+in which the two stop sharing any circle, as a share between them is
+(`endSharesOutsideCircles`), so it does not come back unannounced if they are
+in one again. Removing it needs only the circle in common, so a relationship
+with somebody since disabled can still be taken away.
+
+A pronoun is profile information, shown to the people who share a circle with
+the person as their name is: anybody who says a gendered word for them sees the
+word their pronoun gives. The dashboard, the iPhone app and the command line say
+so where it is set.
 
 Each change is told to the other person the way an invitation is: a note in
 their agent's main conversation (`relationship_set` or `relationship_removed`,
 in the same transaction) and a notification of kind `circle` on their phones.
-Saying the same again tells nobody, and neither does the same person changing
-or taking back what they said within the hour
-(`models.RelationshipTellingInterval`), so a slip corrected at once is one
-note and changing it back and forth cannot fill somebody's phone.
+Saying the same again tells nobody, and one person tells another at most once a
+day (`models.RelationshipNoticeInterval`, kept in `person_relationship_notice`
+apart from the relationship, so taking it back and saying it again does not
+reset it). What changes in between is on the Circles page at once and told no
+more, so saying it and taking it back over and over cannot fill somebody's
+conversation or phone.
 
 The agent's situation says how the person is described (they/them when they
 have not said) and, for somebody who may use circles, lists each person with a
@@ -203,7 +213,9 @@ name and never an instruction) and username, marking one the other person said
 as theirs,
 so that "ask my father" or "where is my wife" reaches the right account with
 the tools that take a person. The `circle` tool sets one with `relate` and
-takes it away with `unrelate`, only on the person's word.
+takes it away with `unrelate`, only on the person's word; both are outward,
+since the other person is told, so the person sees a card first and a run
+nobody is present for cannot do either.
 
 ## The circle chat
 

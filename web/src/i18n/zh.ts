@@ -6117,7 +6117,8 @@ export const zh: Catalog = {
   'profile.pronounHe': '他',
   'profile.pronounShe': '她',
   'profile.pronounThey': 'TA',
-  'profile.pronounHint': '用于圈子里的人如何称呼你，例如儿子或女儿，也用于你的助手如何谈到你。',
+  'profile.pronounHint':
+    '和你同在一个圈子的人能看到它，就像能看到你的名字一样。它决定你在他们那里的称呼（例如儿子或女儿），以及你的助手如何谈到你。',
   'agentDrawer.note.relationshipSet':
     '{personName}设置了你们的关系：{personName}是你的{word}。你可以在“圈子”页面更改。',
   'agentDrawer.note.relationshipRemoved': '{personName}删除了你们的关系。',

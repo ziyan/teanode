@@ -168,11 +168,10 @@ func init() {
 				},
 			},
 			{
-				// A write the person can put back by saying it again or
-				// removing it, and nothing leaves the server but a note to
-				// the other person, which the API writes. Compare
-				// circle_create: no card.
-				Name: "circle_relate", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				// Outward, like a message: the other person is told in their
+				// conversation and on their phone, so the person sees a card
+				// first and a run nobody is present for cannot say it.
+				Name: "circle_relate", Family: tools.FamilyAccount, Risk: tools.RiskOutward,
 				Permissions: []models.Permission{models.PermissionCircleUse},
 				Description: "Say what somebody the person shares a circle with is to them, by username: their father, wife, son, " +
 					"friend. Only on the person's own word, never worked out from mail, memory or a name. The other person is told, " +
@@ -210,14 +209,13 @@ func init() {
 					if err != nil {
 						return nil, err
 					}
-					answer.Note = fmt.Sprintf("%s is now the person's %s; they were told", person.Username, strings.ReplaceAll(strings.TrimSpace(arguments.Relationship), "_", " "))
+					answer.Note = fmt.Sprintf("%s is now the person's %s; they are told, at most once a day", person.Username, strings.ReplaceAll(strings.TrimSpace(arguments.Relationship), "_", " "))
 					return answer, nil
 				},
 			},
 			{
-				// A write like relate: the person can say it again, and the
-				// other person is told by a note.
-				Name: "circle_unrelate", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				// Outward like relate: the other person is told.
+				Name: "circle_unrelate", Family: tools.FamilyAccount, Risk: tools.RiskOutward,
 				Permissions: []models.Permission{models.PermissionCircleUse},
 				Description: "Take away what the person and somebody they share a circle with are to each other, by username, " +
 					"whichever of them said it. Only on the person's word. The other person is told.",
@@ -250,7 +248,7 @@ func init() {
 					if !result.RemovePersonRelationship {
 						return tools.TextResult("nothing was said between the person and %s, so nothing changed", person.Username), nil
 					}
-					return tools.TextResult("took away how the person and %s are related; they were told", person.Username), nil
+					return tools.TextResult("took away how the person and %s are related; they are told, at most once a day", person.Username), nil
 				},
 			},
 			answerTool("circle_accept", true),
@@ -549,10 +547,11 @@ func init() {
 			// account (for somebody who manages accounts), accepting or
 			// declining an invitation and changing somebody's role give or
 			// take away a way in; leaving, deleting a circle and removing
-			// a member cannot be undone by the person alone; making,
-			// renaming a circle, taking back an unanswered invitation and
-			// saying what somebody is to the person (relate, unrelate)
-			// change nothing that cannot be put back.
+			// a member cannot be undone by the person alone; saying what
+			// somebody is to the person (relate, unrelate) is outward, since
+			// the other person is told; making and renaming a circle and
+			// taking back an unanswered invitation change nothing that
+			// cannot be put back.
 			tools.Group{
 				Name: "circle", Family: tools.FamilyAccount,
 				Description: "The person's circles: the family, friends or colleagues on this server they belong to, who is in each, and the invitations to join one.",

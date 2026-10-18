@@ -79,14 +79,13 @@ func (self *graph) SetPersonRelationship(ctx context.Context, arguments SetPerso
 		return nil, translateError(err)
 	}
 	// What the caller now is to the other person, worded as the other
-	// person will see it. Saying the same again tells nobody twice, and
-	// neither does the caller changing what they said within the hour.
+	// person will see it. Saying the same again tells nobody, and anything
+	// else is told at most once a day.
 	toldKind := relationship.KindFor(other.ID)
 	toldGender := relationship.TermGenderFor(other.ID, user.Pronoun)
 	isUnchanged := before != nil && before.KindFor(other.ID) == toldKind && before.TermGenderFor(other.ID, user.Pronoun) == toldGender
-	isRecentlyTold := before != nil && before.UserID == user.ID && time.Since(before.ModifiedAt) < models.RelationshipTellingInterval
-	if !isUnchanged && !isRecentlyTold {
-		if err := self.tellAboutRelationship(ctx, other.ID, models.NoteRelationshipSet, models.RelationshipDetail(user.DisplayName(), toldKind, toldGender)); err != nil {
+	if !isUnchanged {
+		if err := self.tellAboutRelationship(ctx, user.ID, other.ID, models.NoteRelationshipSet, models.RelationshipDetail(user.DisplayName(), toldKind, toldGender)); err != nil {
 			return nil, err
 		}
 	}
@@ -105,10 +104,21 @@ func (self *graph) RemovePersonRelationship(ctx context.Context, arguments Remov
 	if err != nil {
 		return false, err
 	}
+	// Only a circle in common, and not what chatContact also asks: a
+	// relationship with somebody since disabled, or who may no longer use
+	// circles, can still be taken away.
 	tx := self.transaction(ctx)
-	other, err := self.chatContact(tx, user, arguments.UserID)
+	other, err := tx.GetUser(strings.TrimSpace(arguments.UserID))
 	if err != nil {
 		return false, err
+	}
+	if other == nil || other.ID == user.ID {
+		return false, api.ErrNotFound
+	}
+	if shares, err := tx.SharesCircle(user.ID, other.ID); err != nil {
+		return false, err
+	} else if !shares {
+		return false, api.ErrNotFound
 	}
 	before, err := tx.GetPersonRelationship(user.ID, other.ID)
 	if err != nil {
@@ -120,24 +130,23 @@ func (self *graph) RemovePersonRelationship(ctx context.Context, arguments Remov
 	if _, err := tx.RemovePersonRelationship(user.ID, other.ID); err != nil {
 		return false, err
 	}
-	// Taking back within the hour what the caller said themselves is not
-	// told a second time either.
-	isRecentlyTold := before.UserID == user.ID && time.Since(before.ModifiedAt) < models.RelationshipTellingInterval
-	if !isRecentlyTold {
-		if err := self.tellAboutRelationship(ctx, other.ID, models.NoteRelationshipRemoved,
-			models.RelationshipDetail(user.DisplayName(), before.KindFor(other.ID), before.TermGenderFor(other.ID, user.Pronoun))); err != nil {
-			return false, err
-		}
+	if err := self.tellAboutRelationship(ctx, user.ID, other.ID, models.NoteRelationshipRemoved,
+		models.RelationshipDetail(user.DisplayName(), before.KindFor(other.ID), before.TermGenderFor(other.ID, user.Pronoun))); err != nil {
+		return false, err
 	}
 	log.Noticef("%s removed how they are related to another account", user.Username)
 	return true, nil
 }
 
 // tellAboutRelationship writes the note to the other person in this
-// transaction, so there is never a change without it, and sends their phones
-// the notification once it commits.
-func (self *graph) tellAboutRelationship(ctx context.Context, toldUserId string, noteKind models.AgentNoteKind, detail string) error {
+// transaction and sends their phones the notification once it commits, unless
+// the caller told them already within the day (RelationshipNoticeInterval).
+func (self *graph) tellAboutRelationship(ctx context.Context, tellerUserId, toldUserId string, noteKind models.AgentNoteKind, detail string) error {
 	tx := self.transaction(ctx)
+	isTold, err := tx.TakeRelationshipNotice(tellerUserId, toldUserId, time.Now(), models.RelationshipNoticeInterval)
+	if err != nil || !isTold {
+		return err
+	}
 	agentId, err := agent.NoteRelationship(tx, toldUserId, noteKind, detail)
 	if err != nil {
 		return err

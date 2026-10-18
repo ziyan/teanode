@@ -6429,7 +6429,7 @@ export const en = {
   'profile.pronounShe': 'She',
   'profile.pronounThey': 'They',
   'profile.pronounHint':
-    'Used for how you appear to people in your circles, such as son or daughter, and how your agent speaks of you.',
+    'Shown to the people who share a circle with you, as your name is. It words how you appear to them, such as son or daughter, and how your agent speaks of you.',
   'agentDrawer.note.relationshipSet':
     '{personName} set how you are related: {personName} is your {word}. You can change it on the Circles page.',
   'agentDrawer.note.relationshipRemoved': '{personName} removed how you are related.',
