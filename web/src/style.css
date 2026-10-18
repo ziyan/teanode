@@ -1881,6 +1881,12 @@ button.link:hover:not(:disabled) {
   cursor: pointer;
 }
 
+/* Beside a label's words the quiet anchor is a box in the line, not text. */
+label > span > .button-quiet {
+  display: inline-block;
+  vertical-align: baseline;
+}
+
 .button-quiet:hover:not(:disabled) {
   border-color: var(--border);
   background: var(--sidebar-hover);
@@ -2564,6 +2570,8 @@ label span {
   min-height: 30px;
 }
 
+/* A row of the menu like its options, in the menu's own text color: accent
+   text with no box reads as a link. */
 .menu-clear {
   width: 100%;
   margin-bottom: 4px;
@@ -2571,7 +2579,7 @@ label span {
   border: none;
   border-radius: var(--radius-1);
   background: none;
-  color: var(--accent);
+  color: var(--text);
   font: inherit;
   font-size: var(--text-label);
   text-align: left;
@@ -13838,6 +13846,11 @@ button.idea-history-title {
   margin: 0 0 var(--space-4);
 }
 
+/* The pointer's own margin is the space below; the actions row adds none. */
+.finance-pointer .page-actions {
+  margin-bottom: 0;
+}
+
 /* An amount column in the shared table reads down by its decimal places,
    as the plain numbers tables do. */
 .table-surface .numeric {
@@ -16524,6 +16537,18 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: 0;
 }
 
+/* Clear filters is a button with a box, as wide as its words, among the
+   form's fields rather than a row of the menu it sits in. */
+.menu .photo-filter-clear {
+  align-self: flex-start;
+  width: auto;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  font-weight: 550;
+}
+
 .photo-filter-kinds {
   margin: 0;
   padding: 0;
@@ -16540,10 +16565,6 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 .photo-filter-kinds label.checkbox {
   margin-top: 0;
   padding: 6px 0;
-}
-
-.photo-filter-form .menu-clear {
-  margin-bottom: 0;
 }
 
 /* The same strip of tabs on every page. */

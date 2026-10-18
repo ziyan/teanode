@@ -211,10 +211,10 @@ export function WelcomePage() {
       purpose={t('welcome.intro')}
       footnote={
         <>
-          <Link className="button" to="/manage/agent/models">
+          <Link className="button-quiet" to="/manage/agent/models">
             {t('welcome.otherModels')}
           </Link>{' '}
-          <Link className="button" to="/manage/server/setup">
+          <Link className="button-quiet" to="/manage/server/setup">
             {t('welcome.otherSetup')}
           </Link>
         </>
