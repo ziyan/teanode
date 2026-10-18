@@ -321,6 +321,61 @@ func TestAlbumShareAsksTheNameOfThePersonOrCircleAndSharesAtALevel(test *testing
 	}
 }
 
+// album-share-update changes one share by its id. The person is asked
+// when it widens what somebody can do (contribute, or places on) and not when
+// it keeps or narrows it.
+func TestAlbumShareUpdateChangesOneShareAndAsksWhenItWidensIt(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"UpdatePhotoAlbumShare": `{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","granteeName":"Ben Example","shareLevel":"contribute","isLocationIncluded":true}`,
+	})
+	result, err := current.call(map[string]any{"operation": "album-share-update", "share_id": "share-one", "share_level": "Contribute", "is_location_included": true})
+	if err != nil || !result.Untrusted {
+		test.Fatalf("%v %v", result, err)
+	}
+	for _, want := range []string{`"share_id":"share-one"`, `"share_level":"contribute"`, `"is_location_included":true`, `"person":"ben"`} {
+		if !strings.Contains(result.Content, want) {
+			test.Fatalf("%s lacks %s", result.Content, want)
+		}
+	}
+	asked := current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 1 || asked[0]["photoAlbumShareId"] != "share-one" || asked[0]["shareLevel"] != "contribute" || asked[0]["isLocationIncluded"] != true {
+		test.Fatalf("%v", asked)
+	}
+	for name, arguments := range map[string]map[string]any{
+		"no share":        {"operation": "album-share-update", "share_level": "view"},
+		"no level":        {"operation": "album-share-update", "share_id": "share-one"},
+		"a level not one": {"operation": "album-share-update", "share_id": "share-one", "share_level": "owner"},
+	} {
+		if _, err := current.call(arguments); err == nil {
+			test.Errorf("changing a share with %s was not refused", name)
+		}
+	}
+	if asked := current.operations.asked("UpdatePhotoAlbumShare"); len(asked) != 1 {
+		test.Fatalf("a change that was refused reached the server: %v", asked)
+	}
+	for _, scenario := range []struct {
+		arguments map[string]any
+		risk      tools.Risk
+		line      string
+	}{
+		{map[string]any{"operation": "album-share-update", "share_level": "contribute"}, tools.RiskGranting, "Change an album share to view and add photos, without where the photos were taken"},
+		{map[string]any{"operation": "album-share-update", "share_level": "view", "is_location_included": true}, tools.RiskGranting, "Change an album share to view only, including where the photos were taken"},
+		{map[string]any{"operation": "album-share-update", "share_level": "view"}, tools.RiskWrite, "Change an album share to view only, without where the photos were taken"},
+	} {
+		encoded, _ := json.Marshal(scenario.arguments)
+		if risk := riskOf(encoded); risk != scenario.risk {
+			test.Errorf("%v is %s, want %s", scenario.arguments, risk, scenario.risk)
+		}
+		var asked arguments
+		if err := json.Unmarshal(encoded, &asked); err != nil {
+			test.Fatal(err)
+		}
+		if line := previewOf(asked); line != scenario.line {
+			test.Errorf("%v: the card says %q", scenario.arguments, line)
+		}
+	}
+}
+
 func TestAlbumSharesAndUnshareUseTheSharedOperations(test *testing.T) {
 	current := newRun(test, map[string]string{
 		"ListPhotoAlbumShares":  `[{"id":"share-one","granteeUserId":"user-ben","granteeUsername":"ben","granteeName":"Ben Example","shareLevel":"view"},{"id":"share-two","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true}]`,

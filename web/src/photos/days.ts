@@ -81,35 +81,6 @@ export function dayHeading(moment: Date, language: string, timeZone?: string): s
   }).format(moment)
 }
 
-export interface PhotoDay<T> {
-  key: string
-  heading: string
-  photos: T[]
-}
-
-// groupByDay splits photos, which arrive newest first, into runs under one
-// heading each. A run is a day: photos on one day that the list does not
-// keep together (a page boundary, a search) get a heading each, which is
-// what a reader of a page expects.
-export function groupByDay<T extends PlacedPhoto>(
-  photos: T[],
-  language: string,
-  browserTimeZone?: string,
-): PhotoDay<T>[] {
-  const days: PhotoDay<T>[] = []
-  for (const photo of photos) {
-    const { moment, timeZone } = photoWallClock(photo, browserTimeZone)
-    const key = dayKey(moment, timeZone)
-    const last = days[days.length - 1]
-    if (last && last.key === key) {
-      last.photos.push(photo)
-    } else {
-      days.push({ key, heading: dayHeading(moment, language, timeZone), photos: [photo] })
-    }
-  }
-  return days
-}
-
 const DAY_MS = 24 * 60 * 60 * 1000
 
 // trashDaysLeft is how many whole days a photo trashed at a moment stays in
@@ -183,6 +154,57 @@ export function formatOffset(offsetMinutes: number): string {
   const absolute = Math.abs(offsetMinutes)
   const twoDigits = (count: number) => String(count).padStart(2, '0')
   return `UTC${sign}${twoDigits(Math.floor(absolute / 60))}:${twoDigits(absolute % 60)}`
+}
+
+// photoViewerTitle is what the viewer says at its top, on the clock where the
+// photo was taken: the day over the time of day, "October 5" over "19:52".
+// The year comes with the day only when it is not the year the reader is in,
+// so that this year's photos read as short as they can. isoText is the same
+// moment for a machine, to the minute, without the offset.
+export function photoViewerTitle(
+  photo: PlacedPhoto,
+  language: string,
+  browserTimeZone: string | undefined,
+  now: Date,
+): { dateText: string; timeText: string; isoText: string } {
+  const { moment, timeZone } = photoWallClock(photo, browserTimeZone)
+  if (Number.isNaN(moment.getTime())) return { dateText: '', timeText: '', isoText: '' }
+  const yearOf = (value: Date) => new Intl.DateTimeFormat('en', { timeZone, year: 'numeric' }).format(value)
+  const isThisYear = yearOf(moment) === yearOf(now)
+  const dateText = new Intl.DateTimeFormat(language, {
+    timeZone,
+    ...(isThisYear ? {} : { year: 'numeric' }),
+    month: 'long',
+    day: 'numeric',
+  }).format(moment)
+  const timeText = new Intl.DateTimeFormat(language, { timeZone, hour: 'numeric', minute: '2-digit' }).format(moment)
+  const hourAndMinute = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
+  return { dateText, timeText, isoText: `${dayKey(moment, timeZone)}T${hourAndMinute.format(moment)}` }
+}
+
+// photoDayRange writes the days a run of photos spans as the reader's language
+// writes a range, "Oct 3 to 6, 2026", or a single date when they are all on
+// one day. Each photo is read on the clock where it was taken, so a photo from
+// a trip is on the day the people there lived. Empty for no photos.
+export function photoDayRange(photos: PlacedPhoto[], language: string, browserTimeZone: string | undefined): string {
+  let firstKey = ''
+  let lastKey = ''
+  for (const photo of photos) {
+    const { moment, timeZone } = photoWallClock(photo, browserTimeZone)
+    if (Number.isNaN(moment.getTime())) continue
+    const key = dayKey(moment, timeZone)
+    if (firstKey === '' || key < firstKey) firstKey = key
+    if (lastKey === '' || key > lastKey) lastKey = key
+  }
+  if (firstKey === '') return ''
+  // Noon UTC of each day, read in UTC: the day is the day, whatever zone the
+  // reader is in.
+  return formatDateRange(`${firstKey}T12:00:00Z`, `${lastKey}T12:00:00Z`, language, 'UTC')
 }
 
 // formatDuration is the length of a video as m:ss, or h:mm:ss from an hour

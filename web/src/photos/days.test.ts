@@ -8,11 +8,12 @@ import {
   formatDuration,
   firstSentence,
   formatOffset,
-  groupByDay,
   groupByTrashDay,
   indexRange,
   photoAltText,
   photoDateTime,
+  photoDayRange,
+  photoViewerTitle,
   trashDaysLeft,
 } from './days'
 
@@ -41,36 +42,42 @@ describe('days', () => {
     expect(dayHeading(moment, 'ja', 'UTC')).toContain('土曜日')
   })
 
-  it('groups newest first photos into runs of one day', () => {
-    const photos = [
-      photoAt('2030-07-13T01:00:00Z'),
-      photoAt('2030-07-12T23:00:00Z'),
-      photoAt('2030-07-12T02:00:00Z'),
-      photoAt('2030-07-10T09:00:00Z'),
-    ]
-    const days = groupByDay(photos, 'en', 'UTC')
-    expect(days.map((day) => [day.key, day.photos.length])).toEqual([
-      ['2030-07-13', 1],
-      ['2030-07-12', 2],
-      ['2030-07-10', 1],
-    ])
+  it('writes the days the photos span as one range', () => {
+    const photos = [photoAt('2030-07-06T01:00:00Z'), photoAt('2030-07-04T23:00:00Z'), photoAt('2030-07-03T02:00:00Z')]
+    expect(photoDayRange(photos, 'en', 'UTC').replace(/\s/g, ' ')).toBe('Jul 3 \u2013 6, 2030')
   })
 
-  it('moves photos across the day line with the time zone', () => {
+  it('writes one date when every photo is on one day, and nothing for none', () => {
+    const photos = [photoAt('2030-07-12T01:00:00Z'), photoAt('2030-07-12T23:00:00Z')]
+    expect(photoDayRange(photos, 'en', 'UTC')).toBe('Jul 12, 2030')
+    expect(photoDayRange([], 'en', 'UTC')).toBe('')
+  })
+
+  it('writes a range that crosses a month and a year with both ends said', () => {
+    const photos = [photoAt('2031-01-02T10:00:00Z'), photoAt('2030-12-30T10:00:00Z')]
+    const text = photoDayRange(photos, 'en', 'UTC')
+    expect(text).toContain('Dec 30, 2030')
+    expect(text).toContain('Jan 2, 2031')
+  })
+
+  it('finds the first and last day whatever order the photos are in', () => {
+    const photos = [photoAt('2030-07-04T10:00:00Z'), photoAt('2030-07-09T10:00:00Z'), photoAt('2030-07-06T10:00:00Z')]
+    expect(photoDayRange(photos, 'en', 'UTC').replace(/\s/g, ' ')).toBe('Jul 4 \u2013 9, 2030')
+  })
+
+  it('moves a photo across the day line with the time zone', () => {
     const photos = [photoAt('2030-07-13T01:00:00Z'), photoAt('2030-07-12T23:00:00Z')]
-    expect(groupByDay(photos, 'en', 'UTC')).toHaveLength(2)
-    expect(groupByDay(photos, 'en', 'Asia/Tokyo')).toHaveLength(1)
+    expect(photoDayRange(photos, 'en', 'UTC').replace(/\s/g, ' ')).toBe('Jul 12 \u2013 13, 2030')
+    expect(photoDayRange(photos, 'en', 'Asia/Tokyo')).toBe('Jul 13, 2030')
   })
 
-  it('uses the wall clock where the photo was taken when the offset is known', () => {
+  it('reads the days on the clock where each photo was taken when the offset is known', () => {
     // 23:30 at +09:00 is 14:30 UTC the same day; 07:30 at +09:00 is 22:30 UTC
     // the day before. Both are the 12th where they were taken, though UTC
     // (and Los Angeles) would split them across two dates.
     const evening = photoAt('2030-07-12T14:30:00Z', undefined, 540)
     const morning = photoAt('2030-07-11T22:30:00Z', undefined, 540)
-    const days = groupByDay([evening, morning], 'en', 'America/Los_Angeles')
-    expect(days.map((day) => day.key)).toEqual(['2030-07-12'])
-    expect(days[0].photos).toHaveLength(2)
+    expect(photoDayRange([evening, morning], 'en', 'America/Los_Angeles')).toBe('Jul 12, 2030')
   })
 
   it('keeps a late photo on its own local day when UTC has already turned over', () => {
@@ -78,14 +85,39 @@ describe('days', () => {
     // 00:30 at +09:00 on the 13th, which is 15:30 UTC on the 12th.
     const lateOnTwelfth = photoAt('2030-07-12T14:30:00Z', undefined, 540)
     const earlyOnThirteenth = photoAt('2030-07-12T15:30:00Z', undefined, 540)
-    const days = groupByDay([earlyOnThirteenth, lateOnTwelfth], 'en', 'UTC')
-    expect(days.map((day) => day.key)).toEqual(['2030-07-13', '2030-07-12'])
+    expect(photoDayRange([earlyOnThirteenth, lateOnTwelfth], 'en', 'UTC').replace(/\s/g, ' ')).toBe(
+      'Jul 12 \u2013 13, 2030',
+    )
   })
 
-  it('reads a photo with no offset in the browser zone', () => {
-    const photo = photoAt('2030-07-12T23:30:00Z')
-    expect(groupByDay([photo], 'en', 'Asia/Tokyo')[0].key).toBe('2030-07-13')
-    expect(groupByDay([photo], 'en', 'UTC')[0].key).toBe('2030-07-12')
+  it('places a photo with no date taken where it arrived', () => {
+    expect(photoDayRange([photoAt(null, '2030-03-05T08:00:00Z')], 'en', 'UTC')).toBe('Mar 5, 2030')
+  })
+
+  it('titles the viewer with the day over the time, the year only when it is not this one', () => {
+    const photo = photoAt('2030-07-12T19:52:00Z', undefined, 0)
+    const sameYear = photoViewerTitle(photo, 'en', 'UTC', new Date('2030-12-01T00:00:00Z'))
+    expect(sameYear.dateText).toBe('July 12')
+    expect(sameYear.timeText).toBe('7:52 PM')
+    expect(sameYear.isoText).toBe('2030-07-12T19:52')
+    const otherYear = photoViewerTitle(photo, 'en', 'UTC', new Date('2031-01-02T00:00:00Z'))
+    expect(otherYear.dateText).toBe('July 12, 2030')
+  })
+
+  it('titles the viewer on the clock where the photo was taken', () => {
+    // 19:52 at +09:00 is 10:52 UTC; a reader in Los Angeles still sees 19:52.
+    const photo = photoAt('2030-07-12T10:52:00Z', undefined, 540)
+    const title = photoViewerTitle(photo, 'en', 'America/Los_Angeles', new Date('2030-07-20T00:00:00Z'))
+    expect(title.dateText).toBe('July 12')
+    expect(title.timeText).toBe('7:52 PM')
+    expect(title.isoText).toBe('2030-07-12T19:52')
+  })
+
+  it('titles the viewer in the language of the reader', () => {
+    const photo = photoAt('2030-07-12T09:05:00Z', undefined, 0)
+    const title = photoViewerTitle(photo, 'ja', 'UTC', new Date('2030-07-20T00:00:00Z'))
+    expect(title.dateText).toBe('7月12日')
+    expect(title.timeText).toContain('9:05')
   })
 
   it('writes the time of a photo on the clock where it was taken', () => {
@@ -101,11 +133,6 @@ describe('days', () => {
     expect(formatOffset(540)).toBe('UTC+09:00')
     expect(formatOffset(-210)).toBe('UTC-03:30')
     expect(formatOffset(0)).toBe('UTC+00:00')
-  })
-
-  it('places a photo with no date taken at the day it arrived', () => {
-    const days = groupByDay([photoAt(null, '2030-03-04T10:00:00Z')], 'en', 'UTC')
-    expect(days[0].key).toBe('2030-03-04')
   })
 
   it('writes the length of a video as m:ss and h:mm:ss', () => {

@@ -23,7 +23,7 @@ function SearchProbe() {
   return null
 }
 
-function answer() {
+function answer(hasPhoto = false) {
   vi.mocked(graphql).mockImplementation(async (document: string) => {
     if (document.includes('ListAddressBooks'))
       return { ListAddressBooks: [{ id: 'book-1', name: 'Mine', contacts: 1 }] } as never
@@ -41,8 +41,11 @@ function answer() {
           phones: [],
           note: '',
           addresses: [],
+          hasPhoto,
         },
       } as never
+    if (document.includes('RemoveContactPicture'))
+      return { RemoveContactPicture: { id: 'card-2', hasPhoto: false } } as never
     if (document.includes('ReadRecordMemoryLinks'))
       return {
         ReadRecordMemoryLinks: [
@@ -101,4 +104,35 @@ it('opens no card unless a link names one', async () => {
   await screen.findByText('Fixture Guest')
   expect(screen.queryByRole('dialog')).toBeNull()
   expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('GetContact'))).toBe(false)
+})
+
+it('offers to remove the picture of a contact that has one, and only then', async () => {
+  answer(false)
+  show('/contacts?contact=card-2')
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).queryByRole('button', { name: 'Remove picture' })).toBeNull()
+  cleanup()
+
+  answer(true)
+  show('/contacts?contact=card-2')
+  const withPicture = await screen.findByRole('dialog')
+  const removedPicture = () =>
+    vi
+      .mocked(graphql)
+      .mock.calls.some(([document, variables]) => document.includes('RemoveContactPicture') && variables?.id === 'card-2')
+  // It asks first, and a no leaves the picture where it was.
+  fireEvent.click(await within(withPicture).findByRole('button', { name: 'Remove picture' }))
+  const question = await screen.findByRole('alertdialog')
+  expect(within(question).getByText(/Devices synchronizing your address book will lose it too/)).toBeTruthy()
+  expect(removedPicture()).toBe(false)
+  fireEvent.click(within(question).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(removedPicture()).toBe(false)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+
+  fireEvent.click(await within(withPicture).findByRole('button', { name: 'Remove picture' }))
+  fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove picture' }))
+  await waitFor(() => expect(removedPicture()).toBe(true))
+  expect(await screen.findByText('Removed the picture of Linked Guest')).toBeTruthy()
+  await waitFor(() => expect(within(withPicture).queryByRole('button', { name: 'Remove picture' })).toBeNull())
 })

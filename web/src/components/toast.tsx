@@ -11,10 +11,12 @@ import { useTranslation } from '../i18n/i18n'
 // wrong in the same way: what happened to what you just did is a passing fact,
 // and a passing fact belongs somewhere it can pass.
 //
-// A toast carries at most one action, which is how undo arrives — "Archived.
+// A toast carries one action, which is how undo arrives: "Archived.
 // Undo." is the difference between a program you can use quickly and one you
 // have to use carefully, because the cost of the wrong click stops being
-// "find where that went".
+// "find where that went". It may carry two, when what happened has two
+// natural next steps and neither is an undo of the other ("Used this face as
+// their picture. Change. Remove.").
 //
 // What does not belong here: anything the reader has to act on. A form field
 // that is wrong, a page whose query failed — those stay on the page. A
@@ -32,7 +34,7 @@ type Toast = {
   id: number
   kind: ToastKind
   message: string
-  action?: ToastAction
+  actions: ToastAction[]
 }
 
 // How long each kind stays. A failure is read; something that worked is only
@@ -90,8 +92,8 @@ export function toastRoom(
 }
 
 type Speak = {
-  done: (message: string, action?: ToastAction) => void
-  failed: (message: string, action?: ToastAction) => void
+  done: (message: string, action?: ToastAction | ToastAction[]) => void
+  failed: (message: string, action?: ToastAction | ToastAction[]) => void
   // Whatever went wrong, said in the words it arrived with. Anything that is
   // not an Error has no message worth showing, so it gets the general one.
   failure: (caught: unknown, fallback: string) => void
@@ -110,9 +112,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((previous) => previous.filter((toast) => toast.id !== id))
   }, [])
 
-  const add = useCallback((kind: ToastKind, message: string, action?: ToastAction) => {
+  const add = useCallback((kind: ToastKind, message: string, action?: ToastAction | ToastAction[]) => {
     const id = next.current++
-    setToasts((previous) => [...previous, { id, kind, message, action }].slice(-MOST))
+    const actions = action === undefined ? [] : Array.isArray(action) ? action : [action]
+    setToasts((previous) => [...previous, { id, kind, message, actions }].slice(-MOST))
   }, [])
 
   const speak = useMemo<Speak>(
@@ -233,10 +236,10 @@ function ToastRow({
       return
     }
     // A toast with something to press stays long enough to be pressed.
-    const linger = toast.action ? Math.max(LINGER[toast.kind], ACTION_LINGER) : LINGER[toast.kind]
+    const linger = toast.actions.length > 0 ? Math.max(LINGER[toast.kind], ACTION_LINGER) : LINGER[toast.kind]
     const timer = window.setTimeout(() => dismissRef.current(), linger)
     return () => window.clearTimeout(timer)
-  }, [held, toast.kind, toast.action])
+  }, [held, toast.kind, toast.actions])
 
   return (
     <div
@@ -245,8 +248,9 @@ function ToastRow({
       onPointerLeave={() => setHeld(false)}
     >
       <span className="toast-message">{toast.message}</span>
-      {toast.action && (
+      {toast.actions.map((action) => (
         <button
+          key={action.label}
           type="button"
           className="toast-action"
           // An action that fails says so. Undo runs outside whatever wrapped
@@ -256,15 +260,15 @@ function ToastRow({
           onClick={async () => {
             onDismiss()
             try {
-              await toast.action?.run()
+              await action.run()
             } catch (caught) {
               onFailed(caught)
             }
           }}
         >
-          {toast.action.label}
+          {action.label}
         </button>
-      )}
+      ))}
       <button type="button" className="toast-close" aria-label={t('common.close')} onClick={onDismiss}>
         <CloseIcon size={14} />
       </button>

@@ -24,13 +24,13 @@ func newPhotoAlbumCommand() *cli.Command {
 		Commands: []*cli.Command{
 			{Name: "list", Usage: "the albums you reach, the most recently changed first: yours, your circles' and those shared with you", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumList},
 			{
-				Name: "show", Usage: "an album and its photos", ArgsUsage: "<album id>",
+				Name: "read", Usage: "an album and its photos", ArgsUsage: "<album id>",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.IntFlag{Name: "limit", Value: defaultPhotoListSize, Usage: "photos to list, 1 to 500"},
 					&cli.StringFlag{Name: "continue-after", Usage: "continue after this photo, the last one of the previous page"},
 				},
-				Action: runPhotoAlbumShow,
+				Action: runPhotoAlbumRead,
 			},
 			{
 				Name: "create", Usage: "make an album, empty or with photos in it", ArgsUsage: "<title> [photo id]...",
@@ -55,6 +55,15 @@ func newPhotoAlbumCommand() *cli.Command {
 					&cli.BoolFlag{Name: "with-location", Usage: "let them see where the photos were taken and download the original files (otherwise they get a picture that carries no place)"},
 				},
 				Action: runPhotoAlbumShare,
+			},
+			{
+				Name: "share-update", Usage: "change one share of an album: what its people may do, and whether they see where the photos were taken; both are set to what you give, so leaving a flag out takes that away", ArgsUsage: "<share id>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.BoolFlag{Name: "contribute", Usage: "let them add photos of their own and take out the ones they added (otherwise they view and save)"},
+					&cli.BoolFlag{Name: "with-location", Usage: "let them see where the photos were taken and download the original files (otherwise they get a picture that carries no place)"},
+				},
+				Action: runPhotoAlbumShareUpdate,
 			},
 			{Name: "unshare", Usage: "take back one share of an album, with the photos its people put in it", ArgsUsage: "<share id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumUnshare},
 			{Name: "shares", Usage: "who an album is shared with, and at what level", ArgsUsage: "<album id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumShares},
@@ -137,10 +146,10 @@ func photoAlbumLevelText(album *models.PhotoAlbum) string {
 	return "view"
 }
 
-func runPhotoAlbumShow(ctx context.Context, command *cli.Command) error {
+func runPhotoAlbumRead(ctx context.Context, command *cli.Command) error {
 	photoAlbumId := command.Args().First()
 	if photoAlbumId == "" {
-		return usage("usage: teanode photo album show <album id>")
+		return usage("usage: teanode photo album read <album id>")
 	}
 	filter := &client.PhotoFilter{AlbumID: photoAlbumId, PageSize: int(command.Int("limit")), BeforePhotoID: command.String("continue-after")}
 	if filter.PageSize < 1 || filter.PageSize > 500 {
@@ -297,6 +306,36 @@ func photoShareLocationText(share *client.PhotoAlbumShare) string {
 		return ", with where the photos were taken"
 	}
 	return ", without where the photos were taken"
+}
+
+// runPhotoAlbumShareUpdate changes one share by its id, as the dashboard's
+// sheet of shares does: the level and the places are both set to what the
+// flags say.
+func runPhotoAlbumShareUpdate(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode photo album share-update <share id> [--contribute] [--with-location]; 'teanode photo album shares' lists the ids")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	shareLevel := string(models.PhotoAlbumShareLevelView)
+	if command.Bool("contribute") {
+		shareLevel = string(models.PhotoAlbumShareLevelContribute)
+	}
+	share, err := client.UpdatePhotoAlbumShare(ctx, connection, command.Args().First(), shareLevel, command.Bool("with-location"))
+	if err != nil {
+		return describeNotFound(command, err, "the share "+command.Args().First())
+	}
+	if command.Bool("json") {
+		return PrintJSON(share)
+	}
+	with := share.GranteeUsername
+	if share.GranteeCircleID != nil {
+		with = "everyone in " + share.GranteeCircleName
+	}
+	_, _ = fmt.Fprintf(command.Writer, "shared with %s at %s%s (share %s)\n", forTerminal(with), share.ShareLevel, photoShareLocationText(share), share.ID)
+	return nil
 }
 
 func runPhotoAlbumShares(ctx context.Context, command *cli.Command) error {

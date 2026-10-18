@@ -7,7 +7,7 @@ import { TranslationProvider } from '../../i18n/i18n'
 import { PhotoSections, forgetKnownPeople } from './albumControls'
 import { FaceRecognitionPreferences, PhotoPeoplePage } from './people'
 import { NoAddressBookError, createContact } from '../../photos/people'
-import { MergePersonDialog, NamePersonDialog } from './personControls'
+import { MergePersonDialog, NamePersonDialog, NamePersonFlow } from './personControls'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
@@ -38,6 +38,7 @@ const group = (overrides: Record<string, unknown>) => ({
   contactId: 'contact-1',
   contactAddressBookId: 'book-1',
   contactName: 'Sample Person',
+  isOwnContact: false,
   faceCount: 5,
   photoCount: 4,
   facePictureUrl: '/face-1',
@@ -95,6 +96,17 @@ it('shows each person with the name of their contact, or an invitation to name t
   const unnamed = screen.getByRole('link', { name: /Unnamed person/ })
   expect(unnamed.getAttribute('href')).toBe('/photos/people/group-2')
   expect(unnamed.textContent).toContain('1 photo')
+})
+
+it('says "You" after the name of the person who is the reader, and after nobody else', async () => {
+  serve([group({ id: 'group-own', contactName: 'Sample Reader', isOwnContact: true }), group({})])
+  showPeoplePage()
+  const own = await screen.findByRole('link', { name: /Sample Reader/ })
+  expect(within(own).getByText('You').classList.contains('muted')).toBe(true)
+  // After the name, on the same line.
+  const nameLine = within(own).getByText('Sample Reader').parentElement!
+  expect(nameLine.textContent).toBe('Sample ReaderYou')
+  expect(within(screen.getByRole('link', { name: /Sample Person/ })).queryByText('You')).toBeNull()
 })
 
 it('lists the hidden people only after Show hidden is chosen', async () => {
@@ -389,7 +401,7 @@ it('marks a contact that already names another person, and leaves it choosable',
     </TranslationProvider>,
   )
   const marked = (await screen.findByRole('radio', { name: /Sample Person/ })).closest('label') as HTMLElement
-  expect(marked.textContent).toContain('Already names another person')
+  expect(marked.textContent).toContain('Already names another person; choosing it merges the two')
   const plain = screen.getByRole('radio', { name: /Other Person/ }).closest('label') as HTMLElement
   expect(plain.textContent).not.toContain('Already names')
 })
@@ -404,4 +416,118 @@ it('keeps the room for the Name button on every tile, so that the tiles of a row
   for (const tile of tiles) expect(tile.querySelector('.photo-person-foot')).not.toBeNull()
   expect(screen.getAllByRole('button', { name: 'Name' })).toHaveLength(1)
   expect(tiles[0].querySelector('.photo-person-foot')?.querySelector('button')).toBeNull()
+})
+
+// The answer naming a group gives: the group left, the group that went into
+// it, and whether the contact was given a picture.
+const naming = (overrides: Record<string, unknown> = {}) => ({
+  photoFaceGroup: group({ id: 'group-1' }),
+  mergedPhotoFaceGroupId: '',
+  isContactPictureSet: false,
+  ...overrides,
+})
+
+function serveNaming(answer: unknown) {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('NamePhotoFaceGroup')) return { NamePhotoFaceGroup: answer } as never
+    if (document.includes('RemoveContactPicture'))
+      return { RemoveContactPicture: { id: 'contact-1', hasPhoto: false } } as never
+    if (document.includes('ListPhotoFaceGroups')) return { ListPhotoFaceGroups: [] } as never
+    if (document.includes('ListAddressBooks')) return { ListAddressBooks: [{ id: 'book-1' }] } as never
+    if (document.includes('ListContacts'))
+      return { ListContacts: [{ id: 'contact-1', name: 'Sample Person', organization: '', emails: [] }] } as never
+    throw new Error(`unexpected document ${document}`)
+  })
+}
+
+function showNamingFlow(entry: string, onNamed = vi.fn()) {
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <Address />
+          <Routes>
+            <Route
+              path="/photos/people/:photoFaceGroupId"
+              element={
+                <NamePersonFlow
+                  group={group({ id: 'group-2', contactName: '' }) as never}
+                  onClose={vi.fn()}
+                  onNamed={onNamed}
+                />
+              }
+            />
+            <Route
+              path="/photos/people/:photoFaceGroupId/:photoId"
+              element={
+                <NamePersonFlow
+                  group={group({ id: 'group-2', contactName: '' }) as never}
+                  onClose={vi.fn()}
+                  onNamed={onNamed}
+                />
+              }
+            />
+            <Route path="/contacts" element={<p>The contacts page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  return onNamed
+}
+
+async function chooseSamplePerson() {
+  const dialog = screen.getByRole('dialog')
+  fireEvent.click(await within(dialog).findByLabelText('Sample Person'))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+}
+
+it('says "Merged with" and goes to the group that is left when the open person was merged away', async () => {
+  serveNaming(naming({ mergedPhotoFaceGroupId: 'group-2' }))
+  const onNamed = showNamingFlow('/photos/people/group-2/photo-9')
+  await chooseSamplePerson()
+  expect(await screen.findByText('Merged with Sample Person')).toBeTruthy()
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/photos/people/group-1/photo-9'))
+  expect(onNamed).toHaveBeenCalledWith(expect.objectContaining({ mergedPhotoFaceGroupId: 'group-2' }))
+})
+
+it('stays where it is when the merged group is not the one that is open', async () => {
+  serveNaming(naming({ mergedPhotoFaceGroupId: 'group-7' }))
+  showNamingFlow('/photos/people/group-2')
+  await chooseSamplePerson()
+  expect(await screen.findByText('Merged with Sample Person')).toBeTruthy()
+  expect(screen.getByTestId('address').textContent).toBe('/photos/people/group-2')
+})
+
+it('says the person is now named when nothing was merged', async () => {
+  serveNaming(naming())
+  showNamingFlow('/photos/people/group-2')
+  await chooseSamplePerson()
+  expect(await screen.findByText('This person is now Sample Person.')).toBeTruthy()
+  expect(screen.queryByText(/Used this face/)).toBeNull()
+})
+
+it("says a face was used as the contact's picture, and lets it be changed or removed", async () => {
+  serveNaming(naming({ isContactPictureSet: true }))
+  showNamingFlow('/photos/people/group-2')
+  await chooseSamplePerson()
+  expect(await screen.findByText('Used this face as their picture')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+  expect(await screen.findByText('Removed their picture')).toBeTruthy()
+  expect(
+    vi
+      .mocked(graphql)
+      .mock.calls.some(
+        ([document, variables]) => document.includes('RemoveContactPicture') && variables?.id === 'contact-1',
+      ),
+  ).toBe(true)
+})
+
+it('opens the contact from the toast about its picture', async () => {
+  serveNaming(naming({ isContactPictureSet: true }))
+  showNamingFlow('/photos/people/group-2')
+  await chooseSamplePerson()
+  await screen.findByText('Used this face as their picture')
+  fireEvent.click(screen.getByRole('button', { name: 'Change' }))
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/contacts?contact=contact-1'))
 })

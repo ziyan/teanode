@@ -573,7 +573,13 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withFacePictureAddresses(faces...)
+	// The names on the faces of somebody else's photo are the owner's, so
+	// none of them is the caller's own contact.
+	ownContactId := ""
+	if access.IsOwner {
+		ownContactId = principal.User.ContactID
+	}
+	withFacePictureAddresses(ownContactId, faces...)
 	return &PhotoView{Photo: found, PhotoFiles: files, PhotoPreviews: previews, Albums: albums, Faces: faces}, nil
 }
 

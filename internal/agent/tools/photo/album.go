@@ -352,6 +352,39 @@ func albumShare(ctx context.Context, executor client.Executor, asked *arguments)
 	return result, nil
 }
 
+// albumShareUpdate changes one share by its id: what the people it names may
+// do, and whether they see where the photos were taken. Both are set to what
+// is asked, as the dashboard's sheet of shares does: share_level is required
+// and is_location_included is false when it is left out.
+func albumShareUpdate(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	shareId := strings.TrimSpace(asked.ShareID)
+	if shareId == "" {
+		return nil, errors.New("album-share-update needs share_id; album-shares gives them")
+	}
+	shareLevel := strings.ToLower(strings.TrimSpace(asked.ShareLevel))
+	if !models.PhotoAlbumShareLevel(shareLevel).IsValid() {
+		return nil, fmt.Errorf("album-share-update needs share_level, view or contribute, not %q", asked.ShareLevel)
+	}
+	share, err := client.UpdatePhotoAlbumShare(ctx, executor, shareId, shareLevel, asked.IsLocationIncluded)
+	if err != nil {
+		return nil, err
+	}
+	row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded}
+	if share.GranteeCircleID != nil {
+		row["circle_name"] = share.GranteeCircleName
+	} else {
+		row["person"], row["person_name"] = share.GranteeUsername, share.GranteeName
+	}
+	result, err := tools.JSONResult(row)
+	if err != nil {
+		return nil, err
+	}
+	// Names are what other people called themselves.
+	result.Untrusted = true
+	result.Note = "changed a share of an album"
+	return result, nil
+}
+
 func albumUnshare(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
 	shareId := strings.TrimSpace(asked.ShareID)
 	if shareId == "" {

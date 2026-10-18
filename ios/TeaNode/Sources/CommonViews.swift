@@ -8,6 +8,9 @@ struct Toast: ViewModifier {
     @Binding var problemText: String?
     /// What undoes the action just done, offered as a button beside it.
     var undo: Binding<(@MainActor () async -> Void)?>?
+    /// What can be done next, offered as buttons beside the words: two at
+    /// most fit beside them.
+    var buttons: Binding<[ToastButton]>?
 
     func body(content: Content) -> some View {
         content
@@ -24,6 +27,15 @@ struct Toast: ViewModifier {
                                 Task { await action() }
                             }
                             .fontWeight(.semibold)
+                        }
+                        if !isProblem, let shownButtons = buttons?.wrappedValue {
+                            ForEach(shownButtons) { shownButton in
+                                Button(shownButton.title) {
+                                    clear()
+                                    Task { await shownButton.run() }
+                                }
+                                .fontWeight(.semibold)
+                            }
                         }
                     }
                     .font(.callout)
@@ -77,7 +89,15 @@ struct Toast: ViewModifier {
         doneText = nil
         problemText = nil
         undo?.wrappedValue = nil
+        buttons?.wrappedValue = []
     }
+}
+
+/// ToastButton is a button beside a toast's words, for what can be done next.
+struct ToastButton: Identifiable {
+    let title: String
+    let run: @MainActor () async -> Void
+    var id: String { title }
 }
 
 extension View {
@@ -89,6 +109,10 @@ extension View {
         done doneText: Binding<String?>, problem problemText: Binding<String?>, undo: Binding<(@MainActor () async -> Void)?>
     ) -> some View {
         modifier(Toast(doneText: doneText, problemText: problemText, undo: undo))
+    }
+
+    func toast(done doneText: Binding<String?>, problem problemText: Binding<String?>, buttons: Binding<[ToastButton]>) -> some View {
+        modifier(Toast(doneText: doneText, problemText: problemText, buttons: buttons))
     }
 }
 

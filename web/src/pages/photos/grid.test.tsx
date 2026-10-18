@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { TranslationProvider } from '../../i18n/i18n'
 import type { Photo } from '../../photos/api'
@@ -39,16 +39,17 @@ const show = (photos: Photo[], selectedIds: string[] = [], isSelectionMode = fal
   return { onOpen, onToggle, container }
 }
 
-it('puts a heading over each day and the photos of that day under it', () => {
-  show([
+it('draws the photos as one grid with no heading between days', () => {
+  const { container } = show([
     photoFixture({ id: 'a', originalFilename: 'a.jpg', takenAt: '2030-07-13T09:00:00Z' }),
     photoFixture({ id: 'b', originalFilename: 'b.jpg' }),
-    photoFixture({ id: 'c', originalFilename: 'c.jpg' }),
+    photoFixture({ id: 'c', originalFilename: 'c.jpg', takenAt: '2030-07-01T09:00:00Z' }),
   ])
-  const headings = screen.getAllByRole('heading', { level: 2 })
-  expect(headings.map((heading) => heading.textContent)).toEqual(['Saturday, July 13, 2030', 'Friday, July 12, 2030'])
-  const secondDay = headings[1].closest('section') as HTMLElement
-  expect(within(secondDay).getAllByRole('button')).toHaveLength(2)
+  expect(screen.queryAllByRole('heading')).toHaveLength(0)
+  expect(container.querySelectorAll('.photo-grid')).toHaveLength(1)
+  expect(
+    Array.from(container.querySelectorAll('[data-photo-id]')).map((cell) => cell.getAttribute('data-photo-id')),
+  ).toEqual(['a', 'b', 'c'])
 })
 
 it('shows a video length, a favorite, a waiting photo and a failed one', () => {

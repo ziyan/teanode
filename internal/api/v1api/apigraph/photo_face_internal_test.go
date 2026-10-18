@@ -139,8 +139,13 @@ func TestPhotoFaceOperationsNameMergeHideAndRemoveGroups(test *testing.T) {
 
 		// Naming is choosing a contact; the name is the contact's.
 		named, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: firstGroup, ContactID: contactId})
-		if err != nil || named.ContactID != contactId || named.ContactName != "Example Aunt" {
+		if err != nil || named.PhotoFaceGroup.ContactID != contactId || named.PhotoFaceGroup.ContactName != "Example Aunt" || named.MergedPhotoFaceGroupID != "" {
 			test.Fatalf("%+v %v", named, err)
+		}
+		// The contact had no picture and the group has faces the size of a
+		// portrait, so the contact has one now.
+		if !named.IsContactPictureSet {
+			test.Fatalf("the contact was not given a picture: %+v", named)
 		}
 		listed, err = world.graph.ListPhotoFaceGroups(ctx, ListPhotoFaceGroupsArguments{})
 		if err != nil || len(listed) != 1 || listed[0].ContactName != "Example Aunt" {
@@ -323,6 +328,59 @@ func TestNamingAFaceGroupNeedsContactsAndTheCallersOwnContact(test *testing.T) {
 			test.Fatal(err)
 		}
 	})
+}
+
+// Naming is what the person asked for; the picture is a courtesy to it. An
+// address book with no room for a picture does not stop the naming, and the
+// transaction the naming is in goes on after the picture's savepoint is rolled
+// back.
+func TestNamingAFaceGroupSucceedsWhenTheAddressBookHasNoRoomForThePicture(test *testing.T) {
+	world := newPhotoWorld(test)
+	if err := world.config.Update(func(configuration *config.Configuration) error {
+		configuration.Services.Contacts.IsEnabled = new(true)
+		return nil
+	}); err != nil {
+		test.Fatal(err)
+	}
+	both := []models.Permission{models.PermissionPhotosUse, models.PermissionContactsUse}
+	ownerId := world.person("naming-full-book-owner", both...)
+	large := map[models.PhotoPreviewSize][]byte{models.PhotoPreviewLarge: facePictureJpeg(test)}
+	stored := world.storePhoto(ownerId, "full-book", "full-book.jpg", []byte("original"), large)
+	_, groupId := world.storeFaceOf(ownerId, stored.ID, "", 0)
+	var contactId, bookId string
+	var cardLength int
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		book, err := transaction.CreateAddressBook(&models.AddressBook{UserID: ownerId})
+		if err != nil {
+			test.Fatal(err)
+		}
+		kept, err := transaction.PutContact(&models.Contact{AddressBookID: book.ID, UID: "urn:uuid:named", ETag: "e1", Name: "Example Uncle", Card: "BEGIN:VCARD\nVERSION:3.0\nFN:Example Uncle\nEND:VCARD\n"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		contactId, bookId, cardLength = kept.ID, book.ID, len(kept.Card)
+	})
+	// Another card takes all the room but a few hundred bytes. It is written
+	// by the database from a repeat, so that sixty-four megabytes are not sent
+	// as a statement (and logged as one if it is slow).
+	dbtest.Exec(test, world.database, fmt.Sprintf(`INSERT INTO contact (id, addressbook_id, created_at, modified_at, uid, etag, name, card)
+		VALUES ('filler', '%s', now(), now(), 'urn:uuid:filler', 'e1', 'Example Collector',
+			'BEGIN:VCARD' || chr(10) || 'FN:Example Collector' || chr(10) || 'NOTE:' || repeat('x', %d) || chr(10) || 'END:VCARD' || chr(10))`,
+		bookId, db.BytesPerBook-cardLength-500-len("BEGIN:VCARD\nFN:Example Collector\nNOTE:\nEND:VCARD\n")))
+	world.ask(ownerId, both, func(ctx context.Context) {
+		named, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: groupId, ContactID: contactId})
+		if err != nil || named.PhotoFaceGroup.ContactID != contactId || named.IsContactPictureSet {
+			test.Fatalf("a full address book stopped the naming: %+v %v", named, err)
+		}
+		// The transaction is still usable and holds the naming.
+		listed, err := world.graph.ListPhotoFaceGroups(ctx, ListPhotoFaceGroupsArguments{})
+		if err != nil || len(listed) != 1 || listed[0].ContactName != "Example Uncle" {
+			test.Fatalf("%+v %v", listed, err)
+		}
+	})
+	if named := dbtest.QueryString(test, world.database, "SELECT count(*) FROM photo_face_group WHERE contact_id = '"+contactId+"'"); named != "1" {
+		test.Fatalf("%s groups are named after the contact", named)
+	}
 }
 
 func TestPhotoFaceOperationsRefuseWithoutThePermissionOrTheService(test *testing.T) {
@@ -514,5 +572,140 @@ func TestFacePicturesAreCutAFewAtATime(test *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		test.Fatal("the waiting request was never served")
+	}
+}
+
+// chooseOwnContact marks a contact as being the person themselves, as
+// choosing "my card" on the Contacts page does.
+func (self *photoWorld) chooseOwnContact(userId, contactId string) {
+	self.test.Helper()
+	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
+		if _, err := transaction.UpdateUser(userId, func(user *models.User) error {
+			user.ContactID = contactId
+			return nil
+		}); err != nil {
+			self.test.Fatal(err)
+		}
+	})
+}
+
+func TestAGroupNamedByTheCallersOwnContactIsTheCaller(test *testing.T) {
+	world := newPhotoWorld(test)
+	if err := world.config.Update(func(configuration *config.Configuration) error {
+		configuration.Services.Contacts.IsEnabled = new(true)
+		return nil
+	}); err != nil {
+		test.Fatal(err)
+	}
+	permissions := []models.Permission{models.PermissionPhotosUse, models.PermissionContactsUse}
+	adaId := world.person("own-contact-ada", permissions...)
+	benId := world.person("own-contact-ben", permissions...)
+	world.circleOf("Home", adaId, benId)
+	large := map[models.PhotoPreviewSize][]byte{models.PhotoPreviewLarge: facePictureJpeg(test)}
+	var photoIds, faceIds []string
+	var ownGroup, otherGroup, unnamedGroup string
+	for index := range 7 {
+		stored := world.storePhoto(adaId, fmt.Sprintf("own-%d", index), fmt.Sprintf("own-%d.jpg", index), []byte(fmt.Sprintf("original %d", index)), large)
+		photoIds = append(photoIds, stored.ID)
+		var face *models.PhotoFace
+		switch {
+		case index < 3:
+			face, ownGroup = world.storeFaceOf(adaId, stored.ID, ownGroup, 0)
+		case index < 6:
+			face, otherGroup = world.storeFaceOf(adaId, stored.ID, otherGroup, 80)
+		default:
+			face, unnamedGroup = world.storeFaceOf(adaId, stored.ID, "", 160)
+		}
+		faceIds = append(faceIds, face.ID)
+	}
+	adaContactId := world.keepContact(adaId, "Ada Example")
+	auntContactId := world.keepContact(adaId, "Example Aunt")
+	world.chooseOwnContact(adaId, adaContactId)
+	// Ben's own contact has the very same identifier. A contact identifier is
+	// the client's, so two people can hold the same one, and only the
+	// caller's own card may make a face them.
+	world.chooseOwnContact(benId, adaContactId)
+
+	world.ask(adaId, permissions, func(ctx context.Context) {
+		// Nobody has named anything yet.
+		listed, err := world.graph.ListPhotoFaceGroups(ctx, ListPhotoFaceGroupsArguments{})
+		if err != nil || len(listed) != 2 || listed[0].IsOwnContact || listed[1].IsOwnContact {
+			test.Fatalf("an unnamed group is nobody: %+v %v", listed, err)
+		}
+		named, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: ownGroup, ContactID: adaContactId})
+		if err != nil || !named.PhotoFaceGroup.IsOwnContact || named.PhotoFaceGroup.ContactName != "Ada Example" {
+			test.Fatalf("%+v %v", named, err)
+		}
+		other, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: otherGroup, ContactID: auntContactId})
+		if err != nil || other.PhotoFaceGroup.IsOwnContact {
+			test.Fatalf("another contact is not the caller: %+v %v", other, err)
+		}
+		listed, err = world.graph.ListPhotoFaceGroups(ctx, ListPhotoFaceGroupsArguments{})
+		if err != nil || len(listed) != 2 {
+			test.Fatalf("%+v %v", listed, err)
+		}
+		for _, group := range listed {
+			if group.IsOwnContact != (group.ID == ownGroup) {
+				test.Fatalf("only the group of the caller's own contact is them: %+v", group)
+			}
+		}
+		if read, err := world.graph.ReadPhotoFaceGroup(ctx, PhotoFaceGroupArguments{PhotoFaceGroupID: ownGroup}); err != nil || !read.IsOwnContact {
+			test.Fatalf("%+v %v", read, err)
+		}
+		if read, err := world.graph.ReadPhotoFaceGroup(ctx, PhotoFaceGroupArguments{PhotoFaceGroupID: unnamedGroup}); err != nil || read.IsOwnContact {
+			test.Fatalf("%+v %v", read, err)
+		}
+
+		// The faces of a photo say it too.
+		view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photoIds[0]})
+		if err != nil || len(view.Faces) != 1 || !view.Faces[0].IsOwnContact {
+			test.Fatalf("%+v %v", view, err)
+		}
+		if view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photoIds[3]}); err != nil || len(view.Faces) != 1 || view.Faces[0].IsOwnContact || view.Faces[0].ContactName != "Example Aunt" {
+			test.Fatalf("%+v %v", view, err)
+		}
+		if view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photoIds[6]}); err != nil || len(view.Faces) != 1 || view.Faces[0].IsOwnContact {
+			test.Fatalf("%+v %v", view, err)
+		}
+
+		// Taking one face out of the group leaves a group nobody named; the
+		// answers of merge and unname are rows of the same kind.
+		alone, err := world.graph.RemovePhotoFaceFromGroup(ctx, PhotoFaceArguments{PhotoFaceID: faceIds[0]})
+		if err != nil || alone.IsOwnContact {
+			test.Fatalf("%+v %v", alone, err)
+		}
+		merged, err := world.graph.MergePhotoFaceGroups(ctx, MergePhotoFaceGroupsArguments{PhotoFaceGroupIDs: []string{ownGroup, alone.ID}})
+		if err != nil || !merged.IsOwnContact {
+			test.Fatalf("a merged group keeps the name of the first: %+v %v", merged, err)
+		}
+		unnamed, err := world.graph.UnnamePhotoFaceGroup(ctx, PhotoFaceGroupArguments{PhotoFaceGroupID: ownGroup})
+		if err != nil || unnamed.IsOwnContact {
+			test.Fatalf("a group with no name is nobody: %+v %v", unnamed, err)
+		}
+		if _, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: ownGroup, ContactID: adaContactId}); err != nil {
+			test.Fatal(err)
+		}
+		album, err := world.graph.CreatePhotoAlbum(ctx, CreatePhotoAlbumArguments{AlbumTitle: "Me", PhotoIDs: []string{photoIds[1]}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := world.graph.SharePhotoAlbum(ctx, SharePhotoAlbumArguments{PhotoAlbumID: album.ID, GranteeUserID: benId, ShareLevel: "view"}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	// In a photo somebody shared, the names are the owner's: even a reader
+	// whose own contact has the same identifier is not the face.
+	world.ask(benId, permissions, func(ctx context.Context) {
+		view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photoIds[1]})
+		if err != nil || len(view.Faces) != 1 || view.Faces[0].ContactName != "Ada Example" || view.Faces[0].IsOwnContact {
+			test.Fatalf("a face in somebody else's photo is not the reader: %+v %v", view, err)
+		}
+	})
+}
+
+func TestNoGroupIsTheCallerWhenTheyHaveNoOwnContact(test *testing.T) {
+	if isOwnContact("", "") || isOwnContact("", "contact-one") || isOwnContact("contact-one", "") || isOwnContact("contact-one", "contact-two") || !isOwnContact("contact-one", "contact-one") {
+		test.Fatal("a group is the caller only when both name the same contact")
 	}
 }

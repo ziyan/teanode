@@ -244,8 +244,12 @@ type PhotoOperation interface {
 	// RequeuePhotosWithoutPreviews puts up to limit photos that are ready
 	// and have no small preview back to waiting, and says how many there
 	// were: photos marked ready before previews were made, or whose previews
-	// were lost.
-	RequeuePhotosWithoutPreviews(limit int) (int, error)
+	// were lost. With isLiveVideoIncluded, a Live Photo with no video
+	// preview is also put back when its video arrived after its previews
+	// were last made, which is once for each video: a photo that is worked on
+	// again and still has no video preview (the video is too long or cannot
+	// be read) is not put back for it a second time.
+	RequeuePhotosWithoutPreviews(limit int, isLiveVideoIncluded bool) (int, error)
 
 	// MarkPhotoProcessingFailed records a failure of an attempt that claiming
 	// has counted. A failure that is the file's fault keeps the count: after
@@ -1115,17 +1119,22 @@ func (self *transaction) SetPhotoFile(userId, photoId string, file *models.Photo
 		return false, err
 	}
 	changes := map[string]any{"updated_at": photoNow()}
-	if isPhotoFileSourceOfPreviews(file.PhotoFileRole) {
+	if isPhotoFileSourceOfPreviews(file.PhotoFileRole) || file.PhotoFileRole == models.PhotoFileRoleLiveVideo {
 		// A different file means different previews and a different date and
-		// place, so the photo goes back to waiting, whatever it was.
+		// place, so the photo goes back to waiting, whatever it was. A Live
+		// Photo's video is sent after its picture, which is often processed
+		// and ready by then, and the video preview is made from the video.
 		changes["photo_processing_state"] = models.PhotoProcessingWaiting
 		changes["processing_attempt_count"] = 0
 		changes["processing_outage_count"] = 0
 		changes["processing_error_message"] = ""
 		changes["processing_claimed_at"] = nil
 		changes["processing_not_before"] = nil
+	}
+	if isPhotoFileSourceOfPreviews(file.PhotoFileRole) {
 		// The pixels differ, so the faces are found again; the ones the
-		// person confirmed are kept where they are still found.
+		// person confirmed are kept where they are still found. A video does
+		// not change the picture the faces are found in, so they stay found.
 		changes["faces_found_at"] = nil
 	}
 	if file.PhotoFileRole == models.PhotoFileRoleLiveVideo && photo.PhotoKind == models.PhotoKindPicture {
@@ -1654,18 +1663,38 @@ func (self *transaction) RenewPhotoProcessingClaim(photoId string, claimedAt, re
 	return renewed.RowsAffected > 0, renewed.Error
 }
 
-func (self *transaction) RequeuePhotosWithoutPreviews(limit int) (int, error) {
+func (self *transaction) RequeuePhotosWithoutPreviews(limit int, isLiveVideoIncluded bool) (int, error) {
 	if limit < 1 || limit > 100 {
 		return 0, ErrInvalidArguments
 	}
+	missingPreview := `NOT EXISTS (SELECT 1 FROM photo_preview WHERE photo_preview.photo_id = photo.id AND photo_preview.photo_preview_size = ?)`
+	arguments := []any{models.PhotoProcessingWaiting, photoNow(), models.PhotoProcessingReady, photoMarkedForDeletion, models.PhotoPreviewSmall}
+	if isLiveVideoIncluded {
+		// A Live Photo is made ready before its video arrives, or before video
+		// previews existed, and so has none. A video that cannot be made into
+		// a preview (too long, damaged) leaves the photo ready without one
+		// however often it is worked on, so the photo is put back only if the
+		// video arrived after the previews were last made, which happens once
+		// for each video. The previews' own time is the record that the
+		// photo was worked on since: no column holds the time of the last
+		// attempt, and one is not worth a migration.
+		missingPreview += ` OR (
+				NOT EXISTS (SELECT 1 FROM photo_preview WHERE photo_preview.photo_id = photo.id AND photo_preview.photo_preview_size = ?)
+				AND EXISTS (
+					SELECT 1 FROM photo_file
+					JOIN photo_preview AS small_preview ON small_preview.photo_id = photo_file.photo_id AND small_preview.photo_preview_size = ?
+					WHERE photo_file.photo_id = photo.id AND photo_file.photo_file_role = ? AND photo_file.created_at > small_preview.created_at
+				)
+			)`
+		arguments = append(arguments, models.PhotoPreviewVideo, models.PhotoPreviewSmall, models.PhotoFileRoleLiveVideo)
+	}
+	arguments = append(arguments, []models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited}, limit)
 	requeued := self.tx.Exec(`UPDATE photo SET photo_processing_state = ?, processing_attempt_count = 0, processing_outage_count = 0, processing_error_message = '', processing_claimed_at = NULL, processing_not_before = NULL, updated_at = ?
 		WHERE id IN (
 			SELECT id FROM photo
 			WHERE photo_processing_state = ? AND (trashed_at IS NULL OR trashed_at > ?)
-				AND NOT EXISTS (SELECT 1 FROM photo_preview WHERE photo_preview.photo_id = photo.id AND photo_preview.photo_preview_size = ?)
+				AND (`+missingPreview+`)
 				AND EXISTS (SELECT 1 FROM photo_file WHERE photo_file.photo_id = photo.id AND photo_file.photo_file_role IN ?)
-			ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED)`,
-		models.PhotoProcessingWaiting, photoNow(), models.PhotoProcessingReady, photoMarkedForDeletion, models.PhotoPreviewSmall,
-		[]models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited}, limit)
+			ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED)`, arguments...)
 	return int(requeued.RowsAffected), requeued.Error
 }
