@@ -694,35 +694,44 @@ struct ThreadRow: View {
                 // Who, in bold, with when on the right: the time today and
                 // yesterday, else the weekday or the date.
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    // The name keeps its room ahead of the marks, so a row
+                    // with several of them still says who it is from.
                     Text(senders)
                         .font(.headline)
                         .lineLimit(1)
+                        .layoutPriority(1)
                     Spacer(minLength: 4)
                     // Only what asks for attention: high priority, a reply
-                    // owed, and a sender whose checks failed.
+                    // owed, and a sender whose checks failed. One stop for
+                    // VoiceOver, which reads their words together.
                     let marks = MailRowMarks(insight: insight, verdict: MailVerdict.of(message?.authenticationResults))
-                    if marks.isHigh {
-                        Image(systemName: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red)
-                            .accessibilityLabel("Important")
+                    HStack(spacing: 6) {
+                        if marks.isHigh {
+                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+                                .accessibilityLabel("Important")
+                        }
+                        if marks.needsReply {
+                            Image(systemName: "arrowshape.turn.up.left.fill").foregroundStyle(.tint)
+                                .accessibilityLabel("Needs reply")
+                        }
+                        if marks.verdict == .bad {
+                            Image(systemName: "xmark.shield.fill").foregroundStyle(.red)
+                                .accessibilityLabel("Not verified")
+                        } else if marks.verdict == .warn {
+                            Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.orange)
+                                .accessibilityLabel("Looks like spam")
+                        }
+                        if thread.flagged {
+                            Image(systemName: "star.fill").foregroundStyle(.orange)
+                                .accessibilityLabel("Starred")
+                        }
                     }
-                    if marks.needsReply {
-                        Image(systemName: "arrowshape.turn.up.left.fill").font(.caption).foregroundStyle(.tint)
-                            .accessibilityLabel("Needs reply")
-                    }
-                    if marks.verdict == .bad {
-                        Image(systemName: "xmark.shield.fill").font(.caption).foregroundStyle(.red)
-                            .accessibilityLabel("Not verified")
-                    } else if marks.verdict == .warn {
-                        Image(systemName: "exclamationmark.shield.fill").font(.caption).foregroundStyle(.orange)
-                            .accessibilityLabel("Looks like spam")
-                    }
-                    if thread.flagged {
-                        Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange)
-                            .accessibilityLabel("Starred")
-                    }
+                    .font(.caption)
+                    .accessibilityElement(children: .combine)
                     Text(ListTime.label(of: MailTime.date(message?.receivedAt ?? item?.addedAt ?? "")))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
                 // The subject, with whether it carries attachments and how
                 // many messages the conversation holds.
