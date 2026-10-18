@@ -33,6 +33,13 @@ export function useDisplayedPersonName() {
   return (group: Pick<PhotoFaceGroup, 'contactName'>) => personName(group) || t('photos.unnamedPerson')
 }
 
+// "You", in muted text, after the name of the person's own group, so that the
+// one person in the list who is the reader is told apart from the others.
+export function YouMark() {
+  const { t } = useTranslation()
+  return <span className="photo-you muted">{t('photos.you')}</span>
+}
+
 // A face, round. The picture is cut from the photo by the server; until it
 // arrives, or when the photo has no picture yet, the circle holds an initial.
 export function FacePicture({

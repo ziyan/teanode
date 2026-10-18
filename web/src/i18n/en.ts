@@ -5557,6 +5557,7 @@ export const en = {
   'photos.askAssistant': 'Ask the assistant about this photo',
   'photos.detailPeople': 'People',
   'photos.unnamedPerson': 'Unnamed person',
+  'photos.you': 'You',
   'photos.notPerson': 'Not {name}',
   'photos.notThisPerson': 'Not this person',
   'photos.faceRemoved': 'Removed this photo from this person.',

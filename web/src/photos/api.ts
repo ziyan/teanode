@@ -95,6 +95,8 @@ export interface PhotoFace {
   // Those of the face's group; empty while the group is unnamed.
   contactId: string
   contactName: string
+  // Whether the group's contact is the person's own.
+  isOwnContact: boolean
   // Where the face's picture is fetched from (a square cut from the photo).
   facePictureUrl: string
 }
@@ -205,7 +207,7 @@ const PHOTO_FIELDS =
 const PHOTO_DETAIL_FIELDS = `${PHOTO_FIELDS} photoDescription descriptionVisibleText describedAt isDescriptionRequested`
 
 const PHOTO_FACE_FIELDS =
-  'id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName facePictureUrl'
+  'id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName isOwnContact facePictureUrl'
 
 const PHOTO_ALBUM_FIELDS =
   'id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl ownerUserId circleId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex circleName isOwnedByCaller shareLevel canCallerContribute canCallerManage isLocationIncluded'

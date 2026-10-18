@@ -38,6 +38,7 @@ const group = (overrides: Record<string, unknown>) => ({
   contactId: 'contact-1',
   contactAddressBookId: 'book-1',
   contactName: 'Sample Person',
+  isOwnContact: false,
   faceCount: 5,
   photoCount: 4,
   facePictureUrl: '/face-1',
@@ -95,6 +96,17 @@ it('shows each person with the name of their contact, or an invitation to name t
   const unnamed = screen.getByRole('link', { name: /Unnamed person/ })
   expect(unnamed.getAttribute('href')).toBe('/photos/people/group-2')
   expect(unnamed.textContent).toContain('1 photo')
+})
+
+it('says "You" after the name of the person who is the reader, and after nobody else', async () => {
+  serve([group({ id: 'group-own', contactName: 'Sample Reader', isOwnContact: true }), group({})])
+  showPeoplePage()
+  const own = await screen.findByRole('link', { name: /Sample Reader/ })
+  expect(within(own).getByText('You').classList.contains('muted')).toBe(true)
+  // After the name, on the same line.
+  const nameLine = within(own).getByText('Sample Reader').parentElement!
+  expect(nameLine.textContent).toBe('Sample ReaderYou')
+  expect(within(screen.getByRole('link', { name: /Sample Person/ })).queryByText('You')).toBeNull()
 })
 
 it('lists the hidden people only after Show hidden is chosen', async () => {

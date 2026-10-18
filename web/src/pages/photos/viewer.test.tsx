@@ -292,6 +292,7 @@ const face = (overrides: Record<string, unknown>) => ({
   photoFaceGroupId: 'group-1',
   contactId: 'contact-1',
   contactName: 'Sample Person',
+  isOwnContact: false,
   facePictureUrl: '/face-1',
   ...overrides,
 })
@@ -309,6 +310,20 @@ it('lists the people in the photo, a named one a link to the person, and takes a
   fireEvent.click(screen.getByRole('button', { name: 'Not Sample Person' }))
   await waitFor(() => expect(onRemoveFaceFromGroup).toHaveBeenCalledWith(expect.objectContaining({ id: 'face-1' })))
   expect(screen.getByRole('button', { name: 'Not this person' })).toBeTruthy()
+})
+
+it('says "You" in muted text after the name of the reader among the people in the photo', async () => {
+  serveRead({
+    photo: describedPhoto,
+    faces: [
+      face({ id: 'face-9', photoFaceGroupId: 'group-9', contactName: 'Sample Reader', isOwnContact: true }),
+      face({}),
+    ],
+  })
+  show(vi.fn(), { photoLibrary: library() })
+  const own = await screen.findByRole('link', { name: /Sample Reader/ })
+  expect(within(own).getByText('You').classList.contains('muted')).toBe(true)
+  expect(within(screen.getByRole('link', { name: 'Sample Person' })).queryByText('You')).toBeNull()
 })
 
 // Naming an unnamed person happens over the photo: leaving for their page lost
@@ -874,5 +889,252 @@ describe('dragging down to close, on a touch screen', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
     fireEvent.keyDown(document.body, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('zooming and panning the photo', () => {
+  // A window that does not ask for less motion is not needed here: nothing in
+  // these waits on an animation. The stage is given a size, since a test
+  // window draws nothing and has none: 800 by 600, at the window's corner.
+  const stageOf = async () => {
+    const element = (await screen.findByRole('dialog', { name: 'Photo viewer' })).querySelector(
+      '.photo-viewer-stage',
+    ) as HTMLElement
+    element.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+    return element
+  }
+  const viewOf = (target: HTMLElement) => {
+    const transform = (target.querySelector('.photo-viewer-picture') as HTMLElement).style.transform
+    const match = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(transform)
+    return match ? { offsetX: Number(match[1]), offsetY: Number(match[2]), scale: Number(match[3]) } : null
+  }
+  const touch = (
+    target: HTMLElement,
+    type: 'pointerDown' | 'pointerMove' | 'pointerUp',
+    pointerId: number,
+    x: number,
+    y: number,
+  ) => fireEvent[type](target, { pointerId, pointerType: 'touch', isPrimary: pointerId === 1, clientX: x, clientY: y })
+  const mouse = (target: HTMLElement, type: 'pointerDown' | 'pointerMove' | 'pointerUp', x: number, y: number) =>
+    fireEvent[type](target, { pointerId: 7, pointerType: 'mouse', isPrimary: true, button: 0, clientX: x, clientY: y })
+
+  it('zooms in around the pointer with the wheel, and the page does not scroll', async () => {
+    show()
+    const target = await stageOf()
+    expect(viewOf(target)).toBeNull()
+    // Pointer at (600, 150): 200 right of and 150 above the center.
+    const wasNotPrevented = fireEvent.wheel(target, { deltaY: -300, clientX: 600, clientY: 150 })
+    expect(wasNotPrevented).toBe(false)
+    const view = viewOf(target)!
+    expect(view.scale).toBeGreaterThan(1)
+    // The spot that was under the pointer is under it still.
+    expect(view.offsetX).toBeCloseTo(200 * (1 - view.scale), 5)
+    expect(view.offsetY).toBeCloseTo(-150 * (1 - view.scale), 5)
+    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeTruthy()
+  })
+
+  it('zooms back out with the wheel, to fitted and not past it', async () => {
+    show()
+    const target = await stageOf()
+    fireEvent.wheel(target, { deltaY: -300, clientX: 500, clientY: 300 })
+    expect(viewOf(target)).not.toBeNull()
+    for (let turn = 0; turn < 20; turn++) fireEvent.wheel(target, { deltaY: 300, clientX: 500, clientY: 300 })
+    expect(viewOf(target)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy()
+  })
+
+  it('zooms with a trackpad pinch, which is a wheel with the control key down', async () => {
+    show()
+    const target = await stageOf()
+    fireEvent.wheel(target, { deltaY: -20, ctrlKey: true, clientX: 400, clientY: 300 })
+    expect(viewOf(target)!.scale).toBeGreaterThan(1.1)
+  })
+
+  it('pans a zoomed photo by dragging it with the mouse, and no further than its edge', async () => {
+    show()
+    const target = await stageOf()
+    fireEvent.wheel(target, { deltaY: -700, clientX: 400, clientY: 300 })
+    const { scale } = viewOf(target)!
+    expect(scale).toBeGreaterThan(1.5)
+    mouse(target, 'pointerDown', 400, 300)
+    mouse(target, 'pointerMove', 430, 280)
+    expect(viewOf(target)).toMatchObject({ offsetX: 30, offsetY: -20 })
+    mouse(target, 'pointerMove', 5000, 5000)
+    // 800 by 600 at this scale leaves this much either side of the box.
+    expect(viewOf(target)).toMatchObject({
+      offsetX: (800 * scale - 800) / 2,
+      offsetY: (600 * scale - 600) / 2,
+    })
+    mouse(target, 'pointerUp', 5000, 5000)
+    expect(target.classList.contains('is-panning')).toBe(false)
+  })
+
+  it('does not pan a photo that is fitted, for a mouse', async () => {
+    show()
+    const target = await stageOf()
+    mouse(target, 'pointerDown', 400, 300)
+    mouse(target, 'pointerMove', 460, 340)
+    mouse(target, 'pointerUp', 460, 340)
+    expect(viewOf(target)).toBeNull()
+  })
+
+  it('pans a zoomed photo with one finger, and does not close it or turn the page', async () => {
+    const onClose = vi.fn()
+    const onNavigate = vi.fn()
+    show(onClose, {
+      previousPhoto: { ...photo, id: 'photo-0' } as Photo,
+      nextPhoto: { ...photo, id: 'photo-2' } as Photo,
+      onNavigate,
+    })
+    const target = await stageOf()
+    // One wheel event zooms by at most a share of the scale, so twice.
+    fireEvent.wheel(target, { deltaY: -700, clientX: 400, clientY: 300 })
+    fireEvent.wheel(target, { deltaY: -700, clientX: 400, clientY: 300 })
+    touch(target, 'pointerDown', 1, 400, 300)
+    fireEvent.touchStart(target, { touches: [{ clientX: 400, clientY: 300 }] })
+    touch(target, 'pointerMove', 1, 450, 400)
+    expect(viewOf(target)).toMatchObject({ offsetX: 50, offsetY: 100 })
+    touch(target, 'pointerMove', 1, 500, 500)
+    touch(target, 'pointerUp', 1, 500, 500)
+    fireEvent.touchEnd(target, { changedTouches: [{ clientX: 500, clientY: 500 }] })
+    expect(viewOf(target)).toMatchObject({ offsetX: 100, offsetY: 200 })
+    await sleep(250)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('still turns the page for a swipe when the photo is not zoomed', async () => {
+    const onNavigate = vi.fn()
+    const next = { ...photo, id: 'photo-2' } as Photo
+    show(vi.fn(), { nextPhoto: next, onNavigate })
+    const target = await stageOf()
+    fireEvent.touchStart(target, { touches: [{ clientX: 400, clientY: 300 }] })
+    fireEvent.touchEnd(target, { changedTouches: [{ clientX: 200, clientY: 310 }] })
+    expect(onNavigate).toHaveBeenCalledWith(next)
+  })
+
+  it('zooms around the fingers with a pinch, and a pinch does not close the photo', async () => {
+    const onClose = vi.fn()
+    show(onClose)
+    const target = await stageOf()
+    // Two fingers 200 apart, centered 100 right of the center of the stage.
+    touch(target, 'pointerDown', 1, 400, 300)
+    touch(target, 'pointerDown', 2, 600, 300)
+    // The second moves away to 400 apart, and the first down a long way: not a drag to close.
+    touch(target, 'pointerMove', 2, 800, 300)
+    const view = viewOf(target)!
+    expect(view.scale).toBeCloseTo(2, 5)
+    // The spot between the fingers when they went down (100 right of the
+    // center) is between them now (the midpoint is 200 right of it).
+    expect(100 * view.scale + view.offsetX).toBeCloseTo(200, 5)
+    touch(target, 'pointerMove', 1, 400, 700)
+    touch(target, 'pointerUp', 1, 400, 700)
+    touch(target, 'pointerUp', 2, 800, 300)
+    await sleep(250)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('goes on as a pan with the finger that is left after a pinch', async () => {
+    show()
+    const target = await stageOf()
+    touch(target, 'pointerDown', 1, 300, 300)
+    touch(target, 'pointerDown', 2, 500, 300)
+    touch(target, 'pointerMove', 2, 700, 300)
+    touch(target, 'pointerUp', 2, 700, 300)
+    const before = viewOf(target)!
+    expect(before.scale).toBeGreaterThan(1)
+    touch(target, 'pointerMove', 1, 330, 300)
+    expect(viewOf(target)!.offsetX).toBeCloseTo(before.offsetX + 30, 5)
+  })
+
+  it('zooms in and out with a double click, around the pointer', async () => {
+    show()
+    const target = await stageOf()
+    const picture = target.querySelector('.photo-viewer-picture') as HTMLElement
+    fireEvent.doubleClick(picture, { clientX: 600, clientY: 150 })
+    const view = viewOf(target)!
+    expect(view.scale).toBe(2.5)
+    expect(view.offsetX).toBeCloseTo(200 * (1 - 2.5), 5)
+    fireEvent.doubleClick(picture, { clientX: 600, clientY: 150 })
+    expect(viewOf(target)).toBeNull()
+  })
+
+  it('zooms in and out with a double tap, and does not answer the double click that follows it', async () => {
+    show()
+    const target = await stageOf()
+    const picture = target.querySelector('.photo-viewer-picture') as HTMLElement
+    for (let tap = 0; tap < 2; tap++) {
+      touch(target, 'pointerDown', 1, 500, 300)
+      touch(target, 'pointerUp', 1, 500, 300)
+    }
+    expect(viewOf(target)?.scale).toBe(2.5)
+    // The browser's double click for the same two taps.
+    fireEvent.doubleClick(picture, { clientX: 500, clientY: 300 })
+    expect(viewOf(target)?.scale).toBe(2.5)
+  })
+
+  it('does not take two taps far apart for a double tap', async () => {
+    show()
+    const target = await stageOf()
+    touch(target, 'pointerDown', 1, 100, 100)
+    touch(target, 'pointerUp', 1, 100, 100)
+    touch(target, 'pointerDown', 1, 700, 500)
+    touch(target, 'pointerUp', 1, 700, 500)
+    expect(viewOf(target)).toBeNull()
+  })
+
+  it('still zooms with the button, in at the center and back out', async () => {
+    show()
+    const target = await stageOf()
+    fireEvent.click(await screen.findByRole('button', { name: 'Zoom in' }))
+    expect(viewOf(target)).toMatchObject({ scale: 2.5, offsetX: 0, offsetY: 0 })
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }))
+    expect(viewOf(target)).toBeNull()
+  })
+
+  it('starts fitted again on another photo, and the arrow keys still turn the page', async () => {
+    const onNavigate = vi.fn()
+    const next = { ...photo, id: 'photo-2' } as Photo
+    const tree = (shown: Photo) => (
+      <TranslationProvider>
+        <ToastProvider>
+          <MemoryRouter>
+            <PhotoViewer
+              photo={shown}
+              previousPhoto={null}
+              nextPhoto={next}
+              isTrashed={false}
+              isPaused={false}
+              onNavigate={onNavigate}
+              onClose={vi.fn()}
+              onToggleFavorite={vi.fn()}
+              onTrash={vi.fn()}
+              onRestore={vi.fn()}
+              onDeleteForever={vi.fn()}
+              onAddToAlbum={vi.fn()}
+              onNewAlbum={vi.fn()}
+            />
+          </MemoryRouter>
+        </ToastProvider>
+      </TranslationProvider>
+    )
+    const { rerender } = render(tree(photo))
+    const target = await stageOf()
+    fireEvent.wheel(target, { deltaY: -500, clientX: 400, clientY: 300 })
+    expect(viewOf(target)).not.toBeNull()
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(onNavigate).toHaveBeenCalledWith(next)
+    rerender(tree(next))
+    expect(viewOf(target)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy()
+  })
+
+  it('has nothing to zoom on a video', async () => {
+    show(vi.fn(), { photo: { ...photo, photoKind: 'video', videoPreviewUrl: '/video' } as Photo })
+    const target = await stageOf()
+    const wasNotPrevented = fireEvent.wheel(target, { deltaY: -300, clientX: 400, clientY: 300 })
+    expect(wasNotPrevented).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Zoom in' })).toBeNull()
   })
 })

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { askAgentAbout } from '../../api'
-import { useBreadcrumbDetail } from '../../components/breadcrumb'
+import { useBreadcrumbDetail, useBreadcrumbNote } from '../../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { PhotoBackupGuide } from '../../components/photoBackupGuide'
@@ -362,6 +362,7 @@ function AccountPhotosPage() {
   // The trail and the heading read the album's title, or the person's name,
   // not the id.
   useBreadcrumbDetail(shownAlbum?.albumTitle ?? (shownPerson ? displayedName(shownPerson) : null))
+  useBreadcrumbNote(!shownAlbum && shownPerson?.isOwnContact ? t('photos.you') : null)
   useKeepPageInRange(pageIndex, pageSize, count.data ?? null, setPageIndex)
 
   const listedPhotos = library.data?.photos

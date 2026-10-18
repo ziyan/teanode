@@ -50,8 +50,10 @@ import { usePhotoAltText } from './altText'
 import { useAssistantWords } from './assistantName'
 import { ChangeDateDialog } from './changeDate'
 import { DRAG_SETTLE_MS, dragProgress, useDragToClose } from './dragToClose'
-import { FacePicture, NamePersonFlow, personAddress } from './personControls'
+import { FacePicture, NamePersonFlow, YouMark, personAddress } from './personControls'
+import { useViewerZoom } from './useViewerZoom'
 import { ViewerStrip, stripPhotos } from './viewerStrip'
+import { viewTransform } from './zoom'
 
 // The viewer: one photo over the grid, with its details beside it (under it
 // on a phone). It has an address of its own, so Back closes it and a link
@@ -227,7 +229,6 @@ export function PhotoViewer({
   const [isDescriptionSlow, setIsDescriptionSlow] = useState(false)
   const describedAtWhenAsked = useRef<string | null>(null)
   const hasSeenRequest = useRef(false)
-  const [isZoomed, setIsZoomed] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isChangingDate, setIsChangingDate] = useState(false)
@@ -241,12 +242,16 @@ export function PhotoViewer({
   const [isShowingDetails, setIsShowingDetails] = useState(() => window.matchMedia('(min-width: 761px)').matches)
   const viewerElement = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
-  const zoomScroller = useRef<HTMLDivElement>(null)
+  // The shape of the picture as the browser drew it, for the photo it was read
+  // from; the photo's own size until then.
+  const [drawnShape, setDrawnShape] = useState<{ photoId: string; aspectRatio: number } | null>(null)
+  // The original of a zoomed photo that has arrived, so that the fitted
+  // picture stays under it until then.
+  const [readyOriginal, setReadyOriginal] = useState('')
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
 
   // Each photo starts fitted and not playing.
   useEffect(() => {
-    setIsZoomed(false)
     setIsLive(false)
     setIsWaitingForDescription(false)
     setAskingPhotoId(null)
@@ -355,13 +360,24 @@ export function PhotoViewer({
   const originalFile = photoFiles.find((file) => file.photoFileRole === 'original')
   const canZoomOriginal = original !== undefined && DISPLAYABLE_TYPES.includes(original.contentType)
   const fittedSource = photo.largePreviewUrl || photo.smallPreviewUrl
-  const zoomedSource = canZoomOriginal ? original.fileUrl : fittedSource
+  const originalSource = canZoomOriginal ? original.fileUrl : ''
   const videoSource = photo.videoPreviewUrl || (isVideo ? photoFilePath(photo.id, 'original') : '')
   const liveSource = photo.videoPreviewUrl || photoFilePath(photo.id, 'liveVideo')
 
+  const isPicture = !isVideo && Boolean(fittedSource)
+  const drawnAspectRatio =
+    drawnShape?.photoId === photo.id
+      ? drawnShape.aspectRatio
+      : photo.widthPixels > 0 && photo.heightPixels > 0
+        ? photo.widthPixels / photo.heightPixels
+        : 0
+  // Zooming and panning the picture: the wheel, a pinch, a double click or tap,
+  // and a drag of a picture that is zoomed.
+  const zoom = useViewerZoom({ isEnabled: isPicture, resetKey: photo.id, aspectRatio: drawnAspectRatio })
+  const isZoomed = zoom.isZoomed
   // A finger dragging the picture down closes the viewer; a zoomed picture,
-  // a video and a photo with no picture yet are left alone.
-  const isDraggable = !isZoomed && !isVideo && Boolean(fittedSource)
+  // one being pinched, a video and a photo with no picture yet are left alone.
+  const isDraggable = !isZoomed && !zoom.isPinching && isPicture
   const { position: dragPosition, handlers: dragHandlers } = useDragToClose({ isEnabled: isDraggable, onClose })
   const dragAmount = dragPosition ? dragProgress(dragPosition.downPixels, window.innerHeight) : 0
   const dragTransition = dragPosition?.phase === 'dragging' ? 'none' : `transform ${DRAG_SETTLE_MS}ms ease-out`
@@ -443,7 +459,7 @@ export function PhotoViewer({
   }, [previousPhoto, nextPhoto])
 
   const toggleZoom = () => {
-    if (!isVideo && fittedSource) setIsZoomed((previous) => !previous)
+    if (isPicture) zoom.toggleAtCenter()
   }
 
   // What the picture is to somebody who cannot see it: the first sentence of
@@ -625,8 +641,33 @@ export function PhotoViewer({
               </div>
             </div>
             <div
-              className={isDraggable ? 'photo-viewer-stage is-draggable' : 'photo-viewer-stage'}
-              {...dragHandlers}
+              className={[
+                'photo-viewer-stage',
+                isPicture ? 'is-zoomable' : '',
+                isDraggable ? 'is-draggable' : '',
+                isZoomed ? 'is-zoomed' : '',
+                zoom.isPanning ? 'is-panning' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              ref={zoom.stage}
+              onPointerDown={(event) => {
+                zoom.handlers.onPointerDown(event)
+                dragHandlers.onPointerDown(event)
+              }}
+              onPointerMove={(event) => {
+                zoom.handlers.onPointerMove(event)
+                dragHandlers.onPointerMove(event)
+              }}
+              onPointerUp={(event) => {
+                zoom.handlers.onPointerUp(event)
+                dragHandlers.onPointerUp(event)
+              }}
+              onPointerCancel={(event) => {
+                zoom.handlers.onPointerCancel(event)
+                dragHandlers.onPointerCancel(event)
+              }}
+              onLostPointerCapture={zoom.handlers.onLostPointerCapture}
               onTouchStart={(event) => {
                 const touch = event.touches[0]
                 swipeStart.current =
@@ -692,25 +733,42 @@ export function PhotoViewer({
                     </button>
                   )}
                 </div>
-              ) : isZoomed ? (
-                <div className="photo-viewer-zoom" ref={zoomScroller} onDoubleClick={toggleZoom}>
+              ) : (
+                <div
+                  className={zoom.isEasing ? 'photo-viewer-picture is-easing' : 'photo-viewer-picture'}
+                  style={isZoomed ? { transform: viewTransform(zoom.view) } : pictureStyle}
+                  onDoubleClick={zoom.onDoubleClick}
+                >
                   <img
-                    key={zoomedSource}
-                    className={canZoomOriginal ? 'photo-zoomed' : 'photo-zoomed photo-zoomed-preview'}
-                    src={zoomedSource}
+                    className="photo-fitted"
+                    key={photo.id}
+                    src={fittedSource}
                     alt={alt}
                     draggable={false}
-                    onLoad={() => {
-                      const scroller = zoomScroller.current
-                      if (!scroller) return
-                      scroller.scrollLeft = (scroller.scrollWidth - scroller.clientWidth) / 2
-                      scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2
+                    onLoad={(event) => {
+                      const { naturalWidth, naturalHeight } = event.currentTarget
+                      if (naturalWidth > 0 && naturalHeight > 0) {
+                        setDrawnShape({ photoId: photo.id, aspectRatio: naturalWidth / naturalHeight })
+                      }
                     }}
                   />
-                </div>
-              ) : (
-                <div className="photo-viewer-picture" style={pictureStyle} onDoubleClick={toggleZoom}>
-                  <img className="photo-fitted" key={photo.id} src={fittedSource} alt={alt} draggable={false} />
+                  {isZoomed && originalSource && (
+                    // The file itself over the preview once it has arrived, so
+                    // that a zoom is sharp and the picture does not blink.
+                    <img
+                      className={
+                        readyOriginal === originalSource
+                          ? 'photo-fitted photo-original is-ready'
+                          : 'photo-fitted photo-original'
+                      }
+                      key={originalSource}
+                      src={originalSource}
+                      alt=""
+                      aria-hidden="true"
+                      draggable={false}
+                      onLoad={() => setReadyOriginal(originalSource)}
+                    />
+                  )}
                   {photo.photoKind === 'livePhoto' && isLive && (
                     <video
                       className="photo-live-video"
@@ -1085,11 +1143,13 @@ function ViewerPerson({
         <Link className="photo-viewer-person-link" to={personAddress(face.photoFaceGroupId)}>
           <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
           <span className={name ? 'photo-viewer-person-name' : 'photo-viewer-person-name muted'}>{shownName}</span>
+          {face.isOwnContact && <YouMark />}
         </Link>
       ) : (
         <span className="photo-viewer-person-link">
           <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
           <span className={name ? 'photo-viewer-person-name' : 'photo-viewer-person-name muted'}>{shownName}</span>
+          {face.isOwnContact && <YouMark />}
         </span>
       )}
       {onNotThem && (
@@ -1117,6 +1177,7 @@ function ViewerPerson({
             contactId: face.contactId,
             contactAddressBookId: '',
             contactName: face.contactName,
+            isOwnContact: face.isOwnContact,
             faceCount: 0,
             photoCount: 0,
             facePictureUrl: face.facePictureUrl,

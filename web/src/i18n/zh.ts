@@ -5279,6 +5279,7 @@ export const zh: Catalog = {
   'photos.askAssistant': '向助手询问这张照片',
   'photos.detailPeople': '人物',
   'photos.unnamedPerson': '未命名的人物',
+  'photos.you': '你',
   'photos.notPerson': '不是{name}',
   'photos.notThisPerson': '不是这个人',
   'photos.faceRemoved': '已将这张照片从此人物中移除。',

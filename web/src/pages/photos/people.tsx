@@ -11,7 +11,7 @@ import { listPhotoFaceGroups, setPhotoFaceRecognition, type PhotoFaceGroup } fro
 import { hasPermission, useSession } from '../../session'
 import { PhotoSections } from './albumControls'
 import { sectionAddress } from './albums'
-import { FacePicture, NamePersonFlow, personAddress, useDisplayedPersonName } from './personControls'
+import { FacePicture, NamePersonFlow, YouMark, personAddress, useDisplayedPersonName } from './personControls'
 import { PhotoToolbar } from './toolbar'
 
 // The People page: a round picture for each person the server found in the
@@ -130,7 +130,10 @@ function PersonCell({
     <div className={group.isHidden ? 'photo-person-cell is-hidden' : 'photo-person-cell'}>
       <Link className="photo-person-link" to={personAddress(group.id)}>
         <FacePicture facePictureUrl={group.facePictureUrl} name={name} size="large" />
-        <span className={isNamed ? 'photo-person-name' : 'photo-person-name muted'}>{name}</span>
+        <span className="photo-person-title">
+          <span className={isNamed ? 'photo-person-name' : 'photo-person-name muted'}>{name}</span>
+          {group.isOwnContact && <YouMark />}
+        </span>
         <span className="photo-person-details muted">
           {plural(group.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
         </span>

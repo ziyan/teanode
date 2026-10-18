@@ -122,13 +122,20 @@ td a:hover {
   overflow: hidden;
 }
 
+/* What follows the name on the bar ("You") keeps its place when the name is
+   long enough to be cut. */
+.crumb-note {
+  flex: 0 0 auto;
+  font-weight: 400;
+}
+
 /* The label inside it, not the crumb: a crumb is a flex row — the chevron and
    the word — and text-overflow says nothing about a flex item, so a subject
    too long for the bar was cut off mid-word with no sign that there was more
    of it. The word itself is what has to give way, and an ellipsis is what
    says so. */
 .topbar .breadcrumb .crumb.current > a,
-.topbar .breadcrumb .crumb.current > span:not(.separator) {
+.topbar .breadcrumb .crumb.current > span:not(.separator):not(.crumb-note) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3143,6 +3150,14 @@ body,
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
+}
+
+/* What follows the name in the heading, such as "You": smaller and muted, so
+   the name stays what the heading says. */
+.page-heading-note {
+  font-size: var(--text-body);
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 /* When the page's action sits under the title, the two are one header block
@@ -11830,7 +11845,26 @@ main.content:has(> .knowledge-frame) {
   font-size: 40px;
 }
 
+/* The name and, for the person's own group, "You" after it: the name gives way
+   to an ellipsis, the "You" does not. */
+.photo-person-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.photo-you {
+  flex: 0 0 auto;
+  font-size: var(--text-label);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .photo-person-name {
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   font-weight: 600;
@@ -11973,6 +12007,7 @@ main.content:has(> .knowledge-frame) {
 }
 
 .photo-viewer-person-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -12053,6 +12088,10 @@ main.content:has(> .knowledge-frame) {
   display: flex;
   flex-direction: column;
   max-height: min(55vh, 22rem);
+  /* In a window too short for the list at that height the list is what gives
+     way, down to a few rows, and the rows are what scroll. */
+  min-height: 7rem;
+  flex: 0 1 auto;
   overflow-y: auto;
   margin-top: var(--space-2);
   border: 1px solid var(--border);
@@ -12070,6 +12109,9 @@ main.content:has(> .knowledge-frame) {
    text, a line between. */
 .contact-picker-row {
   display: flex;
+  /* Rows keep the height their words need; a list that is taller than its box
+     scrolls, it does not squeeze the rows into each other. */
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--space-3);
   margin: 0;
@@ -12128,6 +12170,31 @@ label.checkbox.is-plain input {
 .contact-picker-empty {
   margin: 0;
   padding: var(--space-3);
+}
+
+/* The dialog that holds the list is never taller than the window: the list
+   shrinks first, and what is still too tall scrolls inside the dialog with
+   Cancel and Save kept in view. */
+.dialog:has(.contact-picker) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--space-4) * 2);
+  overflow-y: auto;
+}
+
+.dialog:has(.contact-picker) > * {
+  flex: 0 0 auto;
+}
+
+.dialog:has(.contact-picker) > .contact-picker {
+  flex: 0 1 auto;
+}
+
+/* The line under the list is under it. A hint under a field pulls itself up
+   to sit close to the field; under a box that scrolls it pulled up into the
+   last row. */
+.contact-picker + .field-hint {
+  margin: var(--space-2) 0 var(--space-3);
 }
 
 /* A picture or a file a fact was read out of, under the fact. Small
@@ -16520,16 +16587,51 @@ body.has-recording-bar .content {
   min-height: 0;
 }
 
-/* A finger on a picture that is not zoomed is a drag to close or a swipe to
-   the next photo: the browser does not take it for a scroll. */
-.photo-viewer-stage.is-draggable {
+/* A finger on a picture is a drag to close, a swipe to the next photo, a pinch
+   or a drag of a zoomed picture: the browser does not take it for a scroll or
+   a zoom of the page. */
+.photo-viewer-stage.is-zoomable {
   touch-action: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+.photo-viewer-stage.is-zoomed .photo-viewer-picture {
+  cursor: grab;
+}
+
+.photo-viewer-stage.is-zoomed.is-panning .photo-viewer-picture {
+  cursor: grabbing;
 }
 
 .photo-viewer-picture {
   position: relative;
   width: 100%;
   height: 100%;
+  transform-origin: center;
+}
+
+/* A zoom the button or a double click asked for glides; one that follows the
+   wheel or the fingers must not lag behind them. */
+.photo-viewer-picture.is-easing {
+  transition: transform 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-viewer-picture.is-easing {
+    transition: none;
+  }
+}
+
+/* The photo's own file, over the preview it replaces once it has arrived. */
+.photo-original {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.photo-original.is-ready {
+  opacity: 1;
 }
 
 .photo-fitted,
@@ -16549,26 +16651,6 @@ body.has-recording-bar .content {
 
 .photo-viewer-video {
   background: #000;
-}
-
-.photo-viewer-zoom {
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  cursor: zoom-out;
-}
-
-.photo-zoomed {
-  display: block;
-  max-width: none;
-  margin: auto;
-}
-
-/* A picture the browser cannot draw as it is, zoomed from the large
-   preview: twice the size of the window. */
-.photo-zoomed-preview {
-  width: 200%;
-  height: auto;
 }
 
 .photo-viewer-message {

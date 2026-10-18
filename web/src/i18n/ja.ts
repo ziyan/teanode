@@ -5497,6 +5497,7 @@ export const ja: Catalog = {
   'photos.askAssistant': 'この写真についてアシスタントに聞く',
   'photos.detailPeople': '写っている人',
   'photos.unnamedPerson': '名前のない人物',
+  'photos.you': 'あなた',
   'photos.notPerson': '{name}ではない',
   'photos.notThisPerson': 'この人物ではない',
   'photos.faceRemoved': 'この写真をこの人物から外しました。',

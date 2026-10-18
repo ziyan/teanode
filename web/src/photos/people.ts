@@ -14,6 +14,8 @@ export interface PhotoFaceGroup {
   contactId: string
   contactAddressBookId: string
   contactName: string
+  // Whether the contact is the person's own, so that the group is them.
+  isOwnContact: boolean
   // Counted over photos that are not in the Trash.
   faceCount: number
   photoCount: number
@@ -24,7 +26,7 @@ export interface PhotoFaceGroup {
 }
 
 const PHOTO_FACE_GROUP_FIELDS =
-  'id createdAt updatedAt contactId contactAddressBookId contactName faceCount photoCount facePictureUrl coverPhotoFaceId isHidden'
+  'id createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl coverPhotoFaceId isHidden'
 
 export const PEOPLE_DOCUMENTS = {
   ListPhotoFaceGroups: `query ($isHiddenIncluded: Boolean) { ListPhotoFaceGroups(isHiddenIncluded: $isHiddenIncluded) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
