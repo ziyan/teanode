@@ -600,10 +600,13 @@ function LocationContent({ userId }: { userId: string }) {
         if (isAsked) toast.failed(t('location.checkInNoPosition'))
         return
       }
+      // Drawn as the viewer, with their own picture or initial.
+      const ownView = views.find((view) => view.userId === userId)
       setBrowserPosition({
         userId: 'browser',
-        name: t('location.you'),
-        avatarColorIndex: 3,
+        name: ownView?.name || t('location.you'),
+        avatarUrl: ownView?.avatarUrl ?? undefined,
+        avatarColorIndex: ownView?.avatarColorIndex ?? 3,
         latitudeDegrees: answer.latitudeDegrees,
         longitudeDegrees: answer.longitudeDegrees,
         accuracyMeters: answer.accuracyMeters ?? 0,
@@ -686,6 +689,8 @@ function LocationContent({ userId }: { userId: string }) {
                       <>
                         {t('location.lastSeen')} <RelativeTime value={view.latestPoint.measuredAt} />
                       </>
+                    ) : isOwner && browserPosition ? (
+                      t('location.browserHere', { meters: Math.round(browserPosition.accuracyMeters) })
                     ) : (
                       t(isOwner ? 'location.nowhere' : 'location.nowhereOther')
                     )}

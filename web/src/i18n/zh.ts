@@ -5716,6 +5716,7 @@ export const zh: Catalog = {
   'location.off': '你的账号没有开启位置功能。请联系管理这台服务器的人开启。',
   'location.mapLabel': '显示人所在位置的地图',
   'location.you': '你',
+  'location.browserHere': '地图上显示的是此浏览器的位置，误差在 {meters} 米以内。在您手机上的 TeaNode 应用记录之前，不会保存任何位置。',
   'location.nowhere': '还没有记录到任何位置。手机上的 TeaNode 应用会记录你去过的地方，并显示在这里。',
   'location.atSince': '{time}起在{place}',
   'location.lastSeen': '最后出现',
