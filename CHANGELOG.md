@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.171.6] - 2026-10-18
+
+### Fixed
+
+- The dashboard's settings and operator pages line up on a phone, show badges only when something needs attention, and no longer shift width between tabs. (#562)
+
 ## [0.171.5] - 2026-10-18
 
 ### Fixed
