@@ -51,7 +51,7 @@ struct PhotoViewer: View {
             // `-TeaNodeScreen photos-viewer-described`, `photos-viewer-info`, `photos-viewer-failed` and `photos-shared-info` open Info over the viewer.
             if DemoServer.isRequested,
                 DemoServer.screen == "photos-viewer-described" || DemoServer.screen == "photos-viewer-info" || DemoServer.screen == "photos-viewer-failed"
-                    || DemoServer.screen == "photos-change-date" || DemoServer.screen == "photos-shared-info"
+                    || DemoServer.screen == "photos-change-date" || DemoServer.screen == "photos-location" || DemoServer.screen == "photos-shared-info"
             {
                 _isShowingInfo = State(initialValue: true)
             }
@@ -870,6 +870,7 @@ struct PhotoInfoView: View {
     /// nil where the viewer cannot, and then the action is not offered.
     let onShowNearby: ((PhotoNearFilter) -> Void)?
     @State private var isChangingDate = false
+    @State private var isChangingLocation = false
     /// The unnamed person being named from here, over the photo.
     @State private var namingGroup: PhotoFaceGroup?
     @State private var isExplainingContacts = false
@@ -930,6 +931,11 @@ struct PhotoInfoView: View {
                 if !shownPhoto.placeName.isEmpty {
                     LabeledContent("Place") { Text(shownPhoto.placeName) }
                 }
+                if shownPhoto.isOwnedByCaller, !shownPhoto.isTrashed {
+                    Button("Change location", systemImage: "mappin") { isChangingLocation = true }
+                        .actionColor()
+                        .fullWidthRowSeparator()
+                }
                 // A photo shared without places has no coordinates, so it has nothing to be near.
                 if let onShowNearby, !shownPhoto.isTrashed, let photoNearFilter = PhotoNearFilter(near: shownPhoto) {
                     Button("Photos taken near here", systemImage: "mappin.and.ellipse") { onShowNearby(photoNearFilter) }
@@ -979,7 +985,13 @@ struct PhotoInfoView: View {
             .sheet(isPresented: $isChangingDate) {
                 PhotoDateChangeSheet(model: model, photo: shownPhoto, listKey: listKey)
             }
+            .sheet(isPresented: $isChangingLocation) {
+                PhotoLocationSheet(model: model, photos: [shownPhoto])
+            }
             .onChange(of: isChangingDate) { _, isStillChanging in
+                if !isStillChanging { Task { await loadDetail() } }
+            }
+            .onChange(of: isChangingLocation) { _, isStillChanging in
                 if !isStillChanging { Task { await loadDetail() } }
             }
             #if DEBUG
@@ -988,6 +1000,12 @@ struct PhotoInfoView: View {
                     guard DemoServer.isRequested, DemoServer.screen == "photos-change-date" else { return }
                     try? await Task.sleep(for: .seconds(1))
                     isChangingDate = true
+                }
+                // `-TeaNodeScreen photos-location` opens the places over Info.
+                .task {
+                    guard DemoServer.isRequested, DemoServer.screen == "photos-location" else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    isChangingLocation = true
                 }
             #endif
             // The viewer's toasts are behind this sheet, so it shows its own.

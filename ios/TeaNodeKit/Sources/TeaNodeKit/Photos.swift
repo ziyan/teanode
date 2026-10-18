@@ -730,6 +730,23 @@ public enum PhotoBatches {
     }
 }
 
+/// PhotoPlace is a city a photo can be placed at: its name as a photo's place
+/// name is written, its point, and how far it is from the point the search was
+/// asked to be near (nil when it was not asked).
+public struct PhotoPlace: Decodable, Hashable, Sendable {
+    public let placeName: String
+    public let latitude: Double
+    public let longitude: Double
+    public let distanceKilometers: Double?
+
+    public init(placeName: String, latitude: Double, longitude: Double, distanceKilometers: Double? = nil) {
+        self.placeName = placeName
+        self.latitude = latitude
+        self.longitude = longitude
+        self.distanceKilometers = distanceKilometers
+    }
+}
+
 /// PhotoCollection is which of the library's lists is shown.
 public enum PhotoCollection: String, CaseIterable, Identifiable, Hashable, Sendable {
     case library, favorites, trash
@@ -795,6 +812,21 @@ extension Documents {
         """
     public static let trashPhotos = """
         mutation ($photoIds: [String!]!) { TrashPhotos(photoIds: $photoIds) }
+        """
+    public static let searchPhotoPlaces = """
+        query ($query: String!, $nearLatitude: Float, $nearLongitude: Float, $limitCount: Int) {
+          SearchPhotoPlaces(query: $query, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, limitCount: $limitCount) {
+            placeName latitude longitude distanceKilometers
+          }
+        }
+        """
+    public static let setPhotoLocation = """
+        mutation ($photoIds: [String!]!, $latitude: Float!, $longitude: Float!) {
+          SetPhotoLocation(photoIds: $photoIds, latitude: $latitude, longitude: $longitude)
+        }
+        """
+    public static let removePhotoLocation = """
+        mutation ($photoIds: [String!]!) { RemovePhotoLocation(photoIds: $photoIds) }
         """
     public static let restorePhotos = """
         mutation ($photoIds: [String!]!) { RestorePhotos(photoIds: $photoIds) }
@@ -950,6 +982,45 @@ extension Connection {
         return try await execute(Documents.updatePhoto, variables: ["photoId": .string(photoId), "takenAt": .string(takenAtText)], as: Answer.self).UpdatePhoto
     }
 
+    /// Cities that match the typed words, best match first. With a point to be
+    /// near, the nearest of equal matches come first and each says how far it
+    /// is; without one the largest cities do and none says.
+    public func searchPhotoPlaces(words: String, nearLatitude: Double? = nil, nearLongitude: Double? = nil) async throws -> [PhotoPlace] {
+        struct Answer: Decodable, Sendable { let SearchPhotoPlaces: [PhotoPlace] }
+        var variables: [String: JSONValue] = ["query": .string(String(words.prefix(PhotoSearch.mostPlaceWordsLength)))]
+        if let nearLatitude, let nearLongitude {
+            variables["nearLatitude"] = .number(nearLatitude)
+            variables["nearLongitude"] = .number(nearLongitude)
+        }
+        return try await execute(Documents.searchPhotoPlaces, variables: variables, as: Answer.self).SearchPhotoPlaces
+    }
+
+    /// Says the photos were taken at a point; the server names the place after
+    /// it. Says how many changed (photos that are not the person's are left
+    /// alone).
+    @discardableResult
+    public func setPhotoLocation(photoIds: [String], latitude: Double, longitude: Double) async throws -> Int {
+        struct Answer: Decodable, Sendable { let SetPhotoLocation: Int }
+        var changedCount = 0
+        for batch in PhotoBatches.batches(of: photoIds) {
+            let variables: [String: JSONValue] = ["photoIds": .array(batch.map { .string($0) }), "latitude": .number(latitude), "longitude": .number(longitude)]
+            changedCount += try await execute(Documents.setPhotoLocation, variables: variables, as: Answer.self).SetPhotoLocation
+        }
+        return changedCount
+    }
+
+    /// Takes the place off photos, and keeps it off when the file is read
+    /// again; says how many changed.
+    @discardableResult
+    public func removePhotoLocation(photoIds: [String]) async throws -> Int {
+        struct Answer: Decodable, Sendable { let RemovePhotoLocation: Int }
+        var changedCount = 0
+        for batch in PhotoBatches.batches(of: photoIds) {
+            changedCount += try await execute(Documents.removePhotoLocation, variables: ["photoIds": .array(batch.map { .string($0) })], as: Answer.self).RemovePhotoLocation
+        }
+        return changedCount
+    }
+
     /// Moves photos to the trash; says how many moved.
     @discardableResult
     public func trashPhotos(_ photoIds: [String]) async throws -> Int {
@@ -1008,6 +1079,8 @@ extension Connection {
 public enum PhotoSearch {
     /// The most photos a search answers with, best match first.
     public static let mostResultCount = 500
+    /// The most characters of words the server takes when it looks for a city.
+    public static let mostPlaceWordsLength = 100
 
     /// The words without the spaces round them; nil when nothing is left to
     /// search for.
