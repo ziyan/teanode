@@ -107,6 +107,17 @@ struct MenuBrand: ToolbarContent {
 /// top left or a drag to the right opens the menu.
 struct MainView: View {
     let connection: Connection
+
+    /// Where the conversations in the side menu start: nothing kept, until it
+    /// is first scrolled, except for the screenshot of a kept place
+    /// (`-TeaNodeScreen conversations-restored`), which shows the menu
+    /// coming back 120 points down.
+    private static var demoConversationsScrollOffsetPoints: CGFloat? {
+        #if DEBUG
+            if DemoServer.isRequested, DemoServer.screen == "conversations-restored" { return 120 }
+        #endif
+        return nil
+    }
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var section = AppSection.agent
@@ -117,6 +128,10 @@ struct MainView: View {
     @State private var finance: FinanceModel
     @State private var financePart = FinancePart.spending
     @State private var composing: ComposeStart?
+    /// How far the side menu's lists are scrolled. The menu is drawn anew
+    /// each time it opens, so the place is kept here, and not across launches.
+    @State private var conversationsScrollOffsetPoints: CGFloat? = MainView.demoConversationsScrollOffsetPoints
+    @State private var mailScrollOffsetPoints: CGFloat?
     /// Whether the services, the agent's identity and the chats have been
     /// read once. Until then it is not known whether the agent is on, and
     /// drawing the conversation or the offer to turn the agent on would be a
@@ -133,7 +148,8 @@ struct MainView: View {
         SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail) {
             SideMenu(
                 connection: connection, mail: mail, section: $section, conversation: $conversation, mailPlace: $mailPlace,
-                financePart: $financePart, composing: $composing
+                financePart: $financePart, composing: $composing,
+                conversationsScrollOffsetPoints: $conversationsScrollOffsetPoints, mailScrollOffsetPoints: $mailScrollOffsetPoints
             ) {
                 isMenuOpen = false
             }
@@ -445,19 +461,29 @@ struct SideMenu: View {
     @Binding var mailPlace: MailPlace?
     @Binding var financePart: FinancePart
     @Binding var composing: ComposeStart?
+    /// How far the conversations and the mail folders are scrolled, kept by
+    /// the main view because the menu is drawn anew each time it opens.
+    @Binding var conversationsScrollOffsetPoints: CGFloat?
+    @Binding var mailScrollOffsetPoints: CGFloat?
     let onClose: () -> Void
     @Environment(AppModel.self) private var app
 
     var body: some View {
         switch section {
         case .agent:
-            ConversationsSheet(connection: connection, isPanel: true, currentId: conversation?.id, leading: AnyView(sections)) { chosen in
+            ConversationsSheet(
+                connection: connection, isPanel: true, currentId: conversation?.id, leading: AnyView(sections),
+                scrollOffsetPoints: $conversationsScrollOffsetPoints
+            ) { chosen in
                 conversation = chosen
                 onClose()
             }
         case .mail:
             NavigationStack {
-                MailboxesList(mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections)) { chosen in
+                MailboxesList(
+                    mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections),
+                    scrollOffsetPoints: $mailScrollOffsetPoints
+                ) { chosen in
                     mailPlace = chosen
                     onClose()
                 }

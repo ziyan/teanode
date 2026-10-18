@@ -796,10 +796,13 @@ public struct AgentSchedule: Codable, Hashable, Sendable, Identifiable {
     public let enabled: Bool
     public let lastRunAt: String?
     public let nextRunAt: String?
+    /// The conversation its answers go to: a goal's, for a schedule that
+    /// runs a goal.
+    public let conversationId: String?
 
     public init(
         id: String, name: String, cron: String, prompt: String = "", deliver: String = "drawer", enabled: Bool = true, lastRunAt: String? = nil,
-        nextRunAt: String? = nil
+        nextRunAt: String? = nil, conversationId: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -809,6 +812,7 @@ public struct AgentSchedule: Codable, Hashable, Sendable, Identifiable {
         self.enabled = enabled
         self.lastRunAt = lastRunAt
         self.nextRunAt = nextRunAt
+        self.conversationId = conversationId
     }
 
     public var isDeliveredByMail: Bool { deliver == "mail" }
@@ -1061,6 +1065,65 @@ public struct AgentFollowUp: Codable, Hashable, Sendable, Identifiable {
             let rightDay = right.element.dueOn ?? "9999-12-31"
             return leftDay == rightDay ? left.offset < right.offset : leftDay < rightDay
         }.map(\.element)
+    }
+}
+
+/// NewAgentFollowUp is something the person asks the agent to follow. The
+/// fields a kind does not use are kept while the kind is changed, so a slip
+/// does not lose what was typed, and are left out of what is sent.
+public struct NewAgentFollowUp: Hashable, Sendable {
+    /// The kinds a person can add, in the order they are offered.
+    public static let kinds = ["bill", "parcel", "deadline", "event"]
+
+    /// bill, parcel, deadline or event.
+    public var followUpKind = "bill"
+    public var followUpTitle = ""
+    /// A day written YYYY-MM-DD, empty for none.
+    public var dueOn = ""
+    public var payee = ""
+    public var amount = ""
+    public var currencyCode = ""
+    public var carrier = ""
+    public var trackingNumber = ""
+    public var place = ""
+
+    public init() {}
+
+    /// The server's own rule: a title, a day unless it is a parcel, and an
+    /// amount for a bill.
+    public var canAdd: Bool {
+        if followUpTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
+        if followUpKind != "parcel" && dueOn.isEmpty { return false }
+        if followUpKind == "bill" && amount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return false }
+        return true
+    }
+
+    /// What the mutation is given: only the fields the kind uses, and none
+    /// that were left empty.
+    public var variables: [String: JSONValue] {
+        var given: [String: JSONValue] = [
+            "followUpKind": .string(followUpKind),
+            "followUpTitle": .string(followUpTitle.trimmingCharacters(in: .whitespacesAndNewlines)),
+        ]
+        var usedFields = [("dueOn", dueOn)]
+        switch followUpKind {
+        case "bill": usedFields += [("payee", payee), ("amount", amount), ("currencyCode", currencyCode)]
+        case "parcel": usedFields += [("carrier", carrier), ("trackingNumber", trackingNumber)]
+        case "event": usedFields += [("place", place)]
+        default: break
+        }
+        for (name, text) in usedFields {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { given[name] = .string(trimmed) }
+        }
+        return given
+    }
+
+    /// A day written YYYY-MM-DD, from its parts in the calendar given, as
+    /// the day the person picked and not the one a time zone moves it to.
+    public static func dayText(_ date: Date, calendar: Calendar = .current) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 }
 
@@ -1525,7 +1588,7 @@ extension Documents {
         """
 
     public static let agentSchedules = """
-        query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt } }
+        query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt conversationId } }
         """
     public static let saveAgentSchedule = """
         mutation ($scheduleId: String, $name: String, $cron: String, $prompt: String, $deliver: String, $enabled: Boolean) {
@@ -1570,6 +1633,11 @@ extension Documents {
         """
     public static let stopAgentFollowUp = """
         mutation ($followUpId: String!) { StopAgentFollowUp(followUpId: $followUpId) { id followUpState } }
+        """
+    public static let addAgentFollowUp = """
+        mutation ($followUpKind: String!, $followUpTitle: String!, $dueOn: String, $payee: String, $amount: String, $currencyCode: String, $carrier: String, $trackingNumber: String, $place: String) {
+          AddAgentFollowUp(followUpKind: $followUpKind, followUpTitle: $followUpTitle, dueOn: $dueOn, payee: $payee, amount: $amount, currencyCode: $currencyCode, carrier: $carrier, trackingNumber: $trackingNumber, place: $place) { id followUpTitle }
+        }
         """
     public static let muteAgentAlertKind = """
         mutation ($muteTarget: String) {
@@ -1932,6 +2000,12 @@ extension Connection {
     public func stopAgentFollowUp(_ followUpId: String) async throws {
         struct Answer: Decodable, Sendable { let StopAgentFollowUp: JSONValue? }
         _ = try await execute(Documents.stopAgentFollowUp, variables: ["followUpId": .string(followUpId)], as: Answer.self)
+    }
+
+    /// Has the agent follow something the person names.
+    public func addAgentFollowUp(_ followUp: NewAgentFollowUp) async throws {
+        struct Answer: Decodable, Sendable { let AddAgentFollowUp: JSONValue? }
+        _ = try await execute(Documents.addAgentFollowUp, variables: followUp.variables, as: Answer.self)
     }
 
     /// Stops the alerts about a kind of follow-up: one of

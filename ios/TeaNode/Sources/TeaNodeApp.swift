@@ -43,6 +43,10 @@ struct TeaNodeApp: App {
             // thing set whichever way the change went.
             .onChange(of: appearance) { appearance.apply() }
             .environment(app)
+            // Switches in TeaNode's green: they are the system's brighter
+            // green otherwise, beside the accent on the same screen. Only
+            // switches: a tint here would also turn every toolbar button green.
+            .toggleStyle(AccentSwitchToggleStyle())
             .onOpenURL { url in app.open(url) }
             .onAppear {
                 appearance.apply()
@@ -73,6 +77,9 @@ struct ConversationsSheet: View {
     /// Rows shown above the conversations, as the side menu puts its
     /// sections there.
     var leading: AnyView?
+    /// How far the list is scrolled, kept by whoever shows it so that the
+    /// side menu, which is drawn anew each time it opens, comes back to it.
+    var scrollOffsetPoints: Binding<CGFloat?> = .constant(nil)
     let onChoose: (AgentConversation?) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -199,6 +206,9 @@ struct ConversationsSheet: View {
                 #endif
             }
             .menuListStyle(isPanel)
+            // Ready once the rows were read: a failed read leaves no rows, and
+            // giving up on the kept place then would lose it.
+            .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isLoaded && problemText == nil, isPaused: !words.isEmpty)
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
                 // A quarter of a second after the last key, as the drawer
@@ -456,6 +466,7 @@ struct ConversationsSheet: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                .tint(.red)
             }
         }
         .confirmationDialog(
@@ -556,7 +567,8 @@ struct SettingsForm: View {
                 if let connection = app.connection {
                     Section("Your account") {
                         NavigationLink {
-                            PreferencesView(connection: connection)
+                            // A new name or picture shows in the accounts above at once.
+                            PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
                         }
@@ -778,7 +790,7 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
-                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-background", "photos-backup-other-account":
+                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-background", "photos-backup-paused", "photos-backup-other-account":
                     PhotoBackupView(connection: connection)
                 case "photos-faces": PhotoFacesSettingsView(connection: connection)
                 case "photos-conversation-card": PhotoConversationCardDemo()
@@ -798,7 +810,7 @@ struct SettingsForm: View {
                 case "circle-detail", "circle-detail-operator": CircleDetailDemoScreen(connection: connection)
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
-                case "settings-picture": PreferencesView(connection: connection)
+                case "settings-picture": PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                 default: EmptyView()
                 }
             }
@@ -833,7 +845,7 @@ struct PhotoBackupSettingsRow: View {
     /// which one, since this account's backup is off.
     private var statusText: Text {
         guard let enabledAccountKey = engine.enabledAccountKey else { return Text("Off") }
-        if enabledAccountKey == app.connection?.accountKey { return Text("On") }
+        if enabledAccountKey == app.connection?.accountKey { return engine.isPaused ? Text("Paused") : Text("On") }
         return Text("On for \(PhotoBackupEngine.name(ofAccountKey: enabledAccountKey))")
     }
 }
@@ -923,15 +935,20 @@ struct AccountsSection: View {
                 Button {
                     Task { await app.switchTo(account) }
                 } label: {
+                    // The person as their server shows them: picture and name,
+                    // with the username beside the server it signs in to.
+                    let profile = app.accountProfiles[account.accountKey]
                     HStack(spacing: 12) {
-                        Text(String(account.username.prefix(1)).uppercased())
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.accentColor, in: .circle)
+                        AvatarView(
+                            name: profile?.displayName ?? account.username, avatarUrl: profile?.avatarUrl,
+                            colorIndex: profile?.avatarColorIndex, size: 36, account: account
+                        )
+                        let displayName = profile?.displayName ?? account.username
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(account.username).foregroundStyle(.primary)
-                            Text(account.server.host).font(.footnote).foregroundStyle(.secondary)
+                            Text(displayName).foregroundStyle(.primary)
+                            // The username only when the name above is not it.
+                            Text(verbatim: displayName == account.username ? account.server.host : "\(account.username) · \(account.server.host)")
+                                .font(.footnote).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if account.accountKey == app.account?.accountKey {
@@ -939,6 +956,7 @@ struct AccountsSection: View {
                         }
                     }
                 }
+                .task(id: account.accountKey) { await app.loadProfile(of: account) }
                 .swipeActions {
                     if account.accountKey != app.account?.accountKey {
                         Button("Sign out", role: .destructive) { signingOut = account }
@@ -969,3 +987,11 @@ struct AccountsSection: View {
     }
 }
 
+/// AccentSwitchToggleStyle is the system switch in the accent color, as the
+/// app's default toggle style. The switch style is named inside, so the style
+/// does not apply itself again.
+struct AccentSwitchToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Toggle(configuration).toggleStyle(.switch).tint(Color.accentColor)
+    }
+}

@@ -255,15 +255,67 @@ final class AppModel {
     /// any other kind the phone can show.
     var previewAddress: URL?
 
-    /// Pictures already read, by their address on the server.
+    /// Pictures already read, by the account and their address on its
+    /// server: two servers can use the same address for different pictures.
     private var pictures: [String: UIImage] = [:]
+
+    private static func pictureKey(accountKey: String, path: String) -> String { accountKey + " " + path }
 
     /// Reads a picture the server keeps, once.
     func picture(_ path: String) async -> UIImage? {
-        if let known = pictures[path] { return known }
+        guard let account else { return nil }
+        let key = Self.pictureKey(accountKey: account.accountKey, path: path)
+        if let known = pictures[key] { return known }
         guard let connection, let data = try? await connection.download(path), let picture = UIImage(data: data) else { return nil }
-        pictures[path] = picture
+        guard isSignedIn(account) else { return nil }
+        pictures[key] = picture
         return picture
+    }
+
+    /// Each signed-in account's own profile, by account key, for the list of
+    /// accounts: the name and picture it goes by on its server.
+    private(set) var accountProfiles: [String: AccountProfile] = [:]
+
+    /// Reads an account's profile from its own server, through the connection
+    /// kept for it, so an account not in use shows its name and picture too.
+    func loadProfile(of chosen: Account) async {
+        guard isSignedIn(chosen), let profile = try? await connection(for: chosen).accountProfile() else { return }
+        // Signed out while the answer was on its way: nothing to show it on.
+        guard isSignedIn(chosen) else { return }
+        accountProfiles[chosen.accountKey] = profile
+    }
+
+    /// Reads a picture from an account's own server, once.
+    func picture(_ path: String, of chosen: Account) async -> UIImage? {
+        if chosen.accountKey == account?.accountKey { return await picture(path) }
+        let key = Self.pictureKey(accountKey: chosen.accountKey, path: path)
+        if let known = pictures[key] { return known }
+        guard isSignedIn(chosen), let data = try? await connection(for: chosen).download(path), let picture = UIImage(data: data) else {
+            return nil
+        }
+        guard isSignedIn(chosen) else { return nil }
+        pictures[key] = picture
+        return picture
+    }
+
+    /// Whether the app is still signed in to an account, which a profile or
+    /// picture read for it checks before and after: connection(for:) would
+    /// make a new connection for one signed out of meanwhile.
+    private func isSignedIn(_ chosen: Account) -> Bool {
+        accounts.contains { $0.accountKey == chosen.accountKey }
+    }
+
+    /// Keeps the profile the person just saved for the account in use, so the
+    /// list of accounts shows the new name or picture without reading it again.
+    func profileSaved(_ saved: AccountProfile) {
+        guard let account, isSignedIn(account) else { return }
+        accountProfiles[account.accountKey] = saved
+    }
+
+    /// Forgets what was read for an account's list row once it is signed out of.
+    private func forgetProfile(accountKey: String) {
+        accountProfiles[accountKey] = nil
+        pictures = pictures.filter { !$0.key.hasPrefix(accountKey + " ") }
     }
 
     /// Shows a file the server keeps in Quick Look: read, written to a
@@ -364,6 +416,9 @@ final class AppModel {
             if DemoServer.isRequested {
                 transport = DemoServer()
                 account = DemoServer.account
+                // In the list too, so Settings shows the account as it does
+                // for a real sign-in.
+                accounts = [DemoServer.account]
                 connection = Connection(account: DemoServer.account, transport: transport)
                 return
             }
@@ -727,6 +782,7 @@ final class AppModel {
         if let account {
             try? PayloadKey.keyring.forget(for: account.accountKey)
             ConversationDraft.forget(accountKey: account.accountKey)
+            forgetProfile(accountKey: account.accountKey)
         }
         try? store.delete()
         phone = nil
@@ -769,6 +825,7 @@ final class AppModel {
         await PhotoBackupEngine.shared.accountRemoved(accountKey: other.accountKey, connection: otherConnections[other.accountKey])
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
+        forgetProfile(accountKey: other.accountKey)
         try? PayloadKey.keyring.forget(for: other.accountKey)
         ConversationDraft.forget(accountKey: other.accountKey)
         try? store.remove(other.accountKey)

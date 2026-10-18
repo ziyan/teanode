@@ -432,6 +432,7 @@ struct ComposeView: View {
                         .fullWidthRowSeparator()
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { model.remove(file) }
+                                .tint(.red)
                         }
                     }
                     if model.uploadingCount > 0 {

@@ -82,6 +82,7 @@ struct BudgetsView: View {
                                 await load()
                             }
                         }
+                        .tint(.red)
                     }
                 }
                 Button("New rule", systemImage: "plus") { editingRule = RuleDraft() }
@@ -615,6 +616,7 @@ struct AssetDetail: View {
                                 await load()
                             }
                         }
+                        .tint(.red)
                     }
                 }
             }
@@ -905,6 +907,7 @@ struct ReceiptsView: View {
                             await load()
                         }
                     }
+                    .tint(.red)
                 }
             }
         }
@@ -1052,8 +1055,8 @@ struct ReceiptDetailView: View {
                     isConfirmingDelete = true
                 } label: {
                     Label("Delete receipt", systemImage: "trash")
-                        .foregroundStyle(.red)
                 }
+                .tint(.red)
                 .confirmationDialog("Delete this receipt?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                     Button("Delete receipt", role: .destructive) {
                         Task {
@@ -1108,6 +1111,7 @@ struct FinanceSetupView: View {
                     }
                     .swipeActions {
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = source }
+                            .tint(.red)
                         Button(source.isEnabled == false ? LocalizedStringKey("Turn on") : "Turn off") {
                             Task {
                                 _ = await finance.act(saying: String(localized: "Saved")) {

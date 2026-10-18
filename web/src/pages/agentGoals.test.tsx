@@ -128,3 +128,48 @@ it('lists goals by where they stand, and answers one from its page', async () =>
     }),
   )
 })
+
+it('moves a schedule into a goal, offering only the ones that do not already run it', async () => {
+  execute.mockReset()
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('ListAgentGoals')) return { ListAgentGoals: [waitingGoal] }
+    if (document.includes('GetAgentGoal'))
+      return {
+        GetAgentGoal: {
+          ...waitingGoal,
+          activity: [],
+          schedules: [{ id: 's-own', name: 'Already its', cron: '0 9 * * *', enabled: true, nextRunAt: null }],
+          backgroundWork: [],
+          artifacts: [],
+        },
+      }
+    if (document.includes('MoveAgentScheduleToGoal')) return { MoveAgentScheduleToGoal: { id: 's-loose' } }
+    if (document.includes('ListAgentSchedules'))
+      return {
+        ListAgentSchedules: [
+          { id: 's-own', name: 'Already its', cron: '0 9 * * *', enabled: true, conversationId: 'goal-boiler' },
+          { id: 's-loose', name: 'Weekly look', cron: '0 8 * * 1', enabled: true },
+        ],
+      }
+    if (document.includes('ListAgentIdeas')) return { ListAgentIdeas: { ideas: [], ideaCategories: [] } }
+    return {}
+  })
+  render(
+    <MemoryRouter initialEntries={['/settings/agent/goals?goal=goal-boiler']}>
+      <GoalsTab />
+    </MemoryRouter>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'goals.useSchedule' }))
+  const dialog = await screen.findByRole('dialog')
+  // The schedule that already runs this goal is not offered again.
+  expect(dialog.textContent).toContain('Weekly look (0 8 * * 1)')
+  expect(dialog.textContent).not.toContain('Already its (')
+  fireEvent.click(dialog.querySelector('button[type="submit"]')!)
+  await waitFor(() =>
+    expect(execute).toHaveBeenCalledWith(expect.stringContaining('MoveAgentScheduleToGoal'), {
+      scheduleId: 's-loose',
+      conversationId: 'goal-boiler',
+    }),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
