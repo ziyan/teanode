@@ -441,7 +441,14 @@ struct ChatMembersSheet: View {
         HStack(spacing: 12) {
             AvatarView(name: member.displayName, avatarUrl: member.avatarUrl, colorIndex: member.avatarColorIndex, size: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text(ChatWords.name(of: member))
+                // The person's own row says so, as a circle's members do and
+                // as the dashboard's list of a chat's members does.
+                HStack(spacing: 6) {
+                    Text(ChatWords.name(of: member))
+                    if member.userId == model.ownUserId {
+                        Text("You").font(.caption).foregroundStyle(Color(.secondaryLabel))
+                    }
+                }
                 if member.isAdmin, chat.isGroup {
                     Text("Admin")
                         .font(.footnote)
