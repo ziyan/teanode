@@ -164,7 +164,7 @@ struct CodingScreen: View {
                         Section {
                             ForEach(computer.workspaces) { workspace in
                                 CodingWorkspaceHeader(workspace: workspace)
-                                    .listRowInsets(ListRowSpacing.insets)
+                                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 0, trailing: 16))
                                     .listRowSeparator(.hidden)
                                 ForEach(workspace.sessions) { session in
                                     NavigationLink(value: CodingTarget(computer: session.computer, paneId: session.paneId)) {
@@ -189,6 +189,8 @@ struct CodingScreen: View {
             }
             .listStyle(.plain)
             .listSectionSpacing(.compact)
+            // A workspace's name is one short line, not a 44 point row.
+            .environment(\.defaultMinListRowHeight, 24)
             .navigationTitle("Coding")
             .withoutSwipeBack()
             .navigationDestination(for: CodingTarget.self) { target in
@@ -262,7 +264,9 @@ struct CodingComputerHeader: View {
                 .foregroundStyle(.secondary)
             Text(verbatim: computer.name)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
+                // A list's section header greys what is in it; the
+                // computer is the heading here, in the text's own color.
+                .foregroundStyle(Color(.label))
             Spacer(minLength: 8)
             Text(countsText)
                 .font(.subheadline)
