@@ -329,9 +329,13 @@ error names the circle and the `circle add` that finishes the job. Without
 that the circle was not found.
 
 Who sees whom, and what a circle is for, is in `docs/subsystems/circles.md`.
-The agent does the same, bar what is an admin's to do by hand, through its
-`circle` tool: `list`, `show`, `people`, `create`, `invite`, `answer` and
-`leave`, and for somebody who manages accounts `add`.
+The agent does the same through its `circle` tool, with an action for each
+subcommand under the same word: `list`, `show`, `people`, `create`, `rename`,
+`delete`, `invite`, `accept`, `decline`, `withdraw`, `role`, `remove` and
+`leave`, and for somebody who manages accounts `add`. Deleting a circle,
+removing a member and leaving are asked about as destructive, a role change,
+accepting or declining an invitation and inviting as granting, and renaming or
+taking back an invitation as an ordinary write.
 
 ### Two things that are not in the schema
 

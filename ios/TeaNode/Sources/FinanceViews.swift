@@ -1578,6 +1578,7 @@ struct TransactionDetail: View {
                 }
             } label: {
                 Label("Add a receipt", systemImage: "receipt")
+                    .actionColor()
             }
             .disabled((FinanceMoney.decimal(transaction.amount) ?? 0) > 0)
         } header: {

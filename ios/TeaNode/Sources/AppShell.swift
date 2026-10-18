@@ -112,16 +112,6 @@ struct MenuBrand: ToolbarContent {
 struct MainView: View {
     let connection: Connection
 
-    /// Where the conversations in the side menu start: nothing kept, until it
-    /// is first scrolled, except for the screenshot of a kept place
-    /// (`-TeaNodeScreen conversations-restored`), which shows the menu
-    /// coming back 120 points down.
-    private static var demoConversationsScrollOffsetPoints: CGFloat? {
-        #if DEBUG
-            if DemoServer.isRequested, DemoServer.screen == "conversations-restored" { return 120 }
-        #endif
-        return nil
-    }
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var section = AppSection.agent
@@ -138,10 +128,10 @@ struct MainView: View {
     /// menu's Photo backup row sets it.
     @State private var isShowingPhotoBackup = false
     @State private var composing: ComposeStart?
-    /// How far the side menu's lists are scrolled. The menu is drawn anew
-    /// each time it opens, so the place is kept here, and not across launches.
-    @State private var conversationsScrollOffsetPoints: CGFloat? = MainView.demoConversationsScrollOffsetPoints
-    @State private var mailScrollOffsetPoints: CGFloat?
+    /// How many times the side menu has been opened, for what it reads again
+    /// each time. The menu itself is kept while closed, so its lists stay
+    /// where they were scrolled.
+    @State private var menuOpeningCount = 0
     /// Whether the services, the agent's identity and the chats have been
     /// read once. Until then it is not known whether the agent is on, and
     /// drawing the conversation or the offer to turn the agent on would be a
@@ -159,13 +149,10 @@ struct MainView: View {
         SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail && section != .location) {
             SideMenu(
                 connection: connection, mail: mail, photos: photos, section: $section, conversation: $conversation, mailPlace: $mailPlace,
-                financePart: $financePart, isShowingPhotoBackup: $isShowingPhotoBackup, composing: $composing,
-                conversationsScrollOffsetPoints: $conversationsScrollOffsetPoints, mailScrollOffsetPoints: $mailScrollOffsetPoints
+                financePart: $financePart, isShowingPhotoBackup: $isShowingPhotoBackup, composing: $composing, openingCount: menuOpeningCount
             ) {
                 isMenuOpen = false
             }
-            // Read again each time it opens, for what changed meanwhile.
-            .id(isMenuOpen ? "open" : "closed")
         } content: {
             screen
                 .environment(\.openMenu, OpenMenu { isMenuOpen = true })
@@ -174,6 +161,21 @@ struct MainView: View {
         .sheet(item: $composing) { start in
             ComposeView(mail: mail, start: start).environment(mail)
         }
+        .onChange(of: isMenuOpen) { _, isOpen in
+            if isOpen { menuOpeningCount += 1 }
+        }
+        #if DEBUG
+            .task(id: app.canChat) {
+                // `-TeaNodeScreen conversations-restored`: the menu, once it has
+                // scrolled to its chats (a second after it does, in the list),
+                // closed and opened again, to show it opens where it was left.
+                guard DemoServer.isRequested, DemoServer.screen == "conversations-restored", app.canChat else { return }
+                try? await Task.sleep(for: .seconds(3))
+                isMenuOpen = false
+                try? await Task.sleep(for: .milliseconds(800))
+                isMenuOpen = true
+            }
+        #endif
         .onAppear {
             if let kept = app.keptSection {
                 section = kept
@@ -184,7 +186,7 @@ struct MainView: View {
                 if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
                 if DemoServer.isMenuRequested { isMenuOpen = true }
                 if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
-                // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`).
+                // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`, `chat-mention`).
                 if let chat = DemoServer.openedChat { conversation = chat }
             #endif
         }
@@ -514,10 +516,9 @@ struct SideMenu: View {
     @Binding var financePart: FinancePart
     @Binding var isShowingPhotoBackup: Bool
     @Binding var composing: ComposeStart?
-    /// How far the conversations and the mail folders are scrolled, kept by
-    /// the main view because the menu is drawn anew each time it opens.
-    @Binding var conversationsScrollOffsetPoints: CGFloat?
-    @Binding var mailScrollOffsetPoints: CGFloat?
+    /// How many times the menu has been opened: the conversations are read
+    /// again each time.
+    let openingCount: Int
     let onClose: () -> Void
     @Environment(AppModel.self) private var app
 
@@ -526,7 +527,7 @@ struct SideMenu: View {
         case .agent:
             ConversationsSheet(
                 connection: connection, isPanel: true, currentId: conversation?.id, leading: AnyView(sections),
-                scrollOffsetPoints: $conversationsScrollOffsetPoints
+                openingCount: openingCount
             ) { chosen in
                 conversation = chosen
                 onClose()
@@ -534,8 +535,7 @@ struct SideMenu: View {
         case .mail:
             NavigationStack {
                 MailboxesList(
-                    mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections),
-                    scrollOffsetPoints: $mailScrollOffsetPoints
+                    mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections)
                 ) { chosen in
                     mailPlace = chosen
                     onClose()

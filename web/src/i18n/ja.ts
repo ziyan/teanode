@@ -2650,6 +2650,9 @@ export const ja: Catalog = {
   'calendar.level.details': '詳細',
   'calendar.level.edit': '詳細と編集',
   'calendar.share': '共有',
+  'calendar.renameTitle': 'カレンダーの名前を変更',
+  'calendar.name': '名前',
+  'calendar.renamed': 'カレンダー名を変更しました。',
   'calendar.findTime': '空いている時間を探す',
   'calendar.findTimeTitle': 'みんなの空き時間を探す',
   'calendar.findTimeIntro':

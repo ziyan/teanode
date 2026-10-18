@@ -18,9 +18,10 @@ import (
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
 )
 
-// Sharing a calendar is on the API, the command line and the agent's calendar
-// tool under the same names: nothing exists on one that the others lack,
-// except that making a circle's calendar is an admin's, done by hand. The
+// Every operation on calendars is on the API, the command line and the agent's
+// calendar tool under the same names: nothing exists on one that the others
+// lack, except that the agent reads the calendars a person reaches and a single
+// event through its agenda rather than under actions of their own. The
 // dashboard and the iPhone app call the same operations.
 func TestCalendarSharingParity(test *testing.T) {
 	test.Parallel()
@@ -43,15 +44,15 @@ func TestCalendarSharingParity(test *testing.T) {
 		"ListCalendars":         {"calendars", ""},
 		"ListCalendarEvents":    {"list", "agenda"},
 		"GetCalendarEvent":      {"show", ""},
-		"GetCalendarRequest":    {"request", ""},
-		"CancelCalendarRequest": {"stop", ""},
+		"GetCalendarRequest":    {"request", "request"},
+		"CancelCalendarRequest": {"stop", "stop"},
 		"SaveCalendarEvent":     {"add", "add"},
 		"DeleteCalendarEvent":   {"remove", "remove"},
-		"SaveCalendar":          {"set", ""},
+		"SaveCalendar":          {"set", "set"},
 		"ListCalendarShares":    {"shares", "shares"},
 		"ShareCalendar":         {"share", "share"},
 		"UnshareCalendar":       {"unshare", "unshare"},
-		"CreateCircleCalendar":  {"circle", ""},
+		"CreateCircleCalendar":  {"circle", "circle"},
 		"ListCalendarFreeBusy":  {"free", "free_together"},
 	}
 	for operation := range operations {

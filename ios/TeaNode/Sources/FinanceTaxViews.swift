@@ -1040,6 +1040,7 @@ struct PaystubDetailView: View {
                         Label("Delete paystub", systemImage: "trash")
                     }
                     .tint(.red)
+                    .actionColor(isDestructive: true)
                     .confirmationDialog("Delete this paystub?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                         Button("Delete paystub", role: .destructive) {
                             Task {
@@ -1264,6 +1265,7 @@ struct TaxFormDetailView: View {
                     Label("Delete form", systemImage: "trash")
                 }
                 .tint(.red)
+                .actionColor(isDestructive: true)
                 .confirmationDialog("Delete this form?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                     Button("Delete form", role: .destructive) {
                         Task {

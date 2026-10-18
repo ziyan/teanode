@@ -66,9 +66,11 @@ struct CalendarScreen: View {
                 if DemoServer.screen == "calendar-day", path.isEmpty {
                     path = [CalendarDay(containing: Date(), in: model.dates)]
                 }
-                // The calendars of other people as a list, which names whose each event is, and the share screen open over the month.
+                // The calendars of other people as a list, which names whose each event is, and the list of calendars or the share screen open over the month.
                 if DemoServer.screen == "calendar-shared" { model.viewMode = .agenda }
-                if DemoServer.screen == "calendar-share-sheet" || DemoServer.screen == "calendar-find-time" { isShowingCalendars = true }
+                if DemoServer.screen == "calendar-sheet" || DemoServer.screen == "calendar-share-sheet" || DemoServer.screen == "calendar-find-time" {
+                    isShowingCalendars = true
+                }
             #endif
         }
         .sheet(item: $draft) { draft in
@@ -349,6 +351,10 @@ struct MonthScroll: View {
         return (-12...24).map { current.adding(months: $0) }
     }()
     @State private var hasPersonScrolled = false
+    /// The room under the last week for the floating Today and views bar,
+    /// which stays one height at every text size: the glass bar floats over
+    /// the scroll view, and without this the last week stays under it.
+    private let floatingBarClearance: CGFloat = 72
 
     var body: some View {
         let isLunarShown = LunarDates.isShownForAppLanguage
@@ -363,7 +369,7 @@ struct MonthScroll: View {
                 }
             }
             .scrollTargetLayout()
-            .padding(.bottom)
+            .padding(.bottom, floatingBarClearance)
         }
         .scrollPosition($position, anchor: .top)
         // The month at the top names the year. It is read from the scroll
@@ -488,13 +494,12 @@ struct MonthWeekRow: View {
     let isLunarShown: Bool
     let onOpenDay: (CalendarDay) -> Void
     @Environment(\.displayScale) private var displayScale
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let dates = model.dates
-        // A cell's lines for chips and the "+N": three, or two once the
-        // text is too large for more, so one chip and the count.
-        let lineCount = dynamicTypeSize.isAccessibilitySize ? 2 : 3
+        // A cell's lines for chips and the "+N": three, two chips and the
+        // count. The accessibility sizes show a count alone, in the cell.
+        let lineCount = 3
         VStack(spacing: 2) {
             HStack(spacing: 4) {
                 Text(week.weekNumber, format: .number)
@@ -532,8 +537,9 @@ struct MonthWeekRow: View {
 
 /// MonthDayCell is a day in the month: its number, today's in a red circle
 /// as Apple's Calendar draws it, the lunar date in Chinese, and its first
-/// events as chips with "+N" for the rest. VoiceOver reads it as its date
-/// and how many events it has.
+/// events as chips with "+N" for the rest, or at the accessibility sizes
+/// only how many there are, since a chip is cut to two letters there. VoiceOver
+/// reads it as its date and how many events it has either way.
 struct MonthDayCell: View {
     let day: CalendarDay
     let date: Date
@@ -545,11 +551,13 @@ struct MonthDayCell: View {
     let colorOf: @MainActor (CalendarEvent) -> Color
     let onOpen: () -> Void
     @ScaledMetric(relativeTo: .subheadline) private var circleSize: CGFloat = 28
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let split = EventChipSplit(eventCount: events.count, lineCount: lineCount)
         let size = min(circleSize, 44)
         let dateText = date.formatted(date: .complete, time: .omitted)
+        let countColor = events.first.map { colorOf($0) } ?? Color.clear
         Button(action: onOpen) {
             VStack(spacing: 2) {
                 Text(day.day, format: .number)
@@ -574,22 +582,38 @@ struct MonthDayCell: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                VStack(spacing: 2) {
-                    ForEach(0..<lineCount, id: \.self) { line in
-                        if line < split.chipCount {
-                            EventChip(event: events[line], color: colorOf(events[line]))
-                        } else if line == split.chipCount, split.moreCount > 0 {
-                            Text(verbatim: "+\(split.moreCount)")
-                                .font(.caption2.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        } else {
-                            // Keeps every row of the month the same height.
-                            EventChip(title: " ", color: .clear, isCancelled: false)
-                                .hidden()
+                if dynamicTypeSize.isAccessibilitySize {
+                    // A title would be cut to "Pa…", which says nothing; the
+                    // day's own screen lists the events, so only the count
+                    // is kept, in the tint of the day's first event. An empty
+                    // day keeps the line's height, so the weeks stay even.
+                    Text(events.count, format: .number)
+                        .font(.caption2.weight(.medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(countColor.opacity(0.22), in: .capsule)
+                        .frame(maxWidth: .infinity)
+                        .opacity(events.isEmpty ? 0 : 1)
+                } else {
+                    VStack(spacing: 2) {
+                        ForEach(0..<lineCount, id: \.self) { line in
+                            if line < split.chipCount {
+                                EventChip(event: events[line], color: colorOf(events[line]))
+                            } else if line == split.chipCount, split.moreCount > 0 {
+                                Text(verbatim: "+\(split.moreCount)")
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 3)
+                                    .padding(.vertical, 1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                // Keeps every row of the month the same height.
+                                EventChip(title: " ", color: .clear, isCancelled: false)
+                                    .hidden()
+                            }
                         }
                     }
                 }

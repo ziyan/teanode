@@ -10430,6 +10430,7 @@ button.with-icon {
 
 .calendar-bar-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 

@@ -1057,6 +1057,7 @@ struct ReceiptDetailView: View {
                     Label("Delete receipt", systemImage: "trash")
                 }
                 .tint(.red)
+                .actionColor(isDestructive: true)
                 .confirmationDialog("Delete this receipt?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                     Button("Delete receipt", role: .destructive) {
                         Task {

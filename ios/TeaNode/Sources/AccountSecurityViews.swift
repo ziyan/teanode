@@ -36,6 +36,7 @@ struct SessionsView: View {
                         Label("Sign out every browser", systemImage: "rectangle.portrait.and.arrow.right")
                     }
                     .tint(.red)
+                    .actionColor(isDestructive: true)
                     .confirmationDialog("Sign out every browser?", isPresented: $isRevokingAll, titleVisibility: .visible) {
                         Button("Sign out every browser", role: .destructive) {
                             Task { await act(saying: String(localized: "Signed out")) { try await connection.revokeAllSessions() } }

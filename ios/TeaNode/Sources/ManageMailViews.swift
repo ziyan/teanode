@@ -2225,6 +2225,7 @@ private struct DomainSettingsView: View {
             if domain.logo != nil {
                 Button("Remove the logo", systemImage: "trash", role: .destructive) { isRemovingLogo = true }
                     .tint(.red)
+                    .actionColor(isDestructive: true)
                     .confirmationDialog("Stop publishing this logo?", isPresented: $isRemovingLogo, titleVisibility: .visible) {
                         Button("Remove the logo", role: .destructive) {
                             Task {
@@ -2732,6 +2733,7 @@ private struct AliasForm: View {
                     Section {
                         Button("Remove address", systemImage: "trash", role: .destructive) { isRemoving = true }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                             .confirmationDialog("Remove address", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task { await remove() }
@@ -3039,6 +3041,7 @@ private struct EditCredentialForm: View {
                 Section {
                     Button("Remove credential", systemImage: "trash", role: .destructive) { isRemoving = true }
                         .tint(.red)
+                        .actionColor(isDestructive: true)
                         .confirmationDialog("Remove credential", isPresented: $isRemoving, titleVisibility: .visible) {
                             Button("Remove", role: .destructive) {
                                 Task { await remove() }

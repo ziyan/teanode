@@ -49,7 +49,12 @@ struct FindATimeScreen: View {
                     }
                 }
                 Section {
-                    DatePicker("First day", selection: $question.firstDay, displayedComponents: .date)
+                    // Both days bounded the same way: a picker with a range and
+                    // one without were drawn in two date styles side by side.
+                    // There is nothing to find before today.
+                    DatePicker(
+                        "First day", selection: $question.firstDay, in: Calendar.current.startOfDay(for: Date())...,
+                        displayedComponents: .date)
                     DatePicker("Last day", selection: $question.lastDay, in: question.firstDay..., displayedComponents: .date)
                     DatePicker("Earliest hour", selection: $earliest, displayedComponents: .hourAndMinute)
                     DatePicker("Latest hour", selection: $latest, displayedComponents: .hourAndMinute)

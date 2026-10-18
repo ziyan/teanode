@@ -1,6 +1,38 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Use the three-letter code, such as USD.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USD のように3文字のコードで入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用三个字母的代码，例如 USD。"
+          }
+        }
+      }
+    },
+    "Yours": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的"
+          }
+        }
+      }
+    },
     "%@ (bill: %@)": {
       "localizations": {
         "ja": {
@@ -57600,6 +57632,38 @@
         }
       }
     },
+    "Calendar name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历名称"
+          }
+        }
+      }
+    },
+    "Calendar renamed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー名を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历已重命名"
+          }
+        }
+      }
+    },
     "Calendars": {
       "localizations": {
         "ja": {
@@ -59200,6 +59264,38 @@
         }
       }
     },
+    "Rename my calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のカレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名我的日历"
+          }
+        }
+      }
+    },
+    "Rename your calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名日历"
+          }
+        }
+      }
+    },
     "Mute for 8 hours": {
       "localizations": {
         "ja": {
@@ -60172,22 +60268,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "会付款的工具需要设置上限，或选择“每次都问我”才能共享。"
-          }
-        }
-      }
-    },
-    "Share %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@を共有"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共享%@"
           }
         }
       }
@@ -62454,22 +62534,6 @@
         }
       }
     },
-    "usd": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd"
-          }
-        }
-      }
-    },
     "This shares %lld pages: this one and everything under it.": {
       "localizations": {
         "ja": {
@@ -63436,22 +63500,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "每笔"
-          }
-        }
-      }
-    },
-    "Use the three-letter code, such as usd.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd のように3文字のコードで入力してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请使用三个字母的代码，例如 usd。"
           }
         }
       }

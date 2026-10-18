@@ -10,8 +10,7 @@ import (
 )
 
 // Circles are on the API, the command line and the agent's circle tool under
-// the same names: nothing exists on one that the others lack, except that the
-// agent's tool leaves out what is an admin's to do by hand. Putting an
+// the same names: nothing exists on one that the others lack. Putting an
 // account in a circle without an invitation is the operator's, and the tool
 // offers it only to somebody who manages accounts.
 // The dashboard and the iPhone app call the same operations.
@@ -25,26 +24,27 @@ func TestCircleParity(test *testing.T) {
 		}
 	}
 
-	// operation, then the subcommands of teanode circle that do it and, where
-	// the agent can, the action of its circle tool.
+	// operation, then the subcommands of teanode circle that do it and the
+	// actions of the agent's circle tool, which are named as the subcommands
+	// are.
 	table := map[string]struct {
 		subcommands []string
-		action      string
+		actions     []string
 	}{
-		"ListCircles":              {[]string{"list"}, "list"},
-		"ReadCircle":               {[]string{"show"}, "show"},
-		"ListCircleInvitations":    {[]string{"invitations"}, "list"},
-		"ListCirclePeople":         {[]string{"people"}, "people"},
-		"CreateCircle":             {[]string{"create"}, "create"},
-		"RenameCircle":             {[]string{"rename"}, ""},
-		"DeleteCircle":             {[]string{"delete"}, ""},
-		"InviteToCircle":           {[]string{"invite"}, "invite"},
-		"AnswerCircleInvitation":   {[]string{"accept", "decline"}, "answer"},
-		"WithdrawCircleInvitation": {[]string{"withdraw"}, ""},
-		"SetCircleMemberRole":      {[]string{"role"}, ""},
-		"RemoveCircleMember":       {[]string{"remove"}, ""},
-		"LeaveCircle":              {[]string{"leave"}, "leave"},
-		"AddCircleMember":          {[]string{"add"}, "add"},
+		"ListCircles":              {[]string{"list"}, []string{"list"}},
+		"ReadCircle":               {[]string{"show"}, []string{"show"}},
+		"ListCircleInvitations":    {[]string{"invitations"}, []string{"list"}},
+		"ListCirclePeople":         {[]string{"people"}, []string{"people"}},
+		"CreateCircle":             {[]string{"create"}, []string{"create"}},
+		"RenameCircle":             {[]string{"rename"}, []string{"rename"}},
+		"DeleteCircle":             {[]string{"delete"}, []string{"delete"}},
+		"InviteToCircle":           {[]string{"invite"}, []string{"invite"}},
+		"AnswerCircleInvitation":   {[]string{"accept", "decline"}, []string{"accept", "decline"}},
+		"WithdrawCircleInvitation": {[]string{"withdraw"}, []string{"withdraw"}},
+		"SetCircleMemberRole":      {[]string{"role"}, []string{"role"}},
+		"RemoveCircleMember":       {[]string{"remove"}, []string{"remove"}},
+		"LeaveCircle":              {[]string{"leave"}, []string{"leave"}},
+		"AddCircleMember":          {[]string{"add"}, []string{"add"}},
 	}
 
 	commands := map[string]bool{}
@@ -85,10 +85,10 @@ func TestCircleParity(test *testing.T) {
 				test.Errorf("teanode circle has no %s", subcommand)
 			}
 		}
-		if names.action != "" {
-			toolActions[names.action] = true
-			if !circleActions[names.action] {
-				test.Errorf("the circle tool has no action %s", names.action)
+		for _, action := range names.actions {
+			toolActions[action] = true
+			if !circleActions[action] {
+				test.Errorf("the circle tool has no action %s", action)
 			}
 		}
 	}

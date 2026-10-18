@@ -36,6 +36,9 @@ struct PreferencesView: View {
                         PhotosPicker(selection: $pickedItem, matching: .images) {
                             Label("Choose a picture", systemImage: "photo")
                         }
+                        // On the picker, not its label: the label is built off
+                        // the main actor, where the modifier cannot be called.
+                        .actionColor()
                         .disabled(isChangingPicture)
                         .fullWidthRowSeparator()
                         if pictureProfile.avatarUrl?.isEmpty == false {
@@ -43,6 +46,7 @@ struct PreferencesView: View {
                                 Task { await removePicture() }
                             }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                             .disabled(isChangingPicture)
                         }
                     } header: {
