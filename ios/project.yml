@@ -69,12 +69,15 @@ targets:
         # behind this.
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) TEANODE_APP
         SWIFT_OBJC_BRIDGING_HEADER: TeaNode/ObjectiveC/TeaNode-Bridging-Header.h
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: TeaNode
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # The iPad turns every way: iPadOS offers an app Split View and Slide Over
+        # only when it supports all four orientations. The iPhone stays upright.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         # The TeaNode leaf on white, from docs/images/logo.svg.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # TeaNode green, the one color of the app's own (DESIGN.md).
@@ -124,7 +127,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).notification
         # The Swift 5 language mode: see NotificationService.swift.
         SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
 
   # TeaNode in the share sheet: pictures, files, a link or words from any
   # app, sent to the person's agent with a note. It reads the sign-in from
@@ -166,7 +169,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).share
         # The Swift 5 language mode: see ShareViewController.swift.
         SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
 
   # The widgets, the Lock Screen's and Control Center's: asking or calling
@@ -201,7 +204,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).widgets
         SWIFT_VERSION: "6.0"
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
 

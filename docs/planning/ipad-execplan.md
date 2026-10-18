@@ -10,7 +10,7 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 
 ## Progress
 
-- [ ] Milestone 1: the app builds for the iPad and runs in every orientation there.
+- [x] Milestone 1: the app builds for the iPad and runs in every orientation there. (2026-10-18; whether `INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad` is accepted is known only from CI's build.)
 - [ ] Milestone 2: the side menu is a column that stays open at regular width.
 - [ ] Milestone 3: screens that read badly when wide are capped, and presenters work on the iPad.
 - [ ] Milestone 4: CI photographs the iPad in landscape and portrait, and the App Store's iPad set.
@@ -18,7 +18,7 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 
 ## Surprises & Discoveries
 
-None yet.
+- Nothing in the sources assumes a phone's screen: there is no `UIScreen.main`, no `userInterfaceIdiom` and no fixed width tied to the iPhone. `UIDevice.current.name` is used only to name the phone to the server, and `Device.modelIdentifier` is sent as the phone's model; the server's table of model names (`internal/models/phone_model_name.go`) already lists the iPads. There is no `TabView` in the app, so the tab bar that iPadOS 26 moves to the top never appears.
 
 ## Decision Log
 
