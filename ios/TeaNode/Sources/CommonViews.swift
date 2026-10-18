@@ -379,6 +379,14 @@ extension View {
         modifier(MenuListStyle(isMenu: isMenu))
     }
 
+    /// Keeps how far the list is scrolled in `scrollOffsetPoints`, which the
+    /// caller holds above the list, and scrolls back to it once the list has
+    /// its rows. The side menu is drawn anew each time it opens, so a list
+    /// that kept its own place would start at the top again.
+    func remembersScroll(offsetPoints scrollOffsetPoints: Binding<CGFloat?>, isReady: Bool) -> some View {
+        modifier(RemembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isReady))
+    }
+
     /// A row of the side menu: no separator, and the one chosen on a
     /// rounded highlight inset from the edges.
     func menuRow(isSelected: Bool) -> some View {
@@ -389,5 +397,59 @@ extension View {
                     .fill(isSelected ? Color(.tertiarySystemFill) : .clear)
                     .padding(.horizontal, 10)
             )
+    }
+}
+
+/// RemembersScroll is `remembersScroll(offsetPoints:isReady:)`.
+private struct RemembersScroll: ViewModifier {
+    @Binding var scrollOffsetPoints: CGFloat?
+    /// Whether what the list shows has been read. The rows may be there a
+    /// moment before that, and are not the final ones.
+    let isReady: Bool
+    @State private var scrollPosition = ScrollPosition()
+    @State private var snapshot = Snapshot(scrollOffsetPoints: 0, isFilled: false)
+    /// Whether the place kept has been scrolled back to. Until then the
+    /// list reports the top, which must not overwrite the place kept.
+    @State private var hasRestored = false
+
+    /// What the list reports about its scroll: where it is, and whether its
+    /// rows fill it, which is when scrolling back can reach the place kept.
+    private struct Snapshot: Equatable {
+        var scrollOffsetPoints: CGFloat
+        var isFilled: Bool
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: Snapshot.self) { geometry in
+                // Counted from the top of the rows: the offset itself is below
+                // zero by the inset under the bar while the list is at rest,
+                // and scrolling to a place counts from the rows' top.
+                Snapshot(
+                    scrollOffsetPoints: geometry.contentOffset.y + geometry.contentInsets.top,
+                    isFilled: geometry.contentSize.height > geometry.containerSize.height)
+            } action: { _, reported in
+                snapshot = reported
+                if hasRestored {
+                    scrollOffsetPoints = reported.scrollOffsetPoints
+                } else {
+                    restore()
+                }
+            }
+            .onChange(of: isReady) { restore() }
+    }
+
+    /// Scrolls back once the rows are all there, or at once when nothing was
+    /// kept, so that what the person scrolls from then on is kept.
+    private func restore() {
+        guard !hasRestored, isReady else { return }
+        guard let kept = scrollOffsetPoints else {
+            hasRestored = true
+            return
+        }
+        guard snapshot.isFilled else { return }
+        hasRestored = true
+        scrollPosition.scrollTo(y: kept)
     }
 }

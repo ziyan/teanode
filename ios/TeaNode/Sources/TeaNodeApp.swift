@@ -65,6 +65,9 @@ struct ConversationsSheet: View {
     /// Rows shown above the conversations, as the side menu puts its
     /// sections there.
     var leading: AnyView?
+    /// How far the list is scrolled, kept by whoever shows it so that the
+    /// side menu, which is drawn anew each time it opens, comes back to it.
+    var scrollOffsetPoints: Binding<CGFloat?> = .constant(nil)
     let onChoose: (AgentConversation?) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -176,6 +179,7 @@ struct ConversationsSheet: View {
                 }
             }
             .menuListStyle(isPanel)
+            .remembersScroll(offsetPoints: scrollOffsetPoints, isReady: isLoaded)
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
                 // A quarter of a second after the last key, as the drawer
