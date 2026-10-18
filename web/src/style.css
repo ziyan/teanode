@@ -11808,7 +11808,9 @@ main.content:has(> .knowledge-frame) {
   flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-1);
+  /* The gap inside the link, so that the picture, the line and the count are
+     as far apart whether they are one link or a link and two lines beside it. */
+  gap: 2px;
   min-width: 0;
   padding: var(--space-2);
   border-radius: var(--radius-2);
@@ -11827,7 +11829,9 @@ main.content:has(> .knowledge-frame) {
   align-items: center;
   gap: 2px;
   min-width: 0;
-  max-width: 100%;
+  /* The whole width of the tile, so that the picture's percentage width is
+     the tile's and not that of the longest word under it. */
+  width: 100%;
   color: var(--text);
   text-decoration: none;
 }
@@ -11851,14 +11855,12 @@ main.content:has(> .knowledge-frame) {
   font-size: var(--text-body);
 }
 
-/* Where the tag and the Name button go: as tall as the button, with or
-   without one, so that a tile that is named is no shorter than one that is not. */
-.photo-person-foot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
+/* The line under the picture is as tall as the Name button, which takes the
+   place of the name on a person nobody has named, so that every tile is one
+   height and naming a person does not move the rows under them. */
+.photo-person-cell .photo-person-title {
   min-height: 32px;
+  align-items: center;
 }
 
 .photo-person-cell .face-picture.is-large {
@@ -16604,6 +16606,16 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   background: var(--sidebar-hover);
 }
 
+/* The actions of a page that are behind the More button on a phone: rows of a
+   menu, each an icon and its name, the ones that remove something in red. */
+.photo-toolbar-menu .photo-icon-actions {
+  display: contents;
+}
+
+.photo-toolbar-menu button.is-dangerous {
+  color: var(--bad);
+}
+
 .photo-filter-button.active {
   border-color: var(--border-strong);
   background: var(--field);
@@ -19102,14 +19114,20 @@ label.checkbox.is-plain > span > .muted {
     text-align: center;
   }
 
-  /* The tools take the line and the actions are the one under it, at its
-     right. */
+  /* One row: the tools take the room the actions leave. What does not fit
+     is behind the More button, so the row never wraps onto a second line of
+     a different length. */
+  .photo-toolbar {
+    flex-wrap: nowrap;
+  }
+
   .photo-toolbar-tools {
-    flex-basis: 100%;
+    flex: 1 1 0;
   }
 
   .photo-toolbar-actions {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
   }
 
   /* Whatever is touched is at least 44px each way. */
@@ -19194,7 +19212,7 @@ label.checkbox.is-plain > span > .muted {
     min-height: 44px;
   }
 
-  .photo-person-foot {
+  .photo-person-cell .photo-person-title {
     min-height: 44px;
   }
 
@@ -19299,6 +19317,10 @@ label.checkbox.is-plain > span > .muted {
   .photo-viewer-albums a {
     display: inline-flex;
     align-items: center;
+    min-height: 44px;
+  }
+
+  .photo-toolbar-menu button {
     min-height: 44px;
   }
 

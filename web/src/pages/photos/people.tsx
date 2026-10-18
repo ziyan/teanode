@@ -106,11 +106,14 @@ function AccountPeoplePage() {
   )
 }
 
-// One person: the round picture, the name under it, how many photos they are
-// in, and for a person who is nobody yet the way to name them. A hidden person
-// is dimmed, picture and name, and says so in a tag, so that dimmed is not the
-// only way it is told. The tile's link is the picture, the name and the count,
-// and the button beside it is its own: a button in a link is neither.
+// One person: the round picture, the name under it, and how many photos they
+// are in. For a person who is nobody yet, and whom the reader may name, the
+// Name button takes the place of the name line rather than adding a line, so
+// that every tile is the same height whether or not it is named. A hidden
+// person is dimmed, picture and name, and says so in a tag, so that dimmed is
+// not the only way it is told. The tile's link is the picture, the name and
+// the count; for a person who is offered the Name button the link is the
+// picture and the button is beside it, since a button in a link is neither.
 function PersonCell({
   group,
   name,
@@ -126,31 +129,33 @@ function PersonCell({
 }) {
   const { t } = useTranslation()
   const isNamed = group.contactName.trim() !== ''
+  const isOfferedName = !isNamed && canName
+  const photoCountText = plural(group.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })
   return (
     <div className={group.isHidden ? 'photo-person-cell is-hidden' : 'photo-person-cell'}>
-      <Link className="photo-person-link" to={personAddress(group.id)}>
-        <FacePicture facePictureUrl={group.facePictureUrl} name={name} size="large" />
-        <span className="photo-person-title">
-          <span className={isNamed ? 'photo-person-name' : 'photo-person-name muted'}>{name}</span>
-          {group.isOwnContact && <YouMark />}
-        </span>
-        <span className="photo-person-details muted">
-          {plural(group.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
-        </span>
-      </Link>
-      {(group.isHidden || canName) && (
-        // The room for the Name button is kept on a tile that has no use for
-        // it, so that every tile is as tall as the one that does and naming a
-        // person does not move the rows under them.
-        <div className="photo-person-foot">
-          {group.isHidden && <Tag value={t('photos.hiddenTag')} />}
-          {!isNamed && canName && (
+      {isOfferedName ? (
+        <>
+          <Link className="photo-person-link" to={personAddress(group.id)} aria-label={`${name}, ${photoCountText}`}>
+            <FacePicture facePictureUrl={group.facePictureUrl} name={name} size="large" />
+          </Link>
+          <span className="photo-person-title">
             <button type="button" className="photo-person-name-button" onClick={onName}>
               {t('photos.nameAction')}
             </button>
-          )}
-        </div>
+          </span>
+          <span className="photo-person-details muted">{photoCountText}</span>
+        </>
+      ) : (
+        <Link className="photo-person-link" to={personAddress(group.id)}>
+          <FacePicture facePictureUrl={group.facePictureUrl} name={name} size="large" />
+          <span className="photo-person-title">
+            <span className={isNamed ? 'photo-person-name' : 'photo-person-name muted'}>{name}</span>
+            {group.isOwnContact && <YouMark />}
+          </span>
+          <span className="photo-person-details muted">{photoCountText}</span>
+        </Link>
       )}
+      {group.isHidden && <Tag value={t('photos.hiddenTag')} />}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { PhotoBackupGuide } from '../../components/photoBackupGuide'
 import {
   AddPersonIcon,
   AlbumRemoveIcon,
+  CheckIcon,
   CloseIcon,
   DownloadIcon,
   HeartIcon,
@@ -88,7 +89,7 @@ import { albumAddress } from './albums'
 import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
 import { AddPhotosDialog, AlbumOwnerMark, ShareAlbumDialog } from './albumSharing'
 import { useShowDateRange, useVisibleDayRange } from './dateRange'
-import { PhotoGrid, type PhotoGrouping } from './grid'
+import { PhotoGrid, isPhotoPreviewPending, type PhotoGrouping } from './grid'
 import { PhotoOverview } from './overview'
 import {
   FacePicture,
@@ -98,7 +99,7 @@ import {
   personAddress,
   useDisplayedPersonName,
 } from './personControls'
-import { PhotoFilterMenu, PhotoIconAction, PhotoScaleSwitch, PhotoToolbar } from './toolbar'
+import { PhotoFilterMenu, PhotoIconAction, PhotoScaleSwitch, PhotoToolbar, PhotoToolbarButton } from './toolbar'
 import { PhotoViewer } from './viewer'
 
 // The Photos page: the timeline of the person's library with its three
@@ -505,8 +506,13 @@ function AccountPhotosPage() {
   })
 
   // Photos that are still being made ready are looked at again soon, rather
-  // than after the page's slow refresh. Not when the list is a search.
-  const hasWaitingPhotos = photos.some((photo) => photo.photoProcessingState === 'waiting')
+  // than after the page's slow refresh. Not when the list is a search. A cell
+  // that still shows a spinner counts even when the server calls its photo
+  // ready, since the small preview it is waiting for arrives with no other
+  // sign.
+  const hasWaitingPhotos = photos.some(
+    (photo) => photo.photoProcessingState === 'waiting' || isPhotoPreviewPending(photo),
+  )
   useEffect(() => {
     if (!hasWaitingPhotos || isSearching) return
     const timer = window.setInterval(() => void library.reload(true), WAITING_POLL_MS)
@@ -1315,6 +1321,9 @@ function AccountPhotosPage() {
         </div>
       ) : (
         <PhotoToolbar
+          essentials={
+            canUseOverview && !isListEmpty && <PhotoScaleSwitch scale={overviewScale} onChange={setOverviewScale} />
+          }
           tools={
             // A list with nothing in it has nothing to search or narrow.
             isListEmpty ? null : (
@@ -1354,30 +1363,35 @@ function AccountPhotosPage() {
             )
           }
         >
-          {canUseOverview && !isListEmpty && <PhotoScaleSwitch scale={overviewScale} onChange={setOverviewScale} />}
           {isUploadShown && (
-            <button type="button" className="primary" onClick={() => fileInput.current?.click()}>
-              <UploadIcon size={16} /> {t('photos.upload')}
-            </button>
+            <PhotoToolbarButton
+              isPrimary
+              label={t('photos.upload')}
+              icon={<UploadIcon size={16} />}
+              onClick={() => fileInput.current?.click()}
+            />
           )}
           {photos.length > 0 && !isOverview && (
-            <button
-              type="button"
-              aria-pressed={isSelecting}
+            <PhotoToolbarButton
+              label={isSelecting ? t('common.cancel') : t('photos.select')}
+              menuIcon={<CheckIcon size={16} />}
+              isPressed={isSelecting}
               onClick={() => (isSelecting ? clearSelection() : setIsSelectionMode(true))}
-            >
-              {isSelecting ? t('common.cancel') : t('photos.select')}
-            </button>
+            />
           )}
           {photoAlbumId && canContributeToAlbum && (
-            <button type="button" onClick={() => setIsAddingPhotos(true)}>
-              <PlusIcon size={16} /> {t('photos.addPhotos')}
-            </button>
+            <PhotoToolbarButton
+              label={t('photos.addPhotos')}
+              icon={<PlusIcon size={16} />}
+              onClick={() => setIsAddingPhotos(true)}
+            />
           )}
           {photoAlbumId && canManageAlbum && shownAlbum?.circleId === null && (
-            <button type="button" onClick={() => setIsSharingAlbum(true)}>
-              <AddPersonIcon size={16} /> {t('photos.share')}
-            </button>
+            <PhotoToolbarButton
+              label={t('photos.share')}
+              icon={<AddPersonIcon size={16} />}
+              onClick={() => setIsSharingAlbum(true)}
+            />
           )}
           {photoAlbumId && canManageAlbum && (
             <span className="photo-icon-actions">
