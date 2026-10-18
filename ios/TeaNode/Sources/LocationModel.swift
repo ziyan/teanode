@@ -351,11 +351,20 @@ final class LocationModel {
     /// Where to check in: the phone's position now, from the recorder when it
     /// has a fresh one, else asked of the phone.
     func currentPosition() async -> (latitudeDegrees: Double, longitudeDegrees: Double)? {
+        guard let reading = await currentReading() else { return nil }
+        return (reading.latitudeDegrees, reading.longitudeDegrees)
+    }
+
+    /// The same position with how precise the phone says it is, in meters
+    /// (negative when the phone could not tell).
+    func currentReading() async -> (latitudeDegrees: Double, longitudeDegrees: Double, accuracyMeters: Double)? {
         if let live = LocationRecorder.shared.livePosition, Date().timeIntervalSince(live.measuredAt) < 60 {
-            return (live.latitudeDegrees, live.longitudeDegrees)
+            return (live.latitudeDegrees, live.longitudeDegrees, live.accuracyMeters)
         }
         let reading = await LocationReader.current()
-        if let latitude = reading.latitudeDegrees, let longitude = reading.longitudeDegrees { return (latitude, longitude) }
+        if let latitude = reading.latitudeDegrees, let longitude = reading.longitudeDegrees {
+            return (latitude, longitude, reading.accuracyMeters ?? -1)
+        }
         problemText = String(localized: "The phone could not tell where it is. Check that location is allowed for TeaNode, then try again.")
         return nil
     }
@@ -376,10 +385,10 @@ final class LocationModel {
 
     /// Records that the person is at a place now. Nil when it worked, else
     /// the reason, for the sheet that asked to say.
-    func checkIn(_ target: CheckInTarget, placeName: String) async -> String? {
+    func checkIn(_ target: CheckInTarget, placeName: String?) async -> String? {
         do {
             try await connection.checkIn(target)
-            doneText = String(localized: "Checked in at \(placeName)")
+            doneText = placeName.map { String(localized: "Checked in at \($0)") } ?? String(localized: "Checked in here")
             LocationRecorder.shared.placesDidChange()
             await load()
             return nil

@@ -18,7 +18,7 @@ vi.mock('../api', async (importOriginal) => ({
 // WebGL is not there to draw a map in; the page's part is what it hands the map.
 vi.mock('../components/locationMap', () => ({
   LocationMap: ({ people, places }: { people: { name: string }[]; places: { placeName: string }[] }) => (
-    <div data-testid="map">
+    <div data-testid="map" data-people={people.map((person) => person.name).join(',')}>
       {people.length} people, {places.length} places
     </div>
   ),
@@ -291,7 +291,10 @@ it('sets Location up when no position is recorded, and not again after Not now',
 
   expect(await screen.findByText('Install the TeaNode app on your iPhone')).toBeTruthy()
   expect(screen.getByText('This is home')).toBeTruthy()
-  expect(screen.queryByTestId('map')).toBeNull()
+  // The map is there with the setup, which stands under it.
+  const map = screen.getByTestId('map')
+  expect(map).toBeTruthy()
+  expect(map.compareDocumentPosition(screen.getByText('This is home')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
   fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
   expect(screen.queryByText('Install the TeaNode app on your iPhone')).toBeNull()
@@ -530,6 +533,88 @@ it('says where place names come from in the setup, and gives the install row no 
   expect(await screen.findByText(/Place names come from OpenStreetMap: your server sends the position/)).toBeTruthy()
   const installRow = screen.getByText('Install the TeaNode app on your iPhone').closest('.settings-row')
   expect(installRow?.querySelector('.tag')).toBeNull()
+})
+
+it('puts the setup row for the phone app behind a button, not a link', async () => {
+  answerWith({ own: { latestPoint: null } })
+  renderAt('/location')
+  expect(await screen.findByRole('button', { name: 'Set up the iPhone app' })).toBeTruthy()
+  expect(screen.queryByRole('link')).toBeNull()
+})
+
+it('shows where the browser is on the map when the person has no position, once they ask', async () => {
+  answerWith({ own: { latestPoint: null } })
+  stubBrowserPosition()
+  renderAt('/location')
+
+  expect((await screen.findByTestId('map')).getAttribute('data-people')).toBe('')
+  fireEvent.click(await screen.findByRole('button', { name: 'Show where I am' }))
+  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toBe('You'))
+  expect(screen.queryByRole('button', { name: 'Show where I am' })).toBeNull()
+})
+
+it('reads the browser position at once when the permission is already granted', async () => {
+  answerWith({ own: { latestPoint: null } })
+  stubBrowserPosition()
+  Object.defineProperty(navigator, 'permissions', {
+    configurable: true,
+    value: { query: async () => ({ state: 'granted' }) },
+  })
+  renderAt('/location')
+
+  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toBe('You'))
+  Object.defineProperty(navigator, 'permissions', { configurable: true, value: undefined })
+})
+
+it('does not draw the browser position for a person who has a position recorded', async () => {
+  answerWith({})
+  stubBrowserPosition()
+  renderAt('/location')
+
+  expect((await screen.findByTestId('map')).getAttribute('data-people')).toBe('Person A')
+  expect(screen.queryByRole('button', { name: 'Show where I am' })).toBeNull()
+})
+
+it('checks in here with the coordinates alone, and says how precise the browser is', async () => {
+  answerWith({})
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ListNearbyPlaces')) return { ListNearbyPlaces: [] } as never
+    if (document.includes('CheckIn')) return { CheckIn: { id: 'visit-new' } } as never
+    return base!(document, variables)
+  })
+  stubBrowserPosition()
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Check in' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(await within(dialog).findByText('Your browser places you within 15 m.')).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: /Check in here/ }))
+  await waitFor(() => expect(calls('CheckIn(')).toHaveLength(1))
+  expect(calls('CheckIn(')[0][1]).toEqual({ latitudeDegrees: 10.5, longitudeDegrees: 20.5 })
+})
+
+it('says plainly when the browser could only find the person roughly, and still lets them check in', async () => {
+  answerWith({})
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ListNearbyPlaces')) return { ListNearbyPlaces: [] } as never
+    return base!(document, variables)
+  })
+  Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
+  Object.defineProperty(navigator, 'geolocation', {
+    configurable: true,
+    value: {
+      getCurrentPosition: (success: (position: unknown) => void) =>
+        success({ coords: { latitude: 10.5, longitude: 20.5, accuracy: 1500 }, timestamp: 1_900_000_000_000 }),
+    },
+  })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Check in' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(await within(dialog).findByText(/could only find you roughly, within 1500 m/)).toBeTruthy()
+  expect((within(dialog).getByRole('button', { name: /Check in here/ }) as HTMLButtonElement).disabled).toBe(false)
 })
 
 it('finds a place by words around the browser position and checks in to it', async () => {

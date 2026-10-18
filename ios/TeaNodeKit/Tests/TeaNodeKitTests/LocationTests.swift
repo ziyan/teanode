@@ -143,6 +143,12 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(try sentVariables(fake.sent[3]), ["placeId": .string("place-1")])
     }
 
+    func testChecksInAtAPositionWithOnlyItsCoordinates() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"CheckIn":\#(visitAnswer)}}"#)
+        try await connection.checkIn(.position(latitudeDegrees: 10.5, longitudeDegrees: 20.5))
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5)])
+    }
+
     func testChecksInAtAPlaceOrAFoundPlace() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"CheckIn":\#(visitAnswer)}}"#)
         try await connection.checkIn(.place("place-1"))

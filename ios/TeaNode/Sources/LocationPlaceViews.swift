@@ -171,6 +171,8 @@ struct CheckInSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var nearbyPlaces: [FoundPlace]?
     @State private var position: (latitudeDegrees: Double, longitudeDegrees: Double)?
+    /// How precise the phone says the position is; negative when it could not tell.
+    @State private var positionAccuracyMeters: Double?
     @State private var loadFailedText: String?
     @State private var searchText = ""
     /// What the last search found, for the words in `searchedWords`.
@@ -194,6 +196,31 @@ struct CheckInSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                if position != nil {
+                    Section {
+                        Button {
+                            Task { await checkInHere() }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "location.fill")
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(Color(.secondaryLabel))
+                                    .frame(width: 28)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Check in here").foregroundStyle(Color(.label))
+                                    if let precisionText {
+                                        Text(verbatim: precisionText)
+                                            .font(.subheadline)
+                                            .foregroundStyle(Color(.secondaryLabel))
+                                    }
+                                }
+                            }
+                            .frame(minHeight: 44, alignment: .leading)
+                        }
+                        .disabled(isCheckingIn)
+                    }
+                }
                 if let listedPlaces {
                     Section {
                         ForEach(listedPlaces) { foundPlace in
@@ -279,6 +306,16 @@ struct CheckInSheet: View {
         }
     }
 
+    /// How precise the position under "Check in here" is, such as "Within
+    /// 20 m"; when the phone could only find the person roughly, it says so.
+    /// Nil when the phone did not say.
+    private var precisionText: String? {
+        guard let positionAccuracyMeters, positionAccuracyMeters >= 0 else { return nil }
+        let withinText = String(localized: "Within \(LocationText.distance(positionAccuracyMeters.rounded()))")
+        guard positionAccuracyMeters > 300 else { return withinText }
+        return String(localized: "\(withinText). The phone could only find you roughly.")
+    }
+
     /// The kind of place it is and how far away, such as "Cafe · 40 m".
     private func details(of foundPlace: FoundPlace) -> String {
         let categoryName = LocationText.category(foundPlace.osmCategory)
@@ -288,13 +325,14 @@ struct CheckInSheet: View {
 
     private func load() async {
         loadFailedText = nil
-        guard let current = await model.currentPosition() else {
+        guard let current = await model.currentReading() else {
             // Said in a toast by the model; the sheet says it too, so it is
             // not left spinning.
             loadFailedText = model.problemText ?? String(localized: "The phone could not tell where it is.")
             return
         }
-        position = current
+        position = (current.latitudeDegrees, current.longitudeDegrees)
+        positionAccuracyMeters = current.accuracyMeters
         do {
             nearbyPlaces = try await model.nearby(latitudeDegrees: current.latitudeDegrees, longitudeDegrees: current.longitudeDegrees)
         } catch {
@@ -319,6 +357,20 @@ struct CheckInSheet: View {
             searchNextOffset = page.nextOffset
         } catch {
             problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
+    /// Checks in at the phone's position with nothing else: the server uses
+    /// the person's own place there, or makes one and names it afterwards.
+    private func checkInHere() async {
+        guard let position else { return }
+        isCheckingIn = true
+        defer { isCheckingIn = false }
+        let target = CheckInTarget.position(latitudeDegrees: position.latitudeDegrees, longitudeDegrees: position.longitudeDegrees)
+        if let refusalText = await model.checkIn(target, placeName: nil) {
+            problemText = refusalText
+        } else {
+            dismiss()
         }
     }
 

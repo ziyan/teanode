@@ -822,6 +822,12 @@ func runCheckIn(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	answer := here.placeRow(result.CheckIn.Place)
 	answer["is_checked_in"] = true
 	answer["arrived"] = here.timeText(result.CheckIn.ArrivedAt)
+	// Coordinates alone make a place called after its city, named from
+	// OpenStreetMap right after; say so, so that it is not read as the name.
+	place := result.CheckIn.Place
+	if place.VisitCount <= 1 && !place.IsNamedByPerson && place.OSMName == "" && place.AddressText == "" {
+		answer["is_new_place_named_shortly"] = true
+	}
 	return untrusted(tools.JSONResult(answer))
 }
 

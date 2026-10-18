@@ -1572,12 +1572,21 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	}
 
 	var checkedIn *models.Place
+	// A place made from coordinates alone is named from OpenStreetMap once the
+	// check-in is committed, like one a report makes.
+	var madePlaces []*models.Place
 	if placeId := strings.TrimSpace(arguments.PlaceID); placeId != "" {
 		if checkedIn, err = tx.GetPlace(userId, placeId); err != nil {
 			return nil, locationFailure(err)
 		}
-	} else if checkedIn, err = self.placeFromFound(tx, userId, arguments, now); err != nil {
-		return nil, err
+	} else {
+		var isUnnamed bool
+		if checkedIn, isUnnamed, err = self.placeFromFound(tx, userId, arguments, now); err != nil {
+			return nil, err
+		}
+		if isUnnamed {
+			madePlaces = append(madePlaces, checkedIn)
+		}
 	}
 
 	// The visit in progress ends, at the moment the person left it if the
@@ -1622,8 +1631,9 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	}
 	visit.Place = checkedIn
 	notices = append(notices, visitNotice{Visit: visit, IsArrival: true, HappenedAt: now})
-	// A place found nearby arrives named, so there is none to name.
-	self.afterLocationChange(ctx, tx, userId, notices, nil)
+	// A place found nearby arrives named, so only one made from coordinates
+	// alone is left to name.
+	self.afterLocationChange(ctx, tx, userId, notices, madePlaces)
 	if err := attachVisitSummaries(tx, userId, []*models.Place{checkedIn}); err != nil {
 		return nil, err
 	}
@@ -1633,50 +1643,66 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 // placeFromFound is the caller's place for a place found nearby: the one they
 // already have for the same OpenStreetMap object, or a new one named as
 // OpenStreetMap named it, so that the provider is not asked about it again.
-func (self *graph) placeFromFound(tx db.Transaction, userId string, arguments CheckInArguments, now time.Time) (*models.Place, error) {
+// With coordinates alone (no placeId, no OpenStreetMap object, no name or
+// address) it is the caller's own place whose radius holds the point, or else a
+// new place called after its city for now; isUnnamed says it is the latter, to
+// be named from OpenStreetMap once the check-in is committed.
+func (self *graph) placeFromFound(tx db.Transaction, userId string, arguments CheckInArguments, now time.Time) (made *models.Place, isUnnamed bool, err error) {
 	if arguments.LatitudeDegrees == nil || arguments.LongitudeDegrees == nil {
-		return nil, fmt.Errorf("%w: give the place as placeId, or as the latitudeDegrees and longitudeDegrees of a place that was found", api.ErrInvalidArguments)
+		return nil, false, fmt.Errorf("%w: give the place as placeId, or as the latitudeDegrees and longitudeDegrees of a place that was found", api.ErrInvalidArguments)
 	}
 	if err := requireOnEarth(*arguments.LatitudeDegrees, *arguments.LongitudeDegrees); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	osmType, osmId := strings.TrimSpace(arguments.OSMType), int64(0)
 	if arguments.OSMID != nil {
 		osmId = *arguments.OSMID
 	}
 	if (osmType == "") != (osmId == 0) {
-		return nil, fmt.Errorf("%w: give both osmType and osmId, or neither", api.ErrInvalidArguments)
+		return nil, false, fmt.Errorf("%w: give both osmType and osmId, or neither", api.ErrInvalidArguments)
 	}
 	if osmType != "" {
 		own, err := tx.FindPlaceIDsByOSM(userId, []db.OSMReference{{OSMType: osmType, OSMID: osmId}})
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if placeId := own[db.OSMReference{OSMType: osmType, OSMID: osmId}]; placeId != "" {
-			return tx.GetPlace(userId, placeId)
+			found, err := tx.GetPlace(userId, placeId)
+			return found, false, err
 		}
 	}
 	placeName := strings.TrimSpace(arguments.PlaceName)
-	if placeName == "" {
-		placeName = strings.TrimSpace(strings.SplitN(arguments.AddressText, ",", 2)[0])
+	addressText := strings.TrimSpace(arguments.AddressText)
+	isCoordinatesOnly := osmType == "" && placeName == "" && addressText == ""
+	if isCoordinatesOnly {
+		holding, err := tx.FindPlaceAt(userId, *arguments.LatitudeDegrees, *arguments.LongitudeDegrees)
+		if err != nil || holding != nil {
+			return holding, false, err
+		}
+		placeName = placeNameFor(*arguments.LatitudeDegrees, *arguments.LongitudeDegrees)
+	} else if placeName == "" {
+		placeName = strings.TrimSpace(strings.SplitN(addressText, ",", 2)[0])
 	}
 	if placeName == "" {
 		placeName = placeNameFor(*arguments.LatitudeDegrees, *arguments.LongitudeDegrees)
 	}
 	if err := self.requireNewPlaceAllowance(userId); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	made, err := tx.CreatePlace(userId, &models.Place{
+	toMake := &models.Place{
 		PlaceName: placeName, LatitudeDegrees: *arguments.LatitudeDegrees, LongitudeDegrees: *arguments.LongitudeDegrees,
 		OSMType: osmType, OSMID: osmId, OSMName: strings.TrimSpace(arguments.PlaceName),
-		OSMCategory: strings.TrimSpace(arguments.OSMCategory), AddressText: strings.TrimSpace(arguments.AddressText),
-		NamedAt: &now,
-	})
+		OSMCategory: strings.TrimSpace(arguments.OSMCategory), AddressText: addressText,
+	}
+	if !isCoordinatesOnly {
+		toMake.NamedAt = &now
+	}
+	made, err = tx.CreatePlace(userId, toMake)
 	if err != nil {
-		return nil, locationFailure(err)
+		return nil, false, locationFailure(err)
 	}
 	self.takeNewPlacesAfterCommit(tx, userId, 1)
-	return made, nil
+	return made, isCoordinatesOnly, nil
 }
 
 func (self *graph) EraseLocationHistory(ctx context.Context, arguments EraseLocationHistoryArguments) (*EraseLocationHistoryView, error) {

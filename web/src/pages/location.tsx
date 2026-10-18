@@ -7,6 +7,7 @@ import { PageHeadingActions } from '../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { MoreIcon } from '../components/icons'
+import { isLocationPermissionGranted, readFreshBrowserLocation } from '../components/browserLocation'
 import { LocationCheckInDialog } from '../components/locationCheckIn'
 import {
   dayKeyOf,
@@ -187,6 +188,10 @@ function LocationContent({ userId }: { userId: string }) {
   const [movedViews, setMovedViews] = useState<Record<string, LocationView>>({})
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null)
   const [isCheckingIn, setIsCheckingIn] = useState(false)
+  // Where this browser is, for a viewer with no recorded position. It is only
+  // drawn: nothing is stored, and it is gone when the page is.
+  const [browserPosition, setBrowserPosition] = useState<MapPerson | null>(null)
+  const [isReadingBrowser, setIsReadingBrowser] = useState(false)
   const [editingPlace, setEditingPlace] = useState<Place | null>(null)
   const [forgettingPlace, setForgettingPlace] = useState<Place | null>(null)
   // What the person is asked to erase: one day, or everything.
@@ -379,9 +384,14 @@ function LocationContent({ userId }: { userId: string }) {
     return [...(placePage?.places ?? [])].sort((first, second) => rank(first) - rank(second))
   }, [placePage])
 
+  // A viewer with no recorded position sees where this browser is, once the
+  // person has allowed it or asks for it.
+  const hasNoOwnPosition = me.data !== null && !me.data.GetLocation?.latestPoint
+
   const mapPeople: MapPerson[] = useMemo(
-    () =>
-      views.flatMap((view) =>
+    () => [
+      ...(hasNoOwnPosition && browserPosition ? [browserPosition] : []),
+      ...views.flatMap((view) =>
         view.latestPoint
           ? [
               {
@@ -397,7 +407,8 @@ function LocationContent({ userId }: { userId: string }) {
             ]
           : [],
       ),
-    [views, selectedUserId, viewedUserId],
+    ],
+    [views, selectedUserId, viewedUserId, hasNoOwnPosition, browserPosition],
   )
   const mapPlaces: MapPlace[] = useMemo(() => {
     const shown =
@@ -571,16 +582,49 @@ function LocationContent({ userId }: { userId: string }) {
     return moment ? dayKeyOf(moment) : ''
   }
 
-  // The first time, with no position recorded yet, a short setup stands where
-  // the empty map would be, until it is dismissed.
-  // It stands only while nobody shares with the person either: a family that
-  // already shares is what the map is for.
+  // The first time, with no position recorded yet, a short setup stands under
+  // the map, until it is dismissed. It stands only while nobody shares with
+  // the person either: a family that already shares is what the map is for.
   const isSetupShown =
     me.data !== null &&
     !me.data.GetLocation?.latestPoint &&
     !isSetupDismissed &&
     shared.data !== null &&
     shared.data.length === 0
+
+  async function showBrowserPosition(isAsked: boolean) {
+    setIsReadingBrowser(true)
+    try {
+      const answer = await readFreshBrowserLocation()
+      if (answer.latitudeDegrees === undefined || answer.longitudeDegrees === undefined) {
+        if (isAsked) toast.failed(t('location.checkInNoPosition'))
+        return
+      }
+      setBrowserPosition({
+        userId: 'browser',
+        name: t('location.you'),
+        avatarColorIndex: 3,
+        latitudeDegrees: answer.latitudeDegrees,
+        longitudeDegrees: answer.longitudeDegrees,
+        accuracyMeters: answer.accuracyMeters ?? 0,
+        isSelected: false,
+      })
+    } finally {
+      setIsReadingBrowser(false)
+    }
+  }
+  useEffect(() => {
+    if (!hasNoOwnPosition) return
+    let isCurrent = true
+    void isLocationPermissionGranted().then((isGranted) => {
+      if (isCurrent && isGranted) void showBrowserPosition(false)
+    })
+    return () => {
+      isCurrent = false
+    }
+    // Asked when the page learns the person has no position of their own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasNoOwnPosition])
   const viewedName = viewedPerson ? personName(viewedPerson) : ''
   const notSharedHistoryText = viewedPerson ? t('location.personSharesNowOnly', { name: viewedName }) : ''
 
@@ -595,6 +639,69 @@ function LocationContent({ userId }: { userId: string }) {
       <ErrorMessage error={me.error} />
       <ErrorMessage error={shared.error} />
 
+      <section className="card location-map-card">
+        <LocationMap
+          people={mapPeople}
+          places={mapPlaces}
+          path={path}
+          onSelectPerson={(selected) => {
+            const view = views.find((each) => each.userId === selected)
+            if (view) selectPerson(view)
+          }}
+          onSelectPlace={selectPlaceOnMap}
+        />
+        {hasNoOwnPosition && !browserPosition && (
+          <div className="location-here">
+            <span className="muted">{t('location.mapNoPosition')}</span>
+            <button type="button" disabled={isReadingBrowser} onClick={() => void showBrowserPosition(true)}>
+              {t('location.showWhereIAm')}
+            </button>
+          </div>
+        )}
+        <div className="location-people">
+          {views.map((view) => {
+            const name = personName(view)
+            const isOwner = view.shareLevel === 'owner'
+            return (
+              <button
+                key={view.userId}
+                type="button"
+                className={
+                  view.userId === (viewedUserId ?? selectedUserId) ? 'location-row is-selected' : 'location-row'
+                }
+                onClick={() => selectPerson(view)}
+              >
+                <span className="location-row-icon">
+                  <Avatar name={name} avatarUrl={view.avatarUrl} colorIndex={view.avatarColorIndex} size={28} />
+                </span>
+                <span className="location-row-body">
+                  <strong>{name}</strong>
+                  <span className="muted">
+                    {view.openVisit ? (
+                      t('location.atSince', {
+                        place: placeTitle(view.openVisit.place, t),
+                        time: view.openVisit.arrivedAt ? timeOf(view.openVisit.arrivedAt) : '',
+                      })
+                    ) : view.latestPoint ? (
+                      <>
+                        {t('location.lastSeen')} <RelativeTime value={view.latestPoint.measuredAt} />
+                      </>
+                    ) : (
+                      t(isOwner ? 'location.nowhere' : 'location.nowhereOther')
+                    )}
+                  </span>
+                </span>
+                {isOwner && (
+                  <span className="location-row-meta">
+                    <Tag value={t('location.you')} />
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
       {isSetupShown && (
         <LocationSetup
           onDismiss={() => {
@@ -606,63 +713,6 @@ function LocationContent({ userId }: { userId: string }) {
             setIsSetupDismissed(true)
           }}
         />
-      )}
-
-      {!isSetupShown && (
-        <section className="card location-map-card">
-          <LocationMap
-            people={mapPeople}
-            places={mapPlaces}
-            path={path}
-            onSelectPerson={(selected) => {
-              const view = views.find((each) => each.userId === selected)
-              if (view) selectPerson(view)
-            }}
-            onSelectPlace={selectPlaceOnMap}
-          />
-          <div className="location-people">
-            {views.map((view) => {
-              const name = personName(view)
-              const isOwner = view.shareLevel === 'owner'
-              return (
-                <button
-                  key={view.userId}
-                  type="button"
-                  className={
-                    view.userId === (viewedUserId ?? selectedUserId) ? 'location-row is-selected' : 'location-row'
-                  }
-                  onClick={() => selectPerson(view)}
-                >
-                  <span className="location-row-icon">
-                    <Avatar name={name} avatarUrl={view.avatarUrl} colorIndex={view.avatarColorIndex} size={28} />
-                  </span>
-                  <span className="location-row-body">
-                    <strong>{name}</strong>
-                    <span className="muted">
-                      {view.openVisit ? (
-                        t('location.atSince', {
-                          place: placeTitle(view.openVisit.place, t),
-                          time: view.openVisit.arrivedAt ? timeOf(view.openVisit.arrivedAt) : '',
-                        })
-                      ) : view.latestPoint ? (
-                        <>
-                          {t('location.lastSeen')} <RelativeTime value={view.latestPoint.measuredAt} />
-                        </>
-                      ) : (
-                        t(isOwner ? 'location.nowhere' : 'location.nowhereOther')
-                      )}
-                    </span>
-                  </span>
-                  {isOwner && (
-                    <span className="location-row-meta">
-                      <Tag value={t('location.you')} />
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </section>
       )}
 
       <Tabs items={TABS} active={tab} onSelect={selectTab} />
