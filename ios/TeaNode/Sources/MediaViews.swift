@@ -474,7 +474,10 @@ struct FileCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 if file.isImage {
-                    RemotePicture(path: file.path, name: file.name, onOpen: openMainFile)
+                    // A picture that is not in the library opens in the full-screen view at once,
+                    // from the bytes already read; the menu's Open is the one that reads the
+                    // file again for Quick Look. A photo opens in the photo viewer.
+                    RemotePicture(path: file.path, name: file.name, onOpen: photoId == nil ? nil : openMainFile)
                 } else if file.isVideo || file.isAudio {
                     if let shareAddress {
                         VideoPlayer(player: AVPlayer(url: shareAddress))
