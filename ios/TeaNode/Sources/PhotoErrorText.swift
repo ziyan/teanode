@@ -29,9 +29,9 @@ extension PhotoBackupFailure {
         case .serverDidNotSayWhichPhoto:
             String(localized: "The server took a file but did not say which photo it was.")
         case .fileRefused(let serverReason):
-            serverReason.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "The server would not take this file.")
+            serverReason.flatMap { $0.isEmpty ? nil : Self.sentence($0) } ?? String(localized: "The server would not take this file.")
         case .serverReason(let serverReason):
-            serverReason
+            Self.sentence(serverReason)
         case .fileIsEmpty:
             String(localized: "The photo library gave an empty file.")
         case .fileIsNotInLibrary:
@@ -41,7 +41,17 @@ extension PhotoBackupFailure {
         case .fileTookTooLongToRead:
             String(localized: "A file took too long to come from your photo library or iCloud. Backup went on without it and tries it again later.")
         case .systemDescription(let systemText):
-            systemText
+            Self.sentence(systemText)
         }
+    }
+
+    /// A reason the server or the system gave, which may be a lowercase phrase
+    /// such as "photo storage is unavailable", written as the sentence the
+    /// screen shows: a capital first letter and a full stop.
+    private static func sentence(_ reason: String) -> String {
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return trimmed }
+        let capitalized = first.uppercased() + trimmed.dropFirst()
+        return capitalized.last.map { ".!?。".contains($0) } == true ? capitalized : capitalized + "."
     }
 }

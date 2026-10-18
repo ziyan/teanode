@@ -249,15 +249,20 @@ struct PhotoBackupContent: View {
                 }
             }
             .accessibilityElement(children: .combine)
+            // The rows with a symbol keep their line under them as long as the
+            // others in the section, rather than starting it after the symbol.
             Label(stateText, systemImage: stateSymbol)
                 .foregroundStyle(.secondary)
+                .fullWidthRowSeparator()
             if status.phase == .waitingForNetwork, status.leftForLaterFileCount > 0 {
                 Label("\(status.leftForLaterFileCount) files will be sent when the network is back.", systemImage: "clock.arrow.circlepath")
                     .foregroundStyle(.secondary)
+                    .fullWidthRowSeparator()
             }
             if status.isUploadingInBackground {
                 Label("Uploading in the background: \(status.queuedFileCount) files queued", systemImage: "arrow.up.circle")
                     .foregroundStyle(.secondary)
+                    .fullWidthRowSeparator()
             }
             if status.hasFilesWaitingForTheApp {
                 Label(
@@ -265,6 +270,7 @@ struct PhotoBackupContent: View {
                     systemImage: "moon.zzz"
                 )
                 .foregroundStyle(.secondary)
+                .fullWidthRowSeparator()
             }
             if status.phase == .uploading || status.phase == .listing, let filename = status.currentFilename {
                 LabeledContent("Sending") {
@@ -275,15 +281,26 @@ struct PhotoBackupContent: View {
                 LabeledContent("Last finished", value: lastPassFinishedAt.formatted(.relative(presentation: .named)))
             }
             if status.refusedFileCount > 0 {
-                Label("\(status.refusedFileCount) files could not be backed up. Back up now tries them again.", systemImage: "exclamationmark.triangle")
+                Label {
+                    Text("\(status.refusedFileCount) files could not be backed up. Back up now tries them again.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+                .fullWidthRowSeparator()
             }
             if status.phase != .needsSignIn, let failure = status.lastFailure {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("The last problem", systemImage: "exclamationmark.triangle")
+                    // A problem is orange with its symbol, never the green of the accent.
+                    Label {
+                        Text("The last problem")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    }
                     Text(failure.localizedText).font(.footnote).foregroundStyle(.secondary)
                     Text("Photo backup tries again when you open TeaNode, when the network is back, or while the phone charges.").font(.footnote).foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
+                .fullWidthRowSeparator()
             }
         }
     }
@@ -396,4 +413,12 @@ private let previewBackground = PhotoBackupStatus(
 }
 #Preview("Not allowed, light") {
     previewContent(PhotoBackupStatus(phase: .off), credentialName: nil, isPermitted: false)
+}
+
+private extension View {
+    /// The line under a row starts at the row's edge, as under a row with no
+    /// symbol, instead of after the symbol, where a list starts it by default.
+    func fullWidthRowSeparator() -> some View {
+        alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+    }
 }
