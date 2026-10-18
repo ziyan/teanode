@@ -121,6 +121,8 @@ struct MainView: View {
     @State private var mailPlace: MailPlace?
     @State private var finance: FinanceModel
     @State private var financePart = FinancePart.spending
+    /// The list under Location's map, which the side menu chooses.
+    @State private var locationSegment = LocationSegment.visits
     /// The photo library, held here so the side menu can list its collections
     /// as it lists the mail folders.
     @State private var photos: PhotosModel
@@ -149,7 +151,8 @@ struct MainView: View {
         SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail && section != .location) {
             SideMenu(
                 connection: connection, mail: mail, photos: photos, section: $section, conversation: $conversation, mailPlace: $mailPlace,
-                financePart: $financePart, isShowingPhotoBackup: $isShowingPhotoBackup, composing: $composing, openingCount: menuOpeningCount
+                financePart: $financePart, locationSegment: $locationSegment, isShowingPhotoBackup: $isShowingPhotoBackup, composing: $composing,
+                openingCount: menuOpeningCount
             ) {
                 isMenuOpen = false
             }
@@ -185,6 +188,8 @@ struct MainView: View {
                 if let tab = DemoServer.tab, let chosen = AppSection(rawValue: tab) { section = chosen }
                 if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
                 if DemoServer.screen?.hasPrefix("finance-") == true { financePart = .accounts }
+                if let screen = DemoServer.screen, ["location-places", "location-place", "location-address"].contains(screen) { locationSegment = .places }
+                if DemoServer.screen == "location-sharing" { locationSegment = .sharing }
                 if DemoServer.isMenuRequested { isMenuOpen = true }
                 if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
                 // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`, `chat-mention`).
@@ -406,7 +411,7 @@ struct MainView: View {
         case .calendar:
             CalendarScreen(connection: connection, username: app.account?.username ?? "")
         case .location:
-            LocationScreen(connection: connection)
+            LocationScreen(connection: connection, segment: $locationSegment)
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:
@@ -515,6 +520,7 @@ struct SideMenu: View {
     @Binding var conversation: AgentConversation?
     @Binding var mailPlace: MailPlace?
     @Binding var financePart: FinancePart
+    @Binding var locationSegment: LocationSegment
     @Binding var isShowingPhotoBackup: Bool
     @Binding var composing: ComposeStart?
     /// How many times the menu has been opened: the conversations are read
@@ -560,6 +566,33 @@ struct SideMenu: View {
                                         .foregroundStyle(.primary)
                                 }
                                 .menuRow(isSelected: financePart == part)
+                            }
+                        }
+                        .listSectionSeparator(.hidden)
+                        .id(Self.partItemsSectionId)
+                    }
+                    .menuListStyle()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { MenuBrand() }
+                    .task { await showPartItems(scroller) }
+                }
+            }
+        case .location:
+            NavigationStack {
+                ScrollViewReader { scroller in
+                    List {
+                        Section { sections }
+                            .listSectionSeparator(.hidden)
+                        Section("Location") {
+                            ForEach(LocationSegment.allCases) { segment in
+                                Button {
+                                    locationSegment = segment
+                                    onClose()
+                                } label: {
+                                    Label(segment.title, systemImage: segment.systemImage)
+                                        .foregroundStyle(.primary)
+                                }
+                                .menuRow(isSelected: locationSegment == segment)
                             }
                         }
                         .listSectionSeparator(.hidden)
@@ -644,9 +677,10 @@ struct SideMenu: View {
                 } else {
                     section = part
                     // The agent's conversations, the mail folders, the
-                    // finance sections and the photo collections stay open to
-                    // choose from; the other parts open at once.
-                    if part != .agent, part != .mail, part != .finance, part != .photos { onClose() }
+                    // finance sections, Location's lists and the photo
+                    // collections stay open to choose from; the other parts
+                    // open at once.
+                    if part != .agent, part != .mail, part != .finance, part != .location, part != .photos { onClose() }
                 }
             } label: {
                 // The part on screen is marked by its color and weight; the
