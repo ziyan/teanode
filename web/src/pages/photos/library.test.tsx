@@ -99,7 +99,13 @@ const callsTo = (name: string) =>
     .map(([, variables]) => (variables ?? {}) as Record<string, unknown>)
 
 beforeEach(() => {
-  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+  // Every query matches except the phone's, which would put the page's actions
+  // behind the More menu.
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: !query.includes('max-width'),
+    addEventListener() {},
+    removeEventListener() {},
+  }))
   library = ['photo-1', 'photo-2', 'photo-3'].map((id) => photoFixture(id))
   readPhotoAnswer = async (photoId) => ({
     ReadPhoto: {
@@ -287,6 +293,21 @@ it('does not run a search again on the timer, and still refreshes a list that is
     await vi.advanceTimersByTimeAsync(11_000)
   })
   expect(searches()).toBeGreaterThan(first)
+})
+
+it('looks again soon at a ready photo whose small preview is not made yet, until it is', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  library = [photoFixture('photo-1', { photoProcessingState: 'ready', smallPreviewUrl: '' })]
+  show('/photos')
+  await screen.findByRole('img', { name: 'Getting this photo ready' })
+  const listReads = () => callsTo('ListPhotos').length
+  const before = listReads()
+  library = [photoFixture('photo-1')]
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(3500)
+  })
+  expect(listReads()).toBeGreaterThan(before)
+  await waitFor(() => expect(screen.queryByRole('img', { name: 'Getting this photo ready' })).toBeNull())
 })
 
 // ---- the viewer for a photo outside the list ----
