@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.175.0] - 2026-10-18
+
+### Added
+
+- Location: the TeaNode app on your iPhone records the places you visit, when you arrived and how long you stayed, even while it is closed. Places are named from OpenStreetMap, and you can rename them and label them home, work, school, family or gym. Share where you are now, or where you have been too, with a circle or a person in it, and see them on a map; get a notification when someone arrives at or leaves a place they named. Your agent can answer where you went and search for places near you. Operators choose the place provider (OpenStreetMap's public server by default, a Photon server, or off) and the map style in the server settings; with a provider on, the server sends the position of each new place to it to look up its name. (#536)
+
 ## [0.174.0] - 2026-10-18
 
 ### Added
