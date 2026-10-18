@@ -326,9 +326,11 @@ struct KnowledgeShareSheet: View {
                 }
                 .swipeActions {
                     Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stopping = share }
+                        .tint(.red)
                 }
                 .contextMenu {
                     Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stopping = share }
+                        .tint(.red)
                 }
             }
         } header: {

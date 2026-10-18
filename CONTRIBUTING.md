@@ -116,6 +116,13 @@ accent, every string in the String Catalog in all three languages.
   and dark. A new screen adds its demo data and its `shoot` lines, and
   somebody opens the screenshots before the pull request merges: CI passing
   says the screen was drawn, not that it looks right.
+- **A button's symbol and words are one color.** Green for an action, red for
+  one that destroys, symbol and words alike. A button with
+  `role: .destructive` gets red words from its role but its symbol takes the
+  app's green tint, so it carries `.tint(.red)` straight after it;
+  `make check-button-colors` fails on one that does not, and
+  `node ios/scripts/check-button-colors.mjs --fix` adds it. Never color the
+  words and the symbol separately.
 
 ## Comments
 

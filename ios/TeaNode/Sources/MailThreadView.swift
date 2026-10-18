@@ -223,6 +223,7 @@ struct MailThreadScreen: View {
             } label: {
                 Label(currentFolder?.kind == "trash" ? LocalizedStringKey("Delete forever") : "Delete", systemImage: "trash")
             }
+            .tint(.red)
             Spacer()
             if let newest, !newest.draft {
                 Menu {
@@ -317,6 +318,7 @@ struct HeldReplyBanner: View {
                         onChange()
                     }
                 }
+                .tint(.red)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)

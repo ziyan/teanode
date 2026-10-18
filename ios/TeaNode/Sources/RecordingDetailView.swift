@@ -339,6 +339,7 @@ struct RecordingDetailScreen: View {
             } label: {
                 Label("Delete recording", systemImage: "trash")
             }
+            .tint(.red)
         } label: {
             Label("Actions", systemImage: "ellipsis.circle")
         }

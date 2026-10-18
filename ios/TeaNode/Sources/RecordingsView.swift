@@ -283,6 +283,7 @@ struct RecordingsScreen: View {
                                         } label: {
                                             Label("Delete recording", systemImage: "trash")
                                         }
+                                        .tint(.red)
                                     }
                                     if row.canRemoveFromPhone, let localRecording = row.localRecording {
                                         Button {
@@ -316,6 +317,7 @@ struct RecordingsScreen: View {
                                         } label: {
                                             Label("Remove from this phone", systemImage: "iphone.slash")
                                         }
+                                        .tint(.red)
                                     }
                                     if let recording = row.recording {
                                         Button(role: .destructive) {
@@ -324,6 +326,7 @@ struct RecordingsScreen: View {
                                         } label: {
                                             Label("Delete recording", systemImage: "trash")
                                         }
+                                        .tint(.red)
                                     }
                                 }
                                 .confirmationDialog(

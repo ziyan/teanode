@@ -115,6 +115,7 @@ struct RemindersList: View {
                     Button("Delete", systemImage: "trash", role: .destructive) {
                         deleting = reminder
                     }
+                    .tint(.red)
                 }
                 .confirmationDialog(
                     "Delete “\(deleting?.title ?? "")”?", isPresented: Binding(get: { deleting?.id == reminder.id }, set: { if !$0 { deleting = nil } }),

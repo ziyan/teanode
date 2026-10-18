@@ -345,6 +345,7 @@ struct CircleDetailView: View {
     @ViewBuilder
     private func memberActions(_ member: CircleMember, in circle: PeopleCircle) -> some View {
         Button("Remove from the circle", systemImage: "person.badge.minus", role: .destructive) { removing = member }
+            .tint(.red)
         Button(member.isAdmin ? LocalizedStringKey("Make member") : "Make admin", systemImage: member.isAdmin ? "person" : "person.badge.key") {
             let memberRole: CircleMemberRole = member.isAdmin ? .member : .admin
             Task {
@@ -421,6 +422,7 @@ struct CircleDetailView: View {
                 }
             }
         }
+        .tint(.red)
     }
 
     // MARK: Renaming, deleting and leaving
@@ -430,6 +432,7 @@ struct CircleDetailView: View {
             if circle.isAdmin {
                 Button("Rename circle", systemImage: "pencil") { isRenaming = true }
                 Button("Delete circle", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                    .tint(.red)
                     .confirmationDialog("Delete \(circle.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                         Button("Delete circle", role: .destructive) {
                             Task {
@@ -444,6 +447,7 @@ struct CircleDetailView: View {
                     }
             }
             Button("Leave circle", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { isConfirmingLeave = true }
+                .tint(.red)
                 .confirmationDialog("Leave the circle \(circle.name)?", isPresented: $isConfirmingLeave, titleVisibility: .visible) {
                     Button("Leave circle", role: .destructive) {
                         Task {
