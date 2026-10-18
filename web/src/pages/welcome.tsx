@@ -211,9 +211,12 @@ export function WelcomePage() {
       purpose={t('welcome.intro')}
       footnote={
         <>
-          <Link to="/manage/agent/models">{t('welcome.otherModels')}</Link>
-          {' · '}
-          <Link to="/manage/server/setup">{t('welcome.otherSetup')}</Link>
+          <Link className="button" to="/manage/agent/models">
+            {t('welcome.otherModels')}
+          </Link>{' '}
+          <Link className="button" to="/manage/server/setup">
+            {t('welcome.otherSetup')}
+          </Link>
         </>
       }
       onSubmit={start}

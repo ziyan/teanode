@@ -52,9 +52,14 @@ function fromList(value: string[] | undefined): string {
 function RestartNote() {
   const { t } = useTranslation()
   return (
-    <p className="notice">
-      {t('serverSettings.needsRestart')} <Link to="/manage/server/about">{t('serverSettings.restartHere')}</Link>
-    </p>
+    <div className="notice">
+      <p>{t('serverSettings.needsRestart')}</p>
+      <p>
+        <Link className="button" to="/manage/server/about">
+          {t('serverSettings.restartHere')}
+        </Link>
+      </p>
+    </div>
   )
 }
 

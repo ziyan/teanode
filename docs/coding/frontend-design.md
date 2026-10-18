@@ -124,9 +124,12 @@ A text-link button (`className="link"`) is not used for an action. A link is
 for going somewhere: a router link, an anchor, a page named in a list, or a
 button that opens a page or a conversation in place. The few other buttons
 styled as links are words inside a sentence (the notice that offers to load
-remote images), a toggle that shows or hides text beside it (the quoted text
-of a reply), or a control of a component's own (the table's "Clear all"
-filters). A page-level action beside Save is a real button
+remote images) or a toggle that shows or hides text beside it (the quoted text
+of a reply). A short action on its own, "Open Circles", "Set up", "Clear all",
+is a real button even when it only navigates: a `<Link className="button">`
+(or `button-quiet` beside a field label), placed in the card's action row or
+at the end of the row it belongs to rather than on a line of its own in the
+middle of text. A page-level action beside Save is a real button
 (`className="danger"` when it removes the thing).
 
 `make lint-ci` holds this line: a button with the link class fails
