@@ -3,9 +3,11 @@ package mailact
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -19,7 +21,11 @@ func init() {
 			{
 				Name: "mail_act", Family: tools.FamilyMailbox, Core: true, Risk: tools.RiskWrite,
 				Permissions: []models.Permission{models.PermissionMailWrite},
-				Description: "Act on messages: mark_read, mark_unread, star, unstar, archive, move (to a folder), junk, not_junk, trash, delete_forever, answer_invitation (say accepted, tentative or declined to the calendar invitation one message carried; it writes to the organizer, so it always asks the person first). Give item_ids, or thread_item_id for every message of a conversation. A message moved to another folder gets a new item_id, given back in the result. A draft sent to trash is discarded for good, as the Discard button does; a message it was a reply to stays where it is.",
+				// The answer is mailed to the organizer and written to the
+				// person's calendar, which the API checks as mail:send and
+				// calendar:use. Without both the action is not offered.
+				ActionRequires: map[string][]models.Permission{"answer_invitation": answerInvitationPermissions},
+				Description:    "Act on messages: mark_read, mark_unread, star, unstar, archive, move (to a folder), junk, not_junk, trash, delete_forever, answer_invitation (say accepted, tentative or declined to the calendar invitation one message carried; it writes to the organizer, so it always asks the person first). Give item_ids, or thread_item_id for every message of a conversation. A message moved to another folder gets a new item_id, given back in the result. A draft sent to trash is discarded for good, as the Discard button does; a message it was a reply to stays where it is.",
 				Parameters: tools.Object(map[string]any{
 					"action":         tools.EnumProperty("what to do", "mark_read", "mark_unread", "star", "unstar", "archive", "move", "junk", "not_junk", "trash", "delete_forever", "answer_invitation"),
 					"item_ids":       tools.ArrayProperty("the messages", tools.StringProperty("item id")),
@@ -64,6 +70,7 @@ func init() {
 					}
 					return fmt.Sprintf(said, what)
 				},
+				PreviewIn: previewAnswerInvitation,
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
 					var call mailActArguments
 					_ = json.Unmarshal(arguments, &call)
@@ -81,6 +88,49 @@ func init() {
 			},
 		}
 	})
+}
+
+// answerInvitationPermissions are what answering needs beyond mail:write.
+var answerInvitationPermissions = []models.Permission{models.PermissionMailSend, models.PermissionCalendarUse}
+
+// previewAnswerInvitation names the event and who will be told, which the
+// static line cannot: the call carries only a message id and an answer. It
+// says nothing for any other action, so the plain line is used.
+func previewAnswerInvitation(ctx context.Context, arguments json.RawMessage) string {
+	var call mailActArguments
+	if err := json.Unmarshal(arguments, &call); err != nil || call.Action != "answer_invitation" || len(call.ItemIDs) != 1 {
+		return ""
+	}
+	run, err := tools.RunFrom(ctx)
+	if err != nil || run.Operations() == nil {
+		return ""
+	}
+	invitation, err := mailbox.GetInvitation(ctx, run.Operations(), call.ItemIDs[0])
+	if err != nil || invitation == nil {
+		return ""
+	}
+	event := "an invitation with no title"
+	if summary := strings.TrimSpace(invitation.Summary); summary != "" {
+		event = strconv.Quote(summary)
+	}
+	if invitation.StartsAt != "" {
+		event += " at " + invitation.StartsAt
+	}
+	line := "Answer " + event + ": " + call.Answer
+	if invitation.Organizer != "" {
+		return line + ", mailed to " + invitation.Organizer
+	}
+	return line + " (it names no organizer, so nobody is mailed)"
+}
+
+// answerRequestId names one answer for the server, which answers a repeated
+// id once. It comes from the call, the message and the answer, so a retried
+// confirmation of the same call reuses it and mails the organizer once. The
+// message and answer are in it because a provider may reuse call ids: a
+// repeat for another message or answer is another answer.
+func answerRequestId(callId, itemId, answer string) string {
+	encoded, _ := json.Marshal([]string{"mail_act", "answer_invitation", callId, itemId, answer})
+	return fmt.Sprintf("answer-%x", sha256.Sum256(encoded))
 }
 
 type mailActArguments struct {
@@ -261,6 +311,9 @@ func runAnswerInvitation(ctx context.Context, call *tools.Call, operations tools
 	if !slices.Contains([]string{"ACCEPTED", "TENTATIVE", "DECLINED"}, answer) {
 		return nil, fmt.Errorf("answer must be accepted, tentative or declined")
 	}
+	if operations.Permissions() != nil && !tools.HoldsAll(operations.Permissions(), answerInvitationPermissions) {
+		return nil, fmt.Errorf("answering an invitation needs the right to send mail and to use the calendar")
+	}
 	if !call.Confirmed {
 		return nil, fmt.Errorf("answering an invitation writes to its organizer and needs the person's confirmation")
 	}
@@ -272,7 +325,7 @@ func runAnswerInvitation(ctx context.Context, call *tools.Call, operations tools
 	if _, _, err := mailbox.MailboxOfItem(ctx, operations, views, arguments.ItemIDs[0]); err != nil {
 		return nil, err
 	}
-	invitation, err := mailbox.AnswerInvitation(ctx, operations, arguments.ItemIDs[0], answer)
+	invitation, err := mailbox.AnswerInvitation(ctx, operations, answerRequestId(call.ID, arguments.ItemIDs[0], answer), arguments.ItemIDs[0], answer)
 	if err != nil {
 		return nil, err
 	}

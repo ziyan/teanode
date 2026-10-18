@@ -3,6 +3,7 @@ package mailact
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,11 +21,18 @@ type sentOperation struct {
 // a person who may not send.
 type invitationOperations struct {
 	isSendRefused bool
-	sent          []sentOperation
+	// isWithoutAnswerPermissions leaves the person with mail:write alone.
+	isWithoutAnswerPermissions bool
+	invitationJSON             string
+	sent                       []sentOperation
 }
 
 func (self *invitationOperations) Permissions() *models.EffectivePermissions {
-	return models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailWrite}})
+	grants := []models.Grant{{Permission: models.PermissionMailWrite}}
+	if !self.isWithoutAnswerPermissions {
+		grants = append(grants, models.Grant{Permission: models.PermissionMailSend}, models.Grant{Permission: models.PermissionCalendarUse})
+	}
+	return models.NewEffectivePermissions(grants)
 }
 
 func (self *invitationOperations) Execute(_ context.Context, document string, variables map[string]any, response any) error {
@@ -34,6 +42,8 @@ func (self *invitationOperations) Execute(_ context.Context, document string, va
 		return json.Unmarshal([]byte(`{"ListMailboxes":[{"mailbox":{"id":"mailbox-one","agent":{"granted":true}},"folders":[{"id":"folder-inbox","mailboxId":"mailbox-one","name":"Inbox","kind":"inbox"}]}]}`), response)
 	case strings.Contains(document, "GetMailboxThread"):
 		return json.Unmarshal([]byte(`{"GetMailboxThread":{"threadId":"thread-one","subject":"Planning","items":[{"folderId":"folder-inbox","item":{"id":"item-one"}}]}}`), response)
+	case strings.Contains(document, "GetMailInvitation") && !strings.Contains(document, "AnswerMailInvitation"):
+		return json.Unmarshal([]byte(`{"GetMailInvitation":`+self.invitationJSON+`}`), response)
 	case strings.Contains(document, "AnswerMailInvitation"):
 		if self.isSendRefused {
 			return context.DeadlineExceeded
@@ -159,5 +169,103 @@ func TestAnswerInvitationPassesOnTheAPIsRefusal(test *testing.T) {
 
 	if _, err := answerWith(test, operations, `{"action":"answer_invitation","item_ids":["item-one"],"answer":"accepted"}`, true); err == nil {
 		test.Fatal("a refused answer reported success")
+	}
+}
+
+func answerWithCall(test *testing.T, operations *invitationOperations, callId, arguments string) {
+	test.Helper()
+	ctx := tools.WithRun(context.Background(), &invitationRun{operations: operations})
+	if _, err := mailActTool(test).Run(ctx, &tools.Call{ID: callId, Arguments: []byte(arguments), Confirmed: true}); err != nil {
+		test.Fatal(err)
+	}
+}
+
+// The server answers a repeated request identifier once, so a retried
+// confirmation of one call has to send the identifier it sent before, and
+// another call, message or answer a different one.
+func TestAnswerInvitationSendsOneRequestIdentifierPerCall(test *testing.T) {
+	operations := &invitationOperations{}
+	accept := `{"action":"answer_invitation","item_ids":["item-one"],"answer":"accepted"}`
+	answerWithCall(test, operations, "call-one", accept)
+	answerWithCall(test, operations, "call-one", accept)
+	answerWithCall(test, operations, "call-two", accept)
+	answerWithCall(test, operations, "call-one", `{"action":"answer_invitation","item_ids":["item-one"],"answer":"declined"}`)
+
+	identifiers := []string{}
+	for _, answer := range operations.answers() {
+		identifier, _ := answer.variables["requestId"].(string)
+		if identifier == "" || len(identifier) > 128 {
+			test.Fatalf("the request identifier %q is missing or too long for the server", identifier)
+		}
+		identifiers = append(identifiers, identifier)
+	}
+	if len(identifiers) != 4 || identifiers[0] != identifiers[1] {
+		test.Errorf("a retry of one call sent %v", identifiers)
+	}
+	if identifiers[2] == identifiers[0] || identifiers[3] == identifiers[0] {
+		test.Errorf("a different call or answer reused an identifier: %v", identifiers)
+	}
+}
+
+// The card names the event, when, and who is mailed, because the call holds
+// only a message identifier.
+func TestAnswerInvitationCardNamesTheEventAndTheOrganizer(test *testing.T) {
+	tool := mailActTool(test)
+	arguments := []byte(`{"action":"answer_invitation","item_ids":["item-one"],"answer":"accepted"}`)
+	operations := &invitationOperations{invitationJSON: `{"method":"REQUEST","summary":"Planning","startsAt":"2031-03-04T10:00:00Z","organizer":"ann@example.org"}`}
+	ctx := tools.WithRun(context.Background(), &invitationRun{operations: operations})
+
+	said := tool.PreviewLine(ctx, arguments)
+	for _, wanted := range []string{`"Planning"`, "2031-03-04T10:00:00Z", "ann@example.org", "accepted"} {
+		if !strings.Contains(said, wanted) {
+			test.Errorf("the card %q does not say %q", said, wanted)
+		}
+	}
+	operations.invitationJSON = `{"method":"REQUEST","summary":"Planning"}`
+	if said := tool.PreviewLine(ctx, arguments); !strings.Contains(said, "no organizer") {
+		test.Errorf("the card %q does not say nobody is mailed", said)
+	}
+	if said := tool.PreviewLine(ctx, []byte(`{"action":"mark_read","item_ids":["item-one"]}`)); strings.Contains(said, "invitation") {
+		test.Errorf("another action got the invitation card: %q", said)
+	}
+}
+
+// A person who may not send mail or use the calendar is not offered the
+// action, and a call that names it anyway is refused before the API.
+func TestAnswerInvitationIsOfferedOnlyWithTheRightToSendAndUseTheCalendar(test *testing.T) {
+	tool := mailActTool(test)
+	holds := func(permissions ...models.Permission) *models.EffectivePermissions {
+		grants := []models.Grant{}
+		for _, permission := range permissions {
+			grants = append(grants, models.Grant{Permission: permission})
+		}
+		return models.NewEffectivePermissions(grants)
+	}
+	for name, permissions := range map[string]*models.EffectivePermissions{
+		"mail:write alone": holds(models.PermissionMailWrite),
+		"no calendar":      holds(models.PermissionMailWrite, models.PermissionMailSend),
+		"no right to send": holds(models.PermissionMailWrite, models.PermissionCalendarUse),
+	} {
+		if slices.Contains(tools.ActionsOf(tool.WithHeldActions(permissions)), "answer_invitation") {
+			test.Errorf("%s was offered answer_invitation", name)
+		}
+		if !slices.Contains(tools.ActionsOf(tool.WithHeldActions(permissions)), "mark_read") {
+			test.Errorf("%s lost mark_read", name)
+		}
+	}
+	all := holds(models.PermissionMailWrite, models.PermissionMailSend, models.PermissionCalendarUse)
+	if !slices.Contains(tools.ActionsOf(tool.WithHeldActions(all)), "answer_invitation") {
+		test.Error("a person who may do both was not offered answer_invitation")
+	}
+	if !slices.Contains(tools.ActionsOf(tool), "answer_invitation") {
+		test.Error("narrowing one person's offer changed the catalog's own tool")
+	}
+
+	operations := &invitationOperations{isWithoutAnswerPermissions: true}
+	if _, err := answerWith(test, operations, `{"action":"answer_invitation","item_ids":["item-one"],"answer":"accepted"}`, true); err == nil {
+		test.Error("a call without the permissions was run")
+	}
+	if len(operations.answers()) != 0 {
+		test.Error("a call without the permissions reached the API")
 	}
 }

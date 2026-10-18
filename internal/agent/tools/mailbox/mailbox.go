@@ -259,7 +259,7 @@ const (
 	attendees { address name participation role }
 } }`
 
-	DocumentAnswerInvitation = `mutation ($itemId: String!, $answer: String!) { AnswerMailInvitation(itemId: $itemId, answer: $answer) {
+	DocumentAnswerInvitation = `mutation ($requestId: String, $itemId: String!, $answer: String!) { AnswerMailInvitation(requestId: $requestId, itemId: $itemId, answer: $answer) {
 	method because summary location startsAt endsAt allDay cancelled organizer participation
 	attendees { address name participation role }
 } }`
@@ -279,11 +279,13 @@ func GetInvitation(ctx context.Context, operations tools.Operations, itemId stri
 
 // AnswerInvitation says whether the person is coming, which also writes to
 // whoever sent the invitation. answer is ACCEPTED, DECLINED or TENTATIVE.
-func AnswerInvitation(ctx context.Context, operations tools.Operations, itemId, answer string) (*InvitationView, error) {
+// The server answers a repeated requestId once, so a retry of the same call
+// does not mail the organizer again.
+func AnswerInvitation(ctx context.Context, operations tools.Operations, requestId, itemId, answer string) (*InvitationView, error) {
 	var result struct {
 		AnswerMailInvitation *InvitationView `json:"AnswerMailInvitation"`
 	}
-	if err := operations.Execute(ctx, DocumentAnswerInvitation, map[string]any{"itemId": itemId, "answer": answer}, &result); err != nil {
+	if err := operations.Execute(ctx, DocumentAnswerInvitation, map[string]any{"requestId": requestId, "itemId": itemId, "answer": answer}, &result); err != nil {
 		return nil, err
 	}
 	return result.AnswerMailInvitation, nil
