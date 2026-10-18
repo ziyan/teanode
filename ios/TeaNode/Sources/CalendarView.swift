@@ -66,9 +66,11 @@ struct CalendarScreen: View {
                 if DemoServer.screen == "calendar-day", path.isEmpty {
                     path = [CalendarDay(containing: Date(), in: model.dates)]
                 }
-                // The calendars of other people as a list, which names whose each event is, and the share screen open over the month.
+                // The calendars of other people as a list, which names whose each event is, and the list of calendars or the share screen open over the month.
                 if DemoServer.screen == "calendar-shared" { model.viewMode = .agenda }
-                if DemoServer.screen == "calendar-share-sheet" || DemoServer.screen == "calendar-find-time" { isShowingCalendars = true }
+                if DemoServer.screen == "calendar-sheet" || DemoServer.screen == "calendar-share-sheet" || DemoServer.screen == "calendar-find-time" {
+                    isShowingCalendars = true
+                }
             #endif
         }
         .sheet(item: $draft) { draft in
