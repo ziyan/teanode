@@ -751,6 +751,15 @@ a.tile:hover strong {
   flex: 1 1 220px;
   min-width: 0;
   max-width: 420px;
+  /* The size of the search box on every other page's list. */
+  padding-block: 5px;
+  font-size: var(--text-label);
+}
+
+.conversation-toolbar select {
+  width: auto;
+  padding-block: 5px;
+  font-size: var(--text-label);
 }
 
 /* auto-fill rather than the band's auto-fit: one conversation is one tile's
@@ -4128,6 +4137,12 @@ a.button.primary:hover {
   min-height: 120px;
 }
 
+/* A draft opened from the thread is a message that was already written, so its
+   editor starts taller than an empty reply's. */
+.mailbox-pane .mailbox-thread-compose.is-draft .richtext-editor {
+  min-height: 200px;
+}
+
 /* A signature is three lines and a link, not a message. */
 .signature-editor .richtext-editor,
 .signature-editor textarea {
@@ -4957,6 +4972,10 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
    right of the column it belongs to. */
 .mailbox-actions input[type='checkbox'] {
   margin: 0;
+}
+/* Nothing to act on in an empty list: no band above "Nothing here". */
+.mailbox-actions[hidden] {
+  display: none;
 }
 .mailbox-actions button,
 .mailbox-actions select {
@@ -8385,28 +8404,19 @@ button.agent-reaction:focus-visible {
 /* What the agent worked out, in the width of a word: the category, whether
    an answer is waited for, and a mark when it said the message matters
    today. Quiet, because every row may carry one. */
-/* Whole chips or none: what does not fit wraps onto a second line that
-   the box is too short to show, so a narrow row ends in a chip and not in
-   half a word. */
+/* At most a mark and one chip, kept whole and pushed to the end of the line,
+   so the chips of every row stand in one column and it is the sender's name
+   that gives way, with an ellipsis, when the row is narrow. */
 .mailbox-row-insight {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
-  align-content: flex-start;
-  row-gap: 18px;
-  max-height: 18px;
   min-width: 0;
-  overflow: hidden;
-  /* And when even the first chip is too wide for what is left, it fades
-     out at the edge rather than stopping at a cut letter. */
-  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+  max-width: 55%;
 }
 
-/* The chips give way before the name does: a row that reads "M…" beside
-   three chips says less than one that reads "Maria" beside one. The name
-   keeps a few characters whatever else is in the line. */
 .mailbox-row-from > .mailbox-row-insight {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .mailbox-row-who {
   min-width: 8ch;
@@ -8769,6 +8779,28 @@ p.notice.domain-logo-note {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* A contact's name, and on a phone its address under it, where the Email
+   column no longer fits beside it. */
+.contact-name {
+  display: flex;
+  flex-direction: column;
+}
+/* A postal address is the longest thing in the row and the least often
+   there: it may shrink below the usual floor of a truncated column, so the
+   row's actions stay on the screen. */
+td.truncate:has(.contact-postal) {
+  min-width: 8rem;
+}
+.contact-email-line {
+  display: none;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .contact-email-line {
+    display: block;
+  }
 }
 
 /* A mailing list in the list of them, laid out the way a conversation is: the
@@ -10826,14 +10858,58 @@ button.with-icon {
    a list is not a month -- and scrolls sideways instead, wide enough that a
    day is still a day. The day view and the agenda are the ones worth reaching
    for on a phone, and neither needs sideways room. */
-@media (max-width: 640px) {
+@media (max-width: 600px) {
+  /* Seven columns of a phone's width cannot hold a chip with a time and a
+     title, so an event is a dot in its calendar's color here and the day,
+     which a press on it opens, writes them out. */
   .calendar-month {
-    display: grid;
-    min-width: 40rem;
+    grid-template-rows: auto repeat(6, minmax(4.5rem, 1fr));
   }
 
-  .calendar-month-scroll {
-    overflow-x: auto;
+  .calendar-month .calendar-day {
+    min-height: 4.5rem;
+    padding: 0.15rem;
+    align-items: center;
+  }
+
+  .calendar-month .calendar-day-entries {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: flex-start;
+    gap: 3px;
+    /* Two rows of dots at most: the day has the rest. */
+    max-height: 22px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .calendar-month .calendar-entry {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--leaf);
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .calendar-month .calendar-entry.calendar-busy-block {
+    background: var(--muted);
+    opacity: 0.5;
+  }
+
+  .calendar-month .calendar-entry > * {
+    display: none;
+  }
+
+  .calendar-month .calendar-weekday {
+    padding: 0.4rem 0;
+    letter-spacing: 0;
   }
 
   .calendar-grid-scroll {
@@ -12680,7 +12756,7 @@ label.checkbox.is-plain input {
 .graph-explore-zoom {
   position: absolute;
   right: var(--space-3);
-  bottom: var(--space-3);
+  top: var(--space-3);
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -12691,6 +12767,12 @@ label.checkbox.is-plain input {
    segmented pair brings its own outline; an icon button is given one. */
 .graph-explore-zoom .segmented {
   background: var(--surface);
+  height: 36px;
+}
+
+.graph-explore-zoom .segmented button {
+  height: 100%;
+  padding: 0 12px;
 }
 
 .graph-explore-zoom .icon-button {
@@ -12699,6 +12781,28 @@ label.checkbox.is-plain input {
   font: inherit;
   font-size: 17px;
   line-height: 1;
+  /* The same height as the Fit and Fullscreen pair beside them. */
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+/* The agent's button floats over the bottom right of every page and covered
+   Fit and Fullscreen there, on a phone as on a desktop; the top right of the
+   drawing is free, so the controls stay there at every width.
+
+   At 760px and below every button is at least 40px tall, which made the 36px
+   icon buttons taller than wide. The whole group takes that height, and the
+   icon buttons the same width, so they stay square. */
+@media (max-width: 760px) {
+  .graph-explore-zoom .segmented {
+    height: 40px;
+  }
+
+  .graph-explore-zoom .icon-button {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 .graph-explore-legend {
@@ -12718,9 +12822,9 @@ label.checkbox.is-plain input {
 .graph-explore-swatch {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: var(--muted);
-  font-size: var(--text-label);
+  font-size: 13px;
 }
 
 .graph-explore-swatch i {
@@ -12741,7 +12845,7 @@ label.checkbox.is-plain input {
 
 .graph-explore-hint {
   flex-basis: 100%;
-  font-size: var(--text-label);
+  font-size: 13px;
 }
 
 .graph-explore-nothing {
@@ -15803,6 +15907,22 @@ button.herdr-question-head {
 }
 .recording-title-link {
   font-weight: 600;
+}
+.recording-meta-line {
+  display: none;
+}
+@media (max-width: 760px) {
+  .recording-title-link {
+    display: block;
+  }
+  .recording-meta-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px var(--space-3);
+    margin-top: 2px;
+    font-size: 12px;
+  }
 }
 .recording-conversation {
   display: flex;

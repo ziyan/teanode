@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
 import { useAgentIdentity } from '../agentPreferences'
 import { ChatAvatars, UnreadCount, chatTitleOf } from '../components/agentChat'
-import { CONVERSATIONS, type Conversation } from '../components/agentDrawer'
+import { CONVERSATIONS, untitledConversationName, type Conversation } from '../components/agentDrawer'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Loading } from '../components/common'
 import { HighlightText } from '../components/highlightText'
@@ -26,7 +26,7 @@ type KindFilter = 'all' | 'agent' | 'chats'
 // in the drawer, and a new one is started there too, so there is one place a
 // conversation is carried on.
 export function AgentConversationsPage() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const toast = useToast()
   const navigate = useNavigate()
   const agent = useAgentIdentity()
@@ -50,12 +50,13 @@ export function AgentConversationsPage() {
   // called and by the summary the agent wrote of it.
   const [filter, setFilter] = useState('')
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
+  const untitledOf = (conversation: Conversation) => untitledConversationName(conversation, t, language)
   // What a conversation is called here: a chat by the people in it.
   const titleOf = (conversation: Conversation) =>
     conversation.kind === 'main'
       ? t('agentDrawer.main')
       : conversation.chat
-        ? chatTitleOf(conversation.chat, ownUserId, deletedNote, conversation.title || t('agentDrawer.untitled'))
+        ? chatTitleOf(conversation.chat, ownUserId, deletedNote, conversation.title || untitledOf(conversation))
         : conversation.title
   const conversations = useMemo(() => {
     const listed = (data?.ListAgentConversations ?? []).filter(
@@ -118,7 +119,6 @@ export function AgentConversationsPage() {
 
   return (
     <>
-      <p className="muted">{t('agentConversations.intro', { name: agentLabel })}</p>
       {/* Starting one first, then finding one: the button leads the row
           and the search box takes the rest of it. */}
       <div className="conversation-toolbar">
@@ -176,10 +176,10 @@ export function AgentConversationsPage() {
                   ) : conversation.chat ? (
                     <>
                       <ChatAvatars chat={conversation.chat} ownUserId={ownUserId} deleted={deletedNote} size={20} />
-                      <HighlightText text={titleOf(conversation) || t('agentDrawer.untitled')} search={filter} />
+                      <HighlightText text={titleOf(conversation) || untitledOf(conversation)} search={filter} />
                     </>
                   ) : (
-                    <HighlightText text={conversation.title || t('agentDrawer.untitled')} search={filter} />
+                    <HighlightText text={conversation.title || untitledOf(conversation)} search={filter} />
                   )}
                 </span>
                 {/* What it is about: the agent's summary, else what it is
