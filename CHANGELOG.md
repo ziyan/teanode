@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.178.2] - 2026-10-18
+
+### Changed
+
+- On the iPhone's Location page, a person you choose stays chosen until you choose someone else; your own row or picture takes you back. (#576)
+
 ## [0.178.1] - 2026-10-18
 
 ### Fixed
