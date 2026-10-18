@@ -358,6 +358,7 @@ struct PersonDetailView: View {
                 if directory.canManageUsers {
                     Section {
                         Button("Set password", systemImage: "key") { isSettingPassword = true }
+                            .actionColor()
                         AddToCircleMenu(user: user, directory: directory)
                         if !isCurrentUser {
                             Button("Remove this person", systemImage: "trash", role: .destructive) { isRemoving = true }
@@ -845,6 +846,7 @@ struct GroupDetailView: View {
             }
             if directory.canChangeMembers && !directory.isUserListHidden {
                 Button("Add members", systemImage: "person.badge.plus") { isAddingMembers = true }
+                    .actionColor()
             }
         } header: {
             Text(AccessWords.memberCount(group.userIds.count))
@@ -1374,6 +1376,7 @@ struct AuditLogView: View {
                             Image(systemName: "line.3.horizontal.decrease.circle")
                         }
                         Button("Show everything", systemImage: "xmark.circle") { resourceType = "" }
+                            .actionColor()
                     }
                     if events.isEmpty {
                         Text("Nothing has been changed yet.").foregroundStyle(.secondary)

@@ -126,12 +126,14 @@ struct AgentSettingsView: View {
                     Text(agent.enabled ? String(localized: "On") : String(localized: "Off"))
                 } label: {
                     Label("About your agent", systemImage: "person.crop.circle")
+                        .foregroundStyle(.primary)
                 }
             }
             NavigationLink {
                 AgentInstructionsView(model: model)
             } label: {
                 Label("Standing instructions", systemImage: "text.quote")
+                    .foregroundStyle(.primary)
             }
             NavigationLink {
                 AgentLanguageView(model: model)
@@ -140,12 +142,14 @@ struct AgentSettingsView: View {
                     Text(AgentSettingsWords.languageName(settings.language))
                 } label: {
                     Label("Language", systemImage: "globe")
+                        .foregroundStyle(.primary)
                 }
             }
             NavigationLink {
                 AgentWritingVoiceView(model: model)
             } label: {
                 Label("Voice", systemImage: "text.bubble")
+                    .foregroundStyle(.primary)
             }
             if let voices = model.voices {
                 NavigationLink {
@@ -155,6 +159,7 @@ struct AgentSettingsView: View {
                         Text(verbatim: AgentSettingsWords.heardVoice(agent: agent, voices: voices))
                     } label: {
                         Label("Speaking voice", systemImage: "speaker.wave.2")
+                            .foregroundStyle(.primary)
                     }
                 }
             }
@@ -172,6 +177,7 @@ struct AgentSettingsView: View {
                     Text(settings.sources.filter(\.isGranted).count + settings.collections.filter(\.granted).count, format: .number)
                 } label: {
                     Label("What it may reach", systemImage: "tray.2")
+                        .foregroundStyle(.primary)
                 }
             }
             NavigationLink {
@@ -181,6 +187,7 @@ struct AgentSettingsView: View {
                     Text(agent.categories.count, format: .number)
                 } label: {
                     Label("Your own categories", systemImage: "tag")
+                        .foregroundStyle(.primary)
                 }
             }
         }
@@ -193,6 +200,7 @@ struct AgentSettingsView: View {
                         Text(verbatim: (agent.askModel ?? "").isEmpty ? String(localized: "The server's choice") : agent.askModel ?? "")
                     } label: {
                         Label("Model for conversations", systemImage: "cpu")
+                            .foregroundStyle(.primary)
                     }
                 }
             }
@@ -200,6 +208,7 @@ struct AgentSettingsView: View {
                 AgentSpeakFirstView(model: model)
             } label: {
                 Label("Speaking first", systemImage: "bubble.left.and.text.bubble.right")
+                    .foregroundStyle(.primary)
             }
             NavigationLink {
                 AgentConfirmView(model: model)
@@ -208,6 +217,7 @@ struct AgentSettingsView: View {
                     Text(agent.confirm.count, format: .number)
                 } label: {
                     Label("Ask me first", systemImage: "hand.raised")
+                        .foregroundStyle(.primary)
                 }
             }
             NavigationLink {
@@ -217,6 +227,7 @@ struct AgentSettingsView: View {
                     Text(AgentUnattendedDraft(agent).orderedAllowedRisks.count, format: .number)
                 } label: {
                     Label("When you are not there", systemImage: "moon")
+                        .foregroundStyle(.primary)
                 }
             }
         }
@@ -614,6 +625,7 @@ struct AgentSpeechVoiceView: View {
                         Task { await play(heard) }
                     } label: {
                         Label(isPlaying ? String(localized: "Playing…") : String(localized: "Listen"), systemImage: "speaker.wave.2")
+                            .actionColor()
                     }
                     .disabled(isPlaying)
                 }
@@ -979,6 +991,7 @@ struct AgentMailboxView: View {
                                 Text(AgentSettingsWords.onOrOff(policy.triage?.enabled == true))
                             } label: {
                                 Label("Sorting", systemImage: "line.3.horizontal.decrease")
+                                    .foregroundStyle(.primary)
                             }
                         }
                         NavigationLink {
@@ -988,12 +1001,14 @@ struct AgentMailboxView: View {
                                 Text(AgentSettingsWords.onOrOff(policy.summaries?.enabled == true))
                             } label: {
                                 Label("Summaries", systemImage: "text.alignleft")
+                                    .foregroundStyle(.primary)
                             }
                         }
                         NavigationLink {
                             AgentMailHelpView(model: model, mailboxId: mailboxId)
                         } label: {
                             Label("Replies and search", systemImage: "magnifyingglass")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             AgentAnsweringView(model: model, mailboxId: mailboxId)
@@ -1002,6 +1017,7 @@ struct AgentMailboxView: View {
                                 Text(AgentSettingsWords.onOrOff(policy.autoReply?.enabled == true))
                             } label: {
                                 Label("Answering for me", systemImage: "arrowshape.turn.up.left")
+                                    .foregroundStyle(.primary)
                             }
                         }
                     } footer: {

@@ -542,6 +542,8 @@ it('offers the chats to a person with no chat yet and no agent, who shares a cir
 
   expect(await screen.findByText(/Your agent is not on yet/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Main chat' }))
+  // Started from the button beside the search box, not from rows in the list.
+  fireEvent.click(await screen.findByRole('button', { name: 'New conversation' }))
   expect(await screen.findByRole('menuitem', { name: 'Message someone' })).toBeTruthy()
   expect(screen.getByRole('menuitem', { name: 'New group' })).toBeTruthy()
   // A side chat is the agent's, and the agent is off.
@@ -571,6 +573,7 @@ it('says who can be messaged, and links to the circles, when choosing Message so
   renderDrawer()
 
   fireEvent.click(await screen.findByRole('button', { name: 'Person B' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'New conversation' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Message someone' }))
 
   const dialog = await screen.findByRole('alertdialog', { name: 'Message someone' })
@@ -591,6 +594,7 @@ it('lists the people in a circle with the person when choosing Message someone',
   renderDrawer()
 
   fireEvent.click(await screen.findByRole('button', { name: 'Person B' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'New conversation' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Message someone' }))
 
   const dialog = await screen.findByRole('dialog', { name: 'Message someone' })

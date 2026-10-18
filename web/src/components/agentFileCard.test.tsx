@@ -101,3 +101,16 @@ it('says so when it could not be saved, and keeps the button', async () => {
   expect(await screen.findByText('api: over quota')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Save to my library' })).toBeTruthy()
 })
+
+it('opens a picture full size with a click on it, and not as a new page', async () => {
+  show(file())
+  const picture = await screen.findByRole('img', { name: 'IMG_0001.jpg' })
+  fireEvent.click(picture)
+  expect(await screen.findByRole('dialog')).toBeTruthy()
+})
+
+it('opens a photo of the library on its page with a click on the picture', async () => {
+  show(file({ photo_id: 'photo-1' }))
+  fireEvent.click(await screen.findByRole('link', { name: 'Open in Photos' }))
+  expect(await screen.findByText('The photo page')).toBeTruthy()
+})

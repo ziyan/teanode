@@ -1,25 +1,26 @@
-// Fails on a destructive button whose symbol and words are different colors.
+// Fails on a button or list row whose symbol and words are different
+// colors (ios/DESIGN.md, "A symbol is the color of its words").
 //
 // A button with `role: .destructive` takes red for its words, but its symbol
-// takes the tint, which in this app is green: in a Form or List row the
-// result is a green trash can beside red words (ios/DESIGN.md, "Destructive
-// ones are red, symbol and words alike"). `.tint(.red)` straight after the
-// button makes the two the same. Every destructive button with a symbol
-// carries it, inside a swipe action or a menu too, where it is what the
-// system does anyway, so that the rule has no exceptions to remember.
+// takes the tint, which in this app is green. `.tint(.red)` straight after
+// the button makes the two the same in a swipe action, a menu or a toolbar,
+// and every destructive button with a symbol carries it, so that the rule
+// has no exceptions to remember.
 //
-//   node ios/scripts/check-button-colors.mjs         lists the buttons
-//   node ios/scripts/check-button-colors.mjs --fix   adds the tint to each
+// In a form or list row the tint does not reach the symbol: a row's symbol
+// takes the app's green whatever color its words are. So every row symbol
+// is given its color: a button's or menu's label `.actionColor()` (green, or
+// grey while it cannot be pressed), a destructive button's
+// `.actionColor(isDestructive: true)` after its tint, and any other label
+// `.foregroundStyle(.primary)`, the color of the words beside it. A row is
+// a label whose nearest container is a Section, Form or List.
+//
+//   node ios/scripts/check-button-colors.mjs         lists them
+//   node ios/scripts/check-button-colors.mjs --fix   colors each
 //
 // A button whose role is chosen at run time (`role: isRisky ? .destructive :
 // nil`) is checked too, and may give its own tint to match (`.tint(isRisky ?
 // .red : .accentColor)`): what is checked is that a tint follows.
-//
-// In a form or list row the tint does not reach the symbol, which stays
-// green: a destructive button there also takes `.actionColor(isDestructive:
-// true)` after its tint, which colors its label red, or grey while it is
-// disabled. A row is a button whose nearest container is a Section, Form or
-// List; one in a swipe action, a menu or a toolbar is not.
 //
 // Written against the file text, like web/scripts/check-link-buttons.mjs, so
 // it needs no parser and no dependencies. Comments and the inside of strings
@@ -178,7 +179,7 @@ function buttonEnd(code, start) {
   }
 }
 
-// rowContainerOf returns the name of the nearest container around `start`
+// containerOf returns the name of the nearest container around `start`
 // that says where a button is drawn, skipping the `if` and `ForEach` blocks
 // between: a Section, Form or List is a row, and anything else is not.
 const containerPattern =
@@ -195,6 +196,8 @@ function containerOf(code, start) {
       }
     }
     const before = code.slice(Math.max(0, index - 200), index)
+    // A section's header and footer are grey words under the rows, not one.
+    if (/\b(header|footer):\s*$/.test(before)) return 'header'
     const words = before.match(/([A-Za-z_.]+)\s*(\((?:[^()]|\([^()]*\))*\))?\s*(?:[a-z]+:\s*)?$/)
     if (words && containerPattern.test(words[1])) return words[1]
     if (/-> some View\s*$|var body: some View\s*$/.test(before)) return null
@@ -204,11 +207,88 @@ function containerOf(code, start) {
 }
 const rowContainers = new Set(['Section', 'Form', 'List'])
 
+// expressionEnd returns where the call that starts at `start` ends: its
+// argument list, then its trailing closures.
+function expressionEnd(code, start) {
+  return buttonEnd(code, start)
+}
+
+// chainOf returns the names of the modifiers chained after `end`.
+function chainOf(code, end) {
+  const names = []
+  let index = end
+  for (;;) {
+    const step = code.slice(index).match(/^\s*\.([A-Za-z]+)\s*/)
+    if (!step) return names
+    names.push(step[1])
+    index += step[0].length
+    if (code[index] === '(') index = skipBalanced(code, index)
+    for (;;) {
+      const closure = code.slice(index).match(/^\s*(?:[a-zA-Z]+:\s*)?\{/)
+      if (!closure || (!closure[0].includes(':') && closure[0].includes('\n'))) break
+      index = skipBalanced(code, index + closure[0].length - 1)
+    }
+  }
+}
+
+// controlOf returns the control whose argument list or closure holds the
+// label at `start`, such as the NavigationLink it is the label of, stepping
+// out of `if` blocks: its name and where it starts.
+function controlOf(code, start) {
+  let index = start - 1
+  for (let level = 0; level < 6 && index > 0; level++) {
+    let depth = 0
+    for (; index >= 0; index--) {
+      const character = code[index]
+      if (character === '}' || character === ')') depth++
+      else if (character === '{' || character === '(') {
+        if (depth === 0) break
+        depth--
+      }
+    }
+    if (index < 0) return null
+    if (code[index] === '(') {
+      const name = code.slice(Math.max(0, index - 40), index).match(/([A-Za-z]+)\s*$/)
+      return name ? { name: name[1], start: index - name[0].length } : null
+    }
+    // A `{`: the closure of `Name(...) {`, or of `label: {` after one, or
+    // of an `if`.
+    let headStart = Math.max(0, index - 300)
+    let head = code.slice(headStart, index).replace(/[a-z]+:\s*$/, '')
+    while (/\}\s*$/.test(head)) {
+      let closeIndex = headStart + head.search(/\}\s*$/)
+      let closeDepth = 0
+      for (; closeIndex >= 0; closeIndex--) {
+        if (code[closeIndex] === '}') closeDepth++
+        else if (code[closeIndex] === '{' && --closeDepth === 0) break
+      }
+      headStart = Math.max(0, closeIndex - 300)
+      head = code.slice(headStart, closeIndex)
+      index = closeIndex
+    }
+    const call = head.match(/([A-Za-z]+)\s*(\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))?\s*$/)
+    if (call && !/^(if|else|in|let|var)$/.test(call[1])) return { name: call[1], start: headStart + call.index }
+    index--
+  }
+  return null
+}
+
+// The controls whose label is an action, green like a button; any other
+// row with a symbol shows something or opens a page, and its symbol takes
+// the color of its words.
+const actionControls = new Set(['Button', 'Menu', 'ShareLink'])
+// Labels whose color is the control's own: a link's words are already the
+// tint like its symbol, and a placeholder screen is not a row.
+const ownColorControls = new Set(['Link', 'ContentUnavailableView', 'PhotosPicker'])
+const colorModifiers = /^(foregroundStyle|foregroundColor|actionColor)$/
+
 const findings = []
 for (const path of swiftFiles(iosDirectory)) {
   let text = readFileSync(path, 'utf8')
   const code = codeOnly(text)
+  const isAppSource = relative(iosDirectory, path).startsWith('TeaNode/')
   const insertions = []
+  const place = (start) => `${relative(repositoryDirectory, path)}:${text.slice(0, start).split('\n').length}`
   for (const match of code.matchAll(/\bButton\s*\(/g)) {
     const start = match.index
     const argumentsEnd = skipBalanced(code, code.indexOf('(', start))
@@ -230,8 +310,15 @@ for (const path of swiftFiles(iosDirectory)) {
     const tint = following.match(/^\s*\.tint\(\s*\.red\s*\)/)
     const hasRowColor = tint && /^\s*\.actionColor\(\s*isDestructive:\s*true\s*\)/.test(following.slice(tint[0].length))
     if (isAlwaysDestructive ? tint && (!isRow || hasRowColor) : /^\s*\.tint\(/.test(following)) continue
-    const line = text.slice(0, start).split('\n').length
-    findings.push({ place: `${relative(repositoryDirectory, path)}:${line}`, isAlwaysDestructive, isRow })
+    findings.push({
+      place: place(start),
+      note: !isAlwaysDestructive
+        ? 'a destructive button whose role is chosen at run time: give it a tint chosen the same way'
+        : isRow
+          ? 'a destructive button in a form or list row: .tint(.red), then .actionColor(isDestructive: true)'
+          : 'a destructive button: .tint(.red) straight after it',
+      isFixable: isAlwaysDestructive,
+    })
     if (!isAlwaysDestructive) continue
     // Indented as the modifiers after a button are: one step in when the
     // button is on one line, level with it when it closes on a later one.
@@ -241,26 +328,56 @@ for (const path of swiftFiles(iosDirectory)) {
     const modifiers = [...(tint ? [] : ['.tint(.red)']), ...(isRow ? ['.actionColor(isDestructive: true)'] : [])]
     insertions.push({ end: tint ? end + tint[0].length : end, indentation, modifiers })
   }
+  // In a form or list row the symbol of a label takes the app's green,
+  // whatever color its words are, so every row symbol is given a color:
+  // an action's with .actionColor(), anything else's with the color of its
+  // words. A destructive button is the pass above's.
+  for (const match of code.matchAll(/\b(Label|Button|NavigationLink|Toggle|Menu|ShareLink)\s*\(/g)) {
+    const start = match.index
+    const kind = match[1]
+    const argumentsEnd = skipBalanced(code, code.indexOf('(', start))
+    const argumentText = code.slice(start, argumentsEnd)
+    const end = expressionEnd(code, start)
+    if (kind === 'Label') {
+      if (!/systemImage:|icon:\s*\{/.test(code.slice(start, end))) continue
+    } else if (!/systemImage:/.test(argumentText) || /\brole:/.test(argumentText)) continue
+    if (!rowContainers.has(containerOf(code, start))) continue
+    const control = kind === 'Label' ? controlOf(code, start) : { name: kind, start }
+    if (control && ownColorControls.has(control.name)) continue
+    if (chainOf(code, end).some((name) => colorModifiers.test(name))) continue
+    // A color on the control around the label is the label's too.
+    if (kind === 'Label' && control && chainOf(code, expressionEnd(code, control.start)).some((name) => colorModifiers.test(name))) continue
+    const isAction = actionControls.has(control?.name ?? '')
+    const modifier = isAction ? '.actionColor()' : '.foregroundStyle(.primary)'
+    findings.push({
+      place: place(start),
+      note: isAction ? 'an action in a form or list row: .actionColor()' : 'a row symbol beside words in the text color: .foregroundStyle(.primary)',
+      isFixable: !isAction || isAppSource,
+    })
+    if (isAction && !isAppSource) continue
+    // On its own line when the label ends one, after it on the same line
+    // when something follows it there.
+    const isLineEnd = /^[ \t]*\n/.test(code.slice(end))
+    const lineStart = text.lastIndexOf('\n', start) + 1
+    const labelIndentation = text.slice(lineStart).match(/^[ \t]*/)[0]
+    const indentation = code.slice(start, end).includes('\n') ? labelIndentation : `${labelIndentation}    `
+    insertions.push({ end, indentation, modifiers: [modifier], isInline: !isLineEnd })
+  }
   if (isFixing && insertions.length > 0) {
-    for (const { end, indentation, modifiers } of insertions.reverse()) {
-      text = `${text.slice(0, end)}${modifiers.map((modifier) => `\n${indentation}${modifier}`).join('')}${text.slice(end)}`
+    insertions.sort((first, second) => second.end - first.end)
+    for (const { end, indentation, modifiers, isInline } of insertions) {
+      const added = isInline ? modifiers.join('') : modifiers.map((modifier) => `\n${indentation}${modifier}`).join('')
+      text = `${text.slice(0, end)}${added}${text.slice(end)}`
     }
     writeFileSync(path, text)
   }
 }
 
-const unfixed = isFixing ? findings.filter((finding) => !finding.isAlwaysDestructive) : findings
-if (isFixing) console.log(`colored ${findings.length - unfixed.length} buttons`)
+const unfixed = isFixing ? findings.filter((finding) => !finding.isFixable) : findings
+if (isFixing) console.log(`colored ${findings.length - unfixed.length} symbols`)
 if (unfixed.length > 0) {
-  console.error('A destructive button with a symbol needs a tint straight after it, .tint(.red), so the symbol is red like its words:')
-  for (const finding of unfixed) {
-    const note = !finding.isAlwaysDestructive
-      ? ' (its role is chosen at run time: give it a tint chosen the same way)'
-      : finding.isRow
-        ? ' (in a form or list row: .actionColor(isDestructive: true) after the tint)'
-        : ''
-    console.error(`  ${finding.place}${note}`)
-  }
-  if (!isFixing) console.error('Run node ios/scripts/check-button-colors.mjs --fix to add it.')
+  console.error("A symbol is the color of its words (ios/DESIGN.md), and these are not:")
+  for (const finding of unfixed) console.error(`  ${finding.place}: ${finding.note}`)
+  if (!isFixing) console.error('Run node ios/scripts/check-button-colors.mjs --fix to color them.')
   process.exit(1)
 }

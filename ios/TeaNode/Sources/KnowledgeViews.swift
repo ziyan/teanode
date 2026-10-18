@@ -526,6 +526,7 @@ struct KnowledgePageView: View {
                         [contact.name, contact.emails.first ?? contact.organization].filter { !$0.isEmpty }.joined(separator: " · "),
                         systemImage: "person.crop.circle"
                     )
+                    .actionColor()
                     .font(.footnote)
                 }
                 .fullWidthRowSeparator()
@@ -534,6 +535,7 @@ struct KnowledgePageView: View {
                 Button(page.contact == nil ? LocalizedStringKey("Link contact") : LocalizedStringKey("Change contact"), systemImage: "person.crop.circle.badge.plus") {
                     isLinkingContact = true
                 }
+                .actionColor()
                 .fullWidthRowSeparator()
             }
             if node.summary.isEmpty {
@@ -668,6 +670,7 @@ struct KnowledgePageView: View {
                     .foregroundStyle(.secondary)
             }
             Button("Add a fact", systemImage: "plus") { editingFact = FactDraft() }
+                .actionColor()
         } header: {
             Text("Facts")
         } footer: {
@@ -723,6 +726,7 @@ struct KnowledgePageView: View {
                 }
             }
             Button("Link to another page", systemImage: "link") { isLinking = true }
+                .actionColor()
         } header: {
             Text("Connections")
         }

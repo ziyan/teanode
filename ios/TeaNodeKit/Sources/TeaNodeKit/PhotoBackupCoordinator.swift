@@ -266,6 +266,13 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
     /// Retry-After of a 503, which is how it refuses an upload only because of
     /// the account's other unfinished uploads).
     case retryLater(failure: PhotoBackupFailure?, isConnectivityFailure: Bool, retryAfterSeconds: Int? = nil)
+    /// The bytes were sent to an upload that is not where the request said: the
+    /// server has another number of bytes (409, as when the app was cut off
+    /// after a part arrived and the answer to the question was an older one) or
+    /// no such upload any more (404, 410). Nothing is wrong with the file or the
+    /// server, so it shows no error and counts as no failure: the next pass asks
+    /// where the upload is again, and a 404 makes it start a new one.
+    case uploadMovedOn
     /// The task was cancelled by the app (backup turned off, a setting changed,
     /// a sign-in refused): not an error and not counted, and the file is still
     /// to send, as the index has it.
@@ -304,9 +311,9 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
     /// (photos are not available on this server, the account has no photo
     /// library, uploads need HTTPS) is the server's reason to show, and the
     /// file is sent again later. A 404, 409 or 410 is not the file's fault
-    /// either (the upload was lost on the way, or the photo is being made): it
-    /// is started again. Only a 400, 413, 415 or 422, and any other 4xx, is
-    /// the server refusing the file. A 503 is the server's trouble, or the
+    /// either (the upload was lost on the way, or the photo is being made): the
+    /// upload "moved on" and the next pass asks where it is. Only a 400, 413,
+    /// 415 or 422, and any other 4xx, is the server refusing the file. A 503 is the server's trouble, or the
     /// account's other unfinished uploads being in the way: the file is sent
     /// again later, after the Retry-After the answer carries, if it has one.
     public static func interpret(
@@ -330,7 +337,9 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
         case 403:
             if reason?.lowercased().contains(passwordWithoutPhotosReason) == true { return .signInNeeded }
             return .retryLater(failure: reason.map { .serverReason($0) }, isConnectivityFailure: false)
-        case 404, 408, 409, 410, 425, 429, 500...599:
+        case 404, 409, 410:
+            return .uploadMovedOn
+        case 408, 425, 429, 500...599:
             return .retryLater(
                 failure: reason.map { .serverReason($0) }, isConnectivityFailure: false,
                 retryAfterSeconds: retryAfterSeconds(fromHeader: retryAfterHeader, now: now))
@@ -491,6 +500,13 @@ public enum PhotoBackupRequest {
         return prepared(request, credential: credential, usesMobileData: usesMobileData, isSmall: true)
     }
 
+    /// The longest the request that completes an upload waits for an answer. The
+    /// server reads the parts back and checks the digest before it answers,
+    /// which takes a while for a video. One that gets no answer in time has not
+    /// failed: the server finishes what it began, and the next question about
+    /// the upload says it is complete.
+    public static let completionRequestTimeoutSeconds: TimeInterval = 60
+
     /// A PATCH that sends the rest of the file, from `offsetBytes`, and says it
     /// is the end, which makes the server complete the upload. The body is the
     /// file from that byte, given to the background session separately. The
@@ -504,6 +520,26 @@ public enum PhotoBackupRequest {
         request.setValue(String(offsetBytes), forHTTPHeaderField: PhotoBackupHeader.uploadOffset)
         request.setValue("?1", forHTTPHeaderField: PhotoBackupHeader.uploadComplete)
         return prepared(request, credential: credential, usesMobileData: usesMobileData, isSmall: false)
+    }
+
+    /// A PATCH with no body at the end of the file, which completes an upload
+    /// that has every byte. It is made by the app, as a plain request, and not
+    /// given to the background session: a task for a file of no bytes is not
+    /// something iOS promises to run.
+    public static func makeCompletion(
+        server: ServerAddress, credential: PhotoBackupCredential, uploadPath: String, sizeBytes: Int64, usesMobileData: Bool
+    ) -> URLRequest {
+        var request = makeContinuation(
+            server: server, credential: credential, uploadPath: uploadPath, offsetBytes: sizeBytes, usesMobileData: usesMobileData)
+        request.timeoutInterval = completionRequestTimeoutSeconds
+        return request
+    }
+
+    /// A DELETE that drops an upload the app will not continue.
+    public static func makeCancellation(server: ServerAddress, credential: PhotoBackupCredential, uploadPath: String, usesMobileData: Bool) -> URLRequest {
+        var request = URLRequest(url: server.endpoint(uploadPath))
+        request.httpMethod = "DELETE"
+        return prepared(request, credential: credential, usesMobileData: usesMobileData, isSmall: true)
     }
 
     private static func prepared(_ request: URLRequest, credential: PhotoBackupCredential, usesMobileData: Bool, isSmall: Bool) -> URLRequest {
@@ -731,6 +767,12 @@ public actor PhotoBackupCoordinator {
     /// After this many uploads in a row that the server failed on (not the
     /// network), nothing more is queued and the pass ends waiting.
     static let serverFailureLimit = 3
+    /// After this many times in a row that a file's upload moved on, the next
+    /// is counted as the server failing. An upload found somewhere else is
+    /// ordinary once or twice (the app was cut off as a part arrived), but one
+    /// that is never where it is said to be would otherwise start passes for
+    /// ever.
+    static let uploadMovedOnLimit = 3
 
     private let index: PhotoBackupIndex
     private let library: any PhotoBackupLibrary
@@ -753,6 +795,7 @@ public actor PhotoBackupCoordinator {
     private let freeSpaceBytes: @Sendable () -> Int64?
     private let now: @Sendable () -> Date
     private let fileManager: FileManager
+    private let tailWriter: any PhotoBackupTailWriter
 
     private var outstanding: [String: Outstanding] = [:]
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -805,13 +848,21 @@ public actor PhotoBackupCoordinator {
     /// once per file while a pass runs, and each time the screen refreshes.
     private var timeLeft = PhotoBackupTimeLeft()
     private var statusHandler: (@Sendable (PhotoBackupStatus) -> Void)?
+    /// The write of the rest of a file in progress, which stopping ends at once
+    /// so that a long video is not copied for a pass that is over.
+    private var currentTailCancellation: TailCancellation?
+    /// How many times in a row each file's upload was found to have moved on
+    /// (see `PhotoBackupOutcome.uploadMovedOn`), by the file's key. A file that
+    /// goes up starts its count again.
+    private var uploadMovedOnCountByKey: [String: Int] = [:]
 
     public init(
         index: PhotoBackupIndex, library: any PhotoBackupLibrary, transfer: any PhotoBackupTransfer, uploads: any PhotoBackupUploads,
         lookup: (any PhotoBackupServerLookup)?, network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String,
         credential: PhotoBackupCredential, budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, exportTimeoutSeconds: TimeInterval = 30 * 60,
         freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, now: @escaping @Sendable () -> Date = { Date() },
-        fileManager: FileManager = .default, batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false
+        fileManager: FileManager = .default, batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false,
+        tailWriter: any PhotoBackupTailWriter = PhotoBackupFileTailWriter()
     ) {
         self.isPaused = isPaused
         self.index = index
@@ -831,6 +882,7 @@ public actor PhotoBackupCoordinator {
         self.freeSpaceBytes = freeSpaceBytes
         self.now = now
         self.fileManager = fileManager
+        self.tailWriter = tailWriter
     }
 
     public func setStatusHandler(_ handler: (@Sendable (PhotoBackupStatus) -> Void)?) {
@@ -880,6 +932,7 @@ public actor PhotoBackupCoordinator {
     public func stop() {
         isStopRequested = true
         currentExport?.finish(.failure(CancellationError()))
+        currentTailCancellation?.cancel()
         resumeWaiters()
     }
 
@@ -1092,7 +1145,12 @@ public actor PhotoBackupCoordinator {
                 }
                 // Deleted on the phone before it went up: nothing to send.
                 let found = Set(items.map(\.localIdentifier))
-                await index.forgetPending(of: batch.filter { !found.contains($0) })
+                let deletedIdentifiers = batch.filter { !found.contains($0) }
+                // The server holds a part of the file of a photo deleted
+                // mid-way, and nothing will continue it.
+                let abandonedPaths = await index.partialUploadPaths(ofLocalIdentifiers: deletedIdentifiers)
+                await index.forgetPending(of: deletedIdentifiers)
+                for abandonedPath in abandonedPaths { cancelOnServer(uploadPath: abandonedPath) }
                 let uploads = PhotoBackupPlanner.preferringLocalFiles(await index.plan(items: items, inFlight: Set(outstanding.keys)))
                     .filter { !dealtWithKeys.contains($0.key) }
                 // Counted already when the listing of this pass ended: its count
@@ -1415,8 +1473,6 @@ public actor PhotoBackupCoordinator {
         case alreadyUploaded(serverPhotoId: String)
         /// The server did not answer as needed, or the app was stopped.
         case notSent(PhotoBackupOutcome)
-        /// The rest of the file could not be written beside it.
-        case tailNotWritten(PhotoBackupFailure)
     }
 
     /// Exports one file and hands it to the session. A file that the library
@@ -1463,6 +1519,7 @@ public actor PhotoBackupCoordinator {
         case .alreadyUploaded(let serverPhotoId):
             removeTemporaryFile(named: exported.outgoingFilename)
             consecutiveServerFailureCount = 0
+            uploadMovedOnCountByKey[upload.key] = nil
             uploadedFileCount += 1
             finishedFileCount += 1
             await index.markUploaded(upload: upload, serverPhotoId: serverPhotoId)
@@ -1470,11 +1527,6 @@ public actor PhotoBackupCoordinator {
         case .notSent(let outcome):
             removeTemporaryFile(named: exported.outgoingFilename)
             return await settleUnsent(outcome, upload: upload)
-        case .tailNotWritten(let failure):
-            removeTemporaryFile(named: exported.outgoingFilename)
-            removeTemporaryFile(named: Self.tailFilename(of: exported.outgoingFilename))
-            await index.setError(failure: failure)
-            return .deferred
         }
         if isStopRequested {
             removeTemporaryFile(named: plan.outgoingFilename)
@@ -1508,12 +1560,19 @@ public actor PhotoBackupCoordinator {
     /// goes up as an upload made first, with a small request of its own, because
     /// the address of an upload sent as one request with its bytes is not heard
     /// until the request ends, which is too late to continue it.
+    ///
+    /// The app may be stopped (paused, turned off) while any of the requests
+    /// here waits for its answer, so it is asked again before each step that
+    /// would leave something behind: a new upload, a file written, a task.
     private func prepareSending(_ upload: PhotoBackupUpload, exported: PhotoBackupExportedFile) async -> Preparation {
         let digest = PhotoBackupRequest.declaredDigest(exported.sha256)
         let usesMobileData = settings.usesMobileData
         var uploadPath: String?
         var offsetBytes: Int64 = 0
         if let kept = await index.partialUpload(localIdentifier: upload.localIdentifier, role: upload.role) {
+            // Whether the server may still hold the upload, and so is told to
+            // drop it when the address is forgotten.
+            var mayBeOnServer = true
             if let digest, kept.sha256 == digest, kept.sizeBytes == exported.sizeBytes {
                 let statusRequest = PhotoBackupRequest.makeStatus(
                     server: server, credential: credential, uploadPath: kept.uploadPath, usesMobileData: usesMobileData)
@@ -1525,51 +1584,50 @@ public actor PhotoBackupCoordinator {
                     return .alreadyUploaded(serverPhotoId: serverPhotoId)
                 case .unsuccessful(let outcome):
                     // A refusal of this question is not a refusal of the file:
-                    // the upload is dropped and a new one made. Anything else
-                    // (no network, a sign-in refused, the server failing) is why
-                    // nothing is sent now.
-                    if case .refused = outcome {
-                        break
-                    }
-                    return .notSent(outcome)
-                case .answered(.receiving), .answered(.gone):
+                    // the upload is dropped and a new one made, whose request
+                    // has a body to read the reason from (a HEAD has none).
+                    // Anything else (no network, a sign-in refused, the server
+                    // failing) is why nothing is sent now.
+                    guard case .refused = outcome else { return .notSent(outcome) }
+                case .answered(.gone):
+                    mayBeOnServer = false
+                case .answered(.receiving):
                     break
                 }
             }
             if uploadPath == nil {
-                await index.forgetPartialUpload(localIdentifier: upload.localIdentifier, role: upload.role)
+                await forgetKeptUpload(of: upload, uploadPath: kept.uploadPath, mayBeOnServer: mayBeOnServer)
             }
         }
-        if offsetBytes > 0, !PhotoBackupBudget.allowsTail(sizeBytes: exported.sizeBytes - offsetBytes, freeSpaceBytes: freeSpaceBytes()) {
+        if let keptPath = uploadPath, offsetBytes > 0, !PhotoBackupBudget.allowsTail(sizeBytes: exported.sizeBytes - offsetBytes, freeSpaceBytes: freeSpaceBytes()) {
             uploadPath = nil
             offsetBytes = 0
-            await index.forgetPartialUpload(localIdentifier: upload.localIdentifier, role: upload.role)
+            await forgetKeptUpload(of: upload, uploadPath: keptPath, mayBeOnServer: true)
         }
+        if isStopRequested { return .notSent(.cancelled) }
         if uploadPath == nil {
-            let creationRequest = PhotoBackupRequest.makeCreation(
-                server: server, credential: credential, upload: upload, sizeBytes: exported.sizeBytes, usesMobileData: usesMobileData,
-                sha256: digest)
-            switch await uploads.createUpload(creationRequest) {
-            case .answered(let createdPath):
-                uploadPath = createdPath
-                // Kept only for a file that has a digest: an exported file that
-                // cannot be told from the one the server has a part of is not
-                // continued.
-                if let digest {
-                    await index.markUploadStarted(
-                        localIdentifier: upload.localIdentifier, clientPhotoId: upload.clientPhotoId, role: upload.role,
-                        partialUpload: PhotoBackupPartialUpload(uploadPath: createdPath, sizeBytes: exported.sizeBytes, sha256: digest))
-                }
-            case .unsuccessful(let outcome):
-                return .notSent(outcome)
+            switch await makeUpload(for: upload, exported: exported, digest: digest) {
+            case .answered(let createdPath): uploadPath = createdPath
+            case .unsuccessful(let outcome): return .notSent(outcome)
             }
         }
         guard let uploadPath else { return .notSent(.retryLater(failure: nil, isConnectivityFailure: false)) }
         if isStopRequested { return .notSent(.cancelled) }
-        let request = PhotoBackupRequest.makeContinuation(
-            server: server, credential: credential, uploadPath: uploadPath, offsetBytes: offsetBytes, usesMobileData: usesMobileData)
+        if offsetBytes == exported.sizeBytes {
+            // The server has every byte and has not completed the upload. The
+            // request that completes it has no body, and a background task for
+            // a file of no bytes may not run, so it is made here, as a plain
+            // request. If it gets no answer the server completes the upload
+            // all the same, and the next HEAD says so.
+            let completion = PhotoBackupRequest.makeCompletion(
+                server: server, credential: credential, uploadPath: uploadPath, sizeBytes: exported.sizeBytes, usesMobileData: usesMobileData)
+            switch await uploads.finishUpload(completion) {
+            case .uploaded(let serverPhotoId): return .alreadyUploaded(serverPhotoId: serverPhotoId)
+            case let outcome: return .notSent(outcome)
+            }
+        }
         guard offsetBytes > 0 else {
-            return .send(SendPlan(request: request, outgoingFilename: exported.outgoingFilename, sizeBytes: exported.sizeBytes))
+            return .send(sendingWholeFile(exported, uploadPath: uploadPath))
         }
         // Background uploads read a file, so the rest is written to one, and
         // the whole file is deleted as soon as it is: only the rest stays on the
@@ -1578,12 +1636,87 @@ public actor PhotoBackupCoordinator {
         let exportedURL = outgoingDirectory.appendingPathComponent(exported.outgoingFilename)
         let tailURL = outgoingDirectory.appendingPathComponent(tailFilename)
         do {
-            try await Task.detached { try Self.writeTail(of: exportedURL, from: offsetBytes, to: tailURL) }.value
+            try await writeTail(of: exportedURL, from: offsetBytes, to: tailURL)
+        } catch is CancellationError {
+            removeTemporaryFile(named: tailFilename)
+            return .notSent(.cancelled)
         } catch {
-            return .tailNotWritten(.systemDescription(error.localizedDescription))
+            // A full disk or a file that cannot be read again will fail the
+            // same way at every pass if the rest is tried again. The upload has
+            // bytes only a tail could continue from, so it is dropped, and the
+            // whole file, still here, goes up as an upload of its own.
+            NSLog("Photo backup: the rest of a file could not be written, so the file is sent again from its first byte")
+            removeTemporaryFile(named: tailFilename)
+            await forgetKeptUpload(of: upload, uploadPath: uploadPath, mayBeOnServer: true)
+            if isStopRequested { return .notSent(.cancelled) }
+            switch await makeUpload(for: upload, exported: exported, digest: digest) {
+            case .answered(let createdPath): return .send(sendingWholeFile(exported, uploadPath: createdPath))
+            case .unsuccessful(let outcome): return .notSent(outcome)
+            }
         }
         removeTemporaryFile(named: exported.outgoingFilename)
+        let request = PhotoBackupRequest.makeContinuation(
+            server: server, credential: credential, uploadPath: uploadPath, offsetBytes: offsetBytes, usesMobileData: usesMobileData)
         return .send(SendPlan(request: request, outgoingFilename: tailFilename, sizeBytes: exported.sizeBytes - offsetBytes))
+    }
+
+    /// The request that sends all of the exported file to a new upload.
+    private func sendingWholeFile(_ exported: PhotoBackupExportedFile, uploadPath: String) -> SendPlan {
+        let request = PhotoBackupRequest.makeContinuation(
+            server: server, credential: credential, uploadPath: uploadPath, offsetBytes: 0, usesMobileData: settings.usesMobileData)
+        return SendPlan(request: request, outgoingFilename: exported.outgoingFilename, sizeBytes: exported.sizeBytes)
+    }
+
+    /// Makes the upload a file goes up in, and keeps its address (for a file
+    /// that has a digest: an exported file that cannot be told from the one the
+    /// server has a part of is not continued).
+    private func makeUpload(for upload: PhotoBackupUpload, exported: PhotoBackupExportedFile, digest: String?) async -> PhotoBackupServiceAnswer<String> {
+        let creationRequest = PhotoBackupRequest.makeCreation(
+            server: server, credential: credential, upload: upload, sizeBytes: exported.sizeBytes, usesMobileData: settings.usesMobileData,
+            sha256: digest)
+        let answer = await uploads.createUpload(creationRequest)
+        if case .answered(let createdPath) = answer, let digest {
+            await index.markUploadStarted(
+                localIdentifier: upload.localIdentifier, clientPhotoId: upload.clientPhotoId, role: upload.role,
+                partialUpload: PhotoBackupPartialUpload(uploadPath: createdPath, sizeBytes: exported.sizeBytes, sha256: digest))
+        }
+        return answer
+    }
+
+    /// Forgets the address kept for a file, and when the server may still hold
+    /// the upload asks it to drop it.
+    private func forgetKeptUpload(of upload: PhotoBackupUpload, uploadPath: String, mayBeOnServer: Bool) async {
+        await index.forgetPartialUpload(localIdentifier: upload.localIdentifier, role: upload.role)
+        if mayBeOnServer { cancelOnServer(uploadPath: uploadPath) }
+    }
+
+    /// Asks the server to drop an upload the app will not continue. It is not
+    /// waited for and its failure is not looked at: an upload nobody continues
+    /// is cleaned up by the server in a week, and this only gives the room back
+    /// sooner.
+    private func cancelOnServer(uploadPath: String) {
+        let request = PhotoBackupRequest.makeCancellation(
+            server: server, credential: credential, uploadPath: uploadPath, usesMobileData: settings.usesMobileData)
+        let uploads = uploads
+        Task.detached { await uploads.cancelUpload(request) }
+    }
+
+    /// Asks the server to drop every upload the index holds an address for and
+    /// forgets the addresses: what the app does when backup is turned off or the
+    /// account goes, after which nothing will continue them. Waits for the
+    /// requests (they are made together and are short), so that they are sent
+    /// before the device password they carry is revoked.
+    public func abandonKeptUploads() async {
+        let paths = await index.allPartialUploadPaths()
+        await index.forgetAllPartialUploads()
+        await index.flush()
+        let requests = paths.map {
+            PhotoBackupRequest.makeCancellation(server: server, credential: credential, uploadPath: $0, usesMobileData: settings.usesMobileData)
+        }
+        let uploads = uploads
+        await withTaskGroup(of: Void.self) { group in
+            for request in requests { group.addTask { await uploads.cancelUpload(request) } }
+        }
     }
 
     /// The name the rest of an exported file is written under, beside it in the
@@ -1593,35 +1726,22 @@ public actor PhotoBackupCoordinator {
         outgoingFilename + ".tail"
     }
 
-    /// How much of a file is read and written at a time.
-    private static let tailChunkBytes = 1 << 20
-
-    /// Writes the bytes of a file from `offsetBytes` to its end into a new file.
-    /// A chunk at a time, so that a long video is never held in memory, and each
-    /// in a pool of its own so that what a read hands back is freed with it.
-    private static func writeTail(of sourceURL: URL, from offsetBytes: Int64, to destinationURL: URL) throws {
-        guard FileManager.default.createFile(atPath: destinationURL.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
-        let reader = try FileHandle(forReadingFrom: sourceURL)
-        defer { try? reader.close() }
-        let writer = try FileHandle(forWritingTo: destinationURL)
-        defer { try? writer.close() }
-        try reader.seek(toOffset: UInt64(offsetBytes))
-        var isMore = true
-        while isMore {
-            isMore = try inAutoreleasePool {
-                guard let chunk = try reader.read(upToCount: tailChunkBytes), !chunk.isEmpty else { return false }
-                try writer.write(contentsOf: chunk)
-                return true
-            }
+    /// Writes the rest of a file beside it, on a task of its own so that the
+    /// actor stays free to hear of finished uploads. Stopping, and the
+    /// cancellation of the pass that asked, both end the write between two
+    /// pieces; what was written is deleted by the writer.
+    private func writeTail(of sourceURL: URL, from offsetBytes: Int64, to destinationURL: URL) async throws {
+        let writer = tailWriter
+        let cancellation = TailCancellation()
+        currentTailCancellation = cancellation
+        defer { currentTailCancellation = nil }
+        try await withTaskCancellationHandler {
+            try await Task.detached {
+                try writer.writeTail(of: sourceURL, from: offsetBytes, to: destinationURL, isCancelled: { cancellation.isCancelled })
+            }.value
+        } onCancel: {
+            cancellation.cancel()
         }
-    }
-
-    private static func inAutoreleasePool<Result>(_ body: () throws -> Result) rethrows -> Result {
-        #if canImport(Darwin)
-            return try autoreleasepool(invoking: body)
-        #else
-            return try body()
-        #endif
     }
 
     /// What follows when the server's answer to a small request, made before a
@@ -1629,7 +1749,10 @@ public actor PhotoBackupCoordinator {
     /// as still to send, as when a queued upload fails.
     private func settleUnsent(_ outcome: PhotoBackupOutcome, upload: PhotoBackupUpload) async -> QueueResult {
         switch outcome {
-        case .uploaded, .cancelled:
+        case .uploaded, .cancelled, .uploadMovedOn:
+            // Moved on is what the request that completes an upload says when
+            // the upload is being completed already or is gone: the question
+            // about it is asked again by the next pass.
             return .deferred
         case .signInNeeded:
             await noteSignInNeeded()
@@ -1700,14 +1823,16 @@ public actor PhotoBackupCoordinator {
     /// when the app was started to hear of it.
     ///
     /// Returns whether the app should start a pass now: an upload went up, no
-    /// pass is running, and files are still to send. A file the server refused
-    /// or asked to wait for does not start one (a file that always fails would
-    /// otherwise start passes as fast as the server answers): those are tried
-    /// again when the time the server asked for has come, when the app is
-    /// opened, or overnight.
+    /// pass is running, and files are still to send; or an upload moved on (see
+    /// `PhotoBackupOutcome.uploadMovedOn`) and the file is to be asked about at
+    /// once. A file the server refused or asked to wait for does not start one
+    /// (a file that always fails would otherwise start passes as fast as the
+    /// server answers): those are tried again when the time the server asked
+    /// for has come, when the app is opened, or overnight.
     @discardableResult
     public func finished(_ job: PhotoBackupJob, outcome: PhotoBackupOutcome) async -> Bool {
         var hasMadeProgress = false
+        var hasFoundUploadMovedOn = false
         // Only the entry of this upload: a cancelled task reports late, and by
         // then the same file may have been queued again under the same key.
         if outstanding[job.key]?.outgoingFilename == job.outgoingFilename { outstanding[job.key] = nil }
@@ -1719,6 +1844,7 @@ public actor PhotoBackupCoordinator {
             consecutiveServerFailureCount = 0
             serverFailureStopCount = 0
             retryNotBefore = nil
+            uploadMovedOnCountByKey[job.key] = nil
             hasMadeProgress = true
             // Counted before the index is written: the upload has left the
             // outstanding list, and a pass waiting on that list may end while
@@ -1732,6 +1858,22 @@ public actor PhotoBackupCoordinator {
             await noteSignInNeeded()
         case .refused(let failure):
             await noteRefused(localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, failure: failure)
+        case .uploadMovedOn:
+            // The upload is somewhere else than the request said (the server
+            // has more bytes, or has dropped it). That is no error to show and
+            // no failure to count, and unlike a failure it is worth asking
+            // about at once: the next pass asks where the upload is. Not for
+            // ever, though: one that is never where it is said to be is
+            // counted as the server failing.
+            let movedOnCount = (uploadMovedOnCountByKey[job.key] ?? 0) + 1
+            uploadMovedOnCountByKey[job.key] = movedOnCount
+            if movedOnCount <= Self.uploadMovedOnLimit {
+                hasFoundUploadMovedOn = true
+            } else {
+                await noteRetryLater(failure: nil, isConnectivityFailure: false, retryAfterSeconds: nil)
+                leftForLaterFileCount += 1
+                if !isRunning { phase = .waitingForNetwork }
+            }
         case .retryLater(let failure, let isConnectivityFailure, let retryAfterSeconds):
             await noteRetryLater(failure: failure, isConnectivityFailure: isConnectivityFailure, retryAfterSeconds: retryAfterSeconds)
             // The file is still to send and nothing in this pass sends it
@@ -1755,7 +1897,10 @@ public actor PhotoBackupCoordinator {
         completionCount += 1
         resumeWaiters()
         await publish()
-        guard hasMadeProgress, !isRunning, !isStopRequested, pendingRetryTime == nil else { return false }
+        // A pass that is running will not send a file again that it has dealt
+        // with, so for an upload that moved on the answer is yes then too: the
+        // app runs one more pass when this one ends.
+        guard (hasMadeProgress && !isRunning) || hasFoundUploadMovedOn, !isStopRequested, pendingRetryTime == nil else { return false }
         return await index.pendingFileCount() > outstanding.count
     }
 
@@ -1849,6 +1994,19 @@ public actor PhotoBackupCoordinator {
         case PhotoBackupLibraryError.unavailable(let failure), PhotoBackupLibraryError.failed(let failure): failure
         default: .systemDescription(error.localizedDescription)
         }
+    }
+}
+
+/// TailCancellation tells the write of the rest of a file to stop. It is read
+/// from the task that writes and set from the actor, so it has a lock.
+private final class TailCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isStopped = false
+
+    var isCancelled: Bool { lock.withLock { isStopped } }
+
+    func cancel() {
+        lock.withLock { isStopped = true }
     }
 }
 

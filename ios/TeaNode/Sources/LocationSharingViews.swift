@@ -62,6 +62,7 @@ struct LocationSharingList: View {
             }
             Section {
                 Button("Share", systemImage: "person.badge.plus") { isSharing = true }
+                    .actionColor()
             } footer: {
                 Text("Choose a person or a circle, and whether they also see your visits and the places they were at.")
             }

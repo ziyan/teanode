@@ -260,10 +260,10 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
             throw Self.libraryError(for: error)
         }
         do {
-            // Readable once the phone has been unlocked after starting, which is
-            // when a background upload can run.
-            try FileManager.default.setAttributes(
-                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            // The same attributes as the rest of a file written beside it: readable
+            // once the phone has been unlocked after starting, which is when a
+            // background upload can run.
+            try FileManager.default.setAttributes(PhotoBackupOutgoingFile.attributes, ofItemAtPath: fileURL.path)
             let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
             let sizeBytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
             guard sizeBytes > 0 else {

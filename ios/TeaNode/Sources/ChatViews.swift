@@ -423,6 +423,7 @@ struct ChatMembersSheet: View {
                                 isAdding = true
                             } label: {
                                 Label("Add people", systemImage: "person.badge.plus")
+                                    .actionColor()
                             }
                         }
                     }
@@ -476,6 +477,7 @@ struct ChatMembersSheet: View {
                         app.openedSection = .settings
                     } label: {
                         Label("Open Settings", systemImage: "gearshape")
+                            .actionColor()
                     }
                 }
             } else {

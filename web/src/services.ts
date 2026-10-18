@@ -28,16 +28,32 @@ export function serviceForPath(pathname: string): HostedServiceKey | undefined {
 export function isPathAvailable(pathname: string, services?: ServiceCapabilities): boolean {
   const serviceKey = serviceForPath(pathname)
   if (serviceKey === 'isCalendarEnabled' && services?.isRemindersEnabled === true) return true
-  // Photos is off until somebody turns it on, so a server that does not say
-  // is taken to be without it; the others are on until said otherwise.
+  // A server that does not say is taken to be without Photos, which came
+  // after the others; they are on until said otherwise.
   if (serviceKey === 'isPhotosEnabled') return services?.isPhotosEnabled === true
   return !serviceKey || services?.[serviceKey] !== false
 }
 
 export function homePath(session: Session): string {
   // A new server's first operator: straight to the one page that starts the
-  // assistant, unless mail was chosen, whose next step is a domain.
-  if (!session.services?.hasCompletedSetup && hasPermission(session.permissions, 'server:manage'))
+  // assistant, unless mail was chosen, whose next step is a domain. A server
+  // an operator set up for Photos, with Photos now running and no mail to set
+  // up, is already a working service, so it does not keep sending its
+  // operator back here on every sign-in until somebody presses "Finish
+  // setup"; the welcome and setup pages stay reachable under Manage, Server,
+  // Setup. Photos running is not enough: it is on by default, so a brand-new
+  // server has it too and still needs the welcome page for its model key.
+  const isSetUpForPhotosAndRunning =
+    session.services?.isPhotosChosen === true &&
+    session.services.isPhotosEnabled &&
+    !session.services.hasPendingServiceRestart &&
+    !session.services.isMailRoutingEnabled &&
+    hasPermission(session.permissions, 'photos:use')
+  if (
+    !session.services?.hasCompletedSetup &&
+    !isSetUpForPhotosAndRunning &&
+    hasPermission(session.permissions, 'server:manage')
+  )
     return !session.services?.hasModelProvider && !session.services?.isMailRoutingEnabled
       ? '/welcome'
       : '/manage/server/setup'

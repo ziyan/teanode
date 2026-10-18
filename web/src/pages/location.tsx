@@ -770,7 +770,7 @@ function LocationContent({ userId }: { userId: string }) {
         >
           <div className="location-day-picker">
             <label>
-              {t('location.day')}
+              <span>{t('location.day')}</span>
               <input
                 type="date"
                 value={dayKey ?? ''}

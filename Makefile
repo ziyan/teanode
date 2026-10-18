@@ -175,7 +175,7 @@ check-catalogs: $(WEB_DIR)/node_modules ## Check the translations against the En
 check-link-buttons: ## Fail on a button styled as a link that does not say why
 	@node $(WEB_DIR)/scripts/check-link-buttons.mjs
 
-check-button-colors: ## Fail on an iPhone button whose symbol and words are different colors
+check-button-colors: ## Fail on an iPhone button or row whose symbol and words are different colors
 	@node ios/scripts/check-button-colors.mjs
 
 check-queries: $(WEB_DIR)/node_modules ## Validate the dashboard's GraphQL against a running server

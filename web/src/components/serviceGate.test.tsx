@@ -24,6 +24,7 @@ const services = {
   isRemindersEnabled: false,
   isContactsEnabled: false,
   isPhotosEnabled: false,
+  isPhotosChosen: false,
   isAssistantEnabled: false,
   hasPendingServiceRestart: false,
   hasCompletedSetup: false,

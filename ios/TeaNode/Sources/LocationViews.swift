@@ -10,7 +10,8 @@ enum LocationRoute: Hashable {
     case settings
 }
 
-/// LocationSegment is what the list under the map shows.
+/// LocationSegment is what the list under the map shows, chosen in the side
+/// menu as Finance's parts and Photos' collections are.
 enum LocationSegment: String, CaseIterable, Identifiable {
     case visits
     case places
@@ -23,6 +24,14 @@ enum LocationSegment: String, CaseIterable, Identifiable {
         case .visits: String(localized: "Visits")
         case .places: String(localized: "Places")
         case .sharing: String(localized: "Sharing")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .visits: "clock"
+        case .places: "mappin"
+        case .sharing: "person.2"
         }
     }
 }
@@ -63,10 +72,11 @@ struct OpenStreetMapCredit: View {
 
 /// LocationScreen is where the person is and where they have been: a map with
 /// their position, the visit in progress under it, and below that their
-/// visits by day and the places they were at.
+/// visits by day and the places they were at. Which list shows is the side
+/// menu's choice.
 struct LocationScreen: View {
     @State private var model: LocationModel
-    @State private var segment = LocationSegment.visits
+    @Binding var segment: LocationSegment
     @State private var path: [LocationRoute] = []
     @State private var isCheckingIn = false
     @State private var isExplainingAlways = false
@@ -75,8 +85,9 @@ struct LocationScreen: View {
     @Environment(AppModel.self) private var app
     private let recorder = LocationRecorder.shared
 
-    init(connection: Connection) {
+    init(connection: Connection, segment: Binding<LocationSegment>) {
         _model = State(initialValue: LocationModel(connection: connection))
+        _segment = segment
     }
 
     var body: some View {
@@ -94,14 +105,7 @@ struct LocationScreen: View {
                         if model.isSetupShown {
                             LocationSetupList(model: model, recorder: recorder, allowLocation: allowLocation)
                         } else {
-                            Picker("Show", selection: $segment) {
-                                ForEach(LocationSegment.allCases) { choice in
-                                    Text(choice.title).tag(choice)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .padding(.horizontal)
-                            // The list under the tabs starts close to them,
+                            // The list starts close to the people above it,
                             // not a grouped list's usual top gap away.
                             content.contentMargins(.top, 8, for: .scrollContent)
                         }
@@ -111,9 +115,17 @@ struct LocationScreen: View {
                 // out from it as the lists' rows do.
                 .background(Color(.systemGroupedBackground))
             }
-            .navigationTitle("Location")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .withoutSwipeBack()
+            // A list chosen in the side menu is shown at once: over whatever
+            // was open on top of it, a person chosen on the map, or the setup
+            // (whose rows say Places and Sharing are where those steps live).
+            .onChange(of: segment) {
+                path = []
+                model.clearSelection()
+                if model.isSetupShown { model.dismissSetup() }
+            }
             .toolbar {
                 MenuButton()
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -189,6 +201,12 @@ struct LocationScreen: View {
         }
     }
 
+    /// The list on screen, as Finance names its part; Location while the
+    /// setup or a chosen person's own visits fill the screen instead.
+    private var title: String {
+        model.isSetupShown || model.selectedPerson != nil ? String(localized: "Location") : segment.title
+    }
+
     @ViewBuilder
     private var content: some View {
         if let loadFailedText = model.loadFailedText {
@@ -210,18 +228,17 @@ struct LocationScreen: View {
         /// `location-sharing`, `location-person`, `location-people` (more
         /// people than fit under the map), `location-checkin` (the check-in
         /// sheet), `location-address` (the address search of a place);
-        /// `location-setup` is the server having no position yet.
+        /// `location-setup` is the server having no position yet. MainView
+        /// chooses the list (Places for `location-places`, `location-place`
+        /// and `location-address`, Sharing for `location-sharing`).
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty else { return }
             switch DemoServer.screen {
             case "location-day": path = [.day(Date())]
-            case "location-places": segment = .places
-            case "location-sharing": segment = .sharing
             case "location-person": model.select(userId: LocationDemo.historyPersonId)
             case "location-people": path = [.people]
             case "location-checkin": isCheckingIn = true
             case "location-place", "location-address":
-                segment = .places
                 if let place = model.places.first(where: { $0.id == LocationDemo.parkPlaceId }) { path = [.place(place)] }
             case "location-settings": path = [.settings]
             default: break

@@ -1000,6 +1000,7 @@ private struct RecordingLocalPlaybackScreen: View {
                             Label(
                                 Duration.milliseconds(media.timelineStartMS).formatted(.time(pattern: .hourMinuteSecond)),
                                 systemImage: selectedMediaId == media.id ? "speaker.wave.2" : "play")
+                            .actionColor()
                         }
                     }
                 }

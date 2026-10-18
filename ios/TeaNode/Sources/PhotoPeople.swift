@@ -21,7 +21,11 @@ extension PhotosModel {
     /// before.
     func reloadFaceGroups(isQuiet: Bool = false) async {
         do {
-            faceGroups = try await connection.photoFaceGroups(isHiddenIncluded: isHiddenPeopleShown)
+            // Always read with the hidden people, to know whether there are any: the screen
+            // offers to show them only then. The ones left out of the list are filtered here.
+            let allGroups = try await connection.photoFaceGroups(isHiddenIncluded: true)
+            hasHiddenPeople = allGroups.contains { $0.isHidden }
+            faceGroups = isHiddenPeopleShown ? allGroups : allGroups.filter { !$0.isHidden }
             faceGroupsFailureText = nil
         } catch {
             guard !Task.isCancelled, !isQuiet else { return }
@@ -130,6 +134,7 @@ extension PhotosModel {
         do {
             let changed = try await connection.hidePhotoFaceGroup(group.id, isHidden: isHidden)
             replaceFaceGroup(changed)
+            if isHidden { hasHiddenPeople = true }
             if isHidden, !isHiddenPeopleShown { faceGroups?.removeAll { $0.id == changed.id } }
             doneText = isHidden ? String(localized: "Hidden from People") : String(localized: "Shown in People again")
             return changed
@@ -628,6 +633,7 @@ struct NamePersonSheet: View {
                             choose { await model.nameWithNewContact(group, contactName: searchText) }
                         } label: {
                             Label("New contact “\(PhotoNaming.trimmedName(searchText))”", systemImage: "person.badge.plus")
+                                .actionColor()
                         }
                         .fullWidthRowSeparator()
                     }
@@ -879,6 +885,7 @@ struct PhotoFacesSettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button("Try again", systemImage: "arrow.clockwise") { Task { await readLibrary() } }
+                        .actionColor()
                 }
             }
             Section {

@@ -15,6 +15,7 @@ const operator = (services: Partial<ServiceCapabilities>) =>
       isRemindersEnabled: false,
       isContactsEnabled: false,
       isPhotosEnabled: false,
+      isPhotosChosen: false,
       isAssistantEnabled: false,
       hasPendingServiceRestart: false,
       hasCompletedSetup: false,
@@ -38,6 +39,31 @@ describe('homePath', () => {
     expect(homePath(operator({ hasCompletedSetup: true, hasModelProvider: true, isAssistantEnabled: true }))).toBe(
       '/agent',
     )
+  })
+  // Photos is on by default, so a brand-new server has it running too, and
+  // its first operator still has to be asked for a model key.
+  it('sends a brand-new server whose Photos is on only by default to the welcome page', () => {
+    const session = operator({ isPhotosEnabled: true })
+    session.permissions = { everywhere: ['server:manage', 'photos:use'], byDomain: [] }
+    expect(homePath(session)).toBe('/welcome')
+  })
+  it('sends an operator who chose Photos, now running, home and not to setup', () => {
+    const session = operator({ isPhotosEnabled: true, isPhotosChosen: true })
+    session.permissions = { everywhere: ['server:manage', 'photos:use'], byDomain: [] }
+    expect(homePath(session)).toBe('/photos')
+  })
+  it('keeps an operator on setup while a chosen Photos is waiting for a restart', () => {
+    const session = operator({ isPhotosEnabled: true, isPhotosChosen: true, hasPendingServiceRestart: true })
+    session.permissions = { everywhere: ['server:manage', 'photos:use'], byDomain: [] }
+    expect(homePath(session)).toBe('/welcome')
+  })
+  it('keeps an operator on setup when Photos was chosen with mail, whose next step is a domain', () => {
+    const session = operator({ isPhotosEnabled: true, isPhotosChosen: true, isMailRoutingEnabled: true })
+    session.permissions = { everywhere: ['server:manage', 'photos:use'], byDomain: [] }
+    expect(homePath(session)).toBe('/manage/server/setup')
+  })
+  it('does not skip setup for an operator who chose Photos but may not use it', () => {
+    expect(homePath(operator({ isPhotosEnabled: true, isPhotosChosen: true }))).toBe('/welcome')
   })
 })
 

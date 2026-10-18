@@ -46,6 +46,7 @@ struct BudgetsView: View {
                 Button("Set a budget", systemImage: "plus") {
                     editingBudget = BudgetDraft(month: finance.month(Date()), currency: finance.reportingCurrency)
                 }
+                .actionColor()
             } header: {
                 Text("Budgets")
             }
@@ -64,6 +65,7 @@ struct BudgetsView: View {
                     .foregroundStyle(.primary)
                 }
                 Button("New category", systemImage: "plus") { editingCategory = CategoryDraft() }
+                    .actionColor()
             }
             Section {
                 ForEach(rules.sorted { ($0.rulePriority ?? 0) < ($1.rulePriority ?? 0) }) { rule in
@@ -87,7 +89,9 @@ struct BudgetsView: View {
                     }
                 }
                 Button("New rule", systemImage: "plus") { editingRule = RuleDraft() }
+                    .actionColor()
                 Button("Suggest rules", systemImage: "sparkles") { isSuggestingRules = true }
+                    .actionColor()
             } header: {
                 Text("Rules")
             } footer: {
@@ -1065,6 +1069,7 @@ struct ReceiptDetailView: View {
                             }
                         }
                     }
+                    .actionColor()
                 }
             }
             InMemorySection(model: memory)

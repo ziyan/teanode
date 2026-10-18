@@ -424,18 +424,25 @@
         }
     }
 
-    /// PhotoConversationCardDemo is the card a picture gets in a conversation, with its Save to my
-    /// library button, on its own: `-TeaNodeScreen photos-conversation-card`. The picture is drawn by
-    /// the demo server.
+    /// PhotoConversationCardDemo is the cards a file gets in a conversation, on their own:
+    /// `-TeaNodeScreen photos-conversation-card`. A picture shows its name, size and caption with no
+    /// buttons (a tap opens it; Save to my library, Share and Copy are in its long-press menu), and a
+    /// document shows a chevron, since a tap on the card opens it. The picture is drawn by the demo
+    /// server.
     struct PhotoConversationCardDemo: View {
-        private let file = AgentFile.of(
-            toolResult:
-                #"{"attachment_id":"demo-picture","url":"/api/v1/agent/attachments/demo-picture","name":"harbor-market.jpg","content_type":"image/jpeg","size":2345678,"caption":"The market by the harbor."}"#
-        ).first
+        private let files = [
+            #"{"attachment_id":"demo-picture","url":"/api/v1/agent/attachments/demo-picture","name":"harbor-market.jpg","content_type":"image/jpeg","size":2345678,"caption":"The market by the harbor."}"#,
+            #"{"attachment_id":"demo-document","url":"/api/v1/agent/attachments/demo-document","name":"market-stalls-2024-summary.pdf","content_type":"application/pdf","size":183500,"caption":""}"#,
+        ].compactMap { AgentFile.of(toolResult: $0).first }
 
         var body: some View {
             ScrollView {
-                if let file { FileCard(file: file).padding() }
+                VStack(spacing: 12) {
+                    ForEach(files, id: \.attachmentId) { file in
+                        FileCard(file: file)
+                    }
+                }
+                .padding()
             }
             .navigationBarTitleDisplayMode(.inline)
         }

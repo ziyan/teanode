@@ -157,6 +157,7 @@ private struct EntryFileSection: View {
                     Text(verbatim: file.name).lineLimit(1)
                 }
                 Button("Remove the file", systemImage: "minus.circle") { self.file = nil }
+                    .actionColor()
             }
             Menu {
                 Button("Photo library", systemImage: "photo.on.rectangle") { isPickingPhotos = true }
@@ -166,6 +167,7 @@ private struct EntryFileSection: View {
                 Button("Files", systemImage: "folder") { isPickingFiles = true }
             } label: {
                 Label(file == nil ? LocalizedStringKey("Add the file") : "Choose another file", systemImage: "paperclip")
+                    .actionColor()
             }
         } header: {
             Text("File")
@@ -351,6 +353,7 @@ struct ReceiptEntryView: View {
                 }
                 Section {
                     Button("Add a line", systemImage: "plus") { draft.receiptLines.append(ReceiptLineDraft()) }
+                        .actionColor()
                 } footer: {
                     Text("A discount is typed below zero, as it is printed.")
                 }
@@ -554,6 +557,7 @@ struct PaystubEntryView: View {
                 }
                 Section {
                     Button("Add a line", systemImage: "plus") { draft.paystubLines.append(PaystubLineDraft()) }
+                        .actionColor()
                 }
                 Section {
                     Toggle("Record it as it is", isOn: $draft.isUnbalancedAccepted)
@@ -714,6 +718,7 @@ struct TaxFormEntryView: View {
                 }
                 Section {
                     Button("Add a box", systemImage: "plus") { draft.taxFormEntries.append(TaxFormEntryDraft()) }
+                        .actionColor()
                 } footer: {
                     Text("Only the boxes that print something.")
                 }

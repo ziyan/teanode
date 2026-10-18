@@ -120,6 +120,49 @@ it('lists the hidden people only after Show hidden is chosen', async () => {
   expect(listed.some(([, variables]) => variables?.isHiddenIncluded === true)).toBe(true)
 })
 
+it('offers Show hidden only when somebody is hidden', async () => {
+  serve([])
+  showPeoplePage()
+  await screen.findByText(/No people yet/)
+  expect(screen.queryByLabelText('Show hidden people')).toBeNull()
+  cleanup()
+  serve([group({})])
+  showPeoplePage()
+  await screen.findByRole('link', { name: /Sample Person/ })
+  expect(screen.queryByLabelText('Show hidden people')).toBeNull()
+  cleanup()
+  // Everybody hidden: the list is empty, and the switch is the way to them.
+  serve([group({ isHidden: true, contactName: 'Hidden Person' })])
+  showPeoplePage()
+  fireEvent.click(await screen.findByLabelText('Show hidden people'))
+  expect(await screen.findByRole('link', { name: /Hidden Person/ })).toBeTruthy()
+})
+
+it('keeps the height of the toolbar row while the people load, so the grid does not move when Show hidden appears', async () => {
+  let release: (answer: unknown) => void = () => {}
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ReadPhotoLibrary')) return { ReadPhotoLibrary: photoLibrary() } as never
+    return new Promise((resolve) => {
+      release = resolve
+    }) as never
+  })
+  const { container } = showPeoplePage()
+  expect(container.querySelector('.photo-toolbar')).not.toBeNull()
+  expect(screen.queryByLabelText('Show hidden people')).toBeNull()
+  release({ ListPhotoFaceGroups: [group({}), group({ id: 'group-2', contactName: 'Hidden Person', isHidden: true })] })
+  const toggle = await screen.findByLabelText('Show hidden people')
+  // The same row, now with the switch in it, and still only one of them.
+  expect(container.querySelectorAll('.photo-toolbar')).toHaveLength(1)
+  expect(container.querySelector('.photo-toolbar')?.contains(toggle)).toBe(true)
+})
+
+it('draws no empty toolbar row once the people have loaded and nobody is hidden', async () => {
+  serve([group({})])
+  const { container } = showPeoplePage()
+  await screen.findByRole('link', { name: /Sample Person/ })
+  expect(container.querySelector('.photo-toolbar')).toBeNull()
+})
+
 it('keeps Show hidden in the address, so that a reload and a copied link keep it', async () => {
   serve([group({}), group({ id: 'group-2', contactName: 'Hidden Person', isHidden: true })])
   showPeoplePage()

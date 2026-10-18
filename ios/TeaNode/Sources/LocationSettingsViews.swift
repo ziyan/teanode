@@ -31,6 +31,7 @@ struct LocationSettingsView: View {
                         Image(systemName: "exclamationmark.triangle")
                     }
                     Button(missing.actionTitle, systemImage: missing.actionSymbol) { missing.perform() }
+                        .actionColor()
                 }
             }
             Section {

@@ -53,12 +53,14 @@ struct CalendarListSheet: View {
                             CalendarShareScreen(model: model, calendar: own)
                         } label: {
                             Label("Share my calendar", systemImage: "person.2")
+                                .foregroundStyle(.primary)
                         }
                         if let ownUserId = own.ownerUserId {
                             NavigationLink {
                                 FindATimeScreen(connection: model.connection, ownUserId: ownUserId)
                             } label: {
                                 Label("Find a time", systemImage: "calendar.badge.clock")
+                                    .foregroundStyle(.primary)
                             }
                         }
                     } footer: {
@@ -469,6 +471,7 @@ struct EventReader: View {
                     Text(whenText)
                     if let location = eventDetail.location, !location.isEmpty {
                         Label(location, systemImage: "mappin.and.ellipse")
+                            .foregroundStyle(.primary)
                     }
                 }
                 if let guests = eventDetail.attendees, !guests.isEmpty {

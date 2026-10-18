@@ -262,8 +262,8 @@ with `teanode user update personb --name "Person B"`, and until then they see
 the username.
 
 Once you share a circle with someone you can message each other. Chats are
-in the agent's drawer, under **Message someone**, and every circle has a chat
-of its own.
+in the agent's drawer: start one with **New conversation**, beside its search
+box, then **Message someone**. Every circle has a chat of its own.
 
 ## Where to go next
 

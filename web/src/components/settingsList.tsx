@@ -2,6 +2,7 @@ import { Children, Fragment, isValidElement } from 'react'
 import { Avatar } from './avatar'
 import { CopyIconButton } from './common'
 import { Tooltip } from './tooltip'
+import { useToast } from './toast'
 import { useTranslation } from '../i18n/i18n'
 
 // The shape every list of account things takes: a heading with the one action
@@ -174,26 +175,28 @@ export function SecretDialog({
 
 // Copy, when the browser will. The clipboard API is absent on an insecure
 // origin, which a deployment behind plain HTTP is; the value is on the screen
-// either way, so this offers what it can rather than failing silently.
-export function CopyButton({ value }: { value: string }) {
+// either way, so this says it could not copy rather than failing silently.
+//
+// The answer is a toast, not new words inside the button: a button that
+// rewrites itself changes size under the pointer, and a failure said in the
+// card is one a person can miss. The label is for a page with several copy
+// buttons, whose accessible names would otherwise all be "Copy".
+export function CopyButton({ value, label }: { value: string; label?: string }) {
   const { t } = useTranslation()
+  const toast = useToast()
 
   return (
     <button
       type="button"
-      onClick={(event) => {
-        const button = event.currentTarget
+      aria-label={label}
+      onClick={() => {
         if (!navigator.clipboard) {
-          button.textContent = t('common.copyFailed')
+          toast.failed(t('common.copyFailed'))
           return
         }
         void navigator.clipboard.writeText(value).then(
-          () => {
-            button.textContent = t('common.copied')
-          },
-          () => {
-            button.textContent = t('common.copyFailed')
-          },
+          () => toast.done(t('common.copied')),
+          () => toast.failed(t('common.copyFailed')),
         )
       }}
     >

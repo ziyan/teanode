@@ -548,6 +548,7 @@ struct GoalHeader: View {
                             isShowingGoal = false
                             app.openedSection = .goals
                         }
+                        .actionColor()
                     }
                 }
                 .navigationTitle(conversation.title ?? String(localized: "Goal"))

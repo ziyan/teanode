@@ -924,6 +924,7 @@ struct PhotoInfoView: View {
                 }
                 if shownPhoto.isOwnedByCaller, !shownPhoto.isTrashed {
                     Button("Change date", systemImage: "calendar") { isChangingDate = true }
+                        .actionColor()
                         .fullWidthRowSeparator()
                 }
                 if !shownPhoto.placeName.isEmpty {
@@ -932,6 +933,7 @@ struct PhotoInfoView: View {
                 // A photo shared without places has no coordinates, so it has nothing to be near.
                 if let onShowNearby, !shownPhoto.isTrashed, let photoNearFilter = PhotoNearFilter(near: shownPhoto) {
                     Button("Photos taken near here", systemImage: "mappin.and.ellipse") { onShowNearby(photoNearFilter) }
+                        .actionColor()
                         .fullWidthRowSeparator()
                 }
                 if !cameraText.isEmpty {
@@ -950,6 +952,7 @@ struct PhotoInfoView: View {
                                 PhotoAlbumScreen(model: model, albumId: album.id)
                             } label: {
                                 Label(album.albumTitle, systemImage: "rectangle.stack")
+                                    .foregroundStyle(.primary)
                             }
                         }
                     }
@@ -1023,6 +1026,7 @@ struct PhotoInfoView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Button("Try again", systemImage: "arrow.clockwise") { Task { await loadDetail() } }
+                .actionColor()
         }
     }
 
@@ -1042,6 +1046,7 @@ struct PhotoInfoView: View {
                         if await model.retryProcessing([shownPhoto]) { await loadDetail() }
                     }
                 }
+                .actionColor()
             }
         }
     }
@@ -1055,6 +1060,7 @@ struct PhotoInfoView: View {
                     if await model.retryProcessing([shownPhoto]) { await loadDetail() }
                 }
             }
+            .actionColor()
         }
     }
 
@@ -1187,12 +1193,14 @@ struct PhotoInfoView: View {
                 if description.isDescribed {
                     if isDescriptionAvailable {
                         Button("Describe again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
+                            .actionColor()
                             .fullWidthRowSeparator()
                     }
                 } else if isDescriptionAvailable {
                     Button(shownPhoto.isVideo ? LocalizedStringKey("Describe this video") : "Describe this photo", systemImage: "text.viewfinder") {
                         Task { await describe(isRedescribed: false) }
                     }
+                    .actionColor()
                     .fullWidthRowSeparator()
                 } else if let library = model.library {
                     Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage.asReasonSentence)
@@ -1200,6 +1208,7 @@ struct PhotoInfoView: View {
                 }
             }
             Button(askAgentText, systemImage: "bubble.left") { onAskAgent(photo) }
+                .actionColor()
         } header: {
             Text("Description")
         } footer: {

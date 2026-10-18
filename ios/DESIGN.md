@@ -91,6 +91,12 @@ its pull request is opened.
   a hairline edge. A small secondary header says what the card is; answers
   are rows with a radio or a check, not buttons of their own; actions are
   standard capsule buttons of equal width, the prominent one first.
+- A card that only shows something (a file, a picture, a page the agent made)
+  has no buttons. A tap on its picture, or on the card when it has nothing
+  else to tap, does the main thing (open it); the rest (Save, Share, Copy)
+  are in its long-press menu, the main action first, and are also its
+  accessibility actions so VoiceOver does not need a long press. Buttons stay
+  on a card only when answering is its point: an approval, a question.
 - The composer is one rounded field with its buttons inside it: the words on
   top, adding files at the bottom left, calling and sending at the bottom
   right.
@@ -108,12 +114,13 @@ its pull request is opened.
   receipt", or a standard capsule button. Never a footnote-size link or
   several small buttons side by side in a row or a card. Destructive ones
   are red, symbol and words alike: `role: .destructive` reddens only the
-  words, so the button carries `.tint(.red)` for its symbol
-  (`make check-button-colors` checks it); in a form or list row, where the
-  tint does not reach the symbol, it also takes
-  `.actionColor(isDestructive: true)`. A list button that can be disabled,
-  or an action in a plain list, takes `.actionColor()`: green while it can
-  be pressed, grey while it cannot, symbol and words alike.
+  words, so the button carries `.tint(.red)` for its symbol.
+- A symbol is the color of its words. Actions are green, or red, and grey
+  while they cannot be pressed; a row that opens a page or shows something
+  has its symbol in the text color, as the side menu's parts do. A list row
+  greens its symbol whatever its words are, so in a form or list a button's
+  label takes `.actionColor()` and any other label with a symbol
+  `.foregroundStyle(.primary)` (`make check-button-colors` checks both).
 - Show content, do not fold it. Lines of a receipt, a quoted message, a
   summary: show them whole, in body text, one row each. A long list moves to
   a screen of its own behind a row, as iOS Settings does; it does not open in

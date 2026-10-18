@@ -27,6 +27,7 @@ struct DeviceSetupView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         Label("Your setup profile is ready", systemImage: "checkmark.circle")
+                            .foregroundStyle(.primary)
                             .fullWidthRowSeparator()
                         if hasOpenedProfile {
                             Text("Profile download started").foregroundStyle(.secondary)
@@ -35,6 +36,7 @@ struct DeviceSetupView: View {
                                 Task { await download(profile) }
                             } label: {
                                 Label("Download profile", systemImage: "arrow.down.circle")
+                                    .actionColor()
                             }
                             .fullWidthRowSeparator()
                             if let profileURL = URL(string: profile.downloadLink) {
@@ -54,20 +56,24 @@ struct DeviceSetupView: View {
                 Section("Access for this device") {
                     if profile.mailboxAppPassword != nil {
                         Label("Mail uses a mailbox app password", systemImage: "envelope")
+                            .foregroundStyle(.primary)
                         if let mailboxId = profile.mailboxAppPassword?.mailboxId {
                             NavigationLink {
                                 DeviceMailPasswordsScreen(connection: connection, username: app.account?.username ?? "", mailboxId: mailboxId)
                             } label: {
                                 Label("Manage mail passwords", systemImage: "key")
+                                    .foregroundStyle(.primary)
                             }
                         }
                     }
                     if profile.syncCredential != nil {
                         Label("Collections use an account sync password", systemImage: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(.primary)
                         NavigationLink {
                             SyncCredentialsView(connection: connection)
                         } label: {
                             Label("Manage sync passwords", systemImage: "key")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }

@@ -215,6 +215,10 @@ final class PhotosModel {
     var faceGroups: [PhotoFaceGroup]?
     var faceGroupsFailureText: String?
     var isHiddenPeopleShown = false
+    /// Whether the person has hidden at least one person, as the last read of
+    /// the groups of faces found; the People screen offers to show hidden
+    /// people only then. See PhotoPeople.swift.
+    var hasHiddenPeople = false
     /// The kind and days the library, Favorites and Trash are narrowed to.
     var photoFilter = PhotoFilter()
     /// The circles the person is in, for making an album for one; empty until read.
@@ -307,7 +311,7 @@ final class PhotosModel {
     }
 
     var isPeopleShown: Bool {
-        library?.isFaceRecognitionAvailable == true || !(faceGroups ?? []).isEmpty
+        library?.isFaceRecognitionAvailable == true || !(faceGroups ?? []).isEmpty || hasHiddenPeople
     }
 
     private func fetchPage(_ key: PhotoListKey, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
@@ -823,13 +827,14 @@ struct OpenedPhoto: Identifiable {
 /// PhotosScreen is the person's photo library: a large title with the days of
 /// the photos on screen under it, an edge to edge grid (or a picture for each
 /// month or year), a Select mode, Years, Months and All with Search floating at
-/// the bottom, and a viewer for one photo. The collections and the photo backup
-/// are in the side menu.
+/// the bottom, and a viewer for one photo. The collections are in the side menu;
+/// Photo backup is in the More menu of the bar.
 struct PhotosScreen: View {
     /// Owned by the app shell, which also draws the collections in the side menu.
     @Bindable var model: PhotosModel
-    /// Whether the photo backup screen is pushed; the side menu's Photo backup row sets it.
-    @Binding var isShowingBackup: Bool
+    /// Whether the photo backup screen is pushed; the More menu's Photo backup item sets it. It is
+    /// pushed on the collection that was open, so the back button returns there.
+    @State private var isShowingBackup = false
     @State private var opened: OpenedPhoto?
     @State private var isConfirmingEmptyTrash = false
     @State private var isSelecting = false
@@ -855,9 +860,8 @@ struct PhotosScreen: View {
         @State private var isDemoPersonOpened = false
     #endif
 
-    init(model: PhotosModel, isShowingBackup: Binding<Bool>) {
+    init(model: PhotosModel) {
         self.model = model
-        _isShowingBackup = isShowingBackup
         #if DEBUG
             // `-TeaNodeScreen photos-select` starts in Select mode with two photos chosen.
             if DemoServer.isRequested, DemoServer.screen == "photos-select" {
@@ -1109,15 +1113,7 @@ struct PhotosScreen: View {
                 ToolbarItem(placement: .primaryAction) {
                     NewAlbumMenu(model: model)
                 }
-            } else if model.section == .people {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Toggle("Show hidden", systemImage: "eye.slash", isOn: Bindable(model).isHiddenPeopleShown)
-                    } label: {
-                        Label("More", systemImage: "ellipsis")
-                    }
-                }
-            } else {
+            } else if model.section != .people {
                 if searchWords == nil {
                     ToolbarItem(placement: .primaryAction) {
                         PhotoFilterMenu(model: model, isChoosingDates: $isChoosingDates)
@@ -1135,22 +1131,49 @@ struct PhotosScreen: View {
                         }
                     }
                 }
-                if model.section == .trash, !photos.isEmpty {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
-                            Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
-                                .tint(.red)
-                        } label: {
-                            Label("More", systemImage: "ellipsis")
-                        }
-                        .confirmationDialog("Empty the Trash?", isPresented: $isConfirmingEmptyTrash, titleVisibility: .visible) {
-                            Button("Delete forever", role: .destructive) { Task { await model.emptyTrash() } }
-                        } message: {
-                            Text("These photos will be deleted forever. This cannot be undone.")
-                        }
-                    }
-                }
             }
+            // One More button on every collection, in the capsule of the buttons beside it. It holds
+            // what is particular to the collection first and Photo backup last.
+            ToolbarItem(placement: .primaryAction) {
+                moreMenu
+            }
+        }
+    }
+
+    /// The More menu of the bar: the collection's own items, then Photo backup, which pushes its screen
+    /// on top of the collection so that the back button returns to it.
+    private var moreMenu: some View {
+        Menu {
+            if model.section == .people, model.hasHiddenPeople || model.isHiddenPeopleShown {
+                // With nobody hidden there is nothing to switch, so the item is left out; it stays
+                // while the switch is on, so that it can be turned off again.
+                Toggle("Show hidden", systemImage: "eye.slash", isOn: Bindable(model).isHiddenPeopleShown)
+            }
+            if model.section == .trash, !photos.isEmpty {
+                Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
+                    .tint(.red)
+            }
+            if hasOwnMoreItems {
+                Divider()
+            }
+            Button("Photo backup", systemImage: "icloud.and.arrow.up") { isShowingBackup = true }
+        } label: {
+            Label("More", systemImage: "ellipsis")
+        }
+        .confirmationDialog("Empty the Trash?", isPresented: $isConfirmingEmptyTrash, titleVisibility: .visible) {
+            Button("Delete forever", role: .destructive) { Task { await model.emptyTrash() } }
+        } message: {
+            Text("These photos will be deleted forever. This cannot be undone.")
+        }
+    }
+
+    /// Whether the collection has items of its own in the More menu, which Photo backup is then
+    /// separated from.
+    private var hasOwnMoreItems: Bool {
+        switch model.section {
+        case .people: model.hasHiddenPeople || model.isHiddenPeopleShown
+        case .trash: !photos.isEmpty
+        default: false
         }
     }
 

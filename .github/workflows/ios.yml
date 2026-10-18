@@ -271,6 +271,8 @@ jobs:
           shoot location-light light large -TeaNodeDemo -TeaNodeTab location
           shoot location-dark dark large -TeaNodeDemo -TeaNodeTab location
           shoot location-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location
+          shoot location-menu-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeMenu
+          shoot location-menu-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeMenu
           shoot location-day-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
           shoot location-day-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
           shoot location-places-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
@@ -336,7 +338,7 @@ jobs:
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
-          # The side menu on Photos: the collections and the photo backup under the parts.
+          # The side menu on Photos: the collections under the parts.
           shoot photos-menu-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
           shoot photos-menu-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
           # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its
@@ -420,7 +422,7 @@ jobs:
           # The library narrowed to the photos taken near a place, with the chip that takes it off.
           shoot photos-near-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-near
           shoot photos-near-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-near
-          # A picture the agent sent, with Save to my library (opened from Settings).
+          # A picture the agent sent and a document, as cards with no buttons: their actions are in the long-press menu (opened from Settings).
           shoot photos-conversation-card-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           shoot photos-conversation-card-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           shoot photos-conversation-card-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card

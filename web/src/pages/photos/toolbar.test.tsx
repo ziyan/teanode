@@ -58,3 +58,16 @@ it('keeps the action in the row on a phone when the page has nothing to search',
   expect(screen.getByRole('button', { name: 'Upload photos' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'More' })).toBeNull()
 })
+
+it('draws no row at all when there is nothing to search and nothing to do', () => {
+  stubPhone(false)
+  const { container } = render(
+    <TranslationProvider>
+      <PhotoToolbar tools={null} essentials={false}>
+        {false}
+        {null}
+      </PhotoToolbar>
+    </TranslationProvider>,
+  )
+  expect(container.querySelector('.photo-toolbar')).toBeNull()
+})
