@@ -8700,6 +8700,28 @@ p.notice.domain-logo-note {
   gap: var(--space-2);
 }
 
+/* A contact's name, and on a phone its address under it, where the Email
+   column no longer fits beside it. */
+.contact-name {
+  display: flex;
+  flex-direction: column;
+}
+/* A postal address is the longest thing in the row and the least often
+   there: it may shrink below the usual floor of a truncated column, so the
+   row's actions stay on the screen. */
+td.truncate:has(.contact-postal) {
+  min-width: 8rem;
+}
+.contact-email-line {
+  display: none;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .contact-email-line {
+    display: block;
+  }
+}
+
 /* A mailing list in the list of them, laid out the way a conversation is: the
    mark, then who and how much, then when and the way out. */
 .subscription-row {

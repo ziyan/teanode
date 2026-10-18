@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
+import { PageHeadingActions } from '../components/breadcrumb'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { PencilIcon, TrashIcon, UserIcon, KeptPersonIcon } from '../components/icons'
@@ -259,6 +260,13 @@ export function AddressBookPage() {
     [me, toast, t],
   )
 
+  // The Address column is drawn only when some contact in the list has one:
+  // most address books have none, and a wide empty column pushes the
+  // organization and the phone off a laptop screen.
+  const hasAddress = (contacts.data?.ListContacts ?? []).some((contact) =>
+    (contact.addresses ?? []).some((address) => Boolean(address.written)),
+  )
+
   const columns = useMemo<Column<Contact>[]>(
     () => [
       {
@@ -274,7 +282,14 @@ export function AddressBookPage() {
               src={contact.hasPhoto ? photoAddress(contact.id) : undefined}
               size={24}
             />
-            {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
+            <span className="contact-name">
+              {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
+              {/* The Email column is dropped on a phone, so the address goes
+                  under the name there. */}
+              {(contact.emails ?? [])[0] ? (
+                <span className="contact-email-line muted">{(contact.emails ?? [])[0]}</span>
+              ) : null}
+            </span>
           </span>
         ),
       },
@@ -282,9 +297,10 @@ export function AddressBookPage() {
         key: 'emails',
         header: t('addressBook.email'),
         filter: 'text',
+        optional: true,
         value: (contact) => (contact.emails ?? []).join(' '),
         render: (contact) => (
-          <span className="mono">
+          <span>
             {(contact.emails ?? [])[0] ?? ''}
             {(contact.emails ?? []).length > 1 ? (
               <span className="muted"> {t('addressBook.more', { count: contact.emails.length - 1 })}</span>
@@ -292,14 +308,21 @@ export function AddressBookPage() {
           </span>
         ),
       },
-      {
-        key: 'postal',
-        header: t('addressBook.postal'),
-        filter: 'text',
-        optional: true,
-        value: (contact) => (contact.addresses ?? []).map((address) => address.written ?? '').join(' '),
-        render: (contact) => <span className="muted">{(contact.addresses ?? [])[0]?.written ?? ''}</span>,
-      },
+      ...(hasAddress
+        ? [
+            {
+              key: 'postal',
+              header: t('addressBook.postal'),
+              filter: 'text' as const,
+              optional: true,
+              truncate: true,
+              value: (contact: Contact) => (contact.addresses ?? []).map((address) => address.written ?? '').join(' '),
+              render: (contact: Contact) => (
+                <span className="contact-postal muted">{(contact.addresses ?? [])[0]?.written ?? ''}</span>
+              ),
+            },
+          ]
+        : []),
       {
         key: 'organization',
         header: t('addressBook.organization'),
@@ -311,14 +334,15 @@ export function AddressBookPage() {
       {
         key: 'phones',
         header: t('addressBook.phone'),
-        width: '11rem',
+        width: '9rem',
+        optional: true,
         value: (contact) => (contact.phones ?? []).join(' '),
         render: (contact) => <span className="muted">{(contact.phones ?? [])[0] ?? ''}</span>,
       },
       {
         key: 'actions',
         header: '',
-        width: '7rem',
+        width: '9rem',
         render: (contact) => (
           <div className="row-actions">
             <Tooltip label={contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}>
@@ -327,7 +351,7 @@ export function AddressBookPage() {
                   me" and "that is you" telling apart by tooltip alone. */}
               <button
                 type="button"
-                className={contact.id === myContactId ? 'marked' : undefined}
+                className={contact.id === myContactId ? 'icon-action marked' : 'icon-action'}
                 disabled={busy}
                 aria-label={`${contact.name}: ${contact.id === myContactId ? t('agent.myContactClear') : t('agent.myContactSet')}`}
                 onClick={() => void markAsMe(contact.id === myContactId ? null : contact)}
@@ -338,6 +362,7 @@ export function AddressBookPage() {
             <Tooltip label={t('common.edit')}>
               <button
                 type="button"
+                className="icon-action"
                 aria-label={`${contact.name}: ${t('common.edit')}`}
                 disabled={busy || opening === contact.id}
                 onClick={() => void edit(contact)}
@@ -348,6 +373,7 @@ export function AddressBookPage() {
             <Tooltip label={t('common.delete')}>
               <button
                 type="button"
+                className="icon-action danger"
                 aria-label={`${contact.name}: ${t('common.delete')}`}
                 disabled={busy}
                 onClick={() => setDeleting(contact)}
@@ -359,7 +385,7 @@ export function AddressBookPage() {
         ),
       },
     ],
-    [t, busy, opening, myContactId, edit, markAsMe],
+    [t, busy, opening, myContactId, edit, markAsMe, hasAddress],
   )
 
   const rows = contacts.data?.ListContacts ?? []
@@ -367,7 +393,7 @@ export function AddressBookPage() {
 
   return (
     <>
-      <div className="page-actions">
+      <PageHeadingActions>
         <button
           className="primary"
           type="button"
@@ -379,7 +405,7 @@ export function AddressBookPage() {
         >
           {t('addressBook.new')}
         </button>
-      </div>
+      </PageHeadingActions>
 
       <DataTable
         columns={columns}
