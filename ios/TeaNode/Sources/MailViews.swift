@@ -107,7 +107,7 @@ struct MailboxesList: View {
                 .listSectionSeparator(.hidden)
             }
         }
-        .remembersScroll(offsetPoints: scrollOffsetPoints, isReady: mail.isLoaded)
+        .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: mail.isLoaded)
         .refreshable { await mail.load() }
         .overlay {
             if mail.isLoaded, mail.entries.isEmpty {

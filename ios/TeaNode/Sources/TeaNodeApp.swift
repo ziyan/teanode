@@ -179,7 +179,7 @@ struct ConversationsSheet: View {
                 }
             }
             .menuListStyle(isPanel)
-            .remembersScroll(offsetPoints: scrollOffsetPoints, isReady: isLoaded)
+            .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isLoaded, isPaused: !words.isEmpty)
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
                 // A quarter of a second after the last key, as the drawer
