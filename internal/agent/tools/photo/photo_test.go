@@ -372,7 +372,55 @@ func TestFavoriteTrashRestoreAndSaveUseTheSharedOperations(test *testing.T) {
 		test.Fatal("a file of another conversation was saved", err)
 	}
 	if _, err := current.call(map[string]any{"operation": "delete_forever"}); err == nil {
-		test.Fatal("the agent can delete photos forever")
+		test.Fatal("an operation nobody named was accepted")
+	}
+}
+
+// Deleting forever is what teanode photo delete and empty-trash do, with the
+// same words, and the person is asked first because neither can be undone.
+func TestDeleteAndEmptyTrashDeleteForeverAndAskFirst(test *testing.T) {
+	current := newRun(test, nil)
+	operations := &fakeOperations{answers: map[string]string{"DeletePhotos": `1`, "EmptyPhotoTrash": `3`}}
+	current.operations = operations
+	if result, err := current.call(map[string]any{"operation": "delete", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "1 of 2 photos deleted forever; the others were not in the Trash and were left alone") {
+		test.Fatalf("%v %v", result, err)
+	}
+	// When every photo went there is nothing to explain.
+	operations.answers["DeletePhotos"] = `2`
+	if result, err := current.call(map[string]any{"operation": "delete", "photo_ids": []string{"a", "b"}}); err != nil || result.Content != "2 of 2 photos deleted forever" {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := operations.asked("DeletePhotos"); len(asked) != 2 || len(asked[0]["photoIds"].([]string)) != 2 {
+		test.Fatalf("%v", asked)
+	}
+	if _, err := current.call(map[string]any{"operation": "delete"}); err == nil {
+		test.Fatal("deleting nothing was accepted")
+	}
+	if result, err := current.call(map[string]any{"operation": "empty-trash"}); err != nil || !strings.Contains(result.Content, "deleted 3 photos forever") {
+		test.Fatalf("%v %v", result, err)
+	}
+	operations.answers["EmptyPhotoTrash"] = `1`
+	if result, err := current.call(map[string]any{"operation": "empty-trash"}); err != nil || result.Content != "deleted 1 photo forever" {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := operations.asked("EmptyPhotoTrash"); len(asked) != 2 {
+		test.Fatalf("%v", asked)
+	}
+	for operation, want := range map[string]string{
+		"delete":      "Delete 2 photos forever; only photos in the Trash are deleted",
+		"empty-trash": "Empty the Trash: delete everything in it forever",
+	} {
+		encoded, _ := json.Marshal(map[string]any{"operation": operation, "photo_ids": []string{"a", "b"}})
+		if risk := riskOf(encoded); risk != tools.RiskDestructive {
+			test.Errorf("%s is %s", operation, risk)
+		}
+		var asked arguments
+		if err := json.Unmarshal(encoded, &asked); err != nil {
+			test.Fatal(err)
+		}
+		if line := previewOf(asked); line != want {
+			test.Errorf("%s: the card says %q", operation, line)
+		}
 	}
 }
 
@@ -383,7 +431,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	for operation, want := range map[string]tools.Risk{
 		"library": tools.RiskRead, "list": tools.RiskRead, "read": tools.RiskRead, "look": tools.RiskRead, "show": tools.RiskRead,
-		"favorite": tools.RiskWrite, "set-date": tools.RiskWrite, "restore": tools.RiskWrite, "retry": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive,
+		"favorite": tools.RiskWrite, "set-date": tools.RiskWrite, "restore": tools.RiskWrite, "retry": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive, "delete": tools.RiskDestructive, "empty-trash": tools.RiskDestructive, "person-read": tools.RiskRead,
 		"album-cover": tools.RiskWrite, "save-shared": tools.RiskWrite, "album-share": tools.RiskGranting, "album-unshare": tools.RiskGranting, "album-shares": tools.RiskRead, "person-unname": tools.RiskWrite, "person-hide": tools.RiskWrite, "person-remove-face": tools.RiskWrite,
 	} {
 		arguments, _ := json.Marshal(map[string]any{"operation": operation})
@@ -405,7 +453,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	properties, _ := photoTool.Parameters["properties"].(map[string]any)
 	operation, _ := properties["operation"].(map[string]any)
-	if enum, _ := operation["enum"].([]string); len(enum) != 33 {
+	if enum, _ := operation["enum"].([]string); len(enum) != 37 {
 		test.Errorf("operations %v", enum)
 	}
 }

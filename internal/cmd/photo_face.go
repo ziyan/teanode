@@ -25,13 +25,13 @@ func newPhotoPeopleCommand() *cli.Command {
 				Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "hidden", Usage: "list the people you hid as well"}}, Action: runPhotoPeopleList,
 			},
 			{
-				Name: "show", Usage: "a person and their photos", ArgsUsage: "<group id>",
+				Name: "read", Usage: "a person and their photos", ArgsUsage: "<group id>",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.IntFlag{Name: "limit", Value: defaultPhotoListSize, Usage: "photos to list, 1 to 500"},
 					&cli.StringFlag{Name: "continue-after", Usage: "continue after this photo, the last one of the previous page"},
 				},
-				Action: runPhotoPeopleShow,
+				Action: runPhotoPeopleRead,
 			},
 			{Name: "name", Usage: "say who a group of faces is, by a contact from your address book (teanode contact list gives their ids); a contact that names another group puts the two together, and a contact with no picture is given a face as one", ArgsUsage: "<group id> <contact id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleName},
 			{Name: "unname", Usage: "take the contact off a group of faces", ArgsUsage: "<group id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleUnname},
@@ -114,10 +114,10 @@ func hiddenText(group *models.PhotoFaceGroup) string {
 	return ""
 }
 
-func runPhotoPeopleShow(ctx context.Context, command *cli.Command) error {
+func runPhotoPeopleRead(ctx context.Context, command *cli.Command) error {
 	photoFaceGroupId := command.Args().First()
 	if photoFaceGroupId == "" {
-		return usage("usage: teanode photo people show <group id>")
+		return usage("usage: teanode photo people read <group id>")
 	}
 	filter := &client.PhotoFilter{FaceGroupID: photoFaceGroupId, PageSize: int(command.Int("limit")), BeforePhotoID: command.String("continue-after")}
 	if filter.PageSize < 1 || filter.PageSize > 500 {
