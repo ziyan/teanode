@@ -124,7 +124,11 @@ export function DomainsPage() {
         optional: true,
         // Straight to the mail this domain received, which is the question
         // most often asked next.
-        render: (entry) => <Link to={`/manage/mail?domain=${encodeURIComponent(entry.domain)}`}>{t('domains.viewMail')}</Link>,
+        render: (entry) => (
+          <Link className="button" to={`/manage/mail?domain=${encodeURIComponent(entry.domain)}`}>
+            {t('domains.viewMail')}
+          </Link>
+        ),
       },
     ],
     [t, plural],

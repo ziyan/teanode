@@ -575,10 +575,7 @@ export function DataTable<Row>({
           </span>
 
           {filtering && (
-            <button
-              /* link-button: the table's own clear-filters control */ className="link"
-              onClick={() => setFilters({})}
-            >
+            <button type="button" onClick={() => setFilters({})}>
               {t('filter.clearAll')}
             </button>
           )}

@@ -371,8 +371,10 @@ export function ComposePage() {
                   {t('compose.template')}
                   {template && (
                     <>
-                      {' · '}
-                      <Link to={`/manage/domains/${domainId}/templates/${template.id}`}>{t('compose.editTemplate')}</Link>
+                      {' '}
+                      <Link className="button-quiet" to={`/manage/domains/${domainId}/templates/${template.id}`}>
+                        {t('compose.editTemplate')}
+                      </Link>
                     </>
                   )}
                 </span>

@@ -184,7 +184,7 @@ export function CalendarShareDialog({
         <>
           <p className="muted">{t('calendar.shareNoPeople')}</p>
           <p>
-            <Link to="/circles" onClick={onClose}>
+            <Link className="button" to="/circles" onClick={onClose}>
               {t('circles.open')}
             </Link>
           </p>
