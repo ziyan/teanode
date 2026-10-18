@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.172.4] - 2026-10-18
+
+### Changed
+
+- Conversations page: the kind filter is a segmented control beside the search box, with New conversation at the end of the row. (#543)
+
 ## [0.172.3] - 2026-10-18
 
 ### Fixed
