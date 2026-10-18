@@ -260,12 +260,20 @@ export function AddressBookPage() {
     [me, toast, t],
   )
 
-  // The Address column is drawn only when some contact in the list has one:
-  // most address books have none, and a wide empty column pushes the
-  // organization and the phone off a laptop screen.
-  const hasAddress = (contacts.data?.ListContacts ?? []).some((contact) =>
-    (contact.addresses ?? []).some((address) => Boolean(address.written)),
-  )
+  // The Address column is drawn only when the address book has an address at
+  // all: most address books have none, and a wide empty column pushes the
+  // organization and the phone off a laptop screen. It is read from the whole
+  // list (never from what a filter leaves) and, once seen, stays, so the
+  // columns do not move when a card is edited or the list reloads.
+  const [hasAddress, setHasAddress] = useState(false)
+  useEffect(() => {
+    if (
+      (contacts.data?.ListContacts ?? []).some((contact) =>
+        (contact.addresses ?? []).some((address) => Boolean(address.written)),
+      )
+    )
+      setHasAddress(true)
+  }, [contacts.data])
 
   const columns = useMemo<Column<Contact>[]>(
     () => [
@@ -284,10 +292,12 @@ export function AddressBookPage() {
             />
             <span className="contact-name">
               {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
-              {/* The Email column is dropped on a phone, so the address goes
-                  under the name there. */}
-              {(contact.emails ?? [])[0] ? (
-                <span className="contact-email-line muted">{(contact.emails ?? [])[0]}</span>
+              {/* The Email and Phone columns are dropped on a phone, so the
+                  address and the number go under the name there. */}
+              {(contact.emails ?? [])[0] || (contact.phones ?? [])[0] ? (
+                <span className="contact-email-line muted">
+                  {[(contact.emails ?? [])[0], (contact.phones ?? [])[0]].filter(Boolean).join(' · ')}
+                </span>
               ) : null}
             </span>
           </span>
