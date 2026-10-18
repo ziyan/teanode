@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.179.0] - 2026-10-18
+
+### Added
+
+- Change where photos were taken, or remove it, from the photo's details or for several chosen photos, on the dashboard, the iPhone, the command line and through the assistant. Removing asks first, and a removed location stays removed. (#580)
+
+### Fixed
+
+- On the iPhone, choosing another Photos collection in the side menu no longer leaves an album or a person open on top of it. (#580)
+
 ## [0.178.4] - 2026-10-18
 
 ### Changed
