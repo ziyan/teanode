@@ -2362,6 +2362,8 @@ export const ja: Catalog = {
   'cli.manualBody':
     'ブラウザはこのページを開いたターミナルに接続できませんでした。代わりに次のコマンドをターミナルに貼り付けてください。コマンドがトークンの入力を求めるので、トークンはコマンドラインにもシェルの履歴にも残りません。',
   'cli.manualToken': '求められたらトークンを貼り付けてください。トークンはここにしか表示されません。',
+  'cli.copyCommand': 'ログインコマンドをコピー',
+  'cli.copyToken': 'トークンをコピー',
   'server.tabRoles': 'ロール',
   'server.tabAudit': '監査',
   'access.users.intro':

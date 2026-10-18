@@ -2365,6 +2365,8 @@ export const en = {
   'cli.manualBody':
     'The browser could not reach the terminal that opened this page. Paste this command into it instead; it asks for the token, which is kept off the command line and out of the shell history.',
   'cli.manualToken': 'Then paste the token when asked. It is shown only here.',
+  'cli.copyCommand': 'Copy the sign-in command',
+  'cli.copyToken': 'Copy the token',
   'server.tabRoles': 'Roles',
   'server.tabAudit': 'Audit',
   'access.users.intro':

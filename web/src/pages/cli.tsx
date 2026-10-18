@@ -170,12 +170,12 @@ export function CommandLinePage({ username }: { username: string }) {
         <p className="muted">{t('cli.manualBody')}</p>
         <code className="auth-command">{command}</code>
         <div className="auth-actions">
-          <CopyButton value={command} />
+          <CopyButton value={command} label={t('cli.copyCommand')} />
         </div>
         <p className="muted">{t('cli.manualToken')}</p>
         <code className="auth-command">{secret}</code>
         <div className="auth-actions">
-          <CopyButton value={secret} />
+          <CopyButton value={secret} label={t('cli.copyToken')} />
         </div>
       </AuthCard>
     )
