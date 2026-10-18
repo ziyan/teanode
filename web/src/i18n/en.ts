@@ -2365,6 +2365,8 @@ export const en = {
   'cli.manualBody':
     'The browser could not reach the terminal that opened this page. Paste this command into it instead; it asks for the token, which is kept off the command line and out of the shell history.',
   'cli.manualToken': 'Then paste the token when asked. It is shown only here.',
+  'cli.copyCommand': 'Copy the sign-in command',
+  'cli.copyToken': 'Copy the token',
   'server.tabRoles': 'Roles',
   'server.tabAudit': 'Audit',
   'access.users.intro':
@@ -5765,6 +5767,8 @@ export const en = {
   'photos.notThisPerson': 'Not this person',
   'photos.faceRemoved': 'Removed this photo from this person.',
   'photos.showHidden': 'Show hidden people',
+  'photos.everyoneHidden':
+    'Everyone found is hidden. Turn on "Show hidden people" to see them.',
   'photos.hiddenHint': 'The people you hid are shown dimmed.',
   'photos.emptyPeople': 'No people yet. A person appears here once they are in at least three photos.',
   'photos.emptyPeopleOff': 'Finding people is off. Turn it on to see the people in your photos.',

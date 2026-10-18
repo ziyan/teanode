@@ -58,6 +58,9 @@ struct MailboxesList: View {
     /// Rows shown above the folders, as the side menu puts its sections
     /// there.
     var leading: AnyView?
+    /// The id of the list's last row, which the side menu scrolls to so that
+    /// the folders are in view when it opens. Nil where nothing scrolls to it.
+    var lastRowId: String?
     let onChoose: (MailPlace) -> Void
 
     var body: some View {
@@ -99,7 +102,7 @@ struct MailboxesList: View {
                 }
                 .listSectionSeparator(.hidden)
                 Section {
-                    FolderLink(place: .subscriptions, name: String(localized: "Subscriptions"), systemImage: "newspaper", count: 0, current: current, onChoose: onChoose)
+                    FolderLink(place: .subscriptions, name: String(localized: "Subscriptions"), systemImage: "newspaper", count: 0, current: current, onChoose: onChoose, scrollId: lastRowId)
                 }
                 .listSectionSeparator(.hidden)
             }
@@ -177,6 +180,8 @@ struct FolderLink: View {
     let count: Int64
     let current: MailPlace?
     let onChoose: (MailPlace) -> Void
+    /// The id a scroll view can scroll to this row by, when something does.
+    var scrollId: String?
 
     var body: some View {
         Button {
@@ -194,8 +199,26 @@ struct FolderLink: View {
             .contentShape(.rect)
         }
         .foregroundStyle(.primary)
+        // Before menuRow, so the row's hidden separator stays the outermost of
+        // its modifiers.
+        .modifier(OptionalScrollId(scrollId: scrollId))
         .menuRow(isSelected: place == current)
         .accessibilityAddTraits(place == current ? .isSelected : [])
+    }
+}
+
+/// OptionalScrollId gives a row an id to scroll to, when it has one: an id of
+/// nothing on every other row would make them all the same row.
+private struct OptionalScrollId: ViewModifier {
+    let scrollId: String?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let scrollId {
+            content.id(scrollId)
+        } else {
+            content
+        }
     }
 }
 

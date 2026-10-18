@@ -1167,7 +1167,7 @@ private final class FakeTailWriter: PhotoBackupTailWriter, @unchecked Sendable {
     private let behavior: Behavior
     private var calls = 0
     private var isAtTheMiddle = false
-    private var wasStopped = false
+    private var isStopped = false
 
     init(_ behavior: Behavior) { self.behavior = behavior }
 
@@ -1176,7 +1176,7 @@ private final class FakeTailWriter: PhotoBackupTailWriter, @unchecked Sendable {
     /// Whether a write has begun and is standing still.
     var isStandingStill: Bool { lock.withLock { isAtTheMiddle } }
     /// Whether the write was told to stop.
-    var wasToldToStop: Bool { lock.withLock { wasStopped } }
+    var hasBeenToldToStop: Bool { lock.withLock { isStopped } }
 
     func writeTail(of sourceURL: URL, from offsetBytes: Int64, to destinationURL: URL, isCancelled: @Sendable () -> Bool) throws {
         lock.withLock { calls += 1 }
@@ -1190,7 +1190,7 @@ private final class FakeTailWriter: PhotoBackupTailWriter, @unchecked Sendable {
             lock.withLock { isAtTheMiddle = true }
             let giveUpAt = Date().addingTimeInterval(20)
             while !isCancelled(), Date() < giveUpAt { Thread.sleep(forTimeInterval: 0.005) }
-            lock.withLock { wasStopped = isCancelled() }
+            lock.withLock { isStopped = isCancelled() }
             try? FileManager.default.removeItem(at: destinationURL)
             throw CancellationError()
         }
@@ -1228,6 +1228,29 @@ private final class Gate: @unchecked Sendable {
             return waiting
         }
         continuation?.resume()
+    }
+}
+
+/// The idle wait of a pass, which runs out only when the test releases it, once
+/// per release. A wait nobody released stays until the pass cancels it, which
+/// is what it does when an upload finishes, so a second pass in the same test
+/// is not ended by a release that was meant for the first.
+private final class IdleWait: @unchecked Sendable {
+    private let lock = NSLock()
+    private var releasedCount = 0
+
+    func release() { lock.withLock { releasedCount += 1 } }
+
+    func wait(seconds: TimeInterval) async {
+        while !Task.isCancelled {
+            let isReleased = lock.withLock { () -> Bool in
+                guard releasedCount > 0 else { return false }
+                releasedCount -= 1
+                return true
+            }
+            if isReleased { return }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
     }
 }
 
@@ -1288,7 +1311,8 @@ private func makeRig(
     index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300,
     exportTimeoutSeconds: TimeInterval = 30 * 60, freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, clock: ManualClock? = nil,
     batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false, uploads existingUploads: FakeUploads? = nil,
-    tailWriter: (any PhotoBackupTailWriter)? = nil, sleepForSeconds: (@Sendable (TimeInterval) async -> Void)? = nil
+    tailWriter: (any PhotoBackupTailWriter)? = nil, sleepForSeconds: (@Sendable (TimeInterval) async -> Void)? = nil,
+    sleepForIdleSeconds: (@Sendable (TimeInterval) async -> Void)? = nil
 ) throws -> Rig {
     let directory = try existingDirectory ?? temporaryDirectory(test)
     let outgoing = directory.appendingPathComponent("outgoing")
@@ -1305,6 +1329,7 @@ private func makeRig(
         budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, exportTimeoutSeconds: exportTimeoutSeconds, freeSpaceBytes: freeSpaceBytes,
         now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) },
         sleepForSeconds: sleepForSeconds ?? { seconds in try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000)) },
+        sleepForIdleSeconds: sleepForIdleSeconds ?? PhotoBackupCoordinator.sleepInRealTime,
         batchSize: batchSize, isPaused: isPaused, tailWriter: tailWriter ?? PhotoBackupFileTailWriter())
     return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, uploads: uploads, coordinator: coordinator)
 }
@@ -1319,6 +1344,10 @@ private func waitUntil(_ description: String, timeout: Double = 5, _ condition: 
 }
 
 private let settings = PhotoBackupCoordinator.Settings(usesMobileData: false, includesHidden: false)
+
+/// An idle wait that runs out the moment a pass starts it, for a test that
+/// only needs the pass to end idle and does not care when.
+private let endsIdleAtOnce: @Sendable (TimeInterval) async -> Void = { _ in }
 
 /// ExportTimeouts stands in for the time limit of each export. The first limit
 /// started runs out once the library has begun an export; the others wait to be
@@ -2131,13 +2160,21 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
 /// What keeps the backup going after the person leaves the app, and what stops
 /// it from stalling while the app is open.
 final class PhotoBackupContinuityTests: XCTestCase {
-    /// A pass over `count` photos, a budget of `budgetCount` files, and a short idle
-    /// wait, so that it ends with `budgetCount` uploads left to the session.
+    /// A pass over `count` photos and a budget of `budgetCount` files. The test
+    /// lets the idle wait run out, once, when the pass is waiting for an upload
+    /// to finish, so the pass ends with `budgetCount` uploads left to the
+    /// session and no real time is waited.
     private func idleEndedPass(count: Int, budgetCount: Int) async throws -> (Rig, PhotoBackupPassResult) {
+        let idleWait = IdleWait()
         let rig = try makeRig(
             self, items: (0..<count).map { makeItem("item\($0)", secondsSince2026: Double($0)) },
-            budget: PhotoBackupBudget(maximumUploadCount: budgetCount, maximumOutstandingBytes: 1 << 30), idleTimeoutSeconds: 0.1)
-        let result = await rig.coordinator.runPass(settings: settings)
+            budget: PhotoBackupBudget(maximumUploadCount: budgetCount, maximumOutstandingBytes: 1 << 30),
+            sleepForIdleSeconds: { seconds in await idleWait.wait(seconds: seconds) })
+        let coordinator = rig.coordinator
+        let pass = Task { await coordinator.runPass(settings: settings) }
+        try await waitUntil("the pass waiting for an upload to finish") { await coordinator.isWaitingForAnUploadToFinish }
+        idleWait.release()
+        let result = await pass.value
         return (rig, result)
     }
 
@@ -2196,7 +2233,8 @@ final class PhotoBackupContinuityTests: XCTestCase {
         let clock = ManualClock()
         let rig = try makeRig(
             self, items: (0..<6).map { makeItem("item\($0)", secondsSince2026: Double($0)) },
-            budget: PhotoBackupBudget(maximumUploadCount: 2, maximumOutstandingBytes: 1 << 30), idleTimeoutSeconds: 0.1, clock: clock)
+            budget: PhotoBackupBudget(maximumUploadCount: 2, maximumOutstandingBytes: 1 << 30), clock: clock,
+            sleepForIdleSeconds: endsIdleAtOnce)
         _ = await rig.coordinator.runPass(settings: settings)
         let jobs = rig.transfer.startedJobs
         rig.transfer.release(jobs[0])
@@ -2303,7 +2341,7 @@ final class PhotoBackupContinuityTests: XCTestCase {
             makeItem("cloudNew", secondsSince2026: 3, isLocallyAvailable: false),
             makeItem("phoneB", secondsSince2026: 4),
         ]
-        let rig = try makeRig(self, items: items, idleTimeoutSeconds: 0.1)
+        let rig = try makeRig(self, items: items, sleepForIdleSeconds: endsIdleAtOnce)
         _ = await rig.coordinator.runPass(settings: PhotoBackupCoordinator.Settings(usesMobileData: true, includesHidden: false))
         XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["phoneB", "phoneA", "cloudNew", "cloudOld"])
     }
@@ -2311,17 +2349,17 @@ final class PhotoBackupContinuityTests: XCTestCase {
     func testTheQueueStopsGrowingWhenTheFreeSpaceIsLowAndFreeSpaceIsReadBeforeEachFile() async throws {
         let questions = NetworkQuestions()
         let rig = try makeRig(
-            self, items: (0..<6).map { makeItem("item\($0)", secondsSince2026: Double($0)) }, budget: .standard, idleTimeoutSeconds: 0.1,
-            freeSpaceBytes: {
+            self, items: (0..<6).map { makeItem("item\($0)", secondsSince2026: Double($0)) }, budget: .standard, freeSpaceBytes: {
                 questions.add()
                 return 800
-            })
+            },
+            sleepForIdleSeconds: endsIdleAtOnce)
         for number in 0..<6 { rig.library.set(bytes: 100, for: "item\(number)|original") }
         _ = await rig.coordinator.runPass(settings: settings)
         // A quarter of 800 bytes is 200: two files of 100 fit, a third does not.
         XCTAssertEqual(rig.transfer.startedJobs.count, 2)
         XCTAssertGreaterThanOrEqual(questions.total, 3, "asked again before each file")
-        let roomy = try makeRig(self, items: (0..<6).map { makeItem("item\($0)", secondsSince2026: Double($0)) }, budget: .standard, idleTimeoutSeconds: 0.1)
+        let roomy = try makeRig(self, items: (0..<6).map { makeItem("item\($0)", secondsSince2026: Double($0)) }, budget: .standard, sleepForIdleSeconds: endsIdleAtOnce)
         _ = await roomy.coordinator.runPass(settings: settings)
         XCTAssertEqual(roomy.transfer.startedJobs.count, 6, "with room the whole library is queued at once")
     }
@@ -3756,7 +3794,7 @@ final class PhotoBackupContinuationTests: XCTestCase {
         _ = await pass.value
         await coordinator.pause()
 
-        XCTAssertTrue(writer.wasToldToStop, "the write does not run on for a pass that is over")
+        XCTAssertTrue(writer.hasBeenToldToStop, "the write does not run on for a pass that is over")
         XCTAssertEqual(rig.transfer.startedJobs.count, 1, "nothing more was queued")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "neither the rest nor the whole file stays")
         let kept = await rig.index.partialUpload(localIdentifier: "a", role: .original)
@@ -3775,7 +3813,7 @@ final class PhotoBackupContinuationTests: XCTestCase {
         pass.cancel()
         _ = await pass.value
 
-        XCTAssertTrue(writer.wasToldToStop, "the cancellation of the task that asked reaches the write")
+        XCTAssertTrue(writer.hasBeenToldToStop, "the cancellation of the task that asked reaches the write")
         XCTAssertEqual(rig.transfer.startedJobs.count, 1)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
     }

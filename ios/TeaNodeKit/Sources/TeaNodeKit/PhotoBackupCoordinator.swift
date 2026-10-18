@@ -798,6 +798,10 @@ public actor PhotoBackupCoordinator {
     /// is given up on when the test says and not after a stretch of real time
     /// that a slow machine can overrun for the files that are not stuck.
     private let sleepForSeconds: @Sendable (TimeInterval) async -> Void
+    /// Waits out the idle time of a pass that nothing is finishing in. A test
+    /// replaces it for the same reason as `sleepForSeconds`: the pass should
+    /// end idle when the test says so, not after a stretch of real time.
+    private let sleepForIdleSeconds: @Sendable (TimeInterval) async -> Void
     private let fileManager: FileManager
     private let tailWriter: any PhotoBackupTailWriter
 
@@ -860,14 +864,19 @@ public actor PhotoBackupCoordinator {
     /// goes up starts its count again.
     private var uploadMovedOnCountByKey: [String: Int] = [:]
 
+    /// Waits for the given time on the clock; what both waits use unless a test
+    /// replaces them. It returns early when the task is cancelled.
+    public static let sleepInRealTime: @Sendable (TimeInterval) async -> Void = { seconds in
+        try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+    }
+
     public init(
         index: PhotoBackupIndex, library: any PhotoBackupLibrary, transfer: any PhotoBackupTransfer, uploads: any PhotoBackupUploads,
         lookup: (any PhotoBackupServerLookup)?, network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String,
         credential: PhotoBackupCredential, budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, exportTimeoutSeconds: TimeInterval = 30 * 60,
         freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, now: @escaping @Sendable () -> Date = { Date() },
-        sleepForSeconds: @escaping @Sendable (TimeInterval) async -> Void = { seconds in
-            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-        },
+        sleepForSeconds: @escaping @Sendable (TimeInterval) async -> Void = PhotoBackupCoordinator.sleepInRealTime,
+        sleepForIdleSeconds: @escaping @Sendable (TimeInterval) async -> Void = PhotoBackupCoordinator.sleepInRealTime,
         fileManager: FileManager = .default, batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false,
         tailWriter: any PhotoBackupTailWriter = PhotoBackupFileTailWriter()
     ) {
@@ -889,6 +898,7 @@ public actor PhotoBackupCoordinator {
         self.freeSpaceBytes = freeSpaceBytes
         self.now = now
         self.sleepForSeconds = sleepForSeconds
+        self.sleepForIdleSeconds = sleepForIdleSeconds
         self.fileManager = fileManager
         self.tailWriter = tailWriter
     }
@@ -1580,7 +1590,7 @@ public actor PhotoBackupCoordinator {
         if let kept = await index.partialUpload(localIdentifier: upload.localIdentifier, role: upload.role) {
             // Whether the server may still hold the upload, and so is told to
             // drop it when the address is forgotten.
-            var mayBeOnServer = true
+            var isPossiblyOnServer = true
             if let digest, kept.sha256 == digest, kept.sizeBytes == exported.sizeBytes {
                 let statusRequest = PhotoBackupRequest.makeStatus(
                     server: server, credential: credential, uploadPath: kept.uploadPath, usesMobileData: usesMobileData)
@@ -1598,19 +1608,19 @@ public actor PhotoBackupCoordinator {
                     // failing) is why nothing is sent now.
                     guard case .refused = outcome else { return .notSent(outcome) }
                 case .answered(.gone):
-                    mayBeOnServer = false
+                    isPossiblyOnServer = false
                 case .answered(.receiving):
                     break
                 }
             }
             if uploadPath == nil {
-                await forgetKeptUpload(of: upload, uploadPath: kept.uploadPath, mayBeOnServer: mayBeOnServer)
+                await forgetKeptUpload(of: upload, uploadPath: kept.uploadPath, isPossiblyOnServer: isPossiblyOnServer)
             }
         }
         if let keptPath = uploadPath, offsetBytes > 0, !PhotoBackupBudget.allowsTail(sizeBytes: exported.sizeBytes - offsetBytes, freeSpaceBytes: freeSpaceBytes()) {
             uploadPath = nil
             offsetBytes = 0
-            await forgetKeptUpload(of: upload, uploadPath: keptPath, mayBeOnServer: true)
+            await forgetKeptUpload(of: upload, uploadPath: keptPath, isPossiblyOnServer: true)
         }
         if isStopRequested { return .notSent(.cancelled) }
         if uploadPath == nil {
@@ -1655,7 +1665,7 @@ public actor PhotoBackupCoordinator {
             // whole file, still here, goes up as an upload of its own.
             NSLog("Photo backup: the rest of a file could not be written, so the file is sent again from its first byte")
             removeTemporaryFile(named: tailFilename)
-            await forgetKeptUpload(of: upload, uploadPath: uploadPath, mayBeOnServer: true)
+            await forgetKeptUpload(of: upload, uploadPath: uploadPath, isPossiblyOnServer: true)
             if isStopRequested { return .notSent(.cancelled) }
             switch await makeUpload(for: upload, exported: exported, digest: digest) {
             case .answered(let createdPath): return .send(sendingWholeFile(exported, uploadPath: createdPath))
@@ -1693,9 +1703,9 @@ public actor PhotoBackupCoordinator {
 
     /// Forgets the address kept for a file, and when the server may still hold
     /// the upload asks it to drop it.
-    private func forgetKeptUpload(of upload: PhotoBackupUpload, uploadPath: String, mayBeOnServer: Bool) async {
+    private func forgetKeptUpload(of upload: PhotoBackupUpload, uploadPath: String, isPossiblyOnServer: Bool) async {
         await index.forgetPartialUpload(localIdentifier: upload.localIdentifier, role: upload.role)
-        if mayBeOnServer { cancelOnServer(uploadPath: uploadPath) }
+        if isPossiblyOnServer { cancelOnServer(uploadPath: uploadPath) }
     }
 
     /// Asks the server to drop an upload the app will not continue. It is not
@@ -1954,8 +1964,9 @@ public actor PhotoBackupCoordinator {
         if isStopRequested || outstanding.isEmpty { return true }
         let completionCountBefore = completionCount
         let seconds = idleTimeoutSeconds
+        let sleepForIdleSeconds = sleepForIdleSeconds
         let timer = Task {
-            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+            await sleepForIdleSeconds(seconds)
             guard !Task.isCancelled else { return }
             await self.resumeWaiters()
         }

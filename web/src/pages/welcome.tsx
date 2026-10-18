@@ -13,7 +13,7 @@ import { useTranslation } from '../i18n/i18n'
 // Which hosted services already run, and whether chosen ones wait for a
 // restart: what the second way in offers. Asked apart from everything else
 // and allowed to fail, since it only changes what that block says.
-const RUNNING = `{ GetServiceCapabilities { isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled hasPendingServiceRestart } }`
+const RUNNING = `{ GetServiceCapabilities { isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isPhotosChosen hasPendingServiceRestart } }`
 
 type RunningServices = {
   isMailboxEnabled: boolean
@@ -21,6 +21,7 @@ type RunningServices = {
   isRemindersEnabled: boolean
   isContactsEnabled: boolean
   isPhotosEnabled: boolean
+  isPhotosChosen: boolean
   hasPendingServiceRestart: boolean
 }
 

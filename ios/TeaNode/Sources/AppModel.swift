@@ -1029,9 +1029,10 @@ extension AppModel {
         if let readSession { accessSession = readSession }
     }
 
-    /// Whether Photos is offered: an operator turned it on for the server and
-    /// the person holds `photos:use`. It gates the Photos section, the rows
-    /// for Photo backup and People in Photos, and the backup switch.
+    /// Whether Photos is offered: the server has it on (it is, unless an
+    /// operator turned it off) and the person holds `photos:use`. It gates the
+    /// Photos section, the rows for Photo backup and People in Photos, and the
+    /// backup switch.
     var isPhotosOffered: Bool {
         PhotosAvailability.isOffered(isServiceEnabled: services?.isPhotosEnabled == true, session: accessSession)
     }
@@ -1058,7 +1059,7 @@ extension AppModel {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled
         case .contacts: return services.isContactsEnabled
-        // Hidden until an operator turns Photos on for the server, and from
+        // Hidden when an operator turned Photos off for the server, and from
         // someone who may not use it.
         case .photos: return isPhotosOffered
         case .recordings: return account?.cachedRecordingUserId != nil || MeetingRecorder.shared.hasSession

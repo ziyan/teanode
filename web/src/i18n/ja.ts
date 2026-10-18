@@ -2362,6 +2362,8 @@ export const ja: Catalog = {
   'cli.manualBody':
     'ブラウザはこのページを開いたターミナルに接続できませんでした。代わりに次のコマンドをターミナルに貼り付けてください。コマンドがトークンの入力を求めるので、トークンはコマンドラインにもシェルの履歴にも残りません。',
   'cli.manualToken': '求められたらトークンを貼り付けてください。トークンはここにしか表示されません。',
+  'cli.copyCommand': 'ログインコマンドをコピー',
+  'cli.copyToken': 'トークンをコピー',
   'server.tabRoles': 'ロール',
   'server.tabAudit': '監査',
   'access.users.intro':
@@ -5701,6 +5703,7 @@ export const ja: Catalog = {
   'photos.notThisPerson': 'この人物ではない',
   'photos.faceRemoved': 'この写真をこの人物から外しました。',
   'photos.showHidden': '非表示の人物を表示',
+  'photos.everyoneHidden': '見つかった人物はすべて非表示です。「非表示の人物を表示」をオンにすると表示されます。',
   'photos.hiddenHint': '非表示にした人物は薄く表示されます。',
   'photos.emptyPeople': 'まだ人物がいません。3枚以上の写真に写っている人物が、ここに表示されます。',
   'photos.emptyPeopleOff': '人物の検出がオフです。オンにすると、写真に写っている人物が表示されます。',

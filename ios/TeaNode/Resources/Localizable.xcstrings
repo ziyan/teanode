@@ -53872,6 +53872,22 @@
         }
       }
     },
+    "Cannot share the file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを共有できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法分享文件"
+          }
+        }
+      }
+    },
     "Copied.": {
       "localizations": {
         "ja": {

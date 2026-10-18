@@ -7,8 +7,8 @@ public struct ServiceCapabilities: Codable, Sendable, Equatable {
     public let isCalendarEnabled: Bool
     public let isRemindersEnabled: Bool
     public let isContactsEnabled: Bool
-    /// Whether the server keeps a photo library. Off until an operator turns
-    /// it on, and false in an answer from a server that predates Photos.
+    /// Whether the server keeps a photo library. On unless an operator turned
+    /// it off, and false in an answer from a server that predates Photos.
     public let isPhotosEnabled: Bool
     public let isAssistantEnabled: Bool
     public let hasPendingServiceRestart: Bool
@@ -59,10 +59,11 @@ extension Documents {
 /// PhotosAvailability decides whether the app offers Photos: the Photos
 /// section, the Photo backup and People in Photos rows, and the backup switch.
 public enum PhotosAvailability {
-    /// True when an operator turned Photos on for the server and the person
-    /// holds `photos:use`. A list of permissions that could not be read, or
-    /// that the server does not give, leaves it offered: the server refuses
-    /// what is not allowed, and a failed read must not hide the library.
+    /// True when the server has Photos on (it is, unless an operator turned it
+    /// off) and the person holds `photos:use`. A list of permissions that could
+    /// not be read, or that the server does not give, leaves it offered: the
+    /// server refuses what is not allowed, and a failed read must not hide the
+    /// library.
     public static func isOffered(isServiceEnabled: Bool, session: AccessSession?) -> Bool {
         guard isServiceEnabled else { return false }
         guard let session, session.permissions != nil else { return true }

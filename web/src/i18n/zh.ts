@@ -2281,6 +2281,8 @@ export const zh: Catalog = {
   'cli.manualBody':
     '浏览器无法连接到打开此页面的终端。请把下面的命令粘贴到终端中；命令会提示输入令牌，令牌不会出现在命令行或 shell 历史中。',
   'cli.manualToken': '然后在提示时粘贴令牌。令牌只在这里显示。',
+  'cli.copyCommand': '复制登录命令',
+  'cli.copyToken': '复制令牌',
   'server.tabRoles': '角色',
   'server.tabAudit': '审计',
   'access.users.intro': '此服务器上的所有账号。除非另行指定，新用户会被加入“Members”群组，以便读取分配给他们的邮箱。',
@@ -5485,6 +5487,7 @@ export const zh: Catalog = {
   'photos.notThisPerson': '不是这个人',
   'photos.faceRemoved': '已将这张照片从此人物中移除。',
   'photos.showHidden': '显示已隐藏的人物',
+  'photos.everyoneHidden': '找到的人物都已隐藏。打开“显示已隐藏的人物”即可查看。',
   'photos.hiddenHint': '已隐藏的人物以淡色显示。',
   'photos.emptyPeople': '还没有人物。某个人出现在至少三张照片中后，就会显示在这里。',
   'photos.emptyPeopleOff': '查找人物已关闭。打开后即可看到照片中的人物。',

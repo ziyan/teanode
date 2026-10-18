@@ -1373,9 +1373,9 @@ struct PhotoGrid: View {
     let onOpen: (Photo) -> Void
 
     var body: some View {
-        // Squares with a hairline between them, edge to edge: five across on a phone held
-        // upright, and more on a wider screen.
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 1)], spacing: 1) {
+        // Squares with a hairline between them, edge to edge: three across on a phone held
+        // upright, as the Photos app shows them, and more on a wider screen.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 1)], spacing: 1) {
             if listKey.photoCollection == .trash {
                 // The Trash is listed by when photos were moved there, so its
                 // groups are the days they were moved on, each with when it goes.
@@ -1734,7 +1734,11 @@ enum PhotoImages {
     static func picture(path: String, connection: Connection) async -> UIImage? {
         let key = key(path: path, accountKey: connection.accountKey)
         if let known = decoded.object(forKey: key) { return known }
-        guard let data = try? await cache.data(for: path, using: connection), let picture = UIImage(data: data) else { return nil }
+        guard let data = try? await cache.data(for: path, using: connection), let read = UIImage(data: data) else { return nil }
+        // A picture made from bytes is unpacked the first time it is drawn, on the
+        // main thread, which made the grid stutter while scrolling; it is unpacked
+        // here instead, away from the main thread.
+        let picture = await read.byPreparingForDisplay() ?? read
         let cost = Int(picture.size.width * picture.scale * picture.size.height * picture.scale * 4)
         decoded.setObject(picture, forKey: key, cost: cost)
         return picture
