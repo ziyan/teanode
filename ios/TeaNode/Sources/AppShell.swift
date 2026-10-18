@@ -116,6 +116,12 @@ struct MainView: View {
     @State private var mailPlace: MailPlace?
     @State private var finance: FinanceModel
     @State private var financePart = FinancePart.spending
+    /// The photo library, held here so the side menu can list its collections
+    /// as it lists the mail folders.
+    @State private var photos: PhotosModel
+    /// Whether the photo backup screen is open on the Photos part; the side
+    /// menu's Photo backup row sets it.
+    @State private var isShowingPhotoBackup = false
     @State private var composing: ComposeStart?
     /// Whether the services, the agent's identity and the chats have been
     /// read once. Until then it is not known whether the agent is on, and
@@ -127,13 +133,14 @@ struct MainView: View {
         self.connection = connection
         _mail = State(initialValue: MailModel(connection: connection, username: username))
         _finance = State(initialValue: FinanceModel(connection: connection))
+        _photos = State(initialValue: PhotosModel.start(connection: connection))
     }
 
     var body: some View {
         SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail) {
             SideMenu(
-                connection: connection, mail: mail, section: $section, conversation: $conversation, mailPlace: $mailPlace,
-                financePart: $financePart, composing: $composing
+                connection: connection, mail: mail, photos: photos, section: $section, conversation: $conversation, mailPlace: $mailPlace,
+                financePart: $financePart, isShowingPhotoBackup: $isShowingPhotoBackup, composing: $composing
             ) {
                 isMenuOpen = false
             }
@@ -342,7 +349,7 @@ struct MainView: View {
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:
-            PhotosScreen(connection: connection)
+            PhotosScreen(model: photos, isShowingBackup: $isShowingPhotoBackup)
         case .goals:
             GoalsScreen(connection: connection)
         case .ideas:
@@ -440,10 +447,12 @@ struct KnowledgeStack: View {
 struct SideMenu: View {
     let connection: Connection
     let mail: MailModel
+    let photos: PhotosModel
     @Binding var section: AppSection
     @Binding var conversation: AgentConversation?
     @Binding var mailPlace: MailPlace?
     @Binding var financePart: FinancePart
+    @Binding var isShowingPhotoBackup: Bool
     @Binding var composing: ComposeStart?
     let onClose: () -> Void
     @Environment(AppModel.self) private var app
@@ -487,6 +496,39 @@ struct SideMenu: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { MenuBrand() }
             }
+        case .photos:
+            NavigationStack {
+                List {
+                    Section { sections }
+                        .listSectionSeparator(.hidden)
+                    Section("Photos") {
+                        ForEach(photos.sections) { collection in
+                            Button {
+                                photos.section = collection
+                                // A backup screen left open would stay over the collection chosen.
+                                isShowingPhotoBackup = false
+                                onClose()
+                            } label: {
+                                Label(collection.title, systemImage: collection.symbolName)
+                                    .foregroundStyle(.primary)
+                            }
+                            .menuRow(isSelected: photos.section == collection)
+                        }
+                        Button {
+                            isShowingPhotoBackup = true
+                            onClose()
+                        } label: {
+                            Label("Photo backup", systemImage: "icloud.and.arrow.up")
+                                .foregroundStyle(.primary)
+                        }
+                        .menuRow(isSelected: false)
+                    }
+                    .listSectionSeparator(.hidden)
+                }
+                .menuListStyle()
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { MenuBrand() }
+            }
         default:
             NavigationStack {
                 List {
@@ -507,10 +549,10 @@ struct SideMenu: View {
                     onClose()
                 } else {
                     section = part
-                    // The agent's conversations, the mail folders and the
-                    // finance sections stay open to choose from; the other
-                    // parts open at once.
-                    if part != .agent, part != .mail, part != .finance { onClose() }
+                    // The agent's conversations, the mail folders, the
+                    // finance sections and the photo collections stay open to
+                    // choose from; the other parts open at once.
+                    if part != .agent, part != .mail, part != .finance, part != .photos { onClose() }
                 }
             } label: {
                 // The part on screen is marked by its color and weight; the

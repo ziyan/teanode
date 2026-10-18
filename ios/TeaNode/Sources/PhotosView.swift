@@ -2,7 +2,7 @@ import SwiftUI
 import TeaNodeKit
 import UIKit
 
-/// PhotoSection is what the menu of collections chooses: three lists of
+/// PhotoSection is what the side menu's collections choose: three lists of
 /// photos, the albums and the people. The name of the one on show is the
 /// large title.
 enum PhotoSection: String, CaseIterable, Identifiable {
@@ -10,7 +10,7 @@ enum PhotoSection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// The name in the segmented control.
+    /// The name in the side menu and the large title.
     var title: String {
         switch self {
         case .library: String(localized: "Library")
@@ -21,7 +21,7 @@ enum PhotoSection: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The symbol next to the name in the menu of collections.
+    /// The symbol next to the name in the side menu.
     var symbolName: String {
         switch self {
         case .library: "photo.on.rectangle"
@@ -221,6 +221,19 @@ final class PhotosModel {
     private(set) var circles: [PeopleCircle] = []
     var doneText: String?
     var problemText: String?
+    /// What can be done next beside the words in doneText. The buttons belong
+    /// to the words they were set with (see showDone): any other message put
+    /// in doneText afterwards shows without them, so Change and Remove never
+    /// sit beside a message that is about something else.
+    var doneButtons: [ToastButton] {
+        get { doneText != nil && doneText == doneButtonsText ? storedDoneButtons : [] }
+        set {
+            storedDoneButtons = newValue
+            doneButtonsText = newValue.isEmpty ? nil : doneText
+        }
+    }
+    private var storedDoneButtons: [ToastButton] = []
+    private var doneButtonsText: String?
     /// The title being asked for, by an alert on whichever screen raised it.
     var albumTitleRequest: AlbumTitleRequest?
 
@@ -232,6 +245,12 @@ final class PhotosModel {
     /// the Kit names what went wrong and the app writes the words.
     func describe(_ error: Error) -> String {
         AppModel.shared.describe(error)
+    }
+
+    /// Says what was done, with the buttons that go with these words.
+    func showDone(_ text: String, buttons: [ToastButton]) {
+        doneText = text
+        doneButtons = buttons
     }
 
     /// Makes a list of just these photos, for a viewer opened on photos the
@@ -281,7 +300,7 @@ final class PhotosModel {
         if library?.isFaceRecognitionAvailable == false, faceGroups == nil { await reloadFaceGroups(isQuiet: true) }
     }
 
-    /// The choices of the segmented control: People only when faces can be
+    /// The collections the side menu lists: People only when faces can be
     /// found, or people were found before, or it is the one being looked at.
     var sections: [PhotoSection] {
         PhotoSection.allCases.filter { $0 != .people || isPeopleShown || section == .people }
@@ -767,45 +786,10 @@ private struct PhotoFollowID: Equatable {
     let hasWaitingPhotos: Bool
 }
 
-/// OpenedPhoto is the photo the viewer was opened on.
-struct OpenedPhoto: Identifiable {
-    let id: String
-}
-
-/// PhotosScreen is the person's photo library: a large title with the days of
-/// the photos on screen under it, an edge to edge grid (or a picture for each
-/// month or year), the collections in a menu at the top right, a Select mode,
-/// Years, Months and All with Search floating at the bottom, and a viewer for
-/// one photo.
-struct PhotosScreen: View {
-    @State private var model: PhotosModel
-    @State private var opened: OpenedPhoto?
-    @State private var isConfirmingEmptyTrash = false
-    @State private var isSelecting = false
-    @State private var selectedPhotoIds: Set<String> = []
-    @State private var isConfirmingTrashOfSelection = false
-    @State private var isConfirmingDeleteOfSelection = false
-    /// What is typed in the library's search field.
-    @State private var searchText = ""
-    /// Whether the search field is out: the Search button at the bottom brings it up.
-    @State private var isSearchPresented = false
-    @State private var isChoosingDates = false
-    @State private var isShowingBackup = false
-    /// How much of the library the switch at the bottom shows.
-    @State private var scale = PhotoScale.all
-    /// The days the photos on screen were taken on, as "Oct 3 to 6, 2026": kept up
-    /// as the grid scrolls. Empty until the grid has said what is on screen.
-    @State private var dateRangeText = ""
-    /// The photo the grid is to scroll to once it is on screen: the first of the
-    /// month or year that was pressed in Months or Years.
-    @State private var pendingJumpPhotoId: String?
-    #if DEBUG
-        @State private var isDemoViewerOpened = false
-        @State private var isDemoAlbumOpened = false
-        @State private var isDemoPersonOpened = false
-    #endif
-
-    init(connection: Connection) {
+extension PhotosModel {
+    /// The model the app shell holds for the Photos part. In a debug build a
+    /// screenshot launch argument can start it on another collection or with a filter.
+    static func start(connection: Connection) -> PhotosModel {
         let model = PhotosModel(connection: connection)
         #if DEBUG
             // `-TeaNodeScreen photos-trash` opens on the Trash, and
@@ -827,7 +811,53 @@ struct PhotosScreen: View {
                 model.photoFilter = PhotoFilter(photoKindFilter: .video)
             }
         #endif
-        _model = State(initialValue: model)
+        return model
+    }
+}
+
+/// OpenedPhoto is the photo the viewer was opened on.
+struct OpenedPhoto: Identifiable {
+    let id: String
+}
+
+/// PhotosScreen is the person's photo library: a large title with the days of
+/// the photos on screen under it, an edge to edge grid (or a picture for each
+/// month or year), a Select mode, Years, Months and All with Search floating at
+/// the bottom, and a viewer for one photo. The collections and the photo backup
+/// are in the side menu.
+struct PhotosScreen: View {
+    /// Owned by the app shell, which also draws the collections in the side menu.
+    @Bindable var model: PhotosModel
+    /// Whether the photo backup screen is pushed; the side menu's Photo backup row sets it.
+    @Binding var isShowingBackup: Bool
+    @State private var opened: OpenedPhoto?
+    @State private var isConfirmingEmptyTrash = false
+    @State private var isSelecting = false
+    @State private var selectedPhotoIds: Set<String> = []
+    @State private var isConfirmingTrashOfSelection = false
+    @State private var isConfirmingDeleteOfSelection = false
+    /// What is typed in the library's search field.
+    @State private var searchText = ""
+    /// Whether the search field is out: the Search button at the bottom brings it up.
+    @State private var isSearchPresented = false
+    @State private var isChoosingDates = false
+    /// How much of the library the switch at the bottom shows.
+    @State private var scale = PhotoScale.all
+    /// The days the photos on screen were taken on, as "Oct 3 to 6, 2026": kept up
+    /// as the grid scrolls. Empty until the grid has said what is on screen.
+    @State private var dateRangeText = ""
+    /// The photo the grid is to scroll to once it is on screen: the first of the
+    /// month or year that was pressed in Months or Years.
+    @State private var pendingJumpPhotoId: String?
+    #if DEBUG
+        @State private var isDemoViewerOpened = false
+        @State private var isDemoAlbumOpened = false
+        @State private var isDemoPersonOpened = false
+    #endif
+
+    init(model: PhotosModel, isShowingBackup: Binding<Bool>) {
+        self.model = model
+        _isShowingBackup = isShowingBackup
         #if DEBUG
             // `-TeaNodeScreen photos-select` starts in Select mode with two photos chosen.
             if DemoServer.isRequested, DemoServer.screen == "photos-select" {
@@ -904,7 +934,7 @@ struct PhotosScreen: View {
             content
                 .modifier(LibrarySearch(isActive: model.section == .library, text: $searchText, isPresented: $isSearchPresented))
                 // The large title is the collection on show, with the days of the photos on screen
-                // under it; the other collections are in the menu at the top right.
+                // under it; the other collections are in the side menu.
                 .navigationTitle(isSelecting ? selectionTitle : model.section.title)
                 .navigationSubtitle(subtitleText)
                 .navigationBarTitleDisplayMode(.large)
@@ -996,7 +1026,7 @@ struct PhotosScreen: View {
         .fullScreenCover(item: $opened) { opened in
             PhotoViewer(model: model, listKey: key ?? .library, openedPhotoId: opened.id)
         }
-        .toast(done: $model.doneText, problem: $model.problemText)
+        .toast(done: $model.doneText, problem: $model.problemText, buttons: $model.doneButtons)
         #if DEBUG
             // `-TeaNodeScreen photos-album` opens the first album, `photos-share` the same with its
             // share sheet over it (`photos-share-stop` with the question before a share is stopped), and
@@ -1067,11 +1097,8 @@ struct PhotosScreen: View {
                     onEnd: endSelection)
             }
         } else {
-            // The collections and the filter share one glass capsule, Select (and what is
-            // particular to a collection) is another, as at the top of the Photos app.
-            ToolbarItem(placement: .primaryAction) {
-                collectionsMenu
-            }
+            // The collections are in the side menu; the bar has the filter, Select and what is
+            // particular to a collection.
             if model.section == .albums {
                 ToolbarItem(placement: .primaryAction) {
                     NewAlbumMenu(model: model)
@@ -1090,10 +1117,13 @@ struct PhotosScreen: View {
                         PhotoFilterMenu(model: model, isChoosingDates: $isChoosingDates)
                     }
                 }
-                ToolbarSpacer(.fixed, placement: .primaryAction)
+                // The filter and Select share one glass capsule, as at the top of
+                // the Photos app.
                 if canSelect {
                     ToolbarItem(placement: .primaryAction) {
-                        Button("Select") {
+                        // An icon like the others in the bar, the circled check
+                        // the size of the circled filter beside it.
+                        Button("Select", systemImage: "checkmark.circle") {
                             scale = .all
                             isSelecting = true
                         }
@@ -1114,23 +1144,6 @@ struct PhotosScreen: View {
                     }
                 }
             }
-        }
-    }
-
-    /// The collections of the library, Favorites, Albums, People and the Trash,
-    /// with the photo backup under them. Library is the one the grid is for.
-    private var collectionsMenu: some View {
-        Menu {
-            Picker("Show", selection: $model.section) {
-                ForEach(model.sections) { section in
-                    Label(section.title, systemImage: section.symbolName).tag(section)
-                }
-            }
-            .pickerStyle(.inline)
-            Divider()
-            Button("Photo backup", systemImage: "icloud.and.arrow.up") { isShowingBackup = true }
-        } label: {
-            Label("Collections", systemImage: "square.grid.2x2")
         }
     }
 
