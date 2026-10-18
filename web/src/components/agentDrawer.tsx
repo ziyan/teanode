@@ -2581,7 +2581,7 @@ function CheckInLine({ at, text, origin }: { at?: string; text: string; origin: 
         {at ? ` · ${clockTime(at)}` : ''}
       </button>
       {origin === 'goalNeedsYou' && goalIdOf(text) ? (
-        <Link className="button agent-checkin-goal" to={`/settings/agent/goals?goal=${goalIdOf(text)}`}>
+        <Link className="button-quiet agent-checkin-goal" to={`/settings/agent/goals?goal=${goalIdOf(text)}`}>
           {t('agentDrawer.openGoal')}
         </Link>
       ) : null}

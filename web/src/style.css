@@ -1867,6 +1867,12 @@ button.link:hover:not(:disabled) {
   cursor: pointer;
 }
 
+/* Beside a label's words the quiet anchor is a box in the line, not text. */
+label > span > .button-quiet {
+  display: inline-block;
+  vertical-align: baseline;
+}
+
 .button-quiet:hover:not(:disabled) {
   border-color: var(--border);
   background: var(--sidebar-hover);
@@ -13788,6 +13794,11 @@ button.idea-history-title {
    panel is from the next. */
 .finance-pointer {
   margin: 0 0 var(--space-4);
+}
+
+/* The pointer's own margin is the space below; the actions row adds none. */
+.finance-pointer .page-actions {
+  margin-bottom: 0;
 }
 
 /* An amount column in the shared table reads down by its decimal places,

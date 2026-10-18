@@ -688,7 +688,7 @@ function OwnKnowledge() {
             {t('knowledge.documents.button')}
           </button>
         </Tooltip>
-        <Link to="/knowledge/explore" title={t('knowledge.explore.go')}>
+        <Link className="button" to="/knowledge/explore" title={t('knowledge.explore.go')}>
           {t('knowledge.explore.title')}
         </Link>
       </div>
