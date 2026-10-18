@@ -370,32 +370,54 @@ it('says that a photo is not available when it cannot be read', async () => {
 
 const manyPhotos = (count: number) => Array.from({ length: count }, (_, index) => photoFixture(`photo-${index + 1}`))
 
-it('goes on across the pages: Previous from the first photo of a page opens the last of the page before', async () => {
-  library = manyPhotos(203)
-  show('/photos/photo-201?page=2')
-  const previous = await screen.findByRole('button', { name: 'Previous photo' })
-  expect(screen.queryByRole('button', { name: 'Next photo' })).not.toBeNull()
-  fireEvent.click(previous)
-  await waitFor(() => expect(address()).toBe('/photos/photo-200'))
-  // Page one is read behind it, so that Previous goes on from there.
-  await waitFor(() => expect(callsTo('ListPhotos').some((variables) => variables.offset === 0)).toBe(true))
-  expect(await screen.findByRole('button', { name: 'Previous photo' })).toBeTruthy()
-})
+// These tests draw a page of 200 photos and read the page beside it, which
+// takes well over a second when the whole suite shares the machine. Every
+// wait is for the thing itself to be there, so the time is only how long to
+// give up after, and the test as a whole is allowed to wait that long for
+// each of them.
+const SLOW_WAIT = { timeout: 15_000 }
+const SLOW_TEST_MS = 60_000
 
-it('goes on across the pages: Next from the last photo of a page opens the first of the page after', async () => {
-  library = manyPhotos(203)
-  show('/photos/photo-200')
-  const next = await screen.findByRole('button', { name: 'Next photo' })
-  fireEvent.click(next)
-  await waitFor(() => expect(address()).toBe('/photos/photo-201?page=2'))
-  await waitFor(() => expect(callsTo('ListPhotos').some((variables) => variables.offset === 200)).toBe(true))
-  // The last photo has nothing after it.
-  fireEvent.click(await screen.findByRole('button', { name: 'Next photo' }))
-  await waitFor(() => expect(address()).toBe('/photos/photo-202?page=2'))
-  fireEvent.click(await screen.findByRole('button', { name: 'Next photo' }))
-  await waitFor(() => expect(address()).toBe('/photos/photo-203?page=2'))
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Next photo' })).toBeNull())
-})
+it(
+  'goes on across the pages: Previous from the first photo of a page opens the last of the page before',
+  async () => {
+    library = manyPhotos(203)
+    show('/photos/photo-201?page=2')
+    const previous = await screen.findByRole('button', { name: 'Previous photo' }, SLOW_WAIT)
+    expect(screen.queryByRole('button', { name: 'Next photo' })).not.toBeNull()
+    fireEvent.click(previous)
+    await waitFor(() => expect(address()).toBe('/photos/photo-200'), SLOW_WAIT)
+    // Page one is read behind it, so that Previous goes on from there.
+    await waitFor(() => expect(callsTo('ListPhotos').some((variables) => variables.offset === 0)).toBe(true), SLOW_WAIT)
+    expect(await screen.findByRole('button', { name: 'Previous photo' }, SLOW_WAIT)).toBeTruthy()
+  },
+  SLOW_TEST_MS,
+)
+
+it(
+  'goes on across the pages: Next from the last photo of a page opens the first of the page after',
+  async () => {
+    library = manyPhotos(203)
+    show('/photos/photo-200')
+    const next = await screen.findByRole('button', { name: 'Next photo' }, SLOW_WAIT)
+    fireEvent.click(next)
+    await waitFor(() => expect(address()).toBe('/photos/photo-201?page=2'), SLOW_WAIT)
+    await waitFor(
+      () => expect(callsTo('ListPhotos').some((variables) => variables.offset === 200)).toBe(true),
+      SLOW_WAIT,
+    )
+    // The page after is drawn, so the viewer knows what follows the photo it
+    // shows, instead of the Next button of the moment before the page came.
+    await screen.findByRole('button', { name: 'Open photo-203.jpg' }, SLOW_WAIT)
+    // The last photo has nothing after it.
+    fireEvent.click(await screen.findByRole('button', { name: 'Next photo' }, SLOW_WAIT))
+    await waitFor(() => expect(address()).toBe('/photos/photo-202?page=2'), SLOW_WAIT)
+    fireEvent.click(await screen.findByRole('button', { name: 'Next photo' }, SLOW_WAIT))
+    await waitFor(() => expect(address()).toBe('/photos/photo-203?page=2'), SLOW_WAIT)
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Next photo' })).toBeNull(), SLOW_WAIT)
+  },
+  SLOW_TEST_MS,
+)
 
 // ---- filters ----
 
