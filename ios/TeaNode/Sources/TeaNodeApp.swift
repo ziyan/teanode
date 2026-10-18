@@ -101,8 +101,8 @@ struct ConversationsSheet: View {
     /// The sheets for starting a chat with a person, and a group.
     @State private var isMessagingSomeone = false
     @State private var isStartingGroup = false
-    /// The row a screenshot scrolls to, to show the rows that start a chat.
-    private static let messageSomeoneRowId = "message-someone"
+    /// The row a screenshot scrolls to, to bring the chats into view.
+    private static let mainChatRowId = "main-chat"
     /// The room the last rows are given at the bottom of the side menu: the
     /// search field floats over the bottom of the list there, and without it
     /// the last chats cannot be scrolled clear of the field. It grows with the
@@ -124,9 +124,11 @@ struct ConversationsSheet: View {
                         }
                         ForEach(found) { conversation in listRow(conversation) }
                     } else {
-                        Section {
-                            // A person with no agent has no main chat to open.
-                            if app.hasAgent {
+                        // A person with no agent has no main chat to open. A new
+                        // side chat, a chat with someone and a group are started
+                        // from the button at the top, so the list is only chats.
+                        if app.hasAgent {
+                            Section {
                                 Button {
                                     onChoose(nil)
                                 } label: {
@@ -144,38 +146,13 @@ struct ConversationsSheet: View {
                                     // screen; green only marks what can be pressed.
                                     .foregroundStyle(.primary)
                                 }
+                                .id(Self.mainChatRowId)
                                 .menuRow(isSelected: currentId == nil)
+                            } header: {
+                                if leading != nil { Text("Chats") }
                             }
-                            if !isPanel, app.isAgentOn {
-                                Button {
-                                    Task { await start() }
-                                } label: {
-                                    Label("New side chat", systemImage: "plus")
-                                        .actionColor()
-                                }
-                                .menuRow(isSelected: false)
-                            }
-                            if app.canChat {
-                                Button {
-                                    isMessagingSomeone = true
-                                } label: {
-                                    Label("Message someone", systemImage: "person.crop.circle.badge.plus")
-                                        .actionColor()
-                                }
-                                .id(Self.messageSomeoneRowId)
-                                .menuRow(isSelected: false)
-                                Button {
-                                    isStartingGroup = true
-                                } label: {
-                                    Label("New group", systemImage: "person.2")
-                                        .actionColor()
-                                }
-                                .menuRow(isSelected: false)
-                            }
-                        } header: {
-                            if leading != nil { Text("Chats") }
+                            .listSectionSeparator(.hidden)
                         }
-                        .listSectionSeparator(.hidden)
                         // The chats with people, by when they were last spoken in
                         // (the server lists them so), apart from the side chats
                         // with the agent.
@@ -208,13 +185,13 @@ struct ConversationsSheet: View {
                 #if DEBUG
                     .task(id: app.canChat) {
                         // `-TeaNodeScreen conversations`: the side menu scrolled to its chats,
-                        // to show the rows that start one, once the session says they are there.
+                        // once the session says chats are on.
                         // `conversations-restored` too, which then closes and opens the menu.
                         guard DemoServer.isRequested, DemoServer.screen == "conversations" || DemoServer.screen == "conversations-restored",
                             leading != nil, app.canChat
                         else { return }
                         try? await Task.sleep(for: .seconds(2))
-                        withAnimation { scroller.scrollTo(Self.messageSomeoneRowId, anchor: .top) }
+                        withAnimation { scroller.scrollTo(Self.mainChatRowId, anchor: .top) }
                     }
                 #endif
             }
@@ -259,6 +236,9 @@ struct ConversationsSheet: View {
                 } else {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { dismiss() }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        newMenu
                     }
                 }
             }

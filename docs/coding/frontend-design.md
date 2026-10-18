@@ -189,8 +189,10 @@ exception to the rule below.
 
 A chat with people is one more conversation in this drawer, and its menu is
 another of the head's dropdowns (`ChatMenu`): who is in it, its name if it is a
-group, its sound, and leaving it. Starting one is in the picker beside the new
-side chat ("Message someone", "New group"). With the agent off the drawer opens
+group, its sound, and leaving it. Starting one is in the picker's "New
+conversation" menu, beside its search box, with the new side chat ("Message
+someone", "New group"), so the picker lists only conversations; the iPhone's
+side menu has the same menu at its top. With the agent off the drawer opens
 on the person's chats, and the offer to turn the agent on takes the main
 conversation's place. There is no page of chats and no row for them in the
 rail; the number on the drawer's button is the unread messages in the chats

@@ -7071,21 +7071,6 @@ label .select-value.placeholder {
   font-weight: 600;
 }
 
-.agent-drawer-list-row.new {
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--muted);
-  cursor: pointer;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-  border-radius: 6px 6px 0 0;
-}
-
-.agent-drawer-list-row.new:hover {
-  color: var(--text);
-}
-
 .agent-drawer-list-row.more {
   border: 0;
   background: none;
@@ -9578,9 +9563,17 @@ td.truncate:has(.contact-postal) {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
-.agent-drawer-search {
-  width: 100%;
+/* The search box, and the button that starts one at its end. */
+.agent-drawer-list-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin-bottom: 4px;
+}
+
+.agent-drawer-search {
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 13px;
 }
 
@@ -18367,14 +18360,6 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
    first picture's letter entirely. */
 .chat-avatars .avatar + .avatar {
   margin-left: -4px;
-}
-
-/* New side chat, Message someone and New group are one block at the top of
-   the list; only the last of them draws the line under it. */
-.agent-drawer-list-row.new.stacked {
-  margin-bottom: 0;
-  border-bottom: 0;
-  border-radius: 6px;
 }
 
 /* The offer where the main conversation would be, with the agent off. */
