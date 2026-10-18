@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.171.5] - 2026-10-18
+
+### Fixed
+
+- In the dialog that names a person in Photos, the note under the contact list no longer overlaps the list. (#553)
+
 ## [0.171.4] - 2026-10-18
 
 ### Fixed
