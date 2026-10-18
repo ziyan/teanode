@@ -1007,6 +1007,12 @@ func (self *recordsFolder) readPostponed(ctx context.Context, entry *ScanEntry) 
 	if !isPostponed || entry.Refused != "" {
 		return
 	}
+	// A page whose time is up does not start a reader: the reader would
+	// fail, and an entry sent with its hash and no text is never read again.
+	if err := ctx.Err(); err != nil {
+		entry.Refused = "not read before the page ended"
+		return
+	}
 	attachment := postponed.attachment
 	text, err := self.attachmentText(ctx, &attachment, postponed.path)
 	if err != nil {
