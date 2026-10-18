@@ -16,18 +16,30 @@ const SEARCH_ADDRESSES = `query ($query: String!) {
 // search, or a choice onChoose refuses by throwing, is shown in the dialog,
 // which stays so the words can be changed and the press tried again. The
 // caller closes the dialog (onClose) once the choice is saved.
+//
+// OpenStreetMap does not know every street. Once something was typed and
+// searched, onKeepTyped (when the caller gives it) offers to keep the words
+// as they were typed, without moving anything. A caller that needs a position
+// and cannot do that (home in the setup) gives notFoundNote instead, which is
+// said when nothing matched.
 export function LocationAddressChooser({
   title,
   onChoose,
+  onKeepTyped,
+  notFoundNote,
   onClose,
 }: {
   title: string
   onChoose: (match: FoundPlace) => Promise<void>
+  onKeepTyped?: (addressText: string) => Promise<void>
+  notFoundNote?: string
   onClose: () => void
 }) {
   const { t } = useTranslation()
   const [queryText, setQueryText] = useState('')
   const [matches, setMatches] = useState<FoundPlace[] | null>(null)
+  // The words the matches are for; the input may have been changed since.
+  const [searchedText, setSearchedText] = useState('')
   const [isBusy, setIsBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -39,6 +51,7 @@ export function LocationAddressChooser({
     try {
       const answer = await graphql<{ SearchAddresses: FoundPlace[] }>(SEARCH_ADDRESSES, { query })
       setMatches(answer.SearchAddresses)
+      setSearchedText(query)
     } catch (failure) {
       setProblem(failure instanceof Error && failure.message ? failure.message : t('location.addressSearchFailed'))
     } finally {
@@ -46,11 +59,11 @@ export function LocationAddressChooser({
     }
   }
 
-  async function choose(match: FoundPlace) {
+  async function choose(save: () => Promise<void>) {
     setIsBusy(true)
     setProblem(null)
     try {
-      await onChoose(match)
+      await save()
     } catch (failure) {
       setProblem(failure instanceof Error && failure.message ? failure.message : t('location.placeFailed'))
       setIsBusy(false)
@@ -85,6 +98,7 @@ export function LocationAddressChooser({
             </button>
           </form>
           {matches !== null && matches.length === 0 && <p className="muted">{t('location.addressNoMatch')}</p>}
+          {matches !== null && matches.length === 0 && notFoundNote && <p className="muted">{notFoundNote}</p>}
           {matches !== null && matches.length > 0 && (
             <div className="location-nearby">
               {matches.map((match, index) => (
@@ -93,7 +107,7 @@ export function LocationAddressChooser({
                   type="button"
                   className="location-row"
                   disabled={isBusy}
-                  onClick={() => void choose(match)}
+                  onClick={() => void choose(() => onChoose(match))}
                 >
                   <span className="location-row-body">
                     <strong>{match.addressText}</strong>
@@ -105,6 +119,14 @@ export function LocationAddressChooser({
                   )}
                 </button>
               ))}
+            </div>
+          )}
+          {matches !== null && onKeepTyped && (
+            <div className="location-keep-typed">
+              <button type="button" disabled={isBusy} onClick={() => void choose(() => onKeepTyped(searchedText))}>
+                {t('location.keepAddressTyped')}
+              </button>
+              <span className="muted">{t('location.keepAddressTypedNote', { address: searchedText })}</span>
             </div>
           )}
           <p className="muted location-credit">{t('location.credit')}</p>

@@ -6119,7 +6119,6 @@ export const en = {
   'location.checkInHereNote': 'Uses where your browser places you now.',
   'location.checkedInHere': 'Checked in here',
   'location.checkInPrecision': 'Your browser places you within {accuracyMeters} m.',
-  'location.checkInCoarse': 'Your browser could only find you roughly, within {accuracyMeters} m. You can still check in, but the place may be beside where you are.',
   'location.setupInstallButton': 'Set up the iPhone app',
   'location.setupInstall': 'Install the TeaNode app on your iPhone',
   'location.setupInstallNote': 'Only the phone records where you go in the background.',
@@ -6161,6 +6160,10 @@ export const en = {
   'location.nowhereOther': 'No position yet.',
   'location.personNotSharing': 'That person does not share their location with you.',
   'location.personNotRead': 'The people who share with you could not be read, so this list cannot be shown.',
-  'location.setupHomeCoarse':
-    'Your browser only knows where you are to within {accuracyMeters} m. Try again on your phone, or somewhere with a better signal.',
+  'location.browserCoarse': 'Your browser can only place you within {accuracyMeters} m. A computer has no GPS; your iPhone is exact.',
+  'location.setupHomeNotFound': 'Not found on the map. Use where I am now on your iPhone, or make home and move its pin.',
+  'location.keepAddressTyped': 'Keep this address as typed',
+  'location.keepAddressTypedNote': 'Keeps "{address}" as the address, without moving the place.',
+  'location.addressKept': 'Kept the address {address}',
+  'location.placeMapHint': 'Drag the pin, or click the map, to put the place exactly where it is. Save to keep it.',
 }

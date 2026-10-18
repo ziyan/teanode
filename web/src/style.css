@@ -17906,6 +17906,21 @@ body.has-recording-bar .content {
   }
 }
 
+/* The map inside the place editor, after the rule above so a phone keeps it
+   small too. */
+.location-map-compact {
+  height: 220px;
+  border-radius: var(--radius-2);
+  overflow: hidden;
+}
+
+.location-keep-typed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
 .photo-circle-chip {
   display: inline-flex;
   flex: 0 0 auto;

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { hasPermission, useSession } from '../session'
-import { COARSE_ACCURACY_METERS, readFreshBrowserLocation } from './browserLocation'
+import { COARSE_ACCURACY_METERS, readFreshBrowserLocation, UNUSABLE_ACCURACY_METERS } from './browserLocation'
 import { Tag } from './common'
 import { LocationAddressChooser } from './locationAddressChooser'
 import { FoundPlace, nearestPlaceHolding } from './locationData'
@@ -48,6 +48,9 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
   const canUseCircles = hasPermission(session.permissions, 'circle:use')
   const [isBusy, setIsBusy] = useState(false)
   const [isTypingAddress, setIsTypingAddress] = useState(false)
+  // How far off the last reading of the browser said it might be, when that
+  // was too far to make home from; null while there is nothing to say.
+  const [coarseAccuracyMeters, setCoarseAccuracyMeters] = useState<number | null>(null)
 
   const home = useQuery(
     async () => (await graphql<{ ListPlaces: { places: { id: string }[] } }>(LIST_HOME_PLACES)).ListPlaces.places,
@@ -89,10 +92,13 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
         toast.failed(t('location.checkInNoPosition'))
         return
       }
+      // Home is where the person lives: a reading that can be a street away
+      // is not saved, and the sentence says why and offers the typed address.
       if (position.accuracyMeters !== undefined && position.accuracyMeters > COARSE_ACCURACY_METERS) {
-        toast.failed(t('location.setupHomeCoarse', { accuracyMeters: Math.round(position.accuracyMeters) }))
+        setCoarseAccuracyMeters(position.accuracyMeters)
         return
       }
+      setCoarseAccuracyMeters(null)
       // A place of the person's that already holds the position (a visit may
       // have made it) is the one labeled; only otherwise is a new one made.
       const own = await graphql<{ ListPlaces: { places: OwnPlace[] } }>(LIST_OWN_PLACES)
@@ -163,7 +169,11 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
         actions={
           !isHomeDone && (
             <>
-              <button type="button" disabled={isBusy} onClick={() => void markHome()}>
+              <button
+                type="button"
+                disabled={isBusy || (coarseAccuracyMeters ?? 0) > UNUSABLE_ACCURACY_METERS}
+                onClick={() => void markHome()}
+              >
                 {t('location.setupHomeButton')}
               </button>
               <button type="button" disabled={isBusy} onClick={() => setIsTypingAddress(true)}>
@@ -173,6 +183,9 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
           )
         }
       />
+      {!isHomeDone && coarseAccuracyMeters !== null && (
+        <p className="muted">{t('location.browserCoarse', { accuracyMeters: Math.round(coarseAccuracyMeters) })}</p>
+      )}
       {familyCircles.map((circle) => {
         const isShared = (shares.data ?? []).some((share) => share.granteeCircleId === circle.id)
         const share = (shareLevel: 'history' | 'current') =>
@@ -219,6 +232,7 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
         <LocationAddressChooser
           title={t('location.setupHomeTypeTitle')}
           onChoose={saveHomeAt}
+          notFoundNote={t('location.setupHomeNotFound')}
           onClose={() => setIsTypingAddress(false)}
         />
       )}

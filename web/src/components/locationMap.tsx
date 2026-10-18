@@ -146,12 +146,20 @@ export function LocationMap({
   path = [],
   onSelectPerson,
   onSelectPlace,
+  onPlaceMoved,
+  isCompact = false,
 }: {
   people: MapPerson[]
   places: MapPlace[]
   path?: MapPathPoint[]
   onSelectPerson?: (userId: string) => void
   onSelectPlace?: (placeId: string) => void
+  // Given, the places' markers can be dragged and a click on the map picks a
+  // position: this is called with where the place should now be. The place
+  // editor uses it for its one place; the page's map does not give it.
+  onPlaceMoved?: (latitudeDegrees: number, longitudeDegrees: number) => void
+  // A smaller map, for inside a dialog.
+  isCompact?: boolean
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -163,8 +171,8 @@ export function LocationMap({
 
   // The latest callbacks, read when a marker is pressed: a marker's element
   // outlives the render that made it.
-  const callbacks = useRef({ onSelectPerson, onSelectPlace })
-  callbacks.current = { onSelectPerson, onSelectPlace }
+  const callbacks = useRef({ onSelectPerson, onSelectPlace, onPlaceMoved })
+  callbacks.current = { onSelectPerson, onSelectPlace, onPlaceMoved }
   // Said once whatever the map fails to load, so a host that is down does not
   // make a toast of every tile.
   const failure = useRef({ toast, message: t('location.mapFailed'), isSaid: false })
@@ -258,6 +266,15 @@ export function LocationMap({
       failure.current.isSaid = true
       failure.current.toast.failed(failure.current.message)
     })
+    // A click on the map picks a position for the place being moved; a press
+    // on a marker is the marker's own, so it is not taken for one.
+    map.on('click', (event) => {
+      const target = event.originalEvent.target
+      if (target instanceof Element && target.closest('.location-marker')) {
+        return
+      }
+      callbacks.current.onPlaceMoved?.(event.lngLat.lat, event.lngLat.lng)
+    })
     mapRef.current = map
     const markers = markersRef.current
     return () => {
@@ -340,7 +357,16 @@ export function LocationMap({
           callbacks.current.onSelectPlace?.(identifier)
         }
       })
-      const marker = new maplibregl.Marker({ element, anchor: 'center' }).setLngLat(position).addTo(map)
+      const isDraggable = key.startsWith('place:') && Boolean(callbacks.current.onPlaceMoved)
+      const marker = new maplibregl.Marker({ element, anchor: 'center', draggable: isDraggable })
+        .setLngLat(position)
+        .addTo(map)
+      if (isDraggable) {
+        marker.on('dragend', () => {
+          const dropped = marker.getLngLat()
+          callbacks.current.onPlaceMoved?.(dropped.lat, dropped.lng)
+        })
+      }
       markers.set(key, { marker, element })
     }
     setSlots([...markers.entries()].map(([key, { element }]) => ({ key, element })))
@@ -425,7 +451,11 @@ export function LocationMap({
   }, [selectedKey])
 
   return (
-    <div className="location-map" role="region" aria-label={t('location.mapLabel')}>
+    <div
+      className={isCompact ? 'location-map location-map-compact' : 'location-map'}
+      role="region"
+      aria-label={t('location.mapLabel')}
+    >
       <div className="location-map-canvas" ref={container} />
       {slots.map((slot) => {
         const person = slot.key.startsWith('person:')

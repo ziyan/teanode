@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
-import { COARSE_ACCURACY_METERS, readFreshBrowserLocation } from './browserLocation'
+import { COARSE_ACCURACY_METERS, readFreshBrowserLocation, UNUSABLE_ACCURACY_METERS } from './browserLocation'
 import { ConfirmDialog } from './dialog'
+import { LocationAddressChooser } from './locationAddressChooser'
 import { FoundPlace, foundPlaceNamed, placeSubtitle, placeTitle } from './locationData'
 import { PlaceLabelIcon } from './placeLabelIcon'
 import { useToast } from './toast'
@@ -22,9 +23,9 @@ const SEARCH_PLACES = `query ($query: String!, $latitudeDegrees: Float, $longitu
   }
 }`
 const CHECK_IN = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String,
-  $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
+  $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String, $accuracyMeters: Float) {
   CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees,
-    placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) { id }
+    accuracyMeters: $accuracyMeters, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) { id }
 }`
 
 type Position = { latitudeDegrees: number; longitudeDegrees: number }
@@ -33,8 +34,12 @@ type SearchPage = { foundPlaces: FoundPlace[]; nextOffset: number | null }
 // LocationCheckInDialog asks the browser where it is (a fresh, precise fix),
 // says how precise it is, lists "Check in here" and then what has a name near
 // there, nearest first, and records that the person is at the one they press.
-// "Check in here" sends only the coordinates; the server uses the person's own
-// place that holds them, or makes one. "Find a place" searches by words, around the same position, and its
+// "Check in here" sends the coordinates and how precise the browser said they
+// are; the server uses the person's own place that holds them, or makes one.
+// A browser sure only to a few hundred meters (a computer has no GPS) is
+// said so plainly, with "Type my address" beside it, which checks in to the
+// address typed instead; past a kilometer "Check in here" is off.
+// "Find a place" searches by words, around the same position, and its
 // answers are checked in to the same way. A failure to find where the person
 // is, or what is near, is a toast and the dialog goes: there is nothing in it
 // to correct, and a refusal of the browser's question is not something to
@@ -55,6 +60,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
     nextOffset: number | null
   } | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [isTypingAddress, setIsTypingAddress] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
   useEffect(() => {
@@ -118,33 +124,43 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
     void search(query, 0)
   }
 
+  // sendCheckIn records the check-in and closes the dialog; it throws when the
+  // server refuses, for the caller to show where it is standing.
+  async function sendCheckIn(foundPlace: FoundPlace | null) {
+    await graphql(
+      CHECK_IN,
+      foundPlace === null
+        ? {
+            latitudeDegrees: position?.latitudeDegrees,
+            longitudeDegrees: position?.longitudeDegrees,
+            accuracyMeters: accuracyMeters ?? undefined,
+          }
+        : foundPlace.placeId
+          ? { placeId: foundPlace.placeId }
+          : {
+              latitudeDegrees: foundPlace.latitudeDegrees,
+              longitudeDegrees: foundPlace.longitudeDegrees,
+              placeName: foundPlace.placeName,
+              osmType: foundPlace.osmType,
+              osmId: foundPlace.osmId,
+              osmCategory: foundPlace.osmCategory,
+              addressText: foundPlace.addressText,
+            },
+    )
+    toast.done(
+      foundPlace === null
+        ? t('location.checkedInHere')
+        : t('location.checkedIn', { place: placeTitle(foundPlaceNamed(foundPlace), t) }),
+    )
+    onCheckedIn()
+    onClose()
+  }
+
   async function checkIn(foundPlace: FoundPlace | null) {
     setIsBusy(true)
     setProblem(null)
     try {
-      await graphql(
-        CHECK_IN,
-        foundPlace === null
-          ? { latitudeDegrees: position?.latitudeDegrees, longitudeDegrees: position?.longitudeDegrees }
-          : foundPlace.placeId
-            ? { placeId: foundPlace.placeId }
-            : {
-                latitudeDegrees: foundPlace.latitudeDegrees,
-                longitudeDegrees: foundPlace.longitudeDegrees,
-                placeName: foundPlace.placeName,
-                osmType: foundPlace.osmType,
-                osmId: foundPlace.osmId,
-                osmCategory: foundPlace.osmCategory,
-                addressText: foundPlace.addressText,
-              },
-      )
-      toast.done(
-        foundPlace === null
-          ? t('location.checkedInHere')
-          : t('location.checkedIn', { place: placeTitle(foundPlaceNamed(foundPlace), t) }),
-      )
-      onCheckedIn()
-      onClose()
+      await sendCheckIn(foundPlace)
     } catch (failure) {
       setProblem(failure instanceof Error && failure.message ? failure.message : t('location.checkInFailed'))
       setIsBusy(false)
@@ -152,6 +168,18 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
   }
 
   const shownPlaces = searched ? searched.foundPlaces : foundPlaces
+  const isCoarse = accuracyMeters !== null && accuracyMeters > COARSE_ACCURACY_METERS
+  const isUnusable = accuracyMeters !== null && accuracyMeters > UNUSABLE_ACCURACY_METERS
+
+  if (isTypingAddress) {
+    return (
+      <LocationAddressChooser
+        title={t('location.setupHomeTypeButton')}
+        onChoose={sendCheckIn}
+        onClose={() => setIsTypingAddress(false)}
+      />
+    )
+  }
 
   return (
     <ConfirmDialog
@@ -180,16 +208,25 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
               {t('location.findPlaceButton')}
             </button>
           </form>
-          {position !== null && accuracyMeters !== null && (
-            <p className="muted">
-              {accuracyMeters > COARSE_ACCURACY_METERS
-                ? t('location.checkInCoarse', { accuracyMeters: Math.round(accuracyMeters) })
-                : t('location.checkInPrecision', { accuracyMeters: Math.round(accuracyMeters) })}
-            </p>
+          {position !== null && accuracyMeters !== null && !isCoarse && (
+            <p className="muted">{t('location.checkInPrecision', { accuracyMeters: Math.round(accuracyMeters) })}</p>
+          )}
+          {position !== null && accuracyMeters !== null && isCoarse && (
+            <div className="location-keep-typed">
+              <p className="muted">{t('location.browserCoarse', { accuracyMeters: Math.round(accuracyMeters) })}</p>
+              <button type="button" disabled={isBusy} onClick={() => setIsTypingAddress(true)}>
+                {t('location.setupHomeTypeButton')}
+              </button>
+            </div>
           )}
           {position !== null && !searched && (
             <div className="location-nearby">
-              <button type="button" className="location-row" disabled={isBusy} onClick={() => void checkIn(null)}>
+              <button
+                type="button"
+                className="location-row"
+                disabled={isBusy || isUnusable}
+                onClick={() => void checkIn(null)}
+              >
                 <span className="location-row-icon">
                   <PlaceLabelIcon placeLabel="" />
                 </span>

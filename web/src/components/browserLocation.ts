@@ -20,8 +20,12 @@ const LOCATION_TIMEOUT_MS = 30_000
 const LOCATION_MAXIMUM_AGE_MS = 5 * 60_000
 
 // A browser that knows where it is only to within this many meters (an answer
-// from the Wi-Fi network or the address) cannot place a person at a door.
-export const COARSE_ACCURACY_METERS = 300
+// from the Wi-Fi network or the address, since a computer has no GPS) is
+// worse than a person can use to say where they are standing: the dashboard
+// says so and offers to type the address. Past the second, it cannot place
+// a person at all, and what records the position is turned off.
+export const COARSE_ACCURACY_METERS = 100
+export const UNUSABLE_ACCURACY_METERS = 1000
 
 // readBrowserLocation asks the browser where it is, and takes a fix up to five
 // minutes old: enough for the agent's answer. It never throws: a refusal is an

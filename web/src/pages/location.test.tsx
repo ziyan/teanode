@@ -17,9 +17,22 @@ vi.mock('../api', async (importOriginal) => ({
 }))
 // WebGL is not there to draw a map in; the page's part is what it hands the map.
 vi.mock('../components/locationMap', () => ({
-  LocationMap: ({ people, places }: { people: { name: string }[]; places: { placeName: string }[] }) => (
+  LocationMap: ({
+    people,
+    places,
+    onPlaceMoved,
+  }: {
+    people: { name: string }[]
+    places: { placeName: string }[]
+    onPlaceMoved?: (latitudeDegrees: number, longitudeDegrees: number) => void
+  }) => (
     <div data-testid="map" data-people={people.map((person) => person.name).join(',')}>
       {people.length} people, {places.length} places
+      {onPlaceMoved && (
+        <button type="button" onClick={() => onPlaceMoved(11.5, 21.5)}>
+          Drop the pin at the test position
+        </button>
+      )}
     </div>
   ),
 }))
@@ -610,30 +623,71 @@ it('checks in here with the coordinates alone, and says how precise the browser 
   expect(await within(dialog).findByText('Your browser places you within 15 m.')).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: /Check in here/ }))
   await waitFor(() => expect(calls('CheckIn(')).toHaveLength(1))
-  expect(calls('CheckIn(')[0][1]).toEqual({ latitudeDegrees: 10.5, longitudeDegrees: 20.5 })
+  expect(calls('CheckIn(')[0][1]).toEqual({ latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 15 })
 })
 
-it('says plainly when the browser could only find the person roughly, and still lets them check in', async () => {
-  answerWith({})
-  const base = vi.mocked(graphql).getMockImplementation()
-  vi.mocked(graphql).mockImplementation(async (document, variables) => {
-    if (document.includes('ListNearbyPlaces')) return { ListNearbyPlaces: [] } as never
-    return base!(document, variables)
-  })
+function stubBrowserAccuracy(accuracy: number) {
   Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
   Object.defineProperty(navigator, 'geolocation', {
     configurable: true,
     value: {
       getCurrentPosition: (success: (position: unknown) => void) =>
-        success({ coords: { latitude: 10.5, longitude: 20.5, accuracy: 1500 }, timestamp: 1_900_000_000_000 }),
+        success({ coords: { latitude: 10.5, longitude: 20.5, accuracy }, timestamp: 1_900_000_000_000 }),
     },
   })
+}
+
+function answerCheckInWithNothingNearby() {
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ListNearbyPlaces')) return { ListNearbyPlaces: [] } as never
+    if (document.includes('CheckIn')) return { CheckIn: { id: 'visit-new' } } as never
+    return base!(document, variables)
+  })
+}
+
+it('says plainly when the browser is sure only to 850 m, offers the typed address, and still lets them check in', async () => {
+  answerWith({})
+  answerCheckInWithNothingNearby()
+  stubBrowserAccuracy(850)
   renderAt('/location')
 
   fireEvent.click(await screen.findByRole('button', { name: 'Check in' }))
   const dialog = await screen.findByRole('alertdialog')
-  expect(await within(dialog).findByText(/could only find you roughly, within 1500 m/)).toBeTruthy()
+  expect(
+    await within(dialog).findByText(
+      'Your browser can only place you within 850 m. A computer has no GPS; your iPhone is exact.',
+    ),
+  ).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: 'Type my address' })).toBeTruthy()
   expect((within(dialog).getByRole('button', { name: /Check in here/ }) as HTMLButtonElement).disabled).toBe(false)
+  fireEvent.click(within(dialog).getByRole('button', { name: /Check in here/ }))
+  await waitFor(() => expect(calls('CheckIn(')).toHaveLength(1))
+  expect(calls('CheckIn(')[0][1]).toMatchObject({ accuracyMeters: 850 })
+})
+
+it('turns Check in here off when the browser is sure only to 1500 m, and checks in at a typed address', async () => {
+  answerWith({})
+  answerCheckInWithNothingNearby()
+  stubBrowserAccuracy(1500)
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Check in' }))
+  const dialog = await screen.findByRole('alertdialog')
+  expect(await within(dialog).findByText(/can only place you within 1500 m/)).toBeTruthy()
+  expect((within(dialog).getByRole('button', { name: /Check in here/ }) as HTMLButtonElement).disabled).toBe(true)
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Type my address' }))
+  const chooser = await screen.findByRole('alertdialog')
+  fireEvent.change(within(chooser).getByLabelText('Type an address'), { target: { value: '12 Elm' } })
+  fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
+  fireEvent.click(await within(chooser).findByRole('button', { name: /12 Elm Street, Exampleton/ }))
+  await waitFor(() => expect(calls('CheckIn(')).toHaveLength(1))
+  expect(calls('CheckIn(')[0][1]).toMatchObject({
+    latitudeDegrees: 11.25,
+    longitudeDegrees: 21.75,
+    addressText: '12 Elm Street, Exampleton',
+  })
 })
 
 it('finds a place by words around the browser position and checks in to it', async () => {
@@ -751,20 +805,26 @@ it('keeps the dialog open with what was typed when a save is refused', async () 
   expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Typed name')
 })
 
-it('does not label the browser position as home when the browser is only sure to a kilometer', async () => {
+it('does not make home from a browser that is only sure to 850 m, and says so beside Type my address', async () => {
   answerWith({ own: { latestPoint: null } })
-  Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
-  Object.defineProperty(navigator, 'geolocation', {
-    configurable: true,
-    value: {
-      getCurrentPosition: (success: (position: unknown) => void) =>
-        success({ coords: { latitude: 10.5, longitude: 20.5, accuracy: 1500 }, timestamp: 1_900_000_000_000 }),
-    },
-  })
+  stubBrowserAccuracy(850)
   renderAt('/location')
 
   fireEvent.click(await screen.findByRole('button', { name: 'Use where I am now' }))
-  expect(await screen.findByText(/only knows where you are to within 1500 m/)).toBeTruthy()
+  expect(await screen.findByText(/can only place you within 850 m/)).toBeTruthy()
+  expect(calls('SavePlace')).toHaveLength(0)
+  expect(screen.getByRole('button', { name: 'Type my address' })).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Use where I am now' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+it('turns Use where I am now off once the browser said it is only sure to 1500 m', async () => {
+  answerWith({ own: { latestPoint: null } })
+  stubBrowserAccuracy(1500)
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Use where I am now' }))
+  expect(await screen.findByText(/can only place you within 1500 m/)).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Use where I am now' }) as HTMLButtonElement).disabled).toBe(true)
   expect(calls('SavePlace')).toHaveLength(0)
 })
 
@@ -831,4 +891,61 @@ it('makes home at a typed address from the setup', async () => {
     placeLabel: 'home',
     addressText: '12 Elm Street, Exampleton',
   })
+})
+
+it('keeps an address as typed for a place, without moving it', async () => {
+  answerWith({ places: [place({ addressText: '1 Old Road, Exampleton' })] })
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SearchAddresses')) return { SearchAddresses: [] } as never
+    return base!(document, variables)
+  })
+  renderAt('/location?tab=places')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Change address' }))
+  const chooser = await screen.findByRole('alertdialog')
+  expect(within(chooser).queryByRole('button', { name: 'Keep this address as typed' })).toBeNull()
+  fireEvent.change(within(chooser).getByLabelText('Type an address'), { target: { value: '9 Nowhere Lane' } })
+  fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
+  fireEvent.click(await within(chooser).findByRole('button', { name: 'Keep this address as typed' }))
+
+  await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
+  expect(calls('SavePlace')[0][1]).toEqual({ placeId: 'place-one', addressText: '9 Nowhere Lane' })
+  expect(await screen.findByText('Kept the address 9 Nowhere Lane')).toBeTruthy()
+})
+
+it('does not offer to keep a typed address for home, and says to use the phone or move the pin', async () => {
+  answerWith({ own: { latestPoint: null } })
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SearchAddresses')) return { SearchAddresses: [] } as never
+    return base!(document, variables)
+  })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Type my address' }))
+  const chooser = await screen.findByRole('alertdialog')
+  fireEvent.change(within(chooser).getByLabelText('Type an address'), { target: { value: '9 Nowhere Lane' } })
+  fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
+  expect(
+    await within(chooser).findByText(
+      'Not found on the map. Use where I am now on your iPhone, or make home and move its pin.',
+    ),
+  ).toBeTruthy()
+  expect(within(chooser).queryByRole('button', { name: 'Keep this address as typed' })).toBeNull()
+})
+
+it('moves a place by its pin in the editor and saves the new position with Save', async () => {
+  answerWith({ places: [place()] })
+  renderAt('/location?tab=places')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
+  const editor = await screen.findByRole('dialog')
+  expect((within(editor).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(within(editor).getByRole('button', { name: 'Drop the pin at the test position' }))
+  fireEvent.click(within(editor).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
+  expect(calls('SavePlace')[0][1]).toEqual({ placeId: 'place-one', latitudeDegrees: 11.5, longitudeDegrees: 21.5 })
 })

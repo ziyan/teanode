@@ -990,6 +990,13 @@ function LocationContent({ userId }: { userId: string }) {
         <LocationAddressChooser
           title={t('location.changeAddress')}
           onClose={() => setAddressPlace(null)}
+          onKeepTyped={async (addressText) => {
+            // Only the words change: the place stays where it is.
+            await graphql(SAVE_PLACE, { placeId: addressPlace.id, addressText })
+            toast.done(t('location.addressKept', { address: addressText }))
+            setAddressPlace(null)
+            reloadAll()
+          }}
           onChoose={async (match) => {
             await graphql(SAVE_PLACE, {
               placeId: addressPlace.id,
@@ -1051,12 +1058,23 @@ function LocationContent({ userId }: { userId: string }) {
   )
 }
 
-type PlaceChanges = { placeName?: string; placeLabel?: string; radiusMeters?: number }
+type PlaceChanges = {
+  placeName?: string
+  placeLabel?: string
+  radiusMeters?: number
+  latitudeDegrees?: number
+  longitudeDegrees?: number
+}
+
+const NO_MAP_PEOPLE: MapPerson[] = []
 
 // PlaceEditor changes one place: what it is called, the label that gives it an
 // icon and a meaning ("home"), and how far from its point still counts as
-// being there. Only what the person changed is sent, so a name the map chose
-// is not turned into one the person gave by saving the radius.
+// being there. A small map shows the place with its radius: the pin is
+// dragged, or the map clicked, to put the place exactly where it is, which
+// matters where OpenStreetMap does not know the street. Only what the person
+// changed is sent, so a name the map chose is not turned into one the person
+// gave by saving the radius.
 function PlaceEditor({
   place,
   isBusy,
@@ -1078,6 +1096,10 @@ function PlaceEditor({
   const [placeName, setPlaceName] = useState(place.placeName)
   const [placeLabel, setPlaceLabel] = useState(place.placeLabel)
   const [radiusText, setRadiusText] = useState(String(Math.round(place.radiusMeters)))
+  const [position, setPosition] = useState({
+    latitudeDegrees: place.latitudeDegrees,
+    longitudeDegrees: place.longitudeDegrees,
+  })
   const radiusMeters = Number(radiusText)
   const isRadiusValid =
     radiusText.trim() !== '' && radiusMeters >= MINIMUM_RADIUS_METERS && radiusMeters <= MAXIMUM_RADIUS_METERS
@@ -1086,6 +1108,24 @@ function PlaceEditor({
   if (placeName.trim() !== place.placeName.trim()) changes.placeName = placeName.trim()
   if (placeLabel !== place.placeLabel) changes.placeLabel = placeLabel
   if (isRadiusValid && radiusMeters !== Math.round(place.radiusMeters)) changes.radiusMeters = radiusMeters
+  if (position.latitudeDegrees !== place.latitudeDegrees || position.longitudeDegrees !== place.longitudeDegrees) {
+    changes.latitudeDegrees = position.latitudeDegrees
+    changes.longitudeDegrees = position.longitudeDegrees
+  }
+  const mapPlaces = useMemo(
+    (): MapPlace[] => [
+      {
+        id: place.id,
+        placeName: placeTitle(place, t),
+        placeLabel,
+        latitudeDegrees: position.latitudeDegrees,
+        longitudeDegrees: position.longitudeDegrees,
+        radiusMeters: isRadiusValid ? radiusMeters : place.radiusMeters,
+        isSelected: true,
+      },
+    ],
+    [place, placeLabel, position, isRadiusValid, radiusMeters, t],
+  )
 
   return (
     <FormDialog
@@ -1111,6 +1151,13 @@ function PlaceEditor({
           onChange={(event) => setPlaceName(event.target.value)}
         />
       </label>
+      <LocationMap
+        isCompact
+        people={NO_MAP_PEOPLE}
+        places={mapPlaces}
+        onPlaceMoved={(latitudeDegrees, longitudeDegrees) => setPosition({ latitudeDegrees, longitudeDegrees })}
+      />
+      <p className="muted">{t('location.placeMapHint')}</p>
       <div className="location-address-row">
         <span className="location-address-text">
           <span className="muted">{t('location.address')}</span>
