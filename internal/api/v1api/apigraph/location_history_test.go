@@ -801,7 +801,9 @@ func (self *locationWorld) addressProvider(t *testing.T) *providerRequests {
 }
 
 // An address search is refused while the provider is off, asks without a box
-// around any position, and tells which matches are where the caller has a place.
+// around any position until there is one, tells which matches are where the
+// caller has a place, and puts the matches nearest the place being given an
+// address first.
 func TestSearchAddressesFromTheProvider(t *testing.T) {
 	world := newLocationWorld(t)
 	const search = `query { SearchAddresses(query: "6 rue example") { placeName addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson } }`
@@ -810,7 +812,7 @@ func TestSearchAddressesFromTheProvider(t *testing.T) {
 	}
 
 	requests := world.addressProvider(t)
-	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.6001, longitudeDegrees: -75.6001, placeLabel: "work") { id } }`)
+	workId := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.6001, longitudeDegrees: -75.6001, placeLabel: "work") { id } }`)["SavePlace"].(map[string]any)["id"].(string)
 
 	rows := world.call(t, world.ada, search)["SearchAddresses"].([]any)
 	if len(rows) != 2 {
@@ -845,6 +847,26 @@ func TestSearchAddressesFromTheProvider(t *testing.T) {
 	if rows[0].(map[string]any)["distanceMeters"].(float64) > 5 || rows[1].(map[string]any)["distanceMeters"].(float64) < 1000 {
 		t.Errorf("distances from the latest position: %v", rows)
 	}
+
+	// Giving the work place an address, the match beside it comes first,
+	// although the other is nearer the latest position; the provider is asked
+	// to prefer a box around the place, not to keep to it.
+	rows = world.call(t, world.ada, fmt.Sprintf(`query { SearchAddresses(query: "6 rue example", placeId: %q) { placeId distanceMeters } }`, workId))["SearchAddresses"].([]any)
+	if len(rows) != 2 || rows[0].(map[string]any)["placeId"] != workId || rows[0].(map[string]any)["distanceMeters"].(float64) > 50 ||
+		rows[1].(map[string]any)["distanceMeters"].(float64) < 1000 {
+		t.Errorf("nearest the place first: %v", rows)
+	}
+	asked = requests.asked()
+	if last := asked[len(asked)-1]; !strings.HasPrefix(last, "/search?") || !strings.Contains(last, "viewbox") || !strings.Contains(last, "bounded=0") {
+		t.Errorf("the search near the place asked %v", last)
+	}
+	// A position given is the same.
+	rows = world.call(t, world.ada, `query { SearchAddresses(query: "6 rue example", latitudeDegrees: 40.6, longitudeDegrees: -75.6) { placeId } }`)["SearchAddresses"].([]any)
+	if len(rows) != 2 || rows[0].(map[string]any)["placeId"] != workId {
+		t.Errorf("nearest the position given first: %v", rows)
+	}
+	world.refused(t, world.ada, `query { SearchAddresses(query: "elm", latitudeDegrees: 40.6) { placeName } }`)
+	world.refused(t, world.ada, `query { SearchAddresses(query: "elm", placeId: "no-such-place") { placeName } }`)
 
 	world.refused(t, world.ada, `query { SearchAddresses(query: "   ") { placeName } }`)
 	world.refused(t, world.ada, fmt.Sprintf(`query { SearchAddresses(query: %q) { placeName } }`, strings.Repeat("a", 201)))

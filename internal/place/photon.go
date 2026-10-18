@@ -167,18 +167,24 @@ func (self *photonProvider) Search(ctx context.Context, query string, latitudeDe
 	return nearest(answer.found(), latitudeDegrees, longitudeDegrees, radiusMeters, limitCount), nil
 }
 
-// Addresses asks for matches anywhere: no point to lean toward, so the words
-// alone decide.
-func (self *photonProvider) Addresses(ctx context.Context, query string, limitCount int) ([]*Found, error) {
+// Addresses asks for matches anywhere, leaning toward a position when there
+// is one: Photon ranks the matches near it higher without leaving out the
+// rest.
+func (self *photonProvider) Addresses(ctx context.Context, query string, near *Position, limitCount int) ([]*Found, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
 	}
-	var answer photonAnswer
-	if err := self.get(ctx, "/api", url.Values{
+	parameters := url.Values{
 		"q":     {query},
-		"limit": {strconv.Itoa(addressFetchCount(limitCount))},
-	}, &answer); err != nil {
+		"limit": {strconv.Itoa(addressFetchCount(limitCount, near))},
+	}
+	if near != nil {
+		parameters.Set("lat", strconv.FormatFloat(near.LatitudeDegrees, 'f', 6, 64))
+		parameters.Set("lon", strconv.FormatFloat(near.LongitudeDegrees, 'f', 6, 64))
+	}
+	var answer photonAnswer
+	if err := self.get(ctx, "/api", parameters, &answer); err != nil {
 		return nil, err
 	}
 	found := make([]*Found, 0, len(answer.Features))
@@ -198,5 +204,5 @@ func (self *photonProvider) Addresses(ctx context.Context, query string, limitCo
 			properties.State, properties.Country)
 		found = append(found, candidate)
 	}
-	return found[:min(len(found), addressFetchCount(limitCount))], nil
+	return addressesNearestFirst(found, near, limitCount), nil
 }

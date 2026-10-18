@@ -125,13 +125,21 @@ type Provider interface {
 	// matching words, which is what a check-in list wants.
 	Search(ctx context.Context, query string, latitudeDegrees, longitudeDegrees, radiusMeters float64, limitCount int) ([]*Found, error)
 
-	// Addresses finds the addresses matching words anywhere, best match first,
-	// at most limitCount of them, for a person who types where a place is.
-	// DistanceMeters is left at zero (the caller knows from where). AddressText
-	// starts with the part that names the match (house number and road, or the
-	// name of a place), which is what a place without a name of its own is
-	// called by.
-	Addresses(ctx context.Context, query string, limitCount int) ([]*Found, error)
+	// Addresses finds the addresses matching words, at most limitCount of
+	// them, for a person who types where a place is. Near a position, the
+	// provider leans toward it and the matches come nearest first, with their
+	// DistanceMeters from it; with no position (nil), they match anywhere,
+	// best match first, and DistanceMeters is zero. AddressText starts with
+	// the part that names the match (house number and road, or the name of a
+	// place), which is what a place without a name of its own is called by.
+	Addresses(ctx context.Context, query string, near *Position, limitCount int) ([]*Found, error)
+}
+
+// Position is a point an address search leans toward: the place being given
+// an address, or where the person was.
+type Position struct {
+	LatitudeDegrees  float64
+	LongitudeDegrees float64
 }
 
 // NewProvider makes the provider the configuration names, or nil with no error
@@ -318,6 +326,11 @@ func (self *requester) get(ctx context.Context, path string, parameters url.Valu
 // the equator.
 const metersPerDegree = 111320.0
 
+// addressLeanRadiusMeters is how far around a position an address search
+// prefers its matches: a town and its neighbors, where a place a person goes
+// to usually is.
+const addressLeanRadiusMeters = 50000.0
+
 // boundingBox is the square around a point that holds the circle of a radius,
 // for a provider that searches inside a box. The east and west edges stop at
 // the date line rather than wrapping, and a box at a pole spans every
@@ -360,7 +373,25 @@ func searchFetchCount(limitCount int) int {
 }
 
 // addressFetchCount is how many matches to ask a provider for when the person
-// wants limitCount: as many, since nothing is dropped for being far.
-func addressFetchCount(limitCount int) int {
+// wants limitCount: as many anywhere, since nothing is dropped for being far,
+// and more near a position, since the nearest are not the ones it lists first.
+func addressFetchCount(limitCount int, near *Position) int {
+	if near != nil {
+		return searchFetchCount(limitCount)
+	}
 	return min(max(limitCount, 1), 40)
+}
+
+// addressesNearestFirst is at most limitCount of the matches, nearest the
+// position first with their distances from it, or in the provider's order
+// with no position. Matches as far away keep the provider's order, which is
+// how well the words matched.
+func addressesNearestFirst(found []*Found, near *Position, limitCount int) []*Found {
+	if near != nil {
+		for _, candidate := range found {
+			candidate.DistanceMeters = DistanceMeters(near.LatitudeDegrees, near.LongitudeDegrees, candidate.LatitudeDegrees, candidate.LongitudeDegrees)
+		}
+		sort.SliceStable(found, func(first, second int) bool { return found[first].DistanceMeters < found[second].DistanceMeters })
+	}
+	return found[:min(len(found), max(limitCount, 1))]
 }

@@ -399,9 +399,10 @@ final class LocationModel {
             limitCount: Self.searchPageSize)
     }
 
-    /// Addresses matching the words typed, best first, anywhere.
-    func searchAddresses(words: String) async throws -> [FoundPlace] {
-        try await connection.searchAddresses(query: words, limitCount: Self.addressSearchLimit)
+    /// Addresses matching the words typed, anywhere, nearest first to the
+    /// place when there is one, else to where the person last was.
+    func searchAddresses(words: String, placeId: String? = nil) async throws -> [FoundPlace] {
+        try await connection.searchAddresses(query: words, placeId: placeId, limitCount: Self.addressSearchLimit)
     }
 
     /// Records that the person is at a place now. Nil when it worked, else

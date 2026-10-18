@@ -5,8 +5,8 @@ import { useTranslation } from '../i18n/i18n'
 import { ConfirmDialog } from './dialog'
 import { FoundPlace } from './locationData'
 
-const SEARCH_ADDRESSES = `query ($query: String!) {
-  SearchAddresses(query: $query) {
+const SEARCH_ADDRESSES = `query ($query: String!, $placeId: String) {
+  SearchAddresses(query: $query, placeId: $placeId) {
     placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson
   }
 }`
@@ -22,17 +22,23 @@ const SEARCH_ADDRESSES = `query ($query: String!) {
 // as they were typed, without moving anything. A caller that needs a position
 // and cannot do that (home in the setup) gives notFoundNote instead, which is
 // said when nothing matched.
+//
+// With placeId (the place whose address is being changed) the matches come
+// nearest to that place first; without it, nearest to where the person last
+// was.
 export function LocationAddressChooser({
   title,
   onChoose,
   onKeepTyped,
   notFoundNote,
+  placeId,
   onClose,
 }: {
   title: string
   onChoose: (match: FoundPlace) => Promise<void>
   onKeepTyped?: (addressText: string) => Promise<void>
   notFoundNote?: string
+  placeId?: string
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -49,7 +55,7 @@ export function LocationAddressChooser({
     setIsBusy(true)
     setProblem(null)
     try {
-      const answer = await graphql<{ SearchAddresses: FoundPlace[] }>(SEARCH_ADDRESSES, { query })
+      const answer = await graphql<{ SearchAddresses: FoundPlace[] }>(SEARCH_ADDRESSES, { query, placeId })
       setMatches(answer.SearchAddresses)
       setSearchedText(query)
     } catch (failure) {

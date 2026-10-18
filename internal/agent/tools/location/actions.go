@@ -43,8 +43,8 @@ const (
     nextOffset foundPlaces { ` + foundFields + ` }
   }
 }`
-	documentSearchAddresses = `query ($query: String!, $limitCount: Int) {
-  SearchAddresses(query: $query, limitCount: $limitCount) {
+	documentSearchAddresses = `query ($query: String!, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeId: String, $limitCount: Int) {
+  SearchAddresses(query: $query, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeId: $placeId, limitCount: $limitCount) {
     placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson
   }
 }`
@@ -722,11 +722,14 @@ func runSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 }
 
 type findAddressArguments struct {
-	Query string `json:"query"`
-	Limit *int   `json:"limit"`
+	Query            string   `json:"query"`
+	PlaceID          string   `json:"place_id"`
+	LatitudeDegrees  *float64 `json:"latitude_degrees"`
+	LongitudeDegrees *float64 `json:"longitude_degrees"`
+	Limit            *int     `json:"limit"`
 }
 
-// runFindAddress is the addresses matching words, anywhere, for a person who
+// runFindAddress is the addresses matching words, nearest first, for a person who
 // says where a place is. The rows are the ones nearby and search give, so that
 // a match's address_text and coordinates go to save_place as they were found.
 func runFindAddress(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -745,6 +748,16 @@ func runFindAddress(ctx context.Context, call *tools.Call) (*tools.Result, error
 	variables := map[string]any{"query": query}
 	if arguments.Limit != nil {
 		variables["limitCount"] = *arguments.Limit
+	}
+	switch {
+	case arguments.LatitudeDegrees != nil || arguments.LongitudeDegrees != nil:
+		latitude, longitude, err := here.aroundPoint(ctx, arguments.LatitudeDegrees, arguments.LongitudeDegrees)
+		if err != nil {
+			return nil, err
+		}
+		variables["latitudeDegrees"], variables["longitudeDegrees"] = latitude, longitude
+	case strings.TrimSpace(arguments.PlaceID) != "":
+		variables["placeId"] = strings.TrimSpace(arguments.PlaceID)
 	}
 	var result struct {
 		SearchAddresses []foundData `json:"SearchAddresses"`

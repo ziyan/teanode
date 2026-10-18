@@ -14,7 +14,7 @@ type searchRecorder struct {
 
 func (self *searchRecorder) Name(context.Context, float64, float64) (*Found, error) { return nil, nil }
 
-func (self *searchRecorder) Addresses(context.Context, string, int) ([]*Found, error) {
+func (self *searchRecorder) Addresses(context.Context, string, *Position, int) ([]*Found, error) {
 	return nil, nil
 }
 
