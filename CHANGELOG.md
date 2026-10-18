@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.171.3] - 2026-10-18
+
+### Changed
+
+- The dashboard's short actions, such as "Open Circles", "Set up" or "View mail", are buttons rather than underlined links. (#539)
+
 ## [0.171.2] - 2026-10-18
 
 ### Fixed
