@@ -331,8 +331,9 @@ struct FileCard: View {
     @State private var savedPhotoId: String?
     @State private var isSavingToLibrary = false
     @State private var savingProblemText: String?
-    /// The picture, once read, which is what Share and Copy hand on. The app
-    /// keeps what it read, so this is not a second download.
+    /// The picture, once read, which is what Copy hands on and what the menu's
+    /// preview shows. The picture inside the card asks the app for the same
+    /// one, and the app downloads it once for both.
     @State private var loadedPicture: UIImage?
 
     /// The photo this file is: the one the photo tool showed, or the copy the

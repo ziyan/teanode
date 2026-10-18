@@ -299,17 +299,18 @@ final class AppModel {
     /// server: two servers can use the same address for different pictures.
     private var pictures: [String: UIImage] = [:]
 
+    /// Pictures being read right now, by the same key. A picture is cached
+    /// only once its download has finished, so two views that ask for the
+    /// same one on first appearance (a file card and the picture inside it)
+    /// would each download it; the second waits for the first read instead.
+    private var pictureReads: [String: Task<UIImage?, Never>] = [:]
+
     private static func pictureKey(accountKey: String, path: String) -> String { accountKey + " " + path }
 
     /// Reads a picture the server keeps, once.
     func picture(_ path: String) async -> UIImage? {
         guard let account else { return nil }
-        let key = Self.pictureKey(accountKey: account.accountKey, path: path)
-        if let known = pictures[key] { return known }
-        guard let connection, let data = try? await connection.download(path), let picture = UIImage(data: data) else { return nil }
-        guard isSignedIn(account) else { return nil }
-        pictures[key] = picture
-        return picture
+        return await picture(path, of: account)
     }
 
     /// Each signed-in account's own profile, by account key, for the list of
@@ -325,16 +326,30 @@ final class AppModel {
         accountProfiles[chosen.accountKey] = profile
     }
 
-    /// Reads a picture from an account's own server, once.
+    /// Reads a picture from an account's own server, once: from what was read
+    /// before, from the read already on its way, or from the server.
     func picture(_ path: String, of chosen: Account) async -> UIImage? {
-        if chosen.accountKey == account?.accountKey { return await picture(path) }
         let key = Self.pictureKey(accountKey: chosen.accountKey, path: path)
         if let known = pictures[key] { return known }
+        if let reading = pictureReads[key] { return await reading.value }
+        // The read is a task of its own so that a caller that stops waiting (its view
+        // went away) does not cancel the download for the callers still waiting.
+        let reading = Task<UIImage?, Never> {
+            let picture = await self.readPicture(path, of: chosen)
+            self.pictureReads[key] = nil
+            if let picture { self.pictures[key] = picture }
+            return picture
+        }
+        pictureReads[key] = reading
+        return await reading.value
+    }
+
+    /// Downloads a picture from an account's own server, if the app is still signed in to it.
+    private func readPicture(_ path: String, of chosen: Account) async -> UIImage? {
         guard isSignedIn(chosen), let data = try? await connection(for: chosen).download(path), let picture = UIImage(data: data) else {
             return nil
         }
         guard isSignedIn(chosen) else { return nil }
-        pictures[key] = picture
         return picture
     }
 
