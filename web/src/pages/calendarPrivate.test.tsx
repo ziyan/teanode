@@ -166,9 +166,10 @@ it('on a phone opens on the agenda, names the month dots and opens the day on a 
   show('/calendar?view=month&on=2030-01-03')
   const dot = await screen.findByRole('button', { name: /^Checkup/ })
   expect(dot.getAttribute('tabindex')).toBe('-1')
-  // A rotation to a wide window brings the dots back into the tab order.
+  // A rotation to a wide window brings the dots back into the tab order,
+  // and the chip's own words, its time first, are its name again.
   setPhone(false)
-  await waitFor(() => expect(screen.getByRole('button', { name: /^Checkup/ }).getAttribute('tabindex')).toBeNull())
+  await waitFor(() => expect(screen.getByRole('button', { name: /Checkup/ }).getAttribute('tabindex')).toBeNull())
   setPhone(true)
   await waitFor(() => expect(screen.getByRole('button', { name: /^Checkup/ }).getAttribute('tabindex')).toBe('-1'))
 

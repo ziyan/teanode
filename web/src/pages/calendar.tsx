@@ -886,9 +886,10 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           style={tone.style}
           onClick={() => void edit(event)}
           // The month draws an event as a dot on a phone, with no text, so
-          // the name is given here (the other views have the words); on a phone the day opens the list, so the dot is
-          // left out of the tab order.
-          aria-label={view === 'month' ? titleWithOwner(event) : undefined}
+          // the name is given here; elsewhere the chip's own words, with its
+          // time, are its name. On a phone the day opens the list, so the
+          // dot is left out of the tab order.
+          aria-label={isPhone && view === 'month' ? titleWithOwner(event) : undefined}
           tabIndex={isPhone && view === 'month' ? -1 : undefined}
           aria-disabled={!!submission.pending || submission.isWorking || busy}
         >
