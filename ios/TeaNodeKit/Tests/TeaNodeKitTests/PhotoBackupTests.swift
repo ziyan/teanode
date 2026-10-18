@@ -1288,7 +1288,7 @@ private func makeRig(
     index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300,
     exportTimeoutSeconds: TimeInterval = 30 * 60, freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, clock: ManualClock? = nil,
     batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false, uploads existingUploads: FakeUploads? = nil,
-    tailWriter: (any PhotoBackupTailWriter)? = nil
+    tailWriter: (any PhotoBackupTailWriter)? = nil, sleepForSeconds: (@Sendable (TimeInterval) async -> Void)? = nil
 ) throws -> Rig {
     let directory = try existingDirectory ?? temporaryDirectory(test)
     let outgoing = directory.appendingPathComponent("outgoing")
@@ -1303,8 +1303,9 @@ private func makeRig(
         server: try ServerAddress(parsing: "photos.example.com"), accountKey: "photos.example.com|robin",
         credential: PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret"),
         budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, exportTimeoutSeconds: exportTimeoutSeconds, freeSpaceBytes: freeSpaceBytes,
-        now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) }, batchSize: batchSize, isPaused: isPaused,
-        tailWriter: tailWriter ?? PhotoBackupFileTailWriter())
+        now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) },
+        sleepForSeconds: sleepForSeconds ?? { seconds in try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000)) },
+        batchSize: batchSize, isPaused: isPaused, tailWriter: tailWriter ?? PhotoBackupFileTailWriter())
     return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, uploads: uploads, coordinator: coordinator)
 }
 
@@ -1318,6 +1319,33 @@ private func waitUntil(_ description: String, timeout: Double = 5, _ condition: 
 }
 
 private let settings = PhotoBackupCoordinator.Settings(usesMobileData: false, includesHidden: false)
+
+/// ExportTimeouts stands in for the time limit of each export. The first limit
+/// started runs out once the library has begun an export; the others wait to be
+/// cancelled, which is what the export they belong to does when it finishes.
+private final class ExportTimeouts: @unchecked Sendable {
+    private let lock = NSLock()
+    private var startedCount = 0
+    private var library: FakeLibrary?
+    private var firstSeconds: TimeInterval?
+
+    func watch(_ library: FakeLibrary) { lock.withLock { self.library = library } }
+
+    /// How long the coordinator gave the first export.
+    var firstTimeoutSeconds: TimeInterval? { lock.withLock { firstSeconds } }
+
+    func wait(seconds: TimeInterval) async {
+        let (isFirst, library) = lock.withLock { () -> (Bool, FakeLibrary?) in
+            startedCount += 1
+            if startedCount == 1 { firstSeconds = seconds }
+            return (startedCount == 1, self.library)
+        }
+        while !Task.isCancelled {
+            if isFirst, let library, library.exportCount >= 1 { return }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+}
 
 final class PhotoBackupCoordinatorTests: XCTestCase {
     func testEveryFileGoesUpNewestFirstAndThePassEndsWhenTheServerHasThemAll() async throws {
@@ -2229,8 +2257,16 @@ final class PhotoBackupContinuityTests: XCTestCase {
     }
 
     func testAFileThatNeverComesOutOfThePhotoLibraryDoesNotHoldUpTheRest() async throws {
+        // The files go newest first, so the stuck file is the first one asked
+        // for. Its time limit is the first one started, and it runs out as soon
+        // as that export has begun; every later limit is left to run until the
+        // export it belongs to finishes and cancels it. The files that are not
+        // stuck are therefore never given up on, however slow the machine.
+        let exportTimeouts = ExportTimeouts()
         let rig = try makeRig(
-            self, items: (0..<4).map { makeItem("item\($0)", secondsSince2026: Double($0)) }, exportTimeoutSeconds: 0.15)
+            self, items: (0..<4).map { makeItem("item\($0)", secondsSince2026: Double($0)) },
+            sleepForSeconds: { seconds in await exportTimeouts.wait(seconds: seconds) })
+        exportTimeouts.watch(rig.library)
         rig.library.set(hung: "item3|original")
         let coordinator = rig.coordinator
         rig.transfer.onStart = { job in
@@ -2293,12 +2329,13 @@ final class PhotoBackupContinuityTests: XCTestCase {
     // MARK: Waking in the background
 
     private func pendingRig(
-        sizes: [String: Int64], clock: ManualClock? = nil, budget: PhotoBackupBudget = .standard, notLocal: Set<String> = []
+        sizes: [String: Int64], clock: ManualClock? = nil, budget: PhotoBackupBudget = .standard, notLocal: Set<String> = [],
+        sleepForSeconds: (@Sendable (TimeInterval) async -> Void)? = nil
     ) async throws -> Rig {
         let items = sizes.keys.sorted().enumerated().map {
             makeItem($0.element, secondsSince2026: Double($0.offset), sizeBytes: sizes[$0.element], isLocallyAvailable: !notLocal.contains($0.element))
         }
-        let rig = try makeRig(self, items: items, budget: budget, clock: clock)
+        let rig = try makeRig(self, items: items, budget: budget, clock: clock, sleepForSeconds: sleepForSeconds)
         for (name, size) in sizes { rig.library.set(bytes: size, for: "\(name)|original") }
         // What an earlier pass leaves: every file noted as still to send.
         await rig.index.adopt(accountKey: "photos.example.com|robin")
@@ -2335,12 +2372,17 @@ final class PhotoBackupContinuityTests: XCTestCase {
     }
 
     func testAWakeGivesUpOnAFileThatOutlastsItsDeadlineAndGoesOnToTheNext() async throws {
+        // The smaller file, "a", is asked for first and is the stuck one. Its
+        // time limit runs out as soon as the export has begun, and the limit of
+        // "b" is never allowed to, so how fast the machine is cannot decide it.
         let clock = ManualClock()
-        let rig = try await pendingRig(sizes: ["a": 1, "b": 2], clock: clock)
+        let exportTimeouts = ExportTimeouts()
+        let rig = try await pendingRig(
+            sizes: ["a": 1, "b": 2], clock: clock, sleepForSeconds: { seconds in await exportTimeouts.wait(seconds: seconds) })
+        exportTimeouts.watch(rig.library)
         rig.library.set(hung: "a|original")
-        let started = Date()
         let queuedCount = await rig.coordinator.topUp(settings: settings, until: clock.now.addingTimeInterval(0.2))
-        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "a stuck file does not hold the wake past its deadline")
+        XCTAssertEqual(exportTimeouts.firstTimeoutSeconds ?? 0, 0.2, accuracy: 0.0001, "the stuck file is given the seconds left in the wake")
         XCTAssertEqual(queuedCount, 1)
         XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["b"])
     }
