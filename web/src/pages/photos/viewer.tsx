@@ -50,7 +50,7 @@ import { usePhotoAltText } from './altText'
 import { useAssistantWords } from './assistantName'
 import { ChangeDateDialog } from './changeDate'
 import { DRAG_SETTLE_MS, dragProgress, useDragToClose } from './dragToClose'
-import { FacePicture, personAddress } from './personControls'
+import { FacePicture, NamePersonFlow, personAddress } from './personControls'
 import { ViewerStrip, stripPhotos } from './viewerStrip'
 
 // The viewer: one photo over the grid, with its details beside it (under it
@@ -943,6 +943,7 @@ export function PhotoViewer({
                         key={face.id}
                         face={face}
                         isLinked={isOwn}
+                        onNamed={() => files.reload(true)}
                         onNotThem={
                           isOwn && onRemoveFaceFromGroup
                             ? async () => {
@@ -1053,20 +1054,34 @@ function ViewerPerson({
   face,
   isLinked,
   onNotThem,
+  onNamed,
 }: {
   face: PhotoFace
   // The person's page is the photo owner's; somebody else's photo has none to open.
   isLinked: boolean
   onNotThem?: () => Promise<void>
+  // Called once an unnamed person is named here, so that the photo's people are read again.
+  onNamed?: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const [isBusy, setIsBusy] = useState(false)
+  const [isNaming, setIsNaming] = useState(false)
   const name = face.contactName.trim()
   const shownName = name || t('photos.unnamedPerson')
   const notLabel = name ? t('photos.notPerson', { name }) : t('photos.notThisPerson')
+  // An unnamed person is named where it is seen: their page is not one the
+  // People list shows yet, and leaving the photo to name them loses it.
+  const isNameable = isLinked && !name && face.photoFaceGroupId !== ''
   return (
     <li className="photo-viewer-person">
-      {isLinked ? (
+      {isNameable ? (
+        <Tooltip label={t('photos.nameThisPerson')}>
+          <button type="button" className="photo-viewer-person-link photo-viewer-person-name-button" onClick={() => setIsNaming(true)}>
+            <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
+            <span className="photo-viewer-person-name muted">{shownName}</span>
+          </button>
+        </Tooltip>
+      ) : isLinked && face.photoFaceGroupId !== '' ? (
         <Link className="photo-viewer-person-link" to={personAddress(face.photoFaceGroupId)}>
           <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
           <span className={name ? 'photo-viewer-person-name' : 'photo-viewer-person-name muted'}>{shownName}</span>
@@ -1092,6 +1107,25 @@ function ViewerPerson({
             <CloseIcon size={14} />
           </button>
         </Tooltip>
+      )}
+      {isNaming && (
+        <NamePersonFlow
+          group={{
+            id: face.photoFaceGroupId,
+            createdAt: '',
+            updatedAt: '',
+            contactId: face.contactId,
+            contactAddressBookId: '',
+            contactName: face.contactName,
+            faceCount: 0,
+            photoCount: 0,
+            facePictureUrl: face.facePictureUrl,
+            coverPhotoFaceId: face.id,
+            isHidden: false,
+          }}
+          onClose={() => setIsNaming(false)}
+          onNamed={() => void onNamed?.()}
+        />
       )}
     </li>
   )

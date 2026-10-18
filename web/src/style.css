@@ -11956,6 +11956,18 @@ main.content:has(> .knowledge-frame) {
   text-decoration: none;
 }
 
+/* An unnamed person is a button that opens the naming dialog: it looks like
+   the link a named person is, with no button chrome of its own. */
+.photo-viewer-person-name-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .photo-viewer-person-link:hover .photo-viewer-person-name {
   text-decoration: underline;
 }

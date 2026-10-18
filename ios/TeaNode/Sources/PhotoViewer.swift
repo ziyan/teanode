@@ -753,6 +753,9 @@ struct PhotoInfoView: View {
     /// nil where the viewer cannot, and then the action is not offered.
     let onShowNearby: ((PhotoNearFilter) -> Void)?
     @State private var isChangingDate = false
+    /// The unnamed person being named from here, over the photo.
+    @State private var namingGroup: PhotoFaceGroup?
+    @State private var isExplainingContacts = false
     @State private var detail: PhotoDetail?
     /// Why the photo's details could not be read; nil when they could, or have
     /// not been asked for yet.
@@ -932,17 +935,7 @@ struct PhotoInfoView: View {
     private var peopleSection: some View {
         Section {
             ForEach(people) { face in
-                NavigationLink {
-                    PhotoPersonScreen(model: model, photoFaceGroupId: face.photoFaceGroupId)
-                } label: {
-                    HStack(spacing: 12) {
-                        FacePictureView(facePictureUrl: face.facePictureUrl, name: shownName(of: face), connection: connection)
-                            .frame(width: 40, height: 40)
-                        Text(shownName(of: face))
-                            .foregroundStyle(face.contactName.isEmpty ? .secondary : .primary)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
+                personRow(face)
                 .contextMenu {
                     Button(role: .destructive) {
                         Task {
@@ -962,6 +955,51 @@ struct PhotoInfoView: View {
         } footer: {
             Text("Touch and hold a person if it is not them.")
         }
+        .sheet(item: $namingGroup) { group in
+            NamePersonSheet(model: model, group: group) { _ in
+                Task { await loadDetail() }
+            }
+        }
+        .alert("Name this person", isPresented: $isExplainingContacts) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Naming people means choosing a contact from your address book, and Contacts is not turned on for you. Ask whoever runs this server to turn on Contacts.")
+        }
+    }
+
+    /// A named person opens their photos. An unnamed one is named here, over
+    /// the photo: their page is not in People yet, and leaving the photo to
+    /// name them loses it.
+    @ViewBuilder
+    private func personRow(_ face: PhotoFace) -> some View {
+        if face.contactName.isEmpty {
+            Button {
+                if app.isSectionAvailable(.contacts) {
+                    namingGroup = PhotoFaceGroup(id: face.photoFaceGroupId, facePictureUrl: face.facePictureUrl)
+                } else {
+                    isExplainingContacts = true
+                }
+            } label: {
+                personLabel(face)
+            }
+            .accessibilityHint(Text("Name this person"))
+        } else {
+            NavigationLink {
+                PhotoPersonScreen(model: model, photoFaceGroupId: face.photoFaceGroupId)
+            } label: {
+                personLabel(face)
+            }
+        }
+    }
+
+    private func personLabel(_ face: PhotoFace) -> some View {
+        HStack(spacing: 12) {
+            FacePictureView(facePictureUrl: face.facePictureUrl, name: shownName(of: face), connection: connection)
+                .frame(width: 40, height: 40)
+            Text(shownName(of: face))
+                .foregroundStyle(face.contactName.isEmpty ? .secondary : .primary)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// The people in somebody else's photo: their names as plain text. The

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { graphql } from '../../api'
+import { ToastProvider } from '../../components/toast'
 import { TranslationProvider } from '../../i18n/i18n'
 import type { Photo, PhotoLibrary } from '../../photos/api'
 import { PhotoViewer } from './viewer'
@@ -75,24 +76,26 @@ const serveRead = (read: Record<string, unknown>) =>
 const show = (onClose = vi.fn(), extra: Partial<React.ComponentProps<typeof PhotoViewer>> = {}) => {
   render(
     <TranslationProvider>
-      <MemoryRouter>
-        <PhotoViewer
-          photo={photo}
-          previousPhoto={null}
-          nextPhoto={null}
-          isTrashed={false}
-          isPaused={false}
-          onNavigate={vi.fn()}
-          onClose={onClose}
-          onToggleFavorite={vi.fn()}
-          onTrash={vi.fn()}
-          onRestore={vi.fn()}
-          onDeleteForever={vi.fn()}
-          onAddToAlbum={vi.fn()}
-          onNewAlbum={vi.fn()}
-          {...extra}
-        />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <PhotoViewer
+            photo={photo}
+            previousPhoto={null}
+            nextPhoto={null}
+            isTrashed={false}
+            isPaused={false}
+            onNavigate={vi.fn()}
+            onClose={onClose}
+            onToggleFavorite={vi.fn()}
+            onTrash={vi.fn()}
+            onRestore={vi.fn()}
+            onDeleteForever={vi.fn()}
+            onAddToAlbum={vi.fn()}
+            onNewAlbum={vi.fn()}
+            {...extra}
+          />
+        </MemoryRouter>
+      </ToastProvider>
     </TranslationProvider>,
   )
   return onClose
@@ -293,7 +296,7 @@ const face = (overrides: Record<string, unknown>) => ({
   ...overrides,
 })
 
-it('lists the people in the photo, each a link to the person, and takes a face out of a group', async () => {
+it('lists the people in the photo, a named one a link to the person, and takes a face out of a group', async () => {
   serveRead({
     photo: describedPhoto,
     faces: [face({}), face({ id: 'face-2', photoFaceGroupId: 'group-2', contactName: '', contactId: '' })],
@@ -302,10 +305,24 @@ it('lists the people in the photo, each a link to the person, and takes a face o
   show(vi.fn(), { photoLibrary: library(), onRemoveFaceFromGroup })
   const link = await screen.findByRole('link', { name: 'Sample Person' })
   expect(link.getAttribute('href')).toBe('/photos/people/group-1')
-  expect(screen.getByRole('link', { name: 'Unnamed person' }).getAttribute('href')).toBe('/photos/people/group-2')
+  expect(screen.queryByRole('link', { name: 'Unnamed person' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Not Sample Person' }))
   await waitFor(() => expect(onRemoveFaceFromGroup).toHaveBeenCalledWith(expect.objectContaining({ id: 'face-1' })))
   expect(screen.getByRole('button', { name: 'Not this person' })).toBeTruthy()
+})
+
+// Naming an unnamed person happens over the photo: leaving for their page lost
+// the photo, and their page is not in the People list yet.
+it('names an unnamed person where the photo is, without closing it', async () => {
+  serveRead({
+    photo: describedPhoto,
+    faces: [face({ id: 'face-2', photoFaceGroupId: 'group-2', contactName: '', contactId: '' })],
+  })
+  const onClose = vi.fn()
+  show(onClose, { photoLibrary: library() })
+  fireEvent.click(await screen.findByRole('button', { name: 'Unnamed person' }))
+  expect(await screen.findByRole('dialog', { name: 'Name this person' })).toBeTruthy()
+  expect(onClose).not.toHaveBeenCalled()
 })
 
 it('leaves out a face that is in no group, which has no person to link to', async () => {

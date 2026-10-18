@@ -1257,7 +1257,10 @@ private struct LibrarySearch: ViewModifier {
     @Binding var isPresented: Bool
 
     func body(content: Content) -> some View {
-        if isActive {
+        // Only while it is out or holds a search: attached all the time, the
+        // system shows the field above the grid, and the Search button at the
+        // bottom is then a second way to the same thing.
+        if isActive && (isPresented || !text.isEmpty) {
             // The field is narrow: it says "Search photos", as the dashboard's
             // does, and VoiceOver reads what it looks through.
             content.searchable(
