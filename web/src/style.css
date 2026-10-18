@@ -12653,7 +12653,7 @@ label.checkbox.is-plain input {
 .graph-explore-zoom {
   position: absolute;
   right: var(--space-3);
-  bottom: var(--space-3);
+  top: var(--space-3);
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -12685,11 +12685,20 @@ label.checkbox.is-plain input {
 }
 
 /* The agent's button floats over the bottom right of every page and covered
-   Fit and Fullscreen there; the top right of the drawing is free. */
-@media (min-width: 641px) {
-  .graph-explore-zoom {
-    bottom: auto;
-    top: var(--space-3);
+   Fit and Fullscreen there, on a phone as on a desktop; the top right of the
+   drawing is free, so the controls stay there at every width.
+
+   At 760px and below every button is at least 40px tall, which made the 36px
+   icon buttons taller than wide. The whole group takes that height, and the
+   icon buttons the same width, so they stay square. */
+@media (max-width: 760px) {
+  .graph-explore-zoom .segmented {
+    height: 40px;
+  }
+
+  .graph-explore-zoom .icon-button {
+    width: 40px;
+    height: 40px;
   }
 }
 
