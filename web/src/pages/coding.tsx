@@ -312,8 +312,9 @@ export function CodingPage() {
       const sessions = group.workspaces.flatMap((workspace) => workspace.sessions)
       const askingCount = sessions.filter((session) => session.herdrSessionState === 'asking').length
       const workingCount = sessions.filter((session) => session.herdrSessionState === 'working').length
-      // The open session's computer stays unfolded, so the row is there.
-      const isClosed = closedComputers.includes(group.computer) && group.computer !== selectedComputer
+      // Folded whenever the person folded it, the open session's computer
+      // too: beside the list the session stays on screen either way.
+      const isClosed = closedComputers.includes(group.computer)
       return (
         <section key={group.computer} className="coding-computer">
           <h3>

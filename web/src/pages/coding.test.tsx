@@ -320,6 +320,11 @@ it('folds a computer away and keeps it folded in the address', async () => {
   // Choosing a session keeps the fold.
   fireEvent.click(screen.getByRole('button', { name: /build/ }))
   expect(screen.getByTestId('where').textContent).toBe('?computer=laptop&pane=w1%3Ap1&closed=desk')
+  // The open session's computer folds too, and its session stays open.
+  fireEvent.click(screen.getByRole('button', { name: /^laptop/ }))
+  expect(screen.getByRole('button', { name: /^laptop/ }).getAttribute('aria-expanded')).toBe('false')
+  expect(screen.queryByRole('button', { name: /build/ })).toBeNull()
+  expect(screen.getByTestId('where').textContent).toContain('closed=desk%2Claptop')
 })
 
 it('switches between the turns and the screen with one floating button', async () => {
