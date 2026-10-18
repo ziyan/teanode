@@ -144,30 +144,33 @@ enum LocationText {
         return String(localized: "\(timesText) · \(duration(visitDuration))")
     }
 
-    /// One person sharing, in a line: "Sam · at Hillside School since 14:05",
-    /// else "Sam · 12 min. ago" for how long ago their latest position was.
-    static func line(of person: PersonLocation) -> String {
-        line(of: person, name: person.displayName, noPositionText: String(localized: "\(person.displayName) · no position yet"))
+    /// Where somebody sharing is, under their name, as Find My says it: the
+    /// place they are at and how long ago their latest position came ("Home ·
+    /// 1 min. ago"), either one alone when that is all there is, else that
+    /// there is no position yet ("No position recorded yet" on the person's
+    /// own row).
+    static func whereText(of person: PersonLocation, isOwn: Bool = false) -> String {
+        let placeName = person.openVisit?.place.shownName
+        let agoText = person.latestPoint?.measuredDate.map {
+            $0.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
+        }
+        switch (placeName, agoText) {
+        case let (placeName?, agoText?): return String(localized: "\(placeName) · \(agoText)")
+        case let (placeName?, nil): return placeName
+        case let (nil, agoText?): return agoText
+        case (nil, nil): return isOwn ? String(localized: "No position recorded yet") : String(localized: "No position yet")
+        }
     }
 
-    /// The person's own line: "You · at Hillside School since 14:05", else
-    /// "You · 12 min. ago", else "You · no position recorded yet".
-    static func ownLine(of person: PersonLocation) -> String {
-        let name = String(localized: "You")
-        return line(of: person, name: name, noPositionText: String(localized: "\(name) · no position recorded yet"))
-    }
-
-    private static func line(of person: PersonLocation, name: String, noPositionText: String) -> String {
-        if let visit = person.openVisit {
-            let place = visit.place.shownName
-            if let arrived = visit.arrivedDate { return String(localized: "\(name) · at \(place) since \(time(arrived))") }
-            return String(localized: "\(name) · at \(place)")
-        }
-        if let measured = person.latestPoint?.measuredDate {
-            let ago = measured.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
-            return String(localized: "\(name) · \(ago)")
-        }
-        return noPositionText
+    /// How far somebody sharing is from the person: "Nearby" within 200 m,
+    /// else the distance as a road sign would give it; nil without both
+    /// positions.
+    static func distanceText(from own: PersonLocation?, to person: PersonLocation) -> String? {
+        guard let ownPoint = own?.latestPoint, let point = person.latestPoint else { return nil }
+        let meters = CLLocation(latitude: ownPoint.latitudeDegrees, longitude: ownPoint.longitudeDegrees)
+            .distance(from: CLLocation(latitude: point.latitudeDegrees, longitude: point.longitudeDegrees))
+        if meters < 200 { return String(localized: "Nearby") }
+        return distance(meters)
     }
 
     /// "At Home since 14:05", for the visit in progress.
