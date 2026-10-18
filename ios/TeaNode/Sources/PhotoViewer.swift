@@ -129,23 +129,31 @@ struct PhotoViewer: View {
     }
 
     private var pager: some View {
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: 0) {
-                ForEach(photos) { photo in
-                    PhotoPage(
-                        photo: photo, model: model, isCurrent: photo.id == currentPhotoId, isZoomed: $isZoomed, isChromeHidden: isChromeHidden,
-                        onSingleTap: { toggleChrome() }, onSetChromeHidden: { isHidden in setChromeHidden(isHidden) })
-                        .containerRelativeFrame([.horizontal, .vertical])
-                        .id(photo.id)
+        GeometryReader { proxy in
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 0) {
+                    ForEach(photos) { photo in
+                        PhotoPage(
+                            photo: photo, model: model, isCurrent: photo.id == currentPhotoId, isZoomed: $isZoomed, isChromeHidden: isChromeHidden,
+                            onSingleTap: { toggleChrome() }, onSetChromeHidden: { isHidden in setChromeHidden(isHidden) })
+                            // A page is as tall as the room the pager has, not taller. A horizontal scroll view is
+                            // the container only along its scrolling direction, so `containerRelativeFrame(.vertical)`
+                            // measured the screen instead: each page ran about a hundred points past the pager's
+                            // top and bottom edges, under the bars and the strip, where the scroll view clips it. What
+                            // a page draws at its foot, such as a video's controls, was cut off there.
+                            .containerRelativeFrame(.horizontal)
+                            .frame(height: proxy.size.height)
+                            .id(photo.id)
+                    }
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $currentPhotoId)
+            .scrollIndicators(.hidden)
+            // A zoomed picture is panned with the same drag that pages.
+            .scrollDisabled(isZoomed)
         }
-        .scrollTargetBehavior(.paging)
-        .scrollPosition(id: $currentPhotoId)
-        .scrollIndicators(.hidden)
-        // A zoomed picture is panned with the same drag that pages.
-        .scrollDisabled(isZoomed)
     }
 
     /// The animation of the bars going and coming; none when Reduce Motion is on.

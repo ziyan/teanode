@@ -263,6 +263,7 @@ struct PhotoAlbumShareSheet: View {
     let model: PhotosModel
     let album: PhotoAlbum
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var shares: [PhotoAlbumShare] = []
     @State private var people: [ChatPerson] = []
     @State private var circles: [PeopleCircle] = []
@@ -275,6 +276,11 @@ struct PhotoAlbumShareSheet: View {
     @State private var shareToStop: PhotoAlbumShare?
 
     private var connection: Connection { model.connection }
+
+    /// One share: who, then the options button beside them, or under them at the accessibility sizes.
+    private var shareRowLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 12))
+    }
 
     /// The circles and people not shared with yet.
     private var availableCircles: [PeopleCircle] {
@@ -341,12 +347,14 @@ struct PhotoAlbumShareSheet: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(shares) { share in
-                HStack(spacing: 12) {
+                // At the accessibility sizes the options button goes under the words rather
+                // than taking width from them.
+                shareRowLayout {
                     PhotoGranteeLabel(
                         name: share.granteeDisplayName,
                         detailText: PhotoWords.line(of: share),
                         kind: share.isWithCircle ? .circle : .person(avatarUrl: share.granteeAvatarUrl, avatarColorIndex: share.granteeAvatarColorIndex))
-                    Spacer(minLength: 0)
+                    if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
                     Menu {
                         shareOptions(share)
                     } label: {
@@ -686,9 +694,10 @@ struct PhotoDateChangeSheet: View {
 /// picture and a name, and under it a line of detail when there is one. Every
 /// row of the share screen is drawn by this one view, so a circle and a person
 /// get a picture of the same size and a name that starts at the same place.
-/// The name stays on one line at the accessibility sizes and shrinks a little
-/// before it is cut, since a long word that does not fit is otherwise broken
-/// in the middle with a hyphen.
+/// At the accessibility sizes the picture goes above the words, which then have
+/// the whole width of the row: the name stays on one line and shrinks a little
+/// before it is cut, and the detail line wraps between words only, since a long
+/// word that does not fit is otherwise broken in the middle with a hyphen.
 private struct PhotoGranteeLabel: View {
     enum Kind {
         case circle
@@ -703,18 +712,38 @@ private struct PhotoGranteeLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 12) {
+        // Beside the picture the words would be squeezed to a few letters a line.
+        let layout =
+            dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             avatar
             VStack(alignment: .leading, spacing: 2) {
                 nameText
                 if let detailText {
-                    Text(detailText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
+                    detailLine(detailText)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func detailLine(_ detailText: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            // The shrinking lets the longest word of the line fit its width, so that the
+            // line breaks between words and never inside one.
+            Text(detailText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .minimumScaleFactor(0.7)
+                .truncationMode(.tail)
+        } else {
+            Text(detailText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.tail)
         }
     }
 

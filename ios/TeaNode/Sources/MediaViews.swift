@@ -294,6 +294,7 @@ struct AttachmentView: View {
 struct FileCard: View {
     let file: AgentFile
     @Environment(AppModel.self) private var app
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var shareAddress: URL?
     @State private var openedPhotoId: OpenedPhoto?
     /// The photo made of this file once the person kept it in their library.
@@ -308,9 +309,28 @@ struct FileCard: View {
     /// Whether the file is a picture or video that can be kept as a photo.
     private var canBeKept: Bool { photoId == nil && (file.isImage || file.isVideo) && !file.isArtifact && app.isPhotosOffered }
 
-    /// The file's name, and its size when the server says it.
-    private var headerText: String {
-        file.size > 0 ? "\(file.name) · \(file.size.formatted(.byteCount(style: .file)))" : file.name
+    /// The file's name, and its size when the server says it. The name is cut in the middle when
+    /// it does not fit, so that the extension stays visible; it is never wrapped, since a name
+    /// is broken at its own hyphens and dots into pieces that read as separate words. At the
+    /// accessibility sizes the size goes on a line of its own, so that it does not take the
+    /// name's width.
+    private var header: some View {
+        let layout =
+            dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+        let sizeText = file.size.formatted(.byteCount(style: .file))
+        return layout {
+            CardHeader(systemImage: "paperclip", title: file.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if file.size > 0 {
+                Text(verbatim: dynamicTypeSize.isAccessibilitySize ? sizeText : "· \(sizeText)")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// What can be done with the file, one full-width button each, the main
@@ -377,7 +397,7 @@ struct FileCard: View {
         // actions below the file as full-width buttons rather than small capsules beside its name.
         CardSurface {
             VStack(alignment: .leading, spacing: 12) {
-                CardHeader(systemImage: "paperclip", title: headerText)
+                header
                 if file.isImage {
                     RemotePicture(path: file.path, name: file.name)
                 } else if file.isVideo || file.isAudio {

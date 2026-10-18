@@ -501,59 +501,67 @@ struct SideMenu: View {
             }
         case .finance:
             NavigationStack {
-                List {
-                    Section { sections }
-                        .listSectionSeparator(.hidden)
-                    Section("Finance") {
-                        ForEach(FinancePart.allCases) { part in
-                            Button {
-                                financePart = part
-                                onClose()
-                            } label: {
-                                Label(part.title, systemImage: part.systemImage)
-                                    .foregroundStyle(.primary)
+                ScrollViewReader { scroller in
+                    List {
+                        Section { sections }
+                            .listSectionSeparator(.hidden)
+                        Section("Finance") {
+                            ForEach(FinancePart.allCases) { part in
+                                Button {
+                                    financePart = part
+                                    onClose()
+                                } label: {
+                                    Label(part.title, systemImage: part.systemImage)
+                                        .foregroundStyle(.primary)
+                                }
+                                .menuRow(isSelected: financePart == part)
                             }
-                            .menuRow(isSelected: financePart == part)
                         }
+                        .listSectionSeparator(.hidden)
+                        .id(Self.partItemsSectionId)
                     }
-                    .listSectionSeparator(.hidden)
+                    .menuListStyle()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { MenuBrand() }
+                    .task { await showPartItems(scroller) }
                 }
-                .menuListStyle()
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { MenuBrand() }
             }
         case .photos:
             NavigationStack {
-                List {
-                    Section { sections }
-                        .listSectionSeparator(.hidden)
-                    Section("Photos") {
-                        ForEach(photos.sections) { collection in
+                ScrollViewReader { scroller in
+                    List {
+                        Section { sections }
+                            .listSectionSeparator(.hidden)
+                        Section("Photos") {
+                            ForEach(photos.sections) { collection in
+                                Button {
+                                    photos.section = collection
+                                    // A backup screen left open would stay over the collection chosen.
+                                    isShowingPhotoBackup = false
+                                    onClose()
+                                } label: {
+                                    Label(collection.title, systemImage: collection.symbolName)
+                                        .foregroundStyle(.primary)
+                                }
+                                .menuRow(isSelected: photos.section == collection)
+                            }
                             Button {
-                                photos.section = collection
-                                // A backup screen left open would stay over the collection chosen.
-                                isShowingPhotoBackup = false
+                                isShowingPhotoBackup = true
                                 onClose()
                             } label: {
-                                Label(collection.title, systemImage: collection.symbolName)
+                                Label("Photo backup", systemImage: "icloud.and.arrow.up")
                                     .foregroundStyle(.primary)
                             }
-                            .menuRow(isSelected: photos.section == collection)
+                            .menuRow(isSelected: false)
                         }
-                        Button {
-                            isShowingPhotoBackup = true
-                            onClose()
-                        } label: {
-                            Label("Photo backup", systemImage: "icloud.and.arrow.up")
-                                .foregroundStyle(.primary)
-                        }
-                        .menuRow(isSelected: false)
+                        .listSectionSeparator(.hidden)
+                        .id(Self.partItemsSectionId)
                     }
-                    .listSectionSeparator(.hidden)
+                    .menuListStyle()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { MenuBrand() }
+                    .task { await showPartItems(scroller) }
                 }
-                .menuListStyle()
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { MenuBrand() }
             }
         default:
             NavigationStack {
@@ -566,6 +574,21 @@ struct SideMenu: View {
                 .toolbar { MenuBrand() }
             }
         }
+    }
+
+    /// The id of the section that lists the items of the part on screen, under the list of the parts.
+    private static let partItemsSectionId = "partItems"
+
+    /// Scrolls the menu down to the items of the part on screen, as it opens: they are what the
+    /// person opened the menu for, and under all the parts they would otherwise start below the
+    /// bottom of the screen. The list is not scrolled past its end, so the parts stay in view
+    /// above the items for as long as there is room. The menu is drawn anew each time it opens,
+    /// so this runs each time. The list is given a moment to lay out its rows first, since a
+    /// scroll asked for before that finds nothing to scroll to.
+    private func showPartItems(_ scroller: ScrollViewProxy) async {
+        try? await Task.sleep(for: .milliseconds(50))
+        guard !Task.isCancelled else { return }
+        scroller.scrollTo(Self.partItemsSectionId, anchor: .top)
     }
 
     private var sections: some View {
