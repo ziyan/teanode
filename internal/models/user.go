@@ -78,6 +78,10 @@ type User struct {
 	TimezoneMode   string     `json:"timezoneMode,omitempty"` // auto | fixed; empty is auto
 	TimezoneSeenAt *time.Time `json:"timezoneSeenAt,omitempty"`
 
+	// Pronoun is how they are described, as they said it; empty until they
+	// do. See relationship.go.
+	Pronoun Pronoun `json:"pronoun,omitempty"`
+
 	// GroupIDs are the groups this person is in. Loaded with the user.
 	GroupIDs []string `json:"groupIds,omitempty"`
 }
@@ -137,6 +141,9 @@ func (self *User) Validate() error {
 	case "", "auto", "fixed":
 	default:
 		errors.add("timezoneMode", "%q is not auto or fixed", self.TimezoneMode)
+	}
+	if self.Pronoun != "" && !self.Pronoun.IsValid() {
+		errors.add("pronoun", "%q is not he, she or they", self.Pronoun)
 	}
 	return errors.ErrOrNil()
 }

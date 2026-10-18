@@ -57,7 +57,7 @@ func NewUserCommand() *cli.Command {
 			},
 			{
 				Name:      "update",
-				Usage:     "change an account's name, address, or the username it signs in with",
+				Usage:     "change an account's name, address, pronoun, or the username it signs in with",
 				ArgsUsage: "<username>",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
@@ -67,6 +67,10 @@ func NewUserCommand() *cli.Command {
 					&cli.StringFlag{
 						Name:  "email",
 						Usage: "address that receives notifications; empty clears it",
+					},
+					&cli.StringFlag{
+						Name:  "pronoun",
+						Usage: "how you are described: he, she, they or none; your own account only. The people who share a circle with you see it, as they see your name; it words what you are to them (a son rather than a child) and how your agent speaks of you",
 					},
 					&cli.StringFlag{
 						Name:  "rename",
@@ -269,7 +273,7 @@ func runUserReset(ctx context.Context, command *cli.Command) error {
 func runUserUpdate(ctx context.Context, command *cli.Command) error {
 	username := command.Args().First()
 	if username == "" {
-		return usage("which username? usage: teanode user update <username> [--name ...] [--email ...] [--rename ...]")
+		return usage("which username? usage: teanode user update <username> [--name ...] [--email ...] [--pronoun he|she|they|none] [--rename ...]")
 	}
 	parameters := &client.UserParameters{}
 	if command.IsSet("name") {
@@ -284,8 +288,15 @@ func runUserUpdate(ctx context.Context, command *cli.Command) error {
 		value := command.String("rename")
 		parameters.NewUsername = &value
 	}
+	if command.IsSet("pronoun") {
+		pronoun, err := pronounFlag(command.String("pronoun"))
+		if err != nil {
+			return err
+		}
+		parameters.Pronoun = &pronoun
+	}
 	if *parameters == (client.UserParameters{}) {
-		return fmt.Errorf("nothing to change; pass --name, --email or --rename")
+		return fmt.Errorf("nothing to change; pass --name, --email, --pronoun or --rename")
 	}
 
 	connection, err := openClient(command)
@@ -301,6 +312,18 @@ func runUserUpdate(ctx context.Context, command *cli.Command) error {
 	}
 	fmt.Printf("changed %s\n", user.Username)
 	return nil
+}
+
+// pronounFlag reads --pronoun: he, she or they, or none to say nothing,
+// which clears it. The server takes the empty word for none.
+func pronounFlag(value string) (string, error) {
+	switch pronoun := strings.ToLower(strings.TrimSpace(value)); pronoun {
+	case "he", "she", "they":
+		return pronoun, nil
+	case "none":
+		return "", nil
+	}
+	return "", usage("--pronoun is he, she, they or none")
 }
 
 func avatarUserFlag() cli.Flag {

@@ -54,6 +54,7 @@ type userModel struct {
 	TimezoneMode   string     `gorm:"column:timezone_mode"`
 	TimezoneSeenAt *time.Time `gorm:"column:timezone_seen_at"`
 	ContactID      *string    `gorm:"column:contact_id"`
+	Pronoun        *string    `gorm:"column:pronoun"`
 
 	AvatarFileID    *string    `gorm:"column:avatar_file_id"`
 	AvatarUpdatedAt *time.Time `gorm:"column:avatar_updated_at"`
@@ -86,6 +87,9 @@ func userFromModel(model *userModel, groupIds []string) *models.User {
 	}
 	if model.ContactID != nil {
 		user.ContactID = *model.ContactID
+	}
+	if model.Pronoun != nil {
+		user.Pronoun = models.Pronoun(*model.Pronoun)
 	}
 	if model.AvatarFileID != nil {
 		user.AvatarFileID = *model.AvatarFileID
@@ -133,6 +137,10 @@ func userToModel(user *models.User) *userModel {
 	if user.ContactID != "" {
 		contact := user.ContactID
 		model.ContactID = &contact
+	}
+	if user.Pronoun != "" {
+		pronoun := string(user.Pronoun)
+		model.Pronoun = &pronoun
 	}
 	if user.AvatarFileID != "" {
 		avatarFileId := user.AvatarFileID

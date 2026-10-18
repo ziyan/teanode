@@ -18,6 +18,9 @@ final class CircleDirectory {
     private(set) var circles: [PeopleCircle] = []
     private(set) var invitations: [CircleInvitation] = []
     private(set) var currentUserId: String?
+    /// How the person says they are described, which words their side of a
+    /// relationship; not set until they say.
+    private(set) var ownPronoun: PersonPronoun = .notSet
     /// Whether they may manage accounts, which lets them make one for
     /// somebody and put it in a circle at once.
     private(set) var canManageUsers = false
@@ -46,6 +49,7 @@ final class CircleDirectory {
         let connection = self.connection
         async let sessionRead = try? connection.accessSession()
         async let invitationsRead = try? connection.circleInvitations()
+        async let profileRead = try? connection.accountProfile()
         var didReadCircles = false
         do {
             circles = try await connection.circles()
@@ -58,6 +62,10 @@ final class CircleDirectory {
         if let session = await sessionRead {
             currentUserId = session.userId
             canManageUsers = session.canManageUsers
+        }
+        if let profile = await profileRead {
+            ownPronoun = profile.chosenPronoun
+            if currentUserId == nil { currentUserId = profile.id }
         }
         // Last, so that the empty state is not drawn in the words for
         // somebody who cannot manage accounts and then changed.
@@ -248,6 +256,8 @@ struct CircleDetailView: View {
     @State private var isConfirmingLeave = false
     @State private var isMakingAccount = false
     @State private var removing: CircleMember?
+    /// The member whose Relationship sheet is open.
+    @State private var relationshipMember: CircleMember?
 
     private var circle: PeopleCircle? { directory.circle(circleId) }
 
@@ -307,6 +317,9 @@ struct CircleDetailView: View {
                 CircleAccountForm(directory: directory, circle: circle)
             }
         }
+        .sheet(item: $relationshipMember) { member in
+            CircleRelationshipSheet(directory: directory, member: member)
+        }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
     }
 
@@ -316,7 +329,7 @@ struct CircleDetailView: View {
         Section {
             ForEach(circle.members) { member in
                 let isCurrentUser = member.userId == directory.currentUserId
-                MemberRow(member: member, isCurrentUser: isCurrentUser)
+                memberRow(member, isCurrentUser: isCurrentUser)
                     .confirmationDialog(
                         "Remove from the circle?", isPresented: Binding(get: { removing?.userId == member.userId }, set: { if !$0 { removing = nil } }),
                         titleVisibility: .visible, presenting: removing
@@ -332,15 +345,42 @@ struct CircleDetailView: View {
                         Text("\(member.displayName) will no longer be in \(circle.name). They can be invited again.")
                     }
                     .swipeActions {
+                        if !isCurrentUser { relationshipAction(member) }
                         if circle.isAdmin && !isCurrentUser { memberActions(member, in: circle) }
                     }
                     .contextMenu {
+                        if !isCurrentUser { relationshipAction(member) }
                         if circle.isAdmin && !isCurrentUser { memberActions(member, in: circle) }
                     }
             }
         } header: {
             Text("Members")
         }
+    }
+
+    /// A member's row. Somebody else's opens what they are to the person when
+    /// pressed, so saying "my father" does not wait on finding the swipe.
+    @ViewBuilder
+    private func memberRow(_ member: CircleMember, isCurrentUser: Bool) -> some View {
+        if isCurrentUser {
+            MemberRow(member: member, isCurrentUser: true)
+        } else {
+            Button {
+                relationshipMember = member
+            } label: {
+                MemberRow(member: member, isCurrentUser: false)
+            }
+            .foregroundStyle(.primary)
+            .accessibilityHint("Says what they are to you")
+        }
+    }
+
+    /// Saying what somebody is to the person, which is for everyone in the
+    /// circle to do for anyone else in it, not only its admins.
+    @ViewBuilder
+    private func relationshipAction(_ member: CircleMember) -> some View {
+        Button("Relationship", systemImage: "person.2") { relationshipMember = member }
+            .tint(.teal)
     }
 
     /// Making a member an admin or a member again, and taking them out. Not
@@ -489,9 +529,9 @@ struct OpenCirclesLink: View {
     }
 }
 
-/// MemberRow is somebody in a circle: their picture, what to call them, the
-/// username they sign in with when that is different, and whether they are an
-/// admin.
+/// MemberRow is somebody in a circle: their picture, what to call them, what
+/// they are to the person, the username they sign in with when that is
+/// different, and whether they are an admin.
 private struct MemberRow: View {
     let member: CircleMember
     let isCurrentUser: Bool
@@ -506,6 +546,9 @@ private struct MemberRow: View {
                         Text("You").font(.caption).foregroundStyle(Color(.secondaryLabel))
                     }
                 }
+                if let relationshipText {
+                    Text(verbatim: relationshipText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                }
                 if member.displayName != member.username {
                     Text(verbatim: member.username).font(.footnote).foregroundStyle(Color(.secondaryLabel))
                 }
@@ -514,6 +557,13 @@ private struct MemberRow: View {
                 }
             }
         }
+    }
+
+    /// What they are to the person, such as "Father", when one of them has
+    /// said; never for the person's own row.
+    private var relationshipText: String? {
+        guard !isCurrentUser, let word = RelationshipWords.word(of: member) else { return nil }
+        return RelationshipWords.capitalized(word)
     }
 }
 
@@ -639,6 +689,118 @@ private struct CircleAccountForm: View {
         directory.doneText = String(localized: "\(name.isEmpty ? username : name) has an account and is in the circle")
         await directory.load()
         dismiss()
+    }
+}
+
+/// CircleRelationshipSheet says what one other member of a circle is to the
+/// person: a picker of the words there are, in the app's language, and a line
+/// saying what the other person will see. When the person has not said how
+/// they are described and the other side has gendered words, it asks that too,
+/// since "son" and "daughter" depend on it. Saving sets that first, then the
+/// relationship, or takes it away for "None".
+struct CircleRelationshipSheet: View {
+    let directory: CircleDirectory
+    let member: CircleMember
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: PersonRelationshipDraft?
+    @State private var isBusy = false
+    @State private var problemText: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let draft = Binding($draft) {
+                    termSection(draft)
+                    if draft.wrappedValue.isPronounAsked {
+                        pronounSection(draft)
+                    }
+                }
+            }
+            .overlay {
+                if draft == nil && problemText == nil {
+                    ProgressView()
+                }
+            }
+            .navigationTitle(member.displayName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task { await save() }
+                    }
+                    .disabled(draft?.canSave != true || isBusy)
+                }
+            }
+            .disabled(isBusy)
+            .toast(done: .constant(nil), problem: $problemText)
+        }
+        .task { await load() }
+    }
+
+    private func termSection(_ draft: Binding<PersonRelationshipDraft>) -> some View {
+        Section {
+            Picker("Relationship", selection: draft.selectedTerm) {
+                Text("None").tag("")
+                ForEach(draft.wrappedValue.terms) { term in
+                    Text(verbatim: RelationshipWords.capitalized(RelationshipWords.word(of: term))).tag(term.term)
+                }
+            }
+            .pickerStyle(.menu)
+        } footer: {
+            if let footerText = seenAsText(draft.wrappedValue) {
+                Text(verbatim: footerText)
+            }
+        }
+    }
+
+    /// What the other person will see the person as, worded by how the person
+    /// is described, or not at all while no relationship is chosen.
+    private func seenAsText(_ draft: PersonRelationshipDraft) -> String? {
+        guard let oppositeKind = draft.oppositeKind else { return nil }
+        let word = RelationshipWords.word(oppositeKind, draft.oppositeTermGender)
+        return String(localized: "\(member.displayName) will see you as their \(word).")
+    }
+
+    private func pronounSection(_ draft: Binding<PersonRelationshipDraft>) -> some View {
+        Section {
+            Picker("How should people describe you?", selection: draft.pronoun) {
+                ForEach(PersonPronoun.allCases, id: \.self) { pronoun in
+                    Text(verbatim: pronoun.title).tag(pronoun)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } header: {
+            Text("How should people describe you?")
+        } footer: {
+            Text("Shown to the people who share a circle with you, as your name is. It words how you appear to them, such as son or daughter, and how your agent speaks of you.")
+        }
+    }
+
+    private func load() async {
+        do {
+            let terms = try await directory.connection.relationshipTerms()
+            draft = PersonRelationshipDraft(member: member, terms: terms, ownPronoun: directory.ownPronoun)
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
+    private func save() async {
+        guard let saving = draft else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await directory.connection.saveRelationship(saving, ownUserId: directory.currentUserId ?? "")
+            directory.doneText = saving.isRemoving ? String(localized: "Relationship removed") : String(localized: "Relationship saved")
+            await directory.load()
+            dismiss()
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
     }
 }
 

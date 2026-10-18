@@ -30,6 +30,16 @@ public struct CircleMember: Codable, Hashable, Sendable, Identifiable {
     /// admin or member.
     public let memberRole: String
     public let joinedAt: String
+    /// What this person is to the caller, such as parent or spouse; empty
+    /// when neither of them has said, and for the caller's own row.
+    public let relationshipKind: String
+    /// masculine, feminine or neutral: the gender of the word to show for
+    /// the relationship. Empty when there is none.
+    public let relationshipTermGender: String
+    /// The relationship in English, such as father. The app words it from
+    /// the kind and the gender in its own language and shows this only for a
+    /// kind it does not know.
+    public let relationshipWord: String
 
     public var id: String { userId }
     public var isAdmin: Bool { memberRole == CircleMemberRole.admin.rawValue }
@@ -41,9 +51,22 @@ public struct CircleMember: Codable, Hashable, Sendable, Identifiable {
         return name
     }
 
+    /// Whether they are somebody to the caller by relationship.
+    public var hasRelationship: Bool { !relationshipKind.isEmpty }
+
+    /// The kind, or nil when there is none or the app does not know it.
+    public var knownRelationshipKind: RelationshipKind? { RelationshipKind(rawValue: relationshipKind) }
+
+    /// The gender of the word for the relationship; neutral when the server
+    /// said none.
+    public var knownRelationshipTermGender: RelationshipTermGender {
+        RelationshipTermGender(rawValue: relationshipTermGender) ?? .neutral
+    }
+
     public init(
         userId: String, username: String, name: String? = nil, avatarUrl: String? = nil, avatarColorIndex: Int? = nil,
-        memberRole: String, joinedAt: String
+        memberRole: String, joinedAt: String, relationshipKind: String = "", relationshipTermGender: String = "",
+        relationshipWord: String = ""
     ) {
         self.userId = userId
         self.username = username
@@ -52,7 +75,210 @@ public struct CircleMember: Codable, Hashable, Sendable, Identifiable {
         self.avatarColorIndex = avatarColorIndex
         self.memberRole = memberRole
         self.joinedAt = joinedAt
+        self.relationshipKind = relationshipKind
+        self.relationshipTermGender = relationshipTermGender
+        self.relationshipWord = relationshipWord
     }
+
+    /// The relationship fields are absent from a server that predates them,
+    /// and empty when there is no relationship.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        userId = try container.decode(String.self, forKey: .userId)
+        username = try container.decode(String.self, forKey: .username)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        avatarUrl = try container.decodeIfPresent(String.self, forKey: .avatarUrl)
+        avatarColorIndex = try container.decodeIfPresent(Int.self, forKey: .avatarColorIndex)
+        memberRole = try container.decode(String.self, forKey: .memberRole)
+        joinedAt = try container.decode(String.self, forKey: .joinedAt)
+        relationshipKind = try container.decodeIfPresent(String.self, forKey: .relationshipKind) ?? ""
+        relationshipTermGender = try container.decodeIfPresent(String.self, forKey: .relationshipTermGender) ?? ""
+        relationshipWord = try container.decodeIfPresent(String.self, forKey: .relationshipWord) ?? ""
+    }
+}
+
+/// RelationshipKind is what one person is to another, in words that do not
+/// depend on who they are: a parent, a spouse. The server keeps it in these
+/// names; the app words each in its own language and in the gender of the
+/// person it is said of.
+public enum RelationshipKind: String, CaseIterable, Sendable {
+    case spouse
+    case partner
+    case parent
+    case child
+    case sibling
+    case grandparent
+    case grandchild
+    case auntOrUncle = "aunt_or_uncle"
+    case nieceOrNephew = "niece_or_nephew"
+    case cousin
+    case parentInLaw = "parent_in_law"
+    case childInLaw = "child_in_law"
+    case siblingInLaw = "sibling_in_law"
+    case stepParent = "step_parent"
+    case stepChild = "step_child"
+    case friend
+    case colleague
+
+    /// What the other person is to the first: a parent's child.
+    public var opposite: RelationshipKind {
+        switch self {
+        case .spouse: .spouse
+        case .partner: .partner
+        case .parent: .child
+        case .child: .parent
+        case .sibling: .sibling
+        case .grandparent: .grandchild
+        case .grandchild: .grandparent
+        case .auntOrUncle: .nieceOrNephew
+        case .nieceOrNephew: .auntOrUncle
+        case .cousin: .cousin
+        case .parentInLaw: .childInLaw
+        case .childInLaw: .parentInLaw
+        case .siblingInLaw: .siblingInLaw
+        case .stepParent: .stepChild
+        case .stepChild: .stepParent
+        case .friend: .friend
+        case .colleague: .colleague
+        }
+    }
+
+    /// Whether the kind has a word for each gender. A cousin, a friend and a
+    /// colleague are the same word whoever they are, so nobody is asked how
+    /// they are described for them.
+    public var hasGenderedWords: Bool {
+        switch self {
+        case .cousin, .friend, .colleague: false
+        default: true
+        }
+    }
+}
+
+/// RelationshipTermGender is the gender of a word for a relationship: "wife"
+/// is feminine, "husband" masculine, "spouse" neutral. It belongs to the
+/// word somebody chose, not to a person.
+public enum RelationshipTermGender: String, CaseIterable, Sendable {
+    case masculine
+    case feminine
+    case neutral
+}
+
+/// PersonPronoun is how a person says they are described. It genders the
+/// words for their side of a relationship ("son" rather than "child") and how
+/// their agent speaks of them. Not set reads as they, and is sent as empty.
+public enum PersonPronoun: String, CaseIterable, Sendable {
+    case notSet = ""
+    case he
+    case she
+    case they
+
+    /// The three a person can choose, without not set.
+    public static let choices: [PersonPronoun] = [.he, .she, .they]
+
+    /// The gender of the words for somebody described this way: neutral until
+    /// they say, and for they.
+    public var termGender: RelationshipTermGender {
+        switch self {
+        case .he: .masculine
+        case .she: .feminine
+        case .they, .notSet: .neutral
+        }
+    }
+}
+
+/// RelationshipTerm is one word a person can pick for somebody: its kind and
+/// the gender of the word. "wife" is a spouse, said in a feminine word.
+public struct RelationshipTerm: Codable, Hashable, Sendable, Identifiable {
+    /// What is sent to set it: wife, father, aunt_or_uncle.
+    public let term: String
+    public let relationshipKind: String
+    public let termGender: String
+    /// The word in English, for a kind the app does not know.
+    public let word: String
+
+    public var id: String { term }
+    public var knownRelationshipKind: RelationshipKind? { RelationshipKind(rawValue: relationshipKind) }
+    public var knownTermGender: RelationshipTermGender { RelationshipTermGender(rawValue: termGender) ?? .neutral }
+
+    public init(term: String, relationshipKind: String, termGender: String, word: String) {
+        self.term = term
+        self.relationshipKind = relationshipKind
+        self.termGender = termGender
+        self.word = word
+    }
+}
+
+/// PersonRelationshipDraft is what the Relationship sheet holds for one other
+/// member: the term chosen (empty for none), and, when the person has not said
+/// how they are described and the other side has gendered words, the pronoun
+/// they pick for themselves.
+public struct PersonRelationshipDraft: Hashable, Sendable {
+    public let memberUserId: String
+    /// Every term the server offers, in the order it offers them.
+    public let terms: [RelationshipTerm]
+    /// The term the member has now, or empty for none.
+    public let originalTerm: String
+    /// How the person described themselves before the sheet opened.
+    public let originalPronoun: PersonPronoun
+    /// The term chosen; empty removes the relationship.
+    public var selectedTerm: String
+    public var pronoun: PersonPronoun
+
+    public init(member: CircleMember, terms: [RelationshipTerm], ownPronoun: PersonPronoun) {
+        memberUserId = member.userId
+        self.terms = terms
+        originalTerm = Self.term(for: member, among: terms)
+        selectedTerm = originalTerm
+        originalPronoun = ownPronoun
+        pronoun = ownPronoun
+    }
+
+    /// The term that says what the member is now. The member's gender follows
+    /// how they are described, which may differ from the word the person
+    /// chose, so a kind with no word of that gender falls back to the
+    /// neutral one.
+    public static func term(for member: CircleMember, among terms: [RelationshipTerm]) -> String {
+        guard member.hasRelationship else { return "" }
+        let termsOfKind = terms.filter { $0.relationshipKind == member.relationshipKind }
+        if let exact = termsOfKind.first(where: { $0.termGender == member.relationshipTermGender }) { return exact.term }
+        if let neutral = termsOfKind.first(where: { $0.termGender == RelationshipTermGender.neutral.rawValue }) { return neutral.term }
+        return termsOfKind.first?.term ?? ""
+    }
+
+    /// The kind of the term chosen, or nil for none.
+    public var selectedKind: RelationshipKind? {
+        terms.first { $0.term == selectedTerm }?.knownRelationshipKind
+    }
+
+    /// What the member will see the person as: the opposite of the kind chosen.
+    public var oppositeKind: RelationshipKind? { selectedKind?.opposite }
+
+    /// The gender of the word the member will see for the person, which is
+    /// how the person is described.
+    public var oppositeTermGender: RelationshipTermGender { pronoun.termGender }
+
+    /// Whether another term was picked. The term shown at first follows how
+    /// the member is described, which may not be the word the person chose
+    /// ("mother" where they said "parent"), so it is saved again only when the
+    /// person picked another one.
+    public var isTermChanged: Bool { selectedTerm != originalTerm }
+
+    public var isRemoving: Bool { isTermChanged && selectedTerm.isEmpty }
+
+    /// Whether the sheet asks how the person should be described: they have
+    /// not said, and the word the member will see has genders.
+    public var isPronounAsked: Bool {
+        originalPronoun == .notSet && (oppositeKind?.hasGenderedWords ?? false)
+    }
+
+    /// The pronoun to set before the relationship, or nil when none is.
+    public var pronounToSet: PersonPronoun? {
+        isPronounAsked && pronoun != .notSet ? pronoun : nil
+    }
+
+    public var hasChanges: Bool { isTermChanged || pronounToSet != nil }
+
+    public var canSave: Bool { hasChanges }
 }
 
 /// CircleInvitation is an invitation to join a circle: to the person it was
@@ -256,7 +482,7 @@ extension Documents {
     /// app's documents fills in one level of shared fields.
     static let circleFields = """
         id name circleKind createdAt memberRole
-        members { userId username name avatarUrl avatarColorIndex memberRole joinedAt }
+        members { userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord }
         pendingInvitations { id circleId circleName circleKind invitedByName invitedUsername memberRole createdAt expiresAt }
         """
     public static let circles = """
@@ -307,6 +533,19 @@ extension Documents {
         """
     public static let leaveCircle = """
         mutation ($circleId: String!) { LeaveCircle(circleId: $circleId) }
+        """
+    public static let relationshipTerms = """
+        query { ListRelationshipTerms { term relationshipKind termGender word } }
+        """
+    public static let setPersonRelationship = """
+        mutation ($userId: String!, $relationshipTerm: String!) {
+          SetPersonRelationship(userId: $userId, relationshipTerm: $relationshipTerm) {
+            userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord
+          }
+        }
+        """
+    public static let removePersonRelationship = """
+        mutation ($userId: String!) { RemovePersonRelationship(userId: $userId) }
         """
 }
 
@@ -413,5 +652,43 @@ extension Connection {
     public func leaveCircle(_ circleId: String) async throws {
         struct Answer: Decodable, Sendable { let LeaveCircle: JSONValue? }
         _ = try await execute(Documents.leaveCircle, variables: ["circleId": .string(circleId)], as: Answer.self)
+    }
+
+    /// Every word a relationship can be said with, in the order to offer them.
+    public func relationshipTerms() async throws -> [RelationshipTerm] {
+        struct Answer: Decodable, Sendable { let ListRelationshipTerms: [RelationshipTerm] }
+        return try await execute(Documents.relationshipTerms, as: Answer.self).ListRelationshipTerms
+    }
+
+    /// Says what somebody in a circle with the person is to them, by one of
+    /// the terms the server offers. They see the opposite at once and are
+    /// told. Answers the member as the person now sees them.
+    public func setPersonRelationship(_ userId: String, term: String) async throws -> CircleMember {
+        struct Answer: Decodable, Sendable { let SetPersonRelationship: CircleMember }
+        return try await execute(
+            Documents.setPersonRelationship, variables: ["userId": .string(userId), "relationshipTerm": .string(term)], as: Answer.self
+        ).SetPersonRelationship
+    }
+
+    /// Takes away what the person and somebody are to each other, whichever of
+    /// them said it. The other is told. True when there was one.
+    public func removePersonRelationship(_ userId: String) async throws -> Bool {
+        struct Answer: Decodable, Sendable { let RemovePersonRelationship: Bool }
+        return try await execute(Documents.removePersonRelationship, variables: ["userId": .string(userId)], as: Answer.self)
+            .RemovePersonRelationship
+    }
+
+    /// Saves the Relationship sheet: how the person is described first when
+    /// the sheet asked, then the relationship, or its removal.
+    public func saveRelationship(_ draft: PersonRelationshipDraft, ownUserId: String) async throws {
+        if let pronoun = draft.pronounToSet {
+            _ = try await setAccountPronoun(ownUserId, pronoun: pronoun)
+        }
+        guard draft.isTermChanged else { return }
+        if draft.isRemoving {
+            _ = try await removePersonRelationship(draft.memberUserId)
+        } else {
+            _ = try await setPersonRelationship(draft.memberUserId, term: draft.selectedTerm)
+        }
     }
 }

@@ -2518,6 +2518,8 @@ func (self *AskRun) situation(ctx context.Context, configuration *config.Configu
 	var lines []string
 	name := personName(owner)
 	lines = append(lines, fmt.Sprintf("The person is %s (username %s).", name, owner.Username))
+	lines = append(lines, pronounLine(owner.Pronoun))
+	lines = append(lines, self.relationshipLines(ctx)...)
 	lines = append(lines, "What they may do: "+permissionWords(settings.Operations.Permissions())+".")
 	granted, others := self.sources(ctx)
 	if len(granted) > 0 {

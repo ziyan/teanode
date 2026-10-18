@@ -1879,6 +1879,20 @@ struct NoteLine: View {
                 let invitation = try? JSONDecoder().decode(CircleInvitationNote.self, from: data), !invitation.circleName.isEmpty
             else { return detail }
             return String(localized: "\(invitation.invitedByName) invited you to \(invitation.circleName). Answer it under Circles in Settings.")
+        // Who said it and what they are to the person travel as JSON, so the
+        // word is made here in the app's language; a detail that is not JSON
+        // is shown as the server wrote it.
+        case "relationship_set":
+            guard let data = detail.data(using: .utf8),
+                let note = try? JSONDecoder().decode(RelationshipNote.self, from: data), !note.personName.isEmpty
+            else { return detail }
+            let word = RelationshipWords.word(kindName: note.relationshipKind, genderName: note.termGender, englishWord: note.relationshipWord)
+            return String(localized: "\(note.personName) set how you are related: \(note.personName) is your \(word).")
+        case "relationship_removed":
+            guard let data = detail.data(using: .utf8),
+                let note = try? JSONDecoder().decode(RelationshipNote.self, from: data), !note.personName.isEmpty
+            else { return detail }
+            return String(localized: "\(note.personName) removed how you are related.")
         default: return detail
         }
     }
@@ -1889,6 +1903,15 @@ struct NoteLine: View {
 private struct CircleInvitationNote: Decodable {
     var invitedByName: String = ""
     var circleName: String = ""
+}
+
+/// RelationshipNote is the detail of a relationship_set or relationship_removed
+/// note: who said it, and what they are (or were) to the person who reads it.
+private struct RelationshipNote: Decodable {
+    var personName: String = ""
+    var relationshipKind: String?
+    var termGender: String?
+    var relationshipWord: String?
 }
 
 /// ChatAgentNote is the detail of a chat_agent_owner_only note: the agent

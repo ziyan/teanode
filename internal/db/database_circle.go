@@ -442,9 +442,13 @@ func deleteCircleRow(tx *gorm.DB, circleId string, memberIds []string) error {
 // in the transaction that changed the circles. Shares with a circle need
 // nothing: they reach a person only through circle_member. Every kind of
 // share that can name a person is ended here, so leaving a circle has one
-// meaning whatever was shared.
+// meaning whatever was shared, and so is what the two said they are to each
+// other.
 func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 	for _, userId := range userIds {
+		if err := endRelationshipsOutsideCircles(tx, userId); err != nil {
+			return err
+		}
 		if err := endCalendarSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}

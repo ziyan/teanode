@@ -834,6 +834,7 @@ struct SettingsForm: View {
                 case "circles": CirclesView(connection: connection)
                 case "circle-detail", "circle-detail-operator": CircleDetailDemoScreen(connection: connection)
                 case "circle-join-offer": CircleJoinOfferDemoScreen(connection: connection)
+                case "circle-relationship": CircleRelationshipDemoScreen(connection: connection)
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
                 case "settings-picture": PreferencesView(connection: connection) { saved in app.profileSaved(saved) }

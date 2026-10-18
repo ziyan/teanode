@@ -51,6 +51,17 @@
             if query.contains("ReadAgentConversation"), let page = chatPage(conversationId: variables["conversationId"] as? String) {
                 return page
             }
+            if query.contains("ListRelationshipTerms") {
+                return #"{"data":{"ListRelationshipTerms":[\#(relationshipTermsJSON)]}}"#
+            }
+            if query.contains("SetPersonRelationship") {
+                let userId = variables["userId"] as? String ?? "sam"
+                let term = variables["relationshipTerm"] as? String ?? ""
+                return #"{"data":{"SetPersonRelationship":\#(relatedMemberJSON(userId, term: term))}}"#
+            }
+            if query.contains("RemovePersonRelationship") {
+                return #"{"data":{"RemovePersonRelationship":true}}"#
+            }
             if query.contains("ListCircleInvitations") {
                 return #"{"data":{"ListCircleInvitations":[\#(hikingInvitationJSON)]}}"#
             }
@@ -137,8 +148,58 @@
 
         static func circleMemberJSON(_ userId: String, memberRole: String) -> String {
             let person = demoPerson(userId)
+            let relationship = demoRelationship(userId)
             return
-                #"{"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"memberRole":"\#(memberRole)","joinedAt":"2026-09-01T09:00:00Z"}"#
+                #"{"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"memberRole":"\#(memberRole)","joinedAt":"2026-09-01T09:00:00Z","relationshipKind":"\#(relationship.relationshipKind)","relationshipTermGender":"\#(relationship.termGender)","relationshipWord":"\#(relationship.word)"}"#
+        }
+
+        /// What a demo person is to Robin: only Sam is anything, Robin's mother,
+        /// who is described as she. Empty for the rest, as the server says it.
+        static func demoRelationship(_ userId: String) -> (relationshipKind: String, termGender: String, word: String) {
+            if userId == "sam" { return ("parent", "feminine", "mother") }
+            return ("", "", "")
+        }
+
+        /// Every word a relationship can be said with, as the server lists
+        /// them: each kind's neutral, masculine and feminine word, a word once
+        /// when two genders share it.
+        static let demoRelationshipTerms: [(term: String, relationshipKind: String, termGender: String, word: String)] = {
+            let words: [(kind: String, neutral: String, masculine: String, feminine: String)] = [
+                ("spouse", "spouse", "husband", "wife"), ("partner", "partner", "boyfriend", "girlfriend"),
+                ("parent", "parent", "father", "mother"), ("child", "child", "son", "daughter"),
+                ("sibling", "sibling", "brother", "sister"), ("grandparent", "grandparent", "grandfather", "grandmother"),
+                ("grandchild", "grandchild", "grandson", "granddaughter"), ("aunt_or_uncle", "aunt or uncle", "uncle", "aunt"),
+                ("niece_or_nephew", "niece or nephew", "nephew", "niece"), ("cousin", "cousin", "cousin", "cousin"),
+                ("parent_in_law", "parent-in-law", "father-in-law", "mother-in-law"),
+                ("child_in_law", "child-in-law", "son-in-law", "daughter-in-law"),
+                ("sibling_in_law", "sibling-in-law", "brother-in-law", "sister-in-law"),
+                ("step_parent", "step-parent", "stepfather", "stepmother"), ("step_child", "stepchild", "stepson", "stepdaughter"),
+                ("friend", "friend", "friend", "friend"), ("colleague", "colleague", "colleague", "colleague"),
+            ]
+            var terms: [(term: String, relationshipKind: String, termGender: String, word: String)] = []
+            for entry in words {
+                for (word, termGender) in [(entry.neutral, "neutral"), (entry.masculine, "masculine"), (entry.feminine, "feminine")] {
+                    let term = word.replacingOccurrences(of: " ", with: "_").replacingOccurrences(of: "-", with: "_")
+                    if terms.contains(where: { $0.term == term }) { continue }
+                    terms.append((term, entry.kind, termGender, word))
+                }
+            }
+            return terms
+        }()
+
+        static var relationshipTermsJSON: String {
+            demoRelationshipTerms.map {
+                #"{"term":"\#($0.term)","relationshipKind":"\#($0.relationshipKind)","termGender":"\#($0.termGender)","word":"\#($0.word)"}"#
+            }.joined(separator: ",")
+        }
+
+        /// A member as SetPersonRelationship answers it: the person with the
+        /// term just chosen.
+        static func relatedMemberJSON(_ userId: String, term: String) -> String {
+            let person = demoPerson(userId)
+            let chosen = demoRelationshipTerms.first { $0.term == term } ?? demoRelationshipTerms[0]
+            return
+                #"{"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"memberRole":"","joinedAt":"2026-09-01T09:00:00Z","relationshipKind":"\#(chosen.relationshipKind)","relationshipTermGender":"\#(chosen.termGender)","relationshipWord":"\#(chosen.word)"}"#
         }
 
         /// The invitation to the hiking group, waiting for the person's answer.
@@ -464,6 +525,32 @@
         var body: some View {
             CircleDetailView(directory: directory, circleId: "circle-home")
                 .task { await directory.load() }
+        }
+    }
+
+    /// CircleRelationshipDemoScreen is the Relationship sheet for Sam, who is
+    /// Robin's mother in the demo (`-TeaNodeScreen circle-relationship`),
+    /// opened over the family circle's page once it has been read. Robin has
+    /// not said how they are described, so the sheet also asks.
+    struct CircleRelationshipDemoScreen: View {
+        @State private var directory: CircleDirectory
+        @State private var isOpen = false
+
+        init(connection: Connection) {
+            _directory = State(initialValue: CircleDirectory(connection: connection))
+        }
+
+        var body: some View {
+            CircleDetailView(directory: directory, circleId: "circle-home")
+                .task {
+                    await directory.load()
+                    isOpen = true
+                }
+                .sheet(isPresented: $isOpen) {
+                    if let member = directory.circle("circle-home")?.member("sam") {
+                        CircleRelationshipSheet(directory: directory, member: member)
+                    }
+                }
         }
     }
 

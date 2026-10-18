@@ -15,10 +15,13 @@ public struct AccountProfile: Codable, Hashable, Sendable {
     public let avatarUrl: String?
     /// Which of the twelve colors their initial is drawn on without a picture.
     public let avatarColorIndex: Int?
+    /// How the person says they are described: he, she or they; empty or
+    /// absent until they say.
+    public let pronoun: String?
 
     public init(
         id: String, username: String, name: String? = nil, email: String? = nil, timezone: String? = nil, timezoneMode: String? = nil,
-        avatarUrl: String? = nil, avatarColorIndex: Int? = nil
+        avatarUrl: String? = nil, avatarColorIndex: Int? = nil, pronoun: String? = nil
     ) {
         self.id = id
         self.username = username
@@ -28,6 +31,12 @@ public struct AccountProfile: Codable, Hashable, Sendable {
         self.timezoneMode = timezoneMode
         self.avatarUrl = avatarUrl
         self.avatarColorIndex = avatarColorIndex
+        self.pronoun = pronoun
+    }
+
+    /// The pronoun as the server keeps it, where empty or unknown is not set.
+    public var chosenPronoun: PersonPronoun {
+        PersonPronoun(rawValue: pronoun ?? "") ?? .notSet
     }
 
     /// What the person is called on screen: their name, or the username when
@@ -59,6 +68,7 @@ public struct ProfileDraft: Hashable, Sendable {
     public var email: String
     public var timezone: String
     public var timezoneMode: AccountProfile.TimezoneMode
+    public var pronoun: PersonPronoun
 
     public init(_ profile: AccountProfile) {
         self.profile = profile
@@ -67,6 +77,7 @@ public struct ProfileDraft: Hashable, Sendable {
         email = profile.email ?? ""
         timezone = profile.timezone ?? ""
         timezoneMode = profile.chosenTimezoneMode
+        pronoun = profile.chosenPronoun
     }
 
     /// Whether saving changes what the person signs in with, which is asked
@@ -76,6 +87,7 @@ public struct ProfileDraft: Hashable, Sendable {
     public var hasChanges: Bool {
         isRenaming || trimmedText(name) != (profile.name ?? "") || trimmedText(email) != (profile.email ?? "")
             || trimmedText(timezone) != (profile.timezone ?? "") || timezoneMode != profile.chosenTimezoneMode
+            || pronoun != profile.chosenPronoun
     }
 
     public var canSave: Bool { hasChanges && !trimmedText(username).isEmpty }
@@ -95,7 +107,7 @@ public struct ProfileDraft: Hashable, Sendable {
         [
             "userId": .string(profile.id), "name": .string(trimmedText(name)), "email": .string(trimmedText(email)),
             "username": .string(trimmedText(username)), "timezone": .string(timezoneMode == .fixed ? trimmedText(timezone) : ""),
-            "timezoneMode": .string(timezoneMode.rawValue),
+            "timezoneMode": .string(timezoneMode.rawValue), "pronoun": .string(pronoun.rawValue),
         ]
     }
 }
@@ -234,7 +246,7 @@ public struct PasskeyPolicy: Codable, Hashable, Sendable {
 extension Documents {
     /// What every read and change of the person's own account answers with.
     static let accountProfileFields = """
-        id username name email avatarUrl avatarColorIndex timezone timezoneMode
+        id username name email avatarUrl avatarColorIndex timezone timezoneMode pronoun
         """
     public static let accountProfile = """
         query { GetCurrentUser { \(accountProfileFields) } }
@@ -246,10 +258,18 @@ extension Documents {
         mutation { RemoveUserAvatar { \(accountProfileFields) } }
         """
     public static let updateAccountProfile = """
-        mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String) {
-          UpdateUser(userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode) {
+        mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String, $pronoun: String) {
+          UpdateUser(
+            userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode,
+            pronoun: $pronoun
+          ) {
             \(accountProfileFields)
           }
+        }
+        """
+    public static let updateAccountPronoun = """
+        mutation ($userId: String!, $pronoun: String) {
+          UpdateUser(userId: $userId, pronoun: $pronoun) { \(accountProfileFields) }
         }
         """
     public static let changePassword = """
@@ -297,6 +317,15 @@ extension Connection {
     public func updateAccountProfile(_ draft: ProfileDraft) async throws -> AccountProfile {
         struct Answer: Decodable, Sendable { let UpdateUser: AccountProfile }
         return try await execute(Documents.updateAccountProfile, variables: draft.variables, as: Answer.self).UpdateUser
+    }
+
+    /// Says how the person is described, alone; not set clears it. Answers the
+    /// account as the server now has it.
+    public func setAccountPronoun(_ userId: String, pronoun: PersonPronoun) async throws -> AccountProfile {
+        struct Answer: Decodable, Sendable { let UpdateUser: AccountProfile }
+        return try await execute(
+            Documents.updateAccountPronoun, variables: ["userId": .string(userId), "pronoun": .string(pronoun.rawValue)], as: Answer.self
+        ).UpdateUser
     }
 
     /// Sets the person's picture. The bytes are a PNG or JPEG the server takes

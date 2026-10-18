@@ -17,7 +17,14 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-function member(userId: string, memberRole: 'admin' | 'member', name: string): CircleMember {
+// What a member is to the caller, as the server sends it: the kind and the
+// gender of the word, empty when nothing has been said.
+function member(
+  userId: string,
+  memberRole: 'admin' | 'member',
+  name: string,
+  relationship: { kind: string; gender: string; word: string } = { kind: '', gender: '', word: '' },
+): CircleMember {
   return {
     userId,
     username: `${userId}-login`,
@@ -26,6 +33,9 @@ function member(userId: string, memberRole: 'admin' | 'member', name: string): C
     avatarColorIndex: 3,
     memberRole,
     joinedAt: '2030-01-01T00:00:00Z',
+    relationshipKind: relationship.kind,
+    relationshipTermGender: relationship.gender,
+    relationshipWord: relationship.word,
   }
 }
 
@@ -58,8 +68,34 @@ function circle(overrides: Partial<Circle> = {}): Circle {
   }
 }
 
-function answerWith(shown: { circles?: Circle[]; invitations?: CircleInvitation[]; read?: Circle }) {
+// The words a relationship can be said with, as the server lists them.
+const TERMS = [
+  { term: 'spouse', relationshipKind: 'spouse', termGender: 'neutral', word: 'spouse' },
+  { term: 'husband', relationshipKind: 'spouse', termGender: 'masculine', word: 'husband' },
+  { term: 'wife', relationshipKind: 'spouse', termGender: 'feminine', word: 'wife' },
+  { term: 'parent', relationshipKind: 'parent', termGender: 'neutral', word: 'parent' },
+  { term: 'father', relationshipKind: 'parent', termGender: 'masculine', word: 'father' },
+  { term: 'mother', relationshipKind: 'parent', termGender: 'feminine', word: 'mother' },
+  { term: 'child', relationshipKind: 'child', termGender: 'neutral', word: 'child' },
+  { term: 'son', relationshipKind: 'child', termGender: 'masculine', word: 'son' },
+  { term: 'daughter', relationshipKind: 'child', termGender: 'feminine', word: 'daughter' },
+  { term: 'cousin', relationshipKind: 'cousin', termGender: 'neutral', word: 'cousin' },
+  { term: 'friend', relationshipKind: 'friend', termGender: 'neutral', word: 'friend' },
+  { term: 'colleague', relationshipKind: 'colleague', termGender: 'neutral', word: 'colleague' },
+]
+
+function answerWith(shown: {
+  circles?: Circle[]
+  invitations?: CircleInvitation[]
+  read?: Circle
+  // How the signed-in person is described; empty until they say.
+  pronoun?: string
+}) {
   vi.mocked(graphql).mockImplementation(async (document) => {
+    if (document.includes('ListRelationshipTerms')) return { ListRelationshipTerms: TERMS } as never
+    if (document.includes('GetCurrentUser')) {
+      return { GetCurrentUser: { id: 'person-a', pronoun: shown.pronoun ?? '' } } as never
+    }
     if (document.includes('ListCircles')) return { ListCircles: shown.circles ?? [] } as never
     if (document.includes('ListCircleInvitations')) return { ListCircleInvitations: shown.invitations ?? [] } as never
     if (document.includes('ReadCircle')) return { ReadCircle: shown.read } as never
@@ -200,10 +236,14 @@ it('hides every admin control from a member, and leaves Leave', async () => {
   expect(screen.queryByLabelText('Username')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Send invitation' })).toBeNull()
   expect(screen.queryByText('Waiting for an answer')).toBeNull()
-  expect(screen.queryByRole('button', { name: /Actions/ })).toBeNull()
   expect(screen.queryByRole('button', { name: /Rename/ })).toBeNull()
   expect(screen.queryByRole('button', { name: /Delete circle/ })).toBeNull()
   expect(screen.getByRole('button', { name: 'Leave' })).toBeTruthy()
+  // The row menu is there for the relationship, and offers nothing else.
+  fireEvent.click(screen.getByRole('button', { name: /Person B: Actions/ }))
+  expect(await screen.findByRole('menuitem', { name: 'Relationship' })).toBeTruthy()
+  expect(screen.queryByRole('menuitem', { name: 'Make member' })).toBeNull()
+  expect(screen.queryByRole('menuitem', { name: 'Remove from the circle' })).toBeNull()
 })
 
 it('does not claim the invited person was found', async () => {
@@ -450,4 +490,158 @@ it('shows the server’s refusal in the Leave confirmation and stays on the page
   // Still asking, still on the circle: nothing was left.
   expect(screen.getByRole('alertdialog', { name: 'Leave Fixture Home?' })).toBeTruthy()
   expect(screen.getByTestId('where').textContent).toBe('/circles/circle-one')
+})
+
+// A circle in which Person B is whatever the test says, and the caller is Person A.
+function circleWithB(relationship?: { kind: string; gender: string; word: string }) {
+  return circle({
+    members: [member('person-a', 'admin', 'Person A'), member('person-b', 'member', 'Person B', relationship)],
+  })
+}
+
+async function openRelationshipDialog() {
+  fireEvent.click(await screen.findByRole('button', { name: /Person B: Actions/ }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Relationship' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Relationship with Person B' })
+  // The terms arrive after the dialog opens.
+  await within(dialog).findByRole('option', { name: 'Father' })
+  return dialog
+}
+
+it('shows what a member is to the person under their name, and nothing for the person themselves', async () => {
+  answerWith({ read: circleWithB({ kind: 'parent', gender: 'masculine', word: 'father' }) })
+  renderAt('/circles/circle-one')
+
+  expect(await screen.findByText(/^Father/)).toBeTruthy()
+  expect(screen.getAllByText(/^Father/)).toHaveLength(1)
+})
+
+it('words the relationship for a kind with one word whatever the gender', async () => {
+  answerWith({ read: circleWithB({ kind: 'cousin', gender: 'neutral', word: 'cousin' }) })
+  renderAt('/circles/circle-one')
+
+  expect(await screen.findByText(/^Cousin/)).toBeTruthy()
+})
+
+it('sets a relationship with the chosen term, and says what the other person will see', async () => {
+  answerWith({ read: circleWithB(), pronoun: 'she' })
+  renderAt('/circles/circle-one')
+
+  const dialog = await openRelationshipDialog()
+  fireEvent.change(within(dialog).getByLabelText('Person B is your'), { target: { value: 'father' } })
+  // How the person is described words the other side: a daughter, not a child.
+  expect(within(dialog).getByText('Person B will see you as their daughter.')).toBeTruthy()
+  // She has said how she is described, so she is not asked.
+  expect(within(dialog).queryByLabelText('How should people describe you?')).toBeNull()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(mutationCalls('SetPersonRelationship')).toHaveLength(1))
+  expect(mutationCalls('SetPersonRelationship')[0][1]).toEqual({ userId: 'person-b', relationshipTerm: 'father' })
+  expect(mutationCalls('UpdateUser')).toHaveLength(0)
+  expect(await screen.findByText('Saved how you are related to Person B.')).toBeTruthy()
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Relationship with Person B' })).toBeNull())
+})
+
+it('asks how the person is described, only when they have not said and the other word has genders', async () => {
+  answerWith({ read: circleWithB(), pronoun: '' })
+  renderAt('/circles/circle-one')
+
+  const dialog = await openRelationshipDialog()
+  // Nothing chosen: nothing to ask about.
+  expect(within(dialog).queryByLabelText('How should people describe you?')).toBeNull()
+
+  fireEvent.change(within(dialog).getByLabelText('Person B is your'), { target: { value: 'father' } })
+  expect(within(dialog).getByText('Person B will see you as their child.')).toBeTruthy()
+  fireEvent.change(within(dialog).getByLabelText('How should people describe you?'), { target: { value: 'he' } })
+  expect(within(dialog).getByText('Person B will see you as their son.')).toBeTruthy()
+
+  // A cousin is a cousin whoever says it: no question.
+  fireEvent.change(within(dialog).getByLabelText('Person B is your'), { target: { value: 'cousin' } })
+  expect(within(dialog).queryByLabelText('How should people describe you?')).toBeNull()
+  fireEvent.change(within(dialog).getByLabelText('Person B is your'), { target: { value: 'friend' } })
+  expect(within(dialog).queryByLabelText('How should people describe you?')).toBeNull()
+  fireEvent.change(within(dialog).getByLabelText('Person B is your'), { target: { value: 'colleague' } })
+  expect(within(dialog).queryByLabelText('How should people describe you?')).toBeNull()
+})
+
+it('saves the pronoun before the relationship', async () => {
+  answerWith({ read: circleWithB(), pronoun: '' })
+  renderAt('/circles/circle-one')
+
+  const dialog = await openRelationshipDialog()
+  fireEvent.change(within(dialog).getByLabelText('Person B is your'), { target: { value: 'father' } })
+  fireEvent.change(within(dialog).getByLabelText('How should people describe you?'), { target: { value: 'she' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(mutationCalls('SetPersonRelationship')).toHaveLength(1))
+  expect(mutationCalls('UpdateUser')).toHaveLength(1)
+  expect(mutationCalls('UpdateUser')[0][1]).toEqual({ userId: 'person-a', pronoun: 'she' })
+  const operations = vi.mocked(graphql).mock.calls.map(([document]) => document)
+  expect(operations.findIndex((document) => document.includes('UpdateUser'))).toBeLessThan(
+    operations.findIndex((document) => document.includes('SetPersonRelationship')),
+  )
+})
+
+it('leaves the pronoun alone when the question is left unanswered', async () => {
+  answerWith({ read: circleWithB(), pronoun: '' })
+  renderAt('/circles/circle-one')
+
+  const dialog = await openRelationshipDialog()
+  fireEvent.change(within(dialog).getByLabelText('Person B is your'), { target: { value: 'mother' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(mutationCalls('SetPersonRelationship')).toHaveLength(1))
+  expect(mutationCalls('UpdateUser')).toHaveLength(0)
+})
+
+it('keeps the word the person chose when only the pronoun question is answered', async () => {
+  // Person B is shown as "mother" because of how they are described; the
+  // person may have said "parent", which re-saving the shown term would undo.
+  answerWith({ read: circleWithB({ kind: 'parent', gender: 'feminine', word: 'mother' }), pronoun: '' })
+  renderAt('/circles/circle-one')
+
+  const dialog = await openRelationshipDialog()
+  fireEvent.change(within(dialog).getByLabelText('How should people describe you?'), { target: { value: 'he' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(mutationCalls('UpdateUser')).toHaveLength(1))
+  expect(mutationCalls('SetPersonRelationship')).toHaveLength(0)
+  expect(mutationCalls('RemovePersonRelationship')).toHaveLength(0)
+})
+
+it('shows the term the person has now, and None removes it', async () => {
+  answerWith({ read: circleWithB({ kind: 'parent', gender: 'masculine', word: 'father' }) })
+  renderAt('/circles/circle-one')
+
+  const dialog = await openRelationshipDialog()
+  const select = within(dialog).getByLabelText('Person B is your') as HTMLSelectElement
+  expect(select.value).toBe('father')
+  // Nothing changed yet, so nothing to save.
+  expect((within(dialog).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+
+  fireEvent.change(select, { target: { value: '' } })
+  expect(within(dialog).getByText('This also removes it for Person B.')).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(mutationCalls('RemovePersonRelationship')).toHaveLength(1))
+  expect(mutationCalls('RemovePersonRelationship')[0][1]).toEqual({ userId: 'person-b' })
+  expect(mutationCalls('SetPersonRelationship')).toHaveLength(0)
+  expect(await screen.findByText('Removed how you are related to Person B.')).toBeTruthy()
+})
+
+it('says the refusal in a toast and keeps the dialog open when the relationship cannot be saved', async () => {
+  answerWith({ read: circleWithB(), pronoun: 'they' })
+  const base = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SetPersonRelationship')) throw new Error('you share no circle with them')
+    return base(document, variables)
+  })
+  renderAt('/circles/circle-one')
+
+  const dialog = await openRelationshipDialog()
+  fireEvent.change(within(dialog).getByLabelText('Person B is your'), { target: { value: 'friend' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  expect(await screen.findByText(/you share no circle with them/)).toBeTruthy()
+  expect(screen.getByRole('dialog', { name: 'Relationship with Person B' })).toBeTruthy()
 })

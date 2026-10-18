@@ -85,6 +85,9 @@ type User struct {
 	Timezone     string `json:"timezone,omitempty"`
 	TimezoneMode string `json:"timezoneMode,omitempty"`
 
+	// How they are described: he, she or they; empty until they say
+	Pronoun string `json:"pronoun,omitempty"`
+
 	// The groups this person is in
 	GroupIDs []string `json:"groupIds"`
 
@@ -118,6 +121,7 @@ func describeUser(user *models.User) *User {
 		LocaleSeen:   user.LocaleSeen,
 		Timezone:     user.Timezone,
 		TimezoneMode: user.TimezoneMode,
+		Pronoun:      string(user.Pronoun),
 		GroupIDs:     groupIds,
 		CreatedAt:    user.CreatedAt,
 
@@ -277,6 +281,11 @@ type UpdateUserArguments struct {
 	// browser ("auto", the default) or stays as set ("fixed")
 	Timezone     *string `json:"timezone"`
 	TimezoneMode *string `json:"timezoneMode"`
+
+	// How they are described: he, she or they. Empty clears it. It words
+	// their side of a relationship ("son" rather than "child") and how their
+	// agent speaks of them.
+	Pronoun *string `json:"pronoun"`
 }
 
 func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments) (*User, error) {
@@ -294,6 +303,12 @@ func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments
 		return nil, err
 	}
 	own := principal.User != nil && principal.User.ID == arguments.UserID
+	// How a person is described is theirs alone to say, whoever else may
+	// change their account: it words their side of every relationship and how
+	// their agent speaks of them.
+	if arguments.Pronoun != nil && !own {
+		return nil, fmt.Errorf("%w: a person says their own pronoun", api.ErrPermissionDenied)
+	}
 	if !selfService(own, arguments) {
 		if principal, err = self.requirePermission(ctx, models.PermissionUserManage); err != nil {
 			return nil, err
@@ -301,6 +316,12 @@ func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments
 	}
 	if arguments.Username != nil {
 		if err := validateUsername(strings.TrimSpace(*arguments.Username)); err != nil {
+			return nil, err
+		}
+	}
+	var pronoun models.Pronoun
+	if arguments.Pronoun != nil {
+		if pronoun, err = pronounArgument(*arguments.Pronoun); err != nil {
 			return nil, err
 		}
 	}
@@ -334,6 +355,9 @@ func (self *graph) UpdateUser(ctx context.Context, arguments UpdateUserArguments
 		}
 		if arguments.TimezoneMode != nil {
 			user.TimezoneMode = strings.TrimSpace(*arguments.TimezoneMode)
+		}
+		if arguments.Pronoun != nil {
+			user.Pronoun = pronoun
 		}
 		if arguments.Disabled != nil {
 			if *arguments.Disabled && user.ID == principal.UserID() {

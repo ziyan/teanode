@@ -93,6 +93,7 @@ import { useToast } from './toast'
 import { savePhotoFromAttachment } from '../photos/api'
 import { hasPermission, useSession } from '../session'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
+import { relationshipWord } from '../lib/relationships'
 import {
   CHAT_FIELDS,
   ChatAvatars,
@@ -1379,6 +1380,8 @@ const NOTE_WORDS: Record<string, { plain: Key; withDetail?: Key }> = {
   goal_met: { plain: 'agentDrawer.note.goalMet', withDetail: 'agentDrawer.note.goalMet' },
   goal_stalled: { plain: 'agentDrawer.note.goalStalled', withDetail: 'agentDrawer.note.goalStalled' },
   circle_invited: { plain: 'agentDrawer.note.circleInvited' },
+  relationship_set: { plain: 'agentDrawer.note.relationshipSet' },
+  relationship_removed: { plain: 'agentDrawer.note.relationshipRemoved' },
   chat_agent_owner_only: {
     plain: 'agentDrawer.note.chatAgentOwnerOnly',
     withDetail: 'agentDrawer.note.chatAgentOwnerOnlyNamed',
@@ -1438,6 +1441,35 @@ function noteWords(
       const invitation = JSON.parse(noteDetail) as { invitedByName?: string; circleName?: string }
       if (invitation.circleName) {
         return t(words.plain, { invitedByName: invitation.invitedByName ?? '', circleName: invitation.circleName })
+      }
+    } catch {
+      // Not JSON: fall through to the prose.
+    }
+    return prose
+  }
+  if (noteKind === 'relationship_set' || noteKind === 'relationship_removed') {
+    // Who said it and what they are to the reader, as JSON; one the drawer
+    // cannot read is shown as the server's own English.
+    try {
+      const said = JSON.parse(noteDetail) as {
+        personName?: string
+        relationshipKind?: string
+        termGender?: string
+        relationshipWord?: string
+      }
+      if (said.personName) {
+        if (noteKind === 'relationship_removed') {
+          return t(words.plain, { personName: said.personName })
+        }
+        const word = relationshipWord(
+          t,
+          said.relationshipKind ?? '',
+          said.termGender ?? '',
+          said.relationshipWord ?? '',
+        )
+        if (word) {
+          return t(words.plain, { personName: said.personName, word })
+        }
       }
     } catch {
       // Not JSON: fall through to the prose.

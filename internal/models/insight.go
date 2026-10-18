@@ -624,6 +624,8 @@ const (
 	NoteHerdrAnswered         AgentNoteKind = "herdr_answered"           // it went, and what it was answered with: JSON
 	NoteCircleInvited         AgentNoteKind = "circle_invited"           // somebody invited the person to a circle: JSON of the inviter's name and the circle's
 	NoteSkillShareCallWaiting AgentNoteKind = "skill_share_call_waiting" // a call of a shared skill waits for the person's approval: JSON naming the call
+	NoteRelationshipSet       AgentNoteKind = "relationship_set"         // somebody said what they are to the person: JSON (RelationshipNote)
+	NoteRelationshipRemoved   AgentNoteKind = "relationship_removed"     // somebody took that away: JSON (RelationshipNote)
 
 	// What only the person who addressed an agent in a chat is told, when
 	// no turn of it started: the detail is the agent's name, and for the
@@ -660,6 +662,8 @@ var noteEnglish = map[AgentNoteKind]string{
 	NoteHerdrAnswered:         "a coding session's question was answered",
 	NoteCircleInvited:         "invited you to a circle",
 	NoteSkillShareCallWaiting: "a call of a skill you shared is waiting for your approval",
+	NoteRelationshipSet:       "somebody said how you are related",
+	NoteRelationshipRemoved:   "somebody removed how you are related",
 	NoteChatAgentOwnerOnly:    "only its owner can ask that agent in this chat",
 	NoteChatAgentOff:          "that agent is switched off",
 	NoteChatAgentAbsent:       "that agent's owner is not in this chat",
@@ -684,6 +688,17 @@ func NoteText(kind AgentNoteKind, detail string) string {
 	case kind == NoteCircleInvited:
 		if invitation := ParseCircleInvitedNote(detail); invitation != nil {
 			return invitation.InvitedByName + " invited you to " + invitation.CircleName
+		}
+		return english
+	case kind == NoteRelationshipSet:
+		if relationship := ParseRelationshipNote(detail); relationship != nil {
+			return relationship.PersonName + " set how you are related: " + relationship.PersonName + " is your " +
+				relationship.RelationshipWord + ". You can change it on the Circles page."
+		}
+		return english
+	case kind == NoteRelationshipRemoved:
+		if relationship := ParseRelationshipNote(detail); relationship != nil {
+			return relationship.PersonName + " removed how you are related."
 		}
 		return english
 	case kind == NoteSkillShareCallWaiting:
@@ -734,6 +749,39 @@ func CircleInvitedDetail(invitedByName, circleName string) string {
 func ParseCircleInvitedNote(detail string) *CircleInvitedNote {
 	var note CircleInvitedNote
 	if err := json.Unmarshal([]byte(detail), &note); err != nil || note.CircleName == "" {
+		return nil
+	}
+	return &note
+}
+
+// RelationshipNote is the detail of a relationship_set or relationship_removed
+// note: who said it, and what they now are to the person who reads it. The
+// kind and the gender are there so that each client words it in its own
+// language; the English word is for the rest.
+type RelationshipNote struct {
+	PersonName       string           `json:"personName"`
+	RelationshipKind RelationshipKind `json:"relationshipKind"`
+	TermGender       TermGender       `json:"termGender"`
+	RelationshipWord string           `json:"relationshipWord"`
+}
+
+// RelationshipDetail is the detail of a relationship_set or
+// relationship_removed note.
+func RelationshipDetail(personName string, relationshipKind RelationshipKind, termGender TermGender) string {
+	encoded, err := json.Marshal(RelationshipNote{
+		PersonName: personName, RelationshipKind: relationshipKind, TermGender: termGender, RelationshipWord: relationshipKind.Word(termGender),
+	})
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+// ParseRelationshipNote reads the detail of a relationship note, or returns
+// nil when it is not one.
+func ParseRelationshipNote(detail string) *RelationshipNote {
+	var note RelationshipNote
+	if err := json.Unmarshal([]byte(detail), &note); err != nil || note.PersonName == "" {
 		return nil
 	}
 	return &note

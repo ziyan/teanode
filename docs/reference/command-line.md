@@ -299,7 +299,9 @@ people are named by username.
     teanode circle accept <invitation-id>                # or: decline <invitation-id>
     teanode circle show <circle-id>                      # members, roles, and for an admin who is still being waited for
     teanode circle role <circle-id> personb admin        # or member
-    teanode circle people                                # everybody you share a circle with, once each (the username where there is no name)
+    teanode circle people                                # everybody you share a circle with, once each (the username where there is no name), and what each is to you
+    teanode circle relate personb father                 # personb is your father; they are told and see you as their son or daughter
+    teanode circle unrelate personb                      # take it away, for both of you
 
 `create`, `rename`, `delete`, `invite`, `withdraw`, `role` and `remove` change
 the circle and need you to be one of its admins; a member who is not one is
@@ -328,14 +330,40 @@ error names the circle and the `circle add` that finishes the job. Without
 `user:manage`, `circle add` says it needs that permission; it does not answer
 that the circle was not found.
 
+`relate` says what somebody you share a circle with is to you, so that "ask my
+father" or "where is my wife" reaches the right account. It prints what the two
+of you now are to each other: `Sam Lee is your father; they will see you as
+their son.` The other person is told (at most once a day), sees you as the
+opposite, and can change or remove it, for both of you. Only the two of you
+see it, it ends if you stop sharing any circle, and your agent knows it. `teanode circle relate --help` lists the words: the neutral one
+first, then the masculine and the feminine (`spouse, husband, wife`;
+`parent_in_law, father_in_law, mother_in_law`; `friend`; `colleague`). The
+word shown for the other person follows how they say they are described, and
+until they say, the word you chose or the neutral one. You say how you are
+described yourself with:
+
+    teanode user update robin --pronoun she              # he, she, they, or none to clear it
+
+It is refused for any account but your own, whoever asks, and the people who
+share a circle with you see it, as they see your name. That is the word the
+other side of a relationship uses for you (`son` rather than `child`) and how
+your agent speaks of you; without it, you are spoken of as they and never
+guessed at from a name. `circle relate` and `circle
+unrelate` need a circle in common with the person, and say that nobody by that
+name shares one otherwise.
+
 Who sees whom, and what a circle is for, is in `docs/subsystems/circles.md`.
 The agent does the same through its `circle` tool, with an action for each
-subcommand under the same word: `list`, `show`, `people`, `create`, `rename`,
-`delete`, `invite`, `accept`, `decline`, `withdraw`, `role`, `remove` and
-`leave`, and for somebody who manages accounts `add`. Deleting a circle,
-removing a member and leaving are asked about as destructive, a role change,
-accepting or declining an invitation and inviting as granting, and renaming or
-taking back an invitation as an ordinary write.
+subcommand under the same word: `list`, `show`, `people`, `relate`, `unrelate`,
+`create`, `rename`, `delete`, `invite`, `accept`, `decline`, `withdraw`, `role`,
+`remove` and `leave`, and for somebody who manages accounts `add`. Deleting a
+circle, removing a member and leaving are asked about as destructive, a role
+change, accepting or declining an invitation and inviting as granting, and
+`relate` and `unrelate` as outward, since the other person is told, and
+renaming and taking back an invitation as an ordinary write. The agent relates people only on your word, never from mail or memory,
+and sets your pronoun, with the `account` tool's `update` and its `pronoun`
+argument, only on your word too. At the start of each of your turns it is told
+how you are described and who in your life is what to you.
 
 ### Two things that are not in the schema
 
