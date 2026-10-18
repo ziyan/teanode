@@ -1164,6 +1164,38 @@ it('offers no search or filter on a list with nothing in it, and keeps them once
   expect(screen.getByRole('button', { name: 'Filter' })).toBeTruthy()
 })
 
+it('says how to add the first photos, with a button for each way that opens it', async () => {
+  library = []
+  const pressFileInput = vi.spyOn(HTMLInputElement.prototype, 'click')
+  show('/photos')
+  await screen.findByText('No photos yet. There are three ways to add some.')
+  expect(screen.getByRole('heading', { name: 'Back up an iPhone' })).toBeTruthy()
+  // One Upload photos button is the page's own; the other is in the card for the computer.
+  const uploadButtons = screen.getAllByRole('button', { name: 'Upload photos' })
+  expect(uploadButtons).toHaveLength(2)
+  fireEvent.click(uploadButtons[1])
+  expect(pressFileInput).toHaveBeenCalledTimes(1)
+  expect(screen.getByText('teanode photo upload ~/Pictures')).toBeTruthy()
+  expect(screen.getByText(`teanode auth login --url ${window.location.origin}`)).toBeTruthy()
+  // Two copy buttons on one page are told apart by what they copy.
+  expect(screen.getByRole('button', { name: 'Copy the sign-in command' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Copy the upload command' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'The command line guide' }).getAttribute('href')).toContain(
+    'command-line.md#teanode-photo',
+  )
+})
+
+it('leaves the first-photos ways out of the Trash, favorites and a search that found nothing', async () => {
+  library = []
+  for (const entry of ['/photos?view=trash', '/photos?view=favorites', '/photos?search=kite']) {
+    show(entry)
+    await screen.findByText(/The Trash is empty|No favorites yet|No photos match your search/)
+    expect(screen.queryByRole('heading', { name: 'Back up an iPhone' })).toBeNull()
+    expect(screen.queryByText('teanode photo upload ~/Pictures')).toBeNull()
+    cleanup()
+  }
+})
+
 it('says how many are selected in the bar, short enough for a phone', async () => {
   show('/photos')
   await selectPhotos('photo-1', 'photo-2')
@@ -1221,6 +1253,18 @@ it('offers no upload in the Trash, and says how long each day of it has left', a
   cleanup()
   show('/photos')
   expect(await screen.findByRole('button', { name: 'Upload photos' })).toBeTruthy()
+})
+
+it('draws no blank toolbar band above an empty Trash, and keeps the one above a Trash with photos', async () => {
+  library = []
+  show('/photos?view=trash')
+  await screen.findByText('The Trash is empty.')
+  expect(document.querySelector('.photo-toolbar')).toBeNull()
+  cleanup()
+  library = ['photo-1'].map((id) => photoFixture(id, { trashedAt: new Date().toISOString() }))
+  show('/photos?view=trash')
+  expect(await screen.findByRole('button', { name: 'Select photos' })).toBeTruthy()
+  expect(document.querySelector('.photo-toolbar')).not.toBeNull()
 })
 
 it('offers to show a restored photo in the library', async () => {

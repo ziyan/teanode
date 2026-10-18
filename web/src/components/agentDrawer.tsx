@@ -28,6 +28,7 @@ import { useFitToContent } from '../hooks/useFitToContent'
 import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } from './common'
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
+import { MenuButton } from './menuButton'
 import { Markdown } from './markdown'
 import { hasSharedCitation, linkSharedCitations, useShowPage } from './dashboardPath'
 import { IdeaSuggestions } from './ideaRow'
@@ -43,6 +44,7 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   CloseIcon,
+  ComposeIcon,
   ComputerIcon,
   GlobeIcon,
   InboxIcon,
@@ -1866,14 +1868,16 @@ export function FileCard({ file }: { file: SharedFile }) {
       setIsSaving(false)
     }
   }
-  const picture = signed ? <img src={signed} alt={file.name} className="agent-file-media" /> : null
+  // A click on the picture opens it: the photo page for a photo of the
+  // library, otherwise the lightbox, as for the pictures attached to a
+  // message. The head's icons are the card's other actions, and stay icons.
   const media = !signed ? null : isImage(type) ? (
     photoAddress ? (
       <Link to={photoAddress} aria-label={t('agentDrawer.openPhoto')}>
-        {picture}
+        <img src={signed} alt={file.name} className="agent-file-media" />
       </Link>
     ) : (
-      picture
+      <ZoomablePicture source={signed} name={file.name} imageClassName="agent-file-media" openTitle={file.name} />
     )
   ) : type.startsWith('video/') ? (
     <video src={signed} controls preload="metadata" className="agent-file-media" />
@@ -5710,24 +5714,74 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               {/* Anywhere outside the list closes it. */}
               <div className="agent-drawer-backdrop" onClick={() => setShowingList(false)} />
               <div className="agent-drawer-list" role="menu">
-                <input
-                  className="agent-drawer-search"
-                  type="search"
-                  value={search}
-                  placeholder={t('agentDrawer.search')}
-                  aria-label={t('agentDrawer.search')}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
+                {/* Finding one, and starting one beside it, as the iPhone's
+                    side menu has its button at the top: the list below is
+                    only conversations. */}
+                <div className="agent-drawer-list-head">
+                  <input
+                    className="agent-drawer-search"
+                    type="search"
+                    value={search}
+                    placeholder={t('agentDrawer.search')}
+                    aria-label={t('agentDrawer.search')}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                  <MenuButton
+                    label={t('agentConversations.new')}
+                    className="icon-button"
+                    icon={<ComposeIcon size={16} />}
+                    render={(closeMenu) => (
+                      <>
+                        {available && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              closeMenu()
+                              setShowingList(false)
+                              void startNew()
+                            }}
+                          >
+                            <PlusIcon size={14} />
+                            {t('agentDrawer.new')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            closeMenu()
+                            setShowingList(false)
+                            setChatDialog('direct')
+                          }}
+                        >
+                          <PeopleIcon size={14} />
+                          {t('chat.messageSomeone')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            closeMenu()
+                            setShowingList(false)
+                            setChatDialog('group')
+                          }}
+                        >
+                          <PeopleIcon size={14} />
+                          {t('chat.newGroup')}
+                        </button>
+                      </>
+                    )}
+                  />
+                </div>
                 {found !== null && found.length === 0 && (
                   <div className="agent-drawer-list-row muted">
                     <span className="agent-drawer-list-title">{t('agentDrawer.nothingFound')}</span>
                   </div>
                 )}
-                {/* The main chat first, whatever was said last, with the way
-                    to start a side chat under it: it is the one the drawer
-                    opens to, and a side chat is started from beside it. The
-                    rest by when they were last spoken in, because that is
-                    how somebody looks for one. */}
+                {/* The main chat first, whatever was said last: it is the
+                    one the drawer opens to. The rest by when they were last
+                    spoken in, because that is how somebody looks for one. */}
                 {(found ?? conversations)
                   .filter((conversation) => conversation.kind === 'main')
                   .map((conversation) => conversationRow(conversation))}
@@ -5742,48 +5796,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       <span className="agent-drawer-list-summary muted">{t('chat.agentOff')}</span>
                     </button>
                   </div>
-                )}
-                {found === null && (
-                  <>
-                    {available && (
-                      <button
-                        type="button"
-                        className="agent-drawer-list-row new stacked"
-                        role="menuitem"
-                        onClick={() => {
-                          setShowingList(false)
-                          void startNew()
-                        }}
-                      >
-                        <PlusIcon size={14} />
-                        <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="agent-drawer-list-row new stacked"
-                      role="menuitem"
-                      onClick={() => {
-                        setShowingList(false)
-                        setChatDialog('direct')
-                      }}
-                    >
-                      <PeopleIcon size={14} />
-                      <span className="agent-drawer-list-title">{t('chat.messageSomeone')}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="agent-drawer-list-row new"
-                      role="menuitem"
-                      onClick={() => {
-                        setShowingList(false)
-                        setChatDialog('group')
-                      }}
-                    >
-                      <PeopleIcon size={14} />
-                      <span className="agent-drawer-list-title">{t('chat.newGroup')}</span>
-                    </button>
-                  </>
                 )}
                 {[...(found ?? conversations)]
                   .filter((conversation) => conversation.kind !== 'main')

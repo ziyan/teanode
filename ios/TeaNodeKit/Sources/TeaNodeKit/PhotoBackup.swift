@@ -805,6 +805,35 @@ public actor PhotoBackupIndex {
         didChange()
     }
 
+    /// The addresses of the uploads kept for these items, in any of their files.
+    /// Read before the items are forgotten, so that the server can be told to
+    /// drop what the app will never continue.
+    public func partialUploadPaths(ofLocalIdentifiers localIdentifiers: [String]) -> [String] {
+        localIdentifiers.flatMap { localIdentifier in
+            (contents.records[localIdentifier]?.roles.values.compactMap { $0.partialUpload?.uploadPath }) ?? []
+        }
+    }
+
+    /// Every address kept, for every file.
+    public func allPartialUploadPaths() -> [String] {
+        contents.records.values.flatMap { record in record.roles.values.compactMap { $0.partialUpload?.uploadPath } }
+    }
+
+    /// Forgets every address kept. Nothing else about the files changes: they
+    /// are still to send, each as an upload of its own.
+    public func forgetAllPartialUploads() {
+        for (localIdentifier, var record) in contents.records {
+            var isChanged = false
+            for (roleName, var state) in record.roles where state.partialUpload != nil {
+                state.partialUpload = nil
+                record.roles[roleName] = state
+                isChanged = true
+            }
+            if isChanged { store(record, for: localIdentifier) }
+        }
+        didChange()
+    }
+
     /// Notes that the server refused a file itself. The upload it was sent in
     /// is over, whatever the server did with it.
     public func markRefused(localIdentifier: String, clientPhotoId: String, role: PhotoBackupFileRole, failure: PhotoBackupFailure) {

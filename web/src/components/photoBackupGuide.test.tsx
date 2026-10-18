@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, expect, it, vi } from 'vitest'
 import { TranslationProvider } from '../i18n/i18n'
 import { PhotoBackupGuide, canPhoneUseAddress } from './photoBackupGuide'
 
@@ -46,4 +46,41 @@ it('shows the page address and warns when a phone cannot use it', () => {
   expect(screen.getByRole('link', { name: 'How to put the server on https' }).getAttribute('href')).toContain(
     'deployment.md#photos-and-the-iphone-app',
   )
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+// The code the iPhone's camera scans is only worth offering when the phone can
+// use the address it leads to.
+it('offers the code for a phone only where a phone can use the address', () => {
+  vi.stubGlobal('location', new URL('https://photos.example.com/photos'))
+  render(
+    <TranslationProvider>
+      <PhotoBackupGuide canConnect />
+    </TranslationProvider>,
+  )
+  expect(screen.getByRole('link', { name: 'Connect a phone' }).getAttribute('href')).toBe('/connect?from=photos')
+  expect(screen.queryByRole('note')).toBeNull()
+  cleanup()
+  vi.stubGlobal('location', new URL('http://localhost:3000/photos'))
+  render(
+    <TranslationProvider>
+      <PhotoBackupGuide canConnect />
+    </TranslationProvider>,
+  )
+  expect(screen.queryByRole('link', { name: 'Connect a phone' })).toBeNull()
+  expect(screen.getByRole('note')).toBeTruthy()
+})
+
+it('leaves the button out where the page has one of its own', () => {
+  vi.stubGlobal('location', new URL('https://photos.example.com/settings/devices'))
+  render(
+    <TranslationProvider>
+      <PhotoBackupGuide />
+    </TranslationProvider>,
+  )
+  expect(screen.queryByRole('link', { name: 'Connect a phone' })).toBeNull()
 })

@@ -610,6 +610,7 @@ struct ImportTransactionRowsView: View {
         Form {
             Section {
                 Button("Choose a file", systemImage: "doc") { isChoosingFile = true }
+                    .actionColor()
                     .disabled(isWorking)
                 if !fileName.isEmpty {
                     LabeledContent("File", value: fileName)

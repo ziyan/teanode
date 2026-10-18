@@ -30,6 +30,7 @@ struct ManageOverviewView: View {
                                 AllMailView(connection: connection)
                             } label: {
                                 Label("Mail", systemImage: "tray.full")
+                                    .foregroundStyle(.primary)
                             }
                         }
                         if access.canManageQueue {
@@ -37,6 +38,7 @@ struct ManageOverviewView: View {
                                 DeliveryQueueView(connection: connection)
                             } label: {
                                 Label("Queue", systemImage: "clock.arrow.circlepath")
+                                    .foregroundStyle(.primary)
                             }
                         }
                         if access.canReadReports {
@@ -44,6 +46,7 @@ struct ManageOverviewView: View {
                                 ReportsView(connection: connection)
                             } label: {
                                 Label("Reports", systemImage: "checkmark.shield")
+                                    .foregroundStyle(.primary)
                             }
                         }
                     } footer: {
@@ -55,6 +58,7 @@ struct ManageOverviewView: View {
                                 DomainsView(connection: connection)
                             } label: {
                                 Label("Domains", systemImage: "globe")
+                                    .foregroundStyle(.primary)
                             }
                         } footer: {
                             Text("What it arrives for, and how each domain is set up.")
@@ -69,21 +73,25 @@ struct ManageOverviewView: View {
                             PeopleView(connection: connection)
                         } label: {
                             Label("People", systemImage: "person.2")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             GroupsView(connection: connection)
                         } label: {
                             Label("Groups", systemImage: "person.3")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             RolesView(connection: connection)
                         } label: {
                             Label("Roles", systemImage: "checkmark.seal")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             AuditLogView(connection: connection)
                         } label: {
                             Label("Audit log", systemImage: "list.bullet.clipboard")
+                                .foregroundStyle(.primary)
                         }
                     } header: {
                         Text("People and access")
@@ -92,11 +100,12 @@ struct ManageOverviewView: View {
                 if access.canManageServer || access.canOpenAgentAdmin {
                     Section {
                         if access.canManageServer {
-                            NavigationLink { ServerServicesView(connection: connection) } label: { Label("Services", systemImage: "switch.2") }
+                            NavigationLink { ServerServicesView(connection: connection) } label: { Label("Services", systemImage: "switch.2").foregroundStyle(.primary) }
                             NavigationLink {
                                 ServerSettingsView(connection: connection)
                             } label: {
                                 Label("Server", systemImage: "server.rack")
+                                    .foregroundStyle(.primary)
                             }
                         }
                         if access.canOpenAgentAdmin {
@@ -104,6 +113,7 @@ struct ManageOverviewView: View {
                                 AgentAdminView(connection: connection)
                             } label: {
                                 Label("Agents", systemImage: "person.2.wave.2")
+                                    .foregroundStyle(.primary)
                             }
                         }
                     } header: {
@@ -707,6 +717,7 @@ struct AuditedMailView: View {
                 Button("Download .eml", systemImage: "arrow.down.doc") {
                     Task { await preview("/api/v1/mail/\(mailDetail.mail.id)/raw", name: "\(mailDetail.mail.id).eml") }
                 }
+                .actionColor()
                 .fullWidthRowSeparator()
                 ForEach(content.presentAttachments, id: \.index) { attachment in
                     Button {
@@ -1944,6 +1955,7 @@ struct DomainView: View {
                         DomainSettingsView(model: model)
                     } label: {
                         Label("Settings", systemImage: "gearshape")
+                            .foregroundStyle(.primary)
                     }
                     NavigationLink {
                         DomainAliasesView(model: model)
@@ -1952,6 +1964,7 @@ struct DomainView: View {
                             Text(domain.aliases?.count ?? 0, format: .number).monospacedDigit()
                         } label: {
                             Label("Aliases", systemImage: "at")
+                                .foregroundStyle(.primary)
                         }
                     }
                     NavigationLink {
@@ -1961,12 +1974,14 @@ struct DomainView: View {
                             Text(domain.credentials?.count ?? 0, format: .number).monospacedDigit()
                         } label: {
                             Label("Credentials", systemImage: "key")
+                                .foregroundStyle(.primary)
                         }
                     }
                     NavigationLink {
                         DomainTemplatesView(connection: model.connection, domainId: domain.id)
                     } label: {
                         Label("Templates", systemImage: "doc.richtext")
+                            .foregroundStyle(.primary)
                     }
                 }
             }
@@ -2189,6 +2204,7 @@ private struct DomainSettingsView: View {
                     }
                 }
             }
+            .actionColor()
         } header: {
             Text("DNS records")
         } footer: {
@@ -2221,6 +2237,7 @@ private struct DomainSettingsView: View {
             Button(domain.logo == nil ? LocalizedStringKey("Upload a logo") : "Replace the logo", systemImage: "square.and.arrow.up") {
                 isPickingLogo = true
             }
+            .actionColor()
             .fullWidthRowSeparator()
             if domain.logo != nil {
                 Button("Remove the logo", systemImage: "trash", role: .destructive) { isRemovingLogo = true }
@@ -2958,6 +2975,7 @@ private struct NewCredentialForm: View {
                     UIPasteboard.general.string = created.password
                     doneText = String(localized: "Copied")
                 }
+                .actionColor()
             } header: {
                 Text("Save this password now; it is not shown again.")
             } footer: {

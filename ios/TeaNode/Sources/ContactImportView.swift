@@ -305,6 +305,7 @@ struct ContactImportView: View {
                     Label(
                         model.areAllShownNewChosen ? String(localized: "Select none") : String(localized: "Select all"),
                         systemImage: "checklist")
+                    .actionColor()
                 }
                 .disabled(model.shownContacts.isEmpty)
             }

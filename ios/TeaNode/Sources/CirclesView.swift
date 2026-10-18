@@ -161,8 +161,10 @@ struct CirclesView: View {
                 Text(verbatim: invitationDetails(invitation)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             }
             Button("Accept", systemImage: "checkmark") { answer(invitation, isAccepted: true) }
+                .actionColor()
                 .fullWidthRowSeparator()
             Button("Decline", systemImage: "xmark") { answer(invitation, isAccepted: false) }
+                .actionColor()
         } header: {
             if isFirst { Text("Invitations") }
         }
@@ -401,6 +403,7 @@ struct CircleDetailView: View {
     private var accountSection: some View {
         Section {
             Button("Make an account for someone", systemImage: "person.badge.plus") { isMakingAccount = true }
+                .actionColor()
         } footer: {
             Text("They sign in with that username and password, and can change the password themselves in their settings.")
         }
@@ -436,6 +439,7 @@ struct CircleDetailView: View {
         Section {
             if circle.isAdmin {
                 Button("Rename circle", systemImage: "pencil") { isRenaming = true }
+                    .actionColor()
                 Button("Delete circle", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
                     .tint(.red)
                     .actionColor(isDestructive: true)

@@ -41,6 +41,9 @@ const PhotoToolbarMenuContext = createContext<{ close: () => void } | null>(null
 // More menu, since a row of words wrapped onto lines of their own is three
 // rows of different lengths above the photos. A page with nothing to search
 // has the whole row to itself, and keeps its one action in it.
+//
+// A row with nothing at all in it, such as the Trash with no photos in it, is
+// not drawn: its minimum height would leave a blank band above the note.
 export function PhotoToolbar({
   tools,
   essentials,
@@ -52,7 +55,10 @@ export function PhotoToolbar({
 }) {
   const { t } = useTranslation()
   const isPhone = useIsPhone()
-  const isOverflowing = isPhone && Children.toArray(tools).length > 0 && Children.toArray(children).length > 0
+  const hasTools = Children.toArray(tools).length > 0
+  const hasActions = Children.toArray(children).length > 0
+  if (!hasTools && !hasActions && Children.toArray(essentials).length === 0) return null
+  const isOverflowing = isPhone && hasTools && hasActions
   return (
     <div className="photo-toolbar">
       <div className="photo-toolbar-tools">{tools}</div>

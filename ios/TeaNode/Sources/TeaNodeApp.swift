@@ -101,8 +101,8 @@ struct ConversationsSheet: View {
     /// The sheets for starting a chat with a person, and a group.
     @State private var isMessagingSomeone = false
     @State private var isStartingGroup = false
-    /// The row a screenshot scrolls to, to show the rows that start a chat.
-    private static let messageSomeoneRowId = "message-someone"
+    /// The row a screenshot scrolls to, to bring the chats into view.
+    private static let mainChatRowId = "main-chat"
     /// The room the last rows are given at the bottom of the side menu: the
     /// search field floats over the bottom of the list there, and without it
     /// the last chats cannot be scrolled clear of the field. It grows with the
@@ -124,9 +124,11 @@ struct ConversationsSheet: View {
                         }
                         ForEach(found) { conversation in listRow(conversation) }
                     } else {
-                        Section {
-                            // A person with no agent has no main chat to open.
-                            if app.hasAgent {
+                        // A person with no agent has no main chat to open. A new
+                        // side chat, a chat with someone and a group are started
+                        // from the button at the top, so the list is only chats.
+                        if app.hasAgent {
+                            Section {
                                 Button {
                                     onChoose(nil)
                                 } label: {
@@ -144,38 +146,15 @@ struct ConversationsSheet: View {
                                     // screen; green only marks what can be pressed.
                                     .foregroundStyle(.primary)
                                 }
+                                .id(Self.mainChatRowId)
                                 .menuRow(isSelected: currentId == nil)
+                            } header: {
+                                // In the side menu, whose own row for this part is Chats, the
+                                // agent's chats are headed by the agent.
+                                if leading != nil { Text(app.agentTitle) }
                             }
-                            if !isPanel, app.isAgentOn {
-                                Button {
-                                    Task { await start() }
-                                } label: {
-                                    Label("New side chat", systemImage: "plus")
-                                        .actionColor()
-                                }
-                                .menuRow(isSelected: false)
-                            }
-                            if app.canChat {
-                                Button {
-                                    isMessagingSomeone = true
-                                } label: {
-                                    Label("Message someone", systemImage: "person.crop.circle.badge.plus")
-                                        .actionColor()
-                                }
-                                .id(Self.messageSomeoneRowId)
-                                .menuRow(isSelected: false)
-                                Button {
-                                    isStartingGroup = true
-                                } label: {
-                                    Label("New group", systemImage: "person.2")
-                                        .actionColor()
-                                }
-                                .menuRow(isSelected: false)
-                            }
-                        } header: {
-                            if leading != nil { Text("Chats") }
+                            .listSectionSeparator(.hidden)
                         }
-                        .listSectionSeparator(.hidden)
                         // The chats with people, by when they were last spoken in
                         // (the server lists them so), apart from the side chats
                         // with the agent.
@@ -208,13 +187,13 @@ struct ConversationsSheet: View {
                 #if DEBUG
                     .task(id: app.canChat) {
                         // `-TeaNodeScreen conversations`: the side menu scrolled to its chats,
-                        // to show the rows that start one, once the session says they are there.
+                        // once the session says chats are on.
                         // `conversations-restored` too, which then closes and opens the menu.
                         guard DemoServer.isRequested, DemoServer.screen == "conversations" || DemoServer.screen == "conversations-restored",
                             leading != nil, app.canChat
                         else { return }
                         try? await Task.sleep(for: .seconds(2))
-                        withAnimation { scroller.scrollTo(Self.messageSomeoneRowId, anchor: .top) }
+                        withAnimation { scroller.scrollTo(Self.mainChatRowId, anchor: .top) }
                     }
                 #endif
             }
@@ -259,6 +238,9 @@ struct ConversationsSheet: View {
                 } else {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { dismiss() }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        newMenu
                     }
                 }
             }
@@ -587,6 +569,7 @@ struct SettingsForm: View {
                             PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
+                                .foregroundStyle(.primary)
                         }
                         // Next to the profile, as on the dashboard's account menu: it is about who
                         // the person is among other people.
@@ -611,32 +594,38 @@ struct SettingsForm: View {
                             ChangePasswordView(connection: connection)
                         } label: {
                             Label("Password", systemImage: "key")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             PasskeysView(connection: connection)
                         } label: {
                             Label("Passkeys", systemImage: "person.badge.key")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             TokensView(connection: connection)
                         } label: {
                             Label("API tokens", systemImage: "terminal")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             DevicesView(connection: connection)
                         } label: {
                             Label("Devices", systemImage: "iphone")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             ConnectedAppsView(connection: connection)
                         } label: {
                             Label("Apps", systemImage: "app.badge.checkmark")
+                                .foregroundStyle(.primary)
                         }
                         // Last, as on the dashboard's menu: the account's pages keep one order.
                         NavigationLink {
                             SessionsView(connection: connection)
                         } label: {
                             Label("Sessions", systemImage: "macbook.and.iphone")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -652,6 +641,7 @@ struct SettingsForm: View {
                             PhotoFacesSettingsView(connection: connection)
                         } label: {
                             Label("People in Photos", systemImage: "person.crop.circle")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -661,41 +651,49 @@ struct SettingsForm: View {
                             AgentSettingsView(connection: connection)
                         } label: {
                             Label("Agent settings", systemImage: "slider.horizontal.3")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             KnowledgeSourcesView(connection: connection)
                         } label: {
                             Label("Sources", systemImage: "tray.2")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             AgentMemorySettingsView(connection: connection)
                         } label: {
                             Label("Memory", systemImage: "brain")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             DreamsView(connection: connection)
                         } label: {
                             Label("Dreams", systemImage: "moon.zzz")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             SchedulesView(connection: connection)
                         } label: {
                             Label("Schedules", systemImage: "clock")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             MutedAlertsView(connection: connection)
                         } label: {
                             Label("Alerts", systemImage: "bell.badge")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             ConnectionsView(connection: connection)
                         } label: {
                             Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             AgentActivityView(connection: connection)
                         } label: {
                             Label("Activity", systemImage: "list.bullet.rectangle")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -705,6 +703,7 @@ struct SettingsForm: View {
                             ManageOverviewView(connection: connection)
                         } label: {
                             Label("Manage", systemImage: "server.rack")
+                                .foregroundStyle(.primary)
                         }
                     } footer: {
                         Text("The server: its mail, domains, people and settings.")
@@ -717,6 +716,7 @@ struct SettingsForm: View {
                             MailboxSettingsView(mail: mail)
                         } label: {
                             Label("Mailbox", systemImage: "tray")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -1003,6 +1003,7 @@ struct AccountsSection: View {
                 app.isAddingAccount = true
             } label: {
                 Label("Add account", systemImage: "plus")
+                    .actionColor()
             }
         } header: {
             Text("Accounts")

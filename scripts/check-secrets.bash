@@ -277,7 +277,8 @@ readonly ALLOWED_HOSTS=(
 
   # Not hostnames: Swift in the iPhone app that reads as one. A mail's carbon
   # copy (`draft.cc`), the app model (`self.app`), a notification's payload
-  # (`pressed.info`) and an SF Symbol's name (`selection.pin.in`). Listed
+  # (`pressed.info`) and SF Symbols' names (`selection.pin.in`,
+  # `arrow.up.forward.app`). Listed
   # exactly rather than dropping `.cc`, `.app`, `.info` or `.in` from the TLDs
   # below, which would hide real names under them.
   draft.cc
@@ -289,6 +290,7 @@ readonly ALLOWED_HOSTS=(
   delegate.app
   pressed.info
   selection.pin.in
+  arrow.up.forward.app
 )
 
 # Top-level domains worth looking for. Restricted rather than open-ended so a

@@ -48,3 +48,18 @@ func TestAssistantConfigurationIgnoresInactiveMailSettings(test *testing.T) {
 		test.Fatal("mailboxes without routing were accepted")
 	}
 }
+
+func TestHostedServiceIsChosenOnOnlyWhenSwitchedOn(test *testing.T) {
+	if (HostedService{}).IsChosenOn() {
+		test.Fatal("a service nobody chose counted as chosen")
+	}
+	if !(HostedService{}).Enabled() {
+		test.Fatal("a service nobody chose stopped being on by default")
+	}
+	if (HostedService{IsEnabled: new(false)}).IsChosenOn() {
+		test.Fatal("a service switched off counted as chosen on")
+	}
+	if !(HostedService{IsEnabled: new(true)}).IsChosenOn() {
+		test.Fatal("a service switched on did not count as chosen")
+	}
+}

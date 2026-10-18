@@ -72,3 +72,32 @@ func TestDisabledCollectionsDoNotProvisionAndSyncNeedsNoMailbox(test *testing.T)
 		}
 	}
 }
+
+// A new server has Photos on only because nothing was chosen, and the
+// dashboard must be able to tell that from a server an operator set up for
+// Photos, so the capabilities say which of the two it is.
+func TestServiceCapabilitiesSayWhetherPhotosWasChosen(test *testing.T) {
+	for _, testCase := range []struct {
+		name            string
+		photos          config.HostedService
+		isPhotosEnabled bool
+		isPhotosChosen  bool
+	}{
+		{"nothing chosen", config.HostedService{}, true, false},
+		{"turned on in setup", config.HostedService{IsEnabled: new(true)}, true, true},
+		{"turned off in setup", config.HostedService{IsEnabled: new(false)}, false, false},
+	} {
+		test.Run(testCase.name, func(test *testing.T) {
+			configuration := config.Default()
+			configuration.Services = config.AssistantServices()
+			configuration.Services.Photos = testCase.photos
+			store := config.NewMemoryStore(configuration)
+			defer func() { _ = store.Close() }()
+			resolver := &graph{config: store}
+			capabilities := resolver.serviceCapabilities()
+			if capabilities.IsPhotosEnabled != testCase.isPhotosEnabled || capabilities.IsPhotosChosen != testCase.isPhotosChosen {
+				test.Fatalf("running capabilities: isPhotosEnabled %v, isPhotosChosen %v", capabilities.IsPhotosEnabled, capabilities.IsPhotosChosen)
+			}
+		})
+	}
+}

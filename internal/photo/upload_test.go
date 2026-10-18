@@ -205,10 +205,14 @@ func TestAnUploadMadeWithNoBytesAnswersItsAddressAndTakesTheWholeFileFromTheStar
 	if fixture.photoByClientId("no-bytes-first") != nil {
 		test.Fatal("a photo exists before a byte has arrived")
 	}
-	status := fixture.send(http.MethodHead, location, nil, nil)
-	fixture.expect(status, http.StatusNoContent)
-	if status.header.Get("Upload-Offset") != "0" {
-		test.Fatalf("HEAD said %v", status.header)
+	uploadStatus := fixture.send(http.MethodHead, location, nil, nil)
+	fixture.expect(uploadStatus, http.StatusNoContent)
+	if uploadStatus.header.Get("Upload-Offset") != "0" {
+		test.Fatalf("HEAD said %v", uploadStatus.header)
+	}
+	// The offset changes with every part, so a cache must never answer for it.
+	if uploadStatus.header.Get("Cache-Control") != "no-store" {
+		test.Fatalf("HEAD said Cache-Control %q, want no-store", uploadStatus.header.Get("Cache-Control"))
 	}
 
 	patched := fixture.send(http.MethodPatch, location, map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": "0", "Upload-Complete": "?1"}, picture)
@@ -236,11 +240,11 @@ func TestTheRestOfAFileCompletesAnUploadMadeWithNoBytesAndHoldsItToTheDeclaredDi
 	// A first request that got one whole part through.
 	cut := fixture.send(http.MethodPatch, location, map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": "0", "Upload-Complete": "?0"}, whole[:8<<20])
 	fixture.expect(cut, http.StatusNoContent)
-	status := fixture.send(http.MethodHead, location, nil, nil)
-	if status.header.Get("Upload-Offset") != strconv.Itoa(8<<20) {
-		test.Fatalf("HEAD said %v", status.header)
+	uploadStatus := fixture.send(http.MethodHead, location, nil, nil)
+	if uploadStatus.header.Get("Upload-Offset") != strconv.Itoa(8<<20) {
+		test.Fatalf("HEAD said %v", uploadStatus.header)
 	}
-	rest := fixture.send(http.MethodPatch, location, map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": status.header.Get("Upload-Offset"), "Upload-Complete": "?1"}, whole[8<<20:])
+	rest := fixture.send(http.MethodPatch, location, map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": uploadStatus.header.Get("Upload-Offset"), "Upload-Complete": "?1"}, whole[8<<20:])
 	fixture.expect(rest, http.StatusCreated)
 	if fixture.photoByClientId("rest-after-a-cut") == nil || !bytes.Equal(fixture.files.get(models.PhotoBlobFileID(digestOf(whole))), whole) {
 		test.Fatal("the two requests did not make the file")
@@ -282,6 +286,58 @@ func TestAnEmptyRestAtTheEndOfTheFileCompletesAnUploadThatHasEveryByte(test *tes
 	done := fixture.send(http.MethodHead, created.header.Get("Location"), nil, nil)
 	if done.header.Get("Upload-Complete") != "?1" || done.header.Get("X-Photo-ID") != found.ID {
 		test.Fatalf("HEAD after completion said %v", done.header)
+	}
+}
+
+// URLSession on iOS 17 and later may add resumable upload headers of its own
+// to a background upload, so the end of the file can be said twice, in one line
+// or in two. Saying the same thing twice is one answer; saying two things is
+// refused.
+func TestACompletenessHeaderSaidTwiceCountsWhenBothAgreeAndIsRefusedWhenTheyDoNot(test *testing.T) {
+	fixture := newFixture(test)
+	picture := smallJpeg(test, 46)
+	created := fixture.send(http.MethodPost, fixture.collectionUrl(),
+		jpegHeaders("said-twice", "Upload-Complete", "?0", "Upload-Length", strconv.Itoa(len(picture)), "X-Photo-Declared-SHA256", digestOf(picture)), nil)
+	fixture.expect(created, http.StatusCreated)
+	location := created.header.Get("Location")
+	patchHeaders := func(completeness string) map[string]string {
+		return map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": "0", "Upload-Complete": completeness}
+	}
+
+	for _, disagreeing := range []string{"?1, ?0", "?0,?1", "?1, yes"} {
+		refused := fixture.send(http.MethodPatch, location, patchHeaders(disagreeing), picture)
+		fixture.expect(refused, http.StatusBadRequest)
+		if !strings.Contains(refused.body, "Upload-Complete") {
+			test.Fatalf("%q was refused as %q", disagreeing, refused.body)
+		}
+	}
+	if fixture.photoByClientId("said-twice") != nil {
+		test.Fatal("a refused request made a photo")
+	}
+
+	// Two lines of the header that disagree are refused like one line that does.
+	twoLines, err := http.NewRequestWithContext(test.Context(), http.MethodPatch, location, bytes.NewReader(picture))
+	if err != nil {
+		test.Fatal(err)
+	}
+	twoLines.Header.Set("Content-Type", "application/partial-upload")
+	twoLines.Header.Set("Upload-Offset", "0")
+	twoLines.Header.Add("Upload-Complete", "?1")
+	twoLines.Header.Add("Upload-Complete", "?0")
+	twoLinesResponse, err := http.DefaultClient.Do(twoLines)
+	if err != nil {
+		test.Fatal(err)
+	}
+	_ = twoLinesResponse.Body.Close()
+	if twoLinesResponse.StatusCode != http.StatusBadRequest {
+		test.Fatalf("two lines that disagree were answered %d", twoLinesResponse.StatusCode)
+	}
+
+	completed := fixture.send(http.MethodPatch, location, patchHeaders("?1, ?1"), picture)
+	fixture.expect(completed, http.StatusCreated)
+	found := fixture.photoByClientId("said-twice")
+	if found == nil || completed.header.Get("X-Photo-ID") != found.ID {
+		test.Fatalf("an end said twice did not complete the upload: %v", completed.header)
 	}
 }
 

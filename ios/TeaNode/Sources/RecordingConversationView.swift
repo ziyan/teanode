@@ -663,6 +663,7 @@ struct RecordingSpeakerNamingSheet: View {
                                 model.confirmedName = suggestion.confirmedName
                             } label: {
                                 Label(suggestion.confirmedName, systemImage: Self.symbolName(suggestion.speakerNameSource))
+                                    .actionColor()
                             }
                             .accessibilityHint(Self.sourceText(suggestion.speakerNameSource))
                         }

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
-import { useAgentIdentity } from '../agentPreferences'
 import { ChatAvatars, UnreadCount, chatTitleOf } from '../components/agentChat'
 import { CONVERSATIONS, untitledConversationName, type Conversation } from '../components/agentDrawer'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
@@ -39,11 +38,9 @@ export function AgentConversationsPage() {
   const { t, language } = useTranslation()
   const toast = useToast()
   const navigate = useNavigate()
-  const agent = useAgentIdentity()
   const ownUserId = useOptionalSession()?.userId ?? ''
   const deletedNote = t('chat.deletedAccount')
-  const agentLabel = agent.name || t('nav.agent')
-  useBreadcrumbDetail(agentLabel)
+  useBreadcrumbDetail(t('nav.chats'))
 
   // The same question the picker asks, and re-asked on the same interval as
   // any list, so a conversation started from a terminal or a phone appears.

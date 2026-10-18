@@ -337,6 +337,7 @@ struct ContactDetailView: View {
                                     app.composingTo = email
                                 } label: {
                                     Label(email, systemImage: "envelope")
+                                        .actionColor()
                                 }
                                 .contextMenu {
                                     Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = email }
@@ -507,6 +508,7 @@ struct ContactEditor: View {
                     }
                     .onDelete { emails.remove(atOffsets: $0) }
                     Button("Add email", systemImage: "plus.circle") { emails.append("") }
+                        .actionColor()
                 }
                 Section("Phone") {
                     ForEach(phones.indices, id: \.self) { index in
@@ -515,6 +517,7 @@ struct ContactEditor: View {
                     }
                     .onDelete { phones.remove(atOffsets: $0) }
                     Button("Add phone", systemImage: "plus.circle") { phones.append("") }
+                        .actionColor()
                 }
                 Section("Address") {
                     TextField("Street", text: Binding($address.street, default: ""), axis: .vertical)

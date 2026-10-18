@@ -248,6 +248,7 @@ struct MailRuleEditor: View {
                 Button("Add a condition", systemImage: "plus") {
                     conditions.append(Edited(value: MailRule.Condition()))
                 }
+                .actionColor()
             }
             Section("Do this") {
                 ForEach($actions) { $action in
@@ -257,6 +258,7 @@ struct MailRuleEditor: View {
                 Button("Add an action", systemImage: "plus") {
                     actions.append(Edited(value: MailRule.Action()))
                 }
+                .actionColor()
             }
         }
         .navigationTitle(isNew ? "Add a rule" : "Edit rule")

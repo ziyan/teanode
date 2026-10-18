@@ -40,6 +40,7 @@ struct ServerServicesView: View {
                         ServerAboutView(connection: connection)
                     } label: {
                         Label("Restart it on the About page", systemImage: "arrow.clockwise")
+                            .foregroundStyle(.primary)
                     }
                 }
             } else { ProgressView() }
@@ -71,6 +72,7 @@ struct SyncCredentialsView: View {
             Section {
                 NavigationLink { DeviceSetupView(connection: connection) } label: {
                     Label("Set up on this iPhone", systemImage: "iphone")
+                        .foregroundStyle(.primary)
                 }
             } footer: {
                 Text("Choose Mail, Calendar, Reminders and Contacts, then install one profile. A mailbox is optional.")

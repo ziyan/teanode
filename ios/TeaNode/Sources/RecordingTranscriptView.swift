@@ -33,6 +33,7 @@ struct RecordingTranscriptScreen: View {
                             RecordingTranscriptScreen(connection: connection, recording: recording, transcriptRun: transcriptRun)
                         } label: {
                             Label("Open transcript version", systemImage: "text.bubble")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -120,12 +121,14 @@ struct RecordingTranscriptScreen: View {
                 RecordingTextHistoryScreen(connection: connection, recordingId: recording.id)
             } label: {
                 Label("Transcript edit history", systemImage: "clock.arrow.circlepath")
+                    .foregroundStyle(.primary)
             }
             if let speakers = model.speakers {
                 NavigationLink {
                     RecordingSpeakersScreen(connection: connection, recording: recording, initial: speakers)
                 } label: {
                     Label("Speakers and voice references", systemImage: "person.2.wave.2")
+                        .foregroundStyle(.primary)
                 }
             }
         }
@@ -179,6 +182,7 @@ struct RecordingSpeakersScreen: View {
                         isRenaming = true
                     } label: {
                         Label(identity.confirmedName, systemImage: "person.crop.circle")
+                            .actionColor()
                     }
                 }
             }

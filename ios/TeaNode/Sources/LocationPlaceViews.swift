@@ -58,6 +58,7 @@ struct LocationPlaceScreen: View {
                     isChangingAddress = true
                 } label: {
                     Label("Change address", systemImage: "magnifyingglass")
+                        .actionColor()
                 }
                 .frame(minHeight: 44)
                 if place.isAddressTyped {
@@ -65,6 +66,7 @@ struct LocationPlaceScreen: View {
                         Task { await useMapAddress() }
                     } label: {
                         Label("Use the map's address", systemImage: "map")
+                            .actionColor()
                     }
                     .frame(minHeight: 44)
                 }
@@ -93,6 +95,7 @@ struct LocationPlaceScreen: View {
                         Task { await move(to: tappedCoordinate) }
                     } label: {
                         Label("Move the place here", systemImage: "mappin.and.ellipse")
+                            .actionColor()
                     }
                     .disabled(isMoving)
                     .frame(minHeight: 44)
@@ -101,6 +104,7 @@ struct LocationPlaceScreen: View {
                         focusMap()
                     } label: {
                         Label("Keep it where it was", systemImage: "arrow.uturn.backward")
+                            .actionColor()
                     }
                     .disabled(isMoving)
                     .frame(minHeight: 44)
@@ -109,6 +113,7 @@ struct LocationPlaceScreen: View {
                     Task { await moveToPhone() }
                 } label: {
                     Label("Use where I am now", systemImage: "location.fill")
+                        .actionColor()
                 }
                 .disabled(isMoving)
                 .frame(minHeight: 44)

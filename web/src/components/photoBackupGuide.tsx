@@ -1,4 +1,5 @@
 import { Trans, useTranslation } from '../i18n/i18n'
+import { CONNECT_PATH } from './dashboardPath'
 
 // Where the deployment guide explains how to put the server on an https
 // address; the section is written for the same people who see this card.
@@ -41,9 +42,16 @@ export function canPhoneUseAddress(address: { protocol: string; hostname: string
 // phone has to reach), and where the switch is. When that address is one a
 // phone cannot use, it says so plainly, since the app would otherwise fail to
 // connect with nothing on either side saying why.
-export function PhotoBackupGuide({ title }: { title?: string }) {
+//
+// canConnect adds the button that opens the page with the code the iPhone's
+// camera scans, for a page that has no such button of its own (the Devices
+// page has one in the heading above). It is left out when a phone cannot use
+// this address, since the code would lead the phone to a server it cannot
+// reach. The code page's way back leads to Photos, where this is shown.
+export function PhotoBackupGuide({ title, canConnect = false }: { title?: string; canConnect?: boolean }) {
   const { t } = useTranslation()
   const address = window.location.origin
+  const canPhoneConnect = canPhoneUseAddress(window.location)
   return (
     <section className="card photo-backup">
       <h3>{title ?? t('photoBackup.title')}</h3>
@@ -54,7 +62,17 @@ export function PhotoBackupGuide({ title }: { title?: string }) {
         </li>
         <li>{t('photoBackup.turnOn')}</li>
       </ol>
-      {!canPhoneUseAddress(window.location) && (
+      {canConnect && canPhoneConnect && (
+        <>
+          <p className="muted">{t('photoBackup.connectHint')}</p>
+          <div className="page-actions">
+            <a className="button" href={`${CONNECT_PATH}?from=photos`}>
+              {t('phones.connect')}
+            </a>
+          </div>
+        </>
+      )}
+      {!canPhoneConnect && (
         <p className="notice warn" role="note">
           <Trans
             k="photoBackup.needsHttps"

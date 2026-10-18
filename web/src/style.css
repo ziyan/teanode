@@ -7071,21 +7071,6 @@ label .select-value.placeholder {
   font-weight: 600;
 }
 
-.agent-drawer-list-row.new {
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--muted);
-  cursor: pointer;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-  border-radius: 6px 6px 0 0;
-}
-
-.agent-drawer-list-row.new:hover {
-  color: var(--text);
-}
-
 .agent-drawer-list-row.more {
   border: 0;
   background: none;
@@ -9578,9 +9563,17 @@ td.truncate:has(.contact-postal) {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
-.agent-drawer-search {
-  width: 100%;
+/* The search box, and the button that starts one at its end. */
+.agent-drawer-list-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin-bottom: 4px;
+}
+
+.agent-drawer-search {
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 13px;
 }
 
@@ -18369,14 +18362,6 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-left: -4px;
 }
 
-/* New side chat, Message someone and New group are one block at the top of
-   the list; only the last of them draws the line under it. */
-.agent-drawer-list-row.new.stacked {
-  margin-bottom: 0;
-  border-bottom: 0;
-  border-radius: 6px;
-}
-
 /* The offer where the main conversation would be, with the agent off. */
 .agent-drawer-offer {
   display: flex;
@@ -18973,6 +18958,32 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 
 .photo-backup > .notice {
   margin-bottom: 0;
+}
+
+/* The other ways into an empty library, stacked under the iPhone's. */
+.photo-way {
+  margin-top: var(--space-4);
+}
+
+/* A command to copy: the words wrap on a phone, the button stays beside them
+   when there is room and drops under them when there is not. */
+.photo-way-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.photo-way-command code {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--field);
+  border-radius: var(--radius-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .services-review {

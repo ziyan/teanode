@@ -20,12 +20,17 @@ type ServiceMutation interface {
 }
 
 type ServiceCapabilities struct {
-	IsMailRoutingEnabled     bool `json:"isMailRoutingEnabled"`
-	IsMailboxEnabled         bool `json:"isMailboxEnabled"`
-	IsCalendarEnabled        bool `json:"isCalendarEnabled"`
-	IsRemindersEnabled       bool `json:"isRemindersEnabled"`
-	IsContactsEnabled        bool `json:"isContactsEnabled"`
-	IsPhotosEnabled          bool `json:"isPhotosEnabled"`
+	IsMailRoutingEnabled bool `json:"isMailRoutingEnabled"`
+	IsMailboxEnabled     bool `json:"isMailboxEnabled"`
+	IsCalendarEnabled    bool `json:"isCalendarEnabled"`
+	IsRemindersEnabled   bool `json:"isRemindersEnabled"`
+	IsContactsEnabled    bool `json:"isContactsEnabled"`
+	IsPhotosEnabled      bool `json:"isPhotosEnabled"`
+	// IsPhotosChosen is true when an operator turned Photos on in setup, and
+	// false when it is on only because nothing was chosen (the default, which
+	// every new server has). Only a chosen Photos says the server was set up
+	// for it.
+	IsPhotosChosen           bool `json:"isPhotosChosen"`
 	IsAssistantEnabled       bool `json:"isAssistantEnabled"`
 	HasPendingServiceRestart bool `json:"hasPendingServiceRestart"`
 	HasCompletedSetup        bool `json:"hasCompletedSetup"`
@@ -82,7 +87,7 @@ func (self *graph) serviceCapabilities() *ServiceCapabilities {
 		HasModelProvider:     len(agentSettings.Providers) > 0 && agentSettings.Models.Default != "",
 		IsMailRoutingEnabled: self.isServiceEnabled(models.ServiceMailRouting), IsMailboxEnabled: self.isServiceEnabled(models.ServiceMailboxes),
 		IsCalendarEnabled: self.isServiceEnabled(models.ServiceCalendar), IsRemindersEnabled: self.isServiceEnabled(models.ServiceReminders),
-		IsContactsEnabled: self.isServiceEnabled(models.ServiceContacts), IsPhotosEnabled: self.isServiceEnabled(models.ServicePhotos), IsAssistantEnabled: self.config.Current().Agent.Enabled && self.settings != nil && self.agentWorker() != nil,
+		IsContactsEnabled: self.isServiceEnabled(models.ServiceContacts), IsPhotosEnabled: self.isServiceEnabled(models.ServicePhotos), IsPhotosChosen: selected.Photos.IsChosenOn(), IsAssistantEnabled: self.config.Current().Agent.Enabled && self.settings != nil && self.agentWorker() != nil,
 		HasPendingServiceRestart: pending, HasCompletedSetup: selected.HasCompletedSetup || (selected.MailRouting.IsEnabled == nil && selected.Mailboxes.IsEnabled == nil && selected.Calendar.IsEnabled == nil && selected.Reminders.IsEnabled == nil && selected.Contacts.IsEnabled == nil && selected.Photos.IsEnabled == nil),
 	}
 }
@@ -183,7 +188,7 @@ func (self *graph) GetServiceSetup(ctx context.Context) (*ServiceSetup, error) {
 	}
 	configuration := self.config.Current()
 	selected := configuration.Services
-	choices := &ServiceCapabilities{IsMailRoutingEnabled: selected.IsEnabled(models.ServiceMailRouting), IsMailboxEnabled: selected.IsEnabled(models.ServiceMailboxes), IsCalendarEnabled: selected.IsEnabled(models.ServiceCalendar), IsRemindersEnabled: selected.IsEnabled(models.ServiceReminders), IsContactsEnabled: selected.IsEnabled(models.ServiceContacts), IsPhotosEnabled: selected.IsEnabled(models.ServicePhotos), IsAssistantEnabled: configuration.Agent.Enabled, HasCompletedSetup: selected.HasCompletedSetup}
+	choices := &ServiceCapabilities{IsMailRoutingEnabled: selected.IsEnabled(models.ServiceMailRouting), IsMailboxEnabled: selected.IsEnabled(models.ServiceMailboxes), IsCalendarEnabled: selected.IsEnabled(models.ServiceCalendar), IsRemindersEnabled: selected.IsEnabled(models.ServiceReminders), IsContactsEnabled: selected.IsEnabled(models.ServiceContacts), IsPhotosEnabled: selected.IsEnabled(models.ServicePhotos), IsPhotosChosen: selected.Photos.IsChosenOn(), IsAssistantEnabled: configuration.Agent.Enabled, HasCompletedSetup: selected.HasCompletedSetup}
 	setup := &ServiceSetup{MailServerName: configuration.Server.Name, SelectedServices: choices, RunningServices: self.serviceCapabilities(), HasModelProvider: len(configuration.Agent.Providers) > 0 && configuration.Agent.Models.Default != ""}
 	if choices.IsMailRoutingEnabled {
 		domains, err := self.transaction(ctx).ListDomains()

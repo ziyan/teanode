@@ -278,7 +278,8 @@ export function Sidebar({
     .filter((group) => group.items.length > 0)
   // The agent's row at the top of the mailbox's rail is called what the
   // agent is called, and is there only when there is an agent to talk to.
-  const agentLabel = agent.name || t('nav.agent')
+  // The agent's part holds the chats with people and groups too, so it is named Chats.
+  const agentLabel = t('nav.chats')
 
   return (
     <>

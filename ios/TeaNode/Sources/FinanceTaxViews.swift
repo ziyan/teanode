@@ -126,6 +126,7 @@ struct TaxesView: View {
                         }
                     }
                     Button("Type in a tax form", systemImage: "square.and.pencil") { isTypingTaxForm = true }
+                        .actionColor()
                 }
             }
             if !paystubs.isEmpty {
@@ -147,6 +148,7 @@ struct TaxesView: View {
                         }
                     }
                     Button("Type in a paystub", systemImage: "square.and.pencil") { isTypingPaystub = true }
+                        .actionColor()
                 }
             }
         }
@@ -218,12 +220,14 @@ struct TaxesView: View {
                         UIPasteboard.general.string = address
                         finance.doneText = String(localized: "Address copied")
                     }
+                    .actionColor()
                     .fullWidthRowSeparator()
                 } else {
                     Text("You have no mailbox address to receive them; add the files instead.")
                         .foregroundStyle(.secondary)
                 }
                 Button("New address", systemImage: "arrow.clockwise") { isRegeneratingAddress = true }
+                    .actionColor()
                 .confirmationDialog("New address?", isPresented: $isRegeneratingAddress, titleVisibility: .visible) {
                     Button("Make a new address", role: .destructive) {
                         Task {
@@ -526,6 +530,7 @@ struct TaxEstimateSection: View {
                 TaxYearSettingView(taxYear: taxYear, setting: setting, onSaved: onSettingsSaved)
             } label: {
                 Label("Year settings", systemImage: "slider.horizontal.3")
+                    .foregroundStyle(.primary)
             }
         } header: {
             if estimate.isProjected == true {

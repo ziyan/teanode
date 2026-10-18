@@ -4,7 +4,6 @@ import { askAgentAbout } from '../../api'
 import { useBreadcrumbDetail, useBreadcrumbNote } from '../../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
-import { PhotoBackupGuide } from '../../components/photoBackupGuide'
 import {
   AddPersonIcon,
   AlbumRemoveIcon,
@@ -89,6 +88,7 @@ import { albumAddress } from './albums'
 import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
 import { AddPhotosDialog, AlbumOwnerMark, ShareAlbumDialog } from './albumSharing'
 import { useShowDateRange, useVisibleDayRange } from './dateRange'
+import { FirstPhotos } from './firstPhotos'
 import { PhotoGrid, isPhotoPreviewPending, type PhotoGrouping } from './grid'
 import { PhotoOverview } from './overview'
 import {
@@ -1074,7 +1074,7 @@ function AccountPhotosPage() {
               ? t('photos.emptyFavorites')
               : isTrash
                 ? t('photos.emptyTrash')
-                : t('photos.emptyLibrary')
+                : t('photos.emptyLibraryWays')
   // The library itself, with nothing searched, filtered or opened, and no
   // photo in it: where somebody who has just opened Photos is looking, and
   // where how to back an iPhone up belongs.
@@ -1456,7 +1456,7 @@ function AccountPhotosPage() {
               </button>
             </div>
           )}
-          {isLibraryEmpty && <PhotoBackupGuide />}
+          {isLibraryEmpty && <FirstPhotos onChooseFiles={() => fileInput.current?.click()} />}
         </>
       ) : isOverview ? (
         <PhotoOverview

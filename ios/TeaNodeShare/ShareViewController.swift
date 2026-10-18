@@ -349,6 +349,7 @@ struct ShareView: View {
                 if !model.isConnected {
                     Section {
                         Label("Open TeaNode and connect it to your server first.", systemImage: "link")
+                            .foregroundStyle(.primary)
                     }
                 } else {
                     if !model.files.isEmpty {
@@ -377,7 +378,7 @@ struct ShareView: View {
                     if !model.recordingFiles.isEmpty {
                         Section {
                             Toggle("Save audio or video as recordings", isOn: $model.isRecordingDestination)
-                            ForEach(model.recordingFiles) { file in Label(file.originalFilename, systemImage: file.isVideo ? "video" : "waveform") }
+                            ForEach(model.recordingFiles) { file in Label(file.originalFilename, systemImage: file.isVideo ? "video" : "waveform").foregroundStyle(.primary) }
                         } footer: {
                             Text(
                                 "Recordings are kept locally until verified by the server. Open TeaNode to resume their background uploads. Recording speech is not sent as an instruction to your agent."
@@ -417,6 +418,7 @@ struct ShareView: View {
                     if let resultText = model.resultText {
                         Section {
                             Label(resultText, systemImage: "checkmark.circle")
+                                .foregroundStyle(.primary)
                         }
                     }
                     if model.effectiveFileDestination == .agent {

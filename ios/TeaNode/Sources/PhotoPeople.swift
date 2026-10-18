@@ -21,7 +21,11 @@ extension PhotosModel {
     /// before.
     func reloadFaceGroups(isQuiet: Bool = false) async {
         do {
-            faceGroups = try await connection.photoFaceGroups(isHiddenIncluded: isHiddenPeopleShown)
+            // Always read with the hidden people, to know whether there are any: the screen
+            // offers to show them only then. The ones left out of the list are filtered here.
+            let allGroups = try await connection.photoFaceGroups(isHiddenIncluded: true)
+            hasHiddenPeople = allGroups.contains { $0.isHidden }
+            faceGroups = isHiddenPeopleShown ? allGroups : allGroups.filter { !$0.isHidden }
             faceGroupsFailureText = nil
         } catch {
             guard !Task.isCancelled, !isQuiet else { return }
@@ -52,6 +56,8 @@ extension PhotosModel {
                 forgetListing(.faceGroup(answer.mergedPhotoFaceGroupId))
             }
             replaceFaceGroup(named)
+            // A merge can take away the only hidden person.
+            if answer.isMerged { await reloadFaceGroups(isQuiet: true) }
             var sentences = [
                 answer.isMerged
                     ? String(localized: "Merged with “\(named.trimmedContactName)”")
@@ -118,6 +124,8 @@ extension PhotosModel {
             faceGroups?.removeAll { $0.id == other.id }
             forgetListing(.faceGroup(other.id))
             replaceFaceGroup(merged)
+            // The group taken in may have been the only hidden one.
+            await reloadFaceGroups(isQuiet: true)
             doneText = String(localized: "Merged the two people")
             return merged
         } catch {
@@ -130,7 +138,11 @@ extension PhotosModel {
         do {
             let changed = try await connection.hidePhotoFaceGroup(group.id, isHidden: isHidden)
             replaceFaceGroup(changed)
+            if isHidden { hasHiddenPeople = true }
             if isHidden, !isHiddenPeopleShown { faceGroups?.removeAll { $0.id == changed.id } }
+            // Then the full list is read again: showing the last hidden person again must take the
+            // Show hidden switch away, which only the full list can say.
+            await reloadFaceGroups(isQuiet: true)
             doneText = isHidden ? String(localized: "Hidden from People") : String(localized: "Shown in People again")
             return changed
         } catch {
@@ -160,6 +172,7 @@ extension PhotosModel {
             try await connection.setPhotoFaceRecognition(isEnabled: isEnabled)
             if !isEnabled {
                 faceGroups = []
+                hasHiddenPeople = false
                 forgetListings { $0.photoFaceGroupId != nil }
             }
             await loadLibrary()
@@ -340,6 +353,13 @@ struct PhotoPeopleView: View {
                     Task { _ = await model.setFaceRecognition(isEnabled: true) }
                 }
                 .buttonStyle(.borderedProminent)
+            }
+        } else if model.hasHiddenPeople, !model.isHiddenPeopleShown {
+            // People were found but every one is hidden, which is not the same as none found.
+            ContentUnavailableView {
+                Label("Everyone found is hidden", systemImage: "eye.slash")
+            } description: {
+                Text("Choose More, then Show hidden, to see the people found in your photos.")
             }
         } else {
             ContentUnavailableView {
@@ -628,6 +648,7 @@ struct NamePersonSheet: View {
                             choose { await model.nameWithNewContact(group, contactName: searchText) }
                         } label: {
                             Label("New contact “\(PhotoNaming.trimmedName(searchText))”", systemImage: "person.badge.plus")
+                                .actionColor()
                         }
                         .fullWidthRowSeparator()
                     }
@@ -879,6 +900,7 @@ struct PhotoFacesSettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button("Try again", systemImage: "arrow.clockwise") { Task { await readLibrary() } }
+                        .actionColor()
                 }
             }
             Section {
