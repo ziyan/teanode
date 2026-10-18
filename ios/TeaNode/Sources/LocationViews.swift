@@ -268,9 +268,19 @@ struct LocationMapHeader: View {
                 UserAnnotation()
             } else if let coordinate = model.latestCoordinate, let own = model.location {
                 Annotation("You", coordinate: coordinate) {
-                    AvatarView(name: own.displayName, avatarUrl: own.avatarUrl, colorIndex: own.avatarColorIndex, size: 36)
-                        .overlay(Circle().stroke(model.selectedUserId == nil ? Color.accentColor : Color(.systemBackground), lineWidth: 3))
-                        .accessibilityLabel("You")
+                    // The way back from somebody chosen, as the own row is.
+                    Button {
+                        model.focusOnOwn()
+                    } label: {
+                        AvatarView(name: own.displayName, avatarUrl: own.avatarUrl, colorIndex: own.avatarColorIndex, size: 36)
+                            .overlay(Circle().stroke(model.selectedUserId == nil ? Color.accentColor : Color(.systemBackground), lineWidth: 3))
+                            // A touch target of 44 points around the picture.
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("You")
+                    .accessibilityHint("Shows you on the map")
                 }
             }
             ForEach(model.places.filter(\.isOfPersonsOwn).prefix(40)) { place in
