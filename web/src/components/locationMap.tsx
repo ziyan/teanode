@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import * as maplibregl from 'maplibre-gl/dist/maplibre-gl-csp.js'
+import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 import { authorization } from '../api'
@@ -17,16 +17,16 @@ import { useToast } from './toast'
 // server, so three things are not the defaults. The style, the tiles, the
 // glyphs and the sprites all come through the server (/api/v1/map/...), which
 // fetches them from the configured map host and rewrites the style's addresses
-// to itself. MapLibre's build for such pages is used, and its worker is a file
-// the dashboard's own build copies to /assets, because the usual build makes
-// its worker from a blob: address. And the markers are ordinary elements, not
-// drawn by the map.
+// to itself. The map's worker is a file the dashboard's own build copies to
+// /assets, with the code it shares with the page beside it, because the map
+// otherwise makes its worker from a blob: address, which the policy refuses.
+// And the markers are ordinary elements, not drawn by the map.
 
 // Where the server gives the map's style, whichever style the operator has
 // set (it is the same path for every style), and where the dashboard serves
 // the worker (webpack.config.js copies it there).
 const MAP_STYLE_PATH = '/api/v1/map/style'
-const MAP_WORKER_PATH = '/assets/maplibre-gl-csp-worker.js'
+const MAP_WORKER_PATH = '/assets/maplibre-gl-worker.mjs'
 
 maplibregl.setWorkerUrl(MAP_WORKER_PATH)
 
@@ -266,8 +266,11 @@ export function LocationMap({
     // Only a map that cannot be drawn is said: the style that did not come, or
     // a source whose description did not. One tile, glyph range or sprite
     // missing leaves a map that is usable, and says nothing.
-    map.on('error', (event: { sourceId?: string; tile?: unknown }) => {
-      if (failure.current.isSaid || event.tile || (hasStyleLoaded && !event.sourceId)) {
+    map.on('error', (event) => {
+      // The source and the tile come in the event's data, which MapLibre adds
+      // to the event without declaring it.
+      const { sourceId, tile } = event as typeof event & { sourceId?: string; tile?: unknown }
+      if (failure.current.isSaid || tile || (hasStyleLoaded && !sourceId)) {
         return
       }
       failure.current.isSaid = true
