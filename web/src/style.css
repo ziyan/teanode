@@ -2556,6 +2556,8 @@ label span {
   min-height: 30px;
 }
 
+/* A row of the menu like its options, in the menu's own text color: accent
+   text with no box reads as a link. */
 .menu-clear {
   width: 100%;
   margin-bottom: 4px;
@@ -2563,7 +2565,7 @@ label span {
   border: none;
   border-radius: var(--radius-1);
   background: none;
-  color: var(--accent);
+  color: var(--text);
   font: inherit;
   font-size: var(--text-label);
   text-align: left;
@@ -16033,6 +16035,11 @@ body.has-recording-bar .content {
   margin-bottom: 0;
 }
 
+/* Clear filters is a button with a box, as wide as its words. */
+.photo-filter-clear {
+  align-self: flex-start;
+}
+
 .photo-filter-kinds {
   margin: 0;
   padding: 0;
@@ -16049,10 +16056,6 @@ body.has-recording-bar .content {
 .photo-filter-kinds label.checkbox {
   margin-top: 0;
   padding: 6px 0;
-}
-
-.photo-filter-form .menu-clear {
-  margin-bottom: 0;
 }
 
 /* The same strip of tabs on every page. */

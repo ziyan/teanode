@@ -136,7 +136,9 @@ middle of text. A page-level action beside Save is a real button
 `check-link-buttons` unless the line of its tag, the line above it or the
 first line inside it says why, as
 `<button /* link-button: words inside a sentence */ ...>`. The class counts
-wherever it sits in a `className` (a template or a ternary too). An anchor
+wherever it sits in a `className` (a template or a ternary too), and so does
+any class that `style.css` draws the same way: accent-colored text with no
+border and no background. An anchor
 with an `href` is not checked, since it goes somewhere; an anchor without one,
 and a router `Link` carrying the class, always fail.
 

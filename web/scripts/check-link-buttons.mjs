@@ -12,7 +12,10 @@
 // rather than a habit.
 //
 // The link class is found anywhere in a className: a string, a template or
-// a ternary, as a whole class ("linked" is not it). An anchor with an href
+// a ternary, as a whole class ("linked" is not it). So is any class that
+// style.css draws the way the link class is drawn: text in the accent color
+// with no border and no background, which reads as a link whatever it is
+// called. An anchor with an href
 // is not checked: it goes somewhere, which is what a link is. An anchor
 // without one is a button in disguise, and a router Link needs no link class
 // to look like what it is; both are flagged with no exemption.
@@ -67,21 +70,41 @@ function tagEnd(text, index) {
   return text.length
 }
 
-// Whether a className value has the link class: any string, template or
-// ternary branch in it with "link" as a whole class.
-function hasLinkClass(value) {
+// The classes a stylesheet draws as links: a rule for one class alone whose
+// text is the accent color, with no border and no background.
+export function linkStyledClasses(css) {
+  const classes = new Set(['link'])
+  const rule = /(^|\})\s*\.([A-Za-z][\w-]*)\s*\{([^}]*)\}/g
+  let match
+  while ((match = rule.exec(css))) {
+    const body = match[3]
+    if (
+      /(^|[;\s])color:\s*var\(--accent\)/.test(body) &&
+      /border:\s*(none|0)\b/.test(body) &&
+      /background:\s*(none|transparent)\b/.test(body)
+    ) {
+      classes.add(match[2])
+    }
+    rule.lastIndex = match.index + match[0].length - 1
+  }
+  return classes
+}
+
+// Whether a className value has a link class: any string, template or
+// ternary branch in it with one of linkClasses as a whole class.
+function hasLinkClass(value, linkClasses) {
   const literals = value.match(/"[^"]*"|'[^']*'|`[^`]*`/g) ?? []
   return literals.some((literal) =>
     literal
       .slice(1, -1)
       .replace(/\$\{[^}]*\}/g, ' ')
       .split(/\s+/)
-      .includes('link'),
+      .some((name) => linkClasses.has(name)),
   )
 }
 
 // Every problem in one file's text, as { line, problem } with line from 1.
-export function findProblems(text) {
+export function findProblems(text, linkClasses = new Set(['link'])) {
   const lines = text.split('\n')
   const lineOf = (index) => text.slice(0, index).split('\n').length
   const problems = []
@@ -93,7 +116,7 @@ export function findProblems(text) {
     if (text[valueStart] === '{') valueEnd = braceEnd(text, valueStart)
     else if (text[valueStart] === '"' || text[valueStart] === "'") valueEnd = stringEnd(text, valueStart) + 1
     else continue
-    if (!hasLinkClass(text.slice(valueStart, valueEnd))) continue
+    if (!hasLinkClass(text.slice(valueStart, valueEnd), linkClasses)) continue
 
     // The tag that carries the attribute: the nearest opening tag before
     // it that has not closed by then.
@@ -137,9 +160,10 @@ function sourceFiles(directory) {
 }
 
 function main() {
+  const linkClasses = linkStyledClasses(readFileSync(join(sourceDirectory, 'style.css'), 'utf8'))
   const found = []
   for (const path of sourceFiles(sourceDirectory)) {
-    for (const { line, problem } of findProblems(readFileSync(path, 'utf8'))) {
+    for (const { line, problem } of findProblems(readFileSync(path, 'utf8'), linkClasses)) {
       found.push(`${relative(join(here, '..'), path)}:${line}  ${problem}`)
     }
   }

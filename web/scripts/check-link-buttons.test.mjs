@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findProblems } from './check-link-buttons.mjs'
+import { findProblems, linkStyledClasses } from './check-link-buttons.mjs'
 
 describe('check-link-buttons', () => {
   it('flags a button with the link class and no reason', () => {
@@ -43,5 +43,14 @@ describe('check-link-buttons', () => {
     expect(findProblems('<a className="link" onClick={go}>Go</a>')).toHaveLength(1)
     expect(findProblems('<Link className="link" to="/x">Go</Link>')).toHaveLength(1)
     expect(findProblems('<a className="link" href={path} download>Go</a>')).toEqual([])
+  })
+
+  it('takes a class drawn as accent text with no border and no background for the link class', () => {
+    const css =
+      '.quiet-clear {\n  border: none;\n  background: none;\n  color: var(--accent);\n}\n.boxed {\n  border: 1px solid var(--border);\n  color: var(--accent);\n}\n'
+    const linkClasses = linkStyledClasses(css)
+    expect([...linkClasses].sort()).toEqual(['link', 'quiet-clear'])
+    expect(findProblems('<button type="button" className="quiet-clear">Clear</button>', linkClasses)).toHaveLength(1)
+    expect(findProblems('<button type="button" className="boxed">Clear</button>', linkClasses)).toEqual([])
   })
 })
