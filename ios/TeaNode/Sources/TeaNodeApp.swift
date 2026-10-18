@@ -179,7 +179,9 @@ struct ConversationsSheet: View {
                 }
             }
             .menuListStyle(isPanel)
-            .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isLoaded, isPaused: !words.isEmpty)
+            // Ready once the rows were read: a failed read leaves no rows, and
+            // giving up on the kept place then would lose it.
+            .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isLoaded && problemText == nil, isPaused: !words.isEmpty)
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
                 // A quarter of a second after the last key, as the drawer
