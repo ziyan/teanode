@@ -372,22 +372,44 @@ func TestWorkWhoseRenewalAnswerWasLostStillRecordsItsOutcome(test *testing.T) {
 	}
 }
 
-// outageDatabase loses the answer to the first renewal of a processing claim,
-// as lostAnswerDatabase does, and then fails every call for a while, as a
-// database that went away does: the worker can neither renew nor read the
-// claim to find out what became of the renewal.
+// outageCallCount is how many calls the outage of outageDatabase refuses, and
+// renewalsAfterOutageCount how many renewals must go through after it before
+// the test goes on.
+const (
+	outageCallCount          = 3
+	renewalsAfterOutageCount = 2
+)
+
+// outageDatabase loses the answer to the first renewal of a processing claim
+// once it is armed, as lostAnswerDatabase does, and then refuses the next few
+// calls, as a database that went away does: the worker can neither renew nor
+// read the claim to find out what became of the renewal.
+//
+// It is armed by the test, once the photo is held in the face reader, because
+// until then the worker is still reading and keeping the photo through the same
+// database, and an outage that began there would fail that work instead. The
+// outage lasts a number of calls and not a time: the only caller while the
+// photo is held is the renewal, once every tick, and a machine that stalls the
+// test for longer than any time chosen would let it pass with no call refused.
 type outageDatabase struct {
 	db.Database
-	mutex       sync.Mutex
-	outageUntil time.Time
-	hasStarted  bool
-	failedCount int
+	mutex                    sync.Mutex
+	isArmed                  bool
+	hasStarted               bool
+	remainingRefusedCount    int
+	renewalsAfterOutageCount int
+}
+
+func (self *outageDatabase) arm() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.isArmed = true
 }
 
 func (self *outageDatabase) TransactionContext(ctx context.Context, run func(db.Transaction) error) error {
 	self.mutex.Lock()
-	if time.Now().Before(self.outageUntil) {
-		self.failedCount++
+	if self.remainingRefusedCount > 0 {
+		self.remainingRefusedCount--
 		self.mutex.Unlock()
 		return errors.New("the database is unreachable")
 	}
@@ -398,18 +420,24 @@ func (self *outageDatabase) TransactionContext(ctx context.Context, run func(db.
 	})
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	if err == nil && isRenewal && !self.hasStarted {
-		self.hasStarted = true
-		self.outageUntil = time.Now().Add(200 * time.Millisecond)
-		return errors.New("the connection dropped after the commit")
+	if err != nil || !isRenewal || !self.isArmed {
+		return err
 	}
-	return err
+	if self.hasStarted {
+		self.renewalsAfterOutageCount++
+		return nil
+	}
+	self.hasStarted = true
+	self.remainingRefusedCount = outageCallCount
+	return errors.New("the connection dropped after the commit")
 }
 
-func (self *outageDatabase) isOver() bool {
+// isSettled says the outage happened, was over, and renewals went through after
+// it.
+func (self *outageDatabase) isSettled() bool {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	return self.hasStarted && time.Now().After(self.outageUntil) && self.failedCount > 0
+	return self.hasStarted && self.remainingRefusedCount == 0 && self.renewalsAfterOutageCount >= renewalsAfterOutageCount
 }
 
 // A renewal whose answer was lost, followed by an outage long enough that the
@@ -437,15 +465,15 @@ func TestWorkWhoseRenewalCannotBeSettledDuringAnOutageStillRecordsItsOutcome(tes
 	finished := make(chan error, 1)
 	go func() { finished <- store.Process(test.Context(), 1) }()
 	waitForReading(test, reader)
+	unreliable.arm()
+	// The outage, and a few renewals after the database is back.
 	deadline := time.Now().Add(10 * time.Second)
-	for !unreliable.isOver() {
+	for !unreliable.isSettled() {
 		if time.Now().After(deadline) {
-			test.Fatal("the outage did not happen")
+			test.Fatal("the outage did not happen and end")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// A few renewals after the database is back.
-	time.Sleep(100 * time.Millisecond)
 	close(release)
 	waitForPass(test, finished)
 
