@@ -69184,22 +69184,6 @@
         }
       }
     },
-    "A new account would be made for these rows.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "将为这些行新建一个账户。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "これらの行のために新しい口座が作られます。"
-          }
-        }
-      }
-    },
     "An account you have, found by its id.": {
       "localizations": {
         "zh-Hans": {
@@ -69566,6 +69550,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "依次选择“更多”和“显示已隐藏的”，即可查看在照片中找到的人物。"
+          }
+        }
+      }
+    },
+    "They would go into a new account, %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい口座 %@ に取り込まれます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它们将进入新账户 %@。"
           }
         }
       }
