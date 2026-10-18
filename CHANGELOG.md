@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.172.3] - 2026-10-18
+
+### Fixed
+
+- On the iPhone, the lines between rows in a list are one length, error messages from the server read as sentences, and warnings show orange or red instead of green. (#559)
+
 ## [0.172.2] - 2026-10-18
 
 ### Fixed
