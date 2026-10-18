@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -36,11 +37,16 @@ var errHerdrNotRunning = errors.New("herdr is not running for this person on thi
 type herdrClient struct {
 	socketPath   string
 	requestCount atomic.Int64
+
+	// typedAt is when keys or text last went into each pane, so a screen
+	// kept from before then is read again.
+	typedMutex sync.Mutex
+	typedAt    map[string]time.Time
 }
 
 // newHerdrClient is the client for herdr's default socket under home.
 func newHerdrClient(home string) *herdrClient {
-	return &herdrClient{socketPath: filepath.Join(home, ".config", "herdr", "herdr.sock")}
+	return &herdrClient{socketPath: filepath.Join(home, ".config", "herdr", "herdr.sock"), typedAt: map[string]time.Time{}}
 }
 
 // herdrAgent is one recognized coding agent as herdr says it, in herdr's
@@ -55,7 +61,11 @@ type herdrAgent struct {
 	Cwd                   string `json:"cwd"`
 	ForegroundCwd         string `json:"foreground_cwd"`
 	TerminalTitleStripped string `json:"terminal_title_stripped"`
-	AgentSession          *struct {
+	// Revision and StateChangeSeq move when herdr's own idea of the pane
+	// changes: its agent, its status, its title. Not when the agent draws.
+	Revision       int64 `json:"revision"`
+	StateChangeSeq int64 `json:"state_change_seq"`
+	AgentSession   *struct {
 		Value string `json:"value"`
 	} `json:"agent_session"`
 }
@@ -218,10 +228,26 @@ func (self *herdrClient) readAgentColored(ctx context.Context, paneId, source st
 // sendKeys presses named keys in the pane, in order. Herdr checks every
 // name before it writes any.
 func (self *herdrClient) sendKeys(ctx context.Context, paneId string, keys []string) error {
+	defer self.noteTyped(paneId)
 	return self.call(ctx, "agent.send_keys", map[string]any{"target": paneId, "keys": keys}, nil)
 }
 
 // sendText types text into the pane as it is, with no Enter after it.
 func (self *herdrClient) sendText(ctx context.Context, paneId, text string) error {
+	defer self.noteTyped(paneId)
 	return self.call(ctx, "pane.send_text", map[string]any{"pane_id": paneId, "text": text}, nil)
+}
+
+// noteTyped records that keys or text went into the pane now.
+func (self *herdrClient) noteTyped(paneId string) {
+	self.typedMutex.Lock()
+	defer self.typedMutex.Unlock()
+	self.typedAt[paneId] = time.Now()
+}
+
+// lastTyped is when keys or text last went into the pane.
+func (self *herdrClient) lastTyped(paneId string) time.Time {
+	self.typedMutex.Lock()
+	defer self.typedMutex.Unlock()
+	return self.typedAt[paneId]
 }
