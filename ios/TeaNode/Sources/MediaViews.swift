@@ -20,9 +20,24 @@ struct RemotePicture: View {
     /// What a tap does in place of the full-screen view: a card whose picture
     /// opens somewhere better than the lightbox (a photo in the library).
     var onOpen: (() -> Void)?
+    /// The path of the file this picture is, when it is a file the person can
+    /// share: the full-screen view then shares that file as it is, under its
+    /// name, in place of the re-encoded copy of the picture. Nil leaves the
+    /// full-screen view sharing the picture it shows.
+    var originalFilePath: String?
     @Environment(AppModel.self) private var app
     @State private var picture: UIImage?
     @State private var isMissing = false
+
+    /// Reads the original file for the share sheet. The full-screen view is
+    /// presented from UIKit, outside this view's environment, so the model is
+    /// captured here.
+    private var originalFileAction: (@MainActor () async -> URL?)? {
+        guard let originalFilePath else { return nil }
+        let app = app
+        let name = name
+        return { await app.downloadedFile(originalFilePath, name: name) }
+    }
 
     var body: some View {
         Group {
@@ -31,7 +46,7 @@ struct RemotePicture: View {
                     if let onOpen {
                         onOpen()
                     } else {
-                        LightboxPresenter.present(picture, name: name)
+                        LightboxPresenter.present(picture, name: name, prepareOriginal: originalFileAction)
                     }
                 } label: {
                     Image(uiImage: picture)
@@ -86,12 +101,13 @@ enum TopViewController {
 /// sheet had nothing to present from.
 @MainActor
 enum LightboxPresenter {
-    static func present(_ picture: UIImage, name: String) {
+    static func present(_ picture: UIImage, name: String, prepareOriginal: (@MainActor () async -> URL?)? = nil) {
         guard let top = TopViewController.find() else { return }
         weak var shown: UIViewController?
-        let controller = UIHostingController(rootView: PictureLightbox(picture: picture, name: name) {
-            shown?.dismiss(animated: true)
-        })
+        let controller = UIHostingController(
+            rootView: PictureLightbox(picture: picture, name: name, prepareOriginal: prepareOriginal) {
+                shown?.dismiss(animated: true)
+            })
         controller.modalPresentationStyle = .overFullScreen
         controller.modalTransitionStyle = .crossDissolve
         controller.view.backgroundColor = .clear
@@ -105,8 +121,13 @@ enum LightboxPresenter {
 struct PictureLightbox: View {
     let picture: UIImage
     let name: String
+    /// Reads the original file to share, for a picture that is a file the
+    /// server keeps; nil shares the picture on screen.
+    var prepareOriginal: (@MainActor () async -> URL?)?
     let onClose: () -> Void
     @State private var isZoomed = false
+    @State private var isPreparingShare = false
+    @State private var isShareFailed = false
     @State private var draggedDown: CGFloat = 0
 
     var body: some View {
@@ -145,19 +166,57 @@ struct PictureLightbox: View {
                 .buttonStyle(.glass)
                 .accessibilityLabel("Close")
                 Spacer()
-                ShareLink(item: Image(uiImage: picture), preview: SharePreview(name, image: Image(uiImage: picture))) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.title3.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.glass)
-                .accessibilityLabel("Share")
+                shareControl
             }
             .padding(.horizontal)
             .opacity(draggedDown == 0 ? 1 : 0)
         }
         .statusBarHidden()
         .accessibilityAction(.escape, onClose)
+        // The conversation's own alert for a file that cannot be read sits under
+        // this full-screen view, so this one says it here.
+        .alert("Cannot share the file", isPresented: $isShareFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The file could not be read. Try again in a moment.")
+        }
+    }
+
+    private var shareSymbol: some View {
+        Image(systemName: "square.and.arrow.up")
+            .font(.title3.weight(.semibold))
+            .frame(width: 44, height: 44)
+    }
+
+    /// Share sends the original file under its own name when the picture is a
+    /// file the server keeps, and the picture on screen otherwise.
+    @ViewBuilder
+    private var shareControl: some View {
+        if let prepareOriginal {
+            Button {
+                Task {
+                    isPreparingShare = true
+                    let address = await prepareOriginal()
+                    isPreparingShare = false
+                    if let address {
+                        ShareSheetPresenter.present(address)
+                    } else {
+                        isShareFailed = true
+                    }
+                }
+            } label: {
+                shareSymbol
+            }
+            .buttonStyle(.glass)
+            .disabled(isPreparingShare)
+            .accessibilityLabel("Share")
+        } else {
+            ShareLink(item: Image(uiImage: picture), preview: SharePreview(name, image: Image(uiImage: picture))) {
+                shareSymbol
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Share")
+        }
     }
 }
 
@@ -388,7 +447,7 @@ struct FileCard: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityActions { accessibilityActionButtons }
+        .accessibilityActions { menuItems }
     }
 
     /// What a tap on the picture does. A picture that is not in the library opens in
@@ -435,23 +494,21 @@ struct FileCard: View {
         }
     }
 
-    /// Shares the file itself under its own name. A ShareLink given the
-    /// picture would send a re-encoded copy with no name, and one given the
-    /// file's address would need the file read on every appearance of the
-    /// card, so the file is read when Share is chosen and the share sheet is
-    /// opened then. The same button serves the menu and VoiceOver.
-    @ViewBuilder
+    /// Shares the file itself under its own name, whatever kind of file it is.
+    /// A ShareLink given the picture would send a re-encoded copy with no
+    /// name, and one given the file's address would need the file read on
+    /// every appearance of the card, so the file is read when Share is chosen
+    /// and the share sheet is opened then. The same button serves the menu and
+    /// VoiceOver.
     private var shareButton: some View {
-        if loadedPicture != nil {
-            Button {
-                Task {
-                    if let address = await app.downloadedFile(file.path, name: file.name) {
-                        ShareSheetPresenter.present(address)
-                    }
+        Button {
+            Task {
+                if let address = await app.downloadedFile(file.path, name: file.name) {
+                    ShareSheetPresenter.present(address)
                 }
-            } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
             }
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up")
         }
     }
 
@@ -466,18 +523,10 @@ struct FileCard: View {
         }
     }
 
-    /// The long-press menu, the main action first.
+    /// The long-press menu, the main action first. VoiceOver gets the same
+    /// list as its actions, since it cannot long press a menu open.
     @ViewBuilder
     private var menuItems: some View {
-        openButton
-        keepButton
-        shareButton
-        copyButton
-    }
-
-    /// The same actions for VoiceOver, which cannot long press a menu open.
-    @ViewBuilder
-    private var accessibilityActionButtons: some View {
         openButton
         keepButton
         shareButton
@@ -490,7 +539,7 @@ struct FileCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 if file.isImage {
-                    RemotePicture(path: file.path, name: file.name, onOpen: pictureOpenAction)
+                    RemotePicture(path: file.path, name: file.name, onOpen: pictureOpenAction, originalFilePath: file.path)
                 } else if file.isVideo || file.isAudio {
                     if let shareAddress {
                         VideoPlayer(player: AVPlayer(url: shareAddress))
