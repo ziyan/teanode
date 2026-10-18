@@ -310,13 +310,12 @@ export function SetupPage() {
         {isSaved && (
           <div className="services-saved" role="status">
             <p>{t('services.saved')}</p>
+            {/* The button for the restart is in the step list below, where a
+                person looks for what to do next; one place for it, not two. */}
             {isWaitingForRestart && (
-              <>
-                <p className="muted">{restartNote}</p>
-                <button type="button" className="primary" disabled={isRestarting} onClick={() => void restart()}>
-                  {isRestarting ? t('server.restarting') : t('services.restartNow')}
-                </button>
-              </>
+              <p className="muted">
+                {restartNote} {t('services.savedRestartBelow')}
+              </p>
             )}
           </div>
         )}

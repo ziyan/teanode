@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { graphql } from '../api'
@@ -109,6 +109,27 @@ it('says which services start after a restart, with the button for it', async ()
   expect(within(step('Restart the server')).getByRole('button', { name: 'Restart now' })).toBeTruthy()
   expect(within(step('Open Photos')).getByText('After the steps above')).toBeTruthy()
   expect(screen.queryByText(/Waiting for a restart/)).toBeNull()
+})
+
+it('has one Restart now, in the steps, once the choices are saved and a restart is waiting', async () => {
+  answer({})
+  renderSetup('/manage/server/setup?choose=photos')
+  await waitFor(() => expect((screen.getByLabelText(/Photos/) as HTMLInputElement).checked).toBe(true))
+  fireEvent.click(screen.getByRole('button', { name: 'Review your choices' }))
+  // Once applied, the server says Photos is chosen and waits for a restart.
+  answer({ selected: { isPhotosEnabled: true }, pendingRestart: ['services'] })
+  const after = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) =>
+    document.includes('UpdateServices') ? ({ UpdateServices: none } as never) : after(document, variables),
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Apply choices' }))
+  const saved = (await screen.findByText('Choices saved')).closest('[role="status"]') as HTMLElement
+  expect(
+    within(saved).getByText(/Photos will be available after a restart\. Restart the server in the steps below\./),
+  ).toBeTruthy()
+  expect(within(saved).queryByRole('button')).toBeNull()
+  expect(screen.getAllByRole('button', { name: 'Restart now' })).toHaveLength(1)
+  expect(within(step('Restart the server')).getByRole('button', { name: 'Restart now' })).toBeTruthy()
 })
 
 it('keeps the assistant steps to do on a server that has only the assistant', async () => {

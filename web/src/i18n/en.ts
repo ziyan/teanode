@@ -5417,6 +5417,7 @@ export const en = {
   'services.openPhotosReady': 'Photos is running. Upload photos, or back up an iPhone with the TeaNode app.',
   'services.openPhotosWaiting': 'Photos can be opened once the server has restarted.',
   'services.restartStarting': '{services} will be available after a restart.',
+  'services.savedRestartBelow': 'Restart the server in the steps below.',
   'services.waitingTitle': '{service} will be available after a restart',
   'services.waitingDetail':
     'It is chosen in service setup, and the server starts it when it restarts. Restarting takes under a minute.',
