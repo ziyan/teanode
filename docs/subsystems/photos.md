@@ -223,8 +223,8 @@ starts at.
 
 ## Where a photo was taken
 
-A person can set where one photo or several were taken, or take the place
-remove it, for a camera with no GPS or a phone that placed a photo in the wrong
+A person can set where one photo or several were taken, or remove it, for a
+camera with no GPS or a phone that placed a photo in the wrong
 town. `SearchPhotoPlaces(query, nearLatitude, nearLongitude, limitCount)`
 searches the same bundled table that names every photo (`internal/place`),
 never an online geocoder, so it works with no provider and can be asked as a
