@@ -173,6 +173,12 @@ extension Error {
 /// swipe from the left edge opens it, and a tap on the screen or a swipe
 /// back closes it. The tab bar steps aside while it is open.
 ///
+/// Where the window is wide (an iPad, but not in Slide Over or a narrow
+/// Split View) there is room for both, so the panel stays open as a column
+/// at the left and the screen takes the rest; nothing slides, and the
+/// screens are told so with `isMenuPinned`, which takes their menu button
+/// away.
+///
 /// SwiftUI has no such container, so this one is drawn by hand.
 struct SidePanel<Panel: View, Content: View>: View {
     @Binding var isOpen: Bool
@@ -183,11 +189,41 @@ struct SidePanel<Panel: View, Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var dragged: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var isReducingMotion
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// How far from the left edge a swipe must start to open the panel.
     static var edgeWidth: CGFloat { 28 }
 
+    /// How wide the panel is when it stays open as a column.
+    static var columnWidth: CGFloat { 320 }
+
     var body: some View {
+        if horizontalSizeClass.isMenuColumn {
+            column
+        } else {
+            slidingPanel
+        }
+    }
+
+    /// The panel at the left and the screen beside it, a hairline between.
+    /// The panel cannot be closed, so there is no offset, shadow, rounded
+    /// corner, drag or tap to close.
+    private var column: some View {
+        HStack(spacing: 0) {
+            panel()
+                .frame(width: Self.columnWidth)
+                .environment(\.isMenuPinned, true)
+            Divider()
+            content()
+                .frame(maxWidth: .infinity)
+                .environment(\.isMenuPinned, true)
+        }
+        // The whole window, to its edges, as the sliding panel is; the
+        // screens keep their own safe areas.
+        .ignoresSafeArea()
+    }
+
+    private var slidingPanel: some View {
         GeometryReader { geometry in
             let width = min(geometry.size.width * 0.84, 380)
             let shift = max(0, min(width, (isOpen ? width : 0) + dragged))
@@ -250,6 +286,14 @@ struct SidePanel<Panel: View, Content: View>: View {
     private func setOpen(_ isOpened: Bool) {
         isOpen = isOpened
     }
+}
+
+extension Optional where Wrapped == UserInterfaceSizeClass {
+    /// Whether a window of this horizontal size class keeps the side menu
+    /// open as a column. The size class and not the device decides, so that
+    /// Slide Over and a narrow Split View, which are compact, slide the menu
+    /// as the iPhone does instead of leaving the screen no room.
+    var isMenuColumn: Bool { self == UserInterfaceSizeClass.regular }
 }
 
 /// SidePanelPan is the side panel's drag, as a UIKit pan so that it can

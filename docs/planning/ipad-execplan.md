@@ -11,7 +11,7 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 ## Progress
 
 - [x] Milestone 1: the app builds for the iPad and runs in every orientation there. (2026-10-18; whether `INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad` is accepted is known only from CI's build.)
-- [ ] Milestone 2: the side menu is a column that stays open at regular width.
+- [x] Milestone 2: the side menu is a column that stays open at regular width. (2026-10-18; compiles only in CI.)
 - [ ] Milestone 3: screens that read badly when wide are capped, and presenters work on the iPad.
 - [ ] Milestone 4: CI photographs the iPad in landscape and portrait, and the App Store's iPad set.
 - [ ] Review until a round finds nothing; DESIGN.md says what the iPad does.
@@ -26,6 +26,10 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 - Decision: the menu cannot be hidden on the iPad in this change. Rationale: the person asked for it to stay open; a hide button is a later addition if wanted.
 - Decision: the iPhone stays upright only; the iPad allows all four orientations. Rationale: iPadOS requires all four for an app to take part in Split View and Slide Over, and nothing on the iPhone changes.
 - Decision: the share extension, the notification extension and the widgets are built for the iPad too. Rationale: an extension must support every device its app does, or App Store Connect refuses the upload.
+
+- Decision: the `onClose` given to `SideMenu` still sets `isMenuOpen` to false when the menu is a column, instead of doing nothing. Rationale: the column ignores `isMenuOpen`, so the observable result is the one the plan asks for, and a window that later turns compact (Slide Over) then finds the sliding menu closed instead of open. Date: 2026-10-18.
+- Decision: the chats in the column are read again from the loop that reports presence (`refreshPresence` in `MainView`), which already restarts when the scene phase, the part or the chosen chat changes and repeats every half minute, rather than from separate `onChange` handlers for the scene phase and the chosen chat. Rationale: one place covers the plan's two triggers (the app coming to the front, a new chat chosen) and also keeps the always-open list fresh while nothing is chosen, which the plan's triggers alone would leave stale. Date: 2026-10-18.
+- Decision: the column's width is `SidePanel.columnWidth` (320 points) and its rule, the horizontal size class being regular, is `Optional<UserInterfaceSizeClass>.isMenuColumn`, shared by `SidePanel` and `MainView`. Rationale: both must agree on when the menu is a column, and `SidePanel` is generic, so a static on it cannot be called from outside. Date: 2026-10-18.
 
 ## Outcomes & Retrospective
 

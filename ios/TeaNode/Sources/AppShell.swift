@@ -59,32 +59,39 @@ struct OpenMenu {
 
 extension EnvironmentValues {
     @Entry var openMenu = OpenMenu {}
+    /// Whether the side menu stays open as a column beside the screen, as it
+    /// does where the window is wide, so that there is no menu to open.
+    @Entry var isMenuPinned = false
 }
 
 /// MenuButton is the button at the top left of every screen that opens the
-/// side menu.
+/// side menu. Where the menu stays open as a column there is nothing to
+/// open, and the screen's bar has no button.
 struct MenuButton: ToolbarContent {
     @Environment(\.openMenu) private var openMenu
+    @Environment(\.isMenuPinned) private var isMenuPinned
     @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                openMenu()
-            } label: {
-                Label("Menu", systemImage: "line.3.horizontal")
-            }
-            // Messages waiting in the chats are the news in the menu behind
-            // this button, where the chats are.
-            .overlay(alignment: .topTrailing) {
-                if app.unreadChatCount > 0 {
-                    Circle()
-                        .fill(.tint)
-                        .frame(width: 9, height: 9)
-                        .accessibilityHidden(true)
+        if !isMenuPinned {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    openMenu()
+                } label: {
+                    Label("Menu", systemImage: "line.3.horizontal")
                 }
+                // Messages waiting in the chats are the news in the menu behind
+                // this button, where the chats are.
+                .overlay(alignment: .topTrailing) {
+                    if app.unreadChatCount > 0 {
+                        Circle()
+                            .fill(.tint)
+                            .frame(width: 9, height: 9)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityValue(app.unreadChatCount > 0 ? Text("\(app.unreadChatCount) unread") : Text(verbatim: ""))
             }
-            .accessibilityValue(app.unreadChatCount > 0 ? Text("\(app.unreadChatCount) unread") : Text(verbatim: ""))
         }
     }
 }
@@ -110,12 +117,14 @@ struct MenuBrand: ToolbarContent {
 
 /// MainView is the signed-in app: one part of TeaNode on screen, and the
 /// side menu under it, as the Claude app keeps its list. The button at the
-/// top left or a drag to the right opens the menu.
+/// top left or a drag to the right opens the menu. Where the window is wide,
+/// as on an iPad, the menu is a column that stays open beside the screen.
 struct MainView: View {
     let connection: Connection
 
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var section = AppSection.agent
     @State private var isMenuOpen = false
     @State private var conversation: AgentConversation?
@@ -131,7 +140,8 @@ struct MainView: View {
     @State private var composing: ComposeStart?
     /// How many times the side menu has been opened, for what it reads again
     /// each time. The menu itself is kept while closed, so its lists stay
-    /// where they were scrolled.
+    /// where they were scrolled. A menu that stays open as a column is never
+    /// opened, so it is counted again as the presence below is reported.
     @State private var menuOpeningCount = 0
     /// Whether the services, the agent's identity and the chats have been
     /// read once. Until then it is not known whether the agent is on, and
@@ -335,6 +345,10 @@ struct MainView: View {
             await app.refreshChats()
             if app.services?.isAssistantEnabled == true || app.canChat { try? await connection.reportPresence(isVisible: isVisible, conversationId: shownConversationId) }
             if isVisible && app.services?.isMailboxEnabled == true { await mail.load() }
+            // The column is always open, so the chats in it are read again
+            // here: as the app comes to the front, when another part or chat
+            // is chosen, and every half minute.
+            if horizontalSizeClass.isMenuColumn { menuOpeningCount += 1 }
             if scenePhase != .active { return }
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
         } while !Task.isCancelled
