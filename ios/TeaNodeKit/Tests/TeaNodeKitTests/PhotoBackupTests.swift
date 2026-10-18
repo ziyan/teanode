@@ -1167,7 +1167,7 @@ private final class FakeTailWriter: PhotoBackupTailWriter, @unchecked Sendable {
     private let behavior: Behavior
     private var calls = 0
     private var isAtTheMiddle = false
-    private var wasStopped = false
+    private var isStopped = false
 
     init(_ behavior: Behavior) { self.behavior = behavior }
 
@@ -1176,7 +1176,7 @@ private final class FakeTailWriter: PhotoBackupTailWriter, @unchecked Sendable {
     /// Whether a write has begun and is standing still.
     var isStandingStill: Bool { lock.withLock { isAtTheMiddle } }
     /// Whether the write was told to stop.
-    var wasToldToStop: Bool { lock.withLock { wasStopped } }
+    var hasBeenToldToStop: Bool { lock.withLock { isStopped } }
 
     func writeTail(of sourceURL: URL, from offsetBytes: Int64, to destinationURL: URL, isCancelled: @Sendable () -> Bool) throws {
         lock.withLock { calls += 1 }
@@ -1190,7 +1190,7 @@ private final class FakeTailWriter: PhotoBackupTailWriter, @unchecked Sendable {
             lock.withLock { isAtTheMiddle = true }
             let giveUpAt = Date().addingTimeInterval(20)
             while !isCancelled(), Date() < giveUpAt { Thread.sleep(forTimeInterval: 0.005) }
-            lock.withLock { wasStopped = isCancelled() }
+            lock.withLock { isStopped = isCancelled() }
             try? FileManager.default.removeItem(at: destinationURL)
             throw CancellationError()
         }
@@ -3794,7 +3794,7 @@ final class PhotoBackupContinuationTests: XCTestCase {
         _ = await pass.value
         await coordinator.pause()
 
-        XCTAssertTrue(writer.wasToldToStop, "the write does not run on for a pass that is over")
+        XCTAssertTrue(writer.hasBeenToldToStop, "the write does not run on for a pass that is over")
         XCTAssertEqual(rig.transfer.startedJobs.count, 1, "nothing more was queued")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "neither the rest nor the whole file stays")
         let kept = await rig.index.partialUpload(localIdentifier: "a", role: .original)
@@ -3813,7 +3813,7 @@ final class PhotoBackupContinuationTests: XCTestCase {
         pass.cancel()
         _ = await pass.value
 
-        XCTAssertTrue(writer.wasToldToStop, "the cancellation of the task that asked reaches the write")
+        XCTAssertTrue(writer.hasBeenToldToStop, "the cancellation of the task that asked reaches the write")
         XCTAssertEqual(rig.transfer.startedJobs.count, 1)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
     }

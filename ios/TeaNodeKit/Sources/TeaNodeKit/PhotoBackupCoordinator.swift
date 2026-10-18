@@ -1590,7 +1590,7 @@ public actor PhotoBackupCoordinator {
         if let kept = await index.partialUpload(localIdentifier: upload.localIdentifier, role: upload.role) {
             // Whether the server may still hold the upload, and so is told to
             // drop it when the address is forgotten.
-            var mayBeOnServer = true
+            var isPossiblyOnServer = true
             if let digest, kept.sha256 == digest, kept.sizeBytes == exported.sizeBytes {
                 let statusRequest = PhotoBackupRequest.makeStatus(
                     server: server, credential: credential, uploadPath: kept.uploadPath, usesMobileData: usesMobileData)
@@ -1608,19 +1608,19 @@ public actor PhotoBackupCoordinator {
                     // failing) is why nothing is sent now.
                     guard case .refused = outcome else { return .notSent(outcome) }
                 case .answered(.gone):
-                    mayBeOnServer = false
+                    isPossiblyOnServer = false
                 case .answered(.receiving):
                     break
                 }
             }
             if uploadPath == nil {
-                await forgetKeptUpload(of: upload, uploadPath: kept.uploadPath, mayBeOnServer: mayBeOnServer)
+                await forgetKeptUpload(of: upload, uploadPath: kept.uploadPath, isPossiblyOnServer: isPossiblyOnServer)
             }
         }
         if let keptPath = uploadPath, offsetBytes > 0, !PhotoBackupBudget.allowsTail(sizeBytes: exported.sizeBytes - offsetBytes, freeSpaceBytes: freeSpaceBytes()) {
             uploadPath = nil
             offsetBytes = 0
-            await forgetKeptUpload(of: upload, uploadPath: keptPath, mayBeOnServer: true)
+            await forgetKeptUpload(of: upload, uploadPath: keptPath, isPossiblyOnServer: true)
         }
         if isStopRequested { return .notSent(.cancelled) }
         if uploadPath == nil {
@@ -1665,7 +1665,7 @@ public actor PhotoBackupCoordinator {
             // whole file, still here, goes up as an upload of its own.
             NSLog("Photo backup: the rest of a file could not be written, so the file is sent again from its first byte")
             removeTemporaryFile(named: tailFilename)
-            await forgetKeptUpload(of: upload, uploadPath: uploadPath, mayBeOnServer: true)
+            await forgetKeptUpload(of: upload, uploadPath: uploadPath, isPossiblyOnServer: true)
             if isStopRequested { return .notSent(.cancelled) }
             switch await makeUpload(for: upload, exported: exported, digest: digest) {
             case .answered(let createdPath): return .send(sendingWholeFile(exported, uploadPath: createdPath))
@@ -1703,9 +1703,9 @@ public actor PhotoBackupCoordinator {
 
     /// Forgets the address kept for a file, and when the server may still hold
     /// the upload asks it to drop it.
-    private func forgetKeptUpload(of upload: PhotoBackupUpload, uploadPath: String, mayBeOnServer: Bool) async {
+    private func forgetKeptUpload(of upload: PhotoBackupUpload, uploadPath: String, isPossiblyOnServer: Bool) async {
         await index.forgetPartialUpload(localIdentifier: upload.localIdentifier, role: upload.role)
-        if mayBeOnServer { cancelOnServer(uploadPath: uploadPath) }
+        if isPossiblyOnServer { cancelOnServer(uploadPath: uploadPath) }
     }
 
     /// Asks the server to drop an upload the app will not continue. It is not
