@@ -431,7 +431,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	for operation, want := range map[string]tools.Risk{
 		"library": tools.RiskRead, "list": tools.RiskRead, "read": tools.RiskRead, "look": tools.RiskRead, "show": tools.RiskRead,
-		"favorite": tools.RiskWrite, "set-date": tools.RiskWrite, "set-location": tools.RiskWrite, "remove-location": tools.RiskWrite, "search-places": tools.RiskRead, "restore": tools.RiskWrite, "retry": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive, "delete": tools.RiskDestructive, "empty-trash": tools.RiskDestructive, "person-read": tools.RiskRead,
+		"favorite": tools.RiskWrite, "set-date": tools.RiskWrite, "set-location": tools.RiskWrite, "remove-location": tools.RiskDestructive, "search-places": tools.RiskRead, "restore": tools.RiskWrite, "retry": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive, "delete": tools.RiskDestructive, "empty-trash": tools.RiskDestructive, "person-read": tools.RiskRead,
 		"album-cover": tools.RiskWrite, "save-shared": tools.RiskWrite, "album-share": tools.RiskGranting, "album-unshare": tools.RiskGranting, "album-shares": tools.RiskRead, "person-unname": tools.RiskWrite, "person-hide": tools.RiskWrite, "person-remove-face": tools.RiskWrite,
 	} {
 		arguments, _ := json.Marshal(map[string]any{"operation": operation})
@@ -441,6 +441,11 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 		if line := photoTool.PreviewLine(test.Context(), arguments); line == "" || strings.Contains(line, "{") {
 			test.Errorf("%s has no sentence for its card: %q", operation, line)
 		}
+	}
+	removing, _ := json.Marshal(map[string]any{"operation": "remove-location", "photo_ids": []string{"a"}})
+	setting, _ := json.Marshal(map[string]any{"operation": "set-location", "photo_ids": []string{"a"}, "place": "Lisbon"})
+	if !tools.NeedsConfirmation(photoTool, removing, nil, nil) || tools.NeedsConfirmation(photoTool, setting, nil, nil) {
+		test.Error("removing a location, which cannot be undone, must ask the person, and setting one need not")
 	}
 	if photoTool.RiskFor(json.RawMessage(`not json`)) != tools.RiskDestructive {
 		test.Error("a call that cannot be read is not held to a card")

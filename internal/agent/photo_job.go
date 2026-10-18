@@ -193,7 +193,7 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 		return err
 	}
 	if isPlaceChanged {
-		self.retitle(ctx, run, thinking.Conversation, "Looked at a photo that was moved meanwhile, and kept nothing")
+		self.retitle(ctx, run, thinking.Conversation, "Looked at a photo whose location changed meanwhile, and kept nothing")
 		return nil
 	}
 	self.retitle(ctx, run, thinking.Conversation, "Described a photo: "+cutRunes(description, 120))
