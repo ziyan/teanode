@@ -17323,9 +17323,18 @@ body.has-recording-bar .content {
   border-top: 1px solid var(--border);
 }
 
+/* The legend floats so it sits under the line rather than on it, where a
+   fieldset's border would otherwise run into its words. */
 .chat-agent-switches legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--space-3);
   padding: 0;
   font-weight: 600;
+}
+
+.chat-agent-switches legend + * {
+  clear: both;
 }
 
 .chat-agent-switches label.checkbox {
@@ -17335,7 +17344,7 @@ body.has-recording-bar .content {
 }
 
 .chat-agent-switches legend + label.checkbox {
-  margin-top: var(--space-2);
+  margin-top: 0;
 }
 
 /* Each sentence sits under its own switch and a gap away from the next. */
@@ -17446,11 +17455,21 @@ body.has-recording-bar .content {
   gap: var(--space-2);
 }
 
-.chat-member-name {
+.chat-member-text {
+  display: flex;
   flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
+}
+
+.chat-member-name {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* On the page of conversations a chat's tile leads with its pictures. */
