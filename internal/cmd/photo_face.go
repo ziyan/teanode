@@ -54,11 +54,20 @@ func newPhotoFacesCommand() *cli.Command {
 	}
 }
 
-// photoPersonText is how a group of faces is called: by its contact, or, for a
-// group nobody has named, by nothing.
+// photoPersonText is how a group of faces is called: by its contact, with
+// "(you)" after the name when the contact is your own card, or, for a group
+// nobody has named, by nothing.
 func photoPersonText(group *models.PhotoFaceGroup) string {
 	if group.ContactName != "" {
-		return group.ContactName
+		return group.ContactName + yourselfText(group.IsOwnContact)
+	}
+	return ""
+}
+
+// yourselfText follows a name that is the person's own contact.
+func yourselfText(isOwnContact bool) string {
+	if isOwnContact {
+		return " (you)"
 	}
 	return ""
 }
@@ -268,7 +277,7 @@ func runPhotoFaces(ctx context.Context, command *cli.Command) error {
 func photoFaceText(face *models.PhotoFace) string {
 	switch {
 	case face.ContactName != "":
-		return fmt.Sprintf("%s (group %s, face %s)", face.ContactName, face.PhotoFaceGroupID, face.ID)
+		return fmt.Sprintf("%s%s (group %s, face %s)", face.ContactName, yourselfText(face.IsOwnContact), face.PhotoFaceGroupID, face.ID)
 	case face.PhotoFaceGroupID != "":
 		return fmt.Sprintf("not named (group %s, face %s)", face.PhotoFaceGroupID, face.ID)
 	}

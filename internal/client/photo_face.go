@@ -14,9 +14,9 @@ import (
 // PhotoFilter.ContactID.
 
 const (
-	photoFaceSelection = `id photoId userId createdAt boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction detectionScore photoFaceGroupId isGroupConfirmed contactId contactName facePictureUrl`
+	photoFaceSelection = `id photoId userId createdAt boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction detectionScore photoFaceGroupId isGroupConfirmed contactId contactName isOwnContact facePictureUrl`
 
-	photoFaceGroupSelection = `{ id userId createdAt updatedAt contactId contactAddressBookId contactName faceCount photoCount facePictureUrl isHidden coverPhotoFaceId }`
+	photoFaceGroupSelection = `{ id userId createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl isHidden coverPhotoFaceId }`
 )
 
 const (

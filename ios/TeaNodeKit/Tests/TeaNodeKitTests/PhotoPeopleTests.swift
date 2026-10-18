@@ -123,6 +123,45 @@ final class PhotoPeopleTests: XCTestCase {
         XCTAssertNil(PhotoNaming.shownName(of: unnamed))
     }
 
+    func testAGroupAndAFaceSayWhenTheyAreThePersonThemselves() throws {
+        let ownGroupJSON = groupJSON.replacingOccurrences(of: #""contactName":"Sample Person","#, with: #""contactName":"Sample Person","isOwnContact":true,"#)
+        let ownGroup = try JSONDecoder().decode(PhotoFaceGroup.self, from: Data(ownGroupJSON.utf8))
+        XCTAssertTrue(ownGroup.isOwnContact)
+        XCTAssertEqual(ownGroup.contactName, "Sample Person")
+        let otherGroup = try JSONDecoder().decode(
+            PhotoFaceGroup.self, from: Data(groupJSON.replacingOccurrences(of: #""contactName":"Sample Person","#, with: #""contactName":"Sample Person","isOwnContact":false,"#).utf8))
+        XCTAssertFalse(otherGroup.isOwnContact)
+        let faceJSON =
+            #"{"id":"f1","photoId":"p1","boxLeftFraction":0.1,"boxTopFraction":0.2,"boxWidthFraction":0.3,"boxHeightFraction":0.4,"photoFaceGroupId":"g1","contactId":"c1","contactName":"Sample Person","isOwnContact":true,"facePictureUrl":"/api/v1/photos/faces/f1/picture"}"#
+        let ownFace = try JSONDecoder().decode(PhotoFace.self, from: Data(faceJSON.utf8))
+        XCTAssertTrue(ownFace.isOwnContact)
+        XCTAssertEqual(ownFace.boxHeightFraction, 0.4, accuracy: 0.0001)
+        // What is sent back to a server that is asked again keeps it.
+        let encoded = try JSONEncoder().encode(ownFace)
+        XCTAssertTrue(try JSONDecoder().decode(PhotoFace.self, from: encoded).isOwnContact)
+        XCTAssertFalse(PhotoFace(id: "f2", photoId: "p1").isOwnContact)
+        XCTAssertFalse(PhotoFaceGroup(id: "g3").isOwnContact)
+    }
+
+    func testAnOlderServerThatDoesNotSayWhoIsTheCallerHasNoGroupOrFaceThatIsThem() throws {
+        XCTAssertFalse(groupJSON.contains("isOwnContact"))
+        let group = try JSONDecoder().decode(PhotoFaceGroup.self, from: Data(groupJSON.utf8))
+        XCTAssertFalse(group.isOwnContact)
+        XCTAssertEqual(group.faceCount, 5)
+        let faceJSON =
+            #"{"id":"f1","photoId":"p1","boxLeftFraction":0.1,"boxTopFraction":0.2,"boxWidthFraction":0.3,"boxHeightFraction":0.4,"photoFaceGroupId":"g1","contactId":"c1","contactName":"Sample Person","facePictureUrl":"/x"}"#
+        let face = try JSONDecoder().decode(PhotoFace.self, from: Data(faceJSON.utf8))
+        XCTAssertFalse(face.isOwnContact)
+        XCTAssertEqual(face.contactName, "Sample Person")
+    }
+
+    func testTheDocumentsAskTheServerWhetherAGroupOrAFaceIsTheCaller() {
+        XCTAssertTrue(Documents.listPhotoFaceGroups.contains("isOwnContact"))
+        XCTAssertTrue(Documents.readPhotoFaceGroup.contains("isOwnContact"))
+        XCTAssertTrue(Documents.namePhotoFaceGroup.contains("isOwnContact"))
+        XCTAssertTrue(Documents.readPhoto.contains("isOwnContact"))
+    }
+
     func testThePeopleAreListedWithTheHiddenOnesOnlyWhenAskedFor() async throws {
         let (connection, fake) = try connection { _ in #"{"data":{"ListPhotoFaceGroups":[\#(groupJSON)]}}"# }
         let groups = try await connection.photoFaceGroups()

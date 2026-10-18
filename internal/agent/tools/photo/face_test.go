@@ -11,7 +11,35 @@ import (
 const (
 	namedGroupJson   = `{"id":"group-one","contactId":"contact-one","contactName":"Example Aunt","faceCount":12,"photoCount":9}`
 	unnamedGroupJson = `{"id":"group-two","contactId":"","contactName":"","faceCount":4,"photoCount":4,"isHidden":false}`
+	ownGroupJson     = `{"id":"group-three","contactId":"contact-own","contactName":"Example Self","isOwnContact":true,"faceCount":30,"photoCount":25}`
 )
+
+func TestAGroupNamedByThePersonsOwnContactIsSaidToBeThem(test *testing.T) {
+	current := newRun(test, map[string]string{"ListPhotoFaceGroups": `[` + ownGroupJson + `,` + namedGroupJson + `,` + unnamedGroupJson + `]`, "NamePhotoFaceGroup": ownGroupJson})
+	result, err := current.call(map[string]any{"operation": "people"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	var answer struct {
+		People []map[string]any `json:"people"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+		test.Fatal(err)
+	}
+	if len(answer.People) != 3 || answer.People[0]["is_you"] != true {
+		test.Fatalf("%s", result.Content)
+	}
+	for _, other := range answer.People[1:] {
+		if _, isThere := other["is_you"]; isThere {
+			test.Fatalf("only the person's own contact is them: %s", result.Content)
+		}
+	}
+	// Naming answers with the same row.
+	named, err := current.call(map[string]any{"operation": "person-name", "face_group_id": "group-three", "contact_id": "contact-own"})
+	if err != nil || !strings.Contains(named.Content, `"is_you":true`) {
+		test.Fatalf("%v %v", named, err)
+	}
+}
 
 func TestPeopleListsGroupsWithTheirNamesAndSaysAnUnnamedOneIsNobodyYet(test *testing.T) {
 	current := newRun(test, map[string]string{"ListPhotoFaceGroups": `[` + namedGroupJson + `,` + unnamedGroupJson + `]`})
@@ -236,7 +264,8 @@ func TestReadSaysWhoIsInAPhoto(test *testing.T) {
 		"photo-one": `{"photo":` + pictureRow + `,"photoFiles":[],"photoPreviews":[],"albums":[],"faces":[` +
 			`{"id":"face-one","photoFaceGroupId":"group-one","contactId":"contact-one","contactName":"Example Aunt"},` +
 			`{"id":"face-two","photoFaceGroupId":"group-two","contactId":"","contactName":""},` +
-			`{"id":"face-three","photoFaceGroupId":"","contactId":"","contactName":""}]}`,
+			`{"id":"face-three","photoFaceGroupId":"","contactId":"","contactName":""},` +
+			`{"id":"face-four","photoFaceGroupId":"group-three","contactId":"contact-own","contactName":"Example Self","isOwnContact":true}]}`,
 		"photo-two": `{"photo":` + videoRow + `,"photoFiles":[],"photoPreviews":[]}`,
 	}}
 	result, err := current.call(map[string]any{"operation": "read", "photo_id": "photo-one"})
@@ -249,9 +278,18 @@ func TestReadSaysWhoIsInAPhoto(test *testing.T) {
 	if err := json.Unmarshal([]byte(result.Content), &details); err != nil {
 		test.Fatal(err)
 	}
-	if len(details.People) != 3 || details.People[0]["contact_name"] != "Example Aunt" || details.People[0]["face_group_id"] != "group-one" || details.People[0]["contact_id"] != "contact-one" ||
+	if len(details.People) != 4 || details.People[0]["contact_name"] != "Example Aunt" || details.People[0]["face_group_id"] != "group-one" || details.People[0]["contact_id"] != "contact-one" ||
 		details.People[1]["face_group_id"] != "group-two" || details.People[1]["contact_name"] != nil || details.People[2]["face_group_id"] != nil {
 		test.Fatalf("%s", result.Content)
+	}
+	// Only the face of the person's own contact says it is them.
+	if details.People[3]["is_you"] != true || details.People[3]["contact_name"] != "Example Self" {
+		test.Fatalf("the person's own face should say is_you: %s", result.Content)
+	}
+	for _, other := range details.People[:3] {
+		if _, isThere := other["is_you"]; isThere {
+			test.Fatalf("only the person's own face is them: %s", result.Content)
+		}
 	}
 	if result, err := current.call(map[string]any{"operation": "read", "photo_id": "photo-two"}); err != nil || !strings.Contains(result.Content, `"people":[]`) {
 		test.Fatalf("a photo with no faces should say so: %v %v", result, err)
@@ -288,7 +326,7 @@ func TestTheToolDeclaresEveryParameterItsOperationsTakeAndTellsTheAgentNotToGues
 			test.Errorf("the tool has no %s", name)
 		}
 	}
-	for _, words := range []string{"never guess who somebody is from their face", "ask the person who it is", "always asks the person first"} {
+	for _, words := range []string{"never guess who somebody is from their face", "is_you true is the person themselves", "ask the person who it is", "always asks the person first"} {
 		if !strings.Contains(photoTool.Description, words) {
 			test.Errorf("the description does not say %q", words)
 		}

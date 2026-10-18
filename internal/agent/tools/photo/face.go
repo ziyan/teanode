@@ -87,6 +87,9 @@ func groupRow(group *models.PhotoFaceGroup) map[string]any {
 	} else {
 		row["contact_name"] = nil
 	}
+	if group.IsOwnContact {
+		row["is_you"] = true
+	}
 	if group.IsHidden {
 		row["is_hidden"] = true
 	}
@@ -265,6 +268,9 @@ func peopleOf(view *client.PhotoView) []map[string]any {
 		}
 		if face.ContactID != "" {
 			row["contact_id"], row["contact_name"] = face.ContactID, face.ContactName
+		}
+		if face.IsOwnContact {
+			row["is_you"] = true
 		}
 		rows = append(rows, row)
 	}

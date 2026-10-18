@@ -16,6 +16,7 @@ import (
 
 const (
 	fixtureNamedGroup   = `{"id":"group-1","userId":"u","contactId":"contact-1","contactAddressBookId":"book-1","contactName":"Example Aunt","faceCount":12,"photoCount":9,"facePictureUrl":"/x","isHidden":false,"coverPhotoFaceId":"face-1"}`
+	fixtureOwnGroup     = `{"id":"group-4","userId":"u","contactId":"contact-own","contactAddressBookId":"book-1","contactName":"Ada Example","isOwnContact":true,"faceCount":30,"photoCount":25,"facePictureUrl":"/z","isHidden":false,"coverPhotoFaceId":"face-4"}`
 	fixtureUnnamedGroup = `{"id":"group-2","userId":"u","contactId":"","contactAddressBookId":"","contactName":"","faceCount":4,"photoCount":4,"facePictureUrl":"/y","isHidden":true,"coverPhotoFaceId":"face-2"}`
 )
 
@@ -42,8 +43,12 @@ func newPhotoFaceServer(test *testing.T) *photoServer {
 		}
 		switch {
 		case strings.Contains(asked.Query, "ListPhotoFaceGroups("):
-			answer("ListPhotoFaceGroups", `[`+fixtureNamedGroup+`,`+fixtureUnnamedGroup+`]`)
+			answer("ListPhotoFaceGroups", `[`+fixtureNamedGroup+`,`+fixtureUnnamedGroup+`,`+fixtureOwnGroup+`]`)
 		case strings.Contains(asked.Query, "ReadPhotoFaceGroup("):
+			if asked.Variables["photoFaceGroupId"] == "group-4" {
+				answer("ReadPhotoFaceGroup", fixtureOwnGroup)
+				return
+			}
 			answer("ReadPhotoFaceGroup", fixtureNamedGroup)
 		case strings.Contains(asked.Query, "UnnamePhotoFaceGroup("):
 			answer("UnnamePhotoFaceGroup", fixtureUnnamedGroup)
@@ -62,7 +67,8 @@ func newPhotoFaceServer(test *testing.T) *photoServer {
 		case strings.Contains(asked.Query, "ReadPhoto("):
 			answer("ReadPhoto", `{"photo":{"id":"photo-1","photoKind":"picture","photoProcessingState":"ready","createdAt":"2025-03-04T10:30:00Z"},"photoFiles":[],"photoPreviews":[],"albums":[],"faces":[`+
 				`{"id":"face-1","photoId":"photo-1","photoFaceGroupId":"group-1","contactId":"contact-1","contactName":"Example Aunt"},`+
-				`{"id":"face-2","photoId":"photo-1","photoFaceGroupId":"group-2"},{"id":"face-3","photoId":"photo-1"}]}`)
+				`{"id":"face-2","photoId":"photo-1","photoFaceGroupId":"group-2"},{"id":"face-3","photoId":"photo-1"},`+
+				`{"id":"face-4","photoId":"photo-1","photoFaceGroupId":"group-4","contactId":"contact-own","contactName":"Ada Example","isOwnContact":true}]}`)
 		case strings.Contains(asked.Query, "ListPhotos("):
 			answer("ListPhotos", `[{"id":"photo-1","photoKind":"picture","takenAt":"2025-03-04T10:30:00Z","takenAtOffsetMinutes":60,"placeName":"Example City","widthPixels":40,"heightPixels":30,"originalFilename":"IMG_1.JPG","photoProcessingState":"ready"}]`)
 		default:
@@ -88,10 +94,13 @@ func TestPeopleListPrintsATableOrJSON(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{"group-1", "Example Aunt", "12", "9", "contact-1", "group-2", "hidden"} {
+	for _, want := range []string{"group-1", "Example Aunt", "12", "9", "contact-1", "group-2", "hidden", "Ada Example (you)"} {
 		if !strings.Contains(table, want) {
 			test.Fatalf("the table lacks %q:\n%s", want, table)
 		}
+	}
+	if strings.Contains(table, "Example Aunt (you)") {
+		test.Fatalf("somebody else is not you:\n%s", table)
 	}
 	if server.lastVariables()["isHiddenIncluded"] != false {
 		test.Fatalf("%v", server.lastVariables())
@@ -101,8 +110,24 @@ func TestPeopleListPrintsATableOrJSON(test *testing.T) {
 	}
 	_, output, err := server.run(test, "people", "list", "--json")
 	var groups []models.PhotoFaceGroup
-	if err != nil || json.Unmarshal([]byte(output), &groups) != nil || len(groups) != 2 || groups[0].ContactName != "Example Aunt" || groups[0].FaceCount != 12 {
+	if err != nil || json.Unmarshal([]byte(output), &groups) != nil || len(groups) != 3 || groups[0].ContactName != "Example Aunt" || groups[0].FaceCount != 12 {
 		test.Fatalf("%v: %s", err, output)
+	}
+	// The JSON carries who is the person themselves, for the one group only.
+	if groups[0].IsOwnContact || groups[1].IsOwnContact || !groups[2].IsOwnContact || !strings.Contains(output, `"isOwnContact": true`) {
+		test.Fatalf("%s", output)
+	}
+}
+
+func TestPeopleShowSaysWhenThePersonIsYou(test *testing.T) {
+	server := newPhotoFaceServer(test)
+	_, table, err := server.run(test, "people", "show", "group-4")
+	if err != nil || !strings.Contains(table, "Ada Example (you)") {
+		test.Fatalf("%v:\n%s", err, table)
+	}
+	_, table, err = server.run(test, "people", "show", "group-1")
+	if err != nil || strings.Contains(table, "(you)") {
+		test.Fatalf("%v:\n%s", err, table)
 	}
 }
 
@@ -235,10 +260,13 @@ func TestShowNamesThePeopleInAPhotoAndLibrarySaysWhetherFacesAreFound(test *test
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{"person:", "Example Aunt (group group-1, face face-1)", "not named (group group-2, face face-2)", "too small or too unsure to group (face face-3)"} {
+	for _, want := range []string{"person:", "Example Aunt (group group-1, face face-1)", "not named (group group-2, face face-2)", "too small or too unsure to group (face face-3)", "Ada Example (you) (group group-4, face face-4)"} {
 		if !strings.Contains(shown, want) {
 			test.Fatalf("%q is not in:\n%s", want, shown)
 		}
+	}
+	if strings.Contains(shown, "Example Aunt (you)") {
+		test.Fatalf("somebody else is not you:\n%s", shown)
 	}
 	_, library, err := server.run(test, "library")
 	if err != nil || !strings.Contains(library, "finding faces:") || !strings.Contains(library, "off (teanode photo faces on)") {

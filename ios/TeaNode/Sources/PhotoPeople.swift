@@ -192,6 +192,34 @@ enum PhotoPersonWords {
     static func name(of group: PhotoFaceGroup) -> String {
         PhotoNaming.shownName(of: group) ?? String(localized: "Unnamed person")
     }
+
+    /// What goes under a person's name on their own screen: how many photos
+    /// they are in, after "You" when the person is the one looking.
+    static func subtitle(of group: PhotoFaceGroup) -> String {
+        let photoCountText = PhotoAlbumWords.photoCount(group.photoCount)
+        return group.isOwnContact ? String(localized: "You") + " · " + photoCountText : photoCountText
+    }
+}
+
+/// PhotoPersonNameText is a person's name and, after it in secondary text,
+/// "You" when the person is the one looking. The caller sets the font and the
+/// color of the name; the name gives way before "You" when the line is short.
+struct PhotoPersonNameText: View {
+    let name: String
+    let isOwnContact: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(name)
+                .lineLimit(1)
+            if isOwnContact {
+                Text("You")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+        }
+    }
 }
 
 // MARK: The people
@@ -280,10 +308,9 @@ struct PhotoPersonCell: View {
         VStack(spacing: 4) {
             FacePictureView(facePictureUrl: group.facePictureUrl, name: PhotoPersonWords.name(of: group), connection: connection)
                 .padding(.bottom, 4)
-            Text(PhotoPersonWords.name(of: group))
+            PhotoPersonNameText(name: PhotoPersonWords.name(of: group), isOwnContact: group.isOwnContact)
                 .font(.subheadline.weight(group.isNamed ? .semibold : .regular))
                 .foregroundStyle(group.isNamed ? .primary : .secondary)
-                .lineLimit(1)
             Text(PhotoAlbumWords.photoCount(group.photoCount))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -332,7 +359,7 @@ struct PhotoPersonScreen: View {
     var body: some View {
         content
             .navigationTitle(isSelecting ? selectionTitle : (current.map { PhotoPersonWords.name(of: $0) } ?? ""))
-            .navigationSubtitle(isSelecting ? "" : (current.map { PhotoAlbumWords.photoCount($0.photoCount) } ?? ""))
+            .navigationSubtitle(isSelecting ? "" : (current.map { PhotoPersonWords.subtitle(of: $0) } ?? ""))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .task { await model.load(key) }

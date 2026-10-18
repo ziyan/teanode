@@ -247,7 +247,14 @@ nobody until the person names it by choosing a contact, or making one; the
 agent never names a face by guessing. A group nobody has named is listed as a
 person once it has at least three faces
 (`MinimumUnnamedPhotoFaceGroupFaceCount`); a pair is more often a chance
-likeness. A named group is always listed. The agent's photo tool can take a name off a
+likeness. A named group is always listed. When the contact that names a group
+is the person's own card (`users.contact_id`, the card the agent knows as
+them), the group is them: `PhotoFaceGroup.isOwnContact` and
+`PhotoFace.isOwnContact` say so, the agent's tool rows carry `is_you`, the
+command line writes "(you)" after the name, and the iPhone shows "You".
+It is set per request from the caller's own user row, and is false for an
+unnamed group and for a face in somebody else's shared photo, whose names are
+the owner's. The agent's photo tool can take a name off a
 group (`person-unname`), hide a group or list it again (`person-hide`, with
 `is_hidden`; `people` with `is_hidden_included` finds the hidden ones), say one
 face is not that person (`person-remove-face`, with the `photo_face_id` that

@@ -996,7 +996,7 @@ struct PhotoInfoView: View {
         HStack(spacing: 12) {
             FacePictureView(facePictureUrl: face.facePictureUrl, name: shownName(of: face), connection: connection)
                 .frame(width: 40, height: 40)
-            Text(shownName(of: face))
+            PhotoPersonNameText(name: shownName(of: face), isOwnContact: face.isOwnContact)
                 .foregroundStyle(face.contactName.isEmpty ? .secondary : .primary)
         }
         .accessibilityElement(children: .combine)

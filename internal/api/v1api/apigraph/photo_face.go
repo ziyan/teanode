@@ -102,20 +102,31 @@ type SetPhotoFaceRecognitionArguments struct {
 }
 
 // withGroupPictureAddresses fills in where each group's picture is fetched
-// from: the picture of its cover face.
-func withGroupPictureAddresses(groups ...*models.PhotoFaceGroup) {
+// from: the picture of its cover face. It also says which group is the caller
+// themselves: the one named by ownContactId, the contact that is the caller's
+// own card (User.ContactID). Nothing is ever the caller's own when ownContactId
+// is empty.
+func withGroupPictureAddresses(ownContactId string, groups ...*models.PhotoFaceGroup) {
 	for _, group := range groups {
 		if group.CoverPhotoFaceID != "" {
 			group.FacePictureURL = api.PhotoFacePicturePath(group.CoverPhotoFaceID)
 		}
+		group.IsOwnContact = isOwnContact(ownContactId, group.ContactID)
 	}
 }
 
 // withFacePictureAddresses is the same for faces.
-func withFacePictureAddresses(faces ...*models.PhotoFace) {
+func withFacePictureAddresses(ownContactId string, faces ...*models.PhotoFace) {
 	for _, face := range faces {
 		face.FacePictureURL = api.PhotoFacePicturePath(face.ID)
+		face.IsOwnContact = isOwnContact(ownContactId, face.ContactID)
 	}
+}
+
+// isOwnContact is whether the contact that names a group, empty for a group
+// nobody named, is the caller's own.
+func isOwnContact(ownContactId, groupContactId string) bool {
+	return ownContactId != "" && groupContactId == ownContactId
 }
 
 func (self *graph) ListPhotoFaceGroups(ctx context.Context, arguments ListPhotoFaceGroupsArguments) ([]*models.PhotoFaceGroup, error) {
@@ -127,7 +138,7 @@ func (self *graph) ListPhotoFaceGroups(ctx context.Context, arguments ListPhotoF
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(groups...)
+	withGroupPictureAddresses(principal.User.ContactID, groups...)
 	return groups, nil
 }
 
@@ -140,7 +151,7 @@ func (self *graph) ReadPhotoFaceGroup(ctx context.Context, arguments PhotoFaceGr
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -170,7 +181,7 @@ func (self *graph) NamePhotoFaceGroup(ctx context.Context, arguments NamePhotoFa
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -183,7 +194,7 @@ func (self *graph) UnnamePhotoFaceGroup(ctx context.Context, arguments PhotoFace
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -196,7 +207,7 @@ func (self *graph) MergePhotoFaceGroups(ctx context.Context, arguments MergePhot
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -209,7 +220,7 @@ func (self *graph) RemovePhotoFaceFromGroup(ctx context.Context, arguments Photo
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -222,7 +233,7 @@ func (self *graph) HidePhotoFaceGroup(ctx context.Context, arguments HidePhotoFa
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
