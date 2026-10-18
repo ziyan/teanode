@@ -761,6 +761,20 @@ final class PhotoBackupServerTests: XCTestCase {
         XCTAssertNil(PhotoBackupPreferences(defaults: defaults).enabledAccountKey)
     }
 
+    func testThePausedFlagIsOffByDefaultAndSurvivesAReloadOfTheSavedSettings() throws {
+        let suiteName = "photo-backup-paused-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: suiteName) }
+        XCTAssertFalse(PhotoBackupPreferences(defaults: defaults).isPaused)
+        PhotoBackupPreferences(defaults: defaults).isPaused = true
+        XCTAssertTrue(PhotoBackupPreferences(defaults: defaults).isPaused, "paused until the person resumes, whatever the launch")
+        // Pausing is not turning off: the account stays.
+        PhotoBackupPreferences(defaults: defaults).enabledAccountKey = "one|robin"
+        XCTAssertEqual(PhotoBackupPreferences(defaults: defaults).enabledAccountKey, "one|robin")
+        PhotoBackupPreferences(defaults: defaults).isPaused = false
+        XCTAssertFalse(PhotoBackupPreferences(defaults: defaults).isPaused)
+    }
+
     func testTheDocumentsAskForWhatTheDecodersRead() throws {
         XCTAssertTrue(Documents.createPhotoBackupCredential.contains("hasPhotosAccess: true"))
         XCTAssertTrue(Documents.createPhotoBackupCredential.contains("hasCalendarAccess: false"))
@@ -1042,7 +1056,7 @@ private func makeRig(
     _ test: XCTestCase, items: [PhotoBackupItem], lookup: FakeLookup? = nil, network: FakeNetwork = FakeNetwork(), budget: PhotoBackupBudget = legacyBudget,
     index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300,
     exportTimeoutSeconds: TimeInterval = 30 * 60, freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, clock: ManualClock? = nil,
-    batchSize: Int = PhotoBackupCoordinator.standardBatchSize
+    batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false
 ) throws -> Rig {
     let directory = try existingDirectory ?? temporaryDirectory(test)
     let outgoing = directory.appendingPathComponent("outgoing")
@@ -1056,7 +1070,7 @@ private func makeRig(
         server: try ServerAddress(parsing: "photos.example.com"), accountKey: "photos.example.com|robin",
         credential: PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret"),
         budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, exportTimeoutSeconds: exportTimeoutSeconds, freeSpaceBytes: freeSpaceBytes,
-        now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) }, batchSize: batchSize)
+        now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) }, batchSize: batchSize, isPaused: isPaused)
     return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, coordinator: coordinator)
 }
 
@@ -2667,6 +2681,85 @@ private final class StatusLog: @unchecked Sendable {
     private var statuses: [PhotoBackupStatus] = []
     func add(_ status: PhotoBackupStatus) { lock.withLock { statuses.append(status) } }
     var all: [PhotoBackupStatus] { lock.withLock { statuses } }
+}
+
+final class PhotoBackupPauseTests: XCTestCase {
+    func testAPausedBackupStartsNoPassAndQueuesNothing() async throws {
+        let items = (0..<4).map { makeItem("item\($0)", secondsSince2026: Double($0)) }
+        let rig = try makeRig(self, items: items, isPaused: true)
+        let result = await rig.coordinator.runPass(settings: settings)
+        XCTAssertTrue(result.wasPaused)
+        XCTAssertEqual(result.plannedFileCount, 0)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 0)
+        XCTAssertEqual(rig.library.exportedUploadKeys.count, 0, "not even read from the library")
+        let queuedByWake = await rig.coordinator.topUp(settings: settings, until: Date(timeIntervalSince1970: 1_800_000_060))
+        XCTAssertEqual(queuedByWake, 0, "the wake in the background does nothing either")
+        let status = await rig.coordinator.status()
+        XCTAssertEqual(status.phase, .paused)
+        XCTAssertTrue(status.isPaused)
+    }
+
+    func testResumingAllowsThePassAgain() async throws {
+        let items = (0..<3).map { makeItem("item\($0)", secondsSince2026: Double($0)) }
+        let rig = try makeRig(self, items: items, isPaused: true)
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-" + job.localIdentifier)) }
+        }
+        let whilePaused = await coordinator.runPass(settings: settings)
+        XCTAssertTrue(whilePaused.wasPaused)
+        await coordinator.resume()
+        let afterResume = await coordinator.runPass(settings: settings)
+        XCTAssertFalse(afterResume.wasPaused)
+        XCTAssertEqual(afterResume.uploadedFileCount, 3)
+        let status = await coordinator.status()
+        XCTAssertNotEqual(status.phase, .paused)
+    }
+
+    func testPausingCancelsTheUploadsTheSessionHoldsAndKeepsWhatWentUp() async throws {
+        let rig = try makeRig(self, items: (0..<10).map { makeItem("item\($0)", secondsSince2026: Double($0)) })
+        let coordinator = rig.coordinator
+        let pass = Task { await coordinator.runPass(settings: settings) }
+        try await waitUntil("four uploads queued") { rig.transfer.startedJobs.count == 4 }
+        // One of them went up before the pause.
+        let first = try XCTUnwrap(rig.transfer.startedJobs.first)
+        rig.transfer.release(first)
+        _ = await coordinator.finished(first, outcome: .uploaded(serverPhotoId: "p-" + first.localIdentifier))
+
+        await coordinator.pause()
+        _ = await pass.value
+        // The call the app makes once the pass has ended.
+        await coordinator.pause()
+
+        XCTAssertTrue(rig.transfer.isCancelled, "the phone stops sending")
+        let held = await rig.transfer.queuedJobs()
+        XCTAssertEqual(held.count, 0)
+        let status = await coordinator.status()
+        XCTAssertEqual(status.phase, .paused)
+        XCTAssertEqual(status.queuedFileCount, 0)
+        XCTAssertFalse(status.isUploading)
+        XCTAssertNil(status.estimatedSecondsLeft)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "the exported files are deleted")
+        let summary = await rig.index.summary()
+        XCTAssertEqual(summary.libraryItemCount, 10, "the index is kept")
+        XCTAssertEqual(summary.backedUpItemCount, 1, "what went up stays recorded")
+        let startedCount = rig.transfer.startedJobs.count
+        let again = await coordinator.runPass(settings: settings)
+        XCTAssertTrue(again.wasPaused)
+        XCTAssertEqual(rig.transfer.startedJobs.count, startedCount, "nothing is queued while paused")
+    }
+
+    func testPausedShowsNeitherTheTimeLeftNorBackgroundUploading() {
+        let status = PhotoBackupStatus(
+            phase: .paused, backedUpItemCount: 10, libraryItemCount: 100, queuedFileCount: 3, waitingFileCount: 5, estimatedSecondsLeft: 600)
+        XCTAssertTrue(status.isEnabled, "paused is not off")
+        XCTAssertTrue(status.isPaused)
+        XCTAssertFalse(status.isUploading)
+        XCTAssertFalse(status.shouldShowTimeLeft)
+        XCTAssertFalse(status.isUploadingInBackground)
+        XCTAssertFalse(status.hasFilesWaitingForTheApp)
+    }
 }
 
 #if canImport(CryptoKit)

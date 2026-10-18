@@ -396,6 +396,7 @@ public struct PhotoBackupPreferences {
     static let enabledAccountKeyName = "photoBackup.enabledAccountKey"
     static let usesMobileDataName = "photoBackup.usesMobileData"
     static let includesHiddenName = "photoBackup.includesHidden"
+    static let isPausedName = "photoBackup.isPaused"
 
     /// The account whose photos this phone backs up; nil when backup is off.
     public var enabledAccountKey: String? {
@@ -415,6 +416,14 @@ public struct PhotoBackupPreferences {
     public var includesHidden: Bool {
         get { defaults.bool(forKey: Self.includesHiddenName) }
         nonmutating set { defaults.set(newValue, forKey: Self.includesHiddenName) }
+    }
+
+    /// Whether the person paused backup. It lasts until they resume, across
+    /// launches, and is not the same as backup being off: nothing is forgotten,
+    /// and the index and the place the listing got to stay where they are.
+    public var isPaused: Bool {
+        get { defaults.bool(forKey: Self.isPausedName) }
+        nonmutating set { defaults.set(newValue, forKey: Self.isPausedName) }
     }
 }
 
@@ -470,6 +479,8 @@ public struct PhotoBackupStatus: Equatable, Sendable {
         case needsAccess(PhotoBackupAccess)
         /// The server does not accept the device password.
         case needsSignIn
+        /// The person paused backup: nothing is listed or sent until they resume.
+        case paused
     }
 
     public var phase: Phase
@@ -480,8 +491,6 @@ public struct PhotoBackupStatus: Equatable, Sendable {
     public var finishedFileCount: Int
     /// Files queued with the session now.
     public var queuedFileCount: Int
-    /// The file being exported or sent first.
-    public var currentFilename: String?
     public var refusedFileCount: Int
     /// Files the last pass could not send and left for later: they wait for
     /// the network, for iCloud, or for the server to answer again.
@@ -503,6 +512,10 @@ public struct PhotoBackupStatus: Equatable, Sendable {
     /// leaves photos the index does not know of yet: work left even when no
     /// file is waiting.
     public var isListingUnfinished: Bool
+    /// How long the items still to back up are estimated to take, from how fast
+    /// the last minutes went; nil until there is enough progress to go on, and
+    /// when nothing is uploading.
+    public var estimatedSecondsLeft: Int?
 
     public var isEnabled: Bool { phase != .off }
 
@@ -547,11 +560,28 @@ public struct PhotoBackupStatus: Equatable, Sendable {
         !isPassRunning && waitingFileCount > 0 && (phase == .idle || phase == .uploading)
     }
 
+    /// Whether the person paused backup.
+    public var isPaused: Bool { phase == .paused }
+
+    /// How many items of the library are not backed up yet.
+    public var itemsLeftCount: Int { max(0, libraryItemCount - backedUpItemCount) }
+
+    /// Files are going up now: a pass lists the library or sends files, or the
+    /// system sends the files queued with it. Not while the backup waits for the
+    /// network, needs the person, is off, or has nothing to send.
+    public var isUploading: Bool {
+        phase == .uploading || phase == .listing || isUploadingInBackground
+    }
+
+    /// Whether the screen says how long is left, or that it is being worked out:
+    /// while files go up and items remain.
+    public var shouldShowTimeLeft: Bool { isUploading && itemsLeftCount > 0 }
+
     public init(
         phase: Phase = .off, backedUpItemCount: Int = 0, libraryItemCount: Int = 0, plannedFileCount: Int = 0, finishedFileCount: Int = 0,
-        queuedFileCount: Int = 0, currentFilename: String? = nil, refusedFileCount: Int = 0, leftForLaterFileCount: Int = 0,
+        queuedFileCount: Int = 0, refusedFileCount: Int = 0, leftForLaterFileCount: Int = 0,
         lastFailure: PhotoBackupFailure? = nil, lastPassFinishedAt: Date? = nil, isPassRunning: Bool = false, waitingFileCount: Int = 0,
-        listedItemCount: Int? = nil, isListingUnfinished: Bool = false
+        listedItemCount: Int? = nil, isListingUnfinished: Bool = false, estimatedSecondsLeft: Int? = nil
     ) {
         self.phase = phase
         self.backedUpItemCount = backedUpItemCount
@@ -559,7 +589,6 @@ public struct PhotoBackupStatus: Equatable, Sendable {
         self.plannedFileCount = plannedFileCount
         self.finishedFileCount = finishedFileCount
         self.queuedFileCount = queuedFileCount
-        self.currentFilename = currentFilename
         self.refusedFileCount = refusedFileCount
         self.leftForLaterFileCount = leftForLaterFileCount
         self.lastFailure = lastFailure
@@ -568,6 +597,7 @@ public struct PhotoBackupStatus: Equatable, Sendable {
         self.waitingFileCount = waitingFileCount
         self.listedItemCount = listedItemCount
         self.isListingUnfinished = isListingUnfinished
+        self.estimatedSecondsLeft = estimatedSecondsLeft
     }
 
     /// How far the backup has got, from 0 to 1; nil while the library has not
@@ -591,6 +621,8 @@ public struct PhotoBackupPassResult: Equatable, Sendable {
     /// or the network failed on this time, which a later pass sends again.
     public var leftForLaterFileCount = 0
     public var wasStopped = false
+    /// The pass did not start because backup is paused.
+    public var wasPaused = false
 
     public init() {}
 }
@@ -660,6 +692,8 @@ public actor PhotoBackupCoordinator {
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var isRunning = false
     private var isStopRequested = false
+    /// Whether the person paused backup: no pass starts and nothing is queued.
+    private var isPaused: Bool
     private var settings = Settings(usesMobileData: false, includesHidden: false)
     private var phase: PhotoBackupStatus.Phase = .idle
     private var plannedFileCount = 0
@@ -667,7 +701,6 @@ public actor PhotoBackupCoordinator {
     private var uploadedFileCount = 0
     private var refusedFileCount = 0
     private var leftForLaterFileCount = 0
-    private var currentFilename: String?
     /// How many items the pass has gone through while it lists the whole
     /// library; nil when it does not.
     private var listedItemCount: Int?
@@ -698,6 +731,9 @@ public actor PhotoBackupCoordinator {
     /// the files the index still has to send, which already holds every file
     /// the rest of the pass will deal with.
     private var isPlannedFileCountFromIndex = false
+    /// Fed the backed up count each time the status is read, which is at least
+    /// once per file while a pass runs, and each time the screen refreshes.
+    private var timeLeft = PhotoBackupTimeLeft()
     private var statusHandler: (@Sendable (PhotoBackupStatus) -> Void)?
 
     public init(
@@ -705,8 +741,9 @@ public actor PhotoBackupCoordinator {
         network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String, credential: PhotoBackupCredential,
         budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, exportTimeoutSeconds: TimeInterval = 30 * 60,
         freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, now: @escaping @Sendable () -> Date = { Date() },
-        fileManager: FileManager = .default, batchSize: Int = PhotoBackupCoordinator.standardBatchSize
+        fileManager: FileManager = .default, batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false
     ) {
+        self.isPaused = isPaused
         self.index = index
         self.library = library
         self.transfer = transfer
@@ -735,16 +772,20 @@ public actor PhotoBackupCoordinator {
         let isListingUnfinished = await index.listingProgress != nil
         var shownPhase = phase
         if summary.isSignInNeeded { shownPhase = .needsSignIn }
+        if isPaused { shownPhase = .paused }
         // While a pass works it is the one queueing the files; with none, what
         // is not with the session waits for the app to be opened or the night.
         var waitingFileCount = 0
         if !isRunning { waitingFileCount = max(0, await index.pendingFileCount() - outstanding.count) }
-        return PhotoBackupStatus(
+        var shownStatus = PhotoBackupStatus(
             phase: shownPhase, backedUpItemCount: summary.backedUpItemCount, libraryItemCount: summary.libraryItemCount,
             plannedFileCount: plannedFileCount, finishedFileCount: finishedFileCount, queuedFileCount: outstanding.count,
-            currentFilename: currentFilename, refusedFileCount: summary.refusedFileCount, leftForLaterFileCount: leftForLaterFileCount,
+            refusedFileCount: summary.refusedFileCount, leftForLaterFileCount: leftForLaterFileCount,
             lastFailure: summary.lastFailure, lastPassFinishedAt: summary.lastPassFinishedAt, isPassRunning: isRunning,
             waitingFileCount: waitingFileCount, listedItemCount: listedItemCount, isListingUnfinished: isListingUnfinished)
+        timeLeft.record(date: now(), backedUpItemCount: shownStatus.backedUpItemCount, isUploading: shownStatus.isUploading)
+        shownStatus.estimatedSecondsLeft = timeLeft.estimatedSecondsLeft(itemsLeftCount: shownStatus.itemsLeftCount)
+        return shownStatus
     }
 
     /// The status, after asking the session what it holds now: with no pass
@@ -773,6 +814,30 @@ public actor PhotoBackupCoordinator {
 
     public var isPassRunning: Bool { isRunning }
 
+    /// Pauses backup until `resume()`: a pass that is working is asked to stop,
+    /// and the uploads the session holds are cancelled so that the phone stops
+    /// sending, along with the files exported for them. What went up stays in
+    /// the index, and so does the place the listing got to. A file cut off
+    /// part way is sent again from its start by the pass after the pause.
+    ///
+    /// A pass that is working ends a moment after this returns, and may have been
+    /// about to queue one more file: the caller waits for the pass and calls
+    /// this again, which cancels whatever got in and clears the exported files.
+    public func pause() async {
+        isPaused = true
+        stop()
+        await transfer.cancelAll()
+        outstanding.removeAll()
+        if !isRunning { removeLeftoverFiles(keeping: []) }
+        await publish()
+    }
+
+    /// Lets passes start again. The caller starts one.
+    public func resume() async {
+        isPaused = false
+        await publish()
+    }
+
     /// When the server asked a pass to try again, if it did and the time has
     /// not come: the app starts a pass then.
     public var pendingRetryTime: Date? {
@@ -786,6 +851,10 @@ public actor PhotoBackupCoordinator {
         var result = PhotoBackupPassResult()
         guard !isRunning else {
             result.wasAlreadyRunning = true
+            return result
+        }
+        guard !isPaused else {
+            result.wasPaused = true
             return result
         }
         isRunning = true
@@ -807,7 +876,6 @@ public actor PhotoBackupCoordinator {
         result.leftForLaterFileCount = leftForLaterFileCount
         result.wasStopped = isStopRequested
         isRunning = false
-        currentFilename = nil
         listedItemCount = nil
         await index.flush()
         await publish()
@@ -824,7 +892,7 @@ public actor PhotoBackupCoordinator {
     /// queued. Nothing is done while a pass runs, which queues files itself.
     @discardableResult
     public func topUp(settings: Settings, until deadline: Date) async -> Int {
-        guard !isRunning else { return 0 }
+        guard !isRunning, !isPaused else { return 0 }
         isRunning = true
         isStopRequested = false
         self.settings = settings
@@ -972,7 +1040,6 @@ public actor PhotoBackupCoordinator {
             }
         }
 
-        currentFilename = nil
         // Then the pass waits for the session to finish what is queued, but
         // not for days: when nothing finishes for a while the pass ends and
         // leaves the uploads to the session, which reports each one when it is
@@ -1071,7 +1138,6 @@ public actor PhotoBackupCoordinator {
                 continue
             }
             phase = uploadingPhase
-            currentFilename = upload.filename
             await publish()
             switch await queue(upload, timeoutSeconds: timeoutSeconds) {
             case .queued, .refused:
