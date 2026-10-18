@@ -190,14 +190,15 @@ struct PhotoLocationChoices: View {
         Button {
             onChoose(place)
         } label: {
-            HStack {
+            // The name over how far it is, as the address search of a place
+            // lists its matches; the label colors keep the row's tint off the words.
+            VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: place.placeName)
-                    .foregroundStyle(.primary)
-                Spacer()
+                    .foregroundStyle(Color(.label))
                 if let detailText = secondaryText(of: place) {
                     Text(verbatim: detailText)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.secondaryLabel))
                 }
             }
         }
