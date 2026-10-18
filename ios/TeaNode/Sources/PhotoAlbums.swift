@@ -235,7 +235,7 @@ struct PhotoSelectionToolbar: ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
             Button("Move to Trash", systemImage: "trash", role: .destructive) { isConfirmingTrash = true }
-                .destructiveBarButtonStyle()
+                .tint(.red)
                 .disabled(isEmpty)
                 .confirmationDialog("Move these photos to the Trash?", isPresented: $isConfirmingTrash, titleVisibility: .visible) {
                     Button("Move to Trash", role: .destructive) {

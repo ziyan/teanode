@@ -504,7 +504,9 @@ func TestACorruptFileWaitsLongerAfterEachFailureAndFailsAfterItsAttemptsWithAPla
 
 func TestAKindOfPictureThatCannotBeReadFailsAtOnce(test *testing.T) {
 	fixture := newFixture(test)
-	found := fixture.uploadAndProcess("webp", map[string]string{"Content-Type": "image/webp", "X-Photo-Client-ID": "webp"}, append([]byte("RIFF\x10\x00\x00\x00WEBPVP8 "), randomBytes(100, 42)...))
+	// An AVIF is kept, as phones and cameras write them, but no previews can
+	// be made of it.
+	found := fixture.uploadAndProcess("avif", map[string]string{"Content-Type": "image/avif", "X-Photo-Client-ID": "avif"}, append([]byte("\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1"), randomBytes(100, 42)...))
 	if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 1 || found.ProcessingErrorMessage != "This kind of file is not supported." {
 		test.Fatalf("%+v", found)
 	}
