@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { Loading } from '../components/common'
+import { announceHerdrAsking } from '../components/herdrPresence'
 import { ConfirmDialog } from '../components/dialog'
 import {
   HERDR_DOCUMENTS,
@@ -255,6 +256,14 @@ export function CodingPage() {
       return Object.keys(kept).length === Object.keys(previous).length ? previous : kept
     })
   }, [listedNow, justOpened])
+  // The rail's Coding row counts the sessions that ask; this page reads them
+  // more often, so it says the count as it reads it.
+  const askingNow = listedNow
+    ? listedNow.sessions.filter((session) => session.herdrSessionState === 'asking').length
+    : null
+  useEffect(() => {
+    if (askingNow !== null) announceHerdrAsking(askingNow)
+  }, [askingNow])
   useEffect(() => {
     if (list.error) toast.failure(list.error, t('herdr.listFailed'))
   }, [list.error, toast, t])

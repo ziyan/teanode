@@ -34,6 +34,9 @@ final class AppModel {
     /// Whether the person has a computer attached that runs herdr, which is
     /// what the Coding section is for.
     private(set) var hasCodingComputers = false
+    /// How many of the person's coding sessions ask something, a question
+    /// or an approval: the number on the side menu's Coding row.
+    private(set) var codingAskingCount = 0
 
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
@@ -462,6 +465,7 @@ final class AppModel {
         if isChanged {
             services = nil
             hasCodingComputers = false
+            codingAskingCount = 0
             accessSession = nil
             forgetAccountFacts()
             openedRecordingLink = nil
@@ -953,7 +957,11 @@ extension AppModel {
 
     func noteCodingComputers() { hasCodingComputers = true }
 
-    /// Asks which computers run herdr. Computers that cannot be asked leave
+    /// The Coding section read the sessions: how many ask, at once, rather
+    /// than at the next slow ask.
+    func noteCodingAsking(_ askingCount: Int) { codingAskingCount = askingCount }
+
+    /// Asks which computers run herdr, and how many sessions ask. Computers that cannot be asked leave
     /// what is known; the section on screen is not taken away under the
     /// person (isKeeping).
     func refreshCodingPresence(isKeeping: Bool) async {
@@ -962,6 +970,7 @@ extension AppModel {
         else { return }
         let hasComputers = !list.computerNames.isEmpty
         if hasComputers || !isKeeping { hasCodingComputers = hasComputers }
+        codingAskingCount = list.sessions.filter(\.isAsking).count
     }
 
     func isSectionAvailable(_ section: AppSection) -> Bool {

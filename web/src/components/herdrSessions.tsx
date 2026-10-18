@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { Loading, Tag, formatBytes } from './common'
-import { CheckIcon, CloseIcon, PaperclipIcon } from './icons'
+import { ArrowUpIcon, CheckIcon, CloseIcon, PaperclipIcon } from './icons'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { Markdown } from './markdown'
 import { SettingsEmpty, SettingsSection } from './settingsList'
@@ -456,8 +456,14 @@ export function HerdrSendForm({
   useLayoutEffect(() => {
     const element = box.current
     if (!element) return
-    element.style.height = 'auto'
-    element.style.height = `${element.scrollHeight}px`
+    // Measured from nothing, then set to the words' height, the border
+    // included; past the tallest the box allows it scrolls, and not before.
+    element.style.height = '0px'
+    const border = element.offsetHeight - element.clientHeight
+    const wanted = element.scrollHeight + border
+    const tallest = parseFloat(getComputedStyle(element).maxHeight) || Infinity
+    element.style.height = `${Math.min(wanted, tallest)}px`
+    element.classList.toggle('is-overflowing', wanted > tallest)
   }, [text])
 
   const send = async () => {
@@ -569,9 +575,16 @@ export function HerdrSendForm({
             }
           }}
         />
-        <button type="submit" className="primary" disabled={!isSendable || isSending || !isSendReady}>
-          {t('herdr.send')}
-        </button>
+        <Tooltip label={t('herdr.send')}>
+          <button
+            type="submit"
+            className="icon-button herdr-send-button"
+            aria-label={t('herdr.send')}
+            disabled={!isSendable || isSending || !isSendReady}
+          >
+            <ArrowUpIcon size={16} />
+          </button>
+        </Tooltip>
       </form>
     </>
   )

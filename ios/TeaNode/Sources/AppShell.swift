@@ -280,7 +280,8 @@ struct MainView: View {
     }
 
     /// Asks at launch, when the app comes to the front and when the account
-    /// changes, then every five minutes. Not while the Coding section is on screen: it reads the list
+    /// changes, then every half minute, so a question shows on the Coding
+    /// row soon after it comes. Not while the Coding section is on screen: it reads the list
     /// itself and says what it finds.
     private func refreshCodingPresenceSlowly() async {
         guard scenePhase == .active else { return }
@@ -289,7 +290,7 @@ struct MainView: View {
         if app.services == nil { await app.refreshServices() }
         repeat {
             if section != .coding { await app.refreshCodingPresence(isKeeping: false) }
-            do { try await Task.sleep(for: .seconds(300)) } catch { return }
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
         } while !Task.isCancelled && scenePhase == .active
     }
 
@@ -564,7 +565,8 @@ struct SideMenu: View {
             // The chats are in the agent's part: what waits in them is the
             // number on its entry. Before menuRow, so the row's hidden
             // separator stays the outermost of its modifiers.
-            .badge(part == .agent ? app.unreadChatCount : 0)
+            // The Coding row counts the sessions that ask something.
+            .badge(part == .agent ? app.unreadChatCount : part == .coding ? app.codingAskingCount : 0)
             .menuRow(isSelected: false)
             .accessibilityAddTraits(section == part ? .isSelected : [])
         }
