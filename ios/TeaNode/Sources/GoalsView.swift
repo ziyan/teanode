@@ -107,6 +107,7 @@ struct GoalDetail: View {
     @State private var goal: AgentGoal?
     @State private var told = ""
     @State private var isConfirmingDrop = false
+    @State private var isChoosingSchedule = false
 
     var body: some View {
         List {
@@ -121,6 +122,9 @@ struct GoalDetail: View {
                     }
                     Button("Open its conversation", systemImage: "bubble.left") {
                         app.openedConversationId = goal.conversationId
+                    }
+                    if goal.isOpen {
+                        Button("Use a schedule", systemImage: "calendar.badge.clock") { isChoosingSchedule = true }
                     }
                 }
                 if goal.isOpen {
@@ -184,6 +188,14 @@ struct GoalDetail: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $isChoosingSchedule) {
+            GoalSchedulePicker(
+                connection: connection, conversationId: conversationId, ownedScheduleIds: Set((goal?.schedules ?? []).compactMap { $0?.id })
+            ) {
+                doneText = String(localized: "The goal now runs on that schedule.")
+                Task { await load() }
+            }
+        }
     }
 
     private func load() async {
@@ -211,6 +223,78 @@ struct GoalDetail: View {
             try await connection.setGoalState(conversationId, to: state)
             doneText = said
             await load()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+}
+
+/// GoalSchedulePicker lists the agent's schedules and gives one to a goal:
+/// each of its runs becomes a turn of the goal, and the goal takes none of
+/// its own. A schedule that already runs the goal is not offered again.
+struct GoalSchedulePicker: View {
+    let connection: Connection
+    let conversationId: String
+    let ownedScheduleIds: Set<String>
+    let onMoved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var schedules: [AgentSchedule]?
+    @State private var isMoving = false
+    @State private var problemText: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let schedules {
+                    Section {
+                        if schedules.isEmpty {
+                            Text("There are no other schedules to use.").foregroundStyle(.secondary)
+                        }
+                        ForEach(schedules) { schedule in
+                            Button {
+                                Task { await move(schedule) }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(schedule.name)
+                                    Text(verbatim: schedule.cron).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                            .disabled(isMoving)
+                        }
+                    } footer: {
+                        Text("Each run of the schedule becomes a turn of this goal, and the goal takes none of its own. Answers appear in the goal's conversation instead of arriving by mail.")
+                    }
+                } else {
+                    ProgressView().frame(maxWidth: .infinity)
+                }
+            }
+            .navigationTitle("Run this goal on a schedule")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .task { await load() }
+            .toast(done: Binding<String?>.constant(nil), problem: $problemText)
+        }
+    }
+
+    private func load() async {
+        do {
+            schedules = try await connection.agentSchedules().filter { !ownedScheduleIds.contains($0.id) }
+        } catch {
+            schedules = []
+            problemText = error.localizedDescription
+        }
+    }
+
+    private func move(_ schedule: AgentSchedule) async {
+        isMoving = true
+        defer { isMoving = false }
+        do {
+            try await connection.moveScheduleToGoal(schedule.id, conversationId: conversationId)
+            onMoved()
+            dismiss()
         } catch {
             problemText = error.localizedDescription
         }

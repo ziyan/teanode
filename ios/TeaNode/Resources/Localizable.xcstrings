@@ -4079,6 +4079,22 @@
         }
       }
     },
+    "Add a follow-up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追いかけるものを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟进一件事"
+          }
+        }
+      }
+    },
     "Add mail, calendars, reminders and contacts to the apps already on an iPhone or Mac.": {
       "localizations": {
         "ja": {
@@ -4255,6 +4271,22 @@
         }
       }
     },
+    "Carrier": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配送業者"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承运方"
+          }
+        }
+      }
+    },
     "Days are counted on this iPhone's clock, so a photo taken in another time zone can fall on a neighboring day.": {
       "localizations": {
         "ja": {
@@ -4267,6 +4299,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "日期按这部 iPhone 的时间计算，因此在其他时区拍摄的照片可能会落在相邻的一天。"
+          }
+        }
+      }
+    },
+    "Each run of the schedule becomes a turn of this goal, and the goal takes none of its own. Answers appear in the goal's conversation instead of arriving by mail.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スケジュールの実行ごとにこのゴールの1回の動きになり、ゴール自身は動きません。回答はメールではなく、ゴールの会話に表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划的每次运行都会成为这个目标的一轮，目标自己不再另外行动。回答会出现在目标的对话里，而不是通过邮件发送。"
           }
         }
       }
@@ -4299,6 +4347,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在这附近"
+          }
+        }
+      }
+    },
+    "Now following: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追いかけ始めました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已开始跟进：%@"
           }
         }
       }
@@ -4395,6 +4459,22 @@
         }
       }
     },
+    "Run this goal on a schedule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このゴールをスケジュールで動かす"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让这个目标按计划运行"
+          }
+        }
+      }
+    },
     "See the photos and save them.": {
       "localizations": {
         "ja": {
@@ -4407,6 +4487,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看照片并保存。"
+          }
+        }
+      }
+    },
+    "Set a day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日付を設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置日期"
           }
         }
       }
@@ -4427,6 +4523,22 @@
         }
       }
     },
+    "The goal now runs on that schedule.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゴールはそのスケジュールで動くようになりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标现在按该计划运行。"
+          }
+        }
+      }
+    },
     "The photos stay in their owners' libraries.": {
       "localizations": {
         "ja": {
@@ -4439,6 +4551,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "照片仍保留在各自所有者的图库中。"
+          }
+        }
+      }
+    },
+    "There are no other schedules to use.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使えるほかのスケジュールはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有其他可用的计划。"
+          }
+        }
+      }
+    },
+    "Tracking number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追跡番号"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运单号"
           }
         }
       }
@@ -6241,6 +6385,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未命名的人物"
+          }
+        }
+      }
+    },
+    "Use a schedule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スケジュールを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用计划"
           }
         }
       }
@@ -45208,6 +45368,22 @@
         }
       }
     },
+    "What to follow": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追いかけるもの"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟进什么"
+          }
+        }
+      }
+    },
     "What to show": {
       "localizations": {
         "ja": {
@@ -45652,6 +45828,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "何时（cron 格式）"
+          }
+        }
+      }
+    },
+    "Where": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点"
           }
         }
       }
@@ -46164,6 +46356,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 的成员"
+          }
+        }
+      }
+    },
+    "Who is to be paid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払い先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "付款给谁"
           }
         }
       }

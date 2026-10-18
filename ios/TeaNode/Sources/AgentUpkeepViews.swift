@@ -2254,6 +2254,100 @@ struct AgentScheduleEditor: View {
 
 // MARK: - Alerts
 
+/// AddFollowUpSheet is the form for having the agent follow something by
+/// hand, with the fields the dashboard's Add dialog has: a kind, what it
+/// is, the day, and what the kind has beyond that.
+struct AddFollowUpSheet: View {
+    let connection: Connection
+    /// A kind in words, as the follow-ups list names it.
+    let kindName: (String) -> String
+    let onAdded: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var followUp = NewAgentFollowUp()
+    @State private var day = Date()
+    @State private var hasDay = false
+    @State private var isSaving = false
+    @State private var problemText: String?
+
+    /// A parcel may do without a day; every other kind has one.
+    private var isDayOptional: Bool { followUp.followUpKind == "parcel" }
+
+    private var followUpToAdd: NewAgentFollowUp {
+        var ready = followUp
+        ready.dueOn = isDayOptional && !hasDay ? "" : NewAgentFollowUp.dayText(day)
+        return ready
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Kind", selection: $followUp.followUpKind) {
+                        ForEach(NewAgentFollowUp.kinds, id: \.self) { kind in
+                            Text(verbatim: kindName(kind)).tag(kind)
+                        }
+                    }
+                    TextField("What to follow", text: $followUp.followUpTitle)
+                    if isDayOptional {
+                        Toggle("Set a day", isOn: $hasDay)
+                    }
+                    if !isDayOptional || hasDay {
+                        DatePicker("Day", selection: $day, displayedComponents: .date)
+                    }
+                }
+                switch followUp.followUpKind {
+                case "bill":
+                    Section {
+                        TextField("Who is to be paid", text: $followUp.payee)
+                        TextField("Amount", text: $followUp.amount)
+                            .keyboardType(.decimalPad)
+                        TextField("Currency", text: $followUp.currencyCode, prompt: Text(verbatim: "USD"))
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                    }
+                case "parcel":
+                    Section {
+                        TextField("Carrier", text: $followUp.carrier)
+                        TextField("Tracking number", text: $followUp.trackingNumber)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                    }
+                case "event":
+                    Section {
+                        TextField("Where", text: $followUp.place)
+                    }
+                default:
+                    EmptyView()
+                }
+            }
+            .navigationTitle("Add a follow-up")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { Task { await add() } }
+                        .disabled(!followUpToAdd.canAdd || isSaving)
+                }
+            }
+            .toast(done: Binding<String?>.constant(nil), problem: $problemText)
+        }
+    }
+
+    private func add() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            try await connection.addAgentFollowUp(followUpToAdd)
+            onAdded(followUp.followUpTitle.trimmed)
+            dismiss()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+}
+
 /// MutedAlertsView is the dashboard's Alerts tab: whether the agent tells
 /// the person unasked what their mail says they should know now, their
 /// quiet hours, the most a day, and the day and time it looks around their
@@ -2278,6 +2372,7 @@ struct MutedAlertsView: View {
     @State private var mutes: [AgentAlertMute] = []
     @State private var followUps: [AgentFollowUp]?
     @State private var isMutingFollowUps = false
+    @State private var isAddingFollowUp = false
     @State private var categoryNames: [String: String] = [:]
     @State private var muting: AgentAlert?
     @State private var isBusy = false
@@ -2305,6 +2400,19 @@ struct MutedAlertsView: View {
             }
         }
         .navigationTitle("Alerts")
+        .toolbar {
+            if preferences?.isRunning == true {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Add a follow-up", systemImage: "plus") { isAddingFollowUp = true }
+                }
+            }
+        }
+        .sheet(isPresented: $isAddingFollowUp) {
+            AddFollowUpSheet(connection: connection, kindName: { sentenceCase(followUpKindName($0, isSingular: true)) }) { title in
+                doneText = String(localized: "Now following: \(title)")
+                Task { await load(isQuiet: false) }
+            }
+        }
         .overlay { if !isAgentRead { ProgressView() } }
         .disabled(isBusy)
         .refreshable { await load() }

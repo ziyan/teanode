@@ -80,6 +80,11 @@
                 answer = Self.alerts
             } else if query.contains("ListAgentFollowUps") {
                 answer = Self.followUps
+            } else if query.contains("AddAgentFollowUp") {
+                // The list is fixed, so an added one is acknowledged and not shown.
+                answer = #"{"data":{"AddAgentFollowUp":{"id":"follow-up-added","followUpTitle":"Added"}}}"#
+            } else if query.contains("MoveAgentScheduleToGoal") {
+                answer = #"{"data":{"MoveAgentScheduleToGoal":{"id":"schedule-moved"}}}"#
             } else if query.contains("ReadAgent") {
                 answer = Self.agent
             } else if query.contains("ListAgentDreams") {
