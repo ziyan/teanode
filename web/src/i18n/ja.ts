@@ -5836,7 +5836,7 @@ export const ja: Catalog = {
   'photos.changeLocation': '場所を変更',
   'photos.removeLocation': '場所を削除',
   'photos.searchPlaces': '都市を検索',
-  'photos.noPlacesMatch': '一致する都市はありません',
+  'photos.noPlacesMatch': '一致する都市がありません',
   'photos.placeDistance': '{distance} km 離れています',
   'photos.noPlace': 'なし',
   'photos.locationChangedOne': '場所を変更しました',

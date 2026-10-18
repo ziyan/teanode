@@ -102,11 +102,22 @@ results. Strings in en, zh-Hans, ja.
 ## Progress
 
 - [x] Plan written (2026-10-18).
-- [ ] Server: migration, database, place search, GraphQL, client, tool, CLI, tests.
-- [ ] Dashboard.
-- [ ] iPhone.
-- [ ] Docs: `docs/subsystems/photos.md`, `docs/reference/command-line.md`.
-- [ ] Review until it converges; screenshots and a walk through in Chrome.
+- [x] Server: migration, database, place search, GraphQL, client, tool, CLI, tests.
+- [x] Dashboard.
+- [x] iPhone (Kit tested on Linux; the app compiles only on macOS CI).
+- [x] Docs: `docs/subsystems/photos.md`, `docs/reference/command-line.md`.
+- [x] Walk through in Chrome at 1400 and 390 wide, light and dark, on a dev server.
+- [ ] Review until it converges (round one fixed); iPhone screenshots from CI.
+
+## Surprises and discoveries
+
+- A photo's description is written with its place name in the prompt, and the
+  vector is read from the description and the place, so both can name a place
+  the person removed. Moving a described photo clears both and asks again.
+- A reader's saved copy of a shared photo is processed from the owner's
+  original file, so it carries `is_location_removed` too.
+- Two cities can share a name and a country; where no distance tells them
+  apart, the dashboard and the iPhone show their coordinates.
 
 ## Decision log
 

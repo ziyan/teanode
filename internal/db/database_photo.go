@@ -89,10 +89,11 @@ type PhotoOperation interface {
 	UpdatePhoto(userId, photoId string, update *PhotoUpdate) (*models.Photo, error)
 
 	// SetPhotoLocation says where the named photos were taken, for the ones
-	// the person owns that are not in the Trash, and gives the number it
-	// changed. A nil location removes the location and remembers that
-	// it was taken away, so that reading the file again does not bring it back.
-	SetPhotoLocation(userId string, photoIds []string, location *PhotoLocation) (int, error)
+	// the person owns that are not in the Trash, and says which it changed. A
+	// nil location removes the location and remembers that it was removed, so
+	// that reading the file again does not bring it back. A changed photo's
+	// description is cleared, because it was written knowing the old place.
+	SetPhotoLocation(userId string, photoIds []string, location *PhotoLocation) (*PhotoLocationChange, error)
 
 	TrashPhotos(userId string, photoIds []string) (int, error)
 	RestorePhotos(userId string, photoIds []string) (int, error)
@@ -384,6 +385,13 @@ type PhotoLocation struct {
 	Latitude  float64
 	Longitude float64
 	PlaceName string
+}
+
+// PhotoLocationChange is what SetPhotoLocation changed: the photos it moved,
+// and of those the ones whose description it cleared, to be described again.
+type PhotoLocationChange struct {
+	ChangedPhotoIDs   []string
+	DescribedPhotoIDs []string
 }
 
 // PhotoMetadata is what is read from a photo's file. Zero values say the file
@@ -913,9 +921,9 @@ func isPlausibleOffsetMinutes(offsetMinutes int) bool {
 	return offsetMinutes >= -24*60 && offsetMinutes <= 24*60
 }
 
-func (self *transaction) SetPhotoLocation(userId string, photoIds []string, location *PhotoLocation) (int, error) {
+func (self *transaction) SetPhotoLocation(userId string, photoIds []string, location *PhotoLocation) (*PhotoLocationChange, error) {
 	if userId == "" || len(photoIds) > 500 {
-		return 0, ErrInvalidArguments
+		return nil, ErrInvalidArguments
 	}
 	changes := map[string]any{"updated_at": photoNow()}
 	if location == nil {
@@ -924,16 +932,46 @@ func (self *transaction) SetPhotoLocation(userId string, photoIds []string, loca
 	} else {
 		if math.IsNaN(location.Latitude) || location.Latitude < -90 || location.Latitude > 90 ||
 			math.IsNaN(location.Longitude) || location.Longitude < -180 || location.Longitude > 180 || len(location.PlaceName) > 255 {
-			return 0, ErrInvalidArguments
+			return nil, ErrInvalidArguments
 		}
 		changes["latitude"], changes["longitude"] = location.Latitude, location.Longitude
 		changes["place_name"], changes["is_location_removed"] = location.PlaceName, false
 	}
-	count, err := self.changePhotoTrash(userId, photoIds, "trashed_at IS NULL", nil, changes)
-	if err != nil || count == 0 {
-		return count, err
+	change := &PhotoLocationChange{}
+	if len(photoIds) == 0 {
+		return change, nil
 	}
-	return count, self.refreshPhotoSearchDocumentsOf(photoIds)
+	var found []photoModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "described_at").
+		Where("user_id = ? AND id IN ? AND trashed_at IS NULL", userId, photoIds).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	for _, each := range found {
+		change.ChangedPhotoIDs = append(change.ChangedPhotoIDs, each.ID)
+		if each.DescribedAt != nil {
+			change.DescribedPhotoIDs = append(change.DescribedPhotoIDs, each.ID)
+		}
+	}
+	if len(change.ChangedPhotoIDs) == 0 {
+		return change, nil
+	}
+	if err := self.tx.Model(&photoModel{}).Where("id IN ?", change.ChangedPhotoIDs).Updates(changes).Error; err != nil {
+		return nil, err
+	}
+	// A description, and the vector read from it, were written knowing the
+	// old place and may name it, which a removed location must not leave
+	// behind.
+	if len(change.DescribedPhotoIDs) > 0 {
+		if err := self.tx.Model(&photoModel{}).Where("id IN ?", change.DescribedPhotoIDs).Updates(map[string]any{
+			"photo_description": "", "description_visible_text": "", "description_model": "", "described_at": nil,
+		}).Error; err != nil {
+			return nil, err
+		}
+		if err := self.tx.Exec(`DELETE FROM "photo_vector" WHERE "photo_id" IN ?`, change.DescribedPhotoIDs).Error; err != nil {
+			return nil, err
+		}
+	}
+	return change, self.refreshPhotoSearchDocumentsOf(change.ChangedPhotoIDs)
 }
 
 func (self *transaction) TrashPhotos(userId string, photoIds []string) (int, error) {

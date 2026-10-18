@@ -884,8 +884,7 @@ func (self *graph) SetPhotoLocation(ctx context.Context, arguments SetPhotoLocat
 	// A position with no city near it has no name; the photo then shows its
 	// coordinates only.
 	placeName, _ := place.Nearest(arguments.Latitude, arguments.Longitude)
-	changedCount, err := self.transaction(ctx).SetPhotoLocation(principal.User.ID, arguments.PhotoIDs, &db.PhotoLocation{Latitude: arguments.Latitude, Longitude: arguments.Longitude, PlaceName: placeName})
-	return changedCount, translateError(err)
+	return self.changePhotoLocation(ctx, principal.User.ID, arguments.PhotoIDs, &db.PhotoLocation{Latitude: arguments.Latitude, Longitude: arguments.Longitude, PlaceName: placeName})
 }
 
 func (self *graph) RemovePhotoLocation(ctx context.Context, arguments PhotoIDsArguments) (int, error) {
@@ -893,8 +892,37 @@ func (self *graph) RemovePhotoLocation(ctx context.Context, arguments PhotoIDsAr
 	if err != nil {
 		return 0, err
 	}
-	changedCount, err := self.transaction(ctx).SetPhotoLocation(principal.User.ID, arguments.PhotoIDs, nil)
-	return changedCount, translateError(err)
+	return self.changePhotoLocation(ctx, principal.User.ID, arguments.PhotoIDs, nil)
+}
+
+// changePhotoLocation moves photos, or removes their location with a nil
+// one, and says how many it changed. A photo that had a description loses it,
+// since it was written knowing the old place, and is described again with the
+// new one where photos can be described.
+func (self *graph) changePhotoLocation(ctx context.Context, userId string, photoIds []string, location *db.PhotoLocation) (int, error) {
+	transaction := self.transaction(ctx)
+	change, err := transaction.SetPhotoLocation(userId, photoIds, location)
+	if err != nil {
+		return 0, translateError(err)
+	}
+	if len(change.DescribedPhotoIDs) > 0 {
+		unavailableMessage, err := self.photoDescriptionUnavailableMessage(ctx, userId)
+		if err != nil {
+			return 0, translateError(err)
+		}
+		if unavailableMessage == "" {
+			assistant, err := transaction.GetAgentByUser(userId)
+			if err != nil {
+				return 0, translateError(err)
+			}
+			for _, photoId := range change.DescribedPhotoIDs {
+				if _, err := self.agentWorker().QueuePhotoDescription(transaction, assistant.ID, photoId); err != nil {
+					return 0, translateError(err)
+				}
+			}
+		}
+	}
+	return len(change.ChangedPhotoIDs), nil
 }
 
 func (self *graph) TrashPhotos(ctx context.Context, arguments PhotoIDsArguments) (int, error) {

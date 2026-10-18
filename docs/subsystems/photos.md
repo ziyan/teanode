@@ -224,7 +224,7 @@ starts at.
 ## Where a photo was taken
 
 A person can set where one photo or several were taken, or take the place
-away, for a camera with no GPS or a phone that placed a photo in the wrong
+remove it, for a camera with no GPS or a phone that placed a photo in the wrong
 town. `SearchPhotoPlaces(query, nearLatitude, nearLongitude, limitCount)`
 searches the same bundled table that names every photo (`internal/place`),
 never an online geocoder, so it works with no provider and can be asked as a
@@ -247,6 +247,13 @@ makes latitude and longitude null and the place name empty, and sets
 changed (photos that are not the caller's, or are in the Trash, are skipped, as
 `TrashPhotos` counts), set `updated_at` and refresh the photos' search
 documents, so the library's search finds a corrected photo by its new city.
+
+A photo that had a description loses it, with the vector read from it: the
+description was written knowing the old place and may name it, which a removed
+location must not leave behind. Where photos can be described, it is asked for
+again (`describe_photo`), and is written with the new place. A copy a reader
+saved from a shared album keeps the owner's `is_location_removed`, since it is
+made from the owner's original file.
 
 `is_location_removed` is why a removed location stays removed: `UpdatePhotoMetadata`
 reads the file again when a Live Photo's video arrives or a retry runs, and

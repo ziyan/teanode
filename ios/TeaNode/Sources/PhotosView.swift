@@ -1076,6 +1076,9 @@ struct PhotosScreen: View {
         .onChange(of: model.section) { _, _ in
             endSelection()
             isSearchPresented = false
+            // The rebuilt stack does not see the list change, so the days of the
+            // last collection's photos are cleared here.
+            dateRangeText = ""
             // The side menu can be opened by a swipe while Photo backup is shown;
             // choosing a collection there must not leave the backup screen on top of it.
             isShowingBackup = false

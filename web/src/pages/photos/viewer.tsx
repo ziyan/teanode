@@ -487,6 +487,11 @@ export function PhotoViewer({
   const canAskAssistant = Boolean(onAskAssistant && fittedSource)
   const canChangeDate = isOwn && !isTrashed && onChangeDate !== undefined
   const canChangeLocation = isOwn && !isTrashed && onChangeLocation !== undefined
+  // A position with no city near it is shown as it is.
+  const coordinatesText =
+    typeof photo.latitude === 'number' && typeof photo.longitude === 'number'
+      ? `${photo.latitude.toFixed(4)}, ${photo.longitude.toFixed(4)}`
+      : ''
   // What is not offered on the bar itself, because it is done once in a while
   // and the bar is for what is done to most photos: choosing the album's cover,
   // taking the photo out of the album, making its thumbnails again.
@@ -495,7 +500,7 @@ export function PhotoViewer({
   const daysLeftInTrash = trashDaysLeft(photo.trashedAt, photoLibrary?.trashRetentionDays ?? 0, new Date())
   const details: [string, string][] = [
     [t('photos.detailDate'), photoDateTime(photo, language, personTimeZone())],
-    [t('photos.detailPlace'), photo.placeName || (canChangeLocation ? t('photos.noPlace') : '')],
+    [t('photos.detailPlace'), photo.placeName || coordinatesText || (canChangeLocation ? t('photos.noPlace') : '')],
     [t('photos.detailCamera'), cameraText],
     [
       t('photos.detailKind'),

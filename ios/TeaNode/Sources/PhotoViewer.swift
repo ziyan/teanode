@@ -889,6 +889,12 @@ struct PhotoInfoView: View {
     /// The photo as the details last read it, which is newer than the one the
     /// viewer opened this with once it was asked to be made ready again.
     private var shownPhoto: Photo { detail?.photo ?? photo }
+
+    /// Where the photo was taken, as numbers, for a position no city is near.
+    private var coordinatesText: String? {
+        guard let latitude = shownPhoto.latitude, let longitude = shownPhoto.longitude else { return nil }
+        return String(format: "%.4f, %.4f", latitude, longitude)
+    }
     private var description: PhotoDescription { detail?.photoDescription ?? PhotoDescription() }
     private var isDescriptionAvailable: Bool { model.library?.isDescriptionAvailable == true }
     private var people: [PhotoFace] { (detail?.faces ?? []).filter(\.isGrouped) }
@@ -930,6 +936,9 @@ struct PhotoInfoView: View {
                 }
                 if !shownPhoto.placeName.isEmpty {
                     LabeledContent("Place") { Text(shownPhoto.placeName) }
+                } else if let coordinatesText {
+                    // A position with no city near it is shown as it is.
+                    LabeledContent("Place") { Text(verbatim: coordinatesText) }
                 }
                 if shownPhoto.isOwnedByCaller, !shownPhoto.isTrashed {
                     Button("Change location", systemImage: "mappin") { isChangingLocation = true }

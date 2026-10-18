@@ -987,7 +987,10 @@ extension Connection {
     /// is; without one the largest cities do and none says.
     public func searchPhotoPlaces(words: String, nearLatitude: Double? = nil, nearLongitude: Double? = nil) async throws -> [PhotoPlace] {
         struct Answer: Decodable, Sendable { let SearchPhotoPlaces: [PhotoPlace] }
-        var variables: [String: JSONValue] = ["query": .string(String(words.prefix(PhotoSearch.mostPlaceWordsLength)))]
+        // The server counts the words by Unicode scalars, which a cut by
+        // characters can exceed.
+        let cutWords = String(String.UnicodeScalarView(words.unicodeScalars.prefix(PhotoSearch.mostPlaceWordsLength)))
+        var variables: [String: JSONValue] = ["query": .string(cutWords)]
         if let nearLatitude, let nearLongitude {
             variables["nearLatitude"] = .number(nearLatitude)
             variables["nearLongitude"] = .number(nearLongitude)
