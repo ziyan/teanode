@@ -604,38 +604,68 @@ final class PhotoBackupServerTests: XCTestCase {
             .retryLater(failure: .systemDescription("cancelled"), isConnectivityFailure: false))
     }
 
-    func testTheRequestIsAPostWithTheDevicePasswordAndTheFilesHeaders() throws {
+    func testTheCreationRequestIsAPostWithNoBodyThatDescribesTheFileAndSaysTheBytesFollow() throws {
         let server = try ServerAddress(parsing: "photos.example.com")
         let credential = PhotoBackupCredential(credentialId: "c1", credentialName: "Robin's iPhone photo backup", username: "robin", password: "sync-secret")
         let upload = try XCTUnwrap(PhotoBackupPlanner.plan(items: [makeItem("a", cloudIdentifier: "cloud-a")], records: [:]).first)
-        let request = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: false)
+        let request = PhotoBackupRequest.makeCreation(server: server, credential: credential, upload: upload, sizeBytes: 4096, usesMobileData: false)
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.absoluteString, "https://photos.example.com/api/v1/photos/uploads")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Basic " + Data("robin:sync-secret".utf8).base64EncodedString())
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Photo-Client-ID"), "cloud-a")
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Photo-Source"), "iphone")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "image/heic")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Upload-Complete"), "?0", "the bytes follow in a request of their own")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Upload-Length"), "4096")
+        XCTAssertNil(request.httpBody)
         XCTAssertFalse(request.allowsCellularAccess)
-        // The resumable-upload headers are URLSession's to add.
-        XCTAssertNil(request.value(forHTTPHeaderField: "Upload-Complete"))
-        XCTAssertNil(request.value(forHTTPHeaderField: "Upload-Draft-Interop-Version"))
-        XCTAssertTrue(PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: true).allowsCellularAccess)
+        XCTAssertEqual(request.timeoutInterval, PhotoBackupRequest.smallRequestTimeoutSeconds)
+        XCTAssertTrue(PhotoBackupRequest.makeCreation(server: server, credential: credential, upload: upload, sizeBytes: 1, usesMobileData: true).allowsCellularAccess)
     }
 
-    func testTheRequestDeclaresTheFilesDigestInLowercaseOnlyWhenItIsSixtyFourHexadecimalDigits() throws {
+    func testTheStatusRequestIsAHeadAndTheContinuationAPatchThatSaysWhereItGoesAndThatItIsTheEnd() throws {
+        let server = try ServerAddress(parsing: "photos.example.com")
+        let credential = PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret")
+        let status = PhotoBackupRequest.makeStatus(server: server, credential: credential, uploadPath: "/api/v1/photos/uploads/u1", usesMobileData: false)
+        XCTAssertEqual(status.httpMethod, "HEAD")
+        XCTAssertEqual(status.url?.absoluteString, "https://photos.example.com/api/v1/photos/uploads/u1")
+        XCTAssertEqual(status.value(forHTTPHeaderField: "Authorization"), credential.authorizationHeader)
+        XCTAssertEqual(status.timeoutInterval, PhotoBackupRequest.smallRequestTimeoutSeconds)
+        let continuation = PhotoBackupRequest.makeContinuation(
+            server: server, credential: credential, uploadPath: "/api/v1/photos/uploads/u1", offsetBytes: 8_388_608, usesMobileData: true)
+        XCTAssertEqual(continuation.httpMethod, "PATCH")
+        XCTAssertEqual(continuation.url?.absoluteString, "https://photos.example.com/api/v1/photos/uploads/u1")
+        XCTAssertEqual(continuation.value(forHTTPHeaderField: "Upload-Offset"), "8388608")
+        XCTAssertEqual(continuation.value(forHTTPHeaderField: "Upload-Complete"), "?1")
+        XCTAssertEqual(continuation.value(forHTTPHeaderField: "Content-Type"), "application/partial-upload", "the server refuses a PATCH of any other type")
+        XCTAssertEqual(continuation.value(forHTTPHeaderField: "Authorization"), credential.authorizationHeader)
+        XCTAssertNil(continuation.value(forHTTPHeaderField: "X-Photo-Client-ID"), "the upload already knows what the file is")
+        XCTAssertTrue(continuation.allowsCellularAccess)
+    }
+
+    func testOnlyTheServersUploadPathsAreFollowed() {
+        XCTAssertTrue(PhotoBackupRequest.isUploadPath("/api/v1/photos/uploads/abc123"))
+        for other in ["/api/v1/photos/uploads", "/api/v1/photos/uploads/", "/api/v1/photos/uploads/a/b", "/api/v1/photos/uploads/a?b", "/graphql", ""] {
+            XCTAssertFalse(PhotoBackupRequest.isUploadPath(other), other)
+        }
+    }
+
+    func testTheCreationRequestDeclaresTheFilesDigestInLowercaseOnlyWhenItIsSixtyFourHexadecimalDigits() throws {
         let server = try ServerAddress(parsing: "photos.example.com")
         let credential = PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret")
         let upload = try XCTUnwrap(PhotoBackupPlanner.plan(items: [makeItem("a", cloudIdentifier: "cloud-a")], records: [:]).first)
         let digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        let declared = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: false, sha256: digest.uppercased())
+        let declared = PhotoBackupRequest.makeCreation(
+            server: server, credential: credential, upload: upload, sizeBytes: 3, usesMobileData: false, sha256: digest.uppercased())
         XCTAssertEqual(declared.value(forHTTPHeaderField: "X-Photo-Declared-SHA256"), digest)
         for notADigest in [nil, "", "abc", String(digest.dropLast()), digest + "0", String(repeating: "g", count: 64)] {
-            let request = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: false, sha256: notADigest)
+            let request = PhotoBackupRequest.makeCreation(
+                server: server, credential: credential, upload: upload, sizeBytes: 3, usesMobileData: false, sha256: notADigest)
             XCTAssertNil(request.value(forHTTPHeaderField: "X-Photo-Declared-SHA256"), "\(notADigest ?? "nil") is not sent")
         }
     }
 
-    func testTheDigestOfTheExportedFileIsSentOnTheUploadsRequest() async throws {
+    func testTheDigestOfTheExportedFileIsSentOnTheCreationRequest() async throws {
         let rig = try makeRig(self, items: [makeItem("a"), makeItem("b", secondsSince2026: 50)])
         let digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         rig.library.set(sha256: digest, for: PhotoBackupUpload.key(localIdentifier: "a", role: .original))
@@ -645,7 +675,7 @@ final class PhotoBackupServerTests: XCTestCase {
             Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-" + job.localIdentifier)) }
         }
         _ = await coordinator.runPass(settings: settings)
-        let requests = rig.transfer.startedRequests
+        let requests = rig.uploads.creationRequests
         XCTAssertEqual(requests.count, 2)
         let sent = requests.map { $0.value(forHTTPHeaderField: "X-Photo-Declared-SHA256") }
         XCTAssertTrue(sent.contains(digest), "the file with a digest declares it")
@@ -807,6 +837,7 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     private var itemsByIdentifier: [String: PhotoBackupItem]?
     private var exportedBytes: [String: Int64] = [:]
     private var exportedDigests: [String: String] = [:]
+    private var exportedContents: [String: Data] = [:]
     private var unavailableKeys: Set<String> = []
     private var unavailableFailures: [String: PhotoBackupFailure] = [:]
     private var failedKeys: Set<String> = []
@@ -847,6 +878,9 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     func set(access: PhotoBackupAccess) { lock.withLock { accessLevel = access } }
     func set(bytes: Int64, for key: String) { lock.withLock { exportedBytes[key] = bytes } }
     func set(sha256: String, for key: String) { lock.withLock { exportedDigests[key] = sha256 } }
+    /// The exact bytes the file is exported with, whole, and their size. For a
+    /// test that checks what is read from the exported file.
+    func set(content: Data, for key: String) { lock.withLock { exportedContents[key] = content } }
     func set(unavailable key: String, _ isUnavailable: Bool, failure: PhotoBackupFailure = .systemDescription("in iCloud")) {
         lock.withLock {
             if isUnavailable {
@@ -950,13 +984,14 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     }
 
     func export(_ upload: PhotoBackupUpload, to directory: URL, mayUseExpensiveNetwork: Bool, includesHidden: Bool) async throws -> PhotoBackupExportedFile {
-        let (bytes, digest, isUnavailable, isFailed, isHung, seconds) = lock.withLock {
+        let (bytes, digest, content, isUnavailable, isFailed, isHung, seconds) = lock.withLock {
             exportedIncludesHidden.append(includesHidden)
             exportedKeys.append(upload.key)
             exportedExpensiveFlags.append(mayUseExpensiveNetwork)
             return (
-                exportedBytes[upload.key] ?? 10, exportedDigests[upload.key], unavailableKeys.contains(upload.key), failedKeys.contains(upload.key),
-                hungKeys.contains(upload.key), secondsPerExport
+                exportedContents[upload.key]?.count.asInt64 ?? exportedBytes[upload.key] ?? 10, exportedDigests[upload.key],
+                exportedContents[upload.key], unavailableKeys.contains(upload.key), failedKeys.contains(upload.key), hungKeys.contains(upload.key),
+                secondsPerExport
             )
         }
         if isHung { try await Task.sleep(nanoseconds: 3_600_000_000_000) }
@@ -966,7 +1001,7 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
         }
         if isFailed { throw PhotoBackupLibraryError.failed(.systemDescription("cannot be read")) }
         let outgoingFilename = UUID().uuidString
-        try Data(count: Int(min(bytes, 1000))).write(to: directory.appendingPathComponent(outgoingFilename))
+        try (content ?? Data(count: Int(min(bytes, 1000)))).write(to: directory.appendingPathComponent(outgoingFilename))
         return PhotoBackupExportedFile(outgoingFilename: outgoingFilename, sizeBytes: bytes, sha256: digest)
     }
 }
@@ -975,6 +1010,7 @@ private final class FakeTransfer: PhotoBackupTransfer, @unchecked Sendable {
     private let lock = NSLock()
     private var jobs: [PhotoBackupJob] = []
     private var requests: [URLRequest] = []
+    private var bodies: [Data] = []
     private var heldJobs: [PhotoBackupJob] = []
     private var wasCancelled = false
     /// Called with each job as it is queued; the test finishes it or leaves it.
@@ -982,13 +1018,18 @@ private final class FakeTransfer: PhotoBackupTransfer, @unchecked Sendable {
 
     var startedJobs: [PhotoBackupJob] { lock.withLock { jobs } }
     var startedRequests: [URLRequest] { lock.withLock { requests } }
+    /// What each queued file held when it was queued, which is what the session
+    /// would have sent.
+    var startedBodies: [Data] { lock.withLock { bodies } }
     var isCancelled: Bool { lock.withLock { wasCancelled } }
 
     func start(request: URLRequest, job: PhotoBackupJob, fileURL: URL) async throws {
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path), "the file is written before it is queued")
+        let body = (try? Data(contentsOf: fileURL)) ?? Data()
         lock.withLock {
             jobs.append(job)
             requests.append(request)
+            bodies.append(body)
             heldJobs.append(job)
         }
         onStart?(job)
@@ -999,6 +1040,65 @@ private final class FakeTransfer: PhotoBackupTransfer, @unchecked Sendable {
     func release(_ job: PhotoBackupJob) { lock.withLock { heldJobs.removeAll { $0.key == job.key } } }
 
     func cancelAll() async { lock.withLock { wasCancelled = true; heldJobs.removeAll() } }
+}
+
+private extension Int {
+    var asInt64: Int64 { Int64(self) }
+}
+
+/// The server's side of the small requests: the uploads it made, how many bytes
+/// of each it has, and the answers a test makes it give.
+private final class FakeUploads: PhotoBackupUploads, @unchecked Sendable {
+    private let lock = NSLock()
+    private var offsets: [String: Int64] = [:]
+    private var photoIds: [String: String] = [:]
+    private var createdCount = 0
+    private var creations: [URLRequest] = []
+    private var statuses: [URLRequest] = []
+    private var creationOutcomes: [PhotoBackupOutcome] = []
+    private var statusOutcomes: [PhotoBackupOutcome] = []
+
+    /// The creation requests, in the order they were made.
+    var creationRequests: [URLRequest] { lock.withLock { creations } }
+    /// The requests that asked where an upload is.
+    var statusRequests: [URLRequest] { lock.withLock { statuses } }
+    /// The paths of the uploads created, in order.
+    var createdPaths: [String] { lock.withLock { (0..<createdCount).map { Self.path(number: $0 + 1) } } }
+
+    static func path(number: Int) -> String { "/api/v1/photos/uploads/fake-\(number)" }
+
+    /// The server now has this many bytes of the upload.
+    func set(offsetBytes: Int64, ofUploadAt path: String) { lock.withLock { offsets[path] = offsetBytes } }
+    /// The server completed the upload as this photo.
+    func set(completePhotoId photoId: String, ofUploadAt path: String) { lock.withLock { photoIds[path] = photoId } }
+    /// The server has forgotten the upload (a week idle, cancelled, cleaned up).
+    func forget(uploadAt path: String) { lock.withLock { offsets[path] = nil; photoIds[path] = nil } }
+    /// The next creation does not work, with this outcome.
+    func failNextCreation(with outcome: PhotoBackupOutcome) { lock.withLock { creationOutcomes.append(outcome) } }
+    /// The next question about an upload is not answered, with this outcome.
+    func failNextStatus(with outcome: PhotoBackupOutcome) { lock.withLock { statusOutcomes.append(outcome) } }
+
+    func createUpload(_ request: URLRequest) async -> PhotoBackupServiceAnswer<String> {
+        lock.withLock {
+            creations.append(request)
+            if !creationOutcomes.isEmpty { return .unsuccessful(creationOutcomes.removeFirst()) }
+            createdCount += 1
+            let path = Self.path(number: createdCount)
+            offsets[path] = 0
+            return .answered(path)
+        }
+    }
+
+    func uploadState(_ request: URLRequest) async -> PhotoBackupServiceAnswer<PhotoBackupServerUpload> {
+        lock.withLock {
+            statuses.append(request)
+            if !statusOutcomes.isEmpty { return .unsuccessful(statusOutcomes.removeFirst()) }
+            let path = request.url?.path ?? ""
+            if let photoId = photoIds[path] { return .answered(.complete(serverPhotoId: photoId)) }
+            guard let offset = offsets[path] else { return .answered(.gone) }
+            return .answered(.receiving(offsetBytes: offset))
+        }
+    }
 }
 
 private final class NetworkQuestions: @unchecked Sendable {
@@ -1049,6 +1149,7 @@ private struct Rig {
     let index: PhotoBackupIndex
     let library: FakeLibrary
     let transfer: FakeTransfer
+    let uploads: FakeUploads
     let coordinator: PhotoBackupCoordinator
 }
 
@@ -1056,7 +1157,7 @@ private func makeRig(
     _ test: XCTestCase, items: [PhotoBackupItem], lookup: FakeLookup? = nil, network: FakeNetwork = FakeNetwork(), budget: PhotoBackupBudget = legacyBudget,
     index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300,
     exportTimeoutSeconds: TimeInterval = 30 * 60, freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, clock: ManualClock? = nil,
-    batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false
+    batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false, uploads existingUploads: FakeUploads? = nil
 ) throws -> Rig {
     let directory = try existingDirectory ?? temporaryDirectory(test)
     let outgoing = directory.appendingPathComponent("outgoing")
@@ -1065,13 +1166,14 @@ private func makeRig(
     let library = FakeLibrary(items: items)
     library.clock = clock
     let transfer = FakeTransfer()
+    let uploads = existingUploads ?? FakeUploads()
     let coordinator = PhotoBackupCoordinator(
-        index: index, library: library, transfer: transfer, lookup: lookup, network: network, outgoingDirectory: outgoing,
+        index: index, library: library, transfer: transfer, uploads: uploads, lookup: lookup, network: network, outgoingDirectory: outgoing,
         server: try ServerAddress(parsing: "photos.example.com"), accountKey: "photos.example.com|robin",
         credential: PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret"),
         budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, exportTimeoutSeconds: exportTimeoutSeconds, freeSpaceBytes: freeSpaceBytes,
         now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) }, batchSize: batchSize, isPaused: isPaused)
-    return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, coordinator: coordinator)
+    return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, uploads: uploads, coordinator: coordinator)
 }
 
 private func waitUntil(_ description: String, timeout: Double = 5, _ condition: @Sendable () async -> Bool) async throws {
@@ -1106,8 +1208,11 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         let token = await rig.index.changeToken
         XCTAssertEqual(token, Data("token-1".utf8))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "temporary files are deleted")
-        let request = try XCTUnwrap(rig.transfer.startedRequests.first)
-        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Photo-Client-ID"), "local:item0")
+        let creation = try XCTUnwrap(rig.uploads.creationRequests.first)
+        XCTAssertEqual(creation.value(forHTTPHeaderField: "X-Photo-Client-ID"), "local:item0")
+        let sending = try XCTUnwrap(rig.transfer.startedRequests.first)
+        XCTAssertEqual(sending.httpMethod, "PATCH")
+        XCTAssertEqual(sending.url?.path, "/api/v1/photos/uploads/fake-1")
     }
 
     func testNoMoreThanFourUploadsAreOutstandingAndMoreFollowAsTheyFinish() async throws {
@@ -2759,6 +2864,589 @@ final class PhotoBackupPauseTests: XCTestCase {
         XCTAssertFalse(status.shouldShowTimeLeft)
         XCTAssertFalse(status.isUploadingInBackground)
         XCTAssertFalse(status.hasFilesWaitingForTheApp)
+    }
+}
+
+// MARK: A file cut off part way goes on from where the server has it
+
+/// A file of this many bytes, each different from its neighbors, so that a
+/// test can tell which part of it was sent.
+private func numberedBytes(_ count: Int) -> Data {
+    Data((0..<count).map { UInt8($0 % 251) })
+}
+
+private let continuedFileDigest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+private let otherFileDigest = "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+private let continuedFileKey = PhotoBackupUpload.key(localIdentifier: "a", role: .original)
+
+/// A rig whose library holds one photo, "a", exported as these bytes.
+private func makeContinuationRig(
+    _ test: XCTestCase, content: Data = numberedBytes(3000), digest: String? = continuedFileDigest, directory: URL? = nil,
+    index: PhotoBackupIndex? = nil, uploads: FakeUploads? = nil, freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }
+) throws -> Rig {
+    let rig = try makeRig(test, items: [makeItem("a")], index: index, directory: directory, freeSpaceBytes: freeSpaceBytes, uploads: uploads)
+    rig.library.set(content: content, for: continuedFileKey)
+    if let digest { rig.library.set(sha256: digest, for: continuedFileKey) }
+    return rig
+}
+
+/// The first try: the pass queues the file and the server takes `serverHasBytes`
+/// of it before the pass is cut off by a pause. The task the session had is
+/// reported cancelled, as the real one is, and backup is resumed. Returns the
+/// job that was cut off.
+@discardableResult
+private func cutOffFirstTry(_ rig: Rig, serverHasBytes: Int64) async throws -> PhotoBackupJob {
+    let coordinator = rig.coordinator
+    let pass = Task { await coordinator.runPass(settings: settings) }
+    try await waitUntil("the file is queued") { rig.transfer.startedJobs.count == 1 }
+    let job = try XCTUnwrap(rig.transfer.startedJobs.first)
+    rig.uploads.set(offsetBytes: serverHasBytes, ofUploadAt: try XCTUnwrap(rig.transfer.startedRequests.first?.url?.path))
+    await coordinator.pause()
+    _ = await pass.value
+    await coordinator.pause()
+    await coordinator.finished(job, outcome: .cancelled)
+    await coordinator.resume()
+    return job
+}
+
+/// A second pass in which every queued upload goes up.
+private func runPassThatUploadsEverything(_ rig: Rig, photoId: String = "p1") async -> PhotoBackupPassResult {
+    let coordinator = rig.coordinator
+    rig.transfer.onStart = { job in
+        rig.transfer.release(job)
+        Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: photoId)) }
+    }
+    return await coordinator.runPass(settings: settings)
+}
+
+final class PhotoBackupContinuationTests: XCTestCase {
+    func testAFileIsMadeAnUploadFirstAndItsBytesGoInAPatchFromTheStart() async throws {
+        let content = numberedBytes(3000)
+        let rig = try makeContinuationRig(self, content: content)
+        let result = await runPassThatUploadsEverything(rig)
+        XCTAssertEqual(result.uploadedFileCount, 1)
+        let creation = try XCTUnwrap(rig.uploads.creationRequests.first)
+        XCTAssertEqual(creation.value(forHTTPHeaderField: "Upload-Length"), "3000")
+        XCTAssertEqual(creation.value(forHTTPHeaderField: "X-Photo-Declared-SHA256"), continuedFileDigest)
+        let sending = try XCTUnwrap(rig.transfer.startedRequests.first)
+        XCTAssertEqual(sending.httpMethod, "PATCH")
+        XCTAssertEqual(sending.url?.path, FakeUploads.path(number: 1))
+        XCTAssertEqual(sending.value(forHTTPHeaderField: "Upload-Offset"), "0")
+        XCTAssertEqual(rig.transfer.startedBodies.first, content, "the whole file, from the exported file itself")
+        XCTAssertEqual(rig.uploads.statusRequests.count, 0, "nothing to ask about a file that was never started")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
+    }
+
+    func testTheAddressOfTheUploadIsKeptWithTheFileUntilItIsOnTheServer() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        let kept = await rig.index.partialUpload(localIdentifier: "a", role: .original)
+        XCTAssertEqual(kept, PhotoBackupPartialUpload(uploadPath: FakeUploads.path(number: 1), sizeBytes: 3000, sha256: continuedFileDigest))
+        _ = await runPassThatUploadsEverything(rig)
+        let afterwards = await rig.index.partialUpload(localIdentifier: "a", role: .original)
+        XCTAssertNil(afterwards, "the upload is over")
+    }
+
+    func testAPausedUploadContinuesFromTheOffsetTheServerHasAndSendsOnlyTheRest() async throws {
+        let content = numberedBytes(3000)
+        let rig = try makeContinuationRig(self, content: content)
+        let firstJob = try await cutOffFirstTry(rig, serverHasBytes: 1200)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "the pause deleted the exported file")
+
+        let result = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(result.uploadedFileCount, 1)
+        XCTAssertEqual(rig.uploads.creationRequests.count, 1, "the upload made the first time is the one that goes on")
+        let status = try XCTUnwrap(rig.uploads.statusRequests.first)
+        XCTAssertEqual(status.httpMethod, "HEAD")
+        XCTAssertEqual(status.url?.path, FakeUploads.path(number: 1))
+        XCTAssertEqual(rig.transfer.startedJobs.count, 2)
+        let continuation = try XCTUnwrap(rig.transfer.startedRequests.last)
+        XCTAssertEqual(continuation.httpMethod, "PATCH")
+        XCTAssertEqual(continuation.url?.path, FakeUploads.path(number: 1))
+        XCTAssertEqual(continuation.value(forHTTPHeaderField: "Upload-Offset"), "1200")
+        XCTAssertEqual(rig.transfer.startedBodies.last, content.suffix(from: 1200), "only the rest of the file is sent")
+        let secondJob = try XCTUnwrap(rig.transfer.startedJobs.last)
+        XCTAssertEqual(secondJob.sizeBytes, 1800, "the queue counts the rest, not the whole file")
+        XCTAssertNotEqual(secondJob.outgoingFilename, firstJob.outgoingFilename)
+        XCTAssertTrue(secondJob.outgoingFilename.hasSuffix(".tail"))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "the rest and the whole file are both deleted")
+    }
+
+    func testTheWholeFileIsDeletedAsSoonAsTheRestIsWrittenSoOnlyTheRestStaysWhileItIsSent() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        let coordinator = rig.coordinator
+        let pass = Task { await coordinator.runPass(settings: settings) }
+        try await waitUntil("the rest is queued") { rig.transfer.startedJobs.count == 2 }
+        let names = try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path)
+        XCTAssertEqual(names.count, 1)
+        XCTAssertTrue(try XCTUnwrap(names.first).hasSuffix(".tail"))
+        let job = try XCTUnwrap(rig.transfer.startedJobs.last)
+        rig.transfer.release(job)
+        await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p1"))
+        _ = await pass.value
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "deleted when the upload ends")
+    }
+
+    func testTheRestIsDeletedWhenItsUploadFailsToo() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .retryLater(failure: nil, isConnectivityFailure: true)) }
+        }
+        _ = await coordinator.runPass(settings: settings)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
+        let kept = await rig.index.partialUpload(localIdentifier: "a", role: .original)
+        XCTAssertNotNil(kept, "the address stays, for the next try")
+    }
+
+    func testAnUploadCutOffManyTimesGoesOnFromWhereItGotEachTime() async throws {
+        let content = numberedBytes(3000)
+        let rig = try makeContinuationRig(self, content: content)
+        try await cutOffFirstTry(rig, serverHasBytes: 500)
+        let coordinator = rig.coordinator
+        let pass = Task { await coordinator.runPass(settings: settings) }
+        try await waitUntil("the rest is queued") { rig.transfer.startedJobs.count == 2 }
+        let second = try XCTUnwrap(rig.transfer.startedJobs.last)
+        rig.uploads.set(offsetBytes: 2000, ofUploadAt: FakeUploads.path(number: 1))
+        await coordinator.pause()
+        _ = await pass.value
+        await coordinator.pause()
+        await coordinator.finished(second, outcome: .cancelled)
+        await coordinator.resume()
+
+        _ = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(rig.uploads.creationRequests.count, 1)
+        XCTAssertEqual(rig.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "2000")
+        XCTAssertEqual(rig.transfer.startedBodies.last, content.suffix(from: 2000))
+        XCTAssertEqual(rig.transfer.startedBodies[1], content.suffix(from: 500))
+    }
+
+    func testARelaunchWithAStoredAddressContinuesTheUpload() async throws {
+        let content = numberedBytes(3000)
+        let directory = try temporaryDirectory(self)
+        let uploads = FakeUploads()
+        let firstLaunch = try makeContinuationRig(self, content: content, directory: directory, uploads: uploads)
+        try await cutOffFirstTry(firstLaunch, serverHasBytes: 1000)
+        await firstLaunch.index.flush()
+
+        // The app is started again: a new index read from the same file, a new
+        // coordinator, the same server.
+        let reopened = try PhotoBackupIndex(directory: directory)
+        let secondLaunch = try makeContinuationRig(self, content: content, directory: directory, index: reopened, uploads: uploads)
+        let result = await runPassThatUploadsEverything(secondLaunch)
+
+        XCTAssertEqual(result.uploadedFileCount, 1)
+        XCTAssertEqual(uploads.creationRequests.count, 1, "no second upload was made")
+        XCTAssertEqual(secondLaunch.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "1000")
+        XCTAssertEqual(secondLaunch.transfer.startedBodies.last, content.suffix(from: 1000))
+    }
+
+    func testAnUploadTheServerNoLongerHasStartsOverFromTheFirstByteInANewUpload() async throws {
+        let content = numberedBytes(3000)
+        let rig = try makeContinuationRig(self, content: content)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        rig.uploads.forget(uploadAt: FakeUploads.path(number: 1))
+
+        let result = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(result.uploadedFileCount, 1)
+        XCTAssertEqual(rig.uploads.statusRequests.count, 1)
+        XCTAssertEqual(rig.uploads.creationRequests.count, 2, "a new upload is made")
+        let sending = try XCTUnwrap(rig.transfer.startedRequests.last)
+        XCTAssertEqual(sending.url?.path, FakeUploads.path(number: 2))
+        XCTAssertEqual(sending.value(forHTTPHeaderField: "Upload-Offset"), "0")
+        XCTAssertEqual(rig.transfer.startedBodies.last, content, "the whole file")
+        XCTAssertEqual(try XCTUnwrap(rig.transfer.startedJobs.last).sizeBytes, 3000)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
+    }
+
+    func testAnOffsetBeyondTheEndOfTheFileStartsOver() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        rig.uploads.set(offsetBytes: 3001, ofUploadAt: FakeUploads.path(number: 1))
+
+        _ = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(rig.uploads.creationRequests.count, 2)
+        XCTAssertEqual(rig.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "0")
+        XCTAssertEqual(rig.transfer.startedBodies.last?.count, 3000)
+    }
+
+    func testAFileThatHashesToSomethingElseIsNotContinuedEvenWhenTheServerHasBytes() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        // The photo was edited in the meantime: the library exports other bytes.
+        let edited = Data(numberedBytes(3000).reversed())
+        rig.library.set(content: edited, for: continuedFileKey)
+        rig.library.set(sha256: otherFileDigest, for: continuedFileKey)
+
+        _ = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(rig.uploads.statusRequests.count, 0, "the server is not asked about an upload that is not this file's")
+        XCTAssertEqual(rig.uploads.creationRequests.count, 2)
+        XCTAssertEqual(rig.uploads.creationRequests.last?.value(forHTTPHeaderField: "X-Photo-Declared-SHA256"), otherFileDigest)
+        XCTAssertEqual(rig.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "0")
+        XCTAssertEqual(rig.transfer.startedBodies.last, edited)
+    }
+
+    func testAFileOfAnotherSizeIsNotContinuedEvenWithTheSameDigestText() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        rig.library.set(content: numberedBytes(2500), for: continuedFileKey)
+
+        _ = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(rig.uploads.statusRequests.count, 0)
+        XCTAssertEqual(rig.uploads.creationRequests.last?.value(forHTTPHeaderField: "Upload-Length"), "2500")
+        XCTAssertEqual(rig.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "0")
+    }
+
+    func testAnUploadTheServerCompletedIsRecordedOnceAndNothingIsSent() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        // The last request got through and the answer was lost.
+        rig.uploads.set(completePhotoId: "photo-9", ofUploadAt: FakeUploads.path(number: 1))
+        let sentBefore = rig.transfer.startedJobs.count
+
+        let result = await rig.coordinator.runPass(settings: settings)
+
+        XCTAssertEqual(rig.transfer.startedJobs.count, sentBefore, "no bytes are sent")
+        XCTAssertEqual(result.uploadedFileCount, 1)
+        let record = await rig.index.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.roles["original"]?.serverPhotoId, "photo-9")
+        XCTAssertEqual(record?.roles["original"]?.isOnServer, true)
+        XCTAssertNil(record?.roles["original"]?.partialUpload)
+        let summary = await rig.index.summary()
+        XCTAssertEqual(summary.backedUpItemCount, 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
+        let again = await rig.coordinator.runPass(settings: settings)
+        XCTAssertEqual(again.plannedFileCount, 0, "it is not planned again")
+        XCTAssertEqual(rig.transfer.startedJobs.count, sentBefore)
+    }
+
+    func testTheFinishedUploadIsRecordedExactlyOnceWhenTheRestGoesUp() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+
+        let result = await runPassThatUploadsEverything(rig, photoId: "photo-7")
+
+        XCTAssertEqual(result.uploadedFileCount, 1)
+        XCTAssertEqual(result.refusedFileCount, 0)
+        let summary = await rig.index.summary()
+        XCTAssertEqual(summary.backedUpItemCount, 1)
+        let record = await rig.index.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.roles["original"]?.serverPhotoId, "photo-7")
+        let pendingCount = await rig.index.pendingFileCount()
+        XCTAssertEqual(pendingCount, 0)
+        let again = await rig.coordinator.runPass(settings: settings)
+        XCTAssertEqual(again.plannedFileCount, 0)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 2, "one upload, then its continuation, and no more")
+    }
+
+    func testAnUploadWithEveryByteButNotCompleteSendsAnEmptyRestThatCompletesIt() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 3000)
+
+        let result = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(result.uploadedFileCount, 1)
+        XCTAssertEqual(rig.uploads.creationRequests.count, 1)
+        let continuation = try XCTUnwrap(rig.transfer.startedRequests.last)
+        XCTAssertEqual(continuation.value(forHTTPHeaderField: "Upload-Offset"), "3000")
+        XCTAssertEqual(continuation.value(forHTTPHeaderField: "Upload-Complete"), "?1")
+        XCTAssertEqual(rig.transfer.startedBodies.last, Data())
+        XCTAssertEqual(try XCTUnwrap(rig.transfer.startedJobs.last).sizeBytes, 0)
+    }
+
+    func testTheRestIsNotWrittenWhenThePhoneHasNoRoomForItAndTheFileStartsOver() async throws {
+        let content = numberedBytes(3000)
+        let rig = try makeContinuationRig(self, content: content, freeSpaceBytes: { 1000 })
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+
+        // 2000 bytes remain; half of the 1000 free is less.
+        _ = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(rig.uploads.creationRequests.count, 2)
+        XCTAssertEqual(rig.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "0")
+        XCTAssertEqual(rig.transfer.startedBodies.last, content)
+    }
+
+    func testTheRestIsAllowedWhenItFitsInHalfOfTheFreeSpaceOrTheSpaceIsUnknown() {
+        XCTAssertTrue(PhotoBackupBudget.allowsTail(sizeBytes: 500, freeSpaceBytes: 1000))
+        XCTAssertFalse(PhotoBackupBudget.allowsTail(sizeBytes: 501, freeSpaceBytes: 1000))
+        XCTAssertTrue(PhotoBackupBudget.allowsTail(sizeBytes: 1 << 40, freeSpaceBytes: nil))
+        XCTAssertTrue(PhotoBackupBudget.allowsTail(sizeBytes: 0, freeSpaceBytes: -5))
+        XCTAssertFalse(PhotoBackupBudget.allowsTail(sizeBytes: 1, freeSpaceBytes: -5))
+    }
+
+    func testAFileWithoutADigestIsNeverContinued() async throws {
+        let rig = try makeContinuationRig(self, digest: nil)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        let kept = await rig.index.partialUpload(localIdentifier: "a", role: .original)
+        XCTAssertNil(kept, "nothing could tell the exported file from another one later")
+
+        _ = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(rig.uploads.statusRequests.count, 0)
+        XCTAssertEqual(rig.uploads.creationRequests.count, 2)
+        XCTAssertEqual(rig.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "0")
+    }
+
+    func testAFileTheServerRefusedForgetsItsAddress() async throws {
+        let rig = try makeContinuationRig(self)
+        let job = try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        let kept = await rig.index.partialUpload(localIdentifier: "a", role: .original)
+        XCTAssertNotNil(kept)
+        await rig.coordinator.finished(job, outcome: .refused(failure: .fileRefused(serverReason: "not a picture")))
+        let afterwards = await rig.index.partialUpload(localIdentifier: "a", role: .original)
+        XCTAssertNil(afterwards)
+    }
+
+    func testAnAddressTheServerCannotBeAskedAboutIsKeptAndNothingIsSent() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        rig.uploads.failNextStatus(with: .retryLater(failure: .systemDescription("offline"), isConnectivityFailure: true))
+        let sentBefore = rig.transfer.startedJobs.count
+
+        let result = await rig.coordinator.runPass(settings: settings)
+
+        XCTAssertEqual(rig.transfer.startedJobs.count, sentBefore)
+        XCTAssertEqual(rig.uploads.creationRequests.count, 1, "an upload is not made for a file whose upload could not be asked about")
+        XCTAssertEqual(result.leftForLaterFileCount, 1)
+        let kept = await rig.index.partialUpload(localIdentifier: "a", role: .original)
+        XCTAssertNotNil(kept)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
+        // And the next pass, with the network back, goes on from the offset.
+        _ = await runPassThatUploadsEverything(rig)
+        XCTAssertEqual(rig.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "1000")
+    }
+
+    func testAServerThatRefusesTheQuestionAboutAnUploadGetsANewUploadInstead() async throws {
+        let rig = try makeContinuationRig(self)
+        try await cutOffFirstTry(rig, serverHasBytes: 1000)
+        rig.uploads.failNextStatus(with: .refused(failure: .fileRefused(serverReason: "bad request")))
+
+        let result = await runPassThatUploadsEverything(rig)
+
+        XCTAssertEqual(result.uploadedFileCount, 1)
+        XCTAssertEqual(result.refusedFileCount, 0, "the question was refused, not the file")
+        XCTAssertEqual(rig.uploads.creationRequests.count, 2)
+        XCTAssertEqual(rig.transfer.startedRequests.last?.value(forHTTPHeaderField: "Upload-Offset"), "0")
+    }
+
+    // MARK: When the upload cannot be made
+
+    func testAFileTheServerRefusesToMakeAnUploadForIsRefusedAndNothingIsQueued() async throws {
+        let rig = try makeContinuationRig(self)
+        rig.uploads.failNextCreation(with: .refused(failure: .fileRefused(serverReason: "too large")))
+        let result = await rig.coordinator.runPass(settings: settings)
+        XCTAssertEqual(result.refusedFileCount, 1)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 0)
+        let record = await rig.index.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.roles["original"]?.refusalCount, 1)
+        XCTAssertEqual(record?.roles["original"]?.refusalFailure, .fileRefused(serverReason: "too large"))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
+    }
+
+    func testAPasswordTheServerRefusesWhenMakingAnUploadStopsTheBackup() async throws {
+        let rig = try makeContinuationRig(self)
+        rig.uploads.failNextCreation(with: .signInNeeded)
+        _ = await rig.coordinator.runPass(settings: settings)
+        let summary = await rig.index.summary()
+        XCTAssertTrue(summary.isSignInNeeded)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 0)
+        XCTAssertTrue(rig.transfer.isCancelled)
+    }
+
+    func testWithoutANetworkTheOtherFilesAreNotTriedAndTheyWaitForLater() async throws {
+        let items = (0..<5).map { makeItem("item\($0)", secondsSince2026: Double($0)) }
+        let rig = try makeRig(self, items: items)
+        rig.uploads.failNextCreation(with: .retryLater(failure: .systemDescription("offline"), isConnectivityFailure: true))
+        let result = await rig.coordinator.runPass(settings: settings)
+        XCTAssertEqual(rig.uploads.creationRequests.count, 1, "the first request found there is no network; the others would wait out a timeout each")
+        XCTAssertEqual(rig.transfer.startedJobs.count, 0)
+        XCTAssertEqual(result.uploadedFileCount, 0)
+        XCTAssertEqual(result.leftForLaterFileCount, 5)
+        let pendingCount = await rig.index.pendingFileCount()
+        XCTAssertEqual(pendingCount, 5, "every file is still to send")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [])
+    }
+
+    func testAServerThatKeepsFailingToMakeUploadsEndsThePassAfterThreeFiles() async throws {
+        let items = (0..<8).map { makeItem("item\($0)", secondsSince2026: Double($0)) }
+        let rig = try makeRig(self, items: items)
+        for _ in 0..<8 { rig.uploads.failNextCreation(with: .retryLater(failure: .serverReason("storage is unavailable"), isConnectivityFailure: false)) }
+        let result = await rig.coordinator.runPass(settings: settings)
+        XCTAssertEqual(rig.uploads.creationRequests.count, 3)
+        XCTAssertEqual(result.leftForLaterFileCount, 8)
+        let retryTime = await rig.coordinator.pendingRetryTime
+        XCTAssertNotNil(retryTime, "the app is told when to try again")
+    }
+
+    func testAWakeInTheBackgroundDoesNotTryMoreFilesOnceTheNetworkIsGone() async throws {
+        let items = (0..<5).map { makeItem("item\($0)", secondsSince2026: Double($0)) }
+        let rig = try makeRig(self, items: items)
+        await rig.index.adopt(accountKey: "photos.example.com|robin")
+        await rig.index.markPending(PhotoBackupPlanner.plan(items: items, records: [:]))
+        rig.uploads.failNextCreation(with: .retryLater(failure: .systemDescription("offline"), isConnectivityFailure: true))
+        let queued = await rig.coordinator.topUp(settings: settings, until: Date(timeIntervalSince1970: 1_800_000_060))
+        XCTAssertEqual(queued, 0)
+        XCTAssertEqual(rig.uploads.creationRequests.count, 1)
+    }
+}
+
+final class PhotoBackupUploadClientTests: XCTestCase {
+    func testAnUploadTheServerMadeIsKnownByThePathOfItsLocationWhateverTheSchemeAndHost() {
+        for location in ["https://photos.example.com/api/v1/photos/uploads/u1", "http://10.0.0.5:8080/api/v1/photos/uploads/u1", "/api/v1/photos/uploads/u1"] {
+            XCTAssertEqual(
+                PhotoBackupUploadClient.interpretCreation(statusCode: 201, locationHeader: location, bodyText: nil, retryAfterHeader: nil),
+                .answered("/api/v1/photos/uploads/u1"), location)
+        }
+    }
+
+    func testALocationThatIsNotAnUploadIsNotFollowed() {
+        for location in [nil, "", "https://photos.example.com/graphql", "https://photos.example.com/api/v1/photos/uploads/", "https://photos.example.com/other/u1"] {
+            XCTAssertEqual(
+                PhotoBackupUploadClient.interpretCreation(statusCode: 201, locationHeader: location, bodyText: nil, retryAfterHeader: nil),
+                .unsuccessful(.retryLater(failure: nil, isConnectivityFailure: false)), location ?? "nil")
+        }
+    }
+
+    func testAnythingButCreatedIsReadAsAnUploadsAnswerIs() {
+        XCTAssertEqual(
+            PhotoBackupUploadClient.interpretCreation(statusCode: 401, locationHeader: nil, bodyText: nil, retryAfterHeader: nil), .unsuccessful(.signInNeeded))
+        XCTAssertEqual(
+            PhotoBackupUploadClient.interpretCreation(statusCode: 413, locationHeader: nil, bodyText: "the file is too large", retryAfterHeader: nil),
+            .unsuccessful(.refused(failure: .fileRefused(serverReason: "the file is too large"))))
+        XCTAssertEqual(
+            PhotoBackupUploadClient.interpretCreation(statusCode: 503, locationHeader: nil, bodyText: nil, retryAfterHeader: "120"),
+            .unsuccessful(.retryLater(failure: nil, isConnectivityFailure: false, retryAfterSeconds: 120)))
+        XCTAssertEqual(
+            PhotoBackupUploadClient.interpretCreation(statusCode: 429, locationHeader: nil, bodyText: "too many uploads are unfinished", retryAfterHeader: nil),
+            .unsuccessful(.retryLater(failure: .serverReason("too many uploads are unfinished"), isConnectivityFailure: false)))
+    }
+
+    func testTheStatusSaysHowManyBytesTheServerHasOrThatTheUploadIsComplete() {
+        func state(_ statusCode: Int, offset: String? = nil, complete: String? = nil, photoId: String? = nil) -> PhotoBackupServiceAnswer<PhotoBackupServerUpload> {
+            PhotoBackupUploadClient.interpretState(
+                statusCode: statusCode, offsetHeader: offset, completeHeader: complete, photoIdHeader: photoId, bodyText: nil, retryAfterHeader: nil)
+        }
+        XCTAssertEqual(state(204, offset: "8388608", complete: "?0"), .answered(.receiving(offsetBytes: 8_388_608)))
+        XCTAssertEqual(state(204, offset: "0", complete: "?0"), .answered(.receiving(offsetBytes: 0)))
+        XCTAssertEqual(state(204, offset: "512", complete: "?1", photoId: "p1"), .answered(.complete(serverPhotoId: "p1")))
+        XCTAssertEqual(state(404), .answered(.gone))
+        XCTAssertEqual(state(410), .answered(.gone))
+        XCTAssertEqual(state(204), .unsuccessful(.retryLater(failure: nil, isConnectivityFailure: false)), "no offset")
+        XCTAssertEqual(state(204, offset: "-1"), .unsuccessful(.retryLater(failure: nil, isConnectivityFailure: false)))
+        XCTAssertEqual(state(204, offset: "512", complete: "?1"), .unsuccessful(.retryLater(failure: .serverDidNotSayWhichPhoto, isConnectivityFailure: false)))
+        XCTAssertEqual(state(401), .unsuccessful(.signInNeeded))
+        XCTAssertEqual(state(500), .unsuccessful(.retryLater(failure: nil, isConnectivityFailure: false)))
+    }
+
+    func testTheClientSendsTheRequestThroughTheTransportAndReadsTheAnswer() async throws {
+        let server = try ServerAddress(parsing: "photos.example.com")
+        let credential = PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret")
+        let transport = ScriptedTransport(statusCode: 204, headers: ["Upload-Offset": "4096", "Upload-Complete": "?0"])
+        let client = PhotoBackupUploadClient(transport: transport)
+        let request = PhotoBackupRequest.makeStatus(server: server, credential: credential, uploadPath: "/api/v1/photos/uploads/u1", usesMobileData: false)
+        let answer = await client.uploadState(request)
+        XCTAssertEqual(answer, .answered(.receiving(offsetBytes: 4096)))
+        XCTAssertEqual(transport.sentRequests.map(\.httpMethod), ["HEAD"])
+    }
+
+    func testATransportThatFailsIsAReasonToTryLaterAndSaysWhetherTheNetworkWasTheCause() async throws {
+        let request = URLRequest(url: try XCTUnwrap(URL(string: "https://photos.example.com/api/v1/photos/uploads")))
+        let offline = PhotoBackupUploadClient(transport: ScriptedTransport(error: URLError(.notConnectedToInternet)))
+        let creation = await offline.createUpload(request)
+        guard case .unsuccessful(.retryLater(_, let isConnectivityFailure, _)) = creation else { return XCTFail("\(creation)") }
+        XCTAssertTrue(isConnectivityFailure)
+        let cancelled = PhotoBackupUploadClient(transport: ScriptedTransport(error: URLError(.cancelled)))
+        let cancelledAnswer = await cancelled.uploadState(request)
+        XCTAssertEqual(cancelledAnswer, .unsuccessful(.cancelled))
+    }
+}
+
+private final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private let statusCode: Int
+    private let headers: [String: String]
+    private let error: Error?
+    private var requests: [URLRequest] = []
+
+    init(statusCode: Int = 200, headers: [String: String] = [:], error: Error? = nil) {
+        self.statusCode = statusCode
+        self.headers = headers
+        self.error = error
+    }
+
+    var sentRequests: [URLRequest] { lock.withLock { requests } }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        lock.withLock { requests.append(request) }
+        if let error { throw error }
+        let response = try XCTUnwrap(HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: statusCode, httpVersion: "HTTP/1.1", headerFields: headers))
+        return (Data(), response)
+    }
+}
+
+final class PhotoBackupPartialUploadIndexTests: XCTestCase {
+    func testTheAddressSurvivesOpeningTheFileAgain() async throws {
+        let directory = try temporaryDirectory(self)
+        let index = try PhotoBackupIndex(directory: directory)
+        await index.adopt(accountKey: "photos.example.com|robin")
+        let partial = PhotoBackupPartialUpload(uploadPath: "/api/v1/photos/uploads/u1", sizeBytes: 3000, sha256: continuedFileDigest)
+        await index.markUploadStarted(localIdentifier: "a", clientPhotoId: "local:a", role: .original, partialUpload: partial)
+        await index.flush()
+        let reopened = try PhotoBackupIndex(directory: directory)
+        let kept = await reopened.partialUpload(localIdentifier: "a", role: .original)
+        XCTAssertEqual(kept, partial)
+        let pendingCount = await reopened.pendingFileCount()
+        XCTAssertEqual(pendingCount, 1, "a file with an upload is still a file to send")
+    }
+
+    func testAnIndexWrittenBeforeAddressesWereKeptIsStillRead() async throws {
+        let directory = try temporaryDirectory(self)
+        let written = #"{"version":1,"accountKey":"photos.example.com|robin","records":{"a":{"clientPhotoId":"local:a","roles":{"original":{"isOnServer":false,"refusalCount":0}}}},"libraryItemCount":1,"isSignInNeeded":false}"#
+        try Data(written.utf8).write(to: directory.appendingPathComponent(PhotoBackupIndex.indexFilename))
+        let index = try PhotoBackupIndex(directory: directory)
+        let wasStartedOver = await index.wasStartedOver
+        XCTAssertFalse(wasStartedOver)
+        let record = await index.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.roles["original"]?.isOnServer, false)
+        XCTAssertNil(record?.roles["original"]?.partialUpload)
+    }
+
+    func testAFileThatWentUpOrWasRefusedOrForgottenHasNoAddress() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        let partial = PhotoBackupPartialUpload(uploadPath: "/api/v1/photos/uploads/u1", sizeBytes: 10, sha256: continuedFileDigest)
+        for role in [PhotoBackupFileRole.original, .edited, .liveVideo] {
+            await index.markUploadStarted(localIdentifier: "a", clientPhotoId: "local:a", role: role, partialUpload: partial)
+        }
+        await index.markUploaded(localIdentifier: "a", clientPhotoId: "local:a", role: .original, serverPhotoId: "p1", assetModificationDate: nil)
+        await index.markRefused(localIdentifier: "a", clientPhotoId: "local:a", role: .edited, failure: .fileRefused(serverReason: nil))
+        await index.forgetPartialUpload(localIdentifier: "a", role: .liveVideo)
+        for role in [PhotoBackupFileRole.original, .edited, .liveVideo] {
+            let kept = await index.partialUpload(localIdentifier: "a", role: role)
+            XCTAssertNil(kept, role.rawValue)
+        }
+    }
+
+    func testEachFileOfAPhotoKeepsItsOwnAddress() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        let original = PhotoBackupPartialUpload(uploadPath: "/api/v1/photos/uploads/u1", sizeBytes: 10, sha256: continuedFileDigest)
+        let video = PhotoBackupPartialUpload(uploadPath: "/api/v1/photos/uploads/u2", sizeBytes: 20, sha256: otherFileDigest)
+        await index.markUploadStarted(localIdentifier: "a", clientPhotoId: "local:a", role: .original, partialUpload: original)
+        await index.markUploadStarted(localIdentifier: "a", clientPhotoId: "local:a", role: .liveVideo, partialUpload: video)
+        await index.forgetPartialUpload(localIdentifier: "a", role: .original)
+        let keptOriginal = await index.partialUpload(localIdentifier: "a", role: .original)
+        let keptVideo = await index.partialUpload(localIdentifier: "a", role: .liveVideo)
+        XCTAssertNil(keptOriginal)
+        XCTAssertEqual(keptVideo, video)
     }
 }
 

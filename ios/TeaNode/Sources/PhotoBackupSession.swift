@@ -68,6 +68,10 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
 
     // MARK: PhotoBackupTransfer
 
+    /// The request is a PATCH that sends the rest of a file to an upload made
+    /// beforehand (PhotoBackupRequest.makeContinuation), and the file is that
+    /// rest, from the byte the server has: the whole file for an upload that has
+    /// no bytes yet.
     func start(request: URLRequest, job: PhotoBackupJob, fileURL: URL) async throws {
         let task = session.uploadTask(with: request, fromFile: fileURL)
         task.taskDescription = String(data: try JSONEncoder().encode(job), encoding: .utf8)
