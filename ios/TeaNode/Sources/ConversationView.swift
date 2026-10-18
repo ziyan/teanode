@@ -742,15 +742,7 @@ struct ConversationItemView: View {
 @MainActor
 enum MessageActionsPresenter {
     static func present(line: TranscriptLine, model: ConversationModel) {
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)
-        var top = window?.rootViewController
-        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
-            top = presented
-        }
-        guard let top else { return }
+        guard let top = TopViewController.find() else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         weak var shown: UIViewController?
         let controller = UIHostingController(

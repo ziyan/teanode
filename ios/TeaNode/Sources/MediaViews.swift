@@ -61,13 +61,13 @@ struct RemotePicture: View {
     }
 }
 
-/// LightboxPresenter shows a picture full screen over whatever is on
-/// screen, a sheet included, as Photos does: from the top of the window
-/// rather than from the view that was tapped, which inside a list or a
-/// sheet had nothing to present from.
+/// TopViewController finds the view controller that anything shown over the
+/// app has to be presented from: the last one of the key window's chain of
+/// presented controllers, so that a sheet or cover already open is not
+/// presented from underneath, where UIKit would refuse.
 @MainActor
-enum LightboxPresenter {
-    static func present(_ picture: UIImage, name: String) {
+enum TopViewController {
+    static func find() -> UIViewController? {
         let window = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
@@ -76,7 +76,18 @@ enum LightboxPresenter {
         while let presented = top?.presentedViewController, !presented.isBeingDismissed {
             top = presented
         }
-        guard let top else { return }
+        return top
+    }
+}
+
+/// LightboxPresenter shows a picture full screen over whatever is on
+/// screen, a sheet included, as Photos does: from the top of the window
+/// rather than from the view that was tapped, which inside a list or a
+/// sheet had nothing to present from.
+@MainActor
+enum LightboxPresenter {
+    static func present(_ picture: UIImage, name: String) {
+        guard let top = TopViewController.find() else { return }
         weak var shown: UIViewController?
         let controller = UIHostingController(rootView: PictureLightbox(picture: picture, name: name) {
             shown?.dismiss(animated: true)
@@ -551,15 +562,7 @@ struct FileCard: View {
 @MainActor
 enum ShareSheetPresenter {
     static func present(_ item: Any) {
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)
-        var top = window?.rootViewController
-        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
-            top = presented
-        }
-        guard let top else { return }
+        guard let top = TopViewController.find() else { return }
         let controller = UIActivityViewController(activityItems: [item], applicationActivities: nil)
         // An iPad shows the sheet as a popover, which needs somewhere to point.
         controller.popoverPresentationController?.sourceView = top.view
@@ -905,7 +908,7 @@ enum CameraPresenter {
     private static var delegate: Delegate?
 
     static func present(onPicture: @escaping (UIImage) -> Void) {
-        guard UIImagePickerController.isSourceTypeAvailable(.camera), let top = topViewController() else { return }
+        guard UIImagePickerController.isSourceTypeAvailable(.camera), let top = TopViewController.find() else { return }
         let picker = UIImagePickerController()
         picker.sourceType = .camera
         picker.modalPresentationStyle = .fullScreen
@@ -913,18 +916,6 @@ enum CameraPresenter {
         Self.delegate = delegate
         picker.delegate = delegate
         top.present(picker, animated: true)
-    }
-
-    private static func topViewController() -> UIViewController? {
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)
-        var top = window?.rootViewController
-        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
-            top = presented
-        }
-        return top
     }
 
     @MainActor
