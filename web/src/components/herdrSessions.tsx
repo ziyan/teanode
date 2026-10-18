@@ -85,6 +85,9 @@ export interface HerdrTurn {
   // asked for them.
   toolInputText?: string
   toolResultText?: string
+  // Whether a tool call has an input or a result, which a read asking for
+  // the detail brings.
+  hasToolDetail?: boolean
 }
 
 // The fields of a session, the same as the command line's
@@ -98,7 +101,7 @@ export const HERDR_DOCUMENTS = {
   }`,
   ReadAgentHerdrSession: `query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
     ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
-      herdrSession { ${SESSION_FIELDS} } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated
+      herdrSession { ${SESSION_FIELDS} } turns { herdrTurnRole turnText turnAt toolInputText toolResultText hasToolDetail } isTruncated
     }
   }`,
   ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
@@ -374,10 +377,27 @@ function chosenOf(question: HerdrQuestion, answeredWith: string): { chosenNumber
   return { chosenNumbers, typedAnswer: chosenNumbers.length > 0 ? '' : answer.replace(/^"(.*)"$/, '$1') }
 }
 
+// The file name endings for the kinds of picture a clipboard holds.
+const PICTURE_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'image/svg+xml': 'svg',
+}
+
 // HerdrTurnsList is what a session said and was told, as the conversation
 // page draws a conversation: what the person typed as bubbles on the right,
 // what the agent wrote as text, and each tool call as one muted line.
-export function HerdrTurnsList({ turns }: { turns: HerdrTurn[] }) {
+export function HerdrTurnsList({
+  turns,
+  onWantToolDetail,
+}: {
+  turns: HerdrTurn[]
+  // Asks for the tool calls' detail, when one is opened before it came.
+  onWantToolDetail?: () => void
+}) {
   const { t } = useTranslation()
   return (
     <ol className="herdr-turns">
@@ -389,11 +409,17 @@ export function HerdrTurnsList({ turns }: { turns: HerdrTurn[] }) {
             <div className="agent-line assistant">
               <Markdown text={turn.turnText} />
             </div>
-          ) : turn.toolInputText || turn.toolResultText ? (
+          ) : turn.hasToolDetail || turn.toolInputText || turn.toolResultText ? (
             // A tool call opens to its whole input and what it answered.
-            <details className="herdr-tool">
+            <details
+              className="herdr-tool"
+              onToggle={(event) => {
+                if (event.currentTarget.open && !turn.toolInputText && !turn.toolResultText) onWantToolDetail?.()
+              }}
+            >
               <summary className="agent-line tool herdr-tool-line">{turn.turnText}</summary>
               <div className="herdr-tool-detail">
+                {!turn.toolInputText && !turn.toolResultText ? <Loading /> : null}
                 {turn.toolInputText ? (
                   <>
                     <h5>{t('herdr.toolInput')}</h5>
@@ -562,7 +588,7 @@ export function HerdrSendForm({
               ...previous,
               ...pictures.map(
                 (picture, index) =>
-                  new File([picture], `pasted-${stamp}-${index + 1}.${picture.type.split('/')[1] || 'png'}`, {
+                  new File([picture], `pasted-${stamp}-${index + 1}.${PICTURE_EXTENSIONS[picture.type] ?? 'png'}`, {
                     type: picture.type,
                   }),
               ),

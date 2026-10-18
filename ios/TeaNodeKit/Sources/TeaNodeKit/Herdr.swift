@@ -98,13 +98,6 @@ public struct HerdrSession: Decodable, Hashable, Sendable, Identifiable {
         return [tabWords, codingAgentName].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    /// The session's chip in the tab strip: herdr's label for its tab, then
-    /// what it is about.
-    public var chipTitle: String {
-        let words = [tabLabel, sessionTitle].filter { !$0.isEmpty }.joined(separator: " ")
-        return words.isEmpty ? codingAgentName : words
-    }
-
     /// What names the workspace in a list or a bar.
     public var workspaceTitle: String {
         if !workspaceLabel.isEmpty { return workspaceLabel }
@@ -150,8 +143,19 @@ public struct HerdrTurn: Decodable, Hashable, Sendable {
     /// the read did not ask for them.
     public let toolInputText: String?
     public let toolResultText: String?
+    /// Whether the server said the tool call has an input or a result to
+    /// show, which a read asking for the detail brings.
+    let isToolDetailed: Bool?
 
-    public var hasToolDetail: Bool { !(toolInputText ?? "").isEmpty || !(toolResultText ?? "").isEmpty }
+    enum CodingKeys: String, CodingKey {
+        case herdrTurnRole, turnText, turnAt, toolInputText, toolResultText
+        case isToolDetailed = "hasToolDetail"
+    }
+
+    /// Whether the tool call has an input or a result to show.
+    public var hasToolDetail: Bool { isToolDetailed == true || isToolDetailLoaded }
+    /// Whether this read brought the input or the result.
+    public var isToolDetailLoaded: Bool { !(toolInputText ?? "").isEmpty || !(toolResultText ?? "").isEmpty }
 }
 
 /// HerdrRead is a session's last turns.
@@ -181,7 +185,7 @@ extension Documents {
     public static let readHerdrSession = """
         query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
           ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
-            herdrSession { \(herdrSessionFields) } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated
+            herdrSession { \(herdrSessionFields) } turns { herdrTurnRole turnText turnAt toolInputText toolResultText hasToolDetail } isTruncated
           }
         }
         """
@@ -228,14 +232,15 @@ extension Connection {
         return try await execute(Documents.listHerdrSessions, variables: variables, as: Answer.self).ListAgentHerdrSessions
     }
 
-    /// The last turnCount turns of a session (100 at most).
-    public func readHerdrSession(computer: String, paneId: String, turnCount: Int) async throws -> HerdrRead {
+    /// The last turnCount turns of a session (100 at most), with each tool
+    /// call's input and result when shouldIncludeToolDetail.
+    public func readHerdrSession(computer: String, paneId: String, turnCount: Int, shouldIncludeToolDetail: Bool) async throws -> HerdrRead {
         struct Answer: Decodable, Sendable { let ReadAgentHerdrSession: HerdrRead }
         return try await execute(
             Documents.readHerdrSession,
             variables: [
                 "computer": .string(computer), "paneId": .string(paneId), "turnCount": .number(Double(turnCount)),
-                "shouldIncludeToolDetail": .bool(true),
+                "shouldIncludeToolDetail": .bool(shouldIncludeToolDetail),
             ],
             as: Answer.self
         ).ReadAgentHerdrSession

@@ -61,11 +61,11 @@ type herdrAgent struct {
 	Cwd                   string `json:"cwd"`
 	ForegroundCwd         string `json:"foreground_cwd"`
 	TerminalTitleStripped string `json:"terminal_title_stripped"`
-	// Revision and StateChangeSeq move when herdr's own idea of the pane
+	// Revision and StateChangeSequence move when herdr's own idea of the pane
 	// changes: its agent, its status, its title. Not when the agent draws.
-	Revision       int64 `json:"revision"`
-	StateChangeSeq int64 `json:"state_change_seq"`
-	AgentSession   *struct {
+	Revision            int64 `json:"revision"`
+	StateChangeSequence int64 `json:"state_change_seq"`
+	AgentSession        *struct {
 		Value string `json:"value"`
 	} `json:"agent_session"`
 }
@@ -250,4 +250,11 @@ func (self *herdrClient) lastTyped(paneId string) time.Time {
 	self.typedMutex.Lock()
 	defer self.typedMutex.Unlock()
 	return self.typedAt[paneId]
+}
+
+// forgetTyped forgets a pane that is gone.
+func (self *herdrClient) forgetTyped(paneId string) {
+	self.typedMutex.Lock()
+	defer self.typedMutex.Unlock()
+	delete(self.typedAt, paneId)
 }

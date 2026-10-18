@@ -230,7 +230,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	}
 	hello.Features = append(hello.Features, FeatureAuthorizationForward)
 	if options.Herdr != nil {
-		hello.Features = append(hello.Features, FeatureHerdr, FeatureHerdrFiles)
+		hello.Features = append(hello.Features, FeatureHerdr, FeatureHerdrFiles, FeatureHerdrOpenBeside)
 	}
 	// Closed when the shell the person attached ends. Leaving the shell is
 	// how they detach, so this program ends with it rather than sitting on

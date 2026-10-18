@@ -256,6 +256,11 @@ export function CodingPage() {
       return Object.keys(kept).length === Object.keys(previous).length ? previous : kept
     })
   }, [listedNow, justOpened])
+  // A session just opened stands in for the list's row until the list has
+  // it; after that the list says whether it is still open.
+  useEffect(() => {
+    if (justOpened && listedNow?.sessions.some((session) => isSameSession(session, justOpened))) setJustOpened(null)
+  }, [listedNow, justOpened])
   // The rail's Coding row counts the sessions that ask; this page reads them
   // more often, so it says the count as it reads it.
   const askingNow = listedNow
@@ -510,6 +515,9 @@ function CodingSession({
     setParameters(changed)
   }
   const [turnCount, setTurnCount] = useState(FIRST_TURN_COUNT)
+  // Each tool call's input and result are most of a read's size, so they
+  // are read only once the person opens a tool call.
+  const [isToolDetailWanted, setToolDetailWanted] = useState(false)
   const [isClosing, setClosing] = useState(false)
   const [isClosingBusy, setClosingBusy] = useState(false)
   useEffect(() => setLatest(session), [session])
@@ -546,7 +554,7 @@ function CodingSession({
           computer: session.computer,
           paneId: session.paneId,
           turnCount,
-          shouldIncludeToolDetail: true,
+          shouldIncludeToolDetail: isToolDetailWanted,
         })
         return { ...response.ReadAgentHerdrSession, screenText: '' }
       }
@@ -558,7 +566,7 @@ function CodingSession({
     },
     everyMS,
     view,
-    String(turnCount),
+    `${turnCount}-${isToolDetailWanted}`,
   )
   const readSession = read.data?.herdrSession
   useEffect(() => {
@@ -811,7 +819,7 @@ function CodingSession({
               {shown.turns.length === 0 ? (
                 <p className="coding-empty muted">{t('herdr.noTurns')}</p>
               ) : (
-                <HerdrTurnsList turns={shown.turns} />
+                <HerdrTurnsList turns={shown.turns} onWantToolDetail={() => setToolDetailWanted(true)} />
               )}
             </>
           )}

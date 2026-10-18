@@ -249,6 +249,9 @@ type AgentHerdrTurnView struct {
 	// what the tool answered, when the read asked for them.
 	ToolInputText  string `json:"toolInputText"`
 	ToolResultText string `json:"toolResultText"`
+	// HasToolDetail says a tool turn has an input or a result, which a read
+	// asking for the detail brings.
+	HasToolDetail bool `json:"hasToolDetail"`
 }
 
 // AgentHerdrReadView is a session's last turns.
@@ -334,7 +337,7 @@ func (self *graph) ReadAgentHerdrSession(ctx context.Context, arguments ReadAgen
 	for _, turn := range read.Turns {
 		view.Turns = append(view.Turns, &AgentHerdrTurnView{
 			HerdrTurnRole: turn.HerdrTurnRole, TurnText: turn.TurnText, TurnAt: turn.TurnAt,
-			ToolInputText: turn.ToolInputText, ToolResultText: turn.ToolResultText,
+			ToolInputText: turn.ToolInputText, ToolResultText: turn.ToolResultText, HasToolDetail: turn.HasToolDetail,
 		})
 	}
 	return view, nil

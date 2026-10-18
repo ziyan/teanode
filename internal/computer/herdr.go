@@ -53,6 +53,11 @@ const FeatureHerdr = "herdr"
 // it would type the text alone.
 const FeatureHerdrFiles = "herdr_files"
 
+// FeatureHerdrOpenBeside is a herdr_open given a pane: the new tab opens in
+// that pane's workspace, in its directory, with its agent. A program that
+// predates it would open a workspace of its own.
+const FeatureHerdrOpenBeside = "herdr_open_beside"
+
 // The states of a herdr session, as this program decides them.
 const (
 	HerdrSessionStateIdle    = "idle"
@@ -528,6 +533,7 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 			continue
 		}
 		delete(self.screens, paneId)
+		self.client.forgetTyped(paneId)
 		// The pane closed, or the agent in it ended.
 		gone := *before
 		gone.HerdrSessionState, gone.Question = HerdrSessionStateUnknown, nil
@@ -736,7 +742,7 @@ type herdrKeptScreen struct {
 // says it changed or the kept one is old: see herdrScreenKeptIdle. Called
 // with refreshes held.
 func (self *Herdr) visibleScreen(ctx context.Context, agent *herdrAgent, hook string, lifecycle *codexLifecycle) (string, error) {
-	stateOf := fmt.Sprintf("%d %d %s %s %s", agent.Revision, agent.StateChangeSeq, agent.AgentStatus, agent.TerminalTitleStripped, hook)
+	stateOf := fmt.Sprintf("%d %d %s %s %s", agent.Revision, agent.StateChangeSequence, agent.AgentStatus, agent.TerminalTitleStripped, hook)
 	if lifecycle != nil {
 		stateOf += fmt.Sprintf(" %t %t", lifecycle.isWorking, lifecycle.question != nil)
 	}
@@ -980,8 +986,9 @@ func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrR
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the history of %s: %w", session.named(), err)
 	}
-	if !arguments.ShouldIncludeToolDetail {
-		for _, turn := range turns {
+	for _, turn := range turns {
+		turn.HasToolDetail = turn.ToolInputText != "" || turn.ToolResultText != ""
+		if !arguments.ShouldIncludeToolDetail {
 			turn.ToolInputText, turn.ToolResultText = "", ""
 		}
 	}
@@ -1081,7 +1088,10 @@ func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 		}
 		text = strings.TrimSpace(text + " " + herdrFileMentions(session.CodingAgentKind, filePaths))
 	}
-	if err := self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": text}, nil); err != nil {
+	err = self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": text}, nil)
+	// A prompt is typed into the pane too: its kept screen is old now.
+	self.client.noteTyped(session.PaneID)
+	if err != nil {
 		return nil, fmt.Errorf("the text may not have been typed into %s; look at its screen before sending again: %w", session.named(), err)
 	}
 	return &HerdrSendResult{HerdrSession: session, IsSent: true, FilePaths: filePaths}, nil

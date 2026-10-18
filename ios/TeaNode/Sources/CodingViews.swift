@@ -21,7 +21,7 @@ struct CodingWorkspace: Identifiable {
 }
 
 /// CodingModel is the list of the person's coding sessions, shared by the
-/// list and the session on screen, which keeps the tab strip's states.
+/// list and the session on screen, which keeps the sessions' states.
 @MainActor
 @Observable
 final class CodingModel {
@@ -96,7 +96,10 @@ final class CodingModel {
             let grouped = seen.map { workspaceId in
                 let sessions = onComputer.filter { $0.workspaceId == workspaceId }.sorted { $0.tabNumber < $1.tabNumber }
                 return CodingWorkspace(
-                    id: "\(computer)/\(workspaceId)", computer: computer, title: sessions.first?.workspaceTitle ?? computer, sessions: sessions)
+                    id: "\(computer)/\(workspaceId)", computer: computer,
+                    // A computer program too old to say where a pane is gives
+                    // no workspace: its sessions are listed under no heading.
+                    title: workspaceId.isEmpty ? "" : sessions.first?.workspaceTitle ?? computer, sessions: sessions)
             }
             result += grouped.sorted { ($0.sessions.first?.workspaceNumber ?? 0) < ($1.sessions.first?.workspaceNumber ?? 0) }
         }
@@ -156,9 +159,11 @@ struct CodingScreen: View {
                     ForEach(model.computers) { computer in
                         Section {
                             ForEach(computer.workspaces) { workspace in
-                                CodingWorkspaceHeader(workspace: workspace)
-                                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 0, trailing: 16))
-                                    .listRowSeparator(.hidden)
+                                if !workspace.title.isEmpty {
+                                    CodingWorkspaceHeader(workspace: workspace)
+                                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 0, trailing: 16))
+                                        .listRowSeparator(.hidden)
+                                }
                                 ForEach(workspace.sessions) { session in
                                     NavigationLink(value: CodingTarget(computer: session.computer, paneId: session.paneId)) {
                                         CodingSessionRow(session: session)
@@ -236,7 +241,7 @@ struct CodingScreen: View {
                 }
             }
             #if DEBUG
-                // A screenshot of a session with its tab strip and
+                // A screenshot of a session with its
                 // transcript (`-TeaNodeScreen coding-session`).
                 .task {
                     if DemoServer.isRequested, DemoServer.screen == "coding-session", path.isEmpty {
@@ -367,7 +372,7 @@ enum CodingPart: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// CodingSessionView is one coding session: its workspace's tabs, what was
+/// CodingSessionView is one coding session: what was
 /// said in it or its screen, the question it asks, and a field to type into
 /// it. It reads again while it is on screen.
 struct CodingSessionView: View {
@@ -394,6 +399,13 @@ struct CodingSessionView: View {
     @State private var isOpeningTab = false
     @State private var isConfirmingClose = false
     @State private var isAtEnd = true
+    /// Whether the person opened a tool call, so reads bring each one's
+    /// input and result; until then they are left out, being most of a
+    /// read's size.
+    @State private var isToolDetailWanted = false
+    /// The last failure said, so a read failing again every few seconds is
+    /// not said again each time.
+    @State private var failureText: String?
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
 
     /// How many turns are read at first, and the most the server gives.
@@ -415,6 +427,10 @@ struct CodingSessionView: View {
         Group {
             if let session {
                 content(session)
+            } else if model.list != nil {
+                // The list was read and the session is not in it: closed on
+                // the computer, or its agent ended. The back button leads on.
+                ContentUnavailableView("This session is no longer open.", systemImage: "xmark.circle")
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -432,7 +448,7 @@ struct CodingSessionView: View {
         }
         // Read while this is on screen and the app is in front: quickly
         // while the session works or asks, slowly while it is idle.
-        .task(id: "\(selectedId)-\(part.rawValue)-\(turnCount)-\(scenePhase == .active)") {
+        .task(id: "\(selectedId)-\(part.rawValue)-\(turnCount)-\(isToolDetailWanted)-\(scenePhase == .active)") {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 await refresh()
@@ -514,7 +530,7 @@ struct CodingSessionView: View {
                     }
                 }
                 ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
-                    CodingTurnView(turn: turn)
+                    CodingTurnView(turn: turn) { isToolDetailWanted = true }
                 }
                 if turns.isEmpty, isRead {
                     Text("Nothing has been said in this session yet.")
@@ -622,7 +638,9 @@ struct CodingSessionView: View {
             } label: {
                 Label("New tab", systemImage: "plus")
             }
-            .disabled(isOpeningTab)
+            // A computer program too old to say where the pane is cannot
+            // open beside it.
+            .disabled(isOpeningTab || session.workspaceId.isEmpty)
             Button {
                 Task { await show(session) }
             } label: {
@@ -690,7 +708,8 @@ struct CodingSessionView: View {
                 turns = []
                 isTruncated = false
             case .turns:
-                let read = try await connection.readHerdrSession(computer: session.computer, paneId: session.paneId, turnCount: turnCount)
+                let read = try await connection.readHerdrSession(
+                    computer: session.computer, paneId: session.paneId, turnCount: turnCount, shouldIncludeToolDetail: isToolDetailWanted)
                 guard isCurrent() else { return }
                 turns = read.turns
                 isTruncated = read.isTruncated
@@ -702,12 +721,15 @@ struct CodingSessionView: View {
                 model.upsert(read.herdrSession)
             }
             isRead = true
+            failureText = nil
             // The list, for this session's state and the list a step back.
             await model.load()
         } catch is CancellationError {
         } catch {
             guard isCurrent(), (error as? URLError)?.code != .cancelled else { return }
-            problemText = app.describe(error)
+            let described = app.describe(error)
+            if described != failureText { problemText = described }
+            failureText = described
             isRead = true
         }
     }
@@ -802,13 +824,11 @@ struct CodingSessionView: View {
     }
 }
 
-/// CodingTurnView is one thing said or done in a session: the person's words
-/// on the right in a bubble, the agent's on the left, a tool as one quiet
-/// line.
 /// CodingToolTurnView is a tool call: one line, which opens, when the read
 /// gave them, to the tool's whole input and what it answered.
 struct CodingToolTurnView: View {
     let turn: HerdrTurn
+    var onWantDetail: () -> Void = {}
     @State private var isOpen = false
 
     var body: some View {
@@ -817,6 +837,9 @@ struct CodingToolTurnView: View {
             // VoiceOver as it does everywhere else.
             DisclosureGroup(isExpanded: $isOpen) {
                 VStack(alignment: .leading, spacing: 10) {
+                    if !turn.isToolDetailLoaded {
+                        ProgressView().frame(maxWidth: .infinity)
+                    }
                     if let input = turn.toolInputText, !input.isEmpty {
                         detail(title: String(localized: "Input"), text: input)
                     }
@@ -833,6 +856,9 @@ struct CodingToolTurnView: View {
             }
             .tint(.secondary)
             .padding(.horizontal, 4)
+            .onChange(of: isOpen) { _, isOpened in
+                if isOpened, !turn.isToolDetailLoaded { onWantDetail() }
+            }
         } else {
             line.padding(.horizontal, 4)
         }
@@ -858,8 +884,13 @@ struct CodingToolTurnView: View {
     }
 }
 
+/// CodingTurnView is one thing said or done in a session: the person's words
+/// on the right in a bubble, the agent's on the left, a tool as one quiet
+/// line.
 struct CodingTurnView: View {
     let turn: HerdrTurn
+    /// Asks for the tool calls' detail, when one is opened before it came.
+    var onWantToolDetail: () -> Void = {}
 
     var body: some View {
         switch turn.herdrTurnRole {
@@ -873,7 +904,7 @@ struct CodingTurnView: View {
                     .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
             }
         case "tool":
-            CodingToolTurnView(turn: turn)
+            CodingToolTurnView(turn: turn, onWantDetail: onWantToolDetail)
         default:
             AgentBubble {
                 Text(Self.markdown(turn.turnText))

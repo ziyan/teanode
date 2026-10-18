@@ -61,6 +61,9 @@ type HerdrTurn struct {
 	// only when a read asks for them.
 	ToolInputText  string `json:"toolInputText,omitempty"`
 	ToolResultText string `json:"toolResultText,omitempty"`
+	// HasToolDetail says a tool turn has an input or a result to show,
+	// whether or not the read asked for them.
+	HasToolDetail bool `json:"hasToolDetail,omitempty"`
 
 	// toolCallID ties a tool turn to the result that answers it, which a
 	// later line of the history file holds.

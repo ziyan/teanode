@@ -286,7 +286,7 @@ struct MainView: View {
         // known yet.
         if app.services == nil { await app.refreshServices() }
         repeat {
-            if section != .coding { await app.refreshCodingPresence(isKeeping: false) }
+            if section != .coding { await app.refreshCodingPresence() }
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
         } while !Task.isCancelled && scenePhase == .active
     }

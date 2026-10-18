@@ -163,6 +163,42 @@ it('puts the selected session in the address and reads it', async () => {
   )
 })
 
+it("reads the tool calls' detail only once one is opened", async () => {
+  execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    if (document === HERDR_DOCUMENTS.ListAgentHerdrSessions) return { ListAgentHerdrSessions: list }
+    const isDetailed = variables?.shouldIncludeToolDetail === true
+    return {
+      ReadAgentHerdrSession: {
+        herdrSession: find('laptop', String(variables?.paneId)),
+        turns: [
+          {
+            herdrTurnRole: 'tool',
+            turnText: 'Read notes.txt',
+            hasToolDetail: true,
+            toolInputText: isDetailed ? 'notes.txt' : '',
+            toolResultText: isDetailed ? 'remember the milk' : '',
+          },
+        ],
+        isTruncated: false,
+      },
+    }
+  })
+  renderAt('/coding?computer=laptop&pane=w1%3Ap1')
+  const line = await screen.findByText('Read notes.txt')
+  expect(execute).not.toHaveBeenCalledWith(
+    HERDR_DOCUMENTS.ReadAgentHerdrSession,
+    expect.objectContaining({ shouldIncludeToolDetail: true }),
+  )
+  const details = line.closest('details') as HTMLDetailsElement
+  details.open = true
+  fireEvent(details, new Event('toggle'))
+  await screen.findByText('remember the milk')
+  expect(execute).toHaveBeenCalledWith(
+    HERDR_DOCUMENTS.ReadAgentHerdrSession,
+    expect.objectContaining({ paneId: 'w1:p1', shouldIncludeToolDetail: true }),
+  )
+})
+
 it('switches tabs by changing the address and reading the other session', async () => {
   renderAt('/coding?computer=laptop&pane=w1%3Ap1')
   await screen.findByText('hello w1:p1')

@@ -41,15 +41,17 @@ export function announceHerdrAsking(askingCount: number) {
 // useHerdrPresence says whether a computer reports herdr, and how many of
 // the person's coding sessions ask something.
 export function useHerdrPresence(isAsked: boolean): HerdrPresence {
-  const [askCount, setAskCount] = useState(0)
-  const [announced, setAnnounced] = useState<{ askingCount: number; askCount: number } | null>(null)
+  const [recheckCount, setRecheckCount] = useState(0)
+  // A count the Coding page announced, with the answer it came after: it
+  // stands until a newer answer comes.
+  const [announced, setAnnounced] = useState<{ askingCount: number; after: number } | null>(null)
   useEffect(() => {
     if (!isAsked) return
     let askedAt = Date.now()
     const recheck = () => {
       if (document.visibilityState !== 'visible' || Date.now() - askedAt < RECHECK_MS) return
       askedAt = Date.now()
-      setAskCount((count) => count + 1)
+      setRecheckCount((count) => count + 1)
     }
     const timer = window.setInterval(recheck, RECHECK_MS)
     document.addEventListener('visibilitychange', recheck)
@@ -60,25 +62,32 @@ export function useHerdrPresence(isAsked: boolean): HerdrPresence {
       window.removeEventListener('focus', recheck)
     }
   }, [isAsked])
+  // How many answers the rail's own ask has had, counted as each arrives.
+  const answerCount = useRef(0)
+  const lastAnswer = useRef<unknown>(null)
   useEffect(() => {
     const onAnnounced = (event: Event) => {
       const askingCount = (event as CustomEvent<number>).detail
-      if (typeof askingCount === 'number') setAnnounced({ askingCount, askCount })
+      if (typeof askingCount === 'number') setAnnounced({ askingCount, after: answerCount.current })
     }
     window.addEventListener(ASKING_EVENT, onAnnounced)
     return () => window.removeEventListener(ASKING_EVENT, onAnnounced)
-  }, [askCount])
+  }, [])
   const { data, error } = useQuery(
     async () =>
       isAsked
         ? { ...(await graphql<HerdrPresenceData>(HERDR_PRESENCE)), isAsked: true }
         : { ListAgentHerdrSessions: { computerNames: [], sessions: [] }, isAsked: false },
-    [isAsked, askCount],
+    [isAsked, recheckCount],
     { refresh: false },
   )
   // The last answer stands through a failed recheck, so a row the person
   // already had does not vanish for one lost request.
   const lastKnown = useRef<HerdrPresence | null>(null)
+  if (data && !error && data !== lastAnswer.current) {
+    lastAnswer.current = data
+    answerCount.current += 1
+  }
   if (!isAsked) return { isPresent: false, askingCount: 0 }
   if (data?.isAsked && !error) {
     const list = data.ListAgentHerdrSessions
@@ -87,9 +96,9 @@ export function useHerdrPresence(isAsked: boolean): HerdrPresence {
       askingCount: list.sessions.filter((session) => session.herdrSessionState === 'asking').length,
     }
   }
-  // A count the Coding page announced since the last ask is the newer one.
+  // A count the Coding page announced since the last answer is the newer one.
   const askingCount =
-    announced && announced.askCount === askCount ? announced.askingCount : (lastKnown.current?.askingCount ?? 0)
+    announced && announced.after === answerCount.current ? announced.askingCount : (lastKnown.current?.askingCount ?? 0)
   if (lastKnown.current !== null) return { isPresent: lastKnown.current.isPresent, askingCount }
   return { isPresent: error ? false : null, askingCount: 0 }
 }

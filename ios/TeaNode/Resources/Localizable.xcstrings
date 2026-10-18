@@ -4703,6 +4703,22 @@
         }
       }
     },
+    "This session is no longer open.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションはもう開いていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个会话已不再打开。"
+          }
+        }
+      }
+    },
     "Type an answer": {
       "localizations": {
         "ja": {
