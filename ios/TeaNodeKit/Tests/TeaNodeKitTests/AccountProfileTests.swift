@@ -115,6 +115,43 @@ final class AccountProfileTests: XCTestCase {
         XCTAssertEqual(variables["timezoneMode"], .string("fixed"))
     }
 
+    // MARK: Pronoun
+
+    func testTheProfileCarriesHowThePersonIsDescribed() async throws {
+        let (connection, _) = connection(answering: #"""
+            {"data":{"GetCurrentUser":{"id":"user-1","username":"robin","name":"Robin","email":null,"timezone":"","timezoneMode":"","pronoun":"she"}}}
+            """#)
+        let read = try await connection.accountProfile()
+        XCTAssertEqual(read?.chosenPronoun, .she)
+        XCTAssertEqual(profile.chosenPronoun, .notSet, "a profile read from a server that predates it has none")
+        XCTAssertEqual(AccountProfile(id: "user-1", username: "robin", pronoun: "someone").chosenPronoun, .notSet)
+    }
+
+    func testChangingThePronounIsAChangeAndIsSentWithTheProfile() {
+        var draft = ProfileDraft(profile)
+        XCTAssertEqual(draft.pronoun, .notSet)
+        XCTAssertEqual(draft.variables["pronoun"], .string(""))
+        draft.pronoun = .they
+        XCTAssertTrue(draft.hasChanges)
+        XCTAssertTrue(draft.canSave)
+        XCTAssertEqual(draft.variables["pronoun"], .string("they"))
+        // Taking it back to not set clears it on the server.
+        var chosen = ProfileDraft(AccountProfile(id: "user-1", username: "robin", pronoun: "he"))
+        XCTAssertFalse(chosen.hasChanges)
+        chosen.pronoun = .notSet
+        XCTAssertTrue(chosen.hasChanges)
+        XCTAssertEqual(chosen.variables["pronoun"], .string(""))
+    }
+
+    func testSettingThePronounAloneSendsOnlyThePersonAndThePronoun() async throws {
+        let (connection, fake) = connection(answering: #"""
+            {"data":{"UpdateUser":{"id":"user-1","username":"robin","name":"Robin","email":null,"timezone":"","timezoneMode":"","pronoun":"he"}}}
+            """#)
+        let saved = try await connection.setAccountPronoun("user-1", pronoun: .he)
+        XCTAssertEqual(saved.chosenPronoun, .he)
+        XCTAssertEqual(try sentVariables(fake), ["userId": .string("user-1"), "pronoun": .string("he")])
+    }
+
     // MARK: Picture
 
     func testDecodesThePictureAndColorTheServerChose() async throws {

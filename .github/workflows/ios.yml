@@ -502,7 +502,7 @@ jobs:
           # circle's page as its admin and as somebody who also runs the
           # server, the offer to join a circle, the picture on the profile, and
           # the sheet and the card of a shared skill: Settings pushes them.
-          for circles_screen in circles circle-detail circle-detail-operator circle-join-offer settings-picture skill-share-sheet skill-share-call; do
+          for circles_screen in circles circle-detail circle-detail-operator circle-relationship circle-join-offer settings-picture skill-share-sheet skill-share-call; do
             shoot "$circles_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"

@@ -64,6 +64,16 @@ struct PreferencesView: View {
                     Text("Shown in TeaNode. Optional: without one, your username is used.")
                 }
                 Section {
+                    Picker("Pronoun", selection: draft.pronoun) {
+                        ForEach(PersonPronoun.allCases, id: \.self) { pronoun in
+                            Text(verbatim: pronoun.title).tag(pronoun)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                } footer: {
+                    Text("Used for how you appear to people in your circles, such as son or daughter, and how your agent speaks of you.")
+                }
+                Section {
                     TextField("Username", text: draft.username)
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)

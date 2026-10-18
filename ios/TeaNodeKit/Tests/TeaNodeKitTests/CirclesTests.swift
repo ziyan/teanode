@@ -233,4 +233,198 @@ final class CirclesTests: XCTestCase {
         XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "colleagues"), calendarId: nil, canShareLocation: true))
         XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "friends"), calendarId: nil, canShareLocation: true))
     }
+
+    // MARK: Relationships
+
+    private let termsAnswer = #"""
+        {"data":{"ListRelationshipTerms":[
+          {"term":"parent","relationshipKind":"parent","termGender":"neutral","word":"parent"},
+          {"term":"father","relationshipKind":"parent","termGender":"masculine","word":"father"},
+          {"term":"mother","relationshipKind":"parent","termGender":"feminine","word":"mother"},
+          {"term":"child","relationshipKind":"child","termGender":"neutral","word":"child"},
+          {"term":"cousin","relationshipKind":"cousin","termGender":"neutral","word":"cousin"},
+          {"term":"friend","relationshipKind":"friend","termGender":"neutral","word":"friend"}]}}
+        """#
+
+    private func related(kind: String, termGender: String, word: String) throws -> CircleMember {
+        let json = """
+            {"userId":"user-2","username":"person-b","name":"Person B","avatarUrl":null,"avatarColorIndex":3,"memberRole":"member",
+             "joinedAt":"2030-01-02T00:00:00Z","relationshipKind":"\(kind)","relationshipTermGender":"\(termGender)","relationshipWord":"\(word)"}
+            """
+        return try JSONDecoder().decode(CircleMember.self, from: Data(json.utf8))
+    }
+
+    func testMembersCarryWhatTheyAreToTheCallerAndNothingWhenNeitherHasSaid() async throws {
+        let withRelationship = circleAnswer.replacingOccurrences(
+            of: #""memberRole":"member","joinedAt":"2030-01-02T00:00:00Z""#,
+            with: #""memberRole":"member","joinedAt":"2030-01-02T00:00:00Z","relationshipKind":"parent","relationshipTermGender":"masculine","relationshipWord":"father""#)
+        let (connection, fake) = connection(answering: #"{"data":{"ReadCircle":\#(withRelationship)}}"#)
+        let circle = try await connection.circle("circle-1")
+
+        let father = try XCTUnwrap(circle.member("user-2"))
+        XCTAssertTrue(father.hasRelationship)
+        XCTAssertEqual(father.knownRelationshipKind, .parent)
+        XCTAssertEqual(father.knownRelationshipTermGender, .masculine)
+        XCTAssertEqual(father.relationshipWord, "father")
+
+        // The caller's own row, and a server that predates the fields, say nothing.
+        let own = try XCTUnwrap(circle.member("user-1"))
+        XCTAssertFalse(own.hasRelationship)
+        XCTAssertEqual(own.relationshipKind, "")
+        XCTAssertEqual(own.relationshipTermGender, "")
+        XCTAssertEqual(own.relationshipWord, "")
+        XCTAssertNil(own.knownRelationshipKind)
+        XCTAssertEqual(own.knownRelationshipTermGender, .neutral)
+
+        let sent = String(decoding: try XCTUnwrap(fake.sent.first?.httpBody), as: UTF8.self)
+        XCTAssertTrue(sent.contains("relationshipKind relationshipTermGender relationshipWord"))
+    }
+
+    func testAKindTheAppDoesNotKnowIsKeptWithItsEnglishWord() throws {
+        let member = try related(kind: "godparent", termGender: "neutral", word: "godparent")
+        XCTAssertTrue(member.hasRelationship)
+        XCTAssertNil(member.knownRelationshipKind)
+        XCTAssertEqual(member.relationshipWord, "godparent")
+    }
+
+    func testEveryKindHasAnOppositeThatPointsBack() {
+        for kind in RelationshipKind.allCases {
+            XCTAssertEqual(kind.opposite.opposite, kind, kind.rawValue)
+        }
+        XCTAssertEqual(RelationshipKind.parent.opposite, .child)
+        XCTAssertEqual(RelationshipKind.auntOrUncle.opposite, .nieceOrNephew)
+        XCTAssertEqual(RelationshipKind.parentInLaw.opposite, .childInLaw)
+        XCTAssertEqual(RelationshipKind.stepParent.opposite, .stepChild)
+        XCTAssertEqual(RelationshipKind.spouse.opposite, .spouse)
+        XCTAssertEqual(RelationshipKind.allCases.count, 17)
+    }
+
+    func testOnlyACousinAFriendAndAColleagueHaveNoGenderedWords() {
+        let plain = RelationshipKind.allCases.filter { !$0.hasGenderedWords }
+        XCTAssertEqual(Set(plain), [.cousin, .friend, .colleague])
+    }
+
+    func testAPronounGendersTheWordsForThePerson() {
+        XCTAssertEqual(PersonPronoun.he.termGender, .masculine)
+        XCTAssertEqual(PersonPronoun.she.termGender, .feminine)
+        XCTAssertEqual(PersonPronoun.they.termGender, .neutral)
+        XCTAssertEqual(PersonPronoun.notSet.termGender, .neutral)
+        XCTAssertEqual(PersonPronoun.notSet.rawValue, "")
+        XCTAssertEqual(PersonPronoun.choices, [.he, .she, .they])
+    }
+
+    func testReadsTheTermsInTheOrderTheServerOffersThem() async throws {
+        let (connection, fake) = connection(answering: termsAnswer)
+        let terms = try await connection.relationshipTerms()
+        XCTAssertEqual(terms.map(\.term), ["parent", "father", "mother", "child", "cousin", "friend"])
+        XCTAssertEqual(terms[1].knownRelationshipKind, .parent)
+        XCTAssertEqual(terms[1].knownTermGender, .masculine)
+        XCTAssertEqual(terms[1].id, "father")
+        XCTAssertEqual(fake.sent.count, 1)
+    }
+
+    func testSettingARelationshipSendsTheTermAndAnswersTheMemberAsTheCallerNowSeesThem() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"SetPersonRelationship":{"userId":"user-2","username":"person-b","name":"Person B","avatarUrl":null,
+                 "avatarColorIndex":3,"memberRole":"","joinedAt":"2030-01-02T00:00:00Z","relationshipKind":"parent",
+                 "relationshipTermGender":"feminine","relationshipWord":"mother"}}}
+                """#)
+        let member = try await connection.setPersonRelationship("user-2", term: "mother")
+        XCTAssertEqual(member.relationshipWord, "mother")
+        XCTAssertEqual(member.knownRelationshipKind, .parent)
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["userId": .string("user-2"), "relationshipTerm": .string("mother")])
+    }
+
+    func testRemovingARelationshipSaysWhetherThereWasOne() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"RemovePersonRelationship":true}}"#)
+        let wasThere = try await connection.removePersonRelationship("user-2")
+        XCTAssertTrue(wasThere)
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["userId": .string("user-2")])
+
+        let (emptyConnection, _) = self.connection(answering: #"{"data":{"RemovePersonRelationship":false}}"#)
+        let wasNone = try await emptyConnection.removePersonRelationship("user-2")
+        XCTAssertFalse(wasNone)
+    }
+
+    func testTheSheetStartsOnTheTermTheMemberHasNow() async throws {
+        let (connection, _) = connection(answering: termsAnswer)
+        let terms = try await connection.relationshipTerms()
+
+        let father = try related(kind: "parent", termGender: "masculine", word: "father")
+        XCTAssertEqual(PersonRelationshipDraft(member: father, terms: terms, ownPronoun: .notSet).selectedTerm, "father")
+        // The word follows how the member is described, which may have no
+        // word of that gender: the neutral one stands in.
+        let cousin = try related(kind: "cousin", termGender: "feminine", word: "cousin")
+        XCTAssertEqual(PersonRelationshipDraft(member: cousin, terms: terms, ownPronoun: .notSet).selectedTerm, "cousin")
+        let none = try XCTUnwrap(try JSONDecoder().decode(PeopleCircle.self, from: Data(circleAnswer.utf8)).member("user-2"))
+        let untouched = PersonRelationshipDraft(member: none, terms: terms, ownPronoun: .notSet)
+        XCTAssertEqual(untouched.selectedTerm, "")
+        XCTAssertTrue(untouched.isRemoving)
+        XCTAssertFalse(untouched.canSave)
+    }
+
+    func testChoosingATermNamesWhatTheOtherPersonWillSeeAndAsksHowThePersonIsDescribed() async throws {
+        let (connection, _) = connection(answering: termsAnswer)
+        let terms = try await connection.relationshipTerms()
+        let none = try XCTUnwrap(try JSONDecoder().decode(PeopleCircle.self, from: Data(circleAnswer.utf8)).member("user-2"))
+
+        var draft = PersonRelationshipDraft(member: none, terms: terms, ownPronoun: .notSet)
+        draft.selectedTerm = "mother"
+        XCTAssertEqual(draft.selectedKind, .parent)
+        XCTAssertEqual(draft.oppositeKind, .child)
+        XCTAssertTrue(draft.isPronounAsked)
+        XCTAssertNil(draft.pronounToSet, "nothing is set until one is chosen")
+        XCTAssertTrue(draft.canSave)
+        draft.pronoun = .she
+        XCTAssertEqual(draft.pronounToSet, .she)
+        XCTAssertEqual(draft.oppositeTermGender, .feminine)
+
+        // A friend is the same word whoever they are: nothing to ask.
+        draft.selectedTerm = "friend"
+        XCTAssertFalse(draft.isPronounAsked)
+        XCTAssertNil(draft.pronounToSet)
+
+        // Somebody who has said already is not asked again.
+        var known = PersonRelationshipDraft(member: none, terms: terms, ownPronoun: .he)
+        known.selectedTerm = "father"
+        XCTAssertFalse(known.isPronounAsked)
+        XCTAssertEqual(known.oppositeTermGender, .masculine)
+    }
+
+    func testSavingTheSheetSetsThePronounFirstThenTheRelationship() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"UpdateUser":{"id":"user-1","username":"robin","pronoun":"she"},
+                 "SetPersonRelationship":{"userId":"user-2","username":"person-b","memberRole":"","joinedAt":"2030-01-02T00:00:00Z",
+                 "relationshipKind":"parent","relationshipTermGender":"feminine","relationshipWord":"mother"}}}
+                """#)
+        let terms = [RelationshipTerm(term: "mother", relationshipKind: "parent", termGender: "feminine", word: "mother")]
+        let none = try XCTUnwrap(try JSONDecoder().decode(PeopleCircle.self, from: Data(circleAnswer.utf8)).member("user-2"))
+        var draft = PersonRelationshipDraft(member: none, terms: terms, ownPronoun: .notSet)
+        draft.selectedTerm = "mother"
+        draft.pronoun = .she
+
+        try await connection.saveRelationship(draft, ownUserId: "user-1")
+
+        XCTAssertEqual(fake.sent.count, 2)
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["userId": .string("user-1"), "pronoun": .string("she")])
+        XCTAssertEqual(try sentVariables(fake.sent[1]), ["userId": .string("user-2"), "relationshipTerm": .string("mother")])
+    }
+
+    func testSavingNoneRemovesTheRelationshipAndLeavesThePronounAlone() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"RemovePersonRelationship":true}}"#)
+        let terms = [RelationshipTerm(term: "mother", relationshipKind: "parent", termGender: "feminine", word: "mother")]
+        let mother = try related(kind: "parent", termGender: "feminine", word: "mother")
+        var draft = PersonRelationshipDraft(member: mother, terms: terms, ownPronoun: .notSet)
+        XCTAssertFalse(draft.canSave)
+        draft.selectedTerm = ""
+        draft.pronoun = .he
+        XCTAssertTrue(draft.canSave)
+
+        try await connection.saveRelationship(draft, ownUserId: "user-1")
+
+        XCTAssertEqual(fake.sent.count, 1)
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["userId": .string("user-2")])
+    }
 }
