@@ -1229,4 +1229,3 @@ func TestTwoFilesRecordedAtOnceForOneAccountDoNotDeadlock(test *testing.T) {
 		test.Fatalf("%s files recorded, want 2", count)
 	}
 }
-
