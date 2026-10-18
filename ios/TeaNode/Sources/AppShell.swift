@@ -560,16 +560,16 @@ struct SideMenu: View {
                                     Label(part.title, systemImage: part.systemImage)
                                         .foregroundStyle(.primary)
                                 }
+                                .id(Self.partItemId(part.id))
                                 .menuRow(isSelected: financePart == part)
                             }
                         }
                         .listSectionSeparator(.hidden)
-                        .id(Self.partItemsSectionId)
                     }
                     .menuListStyle()
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { MenuBrand() }
-                    .task { await showPartItems(scroller) }
+                    .task { await showPartItems(scroller, lastItemId: FinancePart.allCases.last?.id) }
                 }
             }
         case .location:
@@ -587,16 +587,16 @@ struct SideMenu: View {
                                     Label(segment.title, systemImage: segment.systemImage)
                                         .foregroundStyle(.primary)
                                 }
+                                .id(Self.partItemId(segment.id))
                                 .menuRow(isSelected: locationSegment == segment)
                             }
                         }
                         .listSectionSeparator(.hidden)
-                        .id(Self.partItemsSectionId)
                     }
                     .menuListStyle()
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { MenuBrand() }
-                    .task { await showPartItems(scroller) }
+                    .task { await showPartItems(scroller, lastItemId: LocationSegment.allCases.last?.id) }
                 }
             }
         case .photos:
@@ -614,16 +614,16 @@ struct SideMenu: View {
                                     Label(collection.title, systemImage: collection.symbolName)
                                         .foregroundStyle(.primary)
                                 }
+                                .id(Self.partItemId(collection.id))
                                 .menuRow(isSelected: photos.section == collection)
                             }
                         }
                         .listSectionSeparator(.hidden)
-                        .id(Self.partItemsSectionId)
                     }
                     .menuListStyle()
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { MenuBrand() }
-                    .task { await showPartItems(scroller) }
+                    .task { await showPartItems(scroller, lastItemId: photos.sections.last?.id) }
                 }
             }
         default:
@@ -639,19 +639,23 @@ struct SideMenu: View {
         }
     }
 
-    /// The id of the section that lists the items of the part on screen, under the list of the parts.
-    private static let partItemsSectionId = "partItems"
+    /// The id of a row that lists one of the items of the part on screen, under the list of the parts.
+    private static func partItemId(_ itemId: some Hashable) -> String { "partItem \(itemId)" }
 
     /// Scrolls the menu down to the items of the part on screen, as it opens: they are what the
     /// person opened the menu for, and under all the parts they would otherwise start below the
-    /// bottom of the screen. The list is not scrolled past its end, so the parts stay in view
+    /// bottom of the screen. The last item is brought to the bottom, so the parts stay in view
     /// above the items for as long as there is room. The menu is drawn anew each time it opens,
-    /// so this runs each time. The list is given a moment to lay out its rows first, since a
-    /// scroll asked for before that finds nothing to scroll to.
-    private func showPartItems(_ scroller: ScrollViewProxy) async {
-        try? await Task.sleep(for: .milliseconds(50))
-        guard !Task.isCancelled else { return }
-        scroller.scrollTo(Self.partItemsSectionId, anchor: .top)
+    /// so this runs each time. A scroll asked for before the list has laid out its rows finds
+    /// nothing to scroll to, and the menu slides in as it opens, so the scroll is asked for once
+    /// the rows are there and again once the menu is in place.
+    private func showPartItems(_ scroller: ScrollViewProxy, lastItemId: (some Hashable)?) async {
+        guard let lastItemId else { return }
+        for delay in [50, 400] {
+            try? await Task.sleep(for: .milliseconds(delay))
+            guard !Task.isCancelled else { return }
+            scroller.scrollTo(Self.partItemId(lastItemId), anchor: .bottom)
+        }
     }
 
     private var sections: some View {
