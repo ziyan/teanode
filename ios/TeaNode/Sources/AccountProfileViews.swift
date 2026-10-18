@@ -37,10 +37,12 @@ struct PreferencesView: View {
                             Label("Choose a picture", systemImage: "photo")
                         }
                         .disabled(isChangingPicture)
+                        .fullWidthRowSeparator()
                         if pictureProfile.avatarUrl?.isEmpty == false {
                             Button("Remove picture", systemImage: "trash", role: .destructive) {
                                 Task { await removePicture() }
                             }
+                            .tint(.red)
                             .disabled(isChangingPicture)
                         }
                     } header: {
@@ -270,6 +272,7 @@ struct ChangePasswordView: View {
             } footer: {
                 if draft.doesConfirmationDiffer {
                     Label("These do not match.", systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.red)
                 }
             }
         }
@@ -371,6 +374,7 @@ struct PhonesView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = phone }
+                                .tint(.red)
                             if phone.canBeNotified {
                                 Button("Test", systemImage: "bell.badge") {
                                     Task { await test(phone) }
@@ -385,6 +389,7 @@ struct PhonesView: View {
                                 }
                             }
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = phone }
+                                .tint(.red)
                         }
                         .confirmationDialog(
                             "Remove this phone?", isPresented: Binding(get: { removing?.id == phone.id }, set: { if !$0 { removing = nil } }), titleVisibility: .visible
@@ -628,9 +633,11 @@ struct PasskeysView: View {
                         PasskeyRow(passkey: passkey)
                             .swipeActions {
                                 Button("Remove", systemImage: "trash", role: .destructive) { removing = passkey }
+                                    .tint(.red)
                             }
                             .contextMenu {
                                 Button("Remove", systemImage: "trash", role: .destructive) { removing = passkey }
+                                    .tint(.red)
                             }
                             .confirmationDialog(
                                 "Remove this passkey?", isPresented: Binding(get: { removing?.id == passkey.id }, set: { if !$0 { removing = nil } }), titleVisibility: .visible

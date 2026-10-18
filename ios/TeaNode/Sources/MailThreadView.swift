@@ -50,7 +50,7 @@ struct MailThreadScreen: View {
                     // The pages of memory the message that was opened is linked to.
                     InMemoryCard(model: memory)
                 } else if let problemText {
-                    ContentUnavailableView("This conversation could not be read", systemImage: "envelope.badge", description: Text(problemText))
+                    ContentUnavailableView("This conversation could not be read", systemImage: "envelope.badge", description: Text(problemText.asReasonSentence))
                 } else {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 200)
                 }
@@ -223,6 +223,7 @@ struct MailThreadScreen: View {
             } label: {
                 Label(currentFolder?.kind == "trash" ? LocalizedStringKey("Delete forever") : "Delete", systemImage: "trash")
             }
+            .tint(.red)
             Spacer()
             if let newest, !newest.draft {
                 Menu {
@@ -317,6 +318,7 @@ struct HeldReplyBanner: View {
                         onChange()
                     }
                 }
+                .tint(.red)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
@@ -524,7 +526,7 @@ struct MessageCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let problemText {
-            Text(problemText).font(.footnote).foregroundStyle(.red)
+            Text(problemText.asReasonSentence).font(.footnote).foregroundStyle(.red)
         } else {
             ProgressView().frame(maxWidth: .infinity)
         }

@@ -302,6 +302,7 @@ struct KnowledgeSourcesView: View {
             }
             .swipeActions {
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                    .tint(.red)
                 pauseButton(source).tint(.orange)
             }
             .contextMenu {
@@ -309,6 +310,7 @@ struct KnowledgeSourcesView: View {
                 syncButton(source)
                 pauseButton(source)
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                    .tint(.red)
             }
         } else {
             Button {
@@ -321,6 +323,7 @@ struct KnowledgeSourcesView: View {
             }
             .swipeActions {
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                    .tint(.red)
                 pauseButton(source).tint(.orange)
             }
             .contextMenu {
@@ -331,6 +334,7 @@ struct KnowledgeSourcesView: View {
                     Button("Files it decided against opening", systemImage: "doc.badge.ellipsis") { declinedSource = source }
                 }
                 Button("Stop reading it", systemImage: "trash", role: .destructive) { removing = source }
+                    .tint(.red)
             }
         }
     }
@@ -415,7 +419,7 @@ struct KnowledgeSourceRow: View {
                     )
                 }
                 if !source.enabled { Text("Paused; nothing it found is lost, and resuming reads it again.") }
-                if !source.lastError.isEmpty { Text(verbatim: source.lastError) }
+                if !source.lastError.isEmpty { Text(verbatim: source.lastError.asReasonSentence) }
             }
             .font(.footnote)
             .foregroundStyle(Color(.secondaryLabel))
@@ -1120,6 +1124,7 @@ struct AgentMemorySettingsView: View {
                 }
                 .swipeActions {
                     Button("Forget", systemImage: "trash", role: .destructive) { forgetting = learned }
+                        .tint(.red)
                 }
             }
         } header: {
@@ -1897,7 +1902,7 @@ struct AgentDreamRow: View {
                     Text(verbatim: headlineText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
                 }
                 if let lastError = dream.lastError, !lastError.isEmpty {
-                    Text(verbatim: lastError).font(.footnote).foregroundStyle(.red)
+                    Text(verbatim: lastError.asReasonSentence).font(.footnote).foregroundStyle(.red)
                 }
                 if !moreText.isEmpty {
                     Text(verbatim: moreText).font(.caption).foregroundStyle(Color(.secondaryLabel))
@@ -1983,6 +1988,7 @@ struct SchedulesView: View {
                     }
                     .swipeActions {
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = schedule }
+                            .tint(.red)
                         Button(schedule.enabled ? LocalizedStringKey("Turn off") : "Turn on", systemImage: schedule.enabled ? "pause" : "play") {
                             Task {
                                 await act(saying: nil) { try await connection.saveAgentSchedule(scheduleId: schedule.id, isEnabled: !schedule.enabled) }
@@ -1994,6 +2000,7 @@ struct SchedulesView: View {
                         Button("Edit", systemImage: "pencil") { editing = ScheduleEditing(schedule: schedule) }
                         runButton(schedule)
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = schedule }
+                            .tint(.red)
                     }
                 }
             } header: {
@@ -2041,10 +2048,12 @@ struct SchedulesView: View {
                 if hasBriefChanged {
                     Button("Save the new time and days", systemImage: "checkmark.circle") { Task { await saveBrief(isEnabled: true) } }
                         .disabled(briefDayNumbers.isEmpty)
+                        .fullWidthRowSeparator()
                 }
                 Button("Send one now", systemImage: "paperplane") {
                     Task { await act(saying: String(localized: "Sending one now; it will arrive in a moment.")) { try await connection.runDailyBrief() } }
                 }
+                .fullWidthRowSeparator()
                 Button("Stop", role: .destructive) { Task { await saveBrief(isEnabled: false) } }
             } else {
                 Button("Send me a brief", systemImage: "sun.max") { Task { await saveBrief(isEnabled: true) } }
@@ -2254,6 +2263,98 @@ struct AgentScheduleEditor: View {
 
 // MARK: - Alerts
 
+/// AddFollowUpSheet is the form for having the agent follow something by
+/// hand, with the fields the dashboard's Add dialog has: a kind, what it
+/// is, the day, and what the kind has beyond that.
+struct AddFollowUpSheet: View {
+    let connection: Connection
+    /// A kind in words, as the follow-ups list names it.
+    let kindName: (String) -> String
+    let onAdded: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var followUp = NewAgentFollowUp()
+    @State private var day = Date()
+    @State private var hasDay = false
+    @State private var isSaving = false
+    @State private var problemText: String?
+
+    /// The day is set on purpose, as the dashboard asks it to be typed: a
+    /// picker that started on today would file a bill due today at one tap.
+    /// A parcel may do without one; every other kind needs it to be added.
+    private var followUpToAdd: NewAgentFollowUp {
+        var ready = followUp
+        ready.dueOn = hasDay ? NewAgentFollowUp.dayText(day) : ""
+        return ready
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Kind", selection: $followUp.followUpKind) {
+                        ForEach(NewAgentFollowUp.kinds, id: \.self) { kind in
+                            Text(verbatim: kindName(kind)).tag(kind)
+                        }
+                    }
+                    TextField("What to follow", text: $followUp.followUpTitle)
+                    Toggle("Set a day", isOn: $hasDay)
+                    if hasDay {
+                        DatePicker("Day", selection: $day, displayedComponents: .date)
+                    }
+                }
+                switch followUp.followUpKind {
+                case "bill":
+                    Section {
+                        TextField("Who is to be paid", text: $followUp.payee)
+                        TextField("Amount", text: $followUp.amount)
+                            .keyboardType(.decimalPad)
+                        TextField("Currency", text: $followUp.currencyCode, prompt: Text(verbatim: "USD"))
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                    }
+                case "parcel":
+                    Section {
+                        TextField("Carrier", text: $followUp.carrier)
+                        TextField("Tracking number", text: $followUp.trackingNumber)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                    }
+                case "event":
+                    Section {
+                        TextField("Where", text: $followUp.place)
+                    }
+                default:
+                    EmptyView()
+                }
+            }
+            .navigationTitle("Add a follow-up")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { Task { await add() } }
+                        .disabled(!followUpToAdd.canAdd || isSaving)
+                }
+            }
+            .toast(done: Binding<String?>.constant(nil), problem: $problemText)
+        }
+    }
+
+    private func add() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            try await connection.addAgentFollowUp(followUpToAdd)
+            onAdded(followUp.followUpTitle.trimmed)
+            dismiss()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+}
+
 /// MutedAlertsView is the dashboard's Alerts tab: whether the agent tells
 /// the person unasked what their mail says they should know now, their
 /// quiet hours, the most a day, and the day and time it looks around their
@@ -2278,6 +2379,7 @@ struct MutedAlertsView: View {
     @State private var mutes: [AgentAlertMute] = []
     @State private var followUps: [AgentFollowUp]?
     @State private var isMutingFollowUps = false
+    @State private var isAddingFollowUp = false
     @State private var categoryNames: [String: String] = [:]
     @State private var muting: AgentAlert?
     @State private var isBusy = false
@@ -2305,6 +2407,19 @@ struct MutedAlertsView: View {
             }
         }
         .navigationTitle("Alerts")
+        .toolbar {
+            if preferences?.isRunning == true {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Add a follow-up", systemImage: "plus") { isAddingFollowUp = true }
+                }
+            }
+        }
+        .sheet(isPresented: $isAddingFollowUp) {
+            AddFollowUpSheet(connection: connection, kindName: { sentenceCase(followUpKindName($0, isSingular: true)) }) { title in
+                doneText = String(localized: "Now following: \(title)")
+                Task { await load() }
+            }
+        }
         .overlay { if !isAgentRead { ProgressView() } }
         .disabled(isBusy)
         .refreshable { await load() }
@@ -2436,6 +2551,9 @@ struct MutedAlertsView: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
+                // Some of these rows end with a link that has a symbol and
+                // some do not: the line under each starts at the row's edge.
+                .fullWidthRowSeparator()
                 .swipeActions {
                     stopFollowUpButton(followUp).tint(.orange)
                 }
@@ -2790,6 +2908,7 @@ struct ConnectionsView: View {
                 .swipeActions {
                     if server.isPersonal && server.isConnected {
                         Button("Disconnect", systemImage: "bolt.slash", role: .destructive) { disconnecting = server }
+                            .tint(.red)
                     } else if server.isPersonal && !server.doesAuthorizeInBrowser && server.enabled {
                         Button("Connect", systemImage: "bolt") {
                             credential = ""
@@ -2801,6 +2920,7 @@ struct ConnectionsView: View {
                 .contextMenu {
                     if server.isPersonal && server.isConnected {
                         Button("Disconnect", systemImage: "bolt.slash", role: .destructive) { disconnecting = server }
+                            .tint(.red)
                     } else if server.isPersonal && !server.doesAuthorizeInBrowser && server.enabled {
                         Button("Connect", systemImage: "bolt") {
                             credential = ""
@@ -2890,6 +3010,7 @@ struct ConnectionsView: View {
                 .swipeActions {
                     if secret.set {
                         Button("Forget it", systemImage: "trash", role: .destructive) { forgettingSecret = secret }
+                            .tint(.red)
                     }
                     fillButton(secret).tint(.indigo)
                 }
@@ -2897,6 +3018,7 @@ struct ConnectionsView: View {
                     fillButton(secret)
                     if secret.set {
                         Button("Forget it", systemImage: "trash", role: .destructive) { forgettingSecret = secret }
+                            .tint(.red)
                     }
                 }
             }
@@ -3079,6 +3201,7 @@ struct ConnectionsView: View {
                 .swipeActions {
                     if let channel {
                         Button("Remove", systemImage: "trash", role: .destructive) { removingChannel = channel }
+                            .tint(.red)
                         switchButton(channel).tint(.orange)
                     }
                 }
@@ -3093,6 +3216,7 @@ struct ConnectionsView: View {
                             Button("Unlink", systemImage: "link") { unlinking = channel }
                         }
                         Button("Remove", systemImage: "trash", role: .destructive) { removingChannel = channel }
+                            .tint(.red)
                     }
                 }
             }
@@ -3387,6 +3511,7 @@ struct AgentActivityView: View {
                 .swipeActions {
                     if work.isStoppable {
                         Button("Stop", systemImage: "stop.circle", role: .destructive) { stopping = work }
+                            .tint(.red)
                     }
                 }
                 .contextMenu {
@@ -3395,6 +3520,7 @@ struct AgentActivityView: View {
                     }
                     if work.isStoppable {
                         Button("Stop", systemImage: "stop.circle", role: .destructive) { stopping = work }
+                            .tint(.red)
                     }
                 }
             }
@@ -3420,8 +3546,11 @@ struct AgentActivityView: View {
         Section {
             if let dreamJobId {
                 Label(
-                    String(localized: "Dream at \(dreamStartedAt.map { UpkeepWords.when($0) } ?? dreamJobId)"), systemImage: "moon.stars")
+                    String(localized: "Dream at \(dreamStartedAt.map { UpkeepWords.when($0) } ?? dreamJobId)"), systemImage: "moon.stars"
+                )
+                .fullWidthRowSeparator()
                 Button("Show all", systemImage: "xmark.circle") { self.dreamJobId = nil }
+                    .fullWidthRowSeparator()
             }
             if let runs, runs.isEmpty {
                 Text("Nothing yet.").foregroundStyle(.secondary)
@@ -3487,6 +3616,7 @@ struct AgentActivityView: View {
                 .swipeActions {
                     if reply.isHeld {
                         Button("Cancel", systemImage: "xmark.circle", role: .destructive) { cancelling = reply }
+                            .tint(.red)
                     }
                 }
             }

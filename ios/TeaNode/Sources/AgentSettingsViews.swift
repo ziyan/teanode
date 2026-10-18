@@ -161,6 +161,7 @@ struct AgentSettingsView: View {
         } footer: {
             if agent.isOperatorDisabled {
                 Label("Switched off by your administrator. It stays off until they lift that.", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
             }
         }
         Section("Mail and calendars") {
@@ -354,6 +355,7 @@ struct AgentAboutView: View {
                 } footer: {
                     if agent.isOperatorDisabled {
                         Label("Switched off by your administrator. It stays off until they lift that.", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
                     }
                 }
                 Section("What to call it") {
@@ -1426,6 +1428,7 @@ struct AgentCategoriesView: View {
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 removing = RemovedCategory(index: index, name: category.name)
                             }
+                            .tint(.red)
                         }
                     }
                 } footer: {

@@ -159,6 +159,7 @@ struct MailFoldersView: View {
                 .swipeActions {
                     if folder.kind.isEmpty {
                         Button("Delete", systemImage: "trash", role: .destructive) { deleting = folder }
+                            .tint(.red)
                         Button("Rename", systemImage: "pencil") {
                             renamed = folder.name
                             renaming = folder
@@ -263,6 +264,7 @@ struct MailAppPasswordsView: View {
                     DevicePasswordRow(name: password.name, password: password)
                     .swipeActions {
                         Button("Revoke", systemImage: "trash", role: .destructive) { revoking = password }
+                            .tint(.red)
                     }
                     .confirmationDialog(
                         "Revoke \(revoking?.name ?? "")?", isPresented: Binding(get: { revoking?.id == password.id }, set: { if !$0 { revoking = nil } }), titleVisibility: .visible

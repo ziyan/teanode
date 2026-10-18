@@ -328,7 +328,7 @@ struct PhotoPeopleView: View {
             ContentUnavailableView {
                 Label("Faces are not found here", systemImage: "person.crop.circle.badge.exclamationmark")
             } description: {
-                Text(library.faceRecognitionUnavailableMessage.isEmpty ? String(localized: "This server cannot find faces in photos.") : library.faceRecognitionUnavailableMessage)
+                Text(library.faceRecognitionUnavailableMessage.isEmpty ? String(localized: "This server cannot find faces in photos.") : library.faceRecognitionUnavailableMessage.asReasonSentence)
             }
         } else if let library = model.library, !library.isPhotoFaceRecognitionEnabled {
             ContentUnavailableView {
@@ -629,6 +629,7 @@ struct NamePersonSheet: View {
                         } label: {
                             Label("New contact “\(PhotoNaming.trimmedName(searchText))”", systemImage: "person.badge.plus")
                         }
+                        .fullWidthRowSeparator()
                     }
                     ForEach(contacts) { contact in
                         Button {
@@ -867,7 +868,13 @@ struct PhotoFacesSettingsView: View {
         Form {
             if let libraryFailureText {
                 Section {
-                    Label("This setting could not be read.", systemImage: "exclamationmark.triangle")
+                    // A problem is orange with its symbol, never the green of the accent.
+                    Label {
+                        Text("This setting could not be read.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    }
+                    .fullWidthRowSeparator()
                     Text(libraryFailureText)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -906,7 +913,7 @@ struct PhotoFacesSettingsView: View {
     private var footerText: String {
         guard let library else { return "" }
         if !library.isFaceRecognitionAvailable {
-            return library.faceRecognitionUnavailableMessage.isEmpty ? String(localized: "This server cannot find faces in photos.") : library.faceRecognitionUnavailableMessage
+            return library.faceRecognitionUnavailableMessage.isEmpty ? String(localized: "This server cannot find faces in photos.") : library.faceRecognitionUnavailableMessage.asReasonSentence
         }
         return String(localized: "Finds the people in your photos and groups them, so you can browse by person. Turning this off deletes the faces found so far and the names given to them. Your photos are not changed.")
     }

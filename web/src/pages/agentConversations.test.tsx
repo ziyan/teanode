@@ -88,3 +88,33 @@ it('opens the conversation a link from memory names, once, and forgets it', asyn
   expect(vi.mocked(openAgentConversation)).toHaveBeenCalledTimes(1)
   expect(vi.mocked(openAgentConversation)).toHaveBeenCalledWith('side-2')
 })
+
+it('filters by kind from the address, and shows everything to somebody with no chats', async () => {
+  const chat = {
+    id: 'chat-1',
+    kind: 'chat',
+    title: 'Weekend',
+    summary: 'Where to walk on Saturday',
+    lastAt: '2026-01-04T10:00:00Z',
+    chat: { title: 'Weekend', chatKind: 'group', members: [] },
+  }
+  execute.mockResolvedValue({ ListAgentConversations: [...CONVERSATIONS, chat] })
+  render(
+    <MemoryRouter initialEntries={['/agent?kind=chats']}>
+      <AgentConversationsPage />
+    </MemoryRouter>,
+  )
+  expect(await screen.findByRole('button', { name: /Weekend/ })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /Garden plans/ })).toBeNull()
+  expect(screen.getByRole('button', { name: 'agentConversations.kindChats' }).getAttribute('aria-pressed')).toBe('true')
+  cleanup()
+
+  execute.mockResolvedValue({ ListAgentConversations: CONVERSATIONS })
+  render(
+    <MemoryRouter initialEntries={['/agent?kind=chats']}>
+      <AgentConversationsPage />
+    </MemoryRouter>,
+  )
+  expect(await screen.findByRole('button', { name: /Garden plans/ })).toBeTruthy()
+  expect(screen.queryByRole('group', { name: 'agentConversations.kindLabel' })).toBeNull()
+})

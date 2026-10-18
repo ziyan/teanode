@@ -25,6 +25,7 @@ func init() {
 					"include_quoted": tools.BooleanProperty("keep the quoted history inside each message; off by default"),
 					"headers":        tools.BooleanProperty("include every header line and the server's facts about the message — SPF, DKIM, DMARC, the spam filter's score, list and automatic-message markers, a Reply-To or Return-Path elsewhere — for judging whether a message is what it claims"),
 					"max_characters": tools.IntegerProperty("bound per message, 12000 by default"),
+					"invitation":     tools.BooleanProperty("read the calendar invitation this message carried instead of its text: what, where, when, who is asked, and the person's own answer so far; answer it with mail_act answer_invitation"),
 				}, "item_id"),
 				Run: runMailRead,
 			},
@@ -38,6 +39,29 @@ type mailReadArguments struct {
 	IncludeQuoted bool   `json:"include_quoted"`
 	MaxCharacters int    `json:"max_characters"`
 	Headers       bool   `json:"headers"`
+	Invitation    bool   `json:"invitation"`
+}
+
+// readInvitation is the calendar invitation a message carried, which the
+// reader draws as a card above the message. It is a separate read because
+// most messages carry none and the card costs a second query.
+func readInvitation(ctx context.Context, operations tools.Operations, itemId string) (*tools.Result, error) {
+	invitation, err := mailbox.GetInvitation(ctx, operations, itemId)
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]any{"item_id": itemId, "invitation": invitation}
+	if invitation == nil {
+		payload["note"] = "this message carried no calendar invitation"
+	}
+	result, err := tools.JSONResult(payload)
+	if err != nil {
+		return nil, err
+	}
+	// The organizer wrote every word of it.
+	result.Untrusted = true
+	result.Note = "read the invitation of " + itemId
+	return result, nil
 }
 
 func runMailRead(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -62,6 +86,9 @@ func runMailRead(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	_, thread, err := mailbox.MailboxOfItem(ctx, operations, views, arguments.ItemID)
 	if err != nil {
 		return nil, err
+	}
+	if arguments.Invitation {
+		return readInvitation(ctx, operations, arguments.ItemID)
 	}
 	limit := arguments.MaxCharacters
 	if limit <= 0 {

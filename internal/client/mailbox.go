@@ -142,8 +142,11 @@ type MailboxRuleTest struct {
 type MailboxItem struct {
 	ID       string       `json:"id"`
 	FolderID string       `json:"folderId"`
+	MailID   string       `json:"mailId,omitempty"`
 	Seen     bool         `json:"seen"`
 	Flagged  bool         `json:"flagged"`
+	Answered bool         `json:"answered,omitempty"`
+	Draft    bool         `json:"draft,omitempty"`
 	Mail     *MailboxMail `json:"mail"`
 }
 
@@ -152,6 +155,7 @@ type MailboxMail struct {
 	ID         string     `json:"id"`
 	From       string     `json:"from"`
 	FromName   string     `json:"fromName"`
+	Recipients []string   `json:"recipients,omitempty"`
 	Subject    string     `json:"subject"`
 	ReceivedAt *time.Time `json:"receivedAt"`
 }

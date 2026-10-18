@@ -353,7 +353,14 @@ struct ComposeView: View {
             Form {
                 if let warningText = model.warningText {
                     Section {
-                        Label(warningText, systemImage: "exclamationmark.triangle")
+                        // A warning is orange with its symbol, not the green of
+                        // the accent.
+                        Label {
+                            Text(warningText)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                        }
+                        .fullWidthRowSeparator()
                         if model.pending != nil {
                             Button("Try again") { send() }
                             Button("Back to editing") {
@@ -422,8 +429,10 @@ struct ComposeView: View {
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
+                        .fullWidthRowSeparator()
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { model.remove(file) }
+                                .tint(.red)
                         }
                     }
                     if model.uploadingCount > 0 {
@@ -439,7 +448,7 @@ struct ComposeView: View {
                 .disabled(model.pending != nil)
                 if let problemText = model.problemText {
                     Section {
-                        Label(problemText, systemImage: "exclamationmark.circle").foregroundStyle(.red)
+                        Label(problemText.asReasonSentence, systemImage: "exclamationmark.circle").foregroundStyle(.red)
                     }
                 }
                 if model.isLoaded, model.mailbox?.sendingAddresses.isEmpty == true {

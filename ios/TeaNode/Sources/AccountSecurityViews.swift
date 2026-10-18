@@ -33,11 +33,9 @@ struct SessionsView: View {
                     Button(role: .destructive) {
                         isRevokingAll = true
                     } label: {
-                        // The symbol in red with its words: in a list it
-                        // would take the green of what can be pressed.
                         Label("Sign out every browser", systemImage: "rectangle.portrait.and.arrow.right")
-                            .foregroundStyle(.red)
                     }
+                    .tint(.red)
                     .confirmationDialog("Sign out every browser?", isPresented: $isRevokingAll, titleVisibility: .visible) {
                         Button("Sign out every browser", role: .destructive) {
                             Task { await act(saying: String(localized: "Signed out")) { try await connection.revokeAllSessions() } }
@@ -98,6 +96,7 @@ struct SessionsView: View {
         .swipeActions {
             if session.canRevoke {
                 Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { revoking = session }
+                    .tint(.red)
             }
         }
     }
@@ -244,6 +243,7 @@ struct TokensView: View {
         .swipeActions {
             if token.revoked == nil {
                 Button("Revoke", systemImage: "trash", role: .destructive) { revoking = token }
+                    .tint(.red)
                 Button("Edit", systemImage: "pencil") { editing = token }
                     .tint(.indigo)
             }
@@ -605,6 +605,7 @@ struct ConnectedAppsView: View {
         }
         .swipeActions {
             Button("Disconnect", systemImage: "xmark.circle", role: .destructive) { disconnecting = connectedApp }
+                .tint(.red)
             Button("Rename", systemImage: "pencil") {
                 newName = connectedApp.name
                 renaming = connectedApp

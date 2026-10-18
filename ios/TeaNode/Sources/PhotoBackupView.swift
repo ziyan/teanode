@@ -12,6 +12,11 @@ struct PhotoBackupView: View {
     /// The library's size and limits, read when the screen opens.
     @State private var library: PhotoLibrary?
     @State private var libraryFailureText: String?
+    /// Whether the library's size is being read, and when it was last: the
+    /// screen asks the server when it appears, when the app comes to the
+    /// foreground and when backup finishes something, and never in a loop.
+    @State private var isReadingLibrary = false
+    @State private var lastLibraryReadAt: Date?
     private let engine = PhotoBackupEngine.shared
 
     /// Backup is on for another account than the one signed in now.
@@ -23,7 +28,7 @@ struct PhotoBackupView: View {
         PhotoBackupContent(
             status: engine.status, credentialName: engine.credentialName, accessProblem: engine.accessProblem, isWorking: engine.isWorking,
             isPermitted: app.isPhotosOffered, enabledAccountName: engine.enabledAccountName, isOnForOtherAccount: isOnForOtherAccount,
-            library: library, libraryFailureText: libraryFailureText, readLibrary: { Task { await loadLibrary() } },
+            library: library, libraryFailureText: libraryFailureText, readLibrary: { Task { await loadLibrary(mustRead: true) } },
             isOn: Binding(
                 get: { engine.isEnabled && !isOnForOtherAccount },
                 set: { isOn in
@@ -37,6 +42,7 @@ struct PhotoBackupView: View {
             includesHidden: Binding(get: { engine.includesHidden }, set: { engine.includesHidden = $0 }),
             isConfirmingTurnOff: $isConfirmingTurnOff,
             backUpNow: { Task { await engine.backUpNow() } },
+            togglePause: { Task { if engine.isPaused { await engine.resume() } else { await engine.pause() } } },
             signInAgain: { Task { await engine.signInAgain(connection: connection) } },
             turnOff: { Task { await engine.turnOff(connection: connection) } }
         )
@@ -46,12 +52,24 @@ struct PhotoBackupView: View {
         )
         .sensoryFeedback(.success, trigger: engine.doneText) { _, text in text != nil }
         .sensoryFeedback(.warning, trigger: engine.problemText) { _, text in text != nil }
-        .task { await engine.refresh() }
-        .task { await loadLibrary() }
+        // One task when the screen appears: what the phone knows, then what the
+        // server says of the library.
+        .task {
+            await engine.refresh()
+            await loadLibrary(mustRead: true)
+        }
         .onChange(of: scenePhase) { _, phase in
             // Back from the system's Settings, where the person may have given
-            // access to the whole library.
-            if phase == .active { Task { await engine.refresh() } }
+            // access to the whole library, or from another app.
+            guard phase == .active else { return }
+            Task {
+                await engine.refresh()
+                await loadLibrary(mustRead: false)
+            }
+        }
+        // Backup finished something: the server's numbers have changed.
+        .onChange(of: engine.finishedWorkCount) {
+            Task { await loadLibrary(mustRead: false) }
         }
     }
 }
@@ -59,13 +77,20 @@ struct PhotoBackupView: View {
 extension PhotoBackupView {
     /// Reads the size of the library and its limits; a failure is shown with a
     /// way to try again, and what was read before stays.
-    fileprivate func loadLibrary() async {
+    fileprivate func loadLibrary(mustRead: Bool) async {
+        guard PhotoBackupScreenReadPolicy.shouldRead(isReading: isReadingLibrary, lastReadAt: lastLibraryReadAt, now: Date(), mustRead: mustRead) else {
+            return
+        }
+        isReadingLibrary = true
+        defer { isReadingLibrary = false }
         do {
             library = try await connection.photoLibrary()
             libraryFailureText = nil
+            lastLibraryReadAt = Date()
         } catch {
             guard !Task.isCancelled else { return }
             libraryFailureText = app.describe(error)
+            lastLibraryReadAt = Date()
         }
     }
 }
@@ -73,6 +98,7 @@ extension PhotoBackupView {
 /// PhotoBackupContent is the Photo backup screen for a status, with every
 /// choice and button handed in, so that each state can be previewed.
 struct PhotoBackupContent: View {
+    @Environment(\.locale) private var locale
     let status: PhotoBackupStatus
     let credentialName: String?
     let accessProblem: PhotoBackupAccess?
@@ -94,6 +120,8 @@ struct PhotoBackupContent: View {
     @Binding var includesHidden: Bool
     @Binding var isConfirmingTurnOff: Bool
     let backUpNow: () -> Void
+    /// Pauses backup, or resumes it when it is paused.
+    let togglePause: () -> Void
     let signInAgain: () -> Void
     let turnOff: () -> Void
 
@@ -139,8 +167,23 @@ struct PhotoBackupContent: View {
                     Text("Photos and videos go up over Wi-Fi unless you allow mobile data. The Hidden album is left out unless you include it.")
                 }
                 Section {
-                    Button("Back up now", systemImage: "icloud.and.arrow.up", action: backUpNow)
-                        .disabled(isWorking || status.phase == .needsSignIn)
+                    // While paused, Resume backup is the one way on; a Back up now
+                    // that could not be used would only look like a second one.
+                    if !status.isPaused {
+                        Button("Back up now", systemImage: "icloud.and.arrow.up", action: backUpNow)
+                            .disabled(isWorking || status.phase == .needsSignIn)
+                    }
+                    if status.isPaused {
+                        Button("Resume backup", systemImage: "play.circle", action: togglePause)
+                            .disabled(isWorking)
+                    } else {
+                        Button("Pause backup", systemImage: "pause.circle", action: togglePause)
+                            .disabled(isWorking)
+                    }
+                } footer: {
+                    if status.isPaused {
+                        Text("Backup is paused. Nothing is sent until you resume. Photos already backed up stay on TeaNode.")
+                    }
                 }
                 if let credentialName {
                     Section {
@@ -225,15 +268,20 @@ struct PhotoBackupContent: View {
                 }
             }
             .accessibilityElement(children: .combine)
+            // The rows with a symbol keep their line under them as long as the
+            // others in the section, rather than starting it after the symbol.
             Label(stateText, systemImage: stateSymbol)
                 .foregroundStyle(.secondary)
+                .fullWidthRowSeparator()
             if status.phase == .waitingForNetwork, status.leftForLaterFileCount > 0 {
                 Label("\(status.leftForLaterFileCount) files will be sent when the network is back.", systemImage: "clock.arrow.circlepath")
                     .foregroundStyle(.secondary)
+                    .fullWidthRowSeparator()
             }
             if status.isUploadingInBackground {
                 Label("Uploading in the background: \(status.queuedFileCount) files queued", systemImage: "arrow.up.circle")
                     .foregroundStyle(.secondary)
+                    .fullWidthRowSeparator()
             }
             if status.hasFilesWaitingForTheApp {
                 Label(
@@ -241,25 +289,45 @@ struct PhotoBackupContent: View {
                     systemImage: "moon.zzz"
                 )
                 .foregroundStyle(.secondary)
+                .fullWidthRowSeparator()
             }
-            if status.phase == .uploading, let filename = status.currentFilename {
-                LabeledContent("Sending") {
-                    Text(filename).monospaced()
+            // Said while files go up and items remain. Before there is enough
+            // progress to estimate from, the row says so instead of appearing
+            // later and moving the rows below it.
+            if status.shouldShowTimeLeft {
+                Label {
+                    Text(timeLeftText)
+                        .contentTransition(.numericText())
+                } icon: {
+                    Image(systemName: "clock")
                 }
+                .foregroundStyle(.secondary)
+                .fullWidthRowSeparator()
             }
             if let lastPassFinishedAt = status.lastPassFinishedAt {
                 LabeledContent("Last finished", value: lastPassFinishedAt.formatted(.relative(presentation: .named)))
             }
             if status.refusedFileCount > 0 {
-                Label("\(status.refusedFileCount) files could not be backed up. Back up now tries them again.", systemImage: "exclamationmark.triangle")
+                Label {
+                    Text("\(status.refusedFileCount) files could not be backed up. Back up now tries them again.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+                .fullWidthRowSeparator()
             }
             if status.phase != .needsSignIn, let failure = status.lastFailure {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("The last problem", systemImage: "exclamationmark.triangle")
+                    // A problem is orange with its symbol, never the green of the accent.
+                    Label {
+                        Text("The last problem")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    }
                     Text(failure.localizedText).font(.footnote).foregroundStyle(.secondary)
                     Text("Photo backup tries again when you open TeaNode, when the network is back, or while the phone charges.").font(.footnote).foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
+                .fullWidthRowSeparator()
             }
         }
     }
@@ -287,12 +355,50 @@ struct PhotoBackupContent: View {
                 : (status.libraryItemCount == 0
                     ? String(localized: "Ready to back up")
                     : (status.isUploadingInBackground ? String(localized: "Backing up") : String(localized: "Waiting to continue")))
-        case .listing: String(localized: "Reading your photo library")
+        case .listing: listingText
         case .uploading: String(localized: "Backing up")
         case .waitingForNetwork: usesMobileData ? String(localized: "Waiting for the network") : String(localized: "Waiting for Wi-Fi")
         case .needsAccess: String(localized: "Needs access to all your photos")
         case .needsSignIn: String(localized: "Needs you to sign in again")
+        case .paused: String(localized: "Paused")
         }
+    }
+
+    /// "About 3 hours left", rounded the way people say it, or that the time is
+    /// still being worked out.
+    private var timeLeftText: String {
+        guard let estimatedSecondsLeft = status.estimatedSecondsLeft else {
+            return String(localized: "Estimating the time left")
+        }
+        let durationText = spokenDurationText(PhotoBackupSpokenDuration(seconds: estimatedSecondsLeft))
+        return String(localized: "About \(durationText) left")
+    }
+
+    /// The duration in words of the person's language, one unit only: "40 minutes".
+    private func spokenDurationText(_ spokenDuration: PhotoBackupSpokenDuration) -> String {
+        let unit: Duration.UnitsFormatStyle.Unit
+        let secondsPerUnit: Int
+        switch spokenDuration.unit {
+        case .minutes:
+            unit = .minutes
+            secondsPerUnit = 60
+        case .hours:
+            unit = .hours
+            secondsPerUnit = 3_600
+        case .days:
+            unit = .days
+            secondsPerUnit = 86_400
+        }
+        let duration = Duration.seconds(spokenDuration.count * secondsPerUnit)
+        return duration.formatted(.units(allowed: [unit], width: .wide, maximumUnitCount: 1).locale(locale))
+    }
+
+    /// How far the listing of the library has got, when the pass says.
+    private var listingText: String {
+        guard let listedItemCount = status.listedItemCount, status.libraryItemCount > 0 else {
+            return String(localized: "Reading your photo library")
+        }
+        return String(localized: "Reading your photo library: \(listedItemCount.formatted()) of \(status.libraryItemCount.formatted())")
     }
 
     private var stateSymbol: String {
@@ -303,6 +409,7 @@ struct PhotoBackupContent: View {
         case .uploading: "icloud.and.arrow.up"
         case .waitingForNetwork: "wifi"
         case .needsAccess, .needsSignIn: "exclamationmark.triangle"
+        case .paused: "pause.circle"
         }
     }
 }
@@ -320,13 +427,19 @@ private func previewContent(
             library: PhotoLibrary(photoCount: 3_800, videoCount: 112, favoriteCount: 90, trashedCount: 4, usedBytes: 21_400_000_000, trashRetentionDays: 30, maximumFileBytes: 2_000_000_000, maximumAccountBytes: 50_000_000_000),
             libraryFailureText: nil, readLibrary: {},
             isOn: .constant(status.isEnabled && !isOnForOtherAccount), usesMobileData: .constant(usesMobileData), includesHidden: .constant(false),
-            isConfirmingTurnOff: .constant(false), backUpNow: {}, signInAgain: {}, turnOff: {})
+            isConfirmingTurnOff: .constant(false), backUpNow: {}, togglePause: {}, signInAgain: {}, turnOff: {})
     }
 }
 
 private let previewUploading = PhotoBackupStatus(
     phase: .uploading, backedUpItemCount: 1284, libraryItemCount: 3912, plannedFileCount: 2891, finishedFileCount: 1284, queuedFileCount: 4,
-    currentFilename: "IMG_2041.MOV", lastPassFinishedAt: Date(timeIntervalSinceNow: -86_400))
+    lastPassFinishedAt: Date(timeIntervalSinceNow: -86_400), estimatedSecondsLeft: 3 * 3_600 + 200)
+
+private let previewListing = PhotoBackupStatus(
+    phase: .listing, backedUpItemCount: 32, libraryItemCount: 35_103, queuedFileCount: 4, listedItemCount: 1_200)
+
+private let previewPaused = PhotoBackupStatus(
+    phase: .paused, backedUpItemCount: 1284, libraryItemCount: 3912, lastPassFinishedAt: Date(timeIntervalSinceNow: -3_600))
 
 private let previewBackground = PhotoBackupStatus(
     phase: .idle, backedUpItemCount: 1284, libraryItemCount: 3912, queuedFileCount: 200,
@@ -336,8 +449,12 @@ private let previewBackground = PhotoBackupStatus(
 #Preview("Off, dark") { previewContent(PhotoBackupStatus(phase: .off), credentialName: nil).preferredColorScheme(.dark) }
 #Preview("Backing up, light") { previewContent(previewUploading) }
 #Preview("Backing up, dark") { previewContent(previewUploading).preferredColorScheme(.dark) }
+#Preview("Reading the library, light") { previewContent(previewListing) }
+#Preview("Reading the library, dark") { previewContent(previewListing).preferredColorScheme(.dark) }
 #Preview("Uploading in the background, light") { previewContent(previewBackground) }
 #Preview("Uploading in the background, dark") { previewContent(previewBackground).preferredColorScheme(.dark) }
+#Preview("Paused, light") { previewContent(previewPaused) }
+#Preview("Paused, dark") { previewContent(previewPaused).preferredColorScheme(.dark) }
 #Preview("Up to date, light") {
     previewContent(PhotoBackupStatus(phase: .idle, backedUpItemCount: 3912, libraryItemCount: 3912, lastPassFinishedAt: Date(timeIntervalSinceNow: -600)))
 }

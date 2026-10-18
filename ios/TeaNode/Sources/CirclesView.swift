@@ -161,6 +161,7 @@ struct CirclesView: View {
                 Text(verbatim: invitationDetails(invitation)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             }
             Button("Accept", systemImage: "checkmark") { answer(invitation, isAccepted: true) }
+                .fullWidthRowSeparator()
             Button("Decline", systemImage: "xmark") { answer(invitation, isAccepted: false) }
         } header: {
             if isFirst { Text("Invitations") }
@@ -248,11 +249,13 @@ struct CircleDetailView: View {
 
     var body: some View {
         #if DEBUG
-            // `-TeaNodeScreen circle-detail`: scrolled to the invitation waiting for an answer.
+            // `-TeaNodeScreen circle-detail`: scrolled to the invitation waiting for an answer;
+            // `circle-detail-operator` the same for somebody who runs the server, with the
+            // row that makes an account above it.
             ScrollViewReader { scroller in
                 list
                     .task(id: directory.isLoaded) {
-                        guard DemoServer.isRequested, DemoServer.screen == "circle-detail", directory.isLoaded,
+                        guard DemoServer.isRequested, ["circle-detail", "circle-detail-operator"].contains(DemoServer.screen), directory.isLoaded,
                             let invitation = circle?.pendingInvitations.first
                         else { return }
                         try? await Task.sleep(for: .seconds(1))
@@ -342,6 +345,7 @@ struct CircleDetailView: View {
     @ViewBuilder
     private func memberActions(_ member: CircleMember, in circle: PeopleCircle) -> some View {
         Button("Remove from the circle", systemImage: "person.badge.minus", role: .destructive) { removing = member }
+            .tint(.red)
         Button(member.isAdmin ? LocalizedStringKey("Make member") : "Make admin", systemImage: member.isAdmin ? "person" : "person.badge.key") {
             let memberRole: CircleMemberRole = member.isAdmin ? .member : .admin
             Task {
@@ -363,7 +367,7 @@ struct CircleDetailView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             Toggle("Make them an admin", isOn: $invitationDraft.isAdmin)
-            Button("Send invitation", systemImage: "paperplane") {
+            Button {
                 Task {
                     // The server answers the same whether or not the account
                     // exists, so this must not say the person was found.
@@ -372,6 +376,11 @@ struct CircleDetailView: View {
                     }
                     if isSent { invitationDraft = CircleInvitationDraft() }
                 }
+            } label: {
+                // A label inside the button rather than the title and symbol
+                // given to it: given to it, the symbol kept the green while the
+                // disabled words went to black, two colors on one button.
+                Label("Send invitation", systemImage: "paperplane")
             }
             .disabled(!invitationDraft.canSubmit)
         } header: {
@@ -418,6 +427,7 @@ struct CircleDetailView: View {
                 }
             }
         }
+        .tint(.red)
     }
 
     // MARK: Renaming, deleting and leaving
@@ -427,6 +437,7 @@ struct CircleDetailView: View {
             if circle.isAdmin {
                 Button("Rename circle", systemImage: "pencil") { isRenaming = true }
                 Button("Delete circle", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                    .tint(.red)
                     .confirmationDialog("Delete \(circle.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                         Button("Delete circle", role: .destructive) {
                             Task {
@@ -441,6 +452,7 @@ struct CircleDetailView: View {
                     }
             }
             Button("Leave circle", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { isConfirmingLeave = true }
+                .tint(.red)
                 .confirmationDialog("Leave the circle \(circle.name)?", isPresented: $isConfirmingLeave, titleVisibility: .visible) {
                     Button("Leave circle", role: .destructive) {
                         Task {

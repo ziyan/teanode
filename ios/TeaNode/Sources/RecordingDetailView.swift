@@ -339,6 +339,7 @@ struct RecordingDetailScreen: View {
             } label: {
                 Label("Delete recording", systemImage: "trash")
             }
+            .tint(.red)
         } label: {
             Label("Actions", systemImage: "ellipsis.circle")
         }
@@ -444,7 +445,7 @@ struct RecordingDetailsSheet: View {
                         Section {
                             LabeledContent("Processing", value: RecordingWords.processing(run.recordingProcessingState))
                             LabeledContent("Provider model", value: run.providerModelName)
-                            if !run.processingErrorMessage.isEmpty { Text(run.processingErrorMessage).foregroundStyle(.secondary) }
+                            if !run.processingErrorMessage.isEmpty { Text(run.processingErrorMessage.asReasonSentence).foregroundStyle(.secondary) }
                             if ["queued", "preparing", "transcribing", "failed", "canceled"].contains(run.recordingProcessingState) {
                                 Button {
                                     Task { await model.retry(run) }
@@ -452,6 +453,7 @@ struct RecordingDetailsSheet: View {
                                     Label("Retry transcription", systemImage: "arrow.clockwise")
                                 }
                                 .disabled(!model.isTranscriptionAvailable)
+                                .fullWidthRowSeparator()
                             }
                             if run.isRunning {
                                 Button("Cancel transcription", role: .destructive) { Task { await model.cancel(run) } }
@@ -467,7 +469,7 @@ struct RecordingDetailsSheet: View {
                             if !model.isTranscriptionAvailable {
                                 Text(
                                     model.limits?.transcriptionUnavailableMessage?.isEmpty == false
-                                        ? (model.limits?.transcriptionUnavailableMessage ?? "")
+                                        ? (model.limits?.transcriptionUnavailableMessage ?? "").asReasonSentence
                                         : String(localized: "Transcription availability has not been verified. Refresh or ask the operator.")
                                 )
                             }
@@ -540,6 +542,7 @@ struct RecordingDetailsSheet: View {
             if learning.hasStoppedReading == true {
                 Text("Stopped reading transcripts").foregroundStyle(.secondary)
                 Button("Resume reading", systemImage: "play") { Task { await model.resumeLearning() } }.disabled(model.isSubmitting)
+                    .fullWidthRowSeparator()
                 Text("Previously learned pages remain. Transcript corrections still reconcile outdated material.").font(.callout)
                     .foregroundStyle(.secondary)
             } else if !learning.hasAgent {
@@ -555,12 +558,13 @@ struct RecordingDetailsSheet: View {
                 } else if source.cron.isEmpty {
                     Text("Reads only when you ask.").foregroundStyle(.secondary)
                 }
-                if !source.lastError.isEmpty { Text(source.lastError).foregroundStyle(.secondary) }
+                if !source.lastError.isEmpty { Text(source.lastError.asReasonSentence).foregroundStyle(.secondary) }
                 NavigationLink {
                     KnowledgeSourcesView(connection: connection, highlightedSourceId: source.id)
                 } label: {
                     Label("Knowledge source", systemImage: "brain")
                 }
+                .fullWidthRowSeparator()
                 Button("Edit this source", systemImage: "pencil") { editingLearningSource = source }
             } else {
                 Text("Waiting for a completed transcript").foregroundStyle(.secondary)

@@ -283,6 +283,7 @@ struct RecordingsScreen: View {
                                         } label: {
                                             Label("Delete recording", systemImage: "trash")
                                         }
+                                        .tint(.red)
                                     }
                                     if row.canRemoveFromPhone, let localRecording = row.localRecording {
                                         Button {
@@ -316,6 +317,7 @@ struct RecordingsScreen: View {
                                         } label: {
                                             Label("Remove from this phone", systemImage: "iphone.slash")
                                         }
+                                        .tint(.red)
                                     }
                                     if let recording = row.recording {
                                         Button(role: .destructive) {
@@ -324,6 +326,7 @@ struct RecordingsScreen: View {
                                         } label: {
                                             Label("Delete recording", systemImage: "trash")
                                         }
+                                        .tint(.red)
                                     }
                                 }
                                 .confirmationDialog(
@@ -653,7 +656,7 @@ struct RecordingLibraryPlaceholder: View {
             ContentUnavailableView(
                 "No recordings", systemImage: "waveform", description: Text("Tap + to start a recording or import audio or video."))
         case .failed(let failureText):
-            ContentUnavailableView("Cannot load recordings", systemImage: "exclamationmark.triangle", description: Text(failureText))
+            ContentUnavailableView("Cannot load recordings", systemImage: "exclamationmark.triangle", description: Text(failureText.asReasonSentence))
         }
     }
 }
@@ -732,18 +735,19 @@ struct RecordingPlaybackScreen: View {
                     VStack {
                         if isCompatibleAudioPreview {
                             Label("Compatible audio preview", systemImage: "waveform")
+                                .fixedSize(horizontal: false, vertical: true)
                             Text("Audio preview prepared locally; original unchanged.")
                                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                         VideoPlayer(player: player)
-                        if let problemText { Text(problemText).font(.caption).foregroundStyle(.secondary) }
+                        if let problemText { Text(problemText.asReasonSentence).font(.caption).foregroundStyle(.secondary) }
                         if isCompatibleAudioPreview && hasPlayableOriginal {
                             Button {
                                 guard !isChangingPlayback else { return }
                                 isChangingPlayback = true
                                 playbackTask = Task { await useOriginal() }
                             } label: {
-                                if isChangingPlayback { ProgressView() } else { Label("Use original", systemImage: "play.rectangle") }
+                                if isChangingPlayback { ProgressView() } else { Label("Use original", systemImage: "play.rectangle").fixedSize(horizontal: false, vertical: true) }
                             }
                             .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
                         } else if !isCompatibleAudioPreview {
@@ -752,7 +756,7 @@ struct RecordingPlaybackScreen: View {
                                 isChangingPlayback = true
                                 playbackTask = Task { await useAudioPreview() }
                             } label: {
-                                if isChangingPlayback { ProgressView() } else { Label("Use audio preview", systemImage: "waveform") }
+                                if isChangingPlayback { ProgressView() } else { Label("Use audio preview", systemImage: "waveform").fixedSize(horizontal: false, vertical: true) }
                             }
                             .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
                         }
@@ -762,12 +766,24 @@ struct RecordingPlaybackScreen: View {
                                     isCompatibleAudioPreview
                                         ? String(localized: "Share full audio preview") : String(localized: "Share full original"),
                                     systemImage: "square.and.arrow.up")
+                                .fixedSize(horizontal: false, vertical: true)
                             }
                             .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
                         }
                     }
+                    // Real buttons under the player: as plain text they read
+                    // as a caption, and gray when there is no connection.
+                    // Their words, and the heading's, wrap rather than end
+                    // in an ellipsis at the largest text sizes: each label
+                    // keeps its height (fixedSize), as the player takes all
+                    // the room it is given and squeezed them to one line.
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom)
                 } else if let problemText {
-                    ContentUnavailableView("Cannot play recording", systemImage: "exclamationmark.triangle", description: Text(problemText))
+                    ContentUnavailableView("Cannot play recording", systemImage: "exclamationmark.triangle", description: Text(problemText.asReasonSentence))
                 } else {
                     ProgressView(progressText)
                 }
@@ -986,7 +1002,7 @@ private struct RecordingLocalPlaybackScreen: View {
                         }
                     }
                 }
-                if let problemText { Text(problemText).foregroundStyle(.secondary) }
+                if let problemText { Text(problemText.asReasonSentence).foregroundStyle(.secondary) }
             }
             .navigationTitle("Local original")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }

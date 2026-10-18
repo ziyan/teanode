@@ -58,6 +58,9 @@ struct MailboxesList: View {
     /// Rows shown above the folders, as the side menu puts its sections
     /// there.
     var leading: AnyView?
+    /// How far the list is scrolled, kept by whoever shows it so that the
+    /// side menu, which is drawn anew each time it opens, comes back to it.
+    var scrollOffsetPoints: Binding<CGFloat?> = .constant(nil)
     let onChoose: (MailPlace) -> Void
 
     var body: some View {
@@ -104,6 +107,7 @@ struct MailboxesList: View {
                 .listSectionSeparator(.hidden)
             }
         }
+        .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: mail.isLoaded)
         .refreshable { await mail.load() }
         .overlay {
             if mail.isLoaded, mail.entries.isEmpty {
@@ -385,6 +389,7 @@ struct ThreadList: View {
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                            .tint(.red)
                         }
                         .contextMenu {
                             rowMenu([thread])
@@ -511,6 +516,7 @@ struct ThreadList: View {
                 } label: {
                     Label(folder?.kind == "trash" ? LocalizedStringKey("Delete forever") : "Delete", systemImage: "trash")
                 }
+                .tint(.red)
                 .disabled(selection.isEmpty)
             }
         } else {
@@ -585,6 +591,7 @@ struct ThreadList: View {
         Button(folder?.kind == "trash" ? LocalizedStringKey("Delete forever") : "Delete", systemImage: "trash", role: .destructive) {
             Task { await delete(threads) }
         }
+        .tint(.red)
     }
 
     private func folderName(of thread: MailThread) -> String? {
@@ -669,7 +676,10 @@ struct ThreadList: View {
 }
 
 /// ThreadRow is a conversation in a list: who, the agent's marks, the
-/// subject, the agent's summary, the shield and when.
+/// subject, the agent's summary, the shield and when. Every row is the same
+/// height, as Mail draws them: the summary always takes two lines, empty or
+/// not, and the marks are symbols on the first line rather than a line of
+/// their own.
 struct ThreadRow: View {
     let thread: MailThread
     let folderName: String?
@@ -691,17 +701,44 @@ struct ThreadRow: View {
                 // Who, in bold, with when on the right: the time today and
                 // yesterday, else the weekday or the date.
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    // The name keeps its room ahead of the marks, so a row
+                    // with several of them still says who it is from.
                     Text(senders)
                         .font(.headline)
                         .lineLimit(1)
+                        .layoutPriority(1)
                     Spacer(minLength: 4)
-                    if thread.flagged {
-                        Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange)
-                            .accessibilityLabel("Starred")
+                    // Only what asks for attention: high priority, a reply
+                    // owed, and a sender whose checks failed. One stop for
+                    // VoiceOver, which reads their words together.
+                    let marks = MailRowMarks(insight: insight, verdict: MailVerdict.of(message?.authenticationResults))
+                    HStack(spacing: 6) {
+                        if marks.isHigh {
+                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+                                .accessibilityLabel("Important")
+                        }
+                        if marks.needsReply {
+                            Image(systemName: "arrowshape.turn.up.left.fill").foregroundStyle(.tint)
+                                .accessibilityLabel("Needs reply")
+                        }
+                        if marks.verdict == .bad {
+                            Image(systemName: "xmark.shield.fill").foregroundStyle(.red)
+                                .accessibilityLabel("Not verified")
+                        } else if marks.verdict == .warn {
+                            Image(systemName: "exclamationmark.shield.fill").foregroundStyle(.orange)
+                                .accessibilityLabel("Looks like spam")
+                        }
+                        if thread.flagged {
+                            Image(systemName: "star.fill").foregroundStyle(.orange)
+                                .accessibilityLabel("Starred")
+                        }
                     }
+                    .font(.caption)
+                    .accessibilityElement(children: .combine)
                     Text(ListTime.label(of: MailTime.date(message?.receivedAt ?? item?.addedAt ?? "")))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
                 // The subject, with whether it carries attachments and how
                 // many messages the conversation holds.
@@ -733,32 +770,10 @@ struct ThreadRow: View {
                     }
                 }
                 .font(.subheadline)
-                let preview = insight?.summary ?? ""
-                if !preview.isEmpty {
-                    Text(preview)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                // Only what asks for attention: high priority, a reply owed,
-                // and a sender whose checks failed.
-                let marks = MailRowMarks(insight: insight, verdict: MailVerdict.of(message?.authenticationResults))
-                if marks.hasAny {
-                    HStack(spacing: 12) {
-                        if marks.isHigh {
-                            RowMark(systemImage: "exclamationmark.circle.fill", text: String(localized: "Important")).foregroundStyle(.red)
-                        }
-                        if marks.needsReply {
-                            RowMark(systemImage: "arrowshape.turn.up.left.fill", text: String(localized: "Needs reply")).foregroundStyle(.tint)
-                        }
-                        if marks.verdict == .bad {
-                            RowMark(systemImage: "xmark.shield.fill", text: String(localized: "Not verified")).foregroundStyle(.red)
-                        } else if marks.verdict == .warn {
-                            RowMark(systemImage: "exclamationmark.shield.fill", text: String(localized: "Looks like spam")).foregroundStyle(.orange)
-                        }
-                    }
-                    .padding(.top, 1)
-                }
+                Text(insight?.summary ?? "")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2, reservesSpace: true)
             }
         }
         .padding(.leading, -12)
@@ -867,20 +882,6 @@ enum ListRowSpacing {
     static let insets = EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
 }
 
-/// RowMark is a small mark on a row: a symbol close to its word.
-struct RowMark: View {
-    let systemImage: String
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: systemImage).imageScale(.small)
-            Text(text)
-        }
-        .font(.caption.weight(.medium))
-    }
-}
-
 /// MailRowMarks are what a mail row says beyond who and what: only what
 /// asks for attention.
 struct MailRowMarks {
@@ -893,8 +894,6 @@ struct MailRowMarks {
         needsReply = insight?.needsReply == true
         self.verdict = verdict
     }
-
-    var hasAny: Bool { isHigh || needsReply || verdict == .bad || verdict == .warn }
 }
 
 /// InsightChips are the agent's marks on a message: high priority, its

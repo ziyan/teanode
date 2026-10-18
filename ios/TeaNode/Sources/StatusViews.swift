@@ -206,7 +206,7 @@ struct BackgroundCommandView: View {
     private var stateText: String {
         if command.isRunning { return String(localized: "Running") }
         if let exitCode = command.exitCode { return String(localized: "Exited \(exitCode)") }
-        return command.stopReason ?? String(localized: "Stopped")
+        return command.stopReason?.asReasonSentence ?? String(localized: "Stopped")
     }
 }
 

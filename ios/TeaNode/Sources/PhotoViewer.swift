@@ -906,6 +906,7 @@ struct PhotoInfoView: View {
                 if shownPhoto.isWaiting {
                     Label("Getting this photo ready", systemImage: "hourglass")
                         .foregroundStyle(.secondary)
+                        .fullWidthRowSeparator()
                 }
                 if !shownPhoto.isOwnedByCaller, !shownPhoto.ownerName.isEmpty {
                     LabeledContent("Shared by") { Text(shownPhoto.ownerName) }
@@ -915,6 +916,7 @@ struct PhotoInfoView: View {
                 }
                 if shownPhoto.isOwnedByCaller, !shownPhoto.isTrashed {
                     Button("Change date", systemImage: "calendar") { isChangingDate = true }
+                        .fullWidthRowSeparator()
                 }
                 if !shownPhoto.placeName.isEmpty {
                     LabeledContent("Place") { Text(shownPhoto.placeName) }
@@ -922,6 +924,7 @@ struct PhotoInfoView: View {
                 // A photo shared without places has no coordinates, so it has nothing to be near.
                 if let onShowNearby, !shownPhoto.isTrashed, let photoNearFilter = PhotoNearFilter(near: shownPhoto) {
                     Button("Photos taken near here", systemImage: "mappin.and.ellipse") { onShowNearby(photoNearFilter) }
+                        .fullWidthRowSeparator()
                 }
                 if !cameraText.isEmpty {
                     LabeledContent("Camera") { Text(cameraText) }
@@ -1001,7 +1004,13 @@ struct PhotoInfoView: View {
 
     private func detailFailureSection(_ failureText: String) -> some View {
         Section {
-            Label("The details of this photo could not be read.", systemImage: "exclamationmark.triangle")
+            // A problem is orange with its symbol, never the green of the accent.
+            Label {
+                Text("The details of this photo could not be read.")
+            } icon: {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+            }
+            .fullWidthRowSeparator()
             Text(failureText)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -1013,7 +1022,12 @@ struct PhotoInfoView: View {
     /// way to ask for it to be made again.
     private var failureSection: some View {
         Section {
-            Label(PhotoWords.failure(of: shownPhoto), systemImage: "exclamationmark.circle")
+            // The picture was not made: a failure, so red with its symbol.
+            Label {
+                Text(PhotoWords.failure(of: shownPhoto))
+            } icon: {
+                Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
+            }
             if shownPhoto.isOwnedByCaller {
                 Button("Try again", systemImage: "arrow.clockwise") {
                     Task {
@@ -1057,6 +1071,7 @@ struct PhotoInfoView: View {
                             Label("Not \(face.contactName)", systemImage: "person.crop.circle.badge.xmark")
                         }
                     }
+                    .tint(.red)
                 }
             }
         } header: {
@@ -1164,13 +1179,15 @@ struct PhotoInfoView: View {
                 if description.isDescribed {
                     if isDescriptionAvailable {
                         Button("Describe again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
+                            .fullWidthRowSeparator()
                     }
                 } else if isDescriptionAvailable {
                     Button(shownPhoto.isVideo ? LocalizedStringKey("Describe this video") : "Describe this photo", systemImage: "text.viewfinder") {
                         Task { await describe(isRedescribed: false) }
                     }
+                    .fullWidthRowSeparator()
                 } else if let library = model.library {
-                    Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage)
+                    Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage.asReasonSentence)
                         .foregroundStyle(.secondary)
                 }
             }

@@ -89,7 +89,16 @@ struct GoalRow: View {
                 Text(goal.goalStatus).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
             if goal.isOpen, let next = ServerTime.date(goal.goalNextAt) {
-                Text("Next \(next.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.tertiary)
+                // A check-in whose time has passed is about to run, not
+                // "next 17 hours ago".
+                Group {
+                    if next > Date() {
+                        Text("Next \(next.formatted(.relative(presentation: .named)))")
+                    } else {
+                        Text("Next check-in soon")
+                    }
+                }
+                .font(.caption).foregroundStyle(.tertiary)
             }
         }
         .padding(.vertical, 2)
@@ -107,6 +116,7 @@ struct GoalDetail: View {
     @State private var goal: AgentGoal?
     @State private var told = ""
     @State private var isConfirmingDrop = false
+    @State private var isChoosingSchedule = false
 
     var body: some View {
         List {
@@ -121,6 +131,9 @@ struct GoalDetail: View {
                     }
                     Button("Open its conversation", systemImage: "bubble.left") {
                         app.openedConversationId = goal.conversationId
+                    }
+                    if goal.isOpen {
+                        Button("Use a schedule", systemImage: "calendar.badge.clock") { isChoosingSchedule = true }
                     }
                 }
                 if goal.isOpen {
@@ -167,6 +180,7 @@ struct GoalDetail: View {
                     if goal.isOpen {
                         Button("Mark met", systemImage: "checkmark.circle") { Task { await setState("met", saying: String(localized: "Marked met")) } }
                         Button("Drop goal", systemImage: "xmark.circle", role: .destructive) { isConfirmingDrop = true }
+                            .tint(.red)
                         .confirmationDialog("Drop this goal?", isPresented: $isConfirmingDrop, titleVisibility: .visible) {
                             Button("Drop goal", role: .destructive) { Task { await setState("dropped", saying: String(localized: "Dropped")) } }
                         } message: {
@@ -184,6 +198,14 @@ struct GoalDetail: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $isChoosingSchedule) {
+            GoalSchedulePicker(
+                connection: connection, conversationId: conversationId
+            ) {
+                doneText = String(localized: "The goal now runs on that schedule.")
+                Task { await load() }
+            }
+        }
     }
 
     private func load() async {
@@ -217,6 +239,85 @@ struct GoalDetail: View {
     }
 }
 
+/// GoalSchedulePicker lists the agent's schedules and gives one to a goal:
+/// each of its runs becomes a turn of the goal, and the goal takes none of
+/// its own. A schedule that already runs a goal, this one or another, is not
+/// offered: moving it would quietly take it from that goal.
+struct GoalSchedulePicker: View {
+    let connection: Connection
+    let conversationId: String
+    let onMoved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var schedules: [AgentSchedule]?
+    @State private var isMoving = false
+    @State private var problemText: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let schedules {
+                    Section {
+                        if schedules.isEmpty {
+                            Text("There are no other schedules to use.").foregroundStyle(.secondary)
+                        }
+                        ForEach(schedules) { schedule in
+                            Button {
+                                Task { await move(schedule) }
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(schedule.name)
+                                    Text(verbatim: schedule.cron).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                            .disabled(isMoving)
+                        }
+                    } footer: {
+                        Text("Each run of the schedule becomes a turn of this goal, and the goal takes none of its own. Answers appear in the goal's conversation instead of arriving by mail.")
+                    }
+                } else {
+                    ProgressView().frame(maxWidth: .infinity)
+                }
+            }
+            .navigationTitle("Run this goal on a schedule")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .task { await load() }
+            .toast(done: Binding<String?>.constant(nil), problem: $problemText)
+        }
+    }
+
+    private func load() async {
+        do {
+            async let everySchedule = connection.agentSchedules()
+            async let everyGoal = connection.goals()
+            var goalIds = Set(try await everyGoal.map(\.conversationId))
+            goalIds.insert(conversationId)
+            schedules = try await everySchedule.filter { schedule in
+                guard let owner = schedule.conversationId else { return true }
+                return !goalIds.contains(owner)
+            }
+        } catch {
+            schedules = []
+            problemText = error.localizedDescription
+        }
+    }
+
+    private func move(_ schedule: AgentSchedule) async {
+        isMoving = true
+        defer { isMoving = false }
+        do {
+            try await connection.moveScheduleToGoal(schedule.id, conversationId: conversationId)
+            onMoved()
+            dismiss()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+}
+
 /// GoalStarter starts a goal: what it is, and what done looks like.
 struct GoalStarter: View {
     let connection: Connection
@@ -235,7 +336,7 @@ struct GoalStarter: View {
                         .lineLimit(4...)
                 }
                 if let problemText {
-                    Text(problemText).foregroundStyle(.red)
+                    Text(problemText.asReasonSentence).foregroundStyle(.red)
                 }
             }
             .navigationTitle("New goal")

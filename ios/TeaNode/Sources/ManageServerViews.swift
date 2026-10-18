@@ -1041,6 +1041,7 @@ private struct SSOFormView: View {
                     Button("Remove", systemImage: "trash", role: .destructive) {
                         draft.wrappedValue.providers.removeAll { $0.id == shown.id }
                     }
+                    .tint(.red)
                 } header: {
                     Text(verbatim: shown.name.isEmpty ? shown.providerId : shown.name)
                 } footer: {
@@ -1173,14 +1174,16 @@ struct ServerAboutView: View {
                 }
             }
             if let checkError = upgrade.checkError, !checkError.isEmpty {
-                Label(checkError, systemImage: "exclamationmark.triangle")
+                Label(checkError.asReasonSentence, systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.orange)
+                    .fullWidthRowSeparator()
             }
             if upgrade.isAvailable, let url = upgrade.url, let address = URL(string: url) {
                 Link(destination: address) {
                     Label("Release page", systemImage: "safari")
                 }
+                .fullWidthRowSeparator()
             }
             // Shown whenever there are notes, not only when behind: a
             // development build is ahead of every release and still has a
@@ -1192,11 +1195,16 @@ struct ServerAboutView: View {
                 } label: {
                     Label("What changed in \(latestText)", systemImage: "doc.text")
                 }
+                .fullWidthRowSeparator()
             }
             if let errorMessage = upgrade.errorMessage, !errorMessage.isEmpty {
-                Label("The last upgrade did not finish: \(errorMessage)", systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
+                Label(
+                    String(localized: "The last upgrade did not finish: \(errorMessage)").asReasonSentence,
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.footnote)
+                .foregroundStyle(.orange)
+                .fullWidthRowSeparator()
             }
             Button {
                 Task { await checkForUpgrade() }
@@ -1204,6 +1212,7 @@ struct ServerAboutView: View {
                 Label(isChecking ? LocalizedStringKey("Checking…") : "Check now", systemImage: "arrow.triangle.2.circlepath")
             }
             .disabled(isChecking || isUpgrading || upgrade.isEnabled == false)
+            .fullWidthRowSeparator()
             if upgrade.canUpgrade {
                 let latestText = upgrade.latest ?? ""
                 Button {
@@ -1268,6 +1277,7 @@ struct ServerAboutView: View {
                     systemImage: "exclamationmark.triangle"
                 )
                 .foregroundStyle(.red)
+                .fullWidthRowSeparator()
             }
             if isRestarting {
                 HStack(spacing: 8) {
@@ -1280,6 +1290,7 @@ struct ServerAboutView: View {
             } label: {
                 Label(isRestarting ? LocalizedStringKey("Restarting…") : "Restart this instance", systemImage: "arrow.clockwise")
             }
+            .tint(.red)
             .disabled(isRestarting)
             .confirmationDialog("Restart this instance?", isPresented: $isConfirmingRestart, titleVisibility: .visible, presenting: serverStatus) { _ in
                 Button("Yes, restart it", role: .destructive) {
@@ -1490,7 +1501,7 @@ struct ServerSetupView: View {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
                         if let errorMessage = addresses.errorMessage, !errorMessage.isEmpty {
-                            Text(verbatim: errorMessage)
+                            Text(verbatim: errorMessage.asReasonSentence)
                         } else {
                             Text("The external address could not be determined.")
                         }
@@ -1521,7 +1532,7 @@ struct ServerSetupView: View {
     private func outgoingSection(_ identity: OutgoingIdentity) -> some View {
         Section {
             if let uncheckableReason = identity.uncheckableReason, !uncheckableReason.isEmpty {
-                Text(verbatim: uncheckableReason).foregroundStyle(Color(.secondaryLabel))
+                Text(verbatim: uncheckableReason.asReasonSentence).foregroundStyle(Color(.secondaryLabel))
             } else {
                 let address = identity.address ?? ""
                 LabeledContent("Sends from") {
@@ -2187,6 +2198,7 @@ private struct AgentListView: View {
             .tint(.blue)
         } else {
             Button("Switch off", systemImage: "power", role: .destructive) { switchingOff = summary }
+                .tint(.red)
         }
     }
 
@@ -2658,6 +2670,7 @@ private struct AgentRunsAdminView: View {
                 Button("All runs", systemImage: "line.3.horizontal.decrease.circle") {
                     filter.jobId = nil
                 }
+                .fullWidthRowSeparator()
             }
             if let runs, runs.isEmpty {
                 Text("Nothing yet.").foregroundStyle(Color(.secondaryLabel))
@@ -2891,6 +2904,7 @@ private struct AgentProvidersView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                                .tint(.red)
                             if provider.canBeTested {
                                 Button("Test", systemImage: "checkmark.circle") {
                                     Task { await test(provider.name) }
@@ -2906,6 +2920,7 @@ private struct AgentProvidersView: View {
                                 }
                             }
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                                .tint(.red)
                         }
                         .disabled(testingName != nil)
                     }
@@ -3179,7 +3194,7 @@ struct AgentProviderForm: View {
                 let changedText = billingCheck.changed.count.formatted()
                 Text("Prices checked against the bill \(whenText): \(changedText) changed")
             } else {
-                Label(billingCheck.errorMessage, systemImage: "exclamationmark.triangle")
+                Label(billingCheck.errorMessage.asReasonSentence, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
         } else {
@@ -3290,6 +3305,7 @@ struct AgentProviderForm: View {
                 Button("Remove", systemImage: "trash", role: .destructive) {
                     draft.modelPrices.removeAll { $0.id == shown.id }
                 }
+                .tint(.red)
             } header: {
                 Text("Prices for particular models")
             }
@@ -3940,10 +3956,12 @@ private struct ConnectedServersView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                                .tint(.red)
                         }
                         .contextMenu {
                             Button("Edit", systemImage: "pencil") { editing = ServerEditing(serverIndex: index) }
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                                .tint(.red)
                         }
                     }
                 } footer: {
@@ -4386,7 +4404,7 @@ private struct InstalledSkillView: View {
                         LabeledContent("Publisher") { Text(verbatim: skill.publisher) }
                     }
                     if !skill.isReadable {
-                        Label(skill.problem ?? String(localized: "cannot be read"), systemImage: "exclamationmark.triangle")
+                        Label(skill.problem?.asReasonSentence ?? String(localized: "cannot be read"), systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
                     }
                 }
@@ -4419,6 +4437,7 @@ private struct InstalledSkillView: View {
                         }
                     }
                     Button("Remove", systemImage: "trash", role: .destructive) { isRemoving = true }
+                        .tint(.red)
                         .confirmationDialog("Remove \(skillName)?", isPresented: $isRemoving, titleVisibility: .visible) {
                             Button("Remove", role: .destructive) {
                                 Task {
@@ -4621,12 +4640,14 @@ private struct AgentSourceTypesView: View {
                     }
                     .swipeActions {
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = sourceType }
+                            .tint(.red)
                     }
                     .contextMenu {
                         if sourceType.hasGuide {
                             Button("What it says about itself", systemImage: "list.bullet") { reading = sourceType }
                         }
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = sourceType }
+                            .tint(.red)
                     }
                     .disabled(busyName == sourceType.name)
                 }

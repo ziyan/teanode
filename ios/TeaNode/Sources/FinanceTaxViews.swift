@@ -120,6 +120,7 @@ struct TaxesView: View {
                                     await load()
                                 }
                             }
+                            .tint(.red)
                         }
                     }
                 }
@@ -139,6 +140,7 @@ struct TaxesView: View {
                                     await load()
                                 }
                             }
+                            .tint(.red)
                         }
                     }
                 }
@@ -206,6 +208,7 @@ struct TaxesView: View {
                         UIPasteboard.general.string = address
                         finance.doneText = String(localized: "Address copied")
                     }
+                    .fullWidthRowSeparator()
                 } else {
                     Text("You have no mailbox address to receive them; add the files instead.")
                         .foregroundStyle(.secondary)
@@ -432,7 +435,7 @@ struct TaxDocumentUploadRow: View {
                     case .uploading: Text("Uploading…")
                     case .reading: Text("Reading…")
                     case .stillReading: Text("Still reading. Pull to refresh, or look under another year.")
-                    case .failed(let problemText): Text(verbatim: problemText)
+                    case .failed(let problemText): Text(verbatim: problemText.asReasonSentence)
                     }
                 }
                 .font(.caption)
@@ -935,6 +938,9 @@ struct TaxFormRow: View {
                     .foregroundStyle(.orange)
             }
         }
+        // Only some of these rows end with a symbol: the line under every
+        // one starts at the row's edge.
+        .fullWidthRowSeparator()
     }
 }
 
@@ -965,6 +971,9 @@ struct PaystubRow: View {
                 }
             }
         }
+        // Only some of these rows end with a symbol: the line under every
+        // one starts at the row's edge.
+        .fullWidthRowSeparator()
     }
 }
 
@@ -1029,8 +1038,8 @@ struct PaystubDetailView: View {
                         isConfirmingDelete = true
                     } label: {
                         Label("Delete paystub", systemImage: "trash")
-                            .foregroundStyle(.red)
                     }
+                    .tint(.red)
                     .confirmationDialog("Delete this paystub?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                         Button("Delete paystub", role: .destructive) {
                             Task {
@@ -1253,8 +1262,8 @@ struct TaxFormDetailView: View {
                     isConfirmingDelete = true
                 } label: {
                     Label("Delete form", systemImage: "trash")
-                        .foregroundStyle(.red)
                 }
+                .tint(.red)
                 .confirmationDialog("Delete this form?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                     Button("Delete form", role: .destructive) {
                         Task {

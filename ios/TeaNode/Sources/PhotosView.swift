@@ -1139,6 +1139,7 @@ struct PhotosScreen: View {
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
                             Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
+                                .destructiveBarButtonStyle()
                         } label: {
                             Label("More", systemImage: "ellipsis")
                         }
@@ -1583,6 +1584,7 @@ struct PhotoCell: View {
         if photo.isTrashed {
             Button("Restore", systemImage: "arrow.uturn.backward") { Task { await model.restore(photo) } }
             Button("Delete forever", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                .tint(.red)
         } else if !photo.isOwnedByCaller {
             // Somebody else's photo, seen through an album: keep it, save it to
             // the phone, or share it; the rest is its owner's to do.
@@ -1615,6 +1617,7 @@ struct PhotoCell: View {
             Button("Save to the Photos app", systemImage: "square.and.arrow.down") { Task { await model.saveToPhotos(photo) } }
             PhotoShareLink(photo: photo, connection: model.connection)
             Button("Move to Trash", systemImage: "trash", role: .destructive) { isConfirmingTrash = true }
+                .tint(.red)
         }
     }
 }

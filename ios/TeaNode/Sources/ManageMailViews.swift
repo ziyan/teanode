@@ -707,6 +707,7 @@ struct AuditedMailView: View {
                 Button("Download .eml", systemImage: "arrow.down.doc") {
                     Task { await preview("/api/v1/mail/\(mailDetail.mail.id)/raw", name: "\(mailDetail.mail.id).eml") }
                 }
+                .fullWidthRowSeparator()
                 ForEach(content.presentAttachments, id: \.index) { attachment in
                     Button {
                         Task { await preview("/api/v1/mail/\(mailDetail.mail.id)/attachment/\(attachment.index)", name: attachment.filename) }
@@ -723,6 +724,7 @@ struct AuditedMailView: View {
                                 .foregroundStyle(Color(.secondaryLabel))
                         }
                     }
+                    .fullWidthRowSeparator()
                 }
             } else {
                 Text("The content of this message is no longer stored.")
@@ -2193,7 +2195,7 @@ private struct DomainSettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Publish these with whoever runs DNS for this domain. Until the MX record is right, no mail arrives here at all.")
                 if let errorMessage = domain.dnsCheck?.errorMessage, !errorMessage.isEmpty {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Label(errorMessage.asReasonSentence, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 }
             }
         }
@@ -2219,8 +2221,10 @@ private struct DomainSettingsView: View {
             Button(domain.logo == nil ? LocalizedStringKey("Upload a logo") : "Replace the logo", systemImage: "square.and.arrow.up") {
                 isPickingLogo = true
             }
+            .fullWidthRowSeparator()
             if domain.logo != nil {
                 Button("Remove the logo", systemImage: "trash", role: .destructive) { isRemovingLogo = true }
+                    .tint(.red)
                     .confirmationDialog("Stop publishing this logo?", isPresented: $isRemovingLogo, titleVisibility: .visible) {
                         Button("Remove the logo", role: .destructive) {
                             Task {
@@ -2448,7 +2452,7 @@ private struct DNSRecordView: View {
                         .foregroundStyle(Color(.secondaryLabel))
                 }
                 if let blockedReason = record.blockedReason, !blockedReason.isEmpty {
-                    Label(blockedReason, systemImage: "exclamationmark.triangle")
+                    Label(blockedReason.asReasonSentence, systemImage: "exclamationmark.triangle")
                         .font(.callout)
                         .foregroundStyle(.orange)
                 }
@@ -2549,6 +2553,7 @@ private struct DomainAliasesView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = alias }
+                                .tint(.red)
                         }
                     }
                 } footer: {
@@ -2726,6 +2731,7 @@ private struct AliasForm: View {
                 if editedAlias != nil {
                     Section {
                         Button("Remove address", systemImage: "trash", role: .destructive) { isRemoving = true }
+                            .tint(.red)
                             .confirmationDialog("Remove address", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task { await remove() }
@@ -2864,6 +2870,7 @@ private struct DomainCredentialsView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = credential }
+                                .tint(.red)
                         }
                     }
                 } footer: {
@@ -3031,6 +3038,7 @@ private struct EditCredentialForm: View {
                 }
                 Section {
                     Button("Remove credential", systemImage: "trash", role: .destructive) { isRemoving = true }
+                        .tint(.red)
                         .confirmationDialog("Remove credential", isPresented: $isRemoving, titleVisibility: .visible) {
                             Button("Remove", role: .destructive) {
                                 Task { await remove() }
@@ -3133,6 +3141,7 @@ private struct DomainTemplatesView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingTemplate = template }
+                                .tint(.red)
                         }
                     }
                 } header: {
@@ -3170,6 +3179,7 @@ private struct DomainTemplatesView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingLayout = layout }
+                                .tint(.red)
                         }
                     }
                 } header: {

@@ -63,6 +63,11 @@ extension Documents {
           TellAgentGoal(conversationId: $conversationId, text: $text) { conversationId }
         }
         """
+    public static let moveScheduleToGoal = """
+        mutation ($scheduleId: String!, $conversationId: String!) {
+          MoveAgentScheduleToGoal(scheduleId: $scheduleId, conversationId: $conversationId) { id }
+        }
+        """
     public static let setGoalState = """
         mutation ($conversationId: String!, $goalState: String!) {
           SetAgentGoalState(conversationId: $conversationId, goalState: $goalState) { conversationId }
@@ -106,5 +111,17 @@ extension Connection {
             let SetAgentGoalState: Set?
         }
         _ = try await execute(Documents.setGoalState, variables: ["conversationId": .string(conversationId), "goalState": .string(state)], as: Answer.self)
+    }
+
+    /// Makes a schedule one of a goal's: its runs become the goal's turns,
+    /// answered in the goal's conversation rather than by mail, and the goal
+    /// takes none of its own.
+    public func moveScheduleToGoal(_ scheduleId: String, conversationId: String) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Moved: Decodable, Sendable { let id: String }
+            let MoveAgentScheduleToGoal: Moved?
+        }
+        _ = try await execute(
+            Documents.moveScheduleToGoal, variables: ["scheduleId": .string(scheduleId), "conversationId": .string(conversationId)], as: Answer.self)
     }
 }

@@ -6,6 +6,8 @@ import { ErrorMessage, Loading, Tag } from '../components/common'
 import { Column, DataTable } from '../components/dataTable'
 import { useQuery } from '../components/useQuery'
 import { FormDialog } from '../components/dialog'
+import { MailIcon } from '../components/icons'
+import { Tooltip } from '../components/tooltip'
 import { useTranslation } from '../i18n/i18n'
 
 const DOMAINS = `
@@ -50,14 +52,24 @@ export function DomainsPage() {
     }
   }
 
-  const columns = useMemo<Column<Domain>[]>(
-    () => [
+  const domains = data?.ListDomains ?? []
+
+  // The DNS column exists to point at a domain whose records are missing or
+  // unchecked. When every domain has published everything it would be a column
+  // of empty cells, so it is left out until one needs it. Until the list has
+  // arrived it is kept, so that it does not pop in when the first rows do.
+  const hasDnsToShow = !data || domains.some((entry) => recordState(entry) !== 'published')
+
+  const columns = useMemo<Column<Domain>[]>(() => {
+    const everyColumn: Column<Domain>[] = [
       {
         key: 'domain',
         header: t('reports.domain'),
         filter: 'text',
         value: (entry) => entry.domain,
         sort: (first, second) => first.domain.localeCompare(second.domain),
+        // The row opens the domain for a pointer; the name stays a link,
+        // drawn as the row's text, so a keyboard reaches it too.
         render: (entry) => (
           <>
             <Link to={`/manage/domains/${entry.id}`}>{entry.domain}</Link>
@@ -81,11 +93,9 @@ export function DomainsPage() {
           // nobody has uploaded a logo for was making every domain on this
           // list wear a warning about something no mail depends on.
           const missing = records.filter((record) => !record.verified && !record.optional).length
-          return missing === 0 ? (
-            <Tag value={t('domains.allPublished')} tone="good" />
-          ) : (
-            <Tag value={t('domains.missing', { count: missing })} tone="warn" />
-          )
+          // Said only when something is missing: a tag on every row for the
+          // ordinary case is a column of the same word.
+          return missing === 0 ? null : <Tag value={t('domains.missing', { count: missing })} tone="warn" />
         },
       },
       {
@@ -94,12 +104,7 @@ export function DomainsPage() {
         width: '8rem',
         value: (entry) => String(entry.aliases.length),
         sort: (first, second) => first.aliases.length - second.aliases.length,
-        // Filtered to the domain, so the number and the list behind it agree.
-        render: (entry) => (
-          <Link to={`/manage/domains/${entry.id}`}>
-            {plural(entry.aliases.length, { one: 'domains.aliasOne', other: 'domains.aliasOther' })}
-          </Link>
-        ),
+        numeric: true,
       },
       {
         key: 'credentials',
@@ -108,33 +113,31 @@ export function DomainsPage() {
         optional: true,
         value: (entry) => String(entry.credentials.length),
         sort: (first, second) => first.credentials.length - second.credentials.length,
-        render: (entry) => (
-          <Link to={`/manage/domains/${entry.id}`}>
-            {plural(entry.credentials.length, {
-              one: 'domains.credentialOne',
-              other: 'domains.credentialOther',
-            })}
-          </Link>
-        ),
+        numeric: true,
       },
       {
         key: 'mail',
         header: t('nav.mail'),
-        width: '7rem',
+        width: '5rem',
         optional: true,
         // Straight to the mail this domain received, which is the question
         // most often asked next.
         render: (entry) => (
-          <Link className="button-quiet" to={`/manage/mail?domain=${encodeURIComponent(entry.domain)}`}>
-            {t('domains.viewMail')}
-          </Link>
+          <Tooltip label={t('domains.viewMail')}>
+            <Link
+              className="icon-action"
+              to={`/manage/mail?domain=${encodeURIComponent(entry.domain)}`}
+              aria-label={`${entry.domain}: ${t('domains.viewMail')}`}
+            >
+              <MailIcon size={16} />
+            </Link>
+          </Tooltip>
         ),
       },
-    ],
-    [t, plural],
-  )
+    ]
 
-  const domains = data?.ListDomains ?? []
+    return everyColumn.filter((column) => column.key !== 'dns' || hasDnsToShow)
+  }, [t, hasDnsToShow])
 
   return (
     <>
@@ -182,14 +185,22 @@ export function DomainsPage() {
   )
 }
 
+// Whether a domain's DNS records are all published, not (all) published, or
+// not checked yet. The words below and the column's visibility both follow it.
+function recordState(entry: Domain): 'notChecked' | 'published' | 'missing' {
+  const records = entry.records?.records ?? []
+  if (records.length === 0) {
+    return 'notChecked'
+  }
+  return records.every((record) => record.verified || record.optional) ? 'published' : 'missing'
+}
+
 // The value the filter and the sort see: the same three states the tag shows,
 // so narrowing to "not published" is narrowing to what the color says.
 function describeRecords(entry: Domain, t: ReturnType<typeof useTranslation>['t']): string {
-  const records = entry.records?.records ?? []
-  if (records.length === 0) {
+  const state = recordState(entry)
+  if (state === 'notChecked') {
     return t('domains.notChecked')
   }
-  return records.every((record) => record.verified || record.optional)
-    ? t('domains.allPublished')
-    : t('domains.notPublished')
+  return state === 'published' ? t('domains.allPublished') : t('domains.notPublished')
 }

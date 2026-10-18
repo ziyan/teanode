@@ -445,10 +445,13 @@
     }
 
     /// CircleDetailDemoScreen is the page of the family circle, which the
-    /// circles list pushes, opened as it is for a screenshot
-    /// (`-TeaNodeScreen circle-detail`). The page scrolls itself to the
-    /// invitation waiting for an answer, so the members above it and the
-    /// invitation are on one screen.
+    /// circles list pushes, opened as it is for a screenshot. Two screens
+    /// open it: `-TeaNodeScreen circle-detail`, as a circle's admin who does
+    /// not run the server (circlesAnswer takes `user:manage` out of the
+    /// session), and `circle-detail-operator`, with the demo's session as it
+    /// is, so the row that makes an account shows. The page scrolls itself
+    /// to the invitation waiting for an answer, so the members above it and
+    /// the invitation are on one screen.
     struct CircleDetailDemoScreen: View {
         @State private var directory: CircleDirectory
 

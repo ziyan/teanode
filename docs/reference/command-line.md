@@ -131,7 +131,7 @@ so one command serves a person and a script.
 | `role` | the named sets of permissions a group holds; `role permissions` lists what may be given |
 | `circle` | the circles you are in and the invitations to join one; see below |
 | `audit` | the log of administrative changes, with filters |
-| `mailbox` | a mailbox and everything in it: `folder`, `rule`, `subscription`, `device`, `autoreply`, `programs` |
+| `mailbox` | a mailbox and everything in it: `message`, `invitation`, `folder`, `rule`, `subscription`, `device`, `autoreply`, `programs` |
 | `token` | API tokens: `create`, `list`, `update` (rename, or a new lifetime from now), `revoke`; `token create --user` on the console issues somebody's first |
 | `app` | apps authorized to act as you: `list`, `rename` (the name stays when the app renews), `disconnect` (revokes every token it holds) |
 | `session` | the browsers signed in to the dashboard |
@@ -183,6 +183,40 @@ A rule files the mail that arrives after it is written. `rule apply` runs the
 stored rules over what is already in a folder, moving, marking, flagging and
 deleting as arrival would have; forwarding is not repeated, because old mail
 is not sent again. `rule test` says what would happen and changes nothing.
+
+Your own messages are `mailbox message`, through the same operations as the
+dashboard's list, reader and composer; `teanode mail` is the operator's log of
+mail the server handled, not these:
+
+    teanode mailbox message list --unread --from ann
+    teanode mailbox message show <id> --thread
+    teanode mailbox message move <id>... --folder Receipts
+    teanode mailbox message flag <id>... --read --flag
+    teanode mailbox message junk <id>... [--not-junk]
+    teanode mailbox message send --to ann@example.org --subject Lunch --text -
+    teanode mailbox message draft --subject Later --text notes.txt
+
+`list` shows the Inbox unless `--folder` names another or `--everywhere` asks
+for the whole mailbox; `--unread`, `--flagged`, `--has-attachment`, `--from`,
+`--to`, `--subject`, `--search`, `--since` and `--before` narrow it, and
+`--first` with `--offset` (or `--after <id>` within a folder) reads on. `show`
+prints the headers and the text, `--html` the HTML part instead, `--thread`
+the whole conversation oldest first, and `--save-attachments <directory>`
+writes the files out under the names the sender gave them, never outside the
+directory. A moved message gets a new identifier, which `move` prints. `send`
+sends as the mailbox's only address, or `--from` when it has several;
+`--reply-to <id>` keeps the conversation together and marks that message
+answered, `--forward <id>` carries a message's attachments, and
+`--submission-id` reuses an identifier so that a send whose answer was lost is
+not sent twice. `draft` takes the same flags and saves to Drafts; `--draft
+<id>` replaces a draft saved before.
+
+A message that carried a calendar invitation has `mailbox invitation show <id>`
+(what, where, when, who is asked and what you have answered) and `invitation
+answer <id> accept|tentative|decline`, which marks your copy and mails the
+organizer, so it needs the right to send as well as to use the calendar. The
+agent does the same through `mail_read` with `invitation` and `mail_act` with
+`answer_invitation`, which asks you first because it speaks for you.
 
 The rest of the group is the rest of the mailbox. `mailbox list` names the
 mailboxes you can open, and `--all` every mailbox on the server with its
