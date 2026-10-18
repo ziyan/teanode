@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.178.0] - 2026-10-18
+
+### Added
+
+- In a circle, say what somebody is to you (spouse, parent, child, sibling and more, or friend and colleague): they see the opposite side at once and are told, either of you can change or remove it, and only the two of you see it. Your agent knows it, so "ask my father" reaches the right person. (#573)
+- Say how you are described (he, she or they) on your profile; until you do, you are described in neutral words and your agent never guesses. (#573)
+
 ## [0.177.3] - 2026-10-18
 
 ### Fixed
