@@ -426,6 +426,26 @@ struct FileCard: View {
         }
     }
 
+    /// Shares the file itself under its own name. A ShareLink given the
+    /// picture would send a re-encoded copy with no name, and one given the
+    /// file's address would need the file read on every appearance of the
+    /// card, so the file is read when Share is chosen and the share sheet is
+    /// opened then. The same button serves the menu and VoiceOver.
+    @ViewBuilder
+    private var shareButton: some View {
+        if loadedPicture != nil {
+            Button {
+                Task {
+                    if let address = await app.downloadedFile(file.path, name: file.name) {
+                        ShareSheetPresenter.present(address)
+                    }
+                }
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
+    }
+
     @ViewBuilder
     private var copyButton: some View {
         if let loadedPicture {
@@ -437,34 +457,21 @@ struct FileCard: View {
         }
     }
 
-    /// The long-press menu, the main action first. Share is the system's own
-    /// ShareLink here.
+    /// The long-press menu, the main action first.
     @ViewBuilder
     private var menuItems: some View {
         openButton
         keepButton
-        if let loadedPicture {
-            ShareLink(item: Image(uiImage: loadedPicture), preview: SharePreview(file.name, image: Image(uiImage: loadedPicture))) {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-        }
+        shareButton
         copyButton
     }
 
     /// The same actions for VoiceOver, which cannot long press a menu open.
-    /// A ShareLink cannot be run from an accessibility action, so Share
-    /// opens the system's share sheet itself.
     @ViewBuilder
     private var accessibilityActionButtons: some View {
         openButton
         keepButton
-        if let loadedPicture {
-            Button {
-                ShareSheetPresenter.present(loadedPicture)
-            } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-        }
+        shareButton
         copyButton
     }
 

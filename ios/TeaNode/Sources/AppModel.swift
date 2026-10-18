@@ -376,7 +376,15 @@ final class AppModel {
     /// Shows a file the server keeps in Quick Look: read, written to a
     /// place of the app's own under its name, then opened.
     func preview(_ path: String, name: String) async {
-        guard let connection else { return }
+        if let address = await downloadedFile(path, name: name) { previewAddress = address }
+    }
+
+    /// Reads a file the server keeps and writes it, as it is, to a place of
+    /// the app's own under its name: Quick Look and the share sheet show the
+    /// name, and a file shared this way keeps its own bytes. Nil, with the
+    /// reason in previewProblemText, when it could not be read or written.
+    func downloadedFile(_ path: String, name: String) async -> URL? {
+        guard let connection else { return nil }
         do {
             let data = try await connection.download(path)
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -384,9 +392,10 @@ final class AppModel {
             let safeName = name.isEmpty ? "file" : name.replacingOccurrences(of: "/", with: "-")
             let address = folder.appendingPathComponent(safeName)
             try data.write(to: address)
-            previewAddress = address
+            return address
         } catch {
             previewProblemText = describe(error)
+            return nil
         }
     }
 
