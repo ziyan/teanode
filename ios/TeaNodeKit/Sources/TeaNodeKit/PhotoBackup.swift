@@ -221,14 +221,15 @@ public enum PhotoBackupPlanner {
         return "local:" + item.localIdentifier
     }
 
-    /// The uploads still to do, oldest photo first and, within one photo, the
-    /// original before its video and its edit. `inFlight` holds the keys of
-    /// uploads already queued, which are not planned again.
+    /// The uploads still to do, newest photo first (what the person took
+    /// last is what they look for first) and, within one photo, the original
+    /// before its video and its edit. `inFlight` holds the keys of uploads
+    /// already queued, which are not planned again.
     public static func plan(items: [PhotoBackupItem], records: [String: PhotoBackupRecord], inFlight: Set<String> = []) -> [PhotoBackupUpload] {
         let ordered = items.sorted { first, second in
             switch (first.creationDate, second.creationDate) {
             case (let firstDate?, let secondDate?):
-                if firstDate != secondDate { return firstDate < secondDate }
+                if firstDate != secondDate { return firstDate > secondDate }
             case (nil, _?): return false
             case (_?, nil): return true
             case (nil, nil): break
@@ -362,14 +363,56 @@ public struct PhotoBackupRecord: Codable, Equatable, Sendable {
     public var clientPhotoId: String
     /// By PhotoBackupFileRole's raw value, because a JSON object needs text keys.
     public var roles: [String: PhotoBackupRoleRecord]
+    /// Where the item stands in the line of items still to send: the lower, the
+    /// sooner. The listing hands them out newest photo first, so the line is
+    /// newest first without the index holding every item's date. Nil for an item
+    /// that was never planned (one the server already had).
+    public var sendOrder: Int?
 
-    public init(clientPhotoId: String, roles: [String: PhotoBackupRoleRecord] = [:]) {
+    public init(clientPhotoId: String, roles: [String: PhotoBackupRoleRecord] = [:], sendOrder: Int? = nil) {
         self.clientPhotoId = clientPhotoId
         self.roles = roles
+        self.sendOrder = sendOrder
     }
 
     public var serverPhotoId: String? { roles.values.compactMap(\.serverPhotoId).first }
     public var isOriginalOnServer: Bool { roles[PhotoBackupFileRole.original.rawValue]?.isOnServer == true }
+}
+
+/// PhotoBackupResumePoint is where a listing of the whole library stopped: the
+/// creation date of the last item it handled. The library is listed newest
+/// first, so the next batch holds the items made before this date (see
+/// `PhotoBackupListingWindow`). A saved index that still has the identifier of
+/// that item, which an earlier version kept, is read all the same.
+public struct PhotoBackupResumePoint: Codable, Equatable, Sendable {
+    /// The item's creation date as seconds since the reference date, kept
+    /// exactly: the index's other dates are written to the second, and a
+    /// rounded date would skip the items made within the same second. The
+    /// reference date is the one the library keeps its dates against, so the
+    /// number comes back as the very same date.
+    public let creationSecondsSinceReferenceDate: Double
+
+    public init(creationDate: Date) {
+        creationSecondsSinceReferenceDate = creationDate.timeIntervalSinceReferenceDate
+    }
+
+    public var creationDate: Date { Date(timeIntervalSinceReferenceDate: creationSecondsSinceReferenceDate) }
+}
+
+/// PhotoBackupListingProgress is a listing of the whole library that has begun
+/// and not ended, kept in the index so that a pass which stops (iOS ends the
+/// background task, the person leaves, the app is killed) is followed by one
+/// that goes on from there.
+public struct PhotoBackupListingProgress: Codable, Equatable, Sendable {
+    /// The library's change token as it was when the listing began, so that
+    /// whatever changed meanwhile is read once the listing has ended.
+    public var changeToken: Data?
+    /// The last item handled; nil until the first batch is done.
+    public var resumePoint: PhotoBackupResumePoint?
+    /// How many items the listing has gone through, the ones it skipped included.
+    public var listedItemCount: Int
+    /// How many items the library held when the listing began.
+    public var libraryItemCount: Int
 }
 
 /// PhotoBackupSummary is what the index says about the backup as a whole.
@@ -397,8 +440,19 @@ public actor PhotoBackupIndex {
         var version = 1
         var accountKey: String?
         var records: [String: PhotoBackupRecord] = [:]
-        /// The library's archived change token, which only the app reads.
+        /// The library's archived change token, which only the app reads. Set
+        /// only once the whole library has been listed.
         var changeToken: Data?
+        /// The listing of the whole library, while it is under way.
+        var listing: PhotoBackupListingProgress?
+        /// The next order numbers for the items still to send (`sendOrder`):
+        /// those of a listing count up from `nextLaterSendOrder`, newest photo
+        /// first, and those of photos that came into the library afterwards
+        /// count down from `nextEarlierSendOrder`, so they go before the rest.
+        /// Optional so that a file written before they existed is still read;
+        /// nil counts as 1 and 0.
+        var nextLaterSendOrder: Int?
+        var nextEarlierSendOrder: Int?
         var libraryItemCount = 0
         var lastFailure: PhotoBackupFailure?
         var isSignInNeeded = false
@@ -426,6 +480,8 @@ public actor PhotoBackupIndex {
     /// status, published after every upload, does not walk every record.
     private var backedUpItemCount = 0
     private var refusedFileCount = 0
+    /// Files planned and not on the server, leaving out the refused ones.
+    private var pendingFileCountKept = 0
     /// Whether the file existed and could not be read when the index was opened.
     public private(set) var wasStartedOver = false
 
@@ -446,32 +502,42 @@ public actor PhotoBackupIndex {
                 wasStartedOver = true
             }
         }
-        (backedUpItemCount, refusedFileCount) = Self.counts(of: contents.records.values)
+        (backedUpItemCount, refusedFileCount, pendingFileCountKept) = Self.counts(of: contents.records.values)
     }
 
-    /// How many records have their original on the server, and how many of
-    /// their files the server refused often enough to be left alone.
-    private static func counts(of records: some Sequence<PhotoBackupRecord>) -> (backedUp: Int, refused: Int) {
+    /// How many records have their original on the server, how many of their
+    /// files the server refused often enough to be left alone, and how many
+    /// files are still to send.
+    private static func counts(of records: some Sequence<PhotoBackupRecord>) -> (backedUp: Int, refused: Int, pending: Int) {
         var backedUp = 0
         var refused = 0
+        var pending = 0
         for record in records {
             if record.isOriginalOnServer { backedUp += 1 }
-            refused += record.roles.values.filter { $0.refusalCount >= PhotoBackupPlanner.maximumRefusalCount }.count
+            for state in record.roles.values {
+                if state.refusalCount >= PhotoBackupPlanner.maximumRefusalCount {
+                    refused += 1
+                } else if !state.isOnServer {
+                    pending += 1
+                }
+            }
         }
-        return (backedUp, refused)
+        return (backedUp, refused, pending)
     }
 
     /// The only way a record is written, so that the counters follow it.
     private func store(_ record: PhotoBackupRecord?, for localIdentifier: String) {
         if let old = contents.records[localIdentifier] {
-            let (backedUp, refused) = Self.counts(of: [old])
+            let (backedUp, refused, pending) = Self.counts(of: [old])
             backedUpItemCount -= backedUp
             refusedFileCount -= refused
+            pendingFileCountKept -= pending
         }
         if let record {
-            let (backedUp, refused) = Self.counts(of: [record])
+            let (backedUp, refused, pending) = Self.counts(of: [record])
             backedUpItemCount += backedUp
             refusedFileCount += refused
+            pendingFileCountKept += pending
         }
         contents.records[localIdentifier] = record
     }
@@ -489,6 +555,7 @@ public actor PhotoBackupIndex {
         contents = Contents()
         backedUpItemCount = 0
         refusedFileCount = 0
+        pendingFileCountKept = 0
         unwrittenChangeCount = 0
         try? fileManager.removeItem(at: fileURL)
     }
@@ -499,6 +566,7 @@ public actor PhotoBackupIndex {
         contents = Contents()
         backedUpItemCount = 0
         refusedFileCount = 0
+        pendingFileCountKept = 0
         contents.accountKey = accountKey
         if hadAccount { wasStartedOver = true }
         didChange(force: true)
@@ -518,20 +586,28 @@ public actor PhotoBackupIndex {
         return found
     }
 
-    /// Every item the index has a record of, which a listing after an expired
-    /// change token skips.
+    /// The identifiers, among these, that the index has no record of. A listing
+    /// after an expired change token skips the items it has a record of, and
+    /// asks the library for the others only.
+    public func localIdentifiersWithoutRecord(among localIdentifiers: [String]) -> [String] {
+        localIdentifiers.filter { contents.records[$0] == nil }
+    }
+
+    /// Every item the index has a record of.
     public func knownLocalIdentifiers() -> Set<String> {
         Set(contents.records.keys)
     }
 
     public var changeToken: Data? { contents.changeToken }
 
+    /// The listing of the whole library that has begun and not ended, if any.
+    public var listingProgress: PhotoBackupListingProgress? { contents.listing }
+
     /// How many files are still to send: those planned and not on the server,
     /// leaving out the ones the server refused often enough to be left alone.
+    /// Kept up to date as records are written.
     public func pendingFileCount() -> Int {
-        contents.records.values.reduce(0) { total, record in
-            total + record.roles.values.filter { !$0.isOnServer && $0.refusalCount < PhotoBackupPlanner.maximumRefusalCount }.count
-        }
+        pendingFileCountKept
     }
 
     public func summary() -> PhotoBackupSummary {
@@ -549,11 +625,17 @@ public actor PhotoBackupIndex {
 
     /// The items with a file still to send: planned by an earlier pass and not
     /// finished, because the network failed, iCloud was out of reach, or the
-    /// app was closed. They are read again whatever the library's token says.
+    /// app was closed. They are read again whatever the library's token says,
+    /// in the order they are to go: the line `sendOrder` makes, newest photo
+    /// first, and by identifier for items with the same place.
     public func pendingLocalIdentifiers() -> [String] {
-        contents.records.compactMap { localIdentifier, record in
-            record.roles.values.contains { !$0.isOnServer && $0.refusalCount < PhotoBackupPlanner.maximumRefusalCount } ? localIdentifier : nil
-        }.sorted()
+        let pending: [(localIdentifier: String, sendOrder: Int)] = contents.records.compactMap { localIdentifier, record in
+            record.roles.values.contains { !$0.isOnServer && $0.refusalCount < PhotoBackupPlanner.maximumRefusalCount }
+                ? (localIdentifier, record.sendOrder ?? Int.max) : nil
+        }
+        return pending.sorted { first, second in
+            first.sendOrder != second.sendOrder ? first.sendOrder < second.sendOrder : first.localIdentifier < second.localIdentifier
+        }.map(\.localIdentifier)
     }
 
     /// The names, among these items', that the server has not been asked about
@@ -585,14 +667,49 @@ public actor PhotoBackupIndex {
 
     /// Notes that these files are to be sent, so that a pass that ends before
     /// they are keeps them for the next one, however far the library's token has
-    /// moved. Written at once: the token moves on because of it.
-    public func markPending(_ uploads: [PhotoBackupUpload]) {
+    /// moved. The uploads come newest photo first, and the items take their
+    /// place in the line of items to send in that order: after those already in
+    /// it, or before them when `goesBeforeTheRest` (photos that came into the
+    /// library since, which the person looks for first).
+    ///
+    /// Written at once unless `shouldWriteAtOnce` is false, which a listing of the
+    /// whole library says: it writes a batch at a time, and rewriting the whole
+    /// file for each would make the listing take longer the further it went. What
+    /// is not written yet is written with the next change after
+    /// `secondsBetweenWrites`, and by `flush` when the pass ends.
+    public func markPending(_ uploads: [PhotoBackupUpload], goesBeforeTheRest: Bool = false, shouldWriteAtOnce: Bool = true) {
+        var itemsToPlace: [String] = []
+        var placed: Set<String> = []
         for upload in uploads {
             var record = contents.records[upload.localIdentifier] ?? PhotoBackupRecord(clientPhotoId: upload.clientPhotoId)
-            if record.roles[upload.role.rawValue] == nil { record.roles[upload.role.rawValue] = PhotoBackupRoleRecord() }
+            if var state = record.roles[upload.role.rawValue] {
+                // An edit made since the file went up is to be sent again: it
+                // is still to send, and the index must say so for the pass that
+                // reads the files still to send.
+                if state.isOnServer {
+                    state.isOnServer = false
+                    record.roles[upload.role.rawValue] = state
+                }
+            } else {
+                record.roles[upload.role.rawValue] = PhotoBackupRoleRecord()
+            }
+            if record.sendOrder == nil, placed.insert(upload.localIdentifier).inserted { itemsToPlace.append(upload.localIdentifier) }
             store(record, for: upload.localIdentifier)
         }
-        didChange(force: true)
+        if goesBeforeTheRest {
+            contents.nextEarlierSendOrder = (contents.nextEarlierSendOrder ?? 0) - itemsToPlace.count
+        }
+        for (position, localIdentifier) in itemsToPlace.enumerated() {
+            let sendOrder: Int
+            if goesBeforeTheRest {
+                sendOrder = (contents.nextEarlierSendOrder ?? 0) + 1 + position
+            } else {
+                sendOrder = contents.nextLaterSendOrder ?? 1
+                contents.nextLaterSendOrder = sendOrder + 1
+            }
+            contents.records[localIdentifier]?.sendOrder = sendOrder
+        }
+        didChange(force: shouldWriteAtOnce)
     }
 
     /// Forgets the files still to be sent of items that are no longer in the
@@ -659,8 +776,46 @@ public actor PhotoBackupIndex {
         didChange()
     }
 
+    /// Sets the library's change token. A listing under way is dropped with it:
+    /// the token is set to nothing when the next pass has to list the library
+    /// again from the start (the Hidden album was included or left out).
     public func setChangeToken(_ token: Data?) {
         contents.changeToken = token
+        contents.listing = nil
+        didChange(force: true)
+    }
+
+    // MARK: Listing the whole library
+
+    /// Notes that a listing of the whole library begins, with the change token
+    /// as it is now. A listing already under way is replaced.
+    public func beginListing(changeToken: Data?, libraryItemCount: Int) {
+        contents.listing = PhotoBackupListingProgress(
+            changeToken: changeToken, resumePoint: nil, listedItemCount: 0, libraryItemCount: libraryItemCount)
+        contents.libraryItemCount = libraryItemCount
+        didChange(force: true)
+    }
+
+    /// Notes that a batch of the listing is done: the items up to `resumePoint`
+    /// are in the index (or were left out), and the next batch follows it.
+    /// Written with the next change after `secondsBetweenWrites`, not at once:
+    /// the file is rewritten whole, and doing that for each batch would make the
+    /// listing take longer the further it went. A listing that is cut short
+    /// loses at most those seconds of work, and `flush` writes the rest.
+    public func recordListed(batchItemCount: Int, resumePoint: PhotoBackupResumePoint?) {
+        guard var listing = contents.listing else { return }
+        listing.listedItemCount += batchItemCount
+        if let resumePoint { listing.resumePoint = resumePoint }
+        contents.listing = listing
+        didChange()
+    }
+
+    /// Notes that the whole library has been listed: its change token, as it
+    /// was when the listing began, is the one to read changes from.
+    public func finishListing() {
+        guard let listing = contents.listing else { return }
+        contents.changeToken = listing.changeToken
+        contents.listing = nil
         didChange(force: true)
     }
 

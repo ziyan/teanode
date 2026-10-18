@@ -367,6 +367,38 @@ final class AgentUpkeepTests: XCTestCase {
         XCTAssertEqual(AgentFollowUp.muteKinds.first, "follow_up")
     }
 
+    func testAddsAFollowUpWithOnlyTheFieldsItsKindUses() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"AddAgentFollowUp":{"id":"parcel-2","followUpTitle":"Garden shears"}}}"#)
+        var parcel = NewAgentFollowUp()
+        parcel.followUpKind = "parcel"
+        parcel.followUpTitle = " Garden shears "
+        parcel.carrier = "Example Post"
+        // Typed while the kind was a bill, then the kind was changed.
+        parcel.payee = "Example Water"
+        parcel.amount = "84.20"
+        XCTAssertTrue(parcel.canAdd)
+        try await connection.addAgentFollowUp(parcel)
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            ["followUpKind": .string("parcel"), "followUpTitle": .string("Garden shears"), "carrier": .string("Example Post")])
+    }
+
+    func testAFollowUpNeedsWhatTheServerNeeds() {
+        var bill = NewAgentFollowUp()
+        bill.followUpTitle = "Water bill"
+        XCTAssertFalse(bill.canAdd)
+        bill.dueOn = "2030-01-20"
+        XCTAssertFalse(bill.canAdd)
+        bill.amount = "84.20"
+        XCTAssertTrue(bill.canAdd)
+        var event = NewAgentFollowUp()
+        event.followUpKind = "event"
+        event.followUpTitle = "Street fair"
+        XCTAssertFalse(event.canAdd)
+        let day = Calendar(identifier: .gregorian).date(from: DateComponents(year: 2030, month: 1, day: 5))!
+        XCTAssertEqual(NewAgentFollowUp.dayText(day, calendar: Calendar(identifier: .gregorian)), "2030-01-05")
+    }
+
     func testSaysWhyAServerRefusedTheCredential() async throws {
         let (connection, _) = connection(answering: #"{"data":{"ConnectAgentServer":{"name":"tracker","status":"error","lastError":"bad token","tools":0}}}"#)
         let refusal = try await connection.connectServer("tracker", credential: "a-credential")

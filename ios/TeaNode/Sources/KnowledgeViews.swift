@@ -632,6 +632,7 @@ struct KnowledgePageView: View {
                 .fullWidthRowSeparator()
                 .swipeActions {
                     Button("Forget", systemImage: "trash", role: .destructive) { forgettingFact = fact }
+                        .tint(.red)
                     Button("Move", systemImage: "arrow.right.doc.on.clipboard") {
                         choosing = PageChoice(kind: .moveFact(fact.number), title: String(localized: "Move it to"), initial: "")
                     }
@@ -711,6 +712,7 @@ struct KnowledgePageView: View {
                                         }
                                     }
                                 }
+                                .tint(.red)
                             }
                         }
                     }
@@ -783,6 +785,7 @@ struct KnowledgePageView: View {
                         app.askingAbout = AgentReference(path: node.path, name: node.shownName)
                     }
                     Button("Forget page", systemImage: "trash", role: .destructive) { isConfirmingForget = true }
+                        .tint(.red)
                 }
             } label: {
                 Label("Page actions", systemImage: "ellipsis.circle")
@@ -1477,6 +1480,7 @@ struct LinkedRecordRow: View {
         .disabled(!link.canOpen)
         .swipeActions(edge: .trailing) {
             Button("Remove", systemImage: "minus.circle", role: .destructive) { onAct(.remove) }
+                .tint(.red)
             if link.isProposed {
                 Button("Confirm", systemImage: "checkmark") { onAct(.confirm) }.tint(.accentColor)
             }
@@ -1486,6 +1490,7 @@ struct LinkedRecordRow: View {
                 Button("Confirm link", systemImage: "checkmark") { onAct(.confirm) }
             }
             Button("Remove link", systemImage: "minus.circle", role: .destructive) { onAct(.remove) }
+                .tint(.red)
         }
     }
 }
@@ -1528,6 +1533,7 @@ struct ContactPickerSheet: View {
             List {
                 if !currentContactId.isEmpty {
                     Button("Unlink contact", systemImage: "person.crop.circle.badge.minus", role: .destructive) { onChoose("") }
+                        .tint(.red)
                         .fullWidthRowSeparator()
                 }
                 ForEach(contacts) { contact in

@@ -232,6 +232,7 @@ struct PeopleView: View {
             // left to undo it from the same screen.
             if user.id != directory.currentUserId {
                 Button("Remove", systemImage: "trash", role: .destructive) { removing = user }
+                    .tint(.red)
                 Button(user.isDisabled ? LocalizedStringKey("Enable") : "Disable", systemImage: user.isDisabled ? "person.crop.circle.badge.checkmark" : "nosign") {
                     Task { await PersonActions.setDisabled(user, isDisabled: !user.isDisabled, in: directory) }
                 }
@@ -360,6 +361,7 @@ struct PersonDetailView: View {
                         AddToCircleMenu(user: user, directory: directory)
                         if !isCurrentUser {
                             Button("Remove this person", systemImage: "trash", role: .destructive) { isRemoving = true }
+                                .tint(.red)
                                 .confirmationDialog("Remove \(user.username)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                     Button("Remove", role: .destructive) {
                                         Task {
@@ -671,6 +673,7 @@ struct GroupsView: View {
                         .swipeActions {
                             if directory.canManageGroups {
                                 Button("Remove", systemImage: "trash", role: .destructive) { removing = group }
+                                    .tint(.red)
                                 Button("Edit", systemImage: "pencil") { editing = group }
                                     .tint(.indigo)
                             }
@@ -766,6 +769,7 @@ struct GroupDetailView: View {
                     }
                     Section {
                         Button("Remove this group", systemImage: "trash", role: .destructive) { isRemoving = true }
+                            .tint(.red)
                             .confirmationDialog("Remove the group \(group.name)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task {
@@ -833,6 +837,7 @@ struct GroupDetailView: View {
                                 }
                             }
                         }
+                        .tint(.red)
                     }
                 }
             }
@@ -1121,6 +1126,7 @@ struct RolesView: View {
                         .swipeActions {
                             if directory.canManageRoles {
                                 Button("Remove", systemImage: "trash", role: .destructive) { removing = role }
+                                    .tint(.red)
                                 Button("Edit", systemImage: "pencil") { editing = role }
                                     .tint(.indigo)
                             }
@@ -1211,6 +1217,7 @@ struct RoleDetailView: View {
                 if directory.canManageRoles {
                     Section {
                         Button("Remove this role", systemImage: "trash", role: .destructive) { isRemoving = true }
+                            .tint(.red)
                             .confirmationDialog("Remove the role \(role.name)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task {

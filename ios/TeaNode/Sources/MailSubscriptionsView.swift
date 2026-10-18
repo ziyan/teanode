@@ -208,6 +208,7 @@ struct SubscriptionReader: View {
                     }
                 }
                 Button("Delete…", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                    .tint(.red)
             } label: {
                 Label("Actions", systemImage: "ellipsis.circle")
             }

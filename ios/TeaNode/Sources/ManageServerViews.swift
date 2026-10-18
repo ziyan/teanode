@@ -1072,6 +1072,7 @@ private struct SSOFormView: View {
                     Button("Remove", systemImage: "trash", role: .destructive) {
                         draft.wrappedValue.providers.removeAll { $0.id == shown.id }
                     }
+                    .tint(.red)
                 } header: {
                     Text(verbatim: shown.name.isEmpty ? shown.providerId : shown.name)
                 } footer: {
@@ -1320,6 +1321,7 @@ struct ServerAboutView: View {
             } label: {
                 Label(isRestarting ? LocalizedStringKey("Restarting…") : "Restart this instance", systemImage: "arrow.clockwise")
             }
+            .tint(.red)
             .disabled(isRestarting)
             .confirmationDialog("Restart this instance?", isPresented: $isConfirmingRestart, titleVisibility: .visible, presenting: serverStatus) { _ in
                 Button("Yes, restart it", role: .destructive) {
@@ -2227,6 +2229,7 @@ private struct AgentListView: View {
             .tint(.blue)
         } else {
             Button("Switch off", systemImage: "power", role: .destructive) { switchingOff = summary }
+                .tint(.red)
         }
     }
 
@@ -2932,6 +2935,7 @@ private struct AgentProvidersView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                                .tint(.red)
                             if provider.canBeTested {
                                 Button("Test", systemImage: "checkmark.circle") {
                                     Task { await test(provider.name) }
@@ -2947,6 +2951,7 @@ private struct AgentProvidersView: View {
                                 }
                             }
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                                .tint(.red)
                         }
                         .disabled(testingName != nil)
                     }
@@ -3331,6 +3336,7 @@ struct AgentProviderForm: View {
                 Button("Remove", systemImage: "trash", role: .destructive) {
                     draft.modelPrices.removeAll { $0.id == shown.id }
                 }
+                .tint(.red)
             } header: {
                 Text("Prices for particular models")
             }
@@ -3981,10 +3987,12 @@ private struct ConnectedServersView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                                .tint(.red)
                         }
                         .contextMenu {
                             Button("Edit", systemImage: "pencil") { editing = ServerEditing(serverIndex: index) }
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                                .tint(.red)
                         }
                     }
                 } footer: {
@@ -4460,6 +4468,7 @@ private struct InstalledSkillView: View {
                         }
                     }
                     Button("Remove", systemImage: "trash", role: .destructive) { isRemoving = true }
+                        .tint(.red)
                         .confirmationDialog("Remove \(skillName)?", isPresented: $isRemoving, titleVisibility: .visible) {
                             Button("Remove", role: .destructive) {
                                 Task {
@@ -4662,12 +4671,14 @@ private struct AgentSourceTypesView: View {
                     }
                     .swipeActions {
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = sourceType }
+                            .tint(.red)
                     }
                     .contextMenu {
                         if sourceType.hasGuide {
                             Button("What it says about itself", systemImage: "list.bullet") { reading = sourceType }
                         }
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = sourceType }
+                            .tint(.red)
                     }
                     .disabled(busyName == sourceType.name)
                 }

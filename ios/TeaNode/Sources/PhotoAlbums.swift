@@ -235,6 +235,7 @@ struct PhotoSelectionToolbar: ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
             Button("Move to Trash", systemImage: "trash", role: .destructive) { isConfirmingTrash = true }
+                .tint(.red)
                 .disabled(isEmpty)
                 .confirmationDialog("Move these photos to the Trash?", isPresented: $isConfirmingTrash, titleVisibility: .visible) {
                     Button("Move to Trash", role: .destructive) {
@@ -597,6 +598,7 @@ struct PhotoAlbumScreen: View {
                                 model.requestAlbumTitle(.rename(album), scope: .album)
                             }
                             Button("Delete album", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                                .tint(.red)
                         }
                     } label: {
                         Label("More", systemImage: "ellipsis")

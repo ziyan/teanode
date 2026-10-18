@@ -107,7 +107,9 @@ its pull request is opened.
 - Actions are full-size: a row of their own with a symbol, as "Add a
   receipt", or a standard capsule button. Never a footnote-size link or
   several small buttons side by side in a row or a card. Destructive ones
-  are red, symbol and words alike.
+  are red, symbol and words alike: `role: .destructive` reddens only the
+  words, so the button carries `.tint(.red)` for its symbol
+  (`make check-button-colors` checks it).
 - Show content, do not fold it. Lines of a receipt, a quoted message, a
   summary: show them whole, in body text, one row each. A long list moves to
   a screen of its own behind a row, as iOS Settings does; it does not open in

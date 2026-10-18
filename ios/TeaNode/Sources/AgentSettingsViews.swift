@@ -1428,6 +1428,7 @@ struct AgentCategoriesView: View {
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 removing = RemovedCategory(index: index, name: category.name)
                             }
+                            .tint(.red)
                         }
                     }
                 } footer: {

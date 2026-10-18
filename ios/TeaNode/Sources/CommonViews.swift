@@ -401,6 +401,14 @@ extension View {
         modifier(MenuListStyle(isMenu: isMenu))
     }
 
+    /// Keeps how far the list is scrolled in `scrollOffsetPoints`, which the
+    /// caller holds above the list, and scrolls back to it once the list has
+    /// its rows. The side menu is drawn anew each time it opens, so a list
+    /// that kept its own place would start at the top again.
+    func remembersScroll(scrollOffsetPoints: Binding<CGFloat?>, isReady: Bool, isPaused: Bool = false) -> some View {
+        modifier(RemembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isReady, isPaused: isPaused))
+    }
+
     /// A row of the side menu: no separator, and the one chosen on a
     /// rounded highlight inset from the edges.
     func menuRow(isSelected: Bool) -> some View {
@@ -411,5 +419,85 @@ extension View {
                     .fill(isSelected ? Color(.tertiarySystemFill) : .clear)
                     .padding(.horizontal, 10)
             )
+    }
+}
+
+/// RemembersScroll is `remembersScroll(scrollOffsetPoints:isReady:isPaused:)`.
+private struct RemembersScroll: ViewModifier {
+    @Binding var scrollOffsetPoints: CGFloat?
+    /// Whether what the list shows has been read. The rows may be there a
+    /// moment before that, and are not the final ones.
+    let isReady: Bool
+    /// Whether the list shows something other than its rows, such as search
+    /// results, whose place is not the one to come back to.
+    let isPaused: Bool
+    @State private var scrollPosition = ScrollPosition()
+    @State private var scrollGeometry = Geometry(scrollOffsetPoints: 0, scrollableHeightPoints: 0)
+    /// Whether the place kept has been scrolled back to. Until then the
+    /// list reports the top, which must not overwrite the place kept.
+    @State private var hasRestored = false
+
+    /// How long after the rows are read to wait for them to reach the place
+    /// kept, before scrolling as near to it as they now go. A list that has
+    /// lost rows since would otherwise wait for good, and jump there later.
+    private static var settleDuration: Duration { .seconds(1) }
+
+    /// What the list reports about its scroll, both counted from the top of
+    /// the rows: where it is, and how far down it can go.
+    private struct Geometry: Equatable {
+        var scrollOffsetPoints: CGFloat
+        var scrollableHeightPoints: CGFloat
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: Geometry.self) { geometry in
+                // The offset is below zero by the inset under the bar while
+                // the list is at rest; with the inset added back, the top of
+                // the rows is zero, which is what scrolling to a place takes.
+                Geometry(
+                    scrollOffsetPoints: geometry.contentOffset.y + geometry.contentInsets.top,
+                    scrollableHeightPoints: max(
+                        0, geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom - geometry.containerSize.height))
+            } action: { _, reported in
+                scrollGeometry = reported
+                if hasRestored {
+                    // Not while pulled past the top to refresh, nor while
+                    // searching.
+                    if !isPaused { scrollOffsetPoints = max(0, reported.scrollOffsetPoints) }
+                } else {
+                    restoreIfReachable()
+                }
+            }
+            // Initial too: the mail folders are often read before the menu
+            // opens, so their list is ready from the start.
+            .onChange(of: isReady, initial: true) { restoreIfReachable() }
+            .task(id: isReady) {
+                guard isReady else { return }
+                try? await Task.sleep(for: Self.settleDuration)
+                restoreAsNearAsReachable()
+            }
+    }
+
+    /// Scrolls back once the rows reach the place kept, or at once when
+    /// nothing was kept, so that what the person scrolls from then on is kept.
+    private func restoreIfReachable() {
+        guard !hasRestored, isReady else { return }
+        guard let kept = scrollOffsetPoints, kept > 0 else {
+            hasRestored = true
+            return
+        }
+        guard scrollGeometry.scrollableHeightPoints >= kept else { return }
+        hasRestored = true
+        scrollPosition.scrollTo(y: kept)
+    }
+
+    /// Gives up waiting: the rows are as many as they will be, so the list
+    /// goes as near to the place kept as they reach.
+    private func restoreAsNearAsReachable() {
+        guard !hasRestored, let kept = scrollOffsetPoints else { return }
+        hasRestored = true
+        scrollPosition.scrollTo(y: min(kept, scrollGeometry.scrollableHeightPoints))
     }
 }

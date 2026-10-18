@@ -114,6 +114,7 @@ struct PhotoFilterMenu: View {
             Button("Choose dates…", systemImage: "calendar") { isChoosingDates = true }
             if model.photoFilter.isActive {
                 Button("Clear filters", systemImage: "xmark.circle", role: .destructive) { model.photoFilter = PhotoFilter() }
+                    .tint(.red)
             }
         } label: {
             Label("Filter", systemImage: model.photoFilter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
@@ -406,6 +407,7 @@ struct PhotoAlbumShareSheet: View {
                 get: { share.isLocationIncluded },
                 set: { isOn in Task { await update(share, photoShareLevel: share.knownShareLevel, isLocationIncluded: isOn) } }))
         Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { shareToStop = share }
+            .tint(.red)
     }
 
     // MARK: Sharing it with someone

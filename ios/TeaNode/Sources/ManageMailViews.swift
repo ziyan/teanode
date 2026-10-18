@@ -2224,6 +2224,7 @@ private struct DomainSettingsView: View {
             .fullWidthRowSeparator()
             if domain.logo != nil {
                 Button("Remove the logo", systemImage: "trash", role: .destructive) { isRemovingLogo = true }
+                    .tint(.red)
                     .confirmationDialog("Stop publishing this logo?", isPresented: $isRemovingLogo, titleVisibility: .visible) {
                         Button("Remove the logo", role: .destructive) {
                             Task {
@@ -2552,6 +2553,7 @@ private struct DomainAliasesView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = alias }
+                                .tint(.red)
                         }
                     }
                 } footer: {
@@ -2729,6 +2731,7 @@ private struct AliasForm: View {
                 if editedAlias != nil {
                     Section {
                         Button("Remove address", systemImage: "trash", role: .destructive) { isRemoving = true }
+                            .tint(.red)
                             .confirmationDialog("Remove address", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task { await remove() }
@@ -2867,6 +2870,7 @@ private struct DomainCredentialsView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = credential }
+                                .tint(.red)
                         }
                     }
                 } footer: {
@@ -3034,6 +3038,7 @@ private struct EditCredentialForm: View {
                 }
                 Section {
                     Button("Remove credential", systemImage: "trash", role: .destructive) { isRemoving = true }
+                        .tint(.red)
                         .confirmationDialog("Remove credential", isPresented: $isRemoving, titleVisibility: .visible) {
                             Button("Remove", role: .destructive) {
                                 Task { await remove() }
@@ -3136,6 +3141,7 @@ private struct DomainTemplatesView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingTemplate = template }
+                                .tint(.red)
                         }
                     }
                 } header: {
@@ -3173,6 +3179,7 @@ private struct DomainTemplatesView: View {
                         }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingLayout = layout }
+                                .tint(.red)
                         }
                     }
                 } header: {

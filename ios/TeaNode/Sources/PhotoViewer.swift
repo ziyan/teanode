@@ -153,6 +153,7 @@ struct PhotoViewer: View {
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
                     Button("Delete forever", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                        .tint(.red)
                         .confirmationDialog("Delete this photo forever?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                             Button("Delete forever", role: .destructive) {
                                 let next = neighbor(of: current)
@@ -217,6 +218,7 @@ struct PhotoViewer: View {
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
                     Button("Move to Trash", systemImage: "trash", role: .destructive) { isConfirmingTrash = true }
+                        .tint(.red)
                         .confirmationDialog("Move this photo to the Trash?", isPresented: $isConfirmingTrash, titleVisibility: .visible) {
                             Button("Move to Trash", role: .destructive) {
                                 let next = neighbor(of: current)
@@ -715,6 +717,7 @@ struct PhotoInfoView: View {
                             Label("Not \(face.contactName)", systemImage: "person.crop.circle.badge.xmark")
                         }
                     }
+                    .tint(.red)
                 }
             }
         } header: {

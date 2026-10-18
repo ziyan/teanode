@@ -120,6 +120,7 @@ struct TaxesView: View {
                                     await load()
                                 }
                             }
+                            .tint(.red)
                         }
                     }
                 }
@@ -139,6 +140,7 @@ struct TaxesView: View {
                                     await load()
                                 }
                             }
+                            .tint(.red)
                         }
                     }
                 }
@@ -1036,8 +1038,8 @@ struct PaystubDetailView: View {
                         isConfirmingDelete = true
                     } label: {
                         Label("Delete paystub", systemImage: "trash")
-                            .foregroundStyle(.red)
                     }
+                    .tint(.red)
                     .confirmationDialog("Delete this paystub?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                         Button("Delete paystub", role: .destructive) {
                             Task {
@@ -1260,8 +1262,8 @@ struct TaxFormDetailView: View {
                     isConfirmingDelete = true
                 } label: {
                     Label("Delete form", systemImage: "trash")
-                        .foregroundStyle(.red)
                 }
+                .tint(.red)
                 .confirmationDialog("Delete this form?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                     Button("Delete form", role: .destructive) {
                         Task {

@@ -173,9 +173,11 @@ struct SkillSharingView: View {
                 }
                 .swipeActions {
                     Button("Stop sharing", systemImage: "trash", role: .destructive) { stopping = share }
+                        .tint(.red)
                 }
                 .contextMenu {
                     Button("Stop sharing", systemImage: "trash", role: .destructive) { stopping = share }
+                        .tint(.red)
                 }
             }
         } header: {
