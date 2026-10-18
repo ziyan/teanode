@@ -533,7 +533,8 @@ struct SettingsForm: View {
                 if let connection = app.connection {
                     Section("Your account") {
                         NavigationLink {
-                            PreferencesView(connection: connection)
+                            // A new name or picture shows in the accounts above at once.
+                            PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
                         }
@@ -775,7 +776,7 @@ struct SettingsForm: View {
                 case "circle-detail": CircleDetailDemoScreen(connection: connection)
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
-                case "settings-picture": PreferencesView(connection: connection)
+                case "settings-picture": PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                 default: EmptyView()
                 }
             }

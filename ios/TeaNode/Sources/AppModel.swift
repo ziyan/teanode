@@ -267,6 +267,7 @@ final class AppModel {
         let key = Self.pictureKey(accountKey: account.accountKey, path: path)
         if let known = pictures[key] { return known }
         guard let connection, let data = try? await connection.download(path), let picture = UIImage(data: data) else { return nil }
+        guard isSignedIn(account) else { return nil }
         pictures[key] = picture
         return picture
     }
@@ -302,6 +303,13 @@ final class AppModel {
     /// make a new connection for one signed out of meanwhile.
     private func isSignedIn(_ chosen: Account) -> Bool {
         accounts.contains { $0.accountKey == chosen.accountKey }
+    }
+
+    /// Keeps the profile the person just saved for the account in use, so the
+    /// list of accounts shows the new name or picture without reading it again.
+    func profileSaved(_ saved: AccountProfile) {
+        guard let account, isSignedIn(account) else { return }
+        accountProfiles[account.accountKey] = saved
     }
 
     /// Forgets what was read for an account's list row once it is signed out of.
