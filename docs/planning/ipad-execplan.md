@@ -13,8 +13,9 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 - [x] Milestone 1: the app builds for the iPad and runs in every orientation there. (2026-10-18; whether `INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad` is accepted is known only from CI's build.)
 - [x] Milestone 2: the side menu is a column that stays open at regular width. (2026-10-18; compiles only in CI.)
 - [x] Milestone 3: screens that read badly when wide are capped, and presenters work on the iPad. (2026-10-18)
-- [ ] Milestone 4: CI photographs the iPad in landscape and portrait, and the App Store's iPad set.
-- [ ] Review until a round finds nothing; DESIGN.md says what the iPad does.
+- [x] Milestone 4: CI photographs the iPad in landscape and portrait, and the App Store's iPad set. (2026-10-18; the pictures exist only after CI runs.)
+- [x] DESIGN.md says what the iPad does (2026-10-18).
+- [ ] Review until a round finds nothing: CI's compile and the iPad screenshots are the first look.
 
 ## Surprises & Discoveries
 
@@ -35,6 +36,8 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 - Decision: the column's width is `SidePanel.columnWidth` (320 points) and its rule, the horizontal size class being regular, is `Optional<UserInterfaceSizeClass>.isMenuColumn`, shared by `SidePanel` and `MainView`. Rationale: both must agree on when the menu is a column, and `SidePanel` is generic, so a static on it cannot be called from outside. Date: 2026-10-18.
 
 - Decision: the 720 point cap is one modifier, `readableWidth()` (`ReadableWidth` in `CommonViews.swift`), applied to the transcript's messages, to the conversation's bottom bar (the composer and the cards above it, so they line up with the messages) and to the mail thread's content; it changes nothing below regular width. Rationale: the plan names the transcript and the mail; leaving the composer the whole width of the window beside 720 point messages would look broken. Date: 2026-10-18.
+
+- Decision: the iPhone simulator is shut down before the iPad boots in the fourth screenshot machine, and the iPad's appearance and text size are reset to unknown (`shown_appearance`, `shown_size`) so `shoot` sets them again. Rationale: two simulators at once cost the runner memory, and the appearance of one device says nothing about the other. The iPad's status bar override is set only before the App Store set, as the iPhone's is. Date: 2026-10-18.
 
 ## Outcomes & Retrospective
 

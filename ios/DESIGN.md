@@ -127,9 +127,34 @@ its pull request is opened.
   place with a disclosure arrow.
 - A swipe right anywhere on a screen opens the side menu, so rows have no
   swipe-right actions there; what a left swipe does not hold goes in the
-  long-press menu.
+  long-press menu. The iPad's column never slides, but the screens keep the
+  rule, since the same screen is the iPhone's.
 - In the side menu itself a swipe left closes it, so its rows have no swipe
   actions at all: everything a row offers is in its long-press menu.
+
+## The iPad
+
+The same app runs on the iPad, and a screen is designed once for both. What
+differs is decided by the window's horizontal size class (`.regular` or
+`.compact`), never by the device, so Slide Over and a narrow Split View get
+the iPhone's layout.
+
+- At regular width the side menu is a 320 point column that stays open at the
+  left, in landscape and portrait, with a hairline between it and the screen.
+  It cannot be hidden, so no screen shows a menu button there: `MenuButton`
+  draws nothing when `isMenuPinned` is set, and a screen never opens the menu
+  itself. Nothing slides, so the swipe that opens the menu does not exist
+  there either.
+- A screen is laid out for whatever width it is given, from about 400 to 1000
+  points. Lists, forms and grids adapt by themselves. Text that is read in
+  lines, such as a conversation or a mail, is kept to 720 points and
+  centered with `readableWidth()`; a screen with a wide canvas, such as a map
+  or the photos, fills the width.
+- Anything that the system shows as a popover on the iPad (a share sheet, a
+  confirmation) needs an anchor: attach a confirmation to its control, and give
+  a share sheet presented from code a source view and rectangle.
+- The iPad turns every way. CI photographs it in landscape and portrait
+  (`-TeaNodeOrientation landscape` or `portrait` in the demo).
 
 ## Motion and feel
 
