@@ -134,3 +134,28 @@ type budgetRun struct {
 }
 
 func (self *budgetRun) ResultCharacters() int { return self.resultCharacters }
+
+func TestHerdrFocusAndOpenBesideCarryThePane(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	attached := &herdrComputer{fakeComputer{answers: map[string]string{
+		"herdr_focus": `{"paneId":"w1:p1"}`, "herdr_open": `{"paneId":"w1:p2"}`,
+	}}}
+	ctx := tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration})
+	herdr := find(t, "herdr")
+	for _, arguments := range []string{`{"action":"focus","pane":"w1:p1"}`, `{"action":"open","pane":"w1:p1"}`} {
+		if _, err := herdr.Run(ctx, &tools.Call{Arguments: json.RawMessage(arguments)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(attached.asked) != 2 || attached.asked[0] != `herdr_focus {"paneId":"w1:p1"}` ||
+		!strings.HasPrefix(attached.asked[1], `herdr_open {"paneId":"w1:p1"`) {
+		t.Errorf("asked %q", attached.asked)
+	}
+	if risk := herdr.RiskOf(json.RawMessage(`{"action":"focus","pane":"w1:p1"}`)); risk != tools.RiskWrite {
+		t.Errorf("focus is %v", risk)
+	}
+	if preview := herdr.Preview(json.RawMessage(`{"action":"focus","pane":"website","computer":"laptop"}`)); preview != "Show pane website on laptop" {
+		t.Errorf("preview: %q", preview)
+	}
+}

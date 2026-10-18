@@ -31,6 +31,12 @@ final class AppModel {
     /// Whether the server could not be asked which services it runs, and
     /// none are known yet: the app says so rather than calling them off.
     private(set) var hasServicesFailedToLoad = false
+    /// Whether the person has a computer attached that runs herdr, which is
+    /// what the Coding section is for.
+    private(set) var hasCodingComputers = false
+    /// How many of the person's coding sessions ask something, a question
+    /// or an approval: the number on the side menu's Coding row.
+    private(set) var codingAskingCount = 0
 
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
@@ -401,6 +407,8 @@ final class AppModel {
         let isChanged = account.accountKey != self.account?.accountKey
         if isChanged {
             services = nil
+            hasCodingComputers = false
+            codingAskingCount = 0
             accessSession = nil
             forgetAccountFacts()
             openedRecordingLink = nil
@@ -881,6 +889,24 @@ extension AppModel {
         PhotosAvailability.isOffered(isServiceEnabled: services?.isPhotosEnabled == true, session: accessSession)
     }
 
+    func noteCodingComputers() { hasCodingComputers = true }
+
+    /// The Coding section read the sessions: how many ask, at once, rather
+    /// than at the next slow ask.
+    func noteCodingAsking(_ askingCount: Int) { codingAskingCount = askingCount }
+
+    /// Asks which computers run herdr, and how many sessions ask. Computers that cannot be asked leave
+    /// what is known; the section on screen is not taken away under the
+    /// person (isKeeping).
+    func refreshCodingPresence(isKeeping: Bool) async {
+        guard let connection, services?.isAssistantEnabled == true,
+            let list = try? await connection.herdrSessions()
+        else { return }
+        let hasComputers = !list.computerNames.isEmpty
+        if hasComputers || !isKeeping { hasCodingComputers = hasComputers }
+        codingAskingCount = list.sessions.filter(\.isAsking).count
+    }
+
     func isSectionAvailable(_ section: AppSection) -> Bool {
         let services = services ?? .unavailable
         switch section {
@@ -895,6 +921,7 @@ extension AppModel {
         // agent.
         case .agent: return services.isAssistantEnabled || canChat
         case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        case .coding: return services.isAssistantEnabled && hasCodingComputers
         case .settings: return true
         }
     }

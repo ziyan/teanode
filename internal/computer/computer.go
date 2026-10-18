@@ -476,14 +476,6 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 			return nil, fmt.Errorf("the request is not readable: %w", err)
 		}
 		result, err = background.acknowledge(&arguments)
-	case "herdr_list", "herdr_read", "herdr_screen", "herdr_send", "herdr_wait", "herdr_answer", "herdr_watch", "herdr_acknowledge", "herdr_setup", "herdr_open", "herdr_close":
-		var arguments HerdrArguments
-		if len(args) > 0 {
-			if err := json.Unmarshal(args, &arguments); err != nil {
-				return nil, fmt.Errorf("the request is not readable: %w", err)
-			}
-		}
-		result, err = RunHerdr(ctx, options.Herdr, action, &arguments)
 	case "http":
 		var arguments HTTPArguments
 		if err := json.Unmarshal(args, &arguments); err != nil {
@@ -555,7 +547,18 @@ func handle(ctx context.Context, options *Options, action string, args json.RawM
 		}
 		result, err = held.close(&arguments)
 	default:
-		return nil, fmt.Errorf("%q is not something this program does", action)
+		// Every herdr action goes to RunHerdr, which says which it does, so
+		// a new one is not refused here for want of a second list.
+		if !strings.HasPrefix(action, "herdr_") {
+			return nil, fmt.Errorf("%q is not something this program does", action)
+		}
+		var arguments HerdrArguments
+		if len(args) > 0 {
+			if err := json.Unmarshal(args, &arguments); err != nil {
+				return nil, fmt.Errorf("the request is not readable: %w", err)
+			}
+		}
+		result, err = RunHerdr(ctx, options.Herdr, action, &arguments)
 	}
 	if err != nil {
 		return nil, err

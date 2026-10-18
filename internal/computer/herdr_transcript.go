@@ -34,6 +34,9 @@ const (
 	transcriptMostChunkBytes  = 16 << 20
 	transcriptTurnCharacters  = 4000
 	transcriptToolCharacters  = 200
+	// transcriptToolDetailCharacters is the most of a tool's input, and of
+	// its answer, a read gives.
+	transcriptToolDetailCharacters = 4000
 	// transcriptLifecycleBytes is how much of a Codex file's end is read
 	// for whether a turn runs and whether a question waits, which is said
 	// near its end.
@@ -53,6 +56,75 @@ type HerdrTurn struct {
 	HerdrTurnRole string     `json:"herdrTurnRole"`
 	TurnText      string     `json:"turnText"`
 	TurnAt        *time.Time `json:"turnAt,omitempty"`
+	// ToolInputText and ToolResultText are a tool turn's whole input and
+	// what the tool answered, each cut at transcriptToolDetailCharacters;
+	// only when a read asks for them.
+	ToolInputText  string `json:"toolInputText,omitempty"`
+	ToolResultText string `json:"toolResultText,omitempty"`
+
+	// toolCallID ties a tool turn to the result that answers it, which a
+	// later line of the history file holds.
+	toolCallID string
+	// isToolResult says this is no turn of its own but the result of the
+	// tool turn with toolCallID, to be put on it.
+	isToolResult bool
+}
+
+// toolTurn is a tool call as a turn: the line that names it, its whole
+// input, and the id its result will carry.
+func toolTurn(line, inputText, callId string, at *time.Time) []*HerdrTurn {
+	turns := oneTurn(HerdrTurnRoleTool, line, at)
+	for _, turn := range turns {
+		turn.ToolInputText = cutDetail(inputText)
+		turn.toolCallID = callId
+	}
+	return turns
+}
+
+// toolResult is what a tool answered, for its call's turn.
+func toolResult(callId, text string) []*HerdrTurn {
+	if callId == "" {
+		return nil
+	}
+	return []*HerdrTurn{{toolCallID: callId, ToolResultText: cutDetail(strings.TrimSpace(text)), isToolResult: true}}
+}
+
+// cutDetail cuts a tool's input or answer to what a reader is shown, and
+// says when it did.
+func cutDetail(text string) string {
+	if len([]rune(text)) <= transcriptToolDetailCharacters {
+		return text
+	}
+	return string([]rune(text)[:transcriptToolDetailCharacters]) + "\n[cut]"
+}
+
+// prettyInput is a tool's input as a person reads it: its JSON indented.
+func prettyInput(input json.RawMessage) string {
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, input, "", "  "); err != nil {
+		return string(input)
+	}
+	return indented.String()
+}
+
+// attachToolResults puts each result on the tool turn it answers, and
+// leaves the results out of the turns.
+func attachToolResults(turns []*HerdrTurn) []*HerdrTurn {
+	callOf := map[string]*HerdrTurn{}
+	kept := turns[:0]
+	for _, turn := range turns {
+		if turn.isToolResult {
+			if call := callOf[turn.toolCallID]; call != nil {
+				call.ToolResultText = turn.ToolResultText
+			}
+			continue
+		}
+		if turn.toolCallID != "" {
+			callOf[turn.toolCallID] = turn
+		}
+		kept = append(kept, turn)
+	}
+	return kept
 }
 
 var codingSessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
@@ -133,6 +205,7 @@ func readTurnsFrom(file io.ReaderAt, size int64, codingAgentKind string, turnCou
 		for _, line := range lines {
 			turns = append(turns, turnsOfLine(codingAgentKind, line)...)
 		}
+		turns = attachToolResults(turns)
 		if len(turns) >= turnCount || !isCut || chunk >= transcriptMostChunkBytes {
 			isTruncated := isCut || len(turns) > turnCount
 			if len(turns) > turnCount {
@@ -171,9 +244,25 @@ func claudeTurnsOfLine(line []byte) []*HerdrTurn {
 		Message          struct {
 			Content json.RawMessage `json:"content"`
 		} `json:"message"`
+		// Attachment is how Claude Code records a prompt typed while a turn
+		// was running: queued, then handed to the turn, never written as a
+		// message of its own.
+		Attachment struct {
+			Type        string          `json:"type"`
+			IsHumanTurn bool            `json:"humanTurn"`
+			Prompt      json.RawMessage `json:"prompt"`
+		} `json:"attachment"`
 	}
 	if err := json.Unmarshal(line, &record); err != nil || record.IsMeta || record.IsSidechain || record.IsCompactSummary {
 		return nil
+	}
+	if record.Type == "attachment" {
+		// Only what the person typed: a task's notice and another
+		// session's message are queued the same way.
+		if record.Attachment.Type != "queued_command" || !record.Attachment.IsHumanTurn {
+			return nil
+		}
+		record.Type, record.Message.Content = "user", record.Attachment.Prompt
 	}
 	if record.Type != "user" && record.Type != "assistant" {
 		return nil
@@ -190,10 +279,13 @@ func claudeTurnsOfLine(line []byte) []*HerdrTurn {
 		return oneTurn(role, text, record.Timestamp)
 	}
 	var blocks []struct {
-		Type  string          `json:"type"`
-		Text  string          `json:"text"`
-		Name  string          `json:"name"`
-		Input json.RawMessage `json:"input"`
+		Type      string          `json:"type"`
+		Text      string          `json:"text"`
+		Name      string          `json:"name"`
+		Input     json.RawMessage `json:"input"`
+		ID        string          `json:"id"`
+		ToolUseID string          `json:"tool_use_id"`
+		Content   json.RawMessage `json:"content"`
 	}
 	if err := json.Unmarshal(record.Message.Content, &blocks); err != nil {
 		return nil
@@ -207,10 +299,44 @@ func claudeTurnsOfLine(line []byte) []*HerdrTurn {
 			}
 			turns = append(turns, oneTurn(role, block.Text, record.Timestamp)...)
 		case "tool_use":
-			turns = append(turns, oneTurn(HerdrTurnRoleTool, block.Name+": "+toolInputLine(block.Input), record.Timestamp)...)
+			turns = append(turns, toolTurn(block.Name+": "+toolInputLine(block.Input), prettyInput(block.Input), block.ID, record.Timestamp)...)
+		case "tool_result":
+			turns = append(turns, toolResult(block.ToolUseID, toolResultText(block.Content))...)
+		case "image":
+			// The picture itself stays on the computer; the turn says one
+			// was there, so a prompt about it still reads.
+			if role == HerdrTurnRolePerson {
+				turns = append(turns, oneTurn(role, "(a picture)", record.Timestamp)...)
+			}
 		}
 	}
 	return turns
+}
+
+// toolResultText is what a Claude Code tool answered: text, or text blocks
+// with pictures among them, which are named rather than shown.
+func toolResultText(content json.RawMessage) string {
+	var text string
+	if err := json.Unmarshal(content, &text); err == nil {
+		return text
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(content, &blocks); err != nil {
+		return ""
+	}
+	var parts []string
+	for _, block := range blocks {
+		switch block.Type {
+		case "text":
+			parts = append(parts, block.Text)
+		case "image":
+			parts = append(parts, "(a picture)")
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 // codexInjected says a person's message was put there by Codex, not typed:
@@ -222,11 +348,13 @@ func codexTurnsOfLine(line []byte) []*HerdrTurn {
 		Type      string     `json:"type"`
 		Timestamp *time.Time `json:"timestamp"`
 		Payload   struct {
-			Type      string `json:"type"`
-			Role      string `json:"role"`
-			Name      string `json:"name"`
-			Arguments string `json:"arguments"`
-			Input     string `json:"input"`
+			Type      string          `json:"type"`
+			Role      string          `json:"role"`
+			Name      string          `json:"name"`
+			Arguments string          `json:"arguments"`
+			Input     string          `json:"input"`
+			CallID    string          `json:"call_id"`
+			Output    json.RawMessage `json:"output"`
 			Content   []struct {
 				Text string `json:"text"`
 			} `json:"content"`
@@ -255,9 +383,21 @@ func codexTurnsOfLine(line []byte) []*HerdrTurn {
 		}
 		return oneTurn(role, strings.Join(said, "\n\n"), record.Timestamp)
 	case "function_call":
-		return oneTurn(HerdrTurnRoleTool, payload.Name+": "+toolInputLine(json.RawMessage(payload.Arguments)), record.Timestamp)
+		return toolTurn(payload.Name+": "+toolInputLine(json.RawMessage(payload.Arguments)), prettyInput(json.RawMessage(payload.Arguments)), payload.CallID, record.Timestamp)
 	case "custom_tool_call":
-		return oneTurn(HerdrTurnRoleTool, payload.Name+": "+firstCharacters(payload.Input, transcriptToolCharacters), record.Timestamp)
+		return toolTurn(payload.Name+": "+firstCharacters(payload.Input, transcriptToolCharacters), payload.Input, payload.CallID, record.Timestamp)
+	case "function_call_output", "custom_tool_call_output":
+		// The output is text, or an object whose output field is.
+		var text string
+		if err := json.Unmarshal(payload.Output, &text); err != nil {
+			var wrapped struct {
+				Output string `json:"output"`
+			}
+			if json.Unmarshal(payload.Output, &wrapped) == nil {
+				text = wrapped.Output
+			}
+		}
+		return toolResult(payload.CallID, text)
 	}
 	return nil
 }

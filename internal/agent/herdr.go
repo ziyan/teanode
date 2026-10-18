@@ -213,12 +213,12 @@ type HerdrRead struct {
 }
 
 // ReadHerdrSession is the last turns of a session.
-func (self *Agent) ReadHerdrSession(ctx context.Context, agentId, computerName, paneId string, turnCount int) (*HerdrRead, error) {
+func (self *Agent) ReadHerdrSession(ctx context.Context, agentId, computerName, paneId string, turnCount int, shouldIncludeToolDetail bool) (*HerdrRead, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	result, err := askHerdr[computer.HerdrReadResult](ctx, attached, "herdr_read", &computer.HerdrArguments{PaneID: paneId, TurnCount: turnCount}, herdrActionWait)
+	result, err := askHerdr[computer.HerdrReadResult](ctx, attached, "herdr_read", &computer.HerdrArguments{PaneID: paneId, TurnCount: turnCount, ShouldIncludeToolDetail: shouldIncludeToolDetail}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}
@@ -232,12 +232,12 @@ type HerdrScreen struct {
 }
 
 // ReadHerdrScreen is a session's screen, or its last lineCount lines.
-func (self *Agent) ReadHerdrScreen(ctx context.Context, agentId, computerName, paneId string, lineCount int) (*HerdrScreen, error) {
+func (self *Agent) ReadHerdrScreen(ctx context.Context, agentId, computerName, paneId string, lineCount int, shouldKeepColor bool) (*HerdrScreen, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	result, err := askHerdr[computer.HerdrScreenResult](ctx, attached, "herdr_screen", &computer.HerdrArguments{PaneID: paneId, LineCount: lineCount}, herdrActionWait)
+	result, err := askHerdr[computer.HerdrScreenResult](ctx, attached, "herdr_screen", &computer.HerdrArguments{PaneID: paneId, LineCount: lineCount, ShouldKeepColor: shouldKeepColor}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}
@@ -342,15 +342,33 @@ func (self *Agent) WatchHerdrSession(ctx context.Context, agentId, computerName,
 
 // OpenHerdrSession starts a coding agent, "claude" or "codex", in a new
 // herdr pane in a directory of the person's on a computer.
-func (self *Agent) OpenHerdrSession(ctx context.Context, agentId, computerName, directory, codingAgentKind, agentName string, shouldSkipPermissions bool) (*HerdrSession, error) {
+//
+// Given paneId, it opens beside that pane instead: a new tab in the pane's
+// workspace, in its directory and with its coding agent unless directory
+// and codingAgentKind say otherwise.
+func (self *Agent) OpenHerdrSession(ctx context.Context, agentId, computerName, directory, codingAgentKind, agentName string, shouldSkipPermissions bool, paneId string) (*HerdrSession, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
 	// A coding agent takes a while to start: up to a minute is waited for.
 	session, err := askHerdr[computer.HerdrSession](ctx, attached, "herdr_open", &computer.HerdrArguments{
-		Directory: directory, CodingAgentKind: codingAgentKind, AgentName: agentName, ShouldSkipPermissions: shouldSkipPermissions,
+		Directory: directory, CodingAgentKind: codingAgentKind, AgentName: agentName, ShouldSkipPermissions: shouldSkipPermissions, PaneID: paneId,
 	}, 90*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	return &HerdrSession{ComputerName: attached.name, HerdrSession: session}, nil
+}
+
+// FocusHerdrSession brings a session's tab forward in herdr on its
+// computer, so whoever sits there sees it.
+func (self *Agent) FocusHerdrSession(ctx context.Context, agentId, computerName, paneId string) (*HerdrSession, error) {
+	attached, err := self.herdrComputer(agentId, computerName)
+	if err != nil {
+		return nil, err
+	}
+	session, err := askHerdr[computer.HerdrSession](ctx, attached, "herdr_focus", &computer.HerdrArguments{PaneID: paneId}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}

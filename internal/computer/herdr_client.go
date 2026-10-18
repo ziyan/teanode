@@ -66,12 +66,17 @@ type herdrWorkspace struct {
 	WorkspaceID string `json:"workspace_id"`
 	Label       string `json:"label"`
 	TabCount    int    `json:"tab_count"`
+	Number      int    `json:"number"`
+	IsFocused   bool   `json:"focused"`
+	ActiveTabID string `json:"active_tab_id"`
 }
 
 type herdrTab struct {
 	TabID       string `json:"tab_id"`
 	WorkspaceID string `json:"workspace_id"`
 	Label       string `json:"label"`
+	Number      int    `json:"number"`
+	IsFocused   bool   `json:"focused"`
 }
 
 // listWorkspaces is every workspace.
@@ -184,6 +189,26 @@ func (self *herdrClient) readAgent(ctx context.Context, paneId, source string, l
 			Text string `json:"text"`
 		} `json:"read"`
 	}
+	if err := self.call(ctx, "agent.read", params, &result); err != nil {
+		return "", err
+	}
+	return result.Read.Text, nil
+}
+
+// focusAgent brings the agent's workspace, tab and pane forward in herdr.
+func (self *herdrClient) focusAgent(ctx context.Context, paneId string) error {
+	return self.call(ctx, "agent.focus", map[string]any{"target": paneId}, nil)
+}
+
+// readAgentColored is readAgent with the terminal's colors kept, as the
+// escape codes the program in the pane wrote.
+func (self *herdrClient) readAgentColored(ctx context.Context, paneId, source string) (string, error) {
+	var result struct {
+		Read struct {
+			Text string `json:"text"`
+		} `json:"read"`
+	}
+	params := map[string]any{"target": paneId, "source": source, "format": "ansi", "strip_ansi": false}
 	if err := self.call(ctx, "agent.read", params, &result); err != nil {
 		return "", err
 	}
