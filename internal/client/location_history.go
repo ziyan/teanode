@@ -156,8 +156,8 @@ const (
   }
 }`
 
-	DocumentSearchAddresses = `query ($query: String!, $limitCount: Int) {
-  SearchAddresses(query: $query, limitCount: $limitCount) {
+	DocumentSearchAddresses = `query ($query: String!, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeId: String, $limitCount: Int) {
+  SearchAddresses(query: $query, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeId: $placeId, limitCount: $limitCount) {
     ` + foundPlaceFields + `
   }
 }`
@@ -344,12 +344,32 @@ func SearchPlaces(ctx context.Context, connection *Client, search PlaceSearch) (
 	return result.SearchPlaces, nil
 }
 
-// SearchAddresses is the addresses matching words, anywhere, best first. A
-// limitCount of zero is the server's default.
-func SearchAddresses(ctx context.Context, connection *Client, query string, limitCount int) ([]*FoundPlace, error) {
-	variables := map[string]any{"query": query}
-	if limitCount > 0 {
-		variables["limitCount"] = limitCount
+// AddressSearch is a search for addresses by words. Near is a point, a place,
+// or neither, which is where the caller last was.
+type AddressSearch struct {
+	Query            string
+	LatitudeDegrees  *float64
+	LongitudeDegrees *float64
+	PlaceID          string
+	LimitCount       int
+}
+
+// SearchAddresses is the addresses matching words, nearest first to the
+// place, the point, or where the caller last was. A LimitCount of zero is the
+// server's default.
+func SearchAddresses(ctx context.Context, connection *Client, search AddressSearch) ([]*FoundPlace, error) {
+	variables := map[string]any{"query": search.Query}
+	if search.LatitudeDegrees != nil {
+		variables["latitudeDegrees"] = *search.LatitudeDegrees
+	}
+	if search.LongitudeDegrees != nil {
+		variables["longitudeDegrees"] = *search.LongitudeDegrees
+	}
+	if search.PlaceID != "" {
+		variables["placeId"] = search.PlaceID
+	}
+	if search.LimitCount > 0 {
+		variables["limitCount"] = search.LimitCount
 	}
 	var result struct {
 		SearchAddresses []*FoundPlace `json:"SearchAddresses"`

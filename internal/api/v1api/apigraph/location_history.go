@@ -350,6 +350,13 @@ type SearchAddressesArguments struct {
 	// Query is 1 to 200 characters.
 	Query string `json:"query"`
 
+	// Nearest first to a position, or to one of the caller's places (the one
+	// being given an address); with neither, to where the caller was last
+	// reported to be, and in the provider's order with no position at all.
+	LatitudeDegrees  *float64 `json:"latitudeDegrees" graphapi:"nullable"`
+	LongitudeDegrees *float64 `json:"longitudeDegrees" graphapi:"nullable"`
+	PlaceID          string   `json:"placeId" graphapi:"nullable"`
+
 	// LimitCount is 8 by default and at most 20.
 	LimitCount *int `json:"limitCount" graphapi:"nullable"`
 }
@@ -1103,8 +1110,10 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 }
 
 // SearchAddresses waits on the place provider, so it reads in phases for the
-// reason ListNearbyPlaces does. The distances are from where the caller was
-// last reported to be, and zero without a position.
+// reason ListNearbyPlaces does. The matches come nearest first to the place
+// or the position asked about, else to where the caller was last reported to
+// be, with their distances from it; without any position the provider's
+// order stands and the distances are zero.
 func (self *graph) SearchAddresses(ctx context.Context, arguments SearchAddressesArguments) ([]*FoundPlaceView, error) {
 	query := strings.TrimSpace(arguments.Query)
 	if query == "" {
@@ -1121,14 +1130,14 @@ func (self *graph) SearchAddresses(ctx context.Context, arguments SearchAddresse
 		return nil, fmt.Errorf("%w: ask for 1 to %d addresses", api.ErrInvalidArguments, addressLimitMost)
 	}
 	var userId string
-	var latest *models.LocationPoint
+	var near *place.Position
 	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
 		principal, err := self.requireLocationPerson(phaseContext)
 		if err != nil {
 			return err
 		}
 		userId = principal.User.ID
-		latest, err = self.transaction(phaseContext).GetLatestLocationPoint(userId)
+		near, err = self.addressCenter(self.transaction(phaseContext), userId, arguments)
 		return err
 	}); err != nil {
 		return nil, err
@@ -1140,7 +1149,7 @@ func (self *graph) SearchAddresses(ctx context.Context, arguments SearchAddresse
 	if err := self.allowPlaceLookup(userId); err != nil {
 		return nil, err
 	}
-	found, err := provider.Addresses(ctx, query, limitCount)
+	found, err := provider.Addresses(ctx, query, near, limitCount)
 	if err != nil {
 		return nil, placeProviderFailure(err)
 	}
@@ -1166,9 +1175,6 @@ func (self *graph) SearchAddresses(ctx context.Context, arguments SearchAddresse
 	}
 	views := make([]*FoundPlaceView, 0, len(found))
 	for index, each := range found {
-		if latest != nil {
-			each.DistanceMeters = place.DistanceMeters(latest.LatitudeDegrees, latest.LongitudeDegrees, each.LatitudeDegrees, each.LongitudeDegrees)
-		}
 		placeId := ""
 		if ownPlaces[index] != nil {
 			placeId = ownPlaces[index].ID
@@ -1181,31 +1187,48 @@ func (self *graph) SearchAddresses(ctx context.Context, arguments SearchAddresse
 // searchCenter is the position a search is around: the one given, one of the
 // caller's places, or where the caller was last reported to be.
 func (self *graph) searchCenter(tx db.Transaction, userId string, arguments SearchPlacesArguments) (float64, float64, error) {
-	if (arguments.LatitudeDegrees == nil) != (arguments.LongitudeDegrees == nil) {
-		return 0, 0, fmt.Errorf("%w: give both latitudeDegrees and longitudeDegrees", api.ErrInvalidArguments)
-	}
-	if arguments.LatitudeDegrees != nil {
-		if err := requireOnEarth(*arguments.LatitudeDegrees, *arguments.LongitudeDegrees); err != nil {
-			return 0, 0, err
-		}
-		return *arguments.LatitudeDegrees, *arguments.LongitudeDegrees, nil
-	}
-	if placeId := strings.TrimSpace(arguments.PlaceID); placeId != "" {
-		found, err := tx.GetPlace(userId, placeId)
-		if err != nil {
-			return 0, 0, translateError(err)
-		}
-		return found.LatitudeDegrees, found.LongitudeDegrees, nil
-	}
-	latest, err := tx.GetLatestLocationPoint(userId)
+	center, err := self.positionAsked(tx, userId, arguments.LatitudeDegrees, arguments.LongitudeDegrees, arguments.PlaceID)
 	if err != nil {
 		return 0, 0, err
 	}
-	if latest == nil {
+	if center == nil {
 		return 0, 0, fmt.Errorf("%w: there is no position to search around: give latitudeDegrees and longitudeDegrees, "+
 			"or a placeId, or report a location first (the TeaNode app on the iPhone does)", api.ErrInvalidArguments)
 	}
-	return latest.LatitudeDegrees, latest.LongitudeDegrees, nil
+	return center.LatitudeDegrees, center.LongitudeDegrees, nil
+}
+
+// addressCenter is the position an address search puts nearest first, as
+// searchCenter finds it, or nil when the caller has never reported one: an
+// address can be looked up anywhere.
+func (self *graph) addressCenter(tx db.Transaction, userId string, arguments SearchAddressesArguments) (*place.Position, error) {
+	return self.positionAsked(tx, userId, arguments.LatitudeDegrees, arguments.LongitudeDegrees, arguments.PlaceID)
+}
+
+// positionAsked is the position given, else the position of one of the
+// caller's places, else where the caller was last reported to be, else nil.
+func (self *graph) positionAsked(tx db.Transaction, userId string, latitudeDegrees, longitudeDegrees *float64, placeId string) (*place.Position, error) {
+	if (latitudeDegrees == nil) != (longitudeDegrees == nil) {
+		return nil, fmt.Errorf("%w: give both latitudeDegrees and longitudeDegrees", api.ErrInvalidArguments)
+	}
+	if latitudeDegrees != nil {
+		if err := requireOnEarth(*latitudeDegrees, *longitudeDegrees); err != nil {
+			return nil, err
+		}
+		return &place.Position{LatitudeDegrees: *latitudeDegrees, LongitudeDegrees: *longitudeDegrees}, nil
+	}
+	if placeId := strings.TrimSpace(placeId); placeId != "" {
+		found, err := tx.GetPlace(userId, placeId)
+		if err != nil {
+			return nil, translateError(err)
+		}
+		return &place.Position{LatitudeDegrees: found.LatitudeDegrees, LongitudeDegrees: found.LongitudeDegrees}, nil
+	}
+	latest, err := tx.GetLatestLocationPoint(userId)
+	if err != nil || latest == nil {
+		return nil, err
+	}
+	return &place.Position{LatitudeDegrees: latest.LatitudeDegrees, LongitudeDegrees: latest.LongitudeDegrees}, nil
 }
 
 func (self *graph) ListLocationPoints(ctx context.Context, arguments ListLocationPointsArguments) ([]*LocationPointView, error) {

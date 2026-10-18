@@ -96,10 +96,13 @@ func NewLocationCommand() *cli.Command {
 			},
 			{
 				Name:      "addresses",
-				Usage:     "addresses matching words, anywhere, from OpenStreetMap, best match first",
+				Usage:     "addresses matching words, from OpenStreetMap, nearest first to a place, a position, or where you last were",
 				ArgsUsage: "<words>",
 				Flags: []cli.Flag{
 					JSONFlag(),
+					&cli.StringFlag{Name: "near-place", Usage: "list the matches nearest to one of your places, by id"},
+					&cli.FloatFlag{Name: "latitude", Usage: "list the matches nearest to this latitude in degrees; where you were last reported to be by default"},
+					&cli.FloatFlag{Name: "longitude", Usage: "longitude in degrees"},
 					&cli.IntFlag{Name: "first", Usage: "how many to show, at most 20", Value: 8},
 				},
 				Action: runLocationAddresses,
@@ -112,11 +115,12 @@ func NewLocationCommand() *cli.Command {
 					"at --latitude and --longitude. An empty --name goes back to OpenStreetMap's name, and\n" +
 					"--label none takes the label off.\n" +
 					"--address \"<words>\" looks the words up, takes the first match, and moves the place there\n" +
-					"with that address (see 'teanode location addresses'); to choose another match give its\n" +
-					"--latitude, --longitude and --address-text. When no address is found, give the place\n" +
-					"and --address-text alone: the place stays where it is and keeps the address as typed,\n" +
-					"also when you move it later. --address-text \"\" takes a typed address away and lets\n" +
-					"OpenStreetMap name the place again.",
+					"with that address (see 'teanode location addresses'); the first match is the one\n" +
+					"nearest to the place. To choose another match give its --latitude, --longitude and\n" +
+					"--address-text. When no address is found, give the place and --address-text alone:\n" +
+					"the place stays where it is and keeps the address as typed, also when you move it\n" +
+					"later. --address-text \"\" takes a typed address away and lets OpenStreetMap name the\n" +
+					"place again.",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "name", Usage: "your name for the place"},
@@ -669,15 +673,25 @@ func addressRows(found []*client.FoundPlace) [][]string {
 func runLocationAddresses(ctx context.Context, command *cli.Command) error {
 	words := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
 	if words == "" {
-		return usage("usage: teanode location addresses <words> [--first <count>]")
+		return usage("usage: teanode location addresses <words> [--near-place <id> | --latitude <degrees> --longitude <degrees>] [--first <count>]")
+	}
+	latitude, longitude, _, err := locationPointFlags(command)
+	if err != nil {
+		return err
+	}
+	nearPlace := strings.TrimSpace(command.String("near-place"))
+	if nearPlace != "" && latitude != nil {
+		return usage("search near a place or near a position, not both")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	found, err := client.SearchAddresses(ctx, connection, words, int(command.Int("first")))
+	found, err := client.SearchAddresses(ctx, connection, client.AddressSearch{
+		Query: words, LatitudeDegrees: latitude, LongitudeDegrees: longitude, PlaceID: nearPlace, LimitCount: int(command.Int("first")),
+	})
 	if err != nil {
-		return describeError(command, err)
+		return describeNotFound(command, err, "that place")
 	}
 	if command.Bool("json") {
 		if found == nil {
@@ -739,9 +753,9 @@ func runLocationSave(ctx context.Context, command *cli.Command) error {
 	}
 	var otherMatches []*client.FoundPlace
 	if words != "" {
-		matches, err := client.SearchAddresses(ctx, connection, words, 5)
+		matches, err := client.SearchAddresses(ctx, connection, client.AddressSearch{Query: words, PlaceID: change.PlaceID, LimitCount: 5})
 		if err != nil {
-			return describeError(command, err)
+			return describeNotFound(command, err, "that place")
 		}
 		if len(matches) == 0 {
 			return usage("no address matches " + words + "; 'teanode location addresses' shows what a search finds")

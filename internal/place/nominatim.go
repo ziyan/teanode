@@ -169,19 +169,27 @@ func (self *nominatimPlace) toAddressFound() *Found {
 	return found
 }
 
-// Addresses asks for matches anywhere: no viewbox, so the words alone decide.
-func (self *nominatimProvider) Addresses(ctx context.Context, query string, limitCount int) ([]*Found, error) {
+// Addresses asks for matches anywhere. Near a position it gives a box around
+// it as a preference, not a limit (bounded=0), so the words still find a
+// match that is farther away.
+func (self *nominatimProvider) Addresses(ctx context.Context, query string, near *Position, limitCount int) ([]*Found, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
 	}
-	var answers []nominatimPlace
-	if err := self.get(ctx, "/search", url.Values{
+	parameters := url.Values{
 		"format":         {"jsonv2"},
 		"q":              {query},
 		"addressdetails": {"1"},
-		"limit":          {strconv.Itoa(addressFetchCount(limitCount))},
-	}, &answers); err != nil {
+		"limit":          {strconv.Itoa(addressFetchCount(limitCount, near))},
+	}
+	if near != nil {
+		west, north, east, south := boundingBox(near.LatitudeDegrees, near.LongitudeDegrees, addressLeanRadiusMeters)
+		parameters.Set("viewbox", fmt.Sprintf("%.6f,%.6f,%.6f,%.6f", west, north, east, south))
+		parameters.Set("bounded", "0")
+	}
+	var answers []nominatimPlace
+	if err := self.get(ctx, "/search", parameters, &answers); err != nil {
 		return nil, err
 	}
 	found := make([]*Found, 0, len(answers))
@@ -190,5 +198,5 @@ func (self *nominatimProvider) Addresses(ctx context.Context, query string, limi
 			found = append(found, candidate)
 		}
 	}
-	return found[:min(len(found), addressFetchCount(limitCount))], nil
+	return addressesNearestFirst(found, near, limitCount), nil
 }

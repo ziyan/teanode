@@ -999,6 +999,7 @@ function LocationContent({ userId }: { userId: string }) {
       {addressPlace && (
         <LocationAddressChooser
           title={t('location.changeAddress')}
+          placeId={addressPlace.id}
           onClose={() => setAddressPlace(null)}
           onKeepTyped={async (addressText) => {
             // Only the words change: the place stays where it is.

@@ -190,7 +190,15 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(found.first?.latitudeDegrees, 10.5)
         XCTAssertNil(found.first?.placeId)
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["query": .string("12 Elm Street"), "limitCount": .number(8)])
-        XCTAssertTrue(Documents.searchAddresses.contains("SearchAddresses(query: $query, limitCount: $limitCount)"))
+        XCTAssertTrue(Documents.searchAddresses.contains("placeId: $placeId, limitCount: $limitCount)"))
+    }
+
+    func testSearchesAddressesNearestToAPlace() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"SearchAddresses":[]}}"#)
+        _ = try await connection.searchAddresses(query: "12 Elm Street", placeId: "place-1", limitCount: 8)
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            ["query": .string("12 Elm Street"), "placeId": .string("place-1"), "limitCount": .number(8)])
     }
 
     func testKeepsAnAddressAsTypedWithoutMovingThePlace() async throws {

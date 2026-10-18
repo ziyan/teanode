@@ -126,15 +126,23 @@ provider off, the check-in list is the person's own places near the position and
 searching is refused with the operator's switch named.
 
 **Typing an address.** A person can say where a place is instead of where they
-are, for home above all. `SearchAddresses` sends the words they typed to the
-same provider, with no position and no box around one (Nominatim `/search` with
-`addressdetails=1`, Photon `/api`), through the same shared limiter and the same
-12 lookups a minute for each account, and answers up to 20 matches (8 by
-default), best first, called by the same rules as a reverse answer: a match that
-is a road or a stop is called by its address, and a house by its number and
-road. Each match's `distanceMeters` is from the person's latest position, or 0
-when there is none, and its `placeId` is set where one of their own places holds
-the position. The person picks a match, and `SavePlace` takes its
+are, for home above all, or correct where one of their places is.
+`SearchAddresses` sends the words they typed to the same provider, through the
+same shared limiter and the same 12 lookups a minute for each account, and
+answers up to 20 matches (8 by default), called by the same rules as a reverse
+answer: a match that is a road or a stop is called by its address, and a house
+by its number and road. The matches come nearest first to a center: the
+position given, else the place given by `placeId` (the dashboard and the iPhone
+pass the place whose address is being changed), else the person's latest
+position. The provider is asked to lean toward the center without keeping to it
+(Nominatim `/search` with `addressdetails=1` and a 50 km `viewbox` with
+`bounded=0`, Photon `/api` with `lat` and `lon`), for up to three times as many
+matches, which are then sorted by distance. The provider's best match stays in
+the list even when nearer ones would fill it, as its last row, so an address
+typed exactly is found in another town too. With no center at all the words
+alone decide, best match first, and `distanceMeters` is 0; otherwise it is from
+the center. A match's `placeId` is set where one of the person's own places
+holds the position. The person picks a match, and `SavePlace` takes its
 `addressText` with its `latitudeDegrees` and `longitudeDegrees`. The place moves
 there, keeps its label and any name the person gave it, and keeps that address:
 it is marked as named at once (`named_at`), so the naming job does not ask the

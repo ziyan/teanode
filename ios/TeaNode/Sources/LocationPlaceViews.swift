@@ -173,6 +173,7 @@ struct LocationPlaceScreen: View {
         .navigationDestination(isPresented: $isChangingAddress) {
             LocationAddressScreen(
                 model: model,
+                placeId: place.id,
                 keepAsTyped: { typedText in await keepAddress(typedText) }
             ) { address in
                 await moveHere(to: address)
