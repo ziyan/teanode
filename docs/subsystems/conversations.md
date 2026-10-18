@@ -492,10 +492,10 @@ is judged from the call (`chatRiskOf`):
 | `leave` | `LeaveChat` | destructive: an admin has to add the person back |
 | `mute` | `MuteChat` | write; no end time mutes until the person unmutes, as the dashboard does |
 | `mark_read` | `MarkChatRead` | write; through the newest message people said unless one is named |
-| `edit` | `EditChatMessage` | write |
+| `edit` | `EditChatMessage` | outward, as sending is: everybody reads the new words as the person's, and the old ones are not kept |
 | `delete_message` | `DeleteChatMessage` | destructive |
 | `remember` | `SetChatAgentReading` | write |
-| `others_may_ask` | `SetChatAgentAskableByOthers` | granting when turned on, write when turned off or when the call does not say |
+| `others_may_ask` | `SetChatAgentAskableByOthers` | granting when turned on or when the call does not say, write when turned off |
 
 A call that asks shows a card naming the chat and the people, from the agent's
 own conversation for the chat; a message is quoted only in a chat the person
