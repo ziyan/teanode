@@ -2414,14 +2414,22 @@ label span {
 
 .tabs .tab-action {
   align-self: center;
-  padding: 8px 12px;
-  font-size: var(--text-body);
-  color: var(--accent);
-  text-decoration: none;
 }
 
-.tabs .tab-action:hover {
-  text-decoration: underline;
+/* The tabs' own button rules take the box off a button; an action beside the
+   tabs is an ordinary button and keeps it. */
+.tabs button.tab-action {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 14px;
+  margin-right: 0;
+}
+
+.tabs button.tab-action:hover:not(:disabled) {
+  background: var(--sidebar-hover);
+  color: var(--text);
 }
 
 @media (max-width: 600px) {
@@ -7037,16 +7045,8 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
    the transcript, styled as the divider is, gone once everything is in. */
 .agent-drawer-earlier {
   align-self: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font: inherit;
   font-size: 0.85em;
-  padding: 6px 10px;
-}
-
-.agent-drawer-earlier:hover:not(:disabled) {
-  text-decoration: underline;
+  padding: 4px 10px;
 }
 
 .agent-drawer-empty {
@@ -12923,7 +12923,6 @@ label.checkbox.is-plain input {
 }
 
 .connect-here {
-  display: inline-block;
   margin-top: var(--space-2);
 }
 
