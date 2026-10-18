@@ -286,7 +286,7 @@
                 json = #"{"data":{"UnnamePhotoFaceGroup":\#(faceGroupJSON(DemoFaceGroup(id: person.id, name: "", photoIds: person.photoIds)))}}"#
             } else if body.contains("NamePhotoFaceGroup") {
                 let person = demoFaceGroups.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoFaceGroups[0]
-                json = #"{"data":{"NamePhotoFaceGroup":\#(faceGroupJSON(DemoFaceGroup(id: person.id, name: "Chris Placeholder", photoIds: person.photoIds)))}}"#
+                json = #"{"data":{"NamePhotoFaceGroup":{"photoFaceGroup":\#(faceGroupJSON(DemoFaceGroup(id: person.id, name: "Chris Placeholder", photoIds: person.photoIds))),"mergedPhotoFaceGroupId":"","isContactPictureSet":false}}}"#
             } else if body.contains("MergePhotoFaceGroups") {
                 json = #"{"data":{"MergePhotoFaceGroups":\#(faceGroupJSON(demoFaceGroups[0]))}}"#
             } else if body.contains("RemovePhotoFaceFromGroup") {

@@ -53,7 +53,12 @@ func newPhotoFaceServer(test *testing.T) *photoServer {
 		case strings.Contains(asked.Query, "UnnamePhotoFaceGroup("):
 			answer("UnnamePhotoFaceGroup", fixtureUnnamedGroup)
 		case strings.Contains(asked.Query, "NamePhotoFaceGroup("):
-			answer("NamePhotoFaceGroup", fixtureNamedGroup)
+			switch asked.Variables["photoFaceGroupId"] {
+			case "group-merged":
+				answer("NamePhotoFaceGroup", `{"photoFaceGroup":`+fixtureNamedGroup+`,"mergedPhotoFaceGroupId":"group-merged","isContactPictureSet":true}`)
+			default:
+				answer("NamePhotoFaceGroup", `{"photoFaceGroup":`+fixtureNamedGroup+`,"mergedPhotoFaceGroupId":"","isContactPictureSet":false}`)
+			}
 		case strings.Contains(asked.Query, "MergePhotoFaceGroups("):
 			answer("MergePhotoFaceGroups", fixtureNamedGroup)
 		case strings.Contains(asked.Query, "RemovePhotoFaceFromGroup("):
@@ -176,6 +181,20 @@ func TestPeopleNameUnnameMergeRemoveAndHideSendWhatTheyAreGiven(test *testing.T)
 	if variables := server.lastVariables(); variables["photoFaceGroupId"] != "group-1" || variables["contactId"] != "contact-1" {
 		test.Fatalf("%v", variables)
 	}
+	if strings.Contains(output, "merged with") || strings.Contains(output, "picture") {
+		test.Fatalf("nothing was merged and no picture made: %s", output)
+	}
+	// A contact that named another group merges the two; a contact with no
+	// picture is given a face.
+	output, _, err = server.run(test, "people", "name", "group-merged", "contact-1")
+	if err != nil || !strings.Contains(output, "named Example Aunt (group-1)") || !strings.Contains(output, "merged with Example Aunt") || !strings.Contains(output, "used a face as their picture") {
+		test.Fatalf("%v: %s", err, output)
+	}
+	_, output, err = server.run(test, "people", "name", "group-merged", "contact-1", "--json")
+	var mergedAnswer client.NamedPhotoFaceGroup
+	if err != nil || json.Unmarshal([]byte(output), &mergedAnswer) != nil || mergedAnswer.MergedPhotoFaceGroupID != "group-merged" || !mergedAnswer.IsContactPictureSet || mergedAnswer.PhotoFaceGroup.ID != "group-1" {
+		test.Fatalf("%v: %s", err, output)
+	}
 	if output, _, err := server.run(test, "people", "unname", "group-2"); err != nil || !strings.Contains(output, "unnamed a group of faces nobody has named (group-2)") {
 		test.Fatalf("%v: %s", err, output)
 	}
@@ -204,8 +223,8 @@ func TestPeopleNameUnnameMergeRemoveAndHideSendWhatTheyAreGiven(test *testing.T)
 		test.Fatalf("%v", variables)
 	}
 	_, jsonOutput, err := server.run(test, "people", "name", "group-1", "contact-1", "--json")
-	var named models.PhotoFaceGroup
-	if err != nil || json.Unmarshal([]byte(jsonOutput), &named) != nil || named.ContactName != "Example Aunt" {
+	var namedAnswer client.NamedPhotoFaceGroup
+	if err != nil || json.Unmarshal([]byte(jsonOutput), &namedAnswer) != nil || namedAnswer.PhotoFaceGroup.ContactName != "Example Aunt" {
 		test.Fatalf("%v: %s", err, jsonOutput)
 	}
 

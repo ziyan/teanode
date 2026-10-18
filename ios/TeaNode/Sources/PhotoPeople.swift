@@ -38,17 +38,53 @@ extension PhotosModel {
     }
 
     /// Names a group by a contact the person chose; the group as it now is,
-    /// or nil when that failed.
+    /// or nil when that failed. A contact names one person, so a contact that
+    /// names another group already merges the two: the group that is left is
+    /// the one answered, and the one that was named is gone from the people.
+    /// A contact with no picture is given a face of the person, and the toast
+    /// offers to change it or take it off.
     func name(_ group: PhotoFaceGroup, contactId: String) async -> PhotoFaceGroup? {
         do {
-            let named = try await connection.namePhotoFaceGroup(group.id, contactId: contactId)
+            let answer = try await connection.namePhotoFaceGroup(group.id, contactId: contactId)
+            let named = answer.photoFaceGroup
+            if answer.isMerged {
+                faceGroups?.removeAll { $0.id == answer.mergedPhotoFaceGroupId }
+                forgetListing(.faceGroup(answer.mergedPhotoFaceGroupId))
+            }
             replaceFaceGroup(named)
-            doneText = String(localized: "Named “\(named.trimmedContactName)”")
+            var sentences = [
+                answer.isMerged
+                    ? String(localized: "Merged with “\(named.trimmedContactName)”")
+                    : String(localized: "Named “\(named.trimmedContactName)”")
+            ]
+            if answer.isContactPictureSet {
+                sentences.append(String(localized: "Used this face as their picture"))
+            }
+            showDone(sentences.joined(separator: " "), buttons: answer.isContactPictureSet ? contactPictureButtons(contactId: contactId) : [])
             return named
         } catch {
             problemText = describe(error)
             return nil
         }
+    }
+
+    /// Change opens the contact whose picture was just made; Remove takes the
+    /// picture off again.
+    private func contactPictureButtons(contactId: String) -> [ToastButton] {
+        [
+            ToastButton(title: String(localized: "Change")) {
+                AppModel.shared.openedContactId = contactId
+            },
+            ToastButton(title: String(localized: "Remove")) { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.connection.removeContactPicture(contactId)
+                    self.doneText = String(localized: "Removed their picture")
+                } catch {
+                    self.problemText = self.describe(error)
+                }
+            },
+        ]
     }
 
     /// Makes a contact with a name the address book does not have, and names
@@ -337,7 +373,9 @@ struct PhotoPersonCell: View {
 /// merges them with another, or hides them from People.
 struct PhotoPersonScreen: View {
     let model: PhotosModel
-    let photoFaceGroupId: String
+    /// The group shown. It is the one that was opened until naming it puts it
+    /// into a group the contact named already, which is shown from then on.
+    @State private var photoFaceGroupId: String
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var group: PhotoFaceGroup?
@@ -348,6 +386,11 @@ struct PhotoPersonScreen: View {
     @State private var isNaming = false
     @State private var isMerging = false
     @State private var isExplainingContacts = false
+
+    init(model: PhotosModel, photoFaceGroupId: String) {
+        self.model = model
+        _photoFaceGroupId = State(initialValue: photoFaceGroupId)
+    }
 
     private var key: PhotoListKey { .faceGroup(photoFaceGroupId) }
     private var photos: [Photo] { model.photos(in: key) }
@@ -362,8 +405,8 @@ struct PhotoPersonScreen: View {
             .navigationSubtitle(isSelecting ? "" : (current.map { PhotoPersonWords.subtitle(of: $0) } ?? ""))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .task { await model.load(key) }
-            .task { await readGroup() }
+            .task(id: photoFaceGroupId) { await model.load(key) }
+            .task(id: photoFaceGroupId) { await readGroup() }
             .task(id: model.hasWaitingPhotos(in: key)) {
                 if model.hasWaitingPhotos(in: key) { await model.followWaitingPhotos(in: key) }
             }
@@ -377,7 +420,11 @@ struct PhotoPersonScreen: View {
             .albumTitleAlert(model: model, scope: .album, isActive: opened == nil)
             .sheet(isPresented: $isNaming) {
                 if let current {
-                    NamePersonSheet(model: model, group: current) { group = $0 }
+                    NamePersonSheet(model: model, group: current) { named in
+                        // Merged into the group the contact named already, that group is this person now.
+                        group = named
+                        photoFaceGroupId = named.id
+                    }
                 }
             }
             .sheet(isPresented: $isMerging) {
@@ -536,6 +583,11 @@ struct NamePersonSheet: View {
     @State private var failureText: String?
     @Environment(\.dismiss) private var dismiss
 
+    /// The contacts that name some other person: choosing one merges the two.
+    private var linkedContactIds: Set<String> {
+        Set((model.faceGroups ?? []).filter { $0.id != group.id && !$0.contactId.isEmpty }.map(\.contactId))
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -563,6 +615,11 @@ struct NamePersonSheet: View {
                                         .foregroundStyle(.primary)
                                     if let email = contact.emails?.first, email != contact.shownName {
                                         Text(email)
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if linkedContactIds.contains(contact.id) {
+                                        Text("Already names another person; choosing it merges the two")
                                             .font(.footnote)
                                             .foregroundStyle(.secondary)
                                     }

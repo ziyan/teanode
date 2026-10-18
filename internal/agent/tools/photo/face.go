@@ -136,16 +136,40 @@ func personName(ctx context.Context, executor client.Executor, asked *arguments)
 	if faceGroupId == "" || contactId == "" {
 		return nil, errors.New("person-name needs face_group_id and contact_id: the contact the person chose or confirmed. Do not guess a name from a face; ask the person who it is")
 	}
-	group, err := client.NamePhotoFaceGroup(ctx, executor, faceGroupId, contactId)
+	named, err := client.NamePhotoFaceGroup(ctx, executor, faceGroupId, contactId)
 	if err != nil {
 		return nil, err
 	}
-	result, err := tools.JSONResult(groupRow(group))
+	row := groupRow(named.PhotoFaceGroup)
+	result, err := tools.JSONResult(namedGroupRow(row, named))
 	if err != nil {
 		return nil, err
 	}
-	result.Note = "named a group of faces " + tools.Named(group.ContactName, "after a contact")
+	result.Note = "named a group of faces " + tools.Named(named.PhotoFaceGroup.ContactName, "after a contact")
+	switch {
+	case named.MergedPhotoFaceGroupID != "" && named.IsContactPictureSet:
+		result.Note += ", put it together with the group that contact already named, and used a face as their picture"
+	case named.MergedPhotoFaceGroupID != "":
+		result.Note += " and put it together with the group that contact already named"
+	case named.IsContactPictureSet:
+		result.Note += " and used a face as their picture"
+	}
 	return result, nil
+}
+
+// namedGroupRow is the group naming left, with what else the naming did. A
+// contact names one person: face_group_id is the group left, merged_into says
+// the group that was named is part of it now (merged_face_group_id is the id
+// that is gone), and contact_picture_set says the contact had no picture and
+// was given one cut from a face.
+func namedGroupRow(row map[string]any, named *client.NamedPhotoFaceGroup) map[string]any {
+	if named.MergedPhotoFaceGroupID != "" {
+		row["merged_into"], row["merged_face_group_id"] = named.PhotoFaceGroup.ID, named.MergedPhotoFaceGroupID
+	}
+	if named.IsContactPictureSet {
+		row["contact_picture_set"] = true
+	}
+	return row
 }
 
 func personMerge(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {

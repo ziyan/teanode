@@ -24,7 +24,7 @@ const (
 
 	DocumentReadPhotoFaceGroup = `query ($photoFaceGroupId: String!) { ReadPhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) ` + photoFaceGroupSelection + ` }`
 
-	DocumentNamePhotoFaceGroup = `mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) ` + photoFaceGroupSelection + ` }`
+	DocumentNamePhotoFaceGroup = `mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) { photoFaceGroup ` + photoFaceGroupSelection + ` mergedPhotoFaceGroupId isContactPictureSet } }`
 
 	DocumentUnnamePhotoFaceGroup = `mutation ($photoFaceGroupId: String!) { UnnamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) ` + photoFaceGroupSelection + ` }`
 
@@ -67,11 +67,29 @@ func ReadPhotoFaceGroup(ctx context.Context, executor Executor, photoFaceGroupId
 	return result.ReadPhotoFaceGroup, nil
 }
 
+// NamedPhotoFaceGroup is what naming a group answered: the group as it is
+// now, and what else the naming did.
+type NamedPhotoFaceGroup struct {
+	// PhotoFaceGroup is the group that is named. When the contact named
+	// another of the person's groups already, that is the group, with the
+	// faces of both.
+	PhotoFaceGroup *models.PhotoFaceGroup `json:"photoFaceGroup"`
+
+	// MergedPhotoFaceGroupID is the group that was put into PhotoFaceGroup
+	// and is gone; empty when nothing was merged.
+	MergedPhotoFaceGroupID string `json:"mergedPhotoFaceGroupId"`
+
+	// IsContactPictureSet says the contact had no picture and was given one
+	// cut from a face of the group.
+	IsContactPictureSet bool `json:"isContactPictureSet"`
+}
+
 // NamePhotoFaceGroup names a group by a contact from the person's address
-// books.
-func NamePhotoFaceGroup(ctx context.Context, executor Executor, photoFaceGroupId, contactId string) (*models.PhotoFaceGroup, error) {
+// books. A contact names one person, so a contact that names another of the
+// person's groups merges the two.
+func NamePhotoFaceGroup(ctx context.Context, executor Executor, photoFaceGroupId, contactId string) (*NamedPhotoFaceGroup, error) {
 	var result struct {
-		NamePhotoFaceGroup *models.PhotoFaceGroup `json:"NamePhotoFaceGroup"`
+		NamePhotoFaceGroup *NamedPhotoFaceGroup `json:"NamePhotoFaceGroup"`
 	}
 	if err := executor.Execute(ctx, DocumentNamePhotoFaceGroup, map[string]any{"photoFaceGroupId": photoFaceGroupId, "contactId": contactId}, &result); err != nil {
 		return nil, err

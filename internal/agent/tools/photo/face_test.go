@@ -2,6 +2,7 @@ package photo
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -15,7 +16,7 @@ const (
 )
 
 func TestAGroupNamedByThePersonsOwnContactIsSaidToBeThem(test *testing.T) {
-	current := newRun(test, map[string]string{"ListPhotoFaceGroups": `[` + ownGroupJson + `,` + namedGroupJson + `,` + unnamedGroupJson + `]`, "NamePhotoFaceGroup": ownGroupJson})
+	current := newRun(test, map[string]string{"ListPhotoFaceGroups": `[` + ownGroupJson + `,` + namedGroupJson + `,` + unnamedGroupJson + `]`, "NamePhotoFaceGroup": namingJson(ownGroupJson, "", false)})
 	result, err := current.call(map[string]any{"operation": "people"})
 	if err != nil {
 		test.Fatal(err)
@@ -38,6 +39,45 @@ func TestAGroupNamedByThePersonsOwnContactIsSaidToBeThem(test *testing.T) {
 	named, err := current.call(map[string]any{"operation": "person-name", "face_group_id": "group-three", "contact_id": "contact-own"})
 	if err != nil || !strings.Contains(named.Content, `"is_you":true`) {
 		test.Fatalf("%v %v", named, err)
+	}
+}
+
+// namingJson is what naming a group answers.
+func namingJson(groupJson, mergedPhotoFaceGroupId string, isContactPictureSet bool) string {
+	return fmt.Sprintf(`{"photoFaceGroup":%s,"mergedPhotoFaceGroupId":%q,"isContactPictureSet":%t}`, groupJson, mergedPhotoFaceGroupId, isContactPictureSet)
+}
+
+// A contact names one person: naming a group with a contact that names another
+// group answers with the group left, and says the group named is part of it.
+// A contact without a picture is given a face, and the answer says so.
+func TestNamingAGroupSaysWhenItWasMergedAndWhenTheContactWasGivenAPicture(test *testing.T) {
+	current := newRun(test, map[string]string{"NamePhotoFaceGroup": namingJson(namedGroupJson, "group-two", true)})
+	result, err := current.call(map[string]any{"operation": "person-name", "face_group_id": "group-two", "contact_id": "contact-one"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	var answer map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+		test.Fatal(err)
+	}
+	if answer["face_group_id"] != "group-one" || answer["merged_into"] != "group-one" || answer["merged_face_group_id"] != "group-two" || answer["contact_picture_set"] != true {
+		test.Fatalf("%s", result.Content)
+	}
+	for _, want := range []string{"put it together", "used a face as their picture"} {
+		if !strings.Contains(result.Note, want) {
+			test.Fatalf("%q lacks %q", result.Note, want)
+		}
+	}
+	// Merged only, and picture only.
+	current = newRun(test, map[string]string{"NamePhotoFaceGroup": namingJson(namedGroupJson, "group-two", false)})
+	result, err = current.call(map[string]any{"operation": "person-name", "face_group_id": "group-two", "contact_id": "contact-one"})
+	if err != nil || !strings.Contains(result.Content, `"merged_into":"group-one"`) || strings.Contains(result.Content, "contact_picture_set") {
+		test.Fatalf("%v %v", result, err)
+	}
+	current = newRun(test, map[string]string{"NamePhotoFaceGroup": namingJson(namedGroupJson, "", true)})
+	result, err = current.call(map[string]any{"operation": "person-name", "face_group_id": "group-one", "contact_id": "contact-one"})
+	if err != nil || strings.Contains(result.Content, "merged_into") || !strings.Contains(result.Content, `"contact_picture_set":true`) {
+		test.Fatalf("%v %v", result, err)
 	}
 }
 
@@ -97,10 +137,14 @@ func TestAPersonsPhotosAreAskedForByGroupOrByContact(test *testing.T) {
 }
 
 func TestNamingAGroupNeedsTheGroupAndAContactAndSaysNotToGuess(test *testing.T) {
-	current := newRun(test, map[string]string{"NamePhotoFaceGroup": namedGroupJson})
+	current := newRun(test, map[string]string{"NamePhotoFaceGroup": namingJson(namedGroupJson, "", false)})
 	result, err := current.call(map[string]any{"operation": "person-name", "face_group_id": "group-one", "contact_id": "contact-one"})
 	if err != nil || !strings.Contains(result.Content, `"contact_name":"Example Aunt"`) || !strings.Contains(result.Note, "Example Aunt") {
 		test.Fatalf("%v %v", result, err)
+	}
+	// Nothing was merged and no picture was made, so the answer says neither.
+	if strings.Contains(result.Content, "merged_into") || strings.Contains(result.Content, "contact_picture_set") {
+		test.Fatalf("%s", result.Content)
 	}
 	if asked := current.operations.asked("NamePhotoFaceGroup"); len(asked) != 1 || asked[0]["photoFaceGroupId"] != "group-one" || asked[0]["contactId"] != "contact-one" {
 		test.Fatalf("%v", asked)

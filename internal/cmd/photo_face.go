@@ -33,7 +33,7 @@ func newPhotoPeopleCommand() *cli.Command {
 				},
 				Action: runPhotoPeopleShow,
 			},
-			{Name: "name", Usage: "say who a group of faces is, by a contact from your address book (teanode contact list gives their ids)", ArgsUsage: "<group id> <contact id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleName},
+			{Name: "name", Usage: "say who a group of faces is, by a contact from your address book (teanode contact list gives their ids); a contact that names another group puts the two together, and a contact with no picture is given a face as one", ArgsUsage: "<group id> <contact id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleName},
 			{Name: "unname", Usage: "take the contact off a group of faces", ArgsUsage: "<group id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleUnname},
 			{Name: "merge", Usage: "put groups of faces into the first: they are one person", ArgsUsage: "<group id> <group id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleMerge},
 			{Name: "remove", Usage: "take a face out of its group: it is not them", ArgsUsage: "<face id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleRemove},
@@ -166,11 +166,25 @@ func runPhotoPeopleName(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	group, err := client.NamePhotoFaceGroup(ctx, connection, command.Args().Get(0), command.Args().Get(1))
+	named, err := client.NamePhotoFaceGroup(ctx, connection, command.Args().Get(0), command.Args().Get(1))
 	if err != nil {
 		return describeError(command, err)
 	}
-	return printPhotoFaceGroup(command, group, "named")
+	if command.Bool("json") {
+		return PrintJSON(named)
+	}
+	if err := printPhotoFaceGroup(command, named.PhotoFaceGroup, "named"); err != nil {
+		return err
+	}
+	// A contact names one person: a contact that named another group already
+	// puts the two together, and a contact without a picture is given a face.
+	if named.MergedPhotoFaceGroupID != "" {
+		_, _ = fmt.Fprintf(command.Writer, "merged with %s\n", forTerminal(named.PhotoFaceGroup.ContactName))
+	}
+	if named.IsContactPictureSet {
+		_, _ = fmt.Fprintf(command.Writer, "used a face as their picture (teanode contact remove-picture %s takes it off)\n", named.PhotoFaceGroup.ContactID)
+	}
+	return nil
 }
 
 func runPhotoPeopleUnname(ctx context.Context, command *cli.Command) error {

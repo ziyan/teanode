@@ -94,7 +94,7 @@ struct PhotoViewer: View {
         // Clear, so that the black behind the picture can fade away while it is pulled
         // down and show the library under the viewer.
         .presentationBackground(.clear)
-        .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
+        .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText, buttons: Bindable(model).doneButtons)
         .onChange(of: currentPhotoId) { _, photoId in
             isZoomed = false
             guard let photoId else { return }

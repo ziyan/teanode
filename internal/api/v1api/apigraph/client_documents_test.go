@@ -46,6 +46,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"GetContact":               client.DocumentGetContact,
 		"SaveContact":              client.DocumentSaveContact,
 		"DeleteContact":            client.DocumentDeleteContact,
+		"RemoveContactPicture":     client.DocumentRemoveContactPicture,
 		"ListMailboxAppPasswords":  client.DocumentListMailboxAppPasswords,
 		"CreateMailboxAppPassword": client.DocumentCreateMailboxAppPassword,
 		"DeleteMailboxAppPassword": client.DocumentDeleteMailboxAppPassword,

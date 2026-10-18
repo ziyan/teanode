@@ -341,6 +341,27 @@ public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
     public var isNamed: Bool { !trimmedContactName.isEmpty }
 }
 
+/// NamedPhotoFaceGroup is what naming a group answered. A contact names one
+/// person, so a contact that named another group already merges the two:
+/// `photoFaceGroup` is the group that was named already, with the faces of
+/// both, and `mergedPhotoFaceGroupId` is the group that went into it, empty
+/// when nothing was merged. A contact that had no picture was given one cut
+/// from a face of the group.
+public struct NamedPhotoFaceGroup: Decodable, Hashable, Sendable {
+    public let photoFaceGroup: PhotoFaceGroup
+    public let mergedPhotoFaceGroupId: String
+    public let isContactPictureSet: Bool
+
+    public init(photoFaceGroup: PhotoFaceGroup, mergedPhotoFaceGroupId: String = "", isContactPictureSet: Bool = false) {
+        self.photoFaceGroup = photoFaceGroup
+        self.mergedPhotoFaceGroupId = mergedPhotoFaceGroupId
+        self.isContactPictureSet = isContactPictureSet
+    }
+
+    /// Whether another group was put into this one.
+    public var isMerged: Bool { !mergedPhotoFaceGroupId.isEmpty }
+}
+
 /// PhotoDetail is one photo with its files, previews, the albums it is in, its
 /// description and the faces found in it.
 public struct PhotoDetail: Codable, Hashable, Sendable {
@@ -828,7 +849,7 @@ extension Documents {
         query ($photoFaceGroupId: String!) { ReadPhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) { \(photoFaceGroupFields) } }
         """
     public static let namePhotoFaceGroup = """
-        mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) { \(photoFaceGroupFields) } }
+        mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) { photoFaceGroup { \(photoFaceGroupFields) } mergedPhotoFaceGroupId isContactPictureSet } }
         """
     public static let unnamePhotoFaceGroup = """
         mutation ($photoFaceGroupId: String!) { UnnamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) { \(photoFaceGroupFields) } }
@@ -1492,9 +1513,11 @@ extension Connection {
         ).ReadPhotoFaceGroup
     }
 
-    /// Names a group by a contact from the person's address books.
-    public func namePhotoFaceGroup(_ photoFaceGroupId: String, contactId: String) async throws -> PhotoFaceGroup {
-        struct Answer: Decodable, Sendable { let NamePhotoFaceGroup: PhotoFaceGroup }
+    /// Names a group by a contact from the person's address books. A contact
+    /// names one person, so a contact that names another of the person's groups
+    /// merges the two; the answer says what happened.
+    public func namePhotoFaceGroup(_ photoFaceGroupId: String, contactId: String) async throws -> NamedPhotoFaceGroup {
+        struct Answer: Decodable, Sendable { let NamePhotoFaceGroup: NamedPhotoFaceGroup }
         return try await execute(
             Documents.namePhotoFaceGroup, variables: ["photoFaceGroupId": .string(photoFaceGroupId), "contactId": .string(contactId)], as: Answer.self
         ).NamePhotoFaceGroup

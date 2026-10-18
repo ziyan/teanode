@@ -47,6 +47,11 @@ type AddressBookMutation interface {
 	// Forget one. Needs contacts:use.
 	DeleteContact(ctx context.Context, arguments ContactArguments) (bool, error)
 
+	// Take the picture off a contact, whoever put it there, and leave the
+	// rest of the card as it was. A contact with no picture is answered as
+	// it is. Needs contacts:use.
+	RemoveContactPicture(ctx context.Context, arguments ContactArguments) (*ContactView, error)
+
 	// Rename an address book or change what it says about itself. Needs
 	// contacts:use.
 	SaveAddressBook(ctx context.Context, arguments SaveAddressBookArguments) (*AddressBookView, error)
@@ -323,6 +328,18 @@ func (self *graph) DeleteContact(ctx context.Context, arguments ContactArguments
 		return false, translateError(err)
 	}
 	return true, nil
+}
+
+func (self *graph) RemoveContactPicture(ctx context.Context, arguments ContactArguments) (*ContactView, error) {
+	principal, err := self.requireAddressBookPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	kept, err := addressbook.New(self.transaction(ctx)).RemovePicture(ctx, principal, arguments.ID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return contactView(kept, true), nil
 }
 
 func (self *graph) SaveAddressBook(ctx context.Context, arguments SaveAddressBookArguments) (*AddressBookView, error) {

@@ -183,7 +183,10 @@ final class PhotoPeopleTests: XCTestCase {
 
     func testNamingMergingHidingAndRemovingAFaceSendTheServersNames() async throws {
         let (connection, fake) = try connection { body in
-            for name in ["NamePhotoFaceGroup", "UnnamePhotoFaceGroup", "MergePhotoFaceGroups", "RemovePhotoFaceFromGroup", "HidePhotoFaceGroup"]
+            if body.contains("NamePhotoFaceGroup(") {
+                return #"{"data":{"NamePhotoFaceGroup":{"photoFaceGroup":\#(groupJSON),"mergedPhotoFaceGroupId":"","isContactPictureSet":false}}}"#
+            }
+            for name in ["UnnamePhotoFaceGroup", "MergePhotoFaceGroups", "RemovePhotoFaceFromGroup", "HidePhotoFaceGroup"]
             where body.contains(name) {
                 return #"{"data":{"\#(name)":\#(groupJSON)}}"#
             }
@@ -204,6 +207,25 @@ final class PhotoPeopleTests: XCTestCase {
         XCTAssertEqual(sent[3]["photoFaceId"] as? String, "f1")
         XCTAssertEqual(sent[4]["isHidden"] as? Bool, true)
         XCTAssertEqual(sent[5]["isEnabled"] as? Bool, false)
+    }
+
+    func testNamingSaysWhenTheGroupWasMergedAndWhenTheContactWasGivenAPicture() async throws {
+        let (connection, fake) = try connection { body in
+            if body.contains("RemoveContactPicture") { return #"{"data":{"RemoveContactPicture":{"id":"c1","hasPhoto":false}}}"# }
+            return #"{"data":{"NamePhotoFaceGroup":{"photoFaceGroup":\#(groupJSON),"mergedPhotoFaceGroupId":"g2","isContactPictureSet":true}}}"#
+        }
+        let named = try await connection.namePhotoFaceGroup("g2", contactId: "c1")
+        XCTAssertEqual(named.photoFaceGroup.id, "g1")
+        XCTAssertEqual(named.mergedPhotoFaceGroupId, "g2")
+        XCTAssertTrue(named.isMerged)
+        XCTAssertTrue(named.isContactPictureSet)
+        try await connection.removeContactPicture("c1")
+        let sent = try fake.sent.map { try variables(of: $0) }
+        XCTAssertEqual(sent[1]["id"] as? String, "c1")
+        XCTAssertTrue(Documents.namePhotoFaceGroup.contains("mergedPhotoFaceGroupId"))
+        XCTAssertTrue(Documents.namePhotoFaceGroup.contains("isContactPictureSet"))
+        // Nothing merged: the id is empty and the group is not merged.
+        XCTAssertFalse(NamedPhotoFaceGroup(photoFaceGroup: named.photoFaceGroup).isMerged)
     }
 
     func testANewContactIsOfferedForANameNoContactHas() {
