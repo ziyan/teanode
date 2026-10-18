@@ -15,7 +15,7 @@ var heicBrands = map[string]string{
 }
 
 // FormatContentType is the type of picture a file's first bytes say it is,
-// or "" when they are not a JPEG, PNG, GIF or HEIC. A file's name and the
+// or "" when they are not a JPEG, PNG, GIF, WebP or HEIC. A file's name and the
 // type it was sent with can both be wrong: a phone saves a picture it was
 // sent as image.jpeg whatever its format is, and only the bytes are sure.
 // A video's ftyp brands are not on the list, so a video is "".
@@ -27,6 +27,8 @@ func FormatContentType(firstBytes []byte) string {
 		return "image/png"
 	case bytes.HasPrefix(firstBytes, []byte("GIF87a")), bytes.HasPrefix(firstBytes, []byte("GIF89a")):
 		return "image/gif"
+	case len(firstBytes) >= FormatBytes && string(firstBytes[:4]) == "RIFF" && string(firstBytes[8:12]) == "WEBP":
+		return "image/webp"
 	case len(firstBytes) >= FormatBytes && string(firstBytes[4:8]) == "ftyp":
 		return heicBrands[string(firstBytes[8:12])]
 	}

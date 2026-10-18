@@ -851,7 +851,7 @@ func isHeifContentType(contentType string) bool {
 // picture, which is what lets a failure to read it be the file's fault.
 func isGoDecodableContentType(contentType string) bool {
 	switch contentType {
-	case "image/jpeg", "image/png", "image/gif":
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
 		return true
 	}
 	return false
@@ -992,7 +992,7 @@ func (self *Store) decodeHeif(ctx context.Context, content []byte) ([]byte, erro
 // context.
 var errPixelBudget = errors.New("photo: waiting for room to decode a picture was cut short")
 
-// decodeWithinBudget decodes a JPEG, PNG or GIF once the pictures being decoded
+// decodeWithinBudget decodes a JPEG, PNG, GIF or WebP once the pictures being decoded
 // by all the workers leave room for this one. The caller calls the function it
 // gets back when it has no more use for the full-size pixels; calling it more
 // than once is harmless.

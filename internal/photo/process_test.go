@@ -670,6 +670,26 @@ func TestAHeicClaimingAHugePictureIsFailedAtOnceAndHeifDecIsNeverRun(test *testi
 
 // A phone sends a picture saved from a message as image.jpeg whatever its
 // format: it is kept as what its bytes are, and read that way.
+// A WebP, which an iPhone keeps for pictures saved from the web and from
+// some apps, is made into previews like a JPEG. This one is 16 by 12 pixels
+// of one color, written by an encoder for this test.
+func TestAWebPIsMadeIntoPreviews(test *testing.T) {
+	webP := []byte{
+		0x52, 0x49, 0x46, 0x46, 0x1e, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+		0x56, 0x50, 0x38, 0x4c, 0x11, 0x00, 0x00, 0x00, 0x2f, 0x0f, 0xc0, 0x02,
+		0x00, 0x07, 0x50, 0xb2, 0x2a, 0x14, 0xb9, 0xff, 0x81, 0x88, 0xe8, 0x7f,
+		0x00, 0x00,
+	}
+	fixture := newFixture(test)
+	found := fixture.uploadAndProcess("webp", map[string]string{"Content-Type": "image/webp", "X-Photo-Client-ID": "webp", "X-Photo-Filename": "IMG_0001.WEBP"}, webP)
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.WidthPixels != 16 || found.HeightPixels != 12 {
+		test.Fatalf("%+v", found)
+	}
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewSmall); preview == nil {
+		test.Fatal("no small preview")
+	}
+}
+
 func TestAPictureSentAsTheWrongTypeIsKeptAndReadAsWhatItsBytesAre(test *testing.T) {
 	ranMarker := installFakeHeifDec(test, exifJpeg(test, 64, 32, 1))
 	fixture := newFixture(test)
