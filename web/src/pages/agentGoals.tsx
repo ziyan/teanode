@@ -431,13 +431,20 @@ function GoalPage({ conversationId, onBack }: { conversationId: string; onBack: 
   }
 
   // The list is read when the dialog opens, not with the page, so it is the
-  // schedules as they are now. A schedule that already runs this goal is not
-  // offered again.
+  // schedules as they are now. A schedule that already runs a goal, this one
+  // or another, is not offered: moving it would quietly take it from that goal.
   async function chooseSchedule() {
     setBusy(true)
     try {
-      const response = await graphql<{ ListAgentSchedules: Schedule[] }>(SCHEDULES, {})
-      const usable = response.ListAgentSchedules.filter((schedule) => schedule.conversationId !== conversationId)
+      const [response, goalList] = await Promise.all([
+        graphql<{ ListAgentSchedules: Schedule[] }>(SCHEDULES, {}),
+        graphql<{ ListAgentGoals: Goal[] }>(GOALS, {}),
+      ])
+      const goalIds = new Set(goalList.ListAgentGoals.map((goal) => goal.conversationId))
+      goalIds.add(conversationId)
+      const usable = response.ListAgentSchedules.filter(
+        (schedule) => !schedule.conversationId || !goalIds.has(schedule.conversationId),
+      )
       setChosenScheduleId(usable[0]?.id ?? '')
       setUsableSchedules(usable)
     } catch (caught) {

@@ -190,7 +190,7 @@ struct GoalDetail: View {
         .refreshable { await load() }
         .sheet(isPresented: $isChoosingSchedule) {
             GoalSchedulePicker(
-                connection: connection, conversationId: conversationId, ownedScheduleIds: Set((goal?.schedules ?? []).compactMap { $0?.id })
+                connection: connection, conversationId: conversationId
             ) {
                 doneText = String(localized: "The goal now runs on that schedule.")
                 Task { await load() }
@@ -231,11 +231,11 @@ struct GoalDetail: View {
 
 /// GoalSchedulePicker lists the agent's schedules and gives one to a goal:
 /// each of its runs becomes a turn of the goal, and the goal takes none of
-/// its own. A schedule that already runs the goal is not offered again.
+/// its own. A schedule that already runs a goal, this one or another, is not
+/// offered: moving it would quietly take it from that goal.
 struct GoalSchedulePicker: View {
     let connection: Connection
     let conversationId: String
-    let ownedScheduleIds: Set<String>
     let onMoved: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var schedules: [AgentSchedule]?
@@ -281,7 +281,14 @@ struct GoalSchedulePicker: View {
 
     private func load() async {
         do {
-            schedules = try await connection.agentSchedules().filter { !ownedScheduleIds.contains($0.id) }
+            async let everySchedule = connection.agentSchedules()
+            async let everyGoal = connection.goals()
+            var goalIds = Set(try await everyGoal.map(\.conversationId))
+            goalIds.insert(conversationId)
+            schedules = try await everySchedule.filter { schedule in
+                guard let owner = schedule.conversationId else { return true }
+                return !goalIds.contains(owner)
+            }
         } catch {
             schedules = []
             problemText = error.localizedDescription

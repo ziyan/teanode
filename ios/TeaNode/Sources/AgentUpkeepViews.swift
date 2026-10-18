@@ -2269,12 +2269,12 @@ struct AddFollowUpSheet: View {
     @State private var isSaving = false
     @State private var problemText: String?
 
-    /// A parcel may do without a day; every other kind has one.
-    private var isDayOptional: Bool { followUp.followUpKind == "parcel" }
-
+    /// The day is set on purpose, as the dashboard asks it to be typed: a
+    /// picker that started on today would file a bill due today at one tap.
+    /// A parcel may do without one; every other kind needs it to be added.
     private var followUpToAdd: NewAgentFollowUp {
         var ready = followUp
-        ready.dueOn = isDayOptional && !hasDay ? "" : NewAgentFollowUp.dayText(day)
+        ready.dueOn = hasDay ? NewAgentFollowUp.dayText(day) : ""
         return ready
     }
 
@@ -2288,10 +2288,8 @@ struct AddFollowUpSheet: View {
                         }
                     }
                     TextField("What to follow", text: $followUp.followUpTitle)
-                    if isDayOptional {
-                        Toggle("Set a day", isOn: $hasDay)
-                    }
-                    if !isDayOptional || hasDay {
+                    Toggle("Set a day", isOn: $hasDay)
+                    if hasDay {
                         DatePicker("Day", selection: $day, displayedComponents: .date)
                     }
                 }

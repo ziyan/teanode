@@ -796,10 +796,13 @@ public struct AgentSchedule: Codable, Hashable, Sendable, Identifiable {
     public let enabled: Bool
     public let lastRunAt: String?
     public let nextRunAt: String?
+    /// The conversation its answers go to: a goal's, for a schedule that
+    /// runs a goal.
+    public let conversationId: String?
 
     public init(
         id: String, name: String, cron: String, prompt: String = "", deliver: String = "drawer", enabled: Bool = true, lastRunAt: String? = nil,
-        nextRunAt: String? = nil
+        nextRunAt: String? = nil, conversationId: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -809,6 +812,7 @@ public struct AgentSchedule: Codable, Hashable, Sendable, Identifiable {
         self.enabled = enabled
         self.lastRunAt = lastRunAt
         self.nextRunAt = nextRunAt
+        self.conversationId = conversationId
     }
 
     public var isDeliveredByMail: Bool { deliver == "mail" }
@@ -1584,7 +1588,7 @@ extension Documents {
         """
 
     public static let agentSchedules = """
-        query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt } }
+        query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt conversationId } }
         """
     public static let saveAgentSchedule = """
         mutation ($scheduleId: String, $name: String, $cron: String, $prompt: String, $deliver: String, $enabled: Boolean) {
