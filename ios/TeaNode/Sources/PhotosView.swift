@@ -995,19 +995,8 @@ struct PhotosScreen: View {
                         await model.loadAlbumsSection()
                     }
                 }
-                .task { await model.loadLibrary() }
-                // The albums the Add to Album menus list, and the circles an album can be for.
-                .task { await model.loadAlbums() }
-                .task { await model.loadCircles() }
                 .task(id: PhotoFollowID(key: key, hasWaitingPhotos: key.map { model.hasWaitingPhotos(in: $0) } ?? false)) {
                     if let key, model.hasWaitingPhotos(in: key) { await model.followWaitingPhotos(in: key) }
-                }
-                .onChange(of: model.section) { _, _ in
-                    endSelection()
-                    isSearchPresented = false
-                    // The side menu can be opened by a swipe while Photo backup is shown;
-                    // choosing a collection there must not leave the backup screen on top of it.
-                    isShowingBackup = false
                 }
                 .onChange(of: key) { _, _ in dateRangeText = "" }
                 .onChange(of: scale) { _, _ in dateRangeText = "" }
@@ -1030,6 +1019,21 @@ struct PhotosScreen: View {
                     }
                 #endif
         }
+        // A collection chosen in the side menu opens on its own first page: an album
+        // or a person opened in the collection before is not left on top of it.
+        .id(model.section)
+        .onChange(of: model.section) { _, _ in
+            endSelection()
+            isSearchPresented = false
+            // The side menu can be opened by a swipe while Photo backup is shown;
+            // choosing a collection there must not leave the backup screen on top of it.
+            isShowingBackup = false
+        }
+        // Read once for the whole screen, not again for each collection.
+        .task { await model.loadLibrary() }
+        // The albums the Add to Album menus list, and the circles an album can be for.
+        .task { await model.loadAlbums() }
+        .task { await model.loadCircles() }
         .fullScreenCover(item: $opened) { opened in
             PhotoViewer(model: model, listKey: key ?? .library, openedPhotoId: opened.id)
         }
