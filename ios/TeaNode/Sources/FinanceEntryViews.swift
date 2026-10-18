@@ -115,15 +115,17 @@ private struct EntryTextRow: View {
     var placeholder: String?
     @Binding var text: String
     var keyboard: UIKeyboardType = .default
-    var capitalization: TextInputAutocapitalization = .sentences
+    /// Given for a name, a code or a number; plain words take sentence case
+    /// and keep autocorrection.
+    var capitalization: TextInputAutocapitalization? = nil
 
     var body: some View {
         LabeledContent(title) {
             TextField(title, text: $text, prompt: placeholder.map { Text(verbatim: $0) })
                 .multilineTextAlignment(.trailing)
                 .keyboardType(keyboard)
-                .textInputAutocapitalization(capitalization)
-                .autocorrectionDisabled(keyboard != .default || capitalization != .sentences)
+                .textInputAutocapitalization(capitalization ?? .sentences)
+                .autocorrectionDisabled(keyboard != .default || capitalization != nil)
         }
     }
 }
