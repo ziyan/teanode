@@ -135,6 +135,14 @@ readonly ALLOWED_HOSTS=(
   # the finance accounts plan names.
   www.ecb.europa.eu
 
+  # Where places are named and drawn from, by default: the OpenStreetMap
+  # Foundation's usage policy for its public naming server, which the code
+  # that asks it cites, and the free public server of map tiles and styles
+  # the configuration defaults to. Both are addresses of public services that
+  # the code and the location plan have to name.
+  operations.osmfoundation.org
+  .openfreemap.org
+
   # The services the published skills call. They are in the fixtures under
   # internal/skills/testdata, which are the registry's own files kept
   # verbatim so that a change to what it publishes shows up as a test

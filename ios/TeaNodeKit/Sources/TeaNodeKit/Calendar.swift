@@ -506,6 +506,9 @@ extension Documents {
     public static let deleteContact = """
         mutation ($id: String!) { DeleteContact(id: $id) }
         """
+    public static let removeContactPicture = """
+        mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }
+        """
     public static let myContact = """
         query { AgentGraphPage(path: "self") { contact { id } } }
         """
@@ -523,7 +526,7 @@ extension Documents {
         "createCircleCalendar": createCircleCalendar,
         "reminders": reminders, "saveReminder": saveReminder, "setReminderDone": setReminderDone,
         "deleteReminder": deleteReminder, "addressBooks": addressBooks, "contacts": contacts, "contact": contact,
-        "saveContact": saveContact, "importContact": importContact, "deleteContact": deleteContact, "myContact": myContact, "setMyContact": setMyContact,
+        "saveContact": saveContact, "importContact": importContact, "deleteContact": deleteContact, "removeContactPicture": removeContactPicture, "myContact": myContact, "setMyContact": setMyContact,
     ]
 }
 
@@ -721,6 +724,15 @@ extension Connection {
     public func deleteContact(_ id: String) async throws {
         struct Answer: Decodable, Sendable { let DeleteContact: Bool? }
         _ = try await execute(Documents.deleteContact, variables: ["id": .string(id)], as: Answer.self)
+    }
+
+    /// Takes the picture off a contact and leaves the rest of the card.
+    public func removeContactPicture(_ id: String) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Contact: Decodable, Sendable { let id: String }
+            let RemoveContactPicture: Contact
+        }
+        _ = try await execute(Documents.removeContactPicture, variables: ["id": .string(id)], as: Answer.self)
     }
 
     /// The contact that is the person themselves, if one is marked.

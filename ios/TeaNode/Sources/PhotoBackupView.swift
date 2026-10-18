@@ -12,6 +12,11 @@ struct PhotoBackupView: View {
     /// The library's size and limits, read when the screen opens.
     @State private var library: PhotoLibrary?
     @State private var libraryFailureText: String?
+    /// Whether the library's size is being read, and when it was last: the
+    /// screen asks the server when it appears, when the app comes to the
+    /// foreground and when backup finishes something, and never in a loop.
+    @State private var isReadingLibrary = false
+    @State private var lastLibraryReadAt: Date?
     private let engine = PhotoBackupEngine.shared
 
     /// Backup is on for another account than the one signed in now.
@@ -23,7 +28,7 @@ struct PhotoBackupView: View {
         PhotoBackupContent(
             status: engine.status, credentialName: engine.credentialName, accessProblem: engine.accessProblem, isWorking: engine.isWorking,
             isPermitted: app.isPhotosOffered, enabledAccountName: engine.enabledAccountName, isOnForOtherAccount: isOnForOtherAccount,
-            library: library, libraryFailureText: libraryFailureText, readLibrary: { Task { await loadLibrary() } },
+            library: library, libraryFailureText: libraryFailureText, readLibrary: { Task { await loadLibrary(mustRead: true) } },
             isOn: Binding(
                 get: { engine.isEnabled && !isOnForOtherAccount },
                 set: { isOn in
@@ -46,12 +51,24 @@ struct PhotoBackupView: View {
         )
         .sensoryFeedback(.success, trigger: engine.doneText) { _, text in text != nil }
         .sensoryFeedback(.warning, trigger: engine.problemText) { _, text in text != nil }
-        .task { await engine.refresh() }
-        .task { await loadLibrary() }
+        // One task when the screen appears: what the phone knows, then what the
+        // server says of the library.
+        .task {
+            await engine.refresh()
+            await loadLibrary(mustRead: true)
+        }
         .onChange(of: scenePhase) { _, phase in
             // Back from the system's Settings, where the person may have given
-            // access to the whole library.
-            if phase == .active { Task { await engine.refresh() } }
+            // access to the whole library, or from another app.
+            guard phase == .active else { return }
+            Task {
+                await engine.refresh()
+                await loadLibrary(mustRead: false)
+            }
+        }
+        // Backup finished something: the server's numbers have changed.
+        .onChange(of: engine.finishedWorkCount) {
+            Task { await loadLibrary(mustRead: false) }
         }
     }
 }
@@ -59,13 +76,20 @@ struct PhotoBackupView: View {
 extension PhotoBackupView {
     /// Reads the size of the library and its limits; a failure is shown with a
     /// way to try again, and what was read before stays.
-    fileprivate func loadLibrary() async {
+    fileprivate func loadLibrary(mustRead: Bool) async {
+        guard PhotoBackupScreenReadPolicy.shouldRead(isReading: isReadingLibrary, lastReadAt: lastLibraryReadAt, now: Date(), mustRead: mustRead) else {
+            return
+        }
+        isReadingLibrary = true
+        defer { isReadingLibrary = false }
         do {
             library = try await connection.photoLibrary()
             libraryFailureText = nil
+            lastLibraryReadAt = Date()
         } catch {
             guard !Task.isCancelled else { return }
             libraryFailureText = app.describe(error)
+            lastLibraryReadAt = Date()
         }
     }
 }
@@ -242,7 +266,7 @@ struct PhotoBackupContent: View {
                 )
                 .foregroundStyle(.secondary)
             }
-            if status.phase == .uploading, let filename = status.currentFilename {
+            if status.phase == .uploading || status.phase == .listing, let filename = status.currentFilename {
                 LabeledContent("Sending") {
                     Text(filename).monospaced()
                 }
@@ -287,12 +311,20 @@ struct PhotoBackupContent: View {
                 : (status.libraryItemCount == 0
                     ? String(localized: "Ready to back up")
                     : (status.isUploadingInBackground ? String(localized: "Backing up") : String(localized: "Waiting to continue")))
-        case .listing: String(localized: "Reading your photo library")
+        case .listing: listingText
         case .uploading: String(localized: "Backing up")
         case .waitingForNetwork: usesMobileData ? String(localized: "Waiting for the network") : String(localized: "Waiting for Wi-Fi")
         case .needsAccess: String(localized: "Needs access to all your photos")
         case .needsSignIn: String(localized: "Needs you to sign in again")
         }
+    }
+
+    /// How far the listing of the library has got, when the pass says.
+    private var listingText: String {
+        guard let listedItemCount = status.listedItemCount, status.libraryItemCount > 0 else {
+            return String(localized: "Reading your photo library")
+        }
+        return String(localized: "Reading your photo library: \(listedItemCount.formatted()) of \(status.libraryItemCount.formatted())")
     }
 
     private var stateSymbol: String {
@@ -328,6 +360,9 @@ private let previewUploading = PhotoBackupStatus(
     phase: .uploading, backedUpItemCount: 1284, libraryItemCount: 3912, plannedFileCount: 2891, finishedFileCount: 1284, queuedFileCount: 4,
     currentFilename: "IMG_2041.MOV", lastPassFinishedAt: Date(timeIntervalSinceNow: -86_400))
 
+private let previewListing = PhotoBackupStatus(
+    phase: .listing, backedUpItemCount: 32, libraryItemCount: 35_103, queuedFileCount: 4, currentFilename: "IMG_2041.HEIC", listedItemCount: 1_200)
+
 private let previewBackground = PhotoBackupStatus(
     phase: .idle, backedUpItemCount: 1284, libraryItemCount: 3912, queuedFileCount: 200,
     lastPassFinishedAt: Date(timeIntervalSinceNow: -3_600), waitingFileCount: 1_407)
@@ -336,6 +371,8 @@ private let previewBackground = PhotoBackupStatus(
 #Preview("Off, dark") { previewContent(PhotoBackupStatus(phase: .off), credentialName: nil).preferredColorScheme(.dark) }
 #Preview("Backing up, light") { previewContent(previewUploading) }
 #Preview("Backing up, dark") { previewContent(previewUploading).preferredColorScheme(.dark) }
+#Preview("Reading the library, light") { previewContent(previewListing) }
+#Preview("Reading the library, dark") { previewContent(previewListing).preferredColorScheme(.dark) }
 #Preview("Uploading in the background, light") { previewContent(previewBackground) }
 #Preview("Uploading in the background, dark") { previewContent(previewBackground).preferredColorScheme(.dark) }
 #Preview("Up to date, light") {

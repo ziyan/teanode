@@ -268,6 +268,25 @@ jobs:
           shoot calendar-chinese-light light large -TeaNodeDemo -TeaNodeTab calendar -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN
           shoot calendar-day-light light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
           shoot calendar-day-dark dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
+          shoot location-light light large -TeaNodeDemo -TeaNodeTab location
+          shoot location-dark dark large -TeaNodeDemo -TeaNodeTab location
+          shoot location-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location
+          shoot location-day-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
+          shoot location-day-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
+          shoot location-places-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
+          shoot location-places-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
+          shoot location-place-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-place-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-place-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-address-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-address
+          shoot location-address-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-address
+          shoot location-settings-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-settings
+          # Sharing, a person chosen on the map, many people sharing, the check-in sheet, and setting Location up.
+          for location_screen in location-sharing location-person location-people location-checkin location-setup; do
+            shoot "$location_screen-light" light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+            shoot "$location_screen-dark" dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+            shoot "$location_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+          done
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings
@@ -276,6 +295,10 @@ jobs:
             shoot "$recording_screen-dark" dark large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
             shoot "$recording_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
           done
+          shoot coding-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding
+          shoot coding-session-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
+          shoot coding-session-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
+          shoot coding-session-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
           shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
           shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu
@@ -308,13 +331,29 @@ jobs:
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
-          # Photos, from invented photos drawn by the demo server: the library by day, the viewer on its
+          # The side menu on Photos: the collections and the photo backup under the parts.
+          shoot photos-menu-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
+          shoot photos-menu-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
+          # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its
           # first photo, the Trash, and a library with nothing in it.
           shoot photos-library-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-library-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-library-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
           shoot photos-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
+          shoot photos-viewer-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
+          # The viewer as the Photos app lays it out: Info over it, and after a tap with the bars and the strip gone.
+          shoot photos-viewer-info-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-info
+          shoot photos-viewer-info-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-info
+          shoot photos-viewer-hidden-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-hidden
+          # A video in the viewer, stopped a third of the way in so that its controls are on screen.
+          shoot photos-video-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-video-viewer
+          shoot photos-video-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-video-viewer
+          # The library under Months and Years (Library, All is photos-library above).
+          shoot photos-library-months-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-months
+          shoot photos-library-months-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-months
+          shoot photos-library-years-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-years
+          shoot photos-library-years-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-years
           shoot photos-trash-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-trash-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-trash-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
@@ -326,10 +365,12 @@ jobs:
           shoot photos-album-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-album-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
+          shoot photos-select-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
           # Search over the library, Select mode in the Trash, and Info over a photo that could not be made ready.
           shoot photos-search-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-search
           shoot photos-search-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-search
           shoot photos-trash-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash-select
+          shoot photos-trash-select-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash-select
           shoot photos-viewer-failed-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
           shoot photos-viewer-failed-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
           shoot photos-viewer-failed-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
@@ -377,6 +418,7 @@ jobs:
           # A picture the agent sent, with Save to my library (opened from Settings).
           shoot photos-conversation-card-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           shoot photos-conversation-card-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
+          shoot photos-conversation-card-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           # Photo backup, off and part way through a library, with invented counts (opened from Settings).
           shoot photos-backup-off-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
           shoot photos-backup-off-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
@@ -449,7 +491,7 @@ jobs:
           # each screen in light, dark and the largest text. Circles, a
           # circle's page as its admin, the picture on the profile, and the
           # sheet and the card of a shared skill: Settings pushes them.
-          for circles_screen in circles circle-detail settings-picture skill-share-sheet skill-share-call; do
+          for circles_screen in circles circle-detail circle-join-offer settings-picture skill-share-sheet skill-share-call; do
             shoot "$circles_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"

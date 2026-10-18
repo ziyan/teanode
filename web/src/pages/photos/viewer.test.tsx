@@ -1,10 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { graphql } from '../../api'
+import { ToastProvider } from '../../components/toast'
 import { TranslationProvider } from '../../i18n/i18n'
 import type { Photo, PhotoLibrary } from '../../photos/api'
 import { PhotoViewer } from './viewer'
+import { stripPhotos, stripScrollLeft } from './viewerStrip'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
@@ -48,6 +50,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+
 const describedPhoto = {
   ...photo,
   photoDescription: 'A red kite over a field.',
@@ -72,24 +76,26 @@ const serveRead = (read: Record<string, unknown>) =>
 const show = (onClose = vi.fn(), extra: Partial<React.ComponentProps<typeof PhotoViewer>> = {}) => {
   render(
     <TranslationProvider>
-      <MemoryRouter>
-        <PhotoViewer
-          photo={photo}
-          previousPhoto={null}
-          nextPhoto={null}
-          isTrashed={false}
-          isPaused={false}
-          onNavigate={vi.fn()}
-          onClose={onClose}
-          onToggleFavorite={vi.fn()}
-          onTrash={vi.fn()}
-          onRestore={vi.fn()}
-          onDeleteForever={vi.fn()}
-          onAddToAlbum={vi.fn()}
-          onNewAlbum={vi.fn()}
-          {...extra}
-        />
-      </MemoryRouter>
+      <ToastProvider>
+        <MemoryRouter>
+          <PhotoViewer
+            photo={photo}
+            previousPhoto={null}
+            nextPhoto={null}
+            isTrashed={false}
+            isPaused={false}
+            onNavigate={vi.fn()}
+            onClose={onClose}
+            onToggleFavorite={vi.fn()}
+            onTrash={vi.fn()}
+            onRestore={vi.fn()}
+            onDeleteForever={vi.fn()}
+            onAddToAlbum={vi.fn()}
+            onNewAlbum={vi.fn()}
+            {...extra}
+          />
+        </MemoryRouter>
+      </ToastProvider>
     </TranslationProvider>,
   )
   return onClose
@@ -286,11 +292,12 @@ const face = (overrides: Record<string, unknown>) => ({
   photoFaceGroupId: 'group-1',
   contactId: 'contact-1',
   contactName: 'Sample Person',
+  isOwnContact: false,
   facePictureUrl: '/face-1',
   ...overrides,
 })
 
-it('lists the people in the photo, each a link to the person, and takes a face out of a group', async () => {
+it('lists the people in the photo, a named one a link to the person, and takes a face out of a group', async () => {
   serveRead({
     photo: describedPhoto,
     faces: [face({}), face({ id: 'face-2', photoFaceGroupId: 'group-2', contactName: '', contactId: '' })],
@@ -299,10 +306,38 @@ it('lists the people in the photo, each a link to the person, and takes a face o
   show(vi.fn(), { photoLibrary: library(), onRemoveFaceFromGroup })
   const link = await screen.findByRole('link', { name: 'Sample Person' })
   expect(link.getAttribute('href')).toBe('/photos/people/group-1')
-  expect(screen.getByRole('link', { name: 'Unnamed person' }).getAttribute('href')).toBe('/photos/people/group-2')
+  expect(screen.queryByRole('link', { name: 'Unnamed person' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Not Sample Person' }))
   await waitFor(() => expect(onRemoveFaceFromGroup).toHaveBeenCalledWith(expect.objectContaining({ id: 'face-1' })))
   expect(screen.getByRole('button', { name: 'Not this person' })).toBeTruthy()
+})
+
+it('says "You" in muted text after the name of the reader among the people in the photo', async () => {
+  serveRead({
+    photo: describedPhoto,
+    faces: [
+      face({ id: 'face-9', photoFaceGroupId: 'group-9', contactName: 'Sample Reader', isOwnContact: true }),
+      face({}),
+    ],
+  })
+  show(vi.fn(), { photoLibrary: library() })
+  const own = await screen.findByRole('link', { name: /Sample Reader/ })
+  expect(within(own).getByText('You').classList.contains('muted')).toBe(true)
+  expect(within(screen.getByRole('link', { name: 'Sample Person' })).queryByText('You')).toBeNull()
+})
+
+// Naming an unnamed person happens over the photo: leaving for their page lost
+// the photo, and their page is not in the People list yet.
+it('names an unnamed person where the photo is, without closing it', async () => {
+  serveRead({
+    photo: describedPhoto,
+    faces: [face({ id: 'face-2', photoFaceGroupId: 'group-2', contactName: '', contactId: '' })],
+  })
+  const onClose = vi.fn()
+  show(onClose, { photoLibrary: library() })
+  fireEvent.click(await screen.findByRole('button', { name: 'Unnamed person' }))
+  expect(await screen.findByRole('dialog', { name: 'Name this person' })).toBeTruthy()
+  expect(onClose).not.toHaveBeenCalled()
 })
 
 it('leaves out a face that is in no group, which has no person to link to', async () => {
@@ -571,4 +606,535 @@ it('says how long a photo in the Trash has left', async () => {
     photoLibrary: { ...library(), trashRetentionDays: 30 } as PhotoLibrary,
   })
   expect(await screen.findByText('Deleted forever in 30 days')).toBeTruthy()
+})
+
+// ---- the look: the title, the strip, the grouped actions, drag to close ----
+
+const photoAt = (id: string, overrides: Partial<Photo> = {}) =>
+  ({ ...photo, id, originalFilename: `${id}.jpg`, smallPreviewUrl: `/small-${id}`, ...overrides }) as Photo
+
+it('names the day and the time at the top, on the clock where the photo was taken, not its file name', async () => {
+  // 19:52 at +09:00 is 10:52 UTC.
+  const taken = photoAt('photo-1', { takenAt: '2030-07-12T10:52:00Z', takenAtOffsetMinutes: 540 })
+  serveRead({ photo: taken })
+  show(vi.fn(), { photo: taken })
+  const title = await screen.findByRole('heading', { level: 2, name: /July 12, 2030/ })
+  expect(title.querySelector('.photo-viewer-date')?.textContent).toBe('July 12, 2030')
+  expect(title.querySelector('.photo-viewer-time')?.textContent).toBe('7:52 PM')
+  expect(title.querySelector('time')?.getAttribute('datetime')).toBe('2030-07-12T19:52')
+  expect(title.textContent).not.toContain('photo-1.jpg')
+})
+
+it('puts the actions in three places: a copy at the left, a capsule in the middle, the Trash at the right', async () => {
+  show()
+  const capsule = await screen.findByRole('group', { name: 'Photo actions' })
+  const names = (container: HTMLElement) =>
+    within(container)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label'))
+  expect(names(capsule)).toEqual(['Add to Favorites', 'Details', 'Add to album'])
+  const bar = capsule.closest('.photo-viewer-actions') as HTMLElement
+  expect(bar.querySelector('.photo-viewer-actions-start a')?.getAttribute('aria-label')).toBe('Download original')
+  expect(names(bar.querySelector('.photo-viewer-actions-end') as HTMLElement)).toEqual(['Move to Trash'])
+  // The top is the way back and what belongs to the picture.
+  const top = document.querySelector('.photo-viewer-bar') as HTMLElement
+  expect(names(top)).toEqual(['Close', 'Zoom in'])
+})
+
+it('puts Restore in the capsule and Delete forever at the right for a photo in the Trash', async () => {
+  show(vi.fn(), { isTrashed: true })
+  const capsule = await screen.findByRole('group', { name: 'Photo actions' })
+  expect(
+    within(capsule)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label')),
+  ).toEqual(['Restore', 'Details'])
+  const bar = capsule.closest('.photo-viewer-actions') as HTMLElement
+  expect(
+    within(bar.querySelector('.photo-viewer-actions-end') as HTMLElement).getByRole('button', {
+      name: 'Delete forever',
+    }),
+  ).toBeTruthy()
+  expect(screen.queryByRole('link', { name: 'Download original' })).toBeNull()
+})
+
+it('keeps the less used actions of an album under More at the top', async () => {
+  show(vi.fn(), { onSetCover: vi.fn(), onRemoveFromAlbum: vi.fn() })
+  const top = document.querySelector('.photo-viewer-bar') as HTMLElement
+  fireEvent.click(await within(top).findByRole('button', { name: 'More' }))
+  expect(await screen.findByRole('menuitem', { name: 'Use as album cover' })).toBeTruthy()
+  expect(screen.getByRole('menuitem', { name: 'Remove from album' })).toBeTruthy()
+})
+
+it('offers Save to my library in the capsule for a photo that is somebody else’s, with nothing to trash', async () => {
+  const shared = photoAt('photo-1', { isOwnedByCaller: false, ownerName: 'Ben', userId: 'person-2' })
+  serveRead({ photo: shared })
+  const onSaveToLibrary = vi.fn().mockResolvedValue(undefined)
+  show(vi.fn(), { photo: shared, onSaveToLibrary })
+  const capsule = await screen.findByRole('group', { name: 'Photo actions' })
+  fireEvent.click(within(capsule).getByRole('button', { name: 'Save to my library' }))
+  expect(onSaveToLibrary).toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: 'Move to Trash' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Add to Favorites' })).toBeNull()
+})
+
+describe('the strip of neighbors', () => {
+  const run = [photoAt('photo-0'), photoAt('photo-1'), photoAt('photo-2'), photoAt('photo-3')]
+
+  it('shows a small picture for each, marks the one shown, and shows the one clicked', async () => {
+    const onNavigate = vi.fn()
+    show(vi.fn(), { photo: run[1], previousPhoto: run[0], nextPhoto: run[2], neighborPhotos: run, onNavigate })
+    const strip = await screen.findByRole('group', { name: 'Photos next to this one' })
+    const buttons = within(strip).getAllByRole('button')
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Show photo-0.jpg',
+      'Show photo-1.jpg',
+      'Show photo-2.jpg',
+      'Show photo-3.jpg',
+    ])
+    expect(buttons.map((button) => button.getAttribute('aria-current'))).toEqual([null, 'true', null, null])
+    expect(buttons[3].querySelector('img')?.getAttribute('src')).toBe('/small-photo-3')
+    fireEvent.click(buttons[3])
+    expect(onNavigate).toHaveBeenCalledWith(run[3])
+  })
+
+  it('is one stop for the Tab key', async () => {
+    show(vi.fn(), { photo: run[1], neighborPhotos: run })
+    const strip = await screen.findByRole('group', { name: 'Photos next to this one' })
+    expect(
+      within(strip)
+        .getAllByRole('button')
+        .map((button) => button.tabIndex),
+    ).toEqual([-1, 0, -1, -1])
+  })
+
+  it('holds the photo and the two beside it when it is given no list, and is left out for one photo', async () => {
+    show(vi.fn(), { photo: run[1], previousPhoto: run[0], nextPhoto: run[2] })
+    const strip = await screen.findByRole('group', { name: 'Photos next to this one' })
+    expect(within(strip).getAllByRole('button')).toHaveLength(3)
+    cleanup()
+    show(vi.fn(), { photo: run[1] })
+    await screen.findByRole('group', { name: 'Photo actions' })
+    expect(screen.queryByRole('group', { name: 'Photos next to this one' })).toBeNull()
+  })
+
+  it('scrolls to keep the photo shown in the middle when the photo changes', async () => {
+    const scrolled: number[] = []
+    const original = HTMLElement.prototype.scrollTo
+    HTMLElement.prototype.scrollTo = function (this: HTMLElement, options?: ScrollToOptions | number) {
+      if (this.classList.contains('photo-viewer-strip') && typeof options === 'object')
+        scrolled.push(options.left ?? -1)
+    } as typeof HTMLElement.prototype.scrollTo
+    try {
+      const props = { onNavigate: vi.fn(), onClose: vi.fn() }
+      const view = (current: Photo) => (
+        <TranslationProvider>
+          <MemoryRouter>
+            <PhotoViewer
+              photo={current}
+              previousPhoto={null}
+              nextPhoto={null}
+              neighborPhotos={run}
+              isTrashed={false}
+              isPaused={false}
+              onToggleFavorite={vi.fn()}
+              onTrash={vi.fn()}
+              onRestore={vi.fn()}
+              onDeleteForever={vi.fn()}
+              onAddToAlbum={vi.fn()}
+              onNewAlbum={vi.fn()}
+              {...props}
+            />
+          </MemoryRouter>
+        </TranslationProvider>
+      )
+      const { rerender } = render(view(run[0]))
+      await screen.findByRole('group', { name: 'Photos next to this one' })
+      const afterOpening = scrolled.length
+      expect(afterOpening).toBeGreaterThan(0)
+      rerender(view(run[2]))
+      expect(scrolled.length).toBeGreaterThan(afterOpening)
+    } finally {
+      HTMLElement.prototype.scrollTo = original
+    }
+  })
+
+  it('works out the scroll that puts a picture in the middle, and never past either end', () => {
+    // A 100px strip of 1000px: a 50px picture at 500 is centered at 475.
+    expect(stripScrollLeft(500, 50, 100, 1000)).toBe(475)
+    expect(stripScrollLeft(0, 50, 100, 1000)).toBe(0)
+    expect(stripScrollLeft(990, 50, 100, 1000)).toBe(900)
+    // A strip with room to spare does not scroll.
+    expect(stripScrollLeft(40, 50, 400, 200)).toBe(0)
+  })
+
+  it('leaves the photo shown alone when the list does not hold it, and cuts a very long list around it', () => {
+    const current = photoAt('photo-9')
+    expect(stripPhotos(run, current, run[0], run[1]).map((each) => each.id)).toEqual(['photo-0', 'photo-9', 'photo-1'])
+    const long = Array.from({ length: 1000 }, (_, index) => photoAt(`long-${index}`))
+    const cut = stripPhotos(long, long[500], null, null)
+    expect(cut).toHaveLength(400)
+    expect(cut.some((each) => each.id === 'long-500')).toBe(true)
+    const atEnd = stripPhotos(long, long[999], null, null)
+    expect(atEnd[atEnd.length - 1].id).toBe('long-999')
+    expect(stripPhotos(long, long[0], null, null)[0].id).toBe('long-0')
+  })
+})
+
+describe('dragging down to close, on a touch screen', () => {
+  // A wide window that does not ask for less motion, so that closing takes its
+  // short time to leave.
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: !query.includes('reduced-motion'),
+      addEventListener() {},
+      removeEventListener() {},
+    }))
+  })
+
+  const stage = async () =>
+    (await screen.findByRole('dialog', { name: 'Photo viewer' })).querySelector('.photo-viewer-stage') as HTMLElement
+  const drag = (target: HTMLElement, downPixels: number, pointerType = 'touch') => {
+    fireEvent.pointerDown(target, { pointerId: 1, pointerType, isPrimary: true, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(target, {
+      pointerId: 1,
+      pointerType,
+      isPrimary: true,
+      clientX: 100,
+      clientY: 100 + downPixels / 2,
+    })
+    fireEvent.pointerMove(target, {
+      pointerId: 1,
+      pointerType,
+      isPrimary: true,
+      clientX: 100,
+      clientY: 100 + downPixels,
+    })
+    fireEvent.pointerUp(target, { pointerId: 1, pointerType, isPrimary: true, clientX: 100, clientY: 100 + downPixels })
+  }
+
+  it('follows the finger, then closes once it lets go far enough down', async () => {
+    const onClose = show()
+    const target = await stage()
+    fireEvent.pointerDown(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 104, clientY: 220 })
+    const picture = target.querySelector('.photo-viewer-picture') as HTMLElement
+    expect(picture.style.transform).toContain('translate(4px, 120px)')
+    expect(picture.style.transform).toContain('scale(')
+    expect(screen.getByRole('dialog', { name: 'Photo viewer' }).style.getPropertyValue('--photo-viewer-fade')).not.toBe(
+      '1',
+    )
+    fireEvent.pointerUp(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 104, clientY: 220 })
+    // It is on its way out, and the viewer closes when it has gone.
+    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+  })
+
+  it('springs back when it lets go too soon, and does not close', async () => {
+    const onClose = show()
+    const target = await stage()
+    fireEvent.pointerDown(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 125 })
+    fireEvent.pointerUp(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 125 })
+    const picture = target.querySelector('.photo-viewer-picture') as HTMLElement
+    expect(picture.style.transform).toContain('translate(0px, 0px)')
+    await waitFor(() => expect(picture.style.transform).toBe(''))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('does not close for a mouse, which has Close and Escape', async () => {
+    const onClose = show()
+    drag(await stage(), 300, 'mouse')
+    await sleep(250)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('does not close for a drag that is mostly sideways, which turns the page', async () => {
+    const onClose = show()
+    const target = await stage()
+    fireEvent.pointerDown(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 260, clientY: 150 })
+    fireEvent.pointerUp(target, { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: 260, clientY: 300 })
+    await sleep(250)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('does not drag a photo that is zoomed in: there a drag pans', async () => {
+    const onClose = show()
+    fireEvent.click(await screen.findByRole('button', { name: 'Zoom in' }))
+    const target = await stage()
+    expect(target.classList.contains('is-draggable')).toBe(false)
+    drag(target, 300)
+    await sleep(250)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('does not take a touch that began on a control', async () => {
+    const onClose = show(vi.fn(), { previousPhoto: photoAt('photo-0'), nextPhoto: photoAt('photo-2') })
+    await stage()
+    drag(screen.getByRole('button', { name: 'Next photo' }), 300)
+    await sleep(250)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('closes at once for somebody who asks for less motion', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+    const onClose = show()
+    drag(await stage(), 300)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('can also be closed without the gesture, by the button and by Escape', async () => {
+    const onClose = show()
+    fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('zooming and panning the photo', () => {
+  // A window that does not ask for less motion is not needed here: nothing in
+  // these waits on an animation. The stage is given a size, since a test
+  // window draws nothing and has none: 800 by 600, at the window's corner.
+  const stageOf = async () => {
+    const element = (await screen.findByRole('dialog', { name: 'Photo viewer' })).querySelector(
+      '.photo-viewer-stage',
+    ) as HTMLElement
+    element.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+    return element
+  }
+  const viewOf = (target: HTMLElement) => {
+    const transform = (target.querySelector('.photo-viewer-picture') as HTMLElement).style.transform
+    const match = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(transform)
+    return match ? { offsetX: Number(match[1]), offsetY: Number(match[2]), scale: Number(match[3]) } : null
+  }
+  const touch = (
+    target: HTMLElement,
+    type: 'pointerDown' | 'pointerMove' | 'pointerUp',
+    pointerId: number,
+    x: number,
+    y: number,
+  ) => fireEvent[type](target, { pointerId, pointerType: 'touch', isPrimary: pointerId === 1, clientX: x, clientY: y })
+  const mouse = (target: HTMLElement, type: 'pointerDown' | 'pointerMove' | 'pointerUp', x: number, y: number) =>
+    fireEvent[type](target, { pointerId: 7, pointerType: 'mouse', isPrimary: true, button: 0, clientX: x, clientY: y })
+
+  it('zooms in around the pointer with the wheel, and the page does not scroll', async () => {
+    show()
+    const target = await stageOf()
+    expect(viewOf(target)).toBeNull()
+    // Pointer at (600, 150): 200 right of and 150 above the center.
+    const wasNotPrevented = fireEvent.wheel(target, { deltaY: -300, clientX: 600, clientY: 150 })
+    expect(wasNotPrevented).toBe(false)
+    const view = viewOf(target)!
+    expect(view.scale).toBeGreaterThan(1)
+    // The spot that was under the pointer is under it still.
+    expect(view.offsetX).toBeCloseTo(200 * (1 - view.scale), 5)
+    expect(view.offsetY).toBeCloseTo(-150 * (1 - view.scale), 5)
+    expect(screen.getByRole('button', { name: 'Zoom out' })).toBeTruthy()
+  })
+
+  it('zooms back out with the wheel, to fitted and not past it', async () => {
+    show()
+    const target = await stageOf()
+    fireEvent.wheel(target, { deltaY: -300, clientX: 500, clientY: 300 })
+    expect(viewOf(target)).not.toBeNull()
+    for (let turn = 0; turn < 20; turn++) fireEvent.wheel(target, { deltaY: 300, clientX: 500, clientY: 300 })
+    expect(viewOf(target)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy()
+  })
+
+  it('zooms with a trackpad pinch, which is a wheel with the control key down', async () => {
+    show()
+    const target = await stageOf()
+    fireEvent.wheel(target, { deltaY: -20, ctrlKey: true, clientX: 400, clientY: 300 })
+    expect(viewOf(target)!.scale).toBeGreaterThan(1.1)
+  })
+
+  it('pans a zoomed photo by dragging it with the mouse, and no further than its edge', async () => {
+    show()
+    const target = await stageOf()
+    fireEvent.wheel(target, { deltaY: -700, clientX: 400, clientY: 300 })
+    const { scale } = viewOf(target)!
+    expect(scale).toBeGreaterThan(1.5)
+    mouse(target, 'pointerDown', 400, 300)
+    mouse(target, 'pointerMove', 430, 280)
+    expect(viewOf(target)).toMatchObject({ offsetX: 30, offsetY: -20 })
+    mouse(target, 'pointerMove', 5000, 5000)
+    // 800 by 600 at this scale leaves this much either side of the box.
+    expect(viewOf(target)).toMatchObject({
+      offsetX: (800 * scale - 800) / 2,
+      offsetY: (600 * scale - 600) / 2,
+    })
+    mouse(target, 'pointerUp', 5000, 5000)
+    expect(target.classList.contains('is-panning')).toBe(false)
+  })
+
+  it('does not pan a photo that is fitted, for a mouse', async () => {
+    show()
+    const target = await stageOf()
+    mouse(target, 'pointerDown', 400, 300)
+    mouse(target, 'pointerMove', 460, 340)
+    mouse(target, 'pointerUp', 460, 340)
+    expect(viewOf(target)).toBeNull()
+  })
+
+  it('pans a zoomed photo with one finger, and does not close it or turn the page', async () => {
+    const onClose = vi.fn()
+    const onNavigate = vi.fn()
+    show(onClose, {
+      previousPhoto: { ...photo, id: 'photo-0' } as Photo,
+      nextPhoto: { ...photo, id: 'photo-2' } as Photo,
+      onNavigate,
+    })
+    const target = await stageOf()
+    // One wheel event zooms by at most a share of the scale, so twice.
+    fireEvent.wheel(target, { deltaY: -700, clientX: 400, clientY: 300 })
+    fireEvent.wheel(target, { deltaY: -700, clientX: 400, clientY: 300 })
+    touch(target, 'pointerDown', 1, 400, 300)
+    fireEvent.touchStart(target, { touches: [{ clientX: 400, clientY: 300 }] })
+    touch(target, 'pointerMove', 1, 450, 400)
+    expect(viewOf(target)).toMatchObject({ offsetX: 50, offsetY: 100 })
+    touch(target, 'pointerMove', 1, 500, 500)
+    touch(target, 'pointerUp', 1, 500, 500)
+    fireEvent.touchEnd(target, { changedTouches: [{ clientX: 500, clientY: 500 }] })
+    expect(viewOf(target)).toMatchObject({ offsetX: 100, offsetY: 200 })
+    await sleep(250)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('still turns the page for a swipe when the photo is not zoomed', async () => {
+    const onNavigate = vi.fn()
+    const next = { ...photo, id: 'photo-2' } as Photo
+    show(vi.fn(), { nextPhoto: next, onNavigate })
+    const target = await stageOf()
+    fireEvent.touchStart(target, { touches: [{ clientX: 400, clientY: 300 }] })
+    fireEvent.touchEnd(target, { changedTouches: [{ clientX: 200, clientY: 310 }] })
+    expect(onNavigate).toHaveBeenCalledWith(next)
+  })
+
+  it('zooms around the fingers with a pinch, and a pinch does not close the photo', async () => {
+    const onClose = vi.fn()
+    show(onClose)
+    const target = await stageOf()
+    // Two fingers 200 apart, centered 100 right of the center of the stage.
+    touch(target, 'pointerDown', 1, 400, 300)
+    touch(target, 'pointerDown', 2, 600, 300)
+    // The second moves away to 400 apart, and the first down a long way: not a drag to close.
+    touch(target, 'pointerMove', 2, 800, 300)
+    const view = viewOf(target)!
+    expect(view.scale).toBeCloseTo(2, 5)
+    // The spot between the fingers when they went down (100 right of the
+    // center) is between them now (the midpoint is 200 right of it).
+    expect(100 * view.scale + view.offsetX).toBeCloseTo(200, 5)
+    touch(target, 'pointerMove', 1, 400, 700)
+    touch(target, 'pointerUp', 1, 400, 700)
+    touch(target, 'pointerUp', 2, 800, 300)
+    await sleep(250)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('goes on as a pan with the finger that is left after a pinch', async () => {
+    show()
+    const target = await stageOf()
+    touch(target, 'pointerDown', 1, 300, 300)
+    touch(target, 'pointerDown', 2, 500, 300)
+    touch(target, 'pointerMove', 2, 700, 300)
+    touch(target, 'pointerUp', 2, 700, 300)
+    const before = viewOf(target)!
+    expect(before.scale).toBeGreaterThan(1)
+    touch(target, 'pointerMove', 1, 330, 300)
+    expect(viewOf(target)!.offsetX).toBeCloseTo(before.offsetX + 30, 5)
+  })
+
+  it('zooms in and out with a double click, around the pointer', async () => {
+    show()
+    const target = await stageOf()
+    const picture = target.querySelector('.photo-viewer-picture') as HTMLElement
+    fireEvent.doubleClick(picture, { clientX: 600, clientY: 150 })
+    const view = viewOf(target)!
+    expect(view.scale).toBe(2.5)
+    expect(view.offsetX).toBeCloseTo(200 * (1 - 2.5), 5)
+    fireEvent.doubleClick(picture, { clientX: 600, clientY: 150 })
+    expect(viewOf(target)).toBeNull()
+  })
+
+  it('zooms in and out with a double tap, and does not answer the double click that follows it', async () => {
+    show()
+    const target = await stageOf()
+    const picture = target.querySelector('.photo-viewer-picture') as HTMLElement
+    for (let tap = 0; tap < 2; tap++) {
+      touch(target, 'pointerDown', 1, 500, 300)
+      touch(target, 'pointerUp', 1, 500, 300)
+    }
+    expect(viewOf(target)?.scale).toBe(2.5)
+    // The browser's double click for the same two taps.
+    fireEvent.doubleClick(picture, { clientX: 500, clientY: 300 })
+    expect(viewOf(target)?.scale).toBe(2.5)
+  })
+
+  it('does not take two taps far apart for a double tap', async () => {
+    show()
+    const target = await stageOf()
+    touch(target, 'pointerDown', 1, 100, 100)
+    touch(target, 'pointerUp', 1, 100, 100)
+    touch(target, 'pointerDown', 1, 700, 500)
+    touch(target, 'pointerUp', 1, 700, 500)
+    expect(viewOf(target)).toBeNull()
+  })
+
+  it('still zooms with the button, in at the center and back out', async () => {
+    show()
+    const target = await stageOf()
+    fireEvent.click(await screen.findByRole('button', { name: 'Zoom in' }))
+    expect(viewOf(target)).toMatchObject({ scale: 2.5, offsetX: 0, offsetY: 0 })
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }))
+    expect(viewOf(target)).toBeNull()
+  })
+
+  it('starts fitted again on another photo, and the arrow keys still turn the page', async () => {
+    const onNavigate = vi.fn()
+    const next = { ...photo, id: 'photo-2' } as Photo
+    const tree = (shown: Photo) => (
+      <TranslationProvider>
+        <ToastProvider>
+          <MemoryRouter>
+            <PhotoViewer
+              photo={shown}
+              previousPhoto={null}
+              nextPhoto={next}
+              isTrashed={false}
+              isPaused={false}
+              onNavigate={onNavigate}
+              onClose={vi.fn()}
+              onToggleFavorite={vi.fn()}
+              onTrash={vi.fn()}
+              onRestore={vi.fn()}
+              onDeleteForever={vi.fn()}
+              onAddToAlbum={vi.fn()}
+              onNewAlbum={vi.fn()}
+            />
+          </MemoryRouter>
+        </ToastProvider>
+      </TranslationProvider>
+    )
+    const { rerender } = render(tree(photo))
+    const target = await stageOf()
+    fireEvent.wheel(target, { deltaY: -500, clientX: 400, clientY: 300 })
+    expect(viewOf(target)).not.toBeNull()
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(onNavigate).toHaveBeenCalledWith(next)
+    rerender(tree(next))
+    expect(viewOf(target)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeTruthy()
+  })
+
+  it('has nothing to zoom on a video', async () => {
+    show(vi.fn(), { photo: { ...photo, photoKind: 'video', videoPreviewUrl: '/video' } as Photo })
+    const target = await stageOf()
+    const wasNotPrevented = fireEvent.wheel(target, { deltaY: -300, clientX: 400, clientY: 300 })
+    expect(wasNotPrevented).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Zoom in' })).toBeNull()
+  })
 })

@@ -40,6 +40,7 @@ import {
   formatDate,
   personTimeZone,
   photoDateTime,
+  photoViewerTitle,
   trashDaysLeft,
 } from '../../photos/days'
 import { listCirclePeople } from '../../photos/sharing'
@@ -48,7 +49,11 @@ import { AddToAlbumMenu } from './albumControls'
 import { usePhotoAltText } from './altText'
 import { useAssistantWords } from './assistantName'
 import { ChangeDateDialog } from './changeDate'
-import { FacePicture, personAddress } from './personControls'
+import { DRAG_SETTLE_MS, dragProgress, useDragToClose } from './dragToClose'
+import { FacePicture, NamePersonFlow, YouMark, personAddress } from './personControls'
+import { useViewerZoom } from './useViewerZoom'
+import { ViewerStrip, stripPhotos } from './viewerStrip'
+import { viewTransform } from './zoom'
 
 // The viewer: one photo over the grid, with its details beside it (under it
 // on a phone). It has an address of its own, so Back closes it and a link
@@ -96,7 +101,7 @@ function isTakingKeys(element: HTMLElement): boolean {
 }
 
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  'a[href], button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 // Tab and Shift+Tab stay inside the viewer: from its last control to its
 // first, and from its first to its last. A menu open over it (it is drawn in
@@ -127,6 +132,7 @@ export function PhotoViewer({
   photo,
   previousPhoto,
   nextPhoto,
+  neighborPhotos,
   isTrashed,
   isBusy = false,
   isPaused,
@@ -153,6 +159,10 @@ export function PhotoViewer({
   photo: Photo
   previousPhoto: Photo | null
   nextPhoto: Photo | null
+  // The photos of the list the viewer was opened in, newest first, for the
+  // strip of small pictures along its foot. Left out, the strip holds the
+  // photo and the two beside it.
+  neighborPhotos?: Photo[]
   isTrashed: boolean
   // The page is moving, restoring or deleting photos: the buttons that would
   // do it again wait.
@@ -219,7 +229,6 @@ export function PhotoViewer({
   const [isDescriptionSlow, setIsDescriptionSlow] = useState(false)
   const describedAtWhenAsked = useRef<string | null>(null)
   const hasSeenRequest = useRef(false)
-  const [isZoomed, setIsZoomed] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isChangingDate, setIsChangingDate] = useState(false)
@@ -233,7 +242,12 @@ export function PhotoViewer({
   const [isShowingDetails, setIsShowingDetails] = useState(() => window.matchMedia('(min-width: 761px)').matches)
   const viewerElement = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
-  const zoomScroller = useRef<HTMLDivElement>(null)
+  // The shape of the picture as the browser drew it, for the photo it was read
+  // from; the photo's own size until then.
+  const [drawnShape, setDrawnShape] = useState<{ photoId: string; aspectRatio: number } | null>(null)
+  // The original of a zoomed photo that has arrived, so that the fitted
+  // picture stays under it until then.
+  const [readyOriginal, setReadyOriginal] = useState('')
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
 
   // Each photo starts fitted and not playing. Only when the photo changes, not
@@ -244,7 +258,6 @@ export function PhotoViewer({
   useEffect(() => {
     if (previousPhotoId.current === photo.id) return
     previousPhotoId.current = photo.id
-    setIsZoomed(false)
     setIsLive(false)
     setIsWaitingForDescription(false)
     setAskingPhotoId(null)
@@ -353,9 +366,42 @@ export function PhotoViewer({
   const originalFile = photoFiles.find((file) => file.photoFileRole === 'original')
   const canZoomOriginal = original !== undefined && DISPLAYABLE_TYPES.includes(original.contentType)
   const fittedSource = photo.largePreviewUrl || photo.smallPreviewUrl
-  const zoomedSource = canZoomOriginal ? original.fileUrl : fittedSource
+  const originalSource = canZoomOriginal ? original.fileUrl : ''
   const videoSource = photo.videoPreviewUrl || (isVideo ? photoFilePath(photo.id, 'original') : '')
   const liveSource = photo.videoPreviewUrl || photoFilePath(photo.id, 'liveVideo')
+
+  const isPicture = !isVideo && Boolean(fittedSource)
+  const drawnAspectRatio =
+    drawnShape?.photoId === photo.id
+      ? drawnShape.aspectRatio
+      : photo.widthPixels > 0 && photo.heightPixels > 0
+        ? photo.widthPixels / photo.heightPixels
+        : 0
+  // Zooming and panning the picture: the wheel, a pinch, a double click or tap,
+  // and a drag of a picture that is zoomed.
+  const zoom = useViewerZoom({ isEnabled: isPicture, resetKey: photo.id, aspectRatio: drawnAspectRatio })
+  const isZoomed = zoom.isZoomed
+  // A finger dragging the picture down closes the viewer; a zoomed picture,
+  // one being pinched, a video and a photo with no picture yet are left alone.
+  const isDraggable = !isZoomed && !zoom.isPinching && isPicture
+  const { position: dragPosition, handlers: dragHandlers } = useDragToClose({ isEnabled: isDraggable, onClose })
+  const dragAmount = dragPosition ? dragProgress(dragPosition.downPixels, window.innerHeight) : 0
+  const dragTransition = dragPosition?.phase === 'dragging' ? 'none' : `transform ${DRAG_SETTLE_MS}ms ease-out`
+  const pictureStyle: React.CSSProperties | undefined = dragPosition
+    ? {
+        transform: `translate(${dragPosition.acrossPixels}px, ${dragPosition.downPixels}px) scale(${1 - 0.3 * dragAmount})`,
+        transition: dragTransition,
+      }
+    : undefined
+  // The black behind fades with the drag, and the controls over it faster.
+  const viewerStyle = dragPosition
+    ? ({
+        '--photo-viewer-fade': 1 - 0.8 * dragAmount,
+        '--photo-chrome-fade': 1 - dragAmount,
+      } as React.CSSProperties)
+    : undefined
+  const stripItems = stripPhotos(neighborPhotos ?? [], photo, previousPhoto, nextPhoto)
+  const title = photoViewerTitle(photo, language, personTimeZone(), new Date())
 
   // The files the photo has that can be saved: the original always, and the
   // edited version and a Live Photo's video when it has them.
@@ -419,7 +465,7 @@ export function PhotoViewer({
   }, [previousPhoto, nextPhoto])
 
   const toggleZoom = () => {
-    if (!isVideo && fittedSource) setIsZoomed((previous) => !previous)
+    if (isPicture) zoom.toggleAtCenter()
   }
 
   // What the picture is to somebody who cannot see it: the first sentence of
@@ -477,7 +523,14 @@ export function PhotoViewer({
     <>
       {createPortal(
         <div
-          className="photo-viewer"
+          className={[
+            'photo-viewer',
+            isShowingDetails ? 'has-details' : '',
+            dragPosition?.phase === 'dragging' ? 'is-dragging' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          style={viewerStyle}
           role="dialog"
           aria-modal="true"
           aria-label={t('photos.viewer')}
@@ -485,224 +538,142 @@ export function PhotoViewer({
         >
           <div className="photo-viewer-main">
             <div className="photo-viewer-bar">
-              <Tooltip label={t('common.close')}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={t('common.close')}
-                  ref={closeButton}
-                  onClick={onClose}
-                >
-                  <CloseIcon size={18} />
-                </button>
-              </Tooltip>
-              <span className="photo-viewer-spacer" />
-              {photo.photoKind === 'livePhoto' && (
-                <Tooltip label={t('photos.liveHint')}>
+              <div className="photo-viewer-bar-start">
+                <Tooltip label={t('common.close')}>
                   <button
                     type="button"
-                    className={isLive ? 'photo-live-button is-on' : 'photo-live-button'}
-                    aria-label={t('photos.liveHint')}
-                    onPointerDown={() => setIsLive(true)}
-                    onPointerUp={() => setIsLive(false)}
-                    onPointerLeave={() => setIsLive(false)}
-                    onPointerCancel={() => setIsLive(false)}
-                    onKeyDown={(event) => (event.key === ' ' || event.key === 'Enter') && setIsLive(true)}
-                    onKeyUp={() => setIsLive(false)}
-                    onContextMenu={(event) => event.preventDefault()}
+                    className="icon-button photo-round-button"
+                    aria-label={t('common.close')}
+                    ref={closeButton}
+                    onClick={onClose}
                   >
-                    {t('photos.liveButton')}
+                    <ChevronLeftIcon size={20} />
                   </button>
                 </Tooltip>
-              )}
-              {!isVideo && fittedSource && (
-                <Tooltip label={isZoomed ? t('photos.zoomOut') : t('photos.zoomIn')}>
-                  <button
-                    type="button"
-                    className={isZoomed ? 'icon-button is-on' : 'icon-button'}
-                    aria-label={isZoomed ? t('photos.zoomOut') : t('photos.zoomIn')}
-                    aria-pressed={isZoomed}
-                    onClick={toggleZoom}
-                  >
-                    <ZoomInIcon size={18} />
-                  </button>
-                </Tooltip>
-              )}
-              {isTrashed ? (
-                <>
-                  <Tooltip label={t('photos.restore')}>
+              </div>
+              <h2 className="photo-viewer-title">
+                {title.dateText && (
+                  <time dateTime={title.isoText}>
+                    <span className="photo-viewer-date">{title.dateText}</span>
+                    <span className="photo-viewer-time">{title.timeText}</span>
+                  </time>
+                )}
+              </h2>
+              <div className="photo-viewer-bar-end">
+                {photo.photoKind === 'livePhoto' && (
+                  <Tooltip label={t('photos.liveHint')}>
                     <button
                       type="button"
-                      className="icon-button"
-                      aria-label={t('photos.restore')}
-                      disabled={isBusy}
-                      onClick={() => onRestore(photo)}
+                      className={isLive ? 'photo-live-button is-on' : 'photo-live-button'}
+                      aria-label={t('photos.liveHint')}
+                      onPointerDown={() => setIsLive(true)}
+                      onPointerUp={() => setIsLive(false)}
+                      onPointerLeave={() => setIsLive(false)}
+                      onPointerCancel={() => setIsLive(false)}
+                      onKeyDown={(event) => (event.key === ' ' || event.key === 'Enter') && setIsLive(true)}
+                      onKeyUp={() => setIsLive(false)}
+                      onContextMenu={(event) => event.preventDefault()}
                     >
-                      <RestoreIcon size={18} />
+                      {t('photos.liveButton')}
                     </button>
                   </Tooltip>
-                  <Tooltip label={t('photos.deleteForever')}>
+                )}
+                {!isVideo && fittedSource && (
+                  <Tooltip label={isZoomed ? t('photos.zoomOut') : t('photos.zoomIn')}>
                     <button
                       type="button"
-                      className="icon-button danger"
-                      aria-label={t('photos.deleteForever')}
-                      disabled={isBusy}
-                      onClick={() => onDeleteForever(photo)}
+                      className={isZoomed ? 'icon-button photo-round-button is-on' : 'icon-button photo-round-button'}
+                      aria-label={isZoomed ? t('photos.zoomOut') : t('photos.zoomIn')}
+                      aria-pressed={isZoomed}
+                      onClick={toggleZoom}
                     >
-                      <TrashIcon size={18} />
+                      <ZoomInIcon size={18} />
                     </button>
                   </Tooltip>
-                </>
-              ) : (
-                <>
-                  {isOwn ? (
-                    <>
-                      <Tooltip label={photo.isFavorite ? t('photos.unfavorite') : t('photos.favorite')}>
-                        <button
-                          type="button"
-                          className={
-                            photo.isFavorite ? 'icon-button photo-favorite is-on' : 'icon-button photo-favorite'
-                          }
-                          aria-label={photo.isFavorite ? t('photos.unfavorite') : t('photos.favorite')}
-                          aria-pressed={photo.isFavorite}
-                          onClick={() => onToggleFavorite(photo)}
-                        >
-                          <HeartIcon size={18} />
-                        </button>
-                      </Tooltip>
-                      <AddToAlbumMenu
-                        hiddenAlbumId={photoAlbumId}
-                        onChooseAlbum={(target) => void onAddToAlbum(photo, target).then(() => files.reload(true))}
-                        onNewAlbum={() => onNewAlbum(photo)}
-                      />
-                    </>
-                  ) : (
-                    onSaveToLibrary && (
-                      <button
-                        type="button"
-                        className="photo-save-button"
-                        disabled={isSaving}
-                        onClick={() => void saveToLibrary()}
-                      >
-                        <PhotoSaveIcon size={16} /> <span className="photo-save-label">{t('photos.saveToLibrary')}</span>
-                      </button>
-                    )
-                  )}
-                  {downloadChoices.length > 1 ? (
-                    <Tooltip label={t('photos.download')}>
-                      <MenuButton
-                        label={t('photos.download')}
-                        className="icon-button"
-                        icon={<DownloadIcon size={18} />}
-                        render={(close) =>
-                          downloadChoices.map((choice) => (
-                            <a
-                              key={choice.photoFileRole}
+                )}
+                {!isTrashed && hasMoreActions && (
+                  <Tooltip label={t('photos.more')}>
+                    <MenuButton
+                      label={t('photos.more')}
+                      className="icon-button photo-round-button"
+                      icon={<MoreIcon size={18} />}
+                      render={(close) => (
+                        <>
+                          {onSetCover && (
+                            <button
+                              type="button"
                               role="menuitem"
-                              href={photoFilePath(photo.id, choice.photoFileRole)}
-                              download
-                              onClick={close}
+                              onClick={() => {
+                                close()
+                                void onSetCover(photo)
+                              }}
                             >
-                              {t(choice.label)}
-                            </a>
-                          ))
-                        }
-                      />
-                    </Tooltip>
-                  ) : (
-                    <Tooltip label={t('photos.downloadOriginal')}>
-                      <a
-                        className="icon-button"
-                        href={photoFilePath(photo.id, 'original')}
-                        download
-                        aria-label={t('photos.downloadOriginal')}
-                      >
-                        <DownloadIcon size={18} />
-                      </a>
-                    </Tooltip>
-                  )}
-                  {isOwn && (
-                    <Tooltip label={t('photos.trash')}>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={t('photos.trash')}
-                        disabled={isBusy}
-                        onClick={() => onTrash(photo)}
-                      >
-                        <TrashIcon size={18} />
-                      </button>
-                    </Tooltip>
-                  )}
-                  {hasMoreActions && (
-                    <Tooltip label={t('photos.more')}>
-                      <MenuButton
-                        label={t('photos.more')}
-                        className="icon-button"
-                        icon={<MoreIcon size={18} />}
-                        render={(close) => (
-                          <>
-                            {onSetCover && (
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => {
-                                  close()
-                                  void onSetCover(photo)
-                                }}
-                              >
-                                <AlbumCoverIcon size={16} />
-                                {t('photos.useAsCover')}
-                              </button>
-                            )}
-                            {onRemoveFromAlbum && (
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => {
-                                  close()
-                                  void onRemoveFromAlbum(photo)
-                                }}
-                              >
-                                <AlbumRemoveIcon size={16} />
-                                {t('photos.removeFromAlbum')}
-                              </button>
-                            )}
-                            {canMakeThumbnailsAgain && onRetryProcessing && (
-                              <button
-                                type="button"
-                                role="menuitem"
-                                disabled={isBusy}
-                                onClick={() => {
-                                  close()
-                                  void onRetryProcessing(photo)
-                                }}
-                              >
-                                <RefreshIcon size={16} />
-                                {t('photos.makeThumbnailsAgain')}
-                              </button>
-                            )}
-                          </>
-                        )}
-                      />
-                    </Tooltip>
-                  )}
-                </>
-              )}
-              <Tooltip label={t('photos.details')}>
-                <button
-                  type="button"
-                  className={isShowingDetails ? 'icon-button is-on' : 'icon-button'}
-                  aria-label={t('photos.details')}
-                  aria-pressed={isShowingDetails}
-                  onClick={() => setIsShowingDetails((previous) => !previous)}
-                >
-                  <InfoIcon size={18} />
-                </button>
-              </Tooltip>
+                              <AlbumCoverIcon size={16} />
+                              {t('photos.useAsCover')}
+                            </button>
+                          )}
+                          {onRemoveFromAlbum && (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                close()
+                                void onRemoveFromAlbum(photo)
+                              }}
+                            >
+                              <AlbumRemoveIcon size={16} />
+                              {t('photos.removeFromAlbum')}
+                            </button>
+                          )}
+                          {canMakeThumbnailsAgain && onRetryProcessing && (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              disabled={isBusy}
+                              onClick={() => {
+                                close()
+                                void onRetryProcessing(photo)
+                              }}
+                            >
+                              <RefreshIcon size={16} />
+                              {t('photos.makeThumbnailsAgain')}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    />
+                  </Tooltip>
+                )}
+              </div>
             </div>
             <div
-              className="photo-viewer-stage"
+              className={[
+                'photo-viewer-stage',
+                isPicture ? 'is-zoomable' : '',
+                isDraggable ? 'is-draggable' : '',
+                isZoomed ? 'is-zoomed' : '',
+                zoom.isPanning ? 'is-panning' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              ref={zoom.stage}
+              onPointerDown={(event) => {
+                zoom.handlers.onPointerDown(event)
+                dragHandlers.onPointerDown(event)
+              }}
+              onPointerMove={(event) => {
+                zoom.handlers.onPointerMove(event)
+                dragHandlers.onPointerMove(event)
+              }}
+              onPointerUp={(event) => {
+                zoom.handlers.onPointerUp(event)
+                dragHandlers.onPointerUp(event)
+              }}
+              onPointerCancel={(event) => {
+                zoom.handlers.onPointerCancel(event)
+                dragHandlers.onPointerCancel(event)
+              }}
+              onLostPointerCapture={zoom.handlers.onLostPointerCapture}
               onTouchStart={(event) => {
                 const touch = event.touches[0]
                 swipeStart.current =
@@ -768,25 +739,42 @@ export function PhotoViewer({
                     </button>
                   )}
                 </div>
-              ) : isZoomed ? (
-                <div className="photo-viewer-zoom" ref={zoomScroller} onDoubleClick={toggleZoom}>
+              ) : (
+                <div
+                  className={zoom.isEasing ? 'photo-viewer-picture is-easing' : 'photo-viewer-picture'}
+                  style={isZoomed ? { transform: viewTransform(zoom.view) } : pictureStyle}
+                  onDoubleClick={zoom.onDoubleClick}
+                >
                   <img
-                    key={zoomedSource}
-                    className={canZoomOriginal ? 'photo-zoomed' : 'photo-zoomed photo-zoomed-preview'}
-                    src={zoomedSource}
+                    className="photo-fitted"
+                    key={photo.id}
+                    src={fittedSource}
                     alt={alt}
                     draggable={false}
-                    onLoad={() => {
-                      const scroller = zoomScroller.current
-                      if (!scroller) return
-                      scroller.scrollLeft = (scroller.scrollWidth - scroller.clientWidth) / 2
-                      scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2
+                    onLoad={(event) => {
+                      const { naturalWidth, naturalHeight } = event.currentTarget
+                      if (naturalWidth > 0 && naturalHeight > 0) {
+                        setDrawnShape({ photoId: photo.id, aspectRatio: naturalWidth / naturalHeight })
+                      }
                     }}
                   />
-                </div>
-              ) : (
-                <div className="photo-viewer-picture" onDoubleClick={toggleZoom}>
-                  <img className="photo-fitted" key={photo.id} src={fittedSource} alt={alt} draggable={false} />
+                  {isZoomed && originalSource && (
+                    // The file itself over the preview once it has arrived, so
+                    // that a zoom is sharp and the picture does not blink.
+                    <img
+                      className={
+                        readyOriginal === originalSource
+                          ? 'photo-fitted photo-original is-ready'
+                          : 'photo-fitted photo-original'
+                      }
+                      key={originalSource}
+                      src={originalSource}
+                      alt=""
+                      aria-hidden="true"
+                      draggable={false}
+                      onLoad={() => setReadyOriginal(originalSource)}
+                    />
+                  )}
                   {photo.photoKind === 'livePhoto' && isLive && (
                     <video
                       className="photo-live-video"
@@ -799,6 +787,139 @@ export function PhotoViewer({
                   )}
                 </div>
               )}
+            </div>
+            {stripItems.length > 1 && <ViewerStrip photos={stripItems} current={photo} onShow={goTo} />}
+            <div className="photo-viewer-actions">
+              <div className="photo-viewer-actions-start">
+                {!isTrashed &&
+                  (downloadChoices.length > 1 ? (
+                    <Tooltip label={t('photos.download')}>
+                      <MenuButton
+                        label={t('photos.download')}
+                        className="icon-button photo-round-button"
+                        icon={<DownloadIcon size={20} />}
+                        placement="above"
+                        render={(close) =>
+                          downloadChoices.map((choice) => (
+                            <a
+                              key={choice.photoFileRole}
+                              role="menuitem"
+                              href={photoFilePath(photo.id, choice.photoFileRole)}
+                              download
+                              onClick={close}
+                            >
+                              {t(choice.label)}
+                            </a>
+                          ))
+                        }
+                      />
+                    </Tooltip>
+                  ) : (
+                    <Tooltip label={t('photos.downloadOriginal')}>
+                      <a
+                        className="icon-button photo-round-button"
+                        href={photoFilePath(photo.id, 'original')}
+                        download
+                        aria-label={t('photos.downloadOriginal')}
+                      >
+                        <DownloadIcon size={20} />
+                      </a>
+                    </Tooltip>
+                  ))}
+              </div>
+              <div className="photo-action-group" role="group" aria-label={t('photos.photoActions')}>
+                {isTrashed ? (
+                  <Tooltip label={t('photos.restore')}>
+                    <button
+                      type="button"
+                      className="icon-button photo-round-button"
+                      aria-label={t('photos.restore')}
+                      disabled={isBusy}
+                      onClick={() => onRestore(photo)}
+                    >
+                      <RestoreIcon size={20} />
+                    </button>
+                  </Tooltip>
+                ) : isOwn ? (
+                  <Tooltip label={photo.isFavorite ? t('photos.unfavorite') : t('photos.favorite')}>
+                    <button
+                      type="button"
+                      className={
+                        photo.isFavorite
+                          ? 'icon-button photo-round-button photo-favorite is-on'
+                          : 'icon-button photo-round-button photo-favorite'
+                      }
+                      aria-label={photo.isFavorite ? t('photos.unfavorite') : t('photos.favorite')}
+                      aria-pressed={photo.isFavorite}
+                      onClick={() => onToggleFavorite(photo)}
+                    >
+                      <HeartIcon size={20} />
+                    </button>
+                  </Tooltip>
+                ) : (
+                  onSaveToLibrary && (
+                    <button
+                      type="button"
+                      className="photo-save-button"
+                      disabled={isSaving}
+                      onClick={() => void saveToLibrary()}
+                    >
+                      <PhotoSaveIcon size={16} /> <span className="photo-save-label">{t('photos.saveToLibrary')}</span>
+                    </button>
+                  )
+                )}
+                <Tooltip label={t('photos.details')}>
+                  <button
+                    type="button"
+                    className={
+                      isShowingDetails ? 'icon-button photo-round-button is-on' : 'icon-button photo-round-button'
+                    }
+                    aria-label={t('photos.details')}
+                    aria-pressed={isShowingDetails}
+                    onClick={() => setIsShowingDetails((previous) => !previous)}
+                  >
+                    <InfoIcon size={20} />
+                  </button>
+                </Tooltip>
+                {!isTrashed && isOwn && (
+                  <AddToAlbumMenu
+                    hiddenAlbumId={photoAlbumId}
+                    placement="above"
+                    isRound
+                    onChooseAlbum={(target) => void onAddToAlbum(photo, target).then(() => files.reload(true))}
+                    onNewAlbum={() => onNewAlbum(photo)}
+                  />
+                )}
+              </div>
+              <div className="photo-viewer-actions-end">
+                {isTrashed ? (
+                  <Tooltip label={t('photos.deleteForever')}>
+                    <button
+                      type="button"
+                      className="icon-button photo-round-button danger"
+                      aria-label={t('photos.deleteForever')}
+                      disabled={isBusy}
+                      onClick={() => onDeleteForever(photo)}
+                    >
+                      <TrashIcon size={20} />
+                    </button>
+                  </Tooltip>
+                ) : (
+                  isOwn && (
+                    <Tooltip label={t('photos.trash')}>
+                      <button
+                        type="button"
+                        className="icon-button photo-round-button"
+                        aria-label={t('photos.trash')}
+                        disabled={isBusy}
+                        onClick={() => onTrash(photo)}
+                      >
+                        <TrashIcon size={20} />
+                      </button>
+                    </Tooltip>
+                  )
+                )}
+              </div>
             </div>
           </div>
           {isShowingDetails && (
@@ -886,6 +1007,7 @@ export function PhotoViewer({
                         key={face.id}
                         face={face}
                         isLinked={isOwn}
+                        onNamed={() => files.reload(true)}
                         onNotThem={
                           isOwn && onRemoveFaceFromGroup
                             ? async () => {
@@ -996,28 +1118,44 @@ function ViewerPerson({
   face,
   isLinked,
   onNotThem,
+  onNamed,
 }: {
   face: PhotoFace
   // The person's page is the photo owner's; somebody else's photo has none to open.
   isLinked: boolean
   onNotThem?: () => Promise<void>
+  // Called once an unnamed person is named here, so that the photo's people are read again.
+  onNamed?: () => Promise<void>
 }) {
   const { t } = useTranslation()
   const [isBusy, setIsBusy] = useState(false)
+  const [isNaming, setIsNaming] = useState(false)
   const name = face.contactName.trim()
   const shownName = name || t('photos.unnamedPerson')
   const notLabel = name ? t('photos.notPerson', { name }) : t('photos.notThisPerson')
+  // An unnamed person is named where it is seen: their page is not one the
+  // People list shows yet, and leaving the photo to name them loses it.
+  const isNameable = isLinked && !name && face.photoFaceGroupId !== ''
   return (
     <li className="photo-viewer-person">
-      {isLinked ? (
+      {isNameable ? (
+        <Tooltip label={t('photos.nameThisPerson')}>
+          <button type="button" className="photo-viewer-person-link photo-viewer-person-name-button" onClick={() => setIsNaming(true)}>
+            <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
+            <span className="photo-viewer-person-name muted">{shownName}</span>
+          </button>
+        </Tooltip>
+      ) : isLinked && face.photoFaceGroupId !== '' ? (
         <Link className="photo-viewer-person-link" to={personAddress(face.photoFaceGroupId)}>
           <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
           <span className={name ? 'photo-viewer-person-name' : 'photo-viewer-person-name muted'}>{shownName}</span>
+          {face.isOwnContact && <YouMark />}
         </Link>
       ) : (
         <span className="photo-viewer-person-link">
           <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
           <span className={name ? 'photo-viewer-person-name' : 'photo-viewer-person-name muted'}>{shownName}</span>
+          {face.isOwnContact && <YouMark />}
         </span>
       )}
       {onNotThem && (
@@ -1035,6 +1173,26 @@ function ViewerPerson({
             <CloseIcon size={14} />
           </button>
         </Tooltip>
+      )}
+      {isNaming && (
+        <NamePersonFlow
+          group={{
+            id: face.photoFaceGroupId,
+            createdAt: '',
+            updatedAt: '',
+            contactId: face.contactId,
+            contactAddressBookId: '',
+            contactName: face.contactName,
+            isOwnContact: face.isOwnContact,
+            faceCount: 0,
+            photoCount: 0,
+            facePictureUrl: face.facePictureUrl,
+            coverPhotoFaceId: face.id,
+            isHidden: false,
+          }}
+          onClose={() => setIsNaming(false)}
+          onNamed={() => void onNamed?.()}
+        />
       )}
     </li>
   )

@@ -43,6 +43,8 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // Reached from the account menu, so the trail starts at the page. A circle
   // adds its own name below.
   { prefix: '/circles', trail: [{ label: 'circles.title', to: '/circles' }] },
+  // A page of its own in the mailbox's rail, after the calendar.
+  { prefix: '/location', trail: [{ label: 'location.title', to: '/location' }] },
   { prefix: '/manage/mail', trail: [{ label: 'nav.mail', to: '/manage/mail' }] },
   { prefix: '/manage/queue', trail: [{ label: 'nav.queue', to: '/manage/queue' }] },
   { prefix: '/manage/reports', trail: [{ label: 'nav.reports', to: '/manage/reports' }] },
@@ -82,6 +84,11 @@ const SECTION_PAGES: { path: string; label: Key; isRailItem?: boolean }[] = [
 
 const SetDetailContext = createContext<((details: string[]) => void) | null>(null)
 const DetailContext = createContext<string[]>([])
+// A few muted words that follow the page's name where it is drawn: the "You"
+// after the name of the person's own face group. Not part of the name, so the
+// document title and the trail's links do not carry it.
+const SetNoteContext = createContext<((note: string) => void) | null>(null)
+const NoteContext = createContext('')
 // The place beside the page heading where a page puts its one primary action,
 // and the setter the heading uses to say where that is.
 const HeadingActionSlotContext = createContext<HTMLElement | null>(null)
@@ -89,16 +96,21 @@ const SetHeadingActionSlotContext = createContext<((slot: HTMLElement | null) =>
 
 export function BreadcrumbProvider({ children }: { children: React.ReactNode }) {
   const [detail, setDetail] = useState<string[]>([])
+  const [note, setNote] = useState('')
   const [headingActionSlot, setHeadingActionSlot] = useState<HTMLElement | null>(null)
   return (
     <SetDetailContext.Provider value={setDetail}>
       <DetailContext.Provider value={detail}>
-        <SetHeadingActionSlotContext.Provider value={setHeadingActionSlot}>
-          <HeadingActionSlotContext.Provider value={headingActionSlot}>
-            <DocumentTitle />
-            {children}
-          </HeadingActionSlotContext.Provider>
-        </SetHeadingActionSlotContext.Provider>
+        <SetNoteContext.Provider value={setNote}>
+          <NoteContext.Provider value={note}>
+            <SetHeadingActionSlotContext.Provider value={setHeadingActionSlot}>
+              <HeadingActionSlotContext.Provider value={headingActionSlot}>
+                <DocumentTitle />
+                {children}
+              </HeadingActionSlotContext.Provider>
+            </SetHeadingActionSlotContext.Provider>
+          </NoteContext.Provider>
+        </SetNoteContext.Provider>
       </DetailContext.Provider>
     </SetDetailContext.Provider>
   )
@@ -135,6 +147,17 @@ export function useBreadcrumbDetail(detail: string | null | undefined, item?: st
     setDetail?.(detail ? (item ? [detail, item] : [detail]) : [])
     return () => setDetail?.([])
   }, [setDetail, detail, item])
+}
+
+// useBreadcrumbNote puts a few muted words after the page's name in its
+// heading and on the phone bar, such as "You" after the person's own name. It
+// goes with the detail the page names, and is gone when the page is.
+export function useBreadcrumbNote(note: string | null | undefined) {
+  const setNote = useContext(SetNoteContext)
+  useEffect(() => {
+    setNote?.(note ?? '')
+    return () => setNote?.('')
+  }, [setNote, note])
 }
 
 // useTrail is where the breadcrumb and the document title agree. Two places
@@ -316,6 +339,7 @@ function DocumentTitle() {
 // the content reads as a fragment of an application rather than a page of one.
 export function PageHeading() {
   const trail = useTrail()
+  const note = useContext(NoteContext)
   const setSlot = useContext(SetHeadingActionSlotContext)
   const last = trail[trail.length - 1]
 
@@ -328,7 +352,10 @@ export function PageHeading() {
   // arrives.
   return (
     <div className="page-heading-row">
-      <h1 className="page-heading">{last.label || '\u00a0'}</h1>
+      <h1 className="page-heading">
+        {last.label || '\u00a0'}
+        {note && last.label && <span className="page-heading-note muted"> {note}</span>}
+      </h1>
       <div className="page-heading-actions" ref={setSlot} />
     </div>
   )
@@ -343,6 +370,7 @@ export function PageHeading() {
 export function Breadcrumb({ current }: { current?: boolean } = {}) {
   const { t } = useTranslation()
   const full = useTrail()
+  const note = useContext(NoteContext)
 
   // Ancestors only, and every one of them a link. The page's own name is the
   // heading right below, in 30px; saying it again immediately above is the
@@ -376,6 +404,7 @@ export function Breadcrumb({ current }: { current?: boolean } = {}) {
           ) : (
             <span>{crumb.label}</span>
           )}
+          {current && index === trail.length - 1 && note && <span className="crumb-note muted">{note}</span>}
         </span>
       ))}
     </nav>

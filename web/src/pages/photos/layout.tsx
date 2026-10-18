@@ -6,6 +6,7 @@ import { restorePhotos } from '../../photos/api'
 import { announcePhotosChanged } from '../../photos/changes'
 import { photoUploads, useUploadItems } from '../../photos/uploadQueue'
 import { useSession } from '../../session'
+import { PhotoDateRangeLine } from './dateRange'
 import { UploadTray } from './uploadTray'
 
 // How long after a file finishes the open page is told, so that a burst of
@@ -114,9 +115,9 @@ function AccountPhotosLayout({ userId }: { userId: string }) {
   }, [])
 
   return (
-    <>
+    <PhotoDateRangeLine>
       <Outlet />
       <UploadTray />
-    </>
+    </PhotoDateRangeLine>
   )
 }

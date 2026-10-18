@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { askAgentAbout } from '../../api'
-import { useBreadcrumbDetail } from '../../components/breadcrumb'
+import { useBreadcrumbDetail, useBreadcrumbNote } from '../../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { PhotoBackupGuide } from '../../components/photoBackupGuide'
 import {
   AddPersonIcon,
   AlbumRemoveIcon,
+  CheckIcon,
   CloseIcon,
   DownloadIcon,
   HeartIcon,
@@ -56,6 +57,13 @@ import {
 } from '../../photos/api'
 import { usePhotosChanged } from '../../photos/changes'
 import {
+  countPhotosNewerThan,
+  pageIndexOfPlace,
+  parseOverviewScale,
+  type OverviewPeriod,
+  type OverviewScale,
+} from '../../photos/overview'
+import {
   NEARBY_KILOMETERS,
   isFoundByMeaningOnly,
   nearText,
@@ -80,7 +88,9 @@ import { hasPermission, useSession } from '../../session'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
 import { AddPhotosDialog, AlbumOwnerMark, ShareAlbumDialog } from './albumSharing'
-import { PhotoGrid, type PhotoGrouping } from './grid'
+import { useShowDateRange, useVisibleDayRange } from './dateRange'
+import { PhotoGrid, isPhotoPreviewPending, type PhotoGrouping } from './grid'
+import { PhotoOverview } from './overview'
 import {
   FacePicture,
   MergePersonDialog,
@@ -89,7 +99,7 @@ import {
   personAddress,
   useDisplayedPersonName,
 } from './personControls'
-import { PhotoFilterMenu, PhotoIconAction, PhotoToolbar } from './toolbar'
+import { PhotoFilterMenu, PhotoIconAction, PhotoScaleSwitch, PhotoToolbar, PhotoToolbarButton } from './toolbar'
 import { PhotoViewer } from './viewer'
 
 // The Photos page: the timeline of the person's library with its three
@@ -215,6 +225,13 @@ function AccountPhotosPage() {
   // is read again when the search changes or the person does something to it,
   // and not on a timer.
   const isSearching = searchText !== ''
+  // Years and Months are of the library or of the Favorites: not of the
+  // Trash (which is by the day it was emptied into), not of an album or a
+  // person (a few dozen photos at most that the grid shows whole), and not of
+  // a search, whose photos are in the order of how well they match.
+  const canUseOverview = !isInsideCollection && !isTrash && !isSearching
+  const overviewScale: OverviewScale | '' = canUseOverview ? parseOverviewScale(parameters.get('show')) : ''
+  const isOverview = overviewScale !== ''
 
   // ---- The search box and the address ----
 
@@ -280,6 +297,14 @@ function AccountPhotosPage() {
       written.delete('page')
       return written
     })
+  const setOverviewScale = (scale: OverviewScale | '') =>
+    setParameters((previous) => {
+      const written = new URLSearchParams(previous)
+      if (scale) written.set('show', scale)
+      else written.delete('show')
+      written.delete('page')
+      return written
+    })
   const clearNear = () =>
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
@@ -338,6 +363,7 @@ function AccountPhotosPage() {
   // The trail and the heading read the album's title, or the person's name,
   // not the id.
   useBreadcrumbDetail(shownAlbum?.albumTitle ?? (shownPerson ? displayedName(shownPerson) : null))
+  useBreadcrumbNote(!shownAlbum && shownPerson?.isOwnContact ? t('photos.you') : null)
   useKeepPageInRange(pageIndex, pageSize, count.data ?? null, setPageIndex)
 
   const listedPhotos = library.data?.photos
@@ -445,6 +471,16 @@ function AccountPhotosPage() {
     needsPreviousEdge && previousEdge.data?.position === offset - 1 ? previousEdge.data.photo : null
   const nextEdgePhoto = needsNextEdge && nextEdge.data?.position === offset + photos.length ? nextEdge.data.photo : null
 
+  // The photos either side of the shown one that the viewer's strip draws: the
+  // page, and the neighbor on the page before or after at either end.
+  const viewerNeighbors = useMemo(
+    () =>
+      viewerIndex < 0
+        ? undefined
+        : [...(previousEdgePhoto ? [previousEdgePhoto] : []), ...photos, ...(nextEdgePhoto ? [nextEdgePhoto] : [])],
+    [viewerIndex, photos, previousEdgePhoto, nextEdgePhoto],
+  )
+
   const refresh = useCallback(() => {
     return Promise.all([
       library.reload(true),
@@ -470,8 +506,13 @@ function AccountPhotosPage() {
   })
 
   // Photos that are still being made ready are looked at again soon, rather
-  // than after the page's slow refresh. Not when the list is a search.
-  const hasWaitingPhotos = photos.some((photo) => photo.photoProcessingState === 'waiting')
+  // than after the page's slow refresh. Not when the list is a search. A cell
+  // that still shows a spinner counts even when the server calls its photo
+  // ready, since the small preview it is waiting for arrives with no other
+  // sign.
+  const hasWaitingPhotos = photos.some(
+    (photo) => photo.photoProcessingState === 'waiting' || isPhotoPreviewPending(photo),
+  )
   useEffect(() => {
     if (!hasWaitingPhotos || isSearching) return
     const timer = window.setInterval(() => void library.reload(true), WAITING_POLL_MS)
@@ -662,6 +703,33 @@ function AccountPhotosPage() {
       failedWith(caught)
     } finally {
       setIsBusy(false)
+    }
+  }
+
+  // ---- Years and Months ----
+
+  // Choosing a year or a month goes to the grid at the place where it starts:
+  // the page that holds the period's newest photo, and the photo itself
+  // brought to the top of the screen once that page has been read. Back comes
+  // back to the overview.
+  const [isChoosingPeriod, setIsChoosingPeriod] = useState(false)
+  async function showPeriodInGrid(period: OverviewPeriod) {
+    setIsChoosingPeriod(true)
+    try {
+      const place = await countPhotosNewerThan(filter, period)
+      const targetPageIndex = pageIndexOfPlace(place, pageSize)
+      const written = new URLSearchParams(location.search)
+      written.delete('show')
+      written.delete('page')
+      if (targetPageIndex > 0) written.set('page', String(targetPageIndex + 1))
+      navigate(
+        { pathname: basePath, search: written.toString() ? `?${written.toString()}` : '' },
+        { state: { revealPhotoId: period.photo.id } },
+      )
+    } catch (caught) {
+      failedWith(caught)
+    } finally {
+      setIsChoosingPeriod(false)
     }
   }
 
@@ -1022,9 +1090,29 @@ function AccountPhotosPage() {
   const isSelecting = isSelectionMode || selectedIds.size > 0
   // Nothing in the list and nothing asked for: no search or filter to offer.
   const isListEmpty = library.data !== null && photos.length === 0 && !isListStale && searchText === '' && !hasFilters
-  // Day headings are the timeline's. A search is in the order of how well it
-  // matches and is under none; the Trash is under the days it was filled.
-  const grouping: PhotoGrouping = isSearching ? 'none' : isTrash ? 'trash' : 'day'
+  // The Trash is under the days it was filled. Everything else is one grid,
+  // and the page says under its heading which days are on the screen.
+  const grouping: PhotoGrouping = isTrash ? 'trash' : 'none'
+
+  // The days of the cells on the screen, under the page's heading.
+  const listElement = useRef<HTMLDivElement>(null)
+  const isGridShown = !isOverview && !isListStale && library.data !== null
+  const visibleDayRange = useVisibleDayRange(listElement, photos, isGridShown && !isTrash)
+  useShowDateRange(visibleDayRange)
+
+  // Arriving from an overview, the photo that starts the period is brought to
+  // the top once it is on the page, and the address forgets it, so that coming
+  // back from a photo does not scroll again.
+  const revealPhotoId = (location.state as { revealPhotoId?: string } | null)?.revealPhotoId ?? ''
+  useEffect(() => {
+    if (!revealPhotoId || !isGridShown) return
+    const cell = Array.from(listElement.current?.querySelectorAll<HTMLElement>('[data-photo-id]') ?? []).find(
+      (candidate) => candidate.dataset.photoId === revealPhotoId,
+    )
+    if (!cell) return
+    cell.scrollIntoView?.({ block: 'start' })
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: null })
+  }, [revealPhotoId, isGridShown, photos, location.pathname, location.search, navigate])
   // Said only once the names have answered: until then a photo found by a
   // person's or an album's name would be called a mere closest match.
   const isMeaningOnly =
@@ -1233,6 +1321,9 @@ function AccountPhotosPage() {
         </div>
       ) : (
         <PhotoToolbar
+          essentials={
+            canUseOverview && !isListEmpty && <PhotoScaleSwitch scale={overviewScale} onChange={setOverviewScale} />
+          }
           tools={
             // A list with nothing in it has nothing to search or narrow.
             isListEmpty ? null : (
@@ -1273,28 +1364,34 @@ function AccountPhotosPage() {
           }
         >
           {isUploadShown && (
-            <button type="button" className="primary" onClick={() => fileInput.current?.click()}>
-              <UploadIcon size={16} /> {t('photos.upload')}
-            </button>
+            <PhotoToolbarButton
+              isPrimary
+              label={t('photos.upload')}
+              icon={<UploadIcon size={16} />}
+              onClick={() => fileInput.current?.click()}
+            />
           )}
-          {photos.length > 0 && (
-            <button
-              type="button"
-              aria-pressed={isSelecting}
+          {photos.length > 0 && !isOverview && (
+            <PhotoToolbarButton
+              label={isSelecting ? t('common.cancel') : t('photos.select')}
+              menuIcon={<CheckIcon size={16} />}
+              isPressed={isSelecting}
               onClick={() => (isSelecting ? clearSelection() : setIsSelectionMode(true))}
-            >
-              {isSelecting ? t('common.cancel') : t('photos.select')}
-            </button>
+            />
           )}
           {photoAlbumId && canContributeToAlbum && (
-            <button type="button" onClick={() => setIsAddingPhotos(true)}>
-              <PlusIcon size={16} /> {t('photos.addPhotos')}
-            </button>
+            <PhotoToolbarButton
+              label={t('photos.addPhotos')}
+              icon={<PlusIcon size={16} />}
+              onClick={() => setIsAddingPhotos(true)}
+            />
           )}
           {photoAlbumId && canManageAlbum && shownAlbum?.circleId === null && (
-            <button type="button" onClick={() => setIsSharingAlbum(true)}>
-              <AddPersonIcon size={16} /> {t('photos.share')}
-            </button>
+            <PhotoToolbarButton
+              label={t('photos.share')}
+              icon={<AddPersonIcon size={16} />}
+              onClick={() => setIsSharingAlbum(true)}
+            />
           )}
           {photoAlbumId && canManageAlbum && (
             <span className="photo-icon-actions">
@@ -1361,8 +1458,15 @@ function AccountPhotosPage() {
           )}
           {isLibraryEmpty && <PhotoBackupGuide />}
         </>
+      ) : isOverview ? (
+        <PhotoOverview
+          scale={overviewScale}
+          filter={filter}
+          isChoosing={isChoosingPeriod}
+          onChoose={showPeriodInGrid}
+        />
       ) : (
-        <div className={isListStale ? 'photo-list is-loading' : 'photo-list'} aria-busy={isListStale}>
+        <div ref={listElement} className={isListStale ? 'photo-list is-loading' : 'photo-list'} aria-busy={isListStale}>
           <PhotoGrid
             photos={photos}
             grouping={grouping}
@@ -1375,7 +1479,7 @@ function AccountPhotosPage() {
         </div>
       )}
 
-      {(totalCount > pageSize || pageIndex > 0) && (
+      {!isOverview && (totalCount > pageSize || pageIndex > 0) && (
         <div className="list-foot">
           <span />
           <Pager
@@ -1417,6 +1521,7 @@ function AccountPhotosPage() {
           photo={viewerPhoto}
           previousPhoto={viewerPrevious}
           nextPhoto={viewerNext}
+          neighborPhotos={viewerNeighbors}
           isTrashed={Boolean(viewerPhoto.trashedAt) || isTrash}
           isBusy={isBusy}
           isPaused={

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -28,8 +31,9 @@ func newComputerHerdrCommand() *cli.Command {
 			"you can answer from anywhere. 'list' says what each is doing and what it asks,\n" +
 			"'read' prints its last turns, 'screen' what its pane shows, 'send' types into it,\n" +
 			"'wait' waits for it to finish, 'answer' answers its question, 'watch' wakes a\n" +
-			"conversation when it finishes, and 'setup' puts TeaNode's reporting hooks into\n" +
-			"Claude Code there. A pane is named as list names it, by workspace, tab and agent\n" +
+			"conversation when it finishes, 'open' starts a session (beside another with\n" +
+			"--pane), 'focus' brings a session's tab forward in herdr on its computer, and\n" +
+			"'setup' puts TeaNode's reporting hooks into Claude Code there. A pane is named as list names it, by workspace, tab and agent\n" +
 			"(\"website › review\"), or by its id; --computer says which computer when several run herdr.",
 		Commands: []*cli.Command{
 			{
@@ -42,15 +46,17 @@ func newComputerHerdrCommand() *cli.Command {
 				Name:      "read",
 				Usage:     "print the last turns of a session",
 				ArgsUsage: "<pane>",
-				Flags:     []cli.Flag{computerFlag, &cli.IntFlag{Name: "turns", Usage: "how many of the last turns; 10 by default, 100 at most"}, JSONFlag()},
-				Action:    runComputerHerdrRead,
+				Flags: []cli.Flag{computerFlag, &cli.IntFlag{Name: "turns", Usage: "how many of the last turns; 10 by default, 100 at most"},
+					&cli.BoolFlag{Name: "detail", Usage: "print each tool call's whole input and what the tool answered"}, JSONFlag()},
+				Action: runComputerHerdrRead,
 			},
 			{
 				Name:      "screen",
 				Usage:     "print what a session's pane shows",
 				ArgsUsage: "<pane>",
-				Flags:     []cli.Flag{computerFlag, &cli.IntFlag{Name: "lines", Usage: "the last this many lines, rather than the screen as it stands"}, JSONFlag()},
-				Action:    runComputerHerdrScreen,
+				Flags: []cli.Flag{computerFlag, &cli.IntFlag{Name: "lines", Usage: "the last this many lines, rather than the screen as it stands"},
+					&cli.BoolFlag{Name: "color", Usage: "keep the screen's colors"}, JSONFlag()},
+				Action: runComputerHerdrScreen,
 			},
 			{
 				Name:      "send",
@@ -97,15 +103,23 @@ func newComputerHerdrCommand() *cli.Command {
 			},
 			{
 				Name:      "open",
-				Usage:     "start Claude Code or Codex in a new herdr pane in a directory",
-				ArgsUsage: "<claude|codex> <directory>",
+				Usage:     "start Claude Code or Codex in a new herdr pane in a directory, or beside another session",
+				ArgsUsage: "[claude|codex] [directory]",
 				Flags: []cli.Flag{
 					computerFlag,
+					&cli.StringFlag{Name: "pane", Usage: "open beside this pane: a new tab in its workspace, in its directory and with its coding agent unless you name others"},
 					&cli.StringFlag{Name: "name", Usage: "what to call the session in herdr; the directory's name by default"},
 					&cli.BoolFlag{Name: "skip-permissions", Usage: "start it without asking before it acts: Claude Code with --dangerously-skip-permissions, Codex with --yolo"},
 					JSONFlag(),
 				},
 				Action: runComputerHerdrOpen,
+			},
+			{
+				Name:      "focus",
+				Usage:     "bring a session's tab forward in herdr on its computer, so whoever sits there sees it",
+				ArgsUsage: "<pane>",
+				Flags:     []cli.Flag{computerFlag, JSONFlag()},
+				Action:    runComputerHerdrFocus,
 			},
 			{
 				Name:      "close",
@@ -195,17 +209,7 @@ func runComputerHerdrList(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintf(command.Writer, "no coding sessions in herdr on %s\n", strings.Join(listed.ComputerNames, ", "))
 		return nil
 	}
-	writer := tabwriter.NewWriter(command.Writer, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(writer, "NAME\tSTATE\tAGENT\tCOMPUTER\tDIRECTORY\tTITLE\tPANE")
-	for _, session := range listed.Sessions {
-		name := session.PaneName
-		if name == "" {
-			name = session.PaneID
-		}
-		_, _ = fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", forTerminal(name), herdrStateWords(session), session.CodingAgentKind,
-			session.Computer, forTerminal(session.WorkingDirectory), forTerminal(session.PaneTitle), session.PaneID)
-	}
-	_ = writer.Flush()
+	printHerdrSessions(command, listed.Sessions)
 	for _, session := range listed.Sessions {
 		if session.Question != nil {
 			_, _ = fmt.Fprintf(command.Writer, "\n%s asks:\n", herdrPaneWords(session))
@@ -213,6 +217,68 @@ func runComputerHerdrList(ctx context.Context, command *cli.Command) error {
 		}
 	}
 	return nil
+}
+
+// herdrWorkspaceKey is what sessions share when they are in one workspace
+// of one computer.
+type herdrWorkspaceKey struct {
+	computer    string
+	workspaceId string
+}
+
+// printHerdrSessions prints the sessions grouped by computer and workspace,
+// in workspace order, each workspace's sessions in tab order, with the tab
+// herdr shows on the computer's screen marked "on screen".
+func printHerdrSessions(command *cli.Command, sessions []*client.AgentHerdrSession) {
+	ordered := slices.Clone(sessions)
+	sort.SliceStable(ordered, func(left, right int) bool {
+		first, second := ordered[left], ordered[right]
+		if first.Computer != second.Computer {
+			return first.Computer < second.Computer
+		}
+		if first.WorkspaceNumber != second.WorkspaceNumber {
+			return first.WorkspaceNumber < second.WorkspaceNumber
+		}
+		if first.WorkspaceID != second.WorkspaceID {
+			return first.WorkspaceID < second.WorkspaceID
+		}
+		if first.TabNumber != second.TabNumber {
+			return first.TabNumber < second.TabNumber
+		}
+		return first.PaneID < second.PaneID
+	})
+	var previous *herdrWorkspaceKey
+	var writer *tabwriter.Writer
+	for _, session := range ordered {
+		key := herdrWorkspaceKey{computer: session.Computer, workspaceId: session.WorkspaceID}
+		if previous == nil || *previous != key {
+			if writer != nil {
+				_ = writer.Flush()
+				_, _ = fmt.Fprintln(command.Writer)
+			}
+			title := session.WorkspaceLabel
+			if title == "" {
+				title = "(no workspace)"
+			}
+			_, _ = fmt.Fprintf(command.Writer, "%s on %s\n", forTerminal(title), session.Computer)
+			writer = tabwriter.NewWriter(command.Writer, 0, 0, 2, ' ', 0)
+			_, _ = fmt.Fprintln(writer, "  TAB\tNAME\tSTATE\tAGENT\tDIRECTORY\tTITLE\tPANE")
+			previous = &key
+		}
+		name := session.PaneName
+		if name == "" {
+			name = session.PaneID
+		}
+		tab := session.TabLabel
+		if session.IsTabFocused {
+			tab += " (on screen)"
+		}
+		_, _ = fmt.Fprintf(writer, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n", forTerminal(tab), forTerminal(name), herdrStateWords(session), session.CodingAgentKind,
+			forTerminal(session.WorkingDirectory), forTerminal(session.PaneTitle), session.PaneID)
+	}
+	if writer != nil {
+		_ = writer.Flush()
+	}
 }
 
 func herdrPane(command *cli.Command, what string) (string, error) {
@@ -236,7 +302,7 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	read, err := client.ReadAgentHerdrSession(ctx, connection, command.String("computer"), paneId, int(command.Int("turns")))
+	read, err := client.ReadAgentHerdrSession(ctx, connection, command.String("computer"), paneId, int(command.Int("turns")), command.Bool("detail"))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -247,13 +313,45 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintln(command.Writer, "(earlier turns not shown)")
 	}
 	for _, turn := range read.Turns {
-		_, _ = fmt.Fprintf(command.Writer, "%s: %s\n\n", turn.HerdrTurnRole, forTerminal(turn.TurnText))
+		_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", turn.HerdrTurnRole, forTerminal(turn.TurnText))
+		if turn.ToolInputText != "" {
+			_, _ = fmt.Fprintf(command.Writer, "  input:\n%s\n", indentLines(forTerminal(turn.ToolInputText), "    "))
+		}
+		if turn.ToolResultText != "" {
+			_, _ = fmt.Fprintf(command.Writer, "  answered:\n%s\n", indentLines(forTerminal(turn.ToolResultText), "    "))
+		}
+		_, _ = fmt.Fprintln(command.Writer)
 	}
 	session := read.HerdrSession
 	_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", herdrPaneWords(session), herdrStateWords(session))
 	printHerdrQuestion(command, session.Question, "")
 	return nil
 }
+
+// indentLines puts prefix before every line of text.
+func indentLines(text, prefix string) string {
+	return prefix + strings.ReplaceAll(text, "\n", "\n"+prefix)
+}
+
+// colorForTerminal is forTerminal that lets through the codes selecting a
+// color or a style, and only those, so a screen keeps its colors and cannot
+// make the terminal do anything else.
+func colorForTerminal(text string) string {
+	var builder strings.Builder
+	for len(text) > 0 {
+		location := herdrColorCode.FindStringIndex(text)
+		if location == nil {
+			builder.WriteString(forTerminal(text))
+			break
+		}
+		builder.WriteString(forTerminal(text[:location[0]]))
+		builder.WriteString(text[location[0]:location[1]])
+		text = text[location[1]:]
+	}
+	return builder.String()
+}
+
+var herdrColorCode = regexp.MustCompile(`\x1b\[[0-9;:]*m`)
 
 func runComputerHerdrScreen(ctx context.Context, command *cli.Command) error {
 	paneId, err := herdrPane(command, "screen <pane>")
@@ -264,12 +362,16 @@ func runComputerHerdrScreen(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	screen, err := client.ReadAgentHerdrScreen(ctx, connection, command.String("computer"), paneId, int(command.Int("lines")))
+	screen, err := client.ReadAgentHerdrScreen(ctx, connection, command.String("computer"), paneId, int(command.Int("lines")), command.Bool("color"))
 	if err != nil {
 		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(screen)
+	}
+	if command.Bool("color") {
+		_, _ = fmt.Fprintln(command.Writer, colorForTerminal(screen.ScreenText)+"\x1b[0m")
+		return nil
 	}
 	_, _ = fmt.Fprintln(command.Writer, forTerminal(screen.ScreenText))
 	return nil
@@ -443,8 +545,22 @@ func herdrDirectoryOf(directory string) string {
 }
 
 func runComputerHerdrOpen(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 2 {
-		return usage("which coding agent, and where? usage: teanode computer herdr open <claude|codex> <directory>")
+	paneId := strings.TrimSpace(command.String("pane"))
+	arguments := command.Args().Slice()
+	// With a pane, both are optional: the first word is the coding agent
+	// when it is one, and the directory otherwise.
+	codingAgentKind, directory := "", ""
+	if len(arguments) > 0 {
+		if word := strings.ToLower(strings.TrimSpace(arguments[0])); paneId == "" || word == "claude" || word == "codex" {
+			codingAgentKind = arguments[0]
+			arguments = arguments[1:]
+		}
+	}
+	if len(arguments) > 0 {
+		directory = herdrDirectoryOf(arguments[0])
+	}
+	if paneId == "" && (codingAgentKind == "" || directory == "") {
+		return usage("which coding agent, and where? usage: teanode computer herdr open <claude|codex> <directory>, or open [claude|codex] [directory] --pane <pane>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -452,7 +568,7 @@ func runComputerHerdrOpen(ctx context.Context, command *cli.Command) error {
 	}
 	// Starting a coding agent takes a while.
 	connection.SetTimeout(2 * time.Minute)
-	session, err := client.OpenAgentHerdrSession(ctx, connection, command.String("computer"), herdrDirectoryOf(command.Args().Get(1)), command.Args().Get(0), command.String("name"), command.Bool("skip-permissions"))
+	session, err := client.OpenAgentHerdrSession(ctx, connection, command.String("computer"), directory, codingAgentKind, command.String("name"), command.Bool("skip-permissions"), paneId)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -461,6 +577,26 @@ func runComputerHerdrOpen(ctx context.Context, command *cli.Command) error {
 	}
 	_, _ = fmt.Fprintf(command.Writer, "opened %s; it is %s\n", herdrPaneWords(session), herdrStateWords(session))
 	printHerdrQuestion(command, session.Question, "")
+	return nil
+}
+
+func runComputerHerdrFocus(ctx context.Context, command *cli.Command) error {
+	paneId, err := herdrPane(command, "focus <pane>")
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	session, err := client.FocusAgentHerdrSession(ctx, connection, command.String("computer"), paneId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(session)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "showing %s\n", herdrPaneWords(session))
 	return nil
 }
 

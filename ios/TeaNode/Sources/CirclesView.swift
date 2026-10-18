@@ -179,11 +179,13 @@ struct CirclesView: View {
                 try await directory.connection.answerCircleInvitation(invitation.id, isAccepted: isAccepted)
             }
             // Joining a family or colleagues offers to share the calendar with
-            // them, once; a person with no calendar of their own is not asked.
-            if isDone, isAccepted, invitation.circleKind != CircleKind.friends.rawValue,
+            // them, once, and a family also where the person is, in the same
+            // sheet; a person with no calendar of their own is asked only
+            // about the family's location.
+            if isDone, isAccepted {
                 let own = CircleCalendarOffer.ownCalendar(among: (try? await directory.connection.calendars()) ?? [])
-            {
-                calendarOffer = CircleCalendarOffer(accepting: invitation, calendarId: own.id)
+                calendarOffer = CircleCalendarOffer(
+                    accepting: invitation, calendarId: own?.id, canShareLocation: AppModel.shared.canUseLocation)
             }
         }
     }

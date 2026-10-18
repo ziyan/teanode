@@ -25,15 +25,15 @@ func newPhotoPeopleCommand() *cli.Command {
 				Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "hidden", Usage: "list the people you hid as well"}}, Action: runPhotoPeopleList,
 			},
 			{
-				Name: "show", Usage: "a person and their photos", ArgsUsage: "<group id>",
+				Name: "read", Usage: "a person and their photos", ArgsUsage: "<group id>",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.IntFlag{Name: "limit", Value: defaultPhotoListSize, Usage: "photos to list, 1 to 500"},
 					&cli.StringFlag{Name: "continue-after", Usage: "continue after this photo, the last one of the previous page"},
 				},
-				Action: runPhotoPeopleShow,
+				Action: runPhotoPeopleRead,
 			},
-			{Name: "name", Usage: "say who a group of faces is, by a contact from your address book (teanode contact list gives their ids)", ArgsUsage: "<group id> <contact id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleName},
+			{Name: "name", Usage: "say who a group of faces is, by a contact from your address book (teanode contact list gives their ids); a contact that names another group puts the two together, and a contact with no picture is given a face as one", ArgsUsage: "<group id> <contact id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleName},
 			{Name: "unname", Usage: "take the contact off a group of faces", ArgsUsage: "<group id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleUnname},
 			{Name: "merge", Usage: "put groups of faces into the first: they are one person", ArgsUsage: "<group id> <group id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleMerge},
 			{Name: "remove", Usage: "take a face out of its group: it is not them", ArgsUsage: "<face id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoPeopleRemove},
@@ -54,11 +54,20 @@ func newPhotoFacesCommand() *cli.Command {
 	}
 }
 
-// photoPersonText is how a group of faces is called: by its contact, or, for a
-// group nobody has named, by nothing.
+// photoPersonText is how a group of faces is called: by its contact, with
+// "(you)" after the name when the contact is your own card, or, for a group
+// nobody has named, by nothing.
 func photoPersonText(group *models.PhotoFaceGroup) string {
 	if group.ContactName != "" {
-		return group.ContactName
+		return group.ContactName + yourselfText(group.IsOwnContact)
+	}
+	return ""
+}
+
+// yourselfText follows a name that is the person's own contact.
+func yourselfText(isOwnContact bool) string {
+	if isOwnContact {
+		return " (you)"
 	}
 	return ""
 }
@@ -105,10 +114,10 @@ func hiddenText(group *models.PhotoFaceGroup) string {
 	return ""
 }
 
-func runPhotoPeopleShow(ctx context.Context, command *cli.Command) error {
+func runPhotoPeopleRead(ctx context.Context, command *cli.Command) error {
 	photoFaceGroupId := command.Args().First()
 	if photoFaceGroupId == "" {
-		return usage("usage: teanode photo people show <group id>")
+		return usage("usage: teanode photo people read <group id>")
 	}
 	filter := &client.PhotoFilter{FaceGroupID: photoFaceGroupId, PageSize: int(command.Int("limit")), BeforePhotoID: command.String("continue-after")}
 	if filter.PageSize < 1 || filter.PageSize > 500 {
@@ -157,11 +166,25 @@ func runPhotoPeopleName(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	group, err := client.NamePhotoFaceGroup(ctx, connection, command.Args().Get(0), command.Args().Get(1))
+	named, err := client.NamePhotoFaceGroup(ctx, connection, command.Args().Get(0), command.Args().Get(1))
 	if err != nil {
 		return describeError(command, err)
 	}
-	return printPhotoFaceGroup(command, group, "named")
+	if command.Bool("json") {
+		return PrintJSON(named)
+	}
+	if err := printPhotoFaceGroup(command, named.PhotoFaceGroup, "named"); err != nil {
+		return err
+	}
+	// A contact names one person: a contact that named another group already
+	// puts the two together, and a contact without a picture is given a face.
+	if named.MergedPhotoFaceGroupID != "" {
+		_, _ = fmt.Fprintf(command.Writer, "merged with %s\n", forTerminal(named.PhotoFaceGroup.ContactName))
+	}
+	if named.IsContactPictureSet {
+		_, _ = fmt.Fprintf(command.Writer, "used a face as their picture (teanode contact remove-picture %s takes it off)\n", named.PhotoFaceGroup.ContactID)
+	}
+	return nil
 }
 
 func runPhotoPeopleUnname(ctx context.Context, command *cli.Command) error {
@@ -268,7 +291,7 @@ func runPhotoFaces(ctx context.Context, command *cli.Command) error {
 func photoFaceText(face *models.PhotoFace) string {
 	switch {
 	case face.ContactName != "":
-		return fmt.Sprintf("%s (group %s, face %s)", face.ContactName, face.PhotoFaceGroupID, face.ID)
+		return fmt.Sprintf("%s%s (group %s, face %s)", face.ContactName, yourselfText(face.IsOwnContact), face.PhotoFaceGroupID, face.ID)
 	case face.PhotoFaceGroupID != "":
 		return fmt.Sprintf("not named (group %s, face %s)", face.PhotoFaceGroupID, face.ID)
 	}

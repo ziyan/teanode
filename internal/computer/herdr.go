@@ -53,6 +53,11 @@ const FeatureHerdr = "herdr"
 // it would type the text alone.
 const FeatureHerdrFiles = "herdr_files"
 
+// FeatureHerdrOpenBeside is a herdr_open given a pane: the new tab opens in
+// that pane's workspace, in its directory, with its agent. A program that
+// predates it would open a workspace of its own.
+const FeatureHerdrOpenBeside = "herdr_open_beside"
+
 // The states of a herdr session, as this program decides them.
 const (
 	HerdrSessionStateIdle    = "idle"
@@ -70,9 +75,18 @@ const (
 
 // The bounds of watching herdr.
 const (
-	// herdrPollEvery is how often every pane is looked at. Herdr's own
-	// state is not enough to look only when it changes.
+	// herdrPollEvery is how often the panes are looked at. Herdr's list
+	// costs little; a pane's screen is read again only as
+	// herdrScreenKeptIdle and herdrScreenKeptWorking allow.
 	herdrPollEvery = 3 * time.Second
+	// herdrScreenKeptIdle is how long the screen of a pane that sits idle
+	// is kept, and herdrScreenKeptWorking that of one at work, which comes
+	// to a question sooner, when nothing else says the pane changed: herdr's
+	// status, the agent's hooks, Codex's history or keys typed into it. A
+	// pane showing a question is read every look, so its answer is seen.
+	// Reading all of them every look kept herdr busy on a core.
+	herdrScreenKeptIdle    = 30 * time.Second
+	herdrScreenKeptWorking = 9 * time.Second
 	// herdrAnswerSettle is how long a form is given to go away once its
 	// answer is pressed.
 	herdrAnswerSettle = 1500 * time.Millisecond
@@ -113,7 +127,18 @@ type HerdrSession struct {
 	// agent's name, or which agent it is, when a tab holds more than one.
 	// The id says nothing to a person; this is what is shown, and either
 	// names a pane to every action.
-	PaneName          string `json:"paneName"`
+	PaneName string `json:"paneName"`
+	// The workspace and tab the pane is in, as herdr numbers and labels
+	// them; empty when herdr's lists could not be read.
+	WorkspaceID     string `json:"workspaceId"`
+	WorkspaceLabel  string `json:"workspaceLabel"`
+	WorkspaceNumber int    `json:"workspaceNumber"`
+	TabID           string `json:"tabId"`
+	TabLabel        string `json:"tabLabel"`
+	TabNumber       int    `json:"tabNumber"`
+	// IsTabFocused says herdr shows this session's tab on the computer's
+	// screen now: its tab is the active one of the focused workspace.
+	IsTabFocused      bool   `json:"isTabFocused"`
 	CodingAgentKind   string `json:"codingAgentKind"`
 	CodingSessionID   string `json:"codingSessionId"`
 	HerdrSessionState string `json:"herdrSessionState"`
@@ -134,9 +159,15 @@ type HerdrSession struct {
 
 // HerdrArguments are what every herdr action may be given.
 type HerdrArguments struct {
-	PaneID              string `json:"paneId,omitempty"`
-	TurnCount           int    `json:"turnCount,omitempty"`
-	LineCount           int    `json:"lineCount,omitempty"`
+	PaneID    string `json:"paneId,omitempty"`
+	TurnCount int    `json:"turnCount,omitempty"`
+	LineCount int    `json:"lineCount,omitempty"`
+	// ShouldIncludeToolDetail asks a read for each tool turn's whole input
+	// and what the tool answered.
+	ShouldIncludeToolDetail bool `json:"shouldIncludeToolDetail,omitempty"`
+	// ShouldKeepColor asks for the screen with its colors, as the codes
+	// that select them and nothing else a terminal would act on.
+	ShouldKeepColor     bool   `json:"shouldKeepColor,omitempty"`
 	Text                string `json:"text,omitempty"`
 	WaitSeconds         int    `json:"waitSeconds,omitempty"`
 	QuestionFingerprint string `json:"questionFingerprint,omitempty"`
@@ -253,10 +284,13 @@ type Herdr struct {
 	// to one question are not both pressed: the second finds the question
 	// gone.
 	answering map[string]*sync.Mutex
-	watches   map[string][]*herdrWatch
-	events    []*HerdrEvent
-	notify    func(*HerdrEvent)
-	listener  int64
+	// screens are the panes' screens as last read by a look, by pane, held
+	// with refreshes.
+	screens  map[string]*herdrKeptScreen
+	watches  map[string][]*herdrWatch
+	events   []*HerdrEvent
+	notify   func(*HerdrEvent)
+	listener int64
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -347,7 +381,7 @@ func (self *Herdr) saveWatchesLocked() {
 func NewHerdr(home string) *Herdr {
 	return &Herdr{client: newHerdrClient(home), home: home, sessions: map[string]*HerdrSession{},
 		appearances: loadAppearances(home), watches: loadWatches(home), answers: map[string]string{},
-		answering: map[string]*sync.Mutex{}}
+		answering: map[string]*sync.Mutex{}, screens: map[string]*herdrKeptScreen{}}
 }
 
 // Start looks at every pane from now until Close.
@@ -469,11 +503,15 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 		return nil, err
 	}
 	reports := readHookReports(self.home)
-	names := self.paneNames(ctx, agents)
+	names, placements := self.paneNames(ctx, agents)
 	observed := make([]*HerdrSession, 0, len(agents))
 	for _, agent := range agents {
 		session := self.observe(ctx, agent, reports)
 		session.PaneName = names[agent.PaneID]
+		if placement := placements[agent.PaneID]; placement != nil {
+			session.WorkspaceID, session.WorkspaceLabel, session.WorkspaceNumber = placement.WorkspaceID, placement.WorkspaceLabel, placement.WorkspaceNumber
+			session.TabID, session.TabLabel, session.TabNumber, session.IsTabFocused = placement.TabID, placement.TabLabel, placement.TabNumber, placement.IsTabFocused
+		}
 		observed = append(observed, session)
 	}
 	sort.Slice(observed, func(left, right int) bool {
@@ -494,6 +532,8 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 		if seen[paneId] {
 			continue
 		}
+		delete(self.screens, paneId)
+		self.client.forgetTyped(paneId)
 		// The pane closed, or the agent in it ended.
 		gone := *before
 		gone.HerdrSessionState, gone.Question = HerdrSessionStateUnknown, nil
@@ -656,20 +696,20 @@ func (self *Herdr) observe(ctx context.Context, agent *herdrAgent, reports map[s
 		session.CodingSessionID = agent.AgentSession.Value
 		session.TranscriptPath = findTranscript(self.home, agent.Agent, session.CodingSessionID)
 	}
-	screen, err := self.client.readAgent(ctx, agent.PaneID, "visible", 0)
+	var lifecycle *codexLifecycle
+	if agent.Agent == CodingAgentKindCodex && session.TranscriptPath != "" {
+		lifecycle, _ = readCodexLifecycle(session.TranscriptPath)
+	}
+	hook := hookStateOf(reports, session.CodingSessionID, time.Now())
+	screen, err := self.visibleScreen(ctx, agent, hook, lifecycle)
 	if err == nil {
 		session.Question = recognizeQuestion(agent.Agent, screen)
 	} else {
 		session.isScreenUnread = true
 	}
-	var lifecycle *codexLifecycle
-	if agent.Agent == CodingAgentKindCodex && session.TranscriptPath != "" {
-		lifecycle, _ = readCodexLifecycle(session.TranscriptPath)
-	}
 	if session.Question == nil && lifecycle != nil && lifecycle.question != nil && !lifecycle.isWorking {
 		session.Question = lifecycle.question
 	}
-	hook := hookStateOf(reports, session.CodingSessionID, time.Now())
 	switch {
 	case session.Question != nil:
 		session.HerdrSessionState = HerdrSessionStateAsking
@@ -687,6 +727,41 @@ func (self *Herdr) observe(ctx context.Context, agent *herdrAgent, reports map[s
 		session.HerdrSessionState = HerdrSessionStateIdle
 	}
 	return session
+}
+
+// herdrKeptScreen is a pane's screen as a look last read it, and what said
+// how the pane stood then.
+type herdrKeptScreen struct {
+	screen  string
+	err     error
+	readAt  time.Time
+	stateOf string
+}
+
+// visibleScreen is what the pane shows, read again only when something
+// says it changed or the kept one is old: see herdrScreenKeptIdle. Called
+// with refreshes held.
+func (self *Herdr) visibleScreen(ctx context.Context, agent *herdrAgent, hook string, lifecycle *codexLifecycle) (string, error) {
+	stateOf := fmt.Sprintf("%d %d %s %s %s", agent.Revision, agent.StateChangeSequence, agent.AgentStatus, agent.TerminalTitleStripped, hook)
+	if lifecycle != nil {
+		stateOf += fmt.Sprintf(" %t %t", lifecycle.isWorking, lifecycle.question != nil)
+	}
+	now := time.Now()
+	if kept := self.screens[agent.PaneID]; kept != nil && kept.err == nil && kept.stateOf == stateOf && kept.readAt.After(self.client.lastTyped(agent.PaneID)) {
+		keptFor := herdrScreenKeptIdle
+		if agent.AgentStatus == "working" || hook == hookStateWorking || isWorkingOnScreen(kept.screen) {
+			keptFor = herdrScreenKeptWorking
+		}
+		if recognizeQuestion(agent.Agent, kept.screen) != nil {
+			keptFor = 0
+		}
+		if now.Sub(kept.readAt) < keptFor {
+			return kept.screen, nil
+		}
+	}
+	screen, err := self.client.readAgent(ctx, agent.PaneID, "visible", 0)
+	self.screens[agent.PaneID] = &herdrKeptScreen{screen: screen, err: err, readAt: now, stateOf: stateOf}
+	return screen, err
 }
 
 // isWorkingOnScreen says the agent shows a turn running: both say "esc to
@@ -738,17 +813,31 @@ var herdrStartEvery = 500 * time.Millisecond
 
 var herdrAgentNames = map[string]string{CodingAgentKindClaude: "Claude Code", CodingAgentKindCodex: "Codex"}
 
+// herdrPlacement is where a pane is in herdr: its workspace and tab, with
+// the labels and numbers herdr gives them.
+type herdrPlacement struct {
+	WorkspaceID     string
+	WorkspaceLabel  string
+	WorkspaceNumber int
+	TabID           string
+	TabLabel        string
+	TabNumber       int
+	IsTabFocused    bool
+}
+
 // paneNames names each pane with a coding agent in it as the person finds
-// it in herdr. Without herdr's labels, a pane is named by its id.
-func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[string]string {
+// it in herdr, and says where each is. Without herdr's labels, a pane is
+// named by its id and has no placement.
+func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) (map[string]string, map[string]*herdrPlacement) {
 	workspaces, workspaceErr := self.client.listWorkspaces(ctx)
 	tabs, tabErr := self.client.listTabs(ctx)
 	names := map[string]string{}
+	placements := map[string]*herdrPlacement{}
 	if workspaceErr != nil || tabErr != nil {
 		for _, agent := range agents {
 			names[agent.PaneID] = agent.PaneID
 		}
-		return names
+		return names, placements
 	}
 	workspaceOf := map[string]*herdrWorkspace{}
 	for _, workspace := range workspaces {
@@ -782,6 +871,18 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 	}
 	for _, agent := range sorted {
 		workspace := workspaceOf[agent.WorkspaceID]
+		if workspace != nil {
+			placement := &herdrPlacement{
+				WorkspaceID: workspace.WorkspaceID, WorkspaceLabel: strings.TrimSpace(workspace.Label), WorkspaceNumber: workspace.Number,
+			}
+			if tab := tabOf[agent.TabID]; tab != nil {
+				placement.TabID, placement.TabLabel, placement.TabNumber = tab.TabID, strings.TrimSpace(tab.Label), tab.Number
+				// Herdr marks only the active tab of the focused workspace;
+				// an older herdr says it through the workspace instead.
+				placement.IsTabFocused = tab.IsFocused || (workspace.IsFocused && workspace.ActiveTabID == tab.TabID)
+			}
+			placements[agent.PaneID] = placement
+		}
 		if workspace == nil || strings.TrimSpace(workspace.Label) == "" {
 			names[agent.PaneID] = agent.PaneID
 			continue
@@ -820,7 +921,7 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 		}
 		names[agent.PaneID] = strings.Join(parts, " › ")
 	}
-	return names
+	return names, placements
 }
 
 // named is how a session is called in what is said about it.
@@ -861,6 +962,8 @@ func RunHerdr(ctx context.Context, herdr *Herdr, action string, arguments *Herdr
 		return herdr.open(ctx, arguments)
 	case "herdr_close":
 		return herdr.close(ctx, arguments)
+	case "herdr_focus":
+		return herdr.focus(ctx, arguments)
 	case "herdr_setup":
 		return setUpHooks(herdr.home, arguments.IsRemoval)
 	}
@@ -883,6 +986,12 @@ func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrR
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the history of %s: %w", session.named(), err)
 	}
+	for _, turn := range turns {
+		turn.HasToolDetail = turn.ToolInputText != "" || turn.ToolResultText != ""
+		if !arguments.ShouldIncludeToolDetail {
+			turn.ToolInputText, turn.ToolResultText = "", ""
+		}
+	}
 	return &HerdrReadResult{HerdrSession: session, Turns: turns, IsTruncated: isTruncated}, nil
 }
 
@@ -891,8 +1000,15 @@ func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*Herd
 	if err != nil {
 		return nil, err
 	}
+	read := func(source string) (string, error) {
+		if !arguments.ShouldKeepColor {
+			return self.client.readAgent(ctx, session.PaneID, source, 0)
+		}
+		text, err := self.client.readAgentColored(ctx, session.PaneID, source)
+		return keepOnlyColorCodes(text), err
+	}
 	if arguments.LineCount <= 0 {
-		text, err := self.client.readAgent(ctx, session.PaneID, "visible", 0)
+		text, err := read("visible")
 		if err != nil {
 			return nil, err
 		}
@@ -900,13 +1016,47 @@ func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*Herd
 	}
 	// The last lines are cut here: herdr given a count of lines answers
 	// with none.
-	text, err := self.client.readAgent(ctx, session.PaneID, "recent_unwrapped", 0)
+	text, err := read("recent_unwrapped")
 	if err != nil {
 		return nil, err
 	}
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	lines = lines[max(len(lines)-min(arguments.LineCount, herdrMostLineCount), 0):]
 	return &HerdrScreenResult{HerdrSession: session, ScreenText: strings.Join(lines, "\n")}, nil
+}
+
+// colorCode is a terminal code that selects a color or a style (SGR), and
+// terminalCode any escape sequence at all.
+var (
+	colorCode    = regexp.MustCompile(`^\x1b\[[0-9;:]*m`)
+	terminalCode = regexp.MustCompile(`^\x1b(?:\[[0-9;:?<=>]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])`)
+)
+
+// keepOnlyColorCodes keeps the codes that color a screen and drops every
+// other escape sequence and carriage return, so what is shown elsewhere can
+// color the text and nothing else: not move a cursor, set a title or ring
+// a bell.
+func keepOnlyColorCodes(text string) string {
+	var builder strings.Builder
+	for index := 0; index < len(text); {
+		switch text[index] {
+		case '\x1b':
+			if code := colorCode.FindString(text[index:]); code != "" {
+				builder.WriteString(code)
+				index += len(code)
+			} else if code := terminalCode.FindString(text[index:]); code != "" {
+				index += len(code)
+			} else {
+				index++
+			}
+		case '\r':
+			index++
+		default:
+			builder.WriteByte(text[index])
+			index++
+		}
+	}
+	return builder.String()
 }
 
 func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrSendResult, error) {
@@ -938,7 +1088,10 @@ func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 		}
 		text = strings.TrimSpace(text + " " + herdrFileMentions(session.CodingAgentKind, filePaths))
 	}
-	if err := self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": text}, nil); err != nil {
+	err = self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": text}, nil)
+	// A prompt is typed into the pane too: its kept screen is old now.
+	self.client.noteTyped(session.PaneID)
+	if err != nil {
 		return nil, fmt.Errorf("the text may not have been typed into %s; look at its screen before sending again: %w", session.named(), err)
 	}
 	return &HerdrSendResult{HerdrSession: session, IsSent: true, FilePaths: filePaths}, nil
@@ -1112,12 +1265,33 @@ func herdrAgentNameOf(label string) string {
 // is one, a new workspace otherwise, so it is found where the person would
 // look. A coding agent that stops at a question as it starts (whether to
 // trust the folder) is open, and asking it.
+//
+// Given a pane, it opens beside that pane instead: a new tab in the pane's
+// workspace, in its directory and with its coding agent unless the
+// arguments say otherwise.
 func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrSession, error) {
 	kind := strings.ToLower(strings.TrimSpace(arguments.CodingAgentKind))
-	if kind != CodingAgentKindClaude && kind != CodingAgentKindCodex {
-		return nil, fmt.Errorf("open which coding agent? %q is not claude or codex", arguments.CodingAgentKind)
-	}
 	directory := strings.TrimSpace(arguments.Directory)
+	besideWorkspaceId := ""
+	if strings.TrimSpace(arguments.PaneID) != "" {
+		beside, err := self.session(ctx, arguments.PaneID)
+		if err != nil {
+			return nil, fmt.Errorf("open beside which pane? %w", err)
+		}
+		besideWorkspaceId = beside.WorkspaceID
+		if besideWorkspaceId == "" {
+			return nil, fmt.Errorf("cannot tell which workspace %s is in; herdr's lists could not be read", beside.named())
+		}
+		if directory == "" {
+			directory = beside.WorkingDirectory
+		}
+		if kind == "" {
+			kind = beside.CodingAgentKind
+		}
+	}
+	if kind != CodingAgentKindClaude && kind != CodingAgentKindCodex {
+		return nil, fmt.Errorf("open which coding agent? %q is not claude or codex", kind)
+	}
 	if directory == "" {
 		return nil, errors.New("open it in which directory?")
 	}
@@ -1129,8 +1303,11 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if err != nil {
 		return nil, err
 	}
-	workspaceId := ""
+	workspaceId := besideWorkspaceId
 	for _, workspace := range workspaces {
+		if workspaceId != "" {
+			break
+		}
 		if strings.EqualFold(strings.TrimSpace(workspace.Label), filepath.Base(directory)) {
 			workspaceId = workspace.WorkspaceID
 			break
@@ -1231,6 +1408,19 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// focus brings a session's tab forward in herdr, so whoever sits at the
+// computer sees it, and says the session as it is then.
+func (self *Herdr) focus(ctx context.Context, arguments *HerdrArguments) (*HerdrSession, error) {
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.client.focusAgent(ctx, session.PaneID); err != nil {
+		return nil, fmt.Errorf("cannot show %s: %w", session.named(), err)
+	}
+	return self.session(ctx, session.PaneID)
 }
 
 // close ends a session's coding agent and its pane. Not while it works:

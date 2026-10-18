@@ -110,7 +110,7 @@ func nameGroup(test *testing.T, database db.Database, userId, photoFaceGroupId, 
 	var named *models.PhotoFaceGroup
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		var err error
-		if named, err = transaction.NamePhotoFaceGroup(userId, photoFaceGroupId, addressBookId, contactId); err != nil {
+		if named, _, err = transaction.NamePhotoFaceGroup(userId, photoFaceGroupId, addressBookId, contactId); err != nil {
 			test.Fatal(err)
 		}
 	})
@@ -224,14 +224,14 @@ func TestNamingAGroupNeedsOneOfThePersonsOwnContacts(test *testing.T) {
 	foreignBookId, foreignContactId := keepContact(test, database, otherId, "Foreign Person")
 
 	err := database.Transaction(func(transaction db.Transaction) error {
-		_, err := transaction.NamePhotoFaceGroup(ownerId, photoFaceGroupId, foreignBookId, foreignContactId)
+		_, _, err := transaction.NamePhotoFaceGroup(ownerId, photoFaceGroupId, foreignBookId, foreignContactId)
 		return err
 	})
 	if !errors.Is(err, db.ErrNotFound) {
 		test.Fatalf("another person's contact was accepted: %v", err)
 	}
 	err = database.Transaction(func(transaction db.Transaction) error {
-		_, err := transaction.NamePhotoFaceGroup(otherId, photoFaceGroupId, foreignBookId, foreignContactId)
+		_, _, err := transaction.NamePhotoFaceGroup(otherId, photoFaceGroupId, foreignBookId, foreignContactId)
 		return err
 	})
 	if !errors.Is(err, db.ErrNotFound) {
@@ -239,7 +239,7 @@ func TestNamingAGroupNeedsOneOfThePersonsOwnContacts(test *testing.T) {
 	}
 	// A contact's identifier means a contact only in its own book.
 	err = database.Transaction(func(transaction db.Transaction) error {
-		_, err := transaction.NamePhotoFaceGroup(ownerId, photoFaceGroupId, foreignBookId, ownContactId)
+		_, _, err := transaction.NamePhotoFaceGroup(ownerId, photoFaceGroupId, foreignBookId, ownContactId)
 		return err
 	})
 	if !errors.Is(err, db.ErrNotFound) {
@@ -584,23 +584,25 @@ func TestListingPhotosByAFaceGroupOrByAContactIsTheOwnersAlone(test *testing.T) 
 		}
 	}
 	nameGroup(test, database, ownerId, firstGroup, bookId, contactId)
+	// A contact names one person: naming the second group with it puts the
+	// second group into the first.
 	nameGroup(test, database, ownerId, secondGroup, bookId, contactId)
 
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		byContact, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 10, ContactID: contactId})
 		if err != nil || len(byContact) != 3 {
-			test.Fatalf("a contact finds the photos of every group it names: %v %v", photoIdsOf(byContact), err)
+			test.Fatalf("a contact finds the photos of the person it names: %v %v", photoIdsOf(byContact), err)
 		}
 		count, err := transaction.CountPhotos(ownerId, &db.PhotoFilter{ContactID: contactId})
 		if err != nil || count != 3 {
 			test.Fatalf("%d %v", count, err)
 		}
 		byGroup, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 10, FaceGroupID: firstGroup})
-		if err != nil || len(byGroup) != 2 {
+		if err != nil || len(byGroup) != 3 {
 			test.Fatalf("%v %v", photoIdsOf(byGroup), err)
 		}
 		both, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 10, FaceGroupID: firstGroup, ContactID: contactId})
-		if err != nil || len(both) != 2 {
+		if err != nil || len(both) != 3 {
 			test.Fatalf("%v %v", photoIdsOf(both), err)
 		}
 		none, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 10, ContactID: "nobody"})

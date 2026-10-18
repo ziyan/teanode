@@ -21,9 +21,12 @@ import (
 type speakFirstWorld struct {
 	database db.Database
 	worker   *agent.Agent
-	owner    *models.User
-	agent    *models.Agent
-	requests *[]map[string]any
+	// operations is what the worker acts as the person with; a test changes
+	// its permissions.
+	operations *fakeOperations
+	owner      *models.User
+	agent      *models.Agent
+	requests   *[]map[string]any
 }
 
 func newSpeakFirstWorld(t *testing.T) *speakFirstWorld {
@@ -51,7 +54,7 @@ func newSpeakFirstWorld(t *testing.T) *speakFirstWorld {
 	worker := agent.New(&agent.Settings{Database: database, Storage: store, Registry: registry, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
 	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}
 	worker.SetOperationsFactory(func(ctx context.Context, owner *models.User) (agent.Operations, error) { return operations, nil })
-	world := &speakFirstWorld{database: database, worker: worker, requests: requests}
+	world := &speakFirstWorld{database: database, worker: worker, operations: operations, requests: requests}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
 		if world.owner, err = tx.CreateUser(&models.User{Username: "robin", Timezone: "UTC", TimezoneMode: "fixed"}); err != nil {
@@ -360,6 +363,8 @@ func TestAMemoryCheckThatAsksNothingIsNudgedOnce(t *testing.T) {
 // main conversation, with only what the server has on.
 func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 	world := newSpeakFirstWorld(t)
+	// The person may use Location, so the tour offers it.
+	world.operations.permissions = models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}, {Permission: models.PermissionLocationUse}})
 	now := time.Now()
 	var phone *models.AgentPhone
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
@@ -385,7 +390,7 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 		t.Fatalf("one phone tour, done: %+v", jobs)
 	}
 	request := fmt.Sprint((*world.requests)[0]["messages"])
-	for _, want := range []string{"A test phone", "Show them around it", "Share button", "Ask TeaNode", "question of one ask_user call", "offered once"} {
+	for _, want := range []string{"A test phone", "Show them around it", "Share button", "Ask TeaNode", "question of one ask_user call", "offered once", "Location: the app can record the places they go", "set_up action"} {
 		if !strings.Contains(request, want) {
 			t.Errorf("the tour's message says %q", want)
 		}

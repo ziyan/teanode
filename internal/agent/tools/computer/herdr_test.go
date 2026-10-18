@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,10 +14,14 @@ import (
 )
 
 // herdrComputer is a fakeComputer whose program watches herdr.
-type herdrComputer struct{ fakeComputer }
+type herdrComputer struct {
+	fakeComputer
+	// features are what its program does beyond herdr itself.
+	features []string
+}
 
 func (self *herdrComputer) HasFeature(feature string) bool {
-	return feature == deviceComputer.FeatureHerdr
+	return feature == deviceComputer.FeatureHerdr || slices.Contains(self.features, feature)
 }
 
 func TestHerdrListGivesThoseAskingFirstAPageAtATime(t *testing.T) {
@@ -32,7 +37,7 @@ func TestHerdrListGivesThoseAskingFirstAPageAtATime(t *testing.T) {
 	}
 	sessions[17]["herdrSessionState"] = "asking"
 	encoded, _ := json.Marshal(sessions)
-	attached := &herdrComputer{fakeComputer{answers: map[string]string{"herdr_list": string(encoded)}}}
+	attached := &herdrComputer{fakeComputer: fakeComputer{answers: map[string]string{"herdr_list": string(encoded)}}}
 	ctx := tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration})
 	herdr := find(t, "herdr")
 
@@ -89,7 +94,7 @@ func TestHerdrListFitsItsBudgetAndSurvivesAnyOffset(t *testing.T) {
 		})
 	}
 	encoded, _ := json.Marshal(sessions)
-	attached := &herdrComputer{fakeComputer{answers: map[string]string{"herdr_list": string(encoded)}}}
+	attached := &herdrComputer{fakeComputer: fakeComputer{answers: map[string]string{"herdr_list": string(encoded)}}}
 	run := &budgetRun{fakeRun: fakeRun{computer: attached, config: configuration}, resultCharacters: 7744}
 	ctx := tools.WithRun(context.Background(), run)
 	herdr := find(t, "herdr")
@@ -134,3 +139,42 @@ type budgetRun struct {
 }
 
 func (self *budgetRun) ResultCharacters() int { return self.resultCharacters }
+
+func TestHerdrFocusAndOpenBesideCarryThePane(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	attached := &herdrComputer{fakeComputer: fakeComputer{answers: map[string]string{
+		"herdr_focus": `{"paneId":"w1:p1"}`, "herdr_open": `{"paneId":"w1:p2"}`,
+	}}, features: []string{deviceComputer.FeatureHerdrOpenBeside}}
+	ctx := tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration})
+	herdr := find(t, "herdr")
+	for _, arguments := range []string{`{"action":"focus","pane":"w1:p1"}`, `{"action":"open","pane":"w1:p1"}`} {
+		if _, err := herdr.Run(ctx, &tools.Call{Arguments: json.RawMessage(arguments)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(attached.asked) != 2 || attached.asked[0] != `herdr_focus {"paneId":"w1:p1"}` ||
+		!strings.HasPrefix(attached.asked[1], `herdr_open {"paneId":"w1:p1"`) {
+		t.Errorf("asked %q", attached.asked)
+	}
+	if risk := herdr.RiskOf(json.RawMessage(`{"action":"focus","pane":"w1:p1"}`)); risk != tools.RiskWrite {
+		t.Errorf("focus is %v", risk)
+	}
+	if preview := herdr.Preview(json.RawMessage(`{"action":"focus","pane":"website","computer":"laptop"}`)); preview != "Show pane website on laptop" {
+		t.Errorf("preview: %q", preview)
+	}
+}
+
+func TestHerdrOpenBesideIsRefusedByAProgramTooOldForIt(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	attached := &herdrComputer{fakeComputer: fakeComputer{answers: map[string]string{"herdr_open": `{"paneId":"w1:p2"}`}}}
+	ctx := tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration})
+	_, err := find(t, "herdr").Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"open","pane":"w1:p1"}`)})
+	if err == nil || !strings.Contains(err.Error(), "too old") {
+		t.Errorf("an old program was asked to open beside a pane: %v", err)
+	}
+	if len(attached.asked) != 0 {
+		t.Errorf("asked %q", attached.asked)
+	}
+}

@@ -47,6 +47,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"GetContact":               client.DocumentGetContact,
 		"SaveContact":              client.DocumentSaveContact,
 		"DeleteContact":            client.DocumentDeleteContact,
+		"RemoveContactPicture":     client.DocumentRemoveContactPicture,
 		"ListMailboxAppPasswords":  client.DocumentListMailboxAppPasswords,
 		"CreateMailboxAppPassword": client.DocumentCreateMailboxAppPassword,
 		"DeleteMailboxAppPassword": client.DocumentDeleteMailboxAppPassword,
@@ -183,6 +184,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"SetUpAgentHerdrHooks":        client.DocumentSetUpAgentHerdrHooks,
 		"OpenAgentHerdrSession":       client.DocumentOpenAgentHerdrSession,
 		"CloseAgentHerdrSession":      client.DocumentCloseAgentHerdrSession,
+		"FocusAgentHerdrSession":      client.DocumentFocusAgentHerdrSession,
 		// The surveys and subagents it did not wait for, and the survey the
 		// command line starts and waits for by asking.
 		"StartAgentSurvey":        client.DocumentStartAgentSurvey,

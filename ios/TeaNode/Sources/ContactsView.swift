@@ -49,6 +49,18 @@ final class ContactsModel {
         }
     }
 
+    func removePicture(of contactId: String) async -> Bool {
+        do {
+            try await connection.removeContactPicture(contactId)
+            doneText = String(localized: "Removed their picture")
+            await load()
+            return true
+        } catch {
+            problemText = error.localizedDescription
+            return false
+        }
+    }
+
     func delete(_ contactId: String) async -> Bool {
         do {
             try await connection.deleteContact(contactId)
@@ -291,6 +303,7 @@ struct ContactDetailView: View {
     @State private var problemText: String?
     @State private var isEditing = false
     @State private var isConfirmingDelete = false
+    @State private var isConfirmingRemovePicture = false
     @State private var memory = InMemoryModel()
 
     var body: some View {
@@ -365,6 +378,20 @@ struct ContactDetailView: View {
                         } else {
                             Button("This is me") {
                                 Task { await model.setMine(contact.id) }
+                            }
+                        }
+                        if contact.hasPhoto == true {
+                            Button("Remove picture", role: .destructive) {
+                                isConfirmingRemovePicture = true
+                            }
+                            .confirmationDialog("Remove the picture of \(contact.name)?", isPresented: $isConfirmingRemovePicture, titleVisibility: .visible) {
+                                Button("Remove picture", role: .destructive) {
+                                    Task {
+                                        if await model.removePicture(of: contactId) { await read() }
+                                    }
+                                }
+                            } message: {
+                                Text("Devices synchronizing your address book lose it too.")
                             }
                         }
                         Button("Delete contact", role: .destructive) {

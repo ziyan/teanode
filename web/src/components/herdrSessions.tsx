@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { graphql } from '../api'
-import { ErrorMessage, Loading, Tag, formatBytes } from './common'
-import { CheckIcon, CloseIcon, PaperclipIcon } from './icons'
+import { Loading, Tag, formatBytes } from './common'
+import { ArrowUpIcon, CheckIcon, CloseIcon, PaperclipIcon } from './icons'
 import { ConfirmDialog, FormDialog } from './dialog'
+import { Markdown } from './markdown'
 import { SettingsEmpty, SettingsSection } from './settingsList'
-import { Tabs } from './tabs'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
 import { useTranslation } from '../i18n/i18n'
@@ -56,38 +57,55 @@ export interface HerdrSession {
   workingDirectory: string
   transcriptPath: string
   isWatched: boolean
+  // Where herdr keeps the pane: its workspace and its tab, numbered as herdr
+  // numbers them. Left out by a computer whose program does not report them.
+  workspaceId?: string
+  workspaceLabel?: string
+  workspaceNumber?: number
+  tabId?: string
+  tabLabel?: string
+  tabNumber?: number
+  // Herdr shows this session's tab on the computer's screen now.
+  isTabFocused?: boolean
   question?: HerdrQuestion | null
 }
 
-interface HerdrList {
+export interface HerdrList {
   computerNames: string[]
   // The computers that did not answer, whose sessions are not listed.
   failedComputerNames: string[]
   sessions: HerdrSession[]
 }
 
-interface HerdrTurn {
+export interface HerdrTurn {
   herdrTurnRole: 'person' | 'agent' | 'tool'
   turnText: string
   turnAt?: string | null
+  // A tool call's whole input and what the tool answered, when the read
+  // asked for them.
+  toolInputText?: string
+  toolResultText?: string
+  // Whether a tool call has an input or a result, which a read asking for
+  // the detail brings.
+  hasToolDetail?: boolean
 }
 
 // The fields of a session, the same as the command line's
 // client.HerdrSessionFields.
-const SESSION_FIELDS = `computer paneId paneName codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
+const SESSION_FIELDS = `computer paneId paneName codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched workspaceId workspaceLabel workspaceNumber tabId tabLabel tabNumber isTabFocused
   question { questionFingerprint herdrQuestionKind questionText isMultipleChoice isFromTranscript options { optionNumber optionLabel optionDescription herdrOptionKind } }`
 
 export const HERDR_DOCUMENTS = {
   ListAgentHerdrSessions: `query ($computer: String) {
     ListAgentHerdrSessions(computer: $computer) { computerNames failedComputerNames sessions { ${SESSION_FIELDS} } }
   }`,
-  ReadAgentHerdrSession: `query ($computer: String, $paneId: String!, $turnCount: Int) {
-    ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount) {
-      herdrSession { ${SESSION_FIELDS} } turns { herdrTurnRole turnText turnAt } isTruncated
+  ReadAgentHerdrSession: `query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
+    ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
+      herdrSession { ${SESSION_FIELDS} } turns { herdrTurnRole turnText turnAt toolInputText toolResultText hasToolDetail } isTruncated
     }
   }`,
-  ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int) {
-    ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount) { herdrSession { ${SESSION_FIELDS} } screenText }
+  ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
+    ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount, shouldKeepColor: $shouldKeepColor) { herdrSession { ${SESSION_FIELDS} } screenText }
   }`,
   SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String, $attachmentIds: [String!]) {
     SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, attachmentIds: $attachmentIds) { ${SESSION_FIELDS} }
@@ -103,8 +121,11 @@ export const HERDR_DOCUMENTS = {
   WatchAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $conversationId: String) {
     WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ${SESSION_FIELDS} }
   }`,
-  OpenAgentHerdrSession: `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String, $shouldSkipPermissions: Boolean) {
-    OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName, shouldSkipPermissions: $shouldSkipPermissions) { ${SESSION_FIELDS} }
+  OpenAgentHerdrSession: `mutation ($computer: String, $directory: String, $codingAgentKind: String, $agentName: String, $shouldSkipPermissions: Boolean, $paneId: String) {
+    OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName, shouldSkipPermissions: $shouldSkipPermissions, paneId: $paneId) { ${SESSION_FIELDS} }
+  }`,
+  FocusAgentHerdrSession: `mutation ($computer: String, $paneId: String!) {
+    FocusAgentHerdrSession(computer: $computer, paneId: $paneId) { ${SESSION_FIELDS} }
   }`,
   CloseAgentHerdrSession: `mutation ($computer: String, $paneId: String!) {
     CloseAgentHerdrSession(computer: $computer, paneId: $paneId) { ${SESSION_FIELDS} }
@@ -133,6 +154,12 @@ export function listHerdrSessions(fresh = false): Promise<HerdrList> {
     if (sharedList?.answer === answer) sharedList = null
   })
   return answer
+}
+
+// forgetHerdrSessions drops the shared list, so the next caller asks again:
+// for after something changed a session.
+export function forgetHerdrSessions() {
+  sharedList = null
 }
 
 // paneNameOf is a pane as the person knows it in herdr, or its id where
@@ -350,59 +377,121 @@ function chosenOf(question: HerdrQuestion, answeredWith: string): { chosenNumber
   return { chosenNumbers, typedAnswer: chosenNumbers.length > 0 ? '' : answer.replace(/^"(.*)"$/, '$1') }
 }
 
-// HerdrSessionDialog is one session: what it asks, its last turns or its
-// screen, and a box to type into it.
-export function HerdrSessionDialog({
+// The file name endings for the kinds of picture a clipboard holds.
+const PICTURE_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'image/svg+xml': 'svg',
+}
+
+// HerdrTurnsList is what a session said and was told, as the conversation
+// page draws a conversation: what the person typed as bubbles on the right,
+// what the agent wrote as text, and each tool call as one muted line.
+export function HerdrTurnsList({
+  turns,
+  onWantToolDetail,
+}: {
+  turns: HerdrTurn[]
+  // Asks for the tool calls' detail, when one is opened before it came.
+  onWantToolDetail?: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <ol className="herdr-turns">
+      {turns.map((turn, index) => (
+        <li key={index} className={`herdr-turn ${turn.herdrTurnRole}`}>
+          {turn.herdrTurnRole === 'person' ? (
+            <div className="agent-line user">{turn.turnText}</div>
+          ) : turn.herdrTurnRole === 'agent' ? (
+            <div className="agent-line assistant">
+              <Markdown text={turn.turnText} />
+            </div>
+          ) : turn.hasToolDetail || turn.toolInputText || turn.toolResultText ? (
+            // A tool call opens to its whole input and what it answered.
+            <details
+              className="herdr-tool"
+              onToggle={(event) => {
+                if (event.currentTarget.open && !turn.toolInputText && !turn.toolResultText) onWantToolDetail?.()
+              }}
+            >
+              <summary className="agent-line tool herdr-tool-line">{turn.turnText}</summary>
+              <div className="herdr-tool-detail">
+                {!turn.toolInputText && !turn.toolResultText ? <Loading /> : null}
+                {turn.toolInputText ? (
+                  <>
+                    <h5>{t('herdr.toolInput')}</h5>
+                    <pre>{turn.toolInputText}</pre>
+                  </>
+                ) : null}
+                {turn.toolResultText ? (
+                  <>
+                    <h5>{t('herdr.toolResult')}</h5>
+                    <pre>{turn.toolResultText}</pre>
+                  </>
+                ) : null}
+              </div>
+            </details>
+          ) : (
+            <div className="agent-line tool herdr-tool-line">{turn.turnText}</div>
+          )}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+// HerdrDraft is what has been typed into a send form and not sent yet.
+export interface HerdrDraft {
+  text: string
+  pending: File[]
+}
+
+// HerdrSendForm types into a session: text, and files to hand it, which are
+// written on its computer with their paths typed after the text. The box
+// grows with what is typed, and Cmd or Ctrl with Enter sends. onSent is told
+// the session as it stands after. The draft is kept here unless the caller
+// passes draft and onDraftChange, to keep it somewhere that outlives this form.
+export function HerdrSendForm({
   session,
-  onChanged,
-  onClose,
+  onSent,
+  draft,
+  onDraftChange,
 }: {
   session: HerdrSession
-  onChanged: () => void
-  onClose: () => void
+  onSent: (after: HerdrSession) => void
+  draft?: HerdrDraft
+  onDraftChange?: (draft: HerdrDraft) => void
 }) {
   const { t } = useTranslation()
   const toast = useToast()
-  const [view, setView] = useState<'turns' | 'screen'>('turns')
-  const [current, setCurrent] = useState(session)
-  const [text, setText] = useState('')
-  // Files to hand the session with the text: written on its computer, and
-  // their paths typed after the text.
-  const [pending, setPending] = useState<File[]>([])
+  const [ownDraft, setOwnDraft] = useState<HerdrDraft>({ text: '', pending: [] })
+  const { text, pending } = draft ?? ownDraft
+  const changeDraft = onDraftChange ?? setOwnDraft
+  const setText = (next: string) => changeDraft({ text: next, pending })
+  const setPending = (update: (previous: File[]) => File[]) => changeDraft({ text, pending: update(pending) })
   const filePicker = useRef<HTMLInputElement>(null)
+  const box = useRef<HTMLTextAreaElement>(null)
   const [isSending, setSending] = useState(false)
-  const [readCount, setReadCount] = useState(0)
-  const { data: read, error: readError } = useQuery(
-    () =>
-      view === 'turns'
-        ? graphql<{ ReadAgentHerdrSession: { herdrSession: HerdrSession; turns: HerdrTurn[]; isTruncated: boolean } }>(
-            HERDR_DOCUMENTS.ReadAgentHerdrSession,
-            { computer: session.computer, paneId: session.paneId, turnCount: 20 },
-          ).then((response) => ({
-            view: 'turns',
-            session: response.ReadAgentHerdrSession.herdrSession,
-            turns: response.ReadAgentHerdrSession.turns,
-            screen: '',
-          }))
-        : graphql<{ ReadAgentHerdrScreen: { herdrSession: HerdrSession; screenText: string } }>(
-            HERDR_DOCUMENTS.ReadAgentHerdrScreen,
-            { computer: session.computer, paneId: session.paneId },
-          ).then((response) => ({
-            view: 'screen',
-            session: response.ReadAgentHerdrScreen.herdrSession,
-            turns: [],
-            screen: response.ReadAgentHerdrScreen.screenText,
-          })),
-    [view, session.computer, session.paneId, readCount],
-  )
-  useEffect(() => {
-    if (read?.session) setCurrent(read.session)
-  }, [read])
-  // What the program on the computer allows: anything but a session that
-  // asks, which is answered first.
-  const isSendable = current.herdrSessionState !== 'asking'
-
+  // Anything but a session that asks, which is answered first.
+  const isSendable = session.herdrSessionState !== 'asking'
   const isSendReady = text.trim() !== '' || pending.length > 0
+
+  useLayoutEffect(() => {
+    const element = box.current
+    if (!element) return
+    // Measured from nothing, then set to the words' height, the border
+    // included; past the tallest the box allows it scrolls, and not before.
+    element.style.height = '0px'
+    const border = element.offsetHeight - element.clientHeight
+    const wanted = element.scrollHeight + border
+    const tallest = parseFloat(getComputedStyle(element).maxHeight) || Infinity
+    element.style.height = `${Math.min(wanted, tallest)}px`
+    element.classList.toggle('is-overflowing', wanted > tallest)
+  }, [text])
+
   const send = async () => {
     setSending(true)
     try {
@@ -414,16 +503,15 @@ export function HerdrSessionDialog({
         attachmentIds = uploaded.attachments.map((attachment) => attachment.id)
       }
       const response = await graphql<{ SendAgentHerdrSession: HerdrSession }>(HERDR_DOCUMENTS.SendAgentHerdrSession, {
-        computer: current.computer,
-        paneId: current.paneId,
+        computer: session.computer,
+        paneId: session.paneId,
         text,
         attachmentIds,
       })
-      setCurrent(response.SendAgentHerdrSession)
-      setText('')
-      setPending([])
-      toast.done(t('herdr.sent', { pane: paneNameOf(current) }))
-      onChanged()
+      changeDraft({ text: '', pending: [] })
+      toast.done(t('herdr.sent', { pane: paneNameOf(session) }))
+      sharedList = null
+      onSent(response.SendAgentHerdrSession)
     } catch (caught) {
       toast.failure(caught, t('herdr.sendFailed'))
     } finally {
@@ -431,190 +519,100 @@ export function HerdrSessionDialog({
     }
   }
 
-  const [isClosing, setClosing] = useState(false)
-  const [isClosingBusy, setClosingBusy] = useState(false)
-  const close = async () => {
-    setClosingBusy(true)
-    try {
-      await graphql(HERDR_DOCUMENTS.CloseAgentHerdrSession, { computer: current.computer, paneId: current.paneId })
-      toast.done(t('herdr.closed', { pane: paneNameOf(current) }))
-      sharedList = null
-      onChanged()
-      onClose()
-    } catch (caught) {
-      toast.failure(caught, t('herdr.closeFailed'))
-      setClosing(false)
-    } finally {
-      setClosingBusy(false)
-    }
-  }
-
-  const watch = async () => {
-    try {
-      // No conversation named: the server wakes the main one.
-      const response = await graphql<{ WatchAgentHerdrSession: HerdrSession }>(HERDR_DOCUMENTS.WatchAgentHerdrSession, {
-        computer: current.computer,
-        paneId: current.paneId,
-      })
-      setCurrent(response.WatchAgentHerdrSession)
-      toast.done(t('herdr.watching', { pane: paneNameOf(current) }))
-      onChanged()
-    } catch (caught) {
-      toast.failure(caught, t('herdr.watchFailed'))
-    }
-  }
-
-  if (isClosing) {
-    return (
-      <ConfirmDialog
-        title={t('herdr.closeTitle')}
-        body={
-          <p>
-            {t('herdr.closeBody', {
-              agent: codingAgentName(current.codingAgentKind),
-              pane: paneNameOf(current),
-              computer: current.computer,
-            })}
-          </p>
-        }
-        confirmLabel={t('herdr.closeSession')}
-        busy={isClosingBusy}
-        onConfirm={() => void close()}
-        onClose={() => setClosing(false)}
-      />
-    )
-  }
   return (
-    <ConfirmDialog
-      title={`${codingAgentName(current.codingAgentKind)} · ${paneNameOf(current)} · ${current.computer}`}
-      wide
-      onClose={onClose}
-      otherAction={
-        <div className="row-actions">
-          {current.isWatched ? null : (
-            <button type="button" onClick={() => void watch()}>
-              {t('herdr.watch')}
-            </button>
-          )}
-          <button
-            type="button"
-            className="danger"
-            disabled={current.herdrSessionState === 'working'}
-            title={current.herdrSessionState === 'working' ? t('herdr.closeWhileWorking') : undefined}
-            onClick={() => setClosing(true)}
-          >
-            {t('herdr.closeSession')}
-          </button>
-        </div>
-      }
-      body={
-        <div className="herdr-session">
-          <p className="herdr-session-meta muted">
-            <HerdrStateTag session={current} />
-            <span className="mono">{current.workingDirectory}</span>
-            {current.paneTitle ? <span>{current.paneTitle}</span> : null}
-            {current.isWatched ? <span>{t('herdr.watched')}</span> : null}
-          </p>
-          {current.question ? (
-            <HerdrQuestionAnswer
-              key={current.question.questionFingerprint}
-              session={current}
-              question={current.question}
-              onAnswered={(after) => {
-                if (after) setCurrent(after)
-                setReadCount((count) => count + 1)
-                onChanged()
-              }}
-            />
-          ) : null}
-          <Tabs
-            items={[
-              { id: 'turns', label: 'herdr.turns' },
-              { id: 'screen', label: 'herdr.screen' },
-            ]}
-            active={view}
-            onSelect={(id) => setView(id as 'turns' | 'screen')}
-          />
-          {readError ? (
-            <ErrorMessage error={readError} />
-          ) : read === null || read.view !== view ? (
-            <Loading />
-          ) : view === 'screen' ? (
-            <pre className="herdr-screen">{read?.screen}</pre>
-          ) : (
-            <ol className="herdr-turns">
-              {(read?.turns ?? []).map((turn, index) => (
-                <li key={index} className={`herdr-turn ${turn.herdrTurnRole}`}>
-                  <span className="herdr-turn-role muted">
-                    {t(`herdr.role.${turn.herdrTurnRole}` as 'herdr.role.person')}
-                  </span>
-                  <span className="herdr-turn-text">{turn.turnText}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-          {pending.length > 0 && (
-            <div className="agent-attachments">
-              {pending.map((file, index) => (
-                <span key={`${file.name}-${index}`} className="agent-attachment-chip">
-                  <PaperclipIcon size={12} /> {file.name} <span className="muted">{formatBytes(file.size)}</span>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    title={t('agentDrawer.remove')}
-                    aria-label={`${file.name}: ${t('agentDrawer.remove')}`}
-                    onClick={() => setPending((previous) => previous.filter((_, at) => at !== index))}
-                  >
-                    <CloseIcon size={12} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          <form
-            className="herdr-send"
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (isSendReady) void send()
-            }}
-          >
-            <input
-              ref={filePicker}
-              type="file"
-              multiple
-              hidden
-              onChange={(event) => {
-                const chosen = Array.from(event.target.files ?? [])
-                setPending((previous) => [...previous, ...chosen])
-                event.target.value = ''
-              }}
-            />
-            <Tooltip label={t('herdr.attach')}>
+    <>
+      {pending.length > 0 && (
+        <div className="agent-attachments">
+          {pending.map((file, index) => (
+            <span key={`${file.name}-${index}`} className="agent-attachment-chip">
+              <PaperclipIcon size={12} /> {file.name} <span className="muted">{formatBytes(file.size)}</span>
               <button
                 type="button"
-                className="icon-button"
-                aria-label={t('herdr.attach')}
-                disabled={!isSendable || isSending}
-                onClick={() => filePicker.current?.click()}
+                className="icon-action"
+                title={t('agentDrawer.remove')}
+                aria-label={`${file.name}: ${t('agentDrawer.remove')}`}
+                onClick={() => setPending((previous) => previous.filter((_, at) => at !== index))}
               >
-                <PaperclipIcon size={16} />
+                <CloseIcon size={12} />
               </button>
-            </Tooltip>
-            <textarea
-              rows={2}
-              value={text}
-              disabled={!isSendable || isSending}
-              placeholder={isSendable ? t('herdr.sendPlaceholder') : t('herdr.sendDisabled')}
-              aria-label={t('herdr.sendPlaceholder')}
-              onChange={(event) => setText(event.target.value)}
-            />
-            <button type="submit" disabled={!isSendable || isSending || !isSendReady}>
-              {t('herdr.send')}
-            </button>
-          </form>
+            </span>
+          ))}
         </div>
-      }
-    />
+      )}
+      <form
+        className="herdr-send"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (isSendable && !isSending && isSendReady) void send()
+        }}
+      >
+        <input
+          ref={filePicker}
+          type="file"
+          multiple
+          hidden
+          onChange={(event) => {
+            const chosen = Array.from(event.target.files ?? [])
+            setPending((previous) => [...previous, ...chosen])
+            event.target.value = ''
+          }}
+        />
+        <Tooltip label={t('herdr.attach')}>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t('herdr.attach')}
+            disabled={!isSendable || isSending}
+            onClick={() => filePicker.current?.click()}
+          >
+            <PaperclipIcon size={16} />
+          </button>
+        </Tooltip>
+        <textarea
+          ref={box}
+          rows={1}
+          value={text}
+          disabled={!isSendable || isSending}
+          placeholder={isSendable ? t('herdr.sendPlaceholder') : t('herdr.sendDisabled')}
+          aria-label={t('herdr.sendPlaceholder')}
+          onChange={(event) => setText(event.target.value)}
+          // A pasted picture, a screenshot say, is attached as the paperclip
+          // would; pasted text is typed as usual. Each is named afresh, as a
+          // clipboard calls every picture image.png.
+          onPaste={(event) => {
+            const pictures = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
+            if (pictures.length === 0) return
+            event.preventDefault()
+            const stamp = Date.now()
+            setPending((previous) => [
+              ...previous,
+              ...pictures.map(
+                (picture, index) =>
+                  new File([picture], `pasted-${stamp}-${index + 1}.${PICTURE_EXTENSIONS[picture.type] ?? 'png'}`, {
+                    type: picture.type,
+                  }),
+              ),
+            ])
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault()
+              if (isSendable && !isSending && isSendReady) void send()
+            }
+          }}
+        />
+        <Tooltip label={t('herdr.send')}>
+          <button
+            type="submit"
+            className="icon-button herdr-send-button"
+            aria-label={t('herdr.send')}
+            disabled={!isSendable || isSending || !isSendReady}
+          >
+            <ArrowUpIcon size={16} />
+          </button>
+        </Tooltip>
+      </form>
+    </>
   )
 }
 
@@ -698,7 +696,7 @@ function HerdrHooksDialog({ computerNames, onClose }: { computerNames: string[];
 
 // HerdrOpenDialog starts Claude Code or Codex in a new herdr pane, in a
 // directory on one of the person's computers.
-function HerdrOpenDialog({
+export function HerdrOpenDialog({
   computerNames,
   onOpened,
   onClose,
@@ -799,13 +797,19 @@ function HerdrOpenDialog({
   )
 }
 
+// codingPagePath is where a session is read and typed into: the Coding page
+// with the session in its address.
+export function codingPagePath(session: { computer: string; paneId: string }): string {
+  return `/coding?${new URLSearchParams({ computer: session.computer, pane: session.paneId })}`
+}
+
 // HerdrSessionsCard is every session on every computer, for the agent page:
-// a row each, which opens it.
+// a row each, which opens it on the Coding page.
 export function HerdrSessionsCard() {
   const { t } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
   const { data, error, reload } = useQuery(() => listHerdrSessions(true), [])
-  const [opened, setOpened] = useState<HerdrSession | null>(null)
   const [isSettingUp, setSettingUp] = useState(false)
   const [isOpening, setOpening] = useState(false)
   useEffect(() => {
@@ -858,15 +862,9 @@ export function HerdrSessionsCard() {
                 {data.sessions.map((session) => (
                   <tr key={`${session.computer}/${session.paneId}`}>
                     <td>
-                      <button
-                        /* link-button: names a session in a list, which opens it in place */
-                        type="button"
-                        className="link"
-                        title={session.paneId}
-                        onClick={() => setOpened(session)}
-                      >
+                      <Link className="link" to={codingPagePath(session)} title={session.paneId}>
                         {paneNameOf(session)}
-                      </button>
+                      </Link>
                     </td>
                     <td>
                       <HerdrStateTag session={session} />
@@ -882,14 +880,6 @@ export function HerdrSessionsCard() {
           </div>
         </>
       )}
-      {opened ? (
-        <HerdrSessionDialog
-          key={`${opened.computer}/${opened.paneId}`}
-          session={opened}
-          onChanged={() => void reload(true)}
-          onClose={() => setOpened(null)}
-        />
-      ) : null}
       {isSettingUp ? <HerdrHooksDialog computerNames={computerNames} onClose={() => setSettingUp(false)} /> : null}
       {isOpening ? (
         <HerdrOpenDialog
@@ -897,7 +887,7 @@ export function HerdrSessionsCard() {
           onOpened={(session) => {
             setOpening(false)
             void reload(true)
-            setOpened(session)
+            navigate(codingPagePath(session))
           }}
           onClose={() => setOpening(false)}
         />
