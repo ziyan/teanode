@@ -359,15 +359,15 @@ export function LocationMap({
     }
   }, [people, places, slots])
 
-  // Fit the view to what is shown when the set of what is shown changes: a
-  // person or place that comes or goes, or a different day's path. Not when a
-  // person moves, a radius changes or a choice is made: the viewer's own pan
-  // and zoom stay, and a moved person's marker just moves.
+  // Fit the view to what is shown when the people shown change, when places
+  // first arrive, or for a different day's path. Not when a person moves, a
+  // list is paged or filtered, a tab changes, a radius changes or a choice is
+  // made: the viewer's own pan and zoom stay, and markers just come, go or move.
   const fitKey = useMemo(
     () =>
       [
         ...people.map((person) => `person:${person.userId}`),
-        ...places.map((place) => `place:${place.id}`),
+        places.length > 0 ? 'places' : '',
         // A day's path starts where it starts; later points join its end.
         path.length > 0 ? `path:${path[0].latitudeDegrees},${path[0].longitudeDegrees}` : '',
       ].join('|'),

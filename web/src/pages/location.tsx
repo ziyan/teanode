@@ -414,13 +414,13 @@ function LocationContent({ userId }: { userId: string }) {
     ],
     [views, selectedUserId, viewedUserId, hasNoOwnPosition, browserPosition],
   )
+  // The same places whatever the tab: the places of the list and of the
+  // visits shown, once each. A map that changed with the tab redrew itself and
+  // moved on every switch.
   const mapPlaces: MapPlace[] = useMemo(() => {
-    const shown =
-      tab === 'places'
-        ? placeRows
-        : tab === 'visits'
-          ? [...new Map(visitRows.map((visit) => [visit.place.id, visit.place])).values()]
-          : []
+    const shown = [
+      ...new Map([...placeRows, ...visitRows.map((visit) => visit.place)].map((place) => [place.id, place])).values(),
+    ]
     return shown.map((place) => ({
       id: place.id,
       placeName: placeTitle(place, t),
@@ -430,7 +430,7 @@ function LocationContent({ userId }: { userId: string }) {
       radiusMeters: place.radiusMeters,
       isSelected: place.id === selectedPlaceId,
     }))
-  }, [tab, placeRows, visitRows, selectedPlaceId, t])
+  }, [placeRows, visitRows, selectedPlaceId, t])
   const path = useMemo(
     () => (pointList ?? []).map(({ latitudeDegrees, longitudeDegrees }) => ({ latitudeDegrees, longitudeDegrees })),
     [pointList],
