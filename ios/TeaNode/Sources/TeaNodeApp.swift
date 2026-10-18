@@ -149,6 +149,7 @@ struct ConversationsSheet: View {
                                     Task { await start() }
                                 } label: {
                                     Label("New side chat", systemImage: "plus")
+                                        .actionColor()
                                 }
                                 .menuRow(isSelected: false)
                             }
@@ -157,6 +158,7 @@ struct ConversationsSheet: View {
                                     isMessagingSomeone = true
                                 } label: {
                                     Label("Message someone", systemImage: "person.crop.circle.badge.plus")
+                                        .actionColor()
                                 }
                                 .id(Self.messageSomeoneRowId)
                                 .menuRow(isSelected: false)
@@ -164,6 +166,7 @@ struct ConversationsSheet: View {
                                     isStartingGroup = true
                                 } label: {
                                     Label("New group", systemImage: "person.2")
+                                        .actionColor()
                                 }
                                 .menuRow(isSelected: false)
                             }

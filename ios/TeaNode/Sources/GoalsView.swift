@@ -181,6 +181,7 @@ struct GoalDetail: View {
                         Button("Mark met", systemImage: "checkmark.circle") { Task { await setState("met", saying: String(localized: "Marked met")) } }
                         Button("Drop goal", systemImage: "xmark.circle", role: .destructive) { isConfirmingDrop = true }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                         .confirmationDialog("Drop this goal?", isPresented: $isConfirmingDrop, titleVisibility: .visible) {
                             Button("Drop goal", role: .destructive) { Task { await setState("dropped", saying: String(localized: "Dropped")) } }
                         } message: {

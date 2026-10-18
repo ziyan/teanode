@@ -44,6 +44,7 @@ struct CalendarListSheet: View {
                             isRenaming = true
                         } label: {
                             Label("Rename my calendar", systemImage: "pencil")
+                                .actionColor()
                         }
                         .disabled(isWorking)
                     }
@@ -75,6 +76,7 @@ struct CalendarListSheet: View {
                                         ? String(localized: "Make a family calendar for \(circle.name)")
                                         : String(localized: "Make a shared calendar for \(circle.name)"),
                                     systemImage: "calendar.badge.plus")
+                                .actionColor()
                             }
                             .disabled(isWorking)
                         }

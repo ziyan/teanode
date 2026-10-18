@@ -976,9 +976,11 @@ struct AgentMemorySettingsView: View {
         List {
             Section {
                 Button("Check with me now", systemImage: "questionmark.bubble") { Task { await askForCheck() } }
+                    .actionColor()
                     .disabled(isAskingForCheck)
                 if let questions, !questions.isEmpty {
                     Button(hasRunInProgress ? LocalizedStringKey("Grading") : "Grade now", systemImage: "checklist") { Task { await askForGrading() } }
+                        .actionColor()
                         .disabled(isAskingForGrading || hasRunInProgress)
                 }
             } header: {
@@ -1736,6 +1738,7 @@ struct DreamsView: View {
             Button(isBootstrapping ? LocalizedStringKey("Stop") : "Bootstrap", systemImage: isBootstrapping ? "stop.circle" : "bolt.circle") {
                 Task { await setBootstrap(!isBootstrapping) }
             }
+            .actionColor()
             .disabled(isSwitchingBootstrap || preferences == nil)
         } header: {
             HStack {
@@ -2047,6 +2050,7 @@ struct SchedulesView: View {
             if brief?.enabled == true {
                 if hasBriefChanged {
                     Button("Save the new time and days", systemImage: "checkmark.circle") { Task { await saveBrief(isEnabled: true) } }
+                        .actionColor()
                         .disabled(briefDayNumbers.isEmpty)
                         .fullWidthRowSeparator()
                 }
@@ -2057,6 +2061,7 @@ struct SchedulesView: View {
                 Button("Stop", role: .destructive) { Task { await saveBrief(isEnabled: false) } }
             } else {
                 Button("Send me a brief", systemImage: "sun.max") { Task { await saveBrief(isEnabled: true) } }
+                    .actionColor()
                     .disabled(briefDayNumbers.isEmpty)
             }
         } header: {

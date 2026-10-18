@@ -362,6 +362,7 @@ struct PersonDetailView: View {
                         if !isCurrentUser {
                             Button("Remove this person", systemImage: "trash", role: .destructive) { isRemoving = true }
                                 .tint(.red)
+                                .actionColor(isDestructive: true)
                                 .confirmationDialog("Remove \(user.username)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                     Button("Remove", role: .destructive) {
                                         Task {
@@ -770,6 +771,7 @@ struct GroupDetailView: View {
                     Section {
                         Button("Remove this group", systemImage: "trash", role: .destructive) { isRemoving = true }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                             .confirmationDialog("Remove the group \(group.name)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task {
@@ -1218,6 +1220,7 @@ struct RoleDetailView: View {
                     Section {
                         Button("Remove this role", systemImage: "trash", role: .destructive) { isRemoving = true }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                             .confirmationDialog("Remove the role \(role.name)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task {

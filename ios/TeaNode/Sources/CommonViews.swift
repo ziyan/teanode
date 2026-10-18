@@ -409,6 +409,17 @@ extension View {
         modifier(RemembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isReady, isPaused: isPaused))
     }
 
+    /// A button's symbol and words in one color: green while it can be
+    /// pressed, or red for one that destroys, and grey while it cannot
+    /// (ios/DESIGN.md). In a list neither comes by itself: a plain list draws
+    /// the words in the text color beside a green symbol, a disabled button in
+    /// a form turns its words black and leaves its symbol green, and a
+    /// destructive one in a form row keeps a green symbol beside red words
+    /// even with `.tint(.red)`.
+    func actionColor(isDestructive: Bool = false) -> some View {
+        modifier(ActionColor(isDestructive: isDestructive))
+    }
+
     /// A row of the side menu: no separator, and the one chosen on a
     /// rounded highlight inset from the edges.
     func menuRow(isSelected: Bool) -> some View {
@@ -419,6 +430,17 @@ extension View {
                     .fill(isSelected ? Color(.tertiarySystemFill) : .clear)
                     .padding(.horizontal, 10)
             )
+    }
+}
+
+/// ActionColor is `actionColor()`. It reads whether the button can be
+/// pressed from below `.disabled`, which says so to everything inside it.
+private struct ActionColor: ViewModifier {
+    let isDestructive: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content.foregroundStyle(!isEnabled ? AnyShapeStyle(.secondary) : isDestructive ? AnyShapeStyle(.red) : AnyShapeStyle(.tint))
     }
 }
 
