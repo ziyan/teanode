@@ -1252,10 +1252,11 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
                   <>
                     {t('mailbox.noAddress')}
                     {managesDomains && (
-                      <>
-                        {' '}
-                        <Link to="/manage/domains">{t('mailbox.noAddressLink')}</Link>
-                      </>
+                      <p>
+                        <Link className="button" to="/manage/domains">
+                          {t('mailbox.noAddressLink')}
+                        </Link>
+                      </p>
                     )}
                   </>
                 ) : (

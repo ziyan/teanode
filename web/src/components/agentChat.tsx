@@ -923,7 +923,7 @@ export function ChatPeopleDialog({
           <>
             <p className="muted">{t('chat.noPeople')}</p>
             <p>
-              <Link to="/circles" onClick={onClose}>
+              <Link className="button" to="/circles" onClick={onClose}>
                 {t('circles.open')}
               </Link>
             </p>
@@ -1146,7 +1146,7 @@ export function ChatMembersDialog({
                 <>
                   <p className="chat-agent-off">{t('chat.agentIsOff')}</p>
                   <p className="chat-agent-off">
-                    <Link to="/settings/agent" onClick={onClose}>
+                    <Link className="button" to="/settings/agent" onClick={onClose}>
                       {t('agentConversations.turnOnAction')}
                     </Link>
                   </p>

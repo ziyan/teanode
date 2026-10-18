@@ -398,8 +398,14 @@ export function SetupPage() {
         {isAssistantWanted && <p className="muted">{t('services.modelDetail')}</p>}
         {setup.selectedServices.isMailRoutingEnabled && (
           <p role="status">
-            {t(setup.hasMailDomain ? 'services.domainReady' : 'services.domainMissing')}{' '}
-            <Link to="/manage/domains">{t('services.domains')}</Link>
+            {t(setup.hasMailDomain ? 'services.domainReady' : 'services.domainMissing')}
+          </p>
+        )}
+        {setup.selectedServices.isMailRoutingEnabled && (
+          <p>
+            <Link className="button" to="/manage/domains">
+              {t('services.domains')}
+            </Link>
           </p>
         )}
         {(setup.selectedServices.isCalendarEnabled ||
@@ -407,12 +413,15 @@ export function SetupPage() {
           setup.selectedServices.isContactsEnabled ||
           setup.selectedServices.isPhotosEnabled) && (
           <p>
-            <Link to="/settings/devices">{t('services.sync')}</Link>
+            <Link className="button" to="/settings/devices">
+              {t('services.sync')}
+            </Link>
           </p>
         )}
         {setup.runningServices.isAssistantEnabled && isAgentOn && (
           <p>
             <Link
+              className="button"
               to="/agent"
               onClick={(event) => {
                 // The drawer is where the conversation is; the agent's page

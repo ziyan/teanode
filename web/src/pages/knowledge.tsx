@@ -688,7 +688,7 @@ function OwnKnowledge() {
             {t('knowledge.documents.button')}
           </button>
         </Tooltip>
-        <Link to="/knowledge/explore" title={t('knowledge.explore.go')}>
+        <Link className="button" to="/knowledge/explore" title={t('knowledge.explore.go')}>
           {t('knowledge.explore.title')}
         </Link>
       </div>
@@ -2140,8 +2140,14 @@ function PageView({
             {t('knowledge.contact', {
               name: page.contact.name,
               detail: page.contact.emails[0] || page.contact.organization || '',
-            })}{' '}
-            <Link to={`/contacts?contact=${encodeURIComponent(page.contact.id)}`}>{t('memoryLinks.openContact')}</Link>
+            })}
+          </p>
+        ) : null}
+        {page.contact ? (
+          <p>
+            <Link className="button" to={`/contacts?contact=${encodeURIComponent(page.contact.id)}`}>
+              {t('memoryLinks.openContact')}
+            </Link>
           </p>
         ) : null}
         {node.summary ? (

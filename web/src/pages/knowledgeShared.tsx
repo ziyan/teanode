@@ -720,7 +720,7 @@ export function SharePageDialog({
         <>
           <p className="muted">{t('knowledge.share.noPeople')}</p>
           <p>
-            <Link to="/circles" onClick={onClose}>
+            <Link className="button" to="/circles" onClick={onClose}>
               {t('circles.open')}
             </Link>
           </p>
