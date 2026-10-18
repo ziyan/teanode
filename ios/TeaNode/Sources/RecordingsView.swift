@@ -768,8 +768,12 @@ struct RecordingPlaybackScreen: View {
                     }
                     // Real buttons under the player: as plain text they read
                     // as a caption, and gray when there is no connection.
+                    // Their words, and the heading's, wrap rather than end
+                    // in an ellipsis at the largest text sizes.
                     .buttonStyle(.bordered)
                     .controlSize(.large)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.center)
                     .padding(.bottom)
                 } else if let problemText {
                     ContentUnavailableView("Cannot play recording", systemImage: "exclamationmark.triangle", description: Text(problemText))
