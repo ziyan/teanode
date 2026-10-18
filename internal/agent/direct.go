@@ -360,6 +360,17 @@ func (self *directRun) CodingMemory(ctx context.Context, directory, computerName
 	return self.agent.codingMemory(ctx, self.agentModel, self.owner, directory, computerName, prompt)
 }
 
+// Both runs answer the memory tool's coding actions.
+var (
+	_ tools.CodingRemembering = (*AskRun)(nil)
+	_ tools.CodingRemembering = (*directRun)(nil)
+)
+
+// CaptureCodingSession is tools.CodingRemembering for a call from outside.
+func (self *directRun) CaptureCodingSession(ctx context.Context, computerName, assistant string) (bool, error) {
+	return self.agent.captureCodingSession(ctx, self.agentModel.ID, computerName, assistant)
+}
+
 func (self *directRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool) {
 	return self.agent.searchChunksByMeaning(ctx, self.agentModel.ID, self.meaningOfQuestion(ctx, "search", words), sourceIds, documentPrefix, limit)
 }
