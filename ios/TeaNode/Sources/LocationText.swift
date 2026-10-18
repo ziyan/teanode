@@ -151,10 +151,10 @@ enum LocationText {
     /// own row).
     static func whereText(of person: PersonLocation, isOwn: Bool = false) -> String {
         let placeName = person.openVisit?.place.shownName
-        // A reading a moment ahead of this iPhone's clock still reads as
-        // "ago", never "in 0 sec.".
+        // A reading at or a moment ahead of this iPhone's clock reads as "1
+        // sec. ago": the formatter calls a difference of zero "in 0 sec.".
         let agoText = person.latestPoint?.measuredDate.map {
-            min($0, Date()).formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
+            min($0, Date().addingTimeInterval(-1)).formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
         }
         switch (placeName, agoText) {
         case let (placeName?, agoText?): return String(localized: "\(placeName) · \(agoText)")
