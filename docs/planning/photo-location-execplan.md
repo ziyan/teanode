@@ -64,8 +64,8 @@ GraphQL (reflection-registered like `UpdatePhoto` in
 - Both refresh the photos' search documents (`refreshPhotoSearchDocumentsOf`)
   and set `updated_at`.
 
-Database: migration `0244_photo_location_removed` (0243 is taken by an open
-pull request) adds `photo.is_location_removed boolean NOT NULL DEFAULT false`,
+Database: migration `0244_photo_location_removed` (after 0243, the person
+relationship migration) adds `photo.is_location_removed boolean NOT NULL DEFAULT false`,
 with its `.reverse.sql` and reverse test like its neighbours.
 `UpdatePhotoMetadata` must not fill latitude, longitude or place name back in
 from the file while `is_location_removed` is true (a Live Photo's video

@@ -109,7 +109,7 @@ func NewPhotoCommand() *cli.Command {
 				},
 				Action: runPhotoSetLocation,
 			},
-			{Name: "remove-location", Usage: "remove the location from photos, for good: reading the file again does not bring it back (the file itself is not changed)", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRemoveLocation},
+			{Name: "remove-location", Usage: "remove the location from photos, for good: reading the file again does not bring it back (the file itself is not changed)", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoRemoveLocation},
 			{Name: "favorite", Usage: "make a photo a favorite", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "off", Usage: "take it out of the favorites"}}, Action: runPhotoFavorite},
 			{Name: "trash", Usage: "move photos to the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoTrash},
 			{Name: "restore", Usage: "restore photos from the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRestore},
@@ -972,40 +972,50 @@ func runPhotoSetLocation(ctx context.Context, command *cli.Command) error {
 	if len(photoIds) > client.MaximumPhotoIDs {
 		return usage(fmt.Sprintf("name at most %d photos at once", client.MaximumPhotoIDs))
 	}
-	// A position is looked up as well, to say the name the photos will have:
-	// the server names it after the nearest city.
-	query := placeWords
+	var latitude, longitude *float64
 	if positionText != "" {
-		latitude, longitude, err := parsePhotoPoint("at", positionText)
+		parsedLatitude, parsedLongitude, err := parsePhotoPoint("at", positionText)
 		if err != nil {
 			return err
 		}
-		query = strconv.FormatFloat(latitude, 'f', -1, 64) + ", " + strconv.FormatFloat(longitude, 'f', -1, 64)
+		latitude, longitude = &parsedLatitude, &parsedLongitude
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	places, err := client.SearchPhotoPlaces(ctx, connection, query, nil, nil, 1)
-	if err != nil {
-		return describeError(command, err)
-	}
-	if len(places) == 0 {
+	found, err := client.ResolvePhotoPlace(ctx, connection, placeWords, latitude, longitude)
+	if errors.Is(err, client.ErrNoPlaceMatches) {
 		return usage(fmt.Sprintf("no city matches %q; teanode photo search-places shows what the table has, or give a position with --at", placeWords))
 	}
-	latitude, longitude, placeName := places[0].Latitude, places[0].Longitude, places[0].PlaceName
-	changedCount, err := client.SetPhotoLocation(ctx, connection, photoIds, latitude, longitude)
 	if err != nil {
 		return describeError(command, err)
 	}
-	if command.Bool("json") {
-		return PrintJSON(map[string]any{"changedCount": changedCount, "latitude": latitude, "longitude": longitude, "placeName": placeName})
+	changedCount, err := client.SetPhotoLocation(ctx, connection, photoIds, found.Latitude, found.Longitude)
+	if err != nil {
+		return describeError(command, err)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "set the location of %d of %d photos to %s\n", changedCount, len(photoIds), forTerminal(placeName))
+	// The name the photos have now, which is the nearest city's and can be
+	// another than the one picked, or none.
+	placeName := client.PlacedName(ctx, connection, photoIds, found.Latitude, found.Longitude)
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"changedCount": changedCount, "latitude": found.Latitude, "longitude": found.Longitude, "placeName": placeName})
+	}
+	placedText := placeName
+	if placedText == "" {
+		placedText = client.PositionText(found.Latitude, found.Longitude)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "set the location of %d of %d photos to %s\n", changedCount, len(photoIds), forTerminal(placedText))
 	return nil
 }
 
 func runPhotoRemoveLocation(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() == 0 {
+		return usage("usage: teanode photo remove-location <id>...")
+	}
+	if err := confirm(command, "This removes the location from these photos for good; TeaNode keeps no copy of it. Copies already shared or downloaded keep the location."); err != nil {
+		return err
+	}
 	return runPhotoMove(ctx, command, client.RemovePhotoLocation, "changedCount", "removed the location from")
 }
 

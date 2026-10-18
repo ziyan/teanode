@@ -27,6 +27,10 @@ type PhotoOperation interface {
 	// it. The second value says it was made.
 	CreatePhoto(photo *models.Photo) (*models.Photo, bool, error)
 	GetPhoto(userId, photoId string) (*models.Photo, error)
+	// LockPhoto is GetPhoto holding the photo's row until the transaction
+	// ends, for a write that must not cross a change of the photo made
+	// meanwhile.
+	LockPhoto(userId, photoId string) (*models.Photo, error)
 	// ListPhotos lists a page of the photos the filter keeps: newest first,
 	// or best match first when the filter has search words.
 	ListPhotos(userId string, filter *PhotoFilter) ([]*models.Photo, error)
@@ -417,8 +421,13 @@ type PhotoMetadata struct {
 	Latitude             *float64
 	Longitude            *float64
 	PlaceName            string
-	CameraMake           string
-	CameraModel          string
+	// PlaceNameLatitude and PlaceNameLongitude are the position PlaceName was
+	// named from. A photo whose position is no longer that one, because the
+	// person moved it while the file was read, is not given the name.
+	PlaceNameLatitude  *float64
+	PlaceNameLongitude *float64
+	CameraMake         string
+	CameraModel        string
 }
 
 // PhotoLibraryCounts are the totals a library page shows.
@@ -566,6 +575,22 @@ func (self *transaction) GetPhoto(userId, photoId string) (*models.Photo, error)
 	}
 	var row photoModel
 	isFound, err := findOneRow(self.tx.Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, photoId, userId, photoMarkedForDeletion), &row)
+	if err != nil {
+		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
+	}
+	return photoFromModel(&row), nil
+}
+
+func (self *transaction) LockPhoto(userId, photoId string) (*models.Photo, error) {
+	if userId == "" || photoId == "" {
+		return nil, ErrNotFound
+	}
+	var row photoModel
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, photoId, userId, photoMarkedForDeletion), &row)
 	if err != nil {
 		return nil, err
 	}
@@ -913,6 +938,20 @@ func (self *transaction) UpdatePhoto(userId, photoId string, update *PhotoUpdate
 		return nil, err
 	}
 	return self.GetPhoto(userId, photoId)
+}
+
+// isPlaceNameOfPosition says a place name read with a file names the position
+// the photo will have: the one it has, or the file's where it has none. A
+// name made from another position, before the person moved the photo, is not.
+func isPlaceNameOfPosition(current photoModel, metadata *PhotoMetadata) bool {
+	latitude, longitude := current.Latitude, current.Longitude
+	if latitude == nil || longitude == nil {
+		latitude, longitude = metadata.Latitude, metadata.Longitude
+	}
+	if latitude == nil || longitude == nil || metadata.PlaceNameLatitude == nil || metadata.PlaceNameLongitude == nil {
+		return metadata.PlaceNameLatitude == nil && metadata.PlaceNameLongitude == nil
+	}
+	return *latitude == *metadata.PlaceNameLatitude && *longitude == *metadata.PlaceNameLongitude
 }
 
 // isPlausibleOffsetMinutes says an offset is one a clock has had: nothing is
@@ -1669,7 +1708,9 @@ func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMeta
 	if !current.IsLocationRemoved {
 		changes["latitude"] = gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude)
 		changes["longitude"] = gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude)
-		changes["place_name"] = gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName)
+		if isPlaceNameOfPosition(current, metadata) {
+			changes["place_name"] = gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName)
+		}
 	}
 	if takenAt != nil {
 		changes["taken_at"] = takenAt.UTC()

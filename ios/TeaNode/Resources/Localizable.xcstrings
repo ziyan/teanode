@@ -4735,6 +4735,22 @@
         }
       }
     },
+    "This can't be undone. Copies already shared or downloaded keep the location.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この操作は取り消せません。すでに共有またはダウンロードされたコピーには場所が残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此操作无法撤销。已分享或已下载的副本仍保留位置信息。"
+          }
+        }
+      }
+    },
     "This ends %@ in %@ on %@ and closes its pane. What was said stays in its history.": {
       "localizations": {
         "ja": {

@@ -1,10 +1,13 @@
 package photo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/ziyan/teanode/internal/agent/tools"
 )
 
 // rowsOf is count JSON rows made by build, joined as a list.
@@ -220,24 +223,31 @@ func TestSetLocationUsesTheBestMatchOrAPositionAndNeverBoth(test *testing.T) {
 		"SearchPhotoPlaces": `[{"placeName":"Harborview, Exampleland","latitude":10.5,"longitude":20.25}]`,
 		"SetPhotoLocation":  `2`,
 	})
+	// The server names the photos after the larger city near the one matched.
+	current.operations.photos = map[string]string{"photo-one": `{"photo":{"id":"photo-one","latitude":10.5,"longitude":20.25,"placeName":"Harbor City, Exampleland"},"photoFiles":[],"photoPreviews":[]}`}
+	// The card says the city the words matched, not the words.
+	encoded, _ := json.Marshal(map[string]any{"operation": "set-location", "photo_ids": []string{"photo-one", "photo-two"}, "place": "harbor"})
+	if line := cardPreview(tools.WithRun(context.Background(), current), encoded); line != "Set where 2 photos were taken to Harborview, Exampleland (10.5000, 20.2500)" {
+		test.Fatalf("the card says %q", line)
+	}
 	result, err := current.call(map[string]any{"operation": "set-location", "photo_ids": []string{"photo-one", "photo-two", "photo-three"}, "place": "harborview"})
-	if err != nil || !strings.Contains(result.Content, "2 of 3 photos were set to Harborview, Exampleland") {
+	if err != nil || !strings.Contains(result.Content, "2 of 3 photos were set to Harbor City, Exampleland") {
 		test.Fatalf("%v %v", result, err)
 	}
 	asked := current.operations.asked("SetPhotoLocation")
 	if len(asked) != 1 || asked[0]["latitude"] != 10.5 || asked[0]["longitude"] != 20.25 || len(asked[0]["photoIds"].([]string)) != 3 {
 		test.Fatalf("%v", asked)
 	}
-	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 1 || searched[0]["query"] != "harborview" || searched[0]["limitCount"] != 1 {
+	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 2 || searched[1]["query"] != "harborview" || searched[1]["limitCount"] != 1 {
 		test.Fatalf("%v", searched)
 	}
 
 	// A position is looked up for its name, then set.
 	result, err = current.call(map[string]any{"operation": "set-location", "photo_id": "photo-one", "latitude": 10.5, "longitude": 20.25})
-	if err != nil || !strings.Contains(result.Content, "were set to Harborview, Exampleland") {
+	if err != nil || !strings.Contains(result.Content, "were set to Harbor City, Exampleland") {
 		test.Fatalf("%v %v", result, err)
 	}
-	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 2 || searched[1]["query"] != "10.5, 20.25" {
+	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 3 || searched[2]["query"] != "10.5, 20.25" {
 		test.Fatalf("%v", searched)
 	}
 

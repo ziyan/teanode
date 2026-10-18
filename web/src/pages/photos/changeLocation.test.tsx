@@ -108,12 +108,21 @@ it('says "No cities match" when the search finds none', async () => {
   expect(await screen.findByText('No cities match')).toBeTruthy()
 })
 
-it('offers Remove location only while a photo has one, and removes it', async () => {
-  cleanup()
+it('offers Remove location only while a photo has one', () => {
   show([unplaced])
   expect(screen.queryByRole('button', { name: 'Remove location' })).toBeNull()
   cleanup()
+  show([placed])
+  expect(screen.getByRole('button', { name: 'Remove location' })).toBeTruthy()
+})
+
+it('asks before removing the location, and removes it once confirmed', async () => {
   const { onChanged, onClose } = show([placed])
+  fireEvent.click(screen.getByRole('button', { name: 'Remove location' }))
+  expect(await screen.findByText('Remove the location of this photo?')).toBeTruthy()
+  expect(screen.getByText("This can't be undone. Copies already shared or downloaded keep the location.")).toBeTruthy()
+  expect(screen.queryByRole('searchbox')).toBeNull()
+  expect(callsTo('RemovePhotoLocation')).toHaveLength(0)
   fireEvent.click(screen.getByRole('button', { name: 'Remove location' }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
   expect(callsTo('RemovePhotoLocation')).toEqual([{ photoIds: ['photo-1'] }])
@@ -121,7 +130,22 @@ it('offers Remove location only while a photo has one, and removes it', async ()
   expect(await screen.findByText('Location removed')).toBeTruthy()
 })
 
-it('says in a toast that a change failed, and stays open', async () => {
+it('says how many photos the removal is for', () => {
+  show([placed, unplaced])
+  fireEvent.click(screen.getByRole('button', { name: 'Remove location' }))
+  expect(screen.getByText('Remove the location of 2 photos?')).toBeTruthy()
+})
+
+it('goes back to the search on Cancel without removing anything', () => {
+  const { onClose } = show([placed])
+  fireEvent.click(screen.getByRole('button', { name: 'Remove location' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(screen.getByRole('searchbox', { name: 'Search for a city' })).toBeTruthy()
+  expect(callsTo('RemovePhotoLocation')).toHaveLength(0)
+  expect(onClose).not.toHaveBeenCalled()
+})
+
+it('says in a toast that a change failed, stays open, and still tells the caller', async () => {
   const { onChanged, onClose } = show([placed])
   type('Por')
   const choice = await screen.findByRole('button', { name: /Porto, Portugal/ })
@@ -129,5 +153,16 @@ it('says in a toast that a change failed, and stays open', async () => {
   fireEvent.click(choice)
   expect(await screen.findByText('The server is busy.')).toBeTruthy()
   expect(onClose).not.toHaveBeenCalled()
-  expect(onChanged).not.toHaveBeenCalled()
+  // Earlier batches of photos may have changed before the one that failed.
+  expect(onChanged).toHaveBeenCalledTimes(1)
+})
+
+it('tells the caller when a removal fails too, and stays on the question', async () => {
+  const { onChanged, onClose } = show([placed])
+  fireEvent.click(screen.getByRole('button', { name: 'Remove location' }))
+  vi.mocked(graphql).mockRejectedValueOnce(new Error('The server is busy.'))
+  fireEvent.click(screen.getByRole('button', { name: 'Remove location' }))
+  expect(await screen.findByText('The server is busy.')).toBeTruthy()
+  expect(onClose).not.toHaveBeenCalled()
+  expect(onChanged).toHaveBeenCalledTimes(1)
 })

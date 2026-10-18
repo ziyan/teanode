@@ -15,7 +15,8 @@ const hasLocation = (photo: Photo) => typeof photo.latitude === 'number' && type
 // nearest to where the first photo that has a position was taken, and the
 // matches to pick from. The photos move to the one picked. Remove location
 // takes the place off the photos instead, and is there while any of them has
-// one. The dialog makes the calls and says how they went in a toast; the
+// one; it asks first, in the same dialog, because the photos forget it for
+// good. The dialog makes the calls and says how they went in a toast; the
 // caller is told once something changed.
 export function ChangeLocationDialog({
   photos,
@@ -31,6 +32,7 @@ export function ChangeLocationDialog({
   const [searchText, setSearchText] = useState('')
   const [places, setPlaces] = useState<PhotoPlace[] | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [isConfirmingRemoval, setIsConfirmingRemoval] = useState(false)
   const photoIds = photos.map((photo) => photo.id)
   const placedPhoto = photos.find(hasLocation)
   const nearLatitude = placedPhoto?.latitude ?? undefined
@@ -79,6 +81,9 @@ export function ChangeLocationDialog({
       onChanged()
       onClose()
     } catch (caught) {
+      // The photos go in batches of 500, so the batches before the one that
+      // failed may have changed: the caller reloads either way.
+      onChanged()
       toast.failure(caught, t('photos.actionFailed'))
       setIsBusy(false)
     }
@@ -92,9 +97,35 @@ export function ChangeLocationDialog({
       onChanged()
       onClose()
     } catch (caught) {
+      // The photos go in batches of 500, so the batches before the one that
+      // failed may have changed: the caller reloads either way.
+      onChanged()
       toast.failure(caught, t('photos.actionFailed'))
       setIsBusy(false)
     }
+  }
+
+  if (isConfirmingRemoval) {
+    return (
+      <ConfirmDialog
+        title={t('photos.changeLocation')}
+        body={
+          <>
+            <p>
+              {plural(photos.length, {
+                one: 'photos.removeLocationQuestionOne',
+                other: 'photos.removeLocationQuestionOther',
+              })}
+            </p>
+            <p className="muted">{t('photos.removeLocationNote')}</p>
+          </>
+        }
+        confirmLabel={t('photos.removeLocation')}
+        busy={isBusy}
+        onConfirm={() => void remove()}
+        onClose={() => setIsConfirmingRemoval(false)}
+      />
+    )
   }
 
   return (
@@ -141,7 +172,7 @@ export function ChangeLocationDialog({
       busy={isBusy}
       otherAction={
         photos.some(hasLocation) ? (
-          <button type="button" className="danger" disabled={isBusy} onClick={() => void remove()}>
+          <button type="button" className="danger" disabled={isBusy} onClick={() => setIsConfirmingRemoval(true)}>
             {t('photos.removeLocation')}
           </button>
         ) : undefined

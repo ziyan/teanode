@@ -156,6 +156,8 @@ struct PhotoLocationChoices: View {
                         .actionColor(isDestructive: true)
                         .confirmationDialog(removalQuestion, isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
                             Button("Remove location", role: .destructive) { onRemove() }
+                        } message: {
+                            Text("This can't be undone. Copies already shared or downloaded keep the location.")
                         }
                 }
             }

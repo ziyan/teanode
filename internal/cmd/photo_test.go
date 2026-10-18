@@ -776,25 +776,41 @@ func TestSearchPlacesListsCitiesAndSendsThePointItIsNear(test *testing.T) {
 // one of them.
 func TestSetLocationTakesAPlaceOrAPositionAndNeverBoth(test *testing.T) {
 	server := newPhotoServer(test)
+	// The server names the photo after the larger city near the one picked.
+	server.photoViews["photo-1"] = `{"photo":{"id":"photo-1","latitude":10.5,"longitude":20.25,"placeName":"Harbor City, Exampleland"},"photoFiles":[],"photoPreviews":[]}`
+	lastVariablesOf := func(operation string) map[string]any {
+		for index := len(server.documents) - 1; index >= 0; index-- {
+			if strings.Contains(server.documents[index], operation+"(") {
+				return server.variables[index]
+			}
+		}
+		return nil
+	}
 	output, _, err := server.run(test, "set-location", "photo-1", "photo-2", "--place", "harbor view")
-	if err != nil || !strings.Contains(output, "set the location of 2 of 2 photos to Harborview, Exampleland") {
+	if err != nil || !strings.Contains(output, "set the location of 2 of 2 photos to Harbor City, Exampleland") {
 		test.Fatalf("%v %q", err, output)
 	}
-	if lookup := server.variables[len(server.variables)-2]; lookup["query"] != "harbor view" || lookup["limitCount"] != 1.0 {
+	if lookup := lastVariablesOf("SearchPhotoPlaces"); lookup["query"] != "harbor view" || lookup["limitCount"] != 1.0 {
 		test.Fatalf("looked up %v", lookup)
 	}
-	sent := server.variables[len(server.variables)-1]
-	if sent["latitude"] != 10.5 || sent["longitude"] != 20.25 || !reflect.DeepEqual(sent["photoIds"], []any{"photo-1", "photo-2"}) || !strings.Contains(server.documents[len(server.documents)-1], "SetPhotoLocation(") {
+	sent := lastVariablesOf("SetPhotoLocation")
+	if sent["latitude"] != 10.5 || sent["longitude"] != 20.25 || !reflect.DeepEqual(sent["photoIds"], []any{"photo-1", "photo-2"}) {
 		test.Fatalf("sent %v", sent)
 	}
 
 	// A position is looked up for its name, as the words are.
 	_, output, err = server.run(test, "set-location", "photo-1", "--at", "10.5, 20.25", "--json")
-	if err != nil || !strings.Contains(output, `"changedCount": 2`) || !strings.Contains(output, `"placeName": "Harborview, Exampleland"`) {
+	if err != nil || !strings.Contains(output, `"changedCount": 2`) || !strings.Contains(output, `"placeName": "Harbor City, Exampleland"`) {
 		test.Fatalf("%v %q", err, output)
 	}
-	if lookup := server.variables[len(server.variables)-2]; lookup["query"] != "10.5, 20.25" {
+	if lookup := lastVariablesOf("SearchPhotoPlaces"); lookup["query"] != "10.5, 20.25" {
 		test.Fatalf("looked up %v", lookup)
+	}
+
+	// A position no city is near is said as the position.
+	server.photoViews["photo-3"] = `{"photo":{"id":"photo-3","latitude":10.5,"longitude":20.25,"placeName":""},"photoFiles":[],"photoPreviews":[]}`
+	if output, _, err := server.run(test, "set-location", "photo-3", "--place", "harbor"); err != nil || !strings.Contains(output, "to 10.5000, 20.2500") {
+		test.Fatalf("%v %q", err, output)
 	}
 
 	count := len(server.documents)
@@ -827,15 +843,23 @@ func TestSetLocationTakesAPlaceOrAPositionAndNeverBoth(test *testing.T) {
 
 func TestRemoveLocationNamesThePhotosAndSaysHowManyChanged(test *testing.T) {
 	server := newPhotoServer(test)
-	output, _, err := server.run(test, "remove-location", "photo-1", "photo-2")
+	output, _, err := server.run(test, "remove-location", "--force", "photo-1", "photo-2")
 	if err != nil || !strings.Contains(output, "removed the location from 1 of 2 photos") {
 		test.Fatalf("%v: %s", err, output)
 	}
 	if got := server.variables[len(server.variables)-1]["photoIds"]; !reflect.DeepEqual(got, []any{"photo-1", "photo-2"}) {
 		test.Fatalf("%v", got)
 	}
-	if _, output, err = server.run(test, "remove-location", "--json", "photo-1"); err != nil || !strings.Contains(output, `"changedCount": 1`) {
+	if _, output, err = server.run(test, "remove-location", "--force", "--json", "photo-1"); err != nil || !strings.Contains(output, `"changedCount": 1`) {
 		test.Fatalf("%v: %s", err, output)
+	}
+	// Removing is for good, so with nobody at a terminal to ask it needs --force.
+	count := len(server.documents)
+	if _, _, err := server.run(test, "remove-location", "photo-1"); err == nil || !strings.Contains(err.Error(), "--force") {
+		test.Fatalf("a removal without --force was not refused: %v", err)
+	}
+	if len(server.documents) != count {
+		test.Fatal("a refused removal reached the server")
 	}
 	if _, _, err := server.run(test, "remove-location"); err == nil {
 		test.Fatal("removing nothing was accepted")

@@ -166,8 +166,10 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		// The person may have moved the photo while the model looked, and a
 		// description of the old place must not land after the move cleared
-		// it. The request ends; asking again describes the new place.
-		current, err := tx.GetPhoto(ownerId, photoId)
+		// it. The row is held until the description is written, so a move
+		// waits for it or comes first. The request ends; asking again
+		// describes the new place.
+		current, err := tx.LockPhoto(ownerId, photoId)
 		if err != nil {
 			return err
 		}

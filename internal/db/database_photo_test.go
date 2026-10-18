@@ -1106,6 +1106,40 @@ func TestAPhotosLocationIsSetRemovedAndKeptWhenTheFileIsReadAgain(test *testing.
 	})
 }
 
+// A file read before the person moved the photo names the place it was taken
+// by its old position; the name is not put next to the new one.
+func TestAPlaceNameReadBeforeAMoveIsNotKept(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-location-reading")
+	moved := newTestPhoto(test, database, ownerId, "moved", nil)
+	kept := newTestPhoto(test, database, ownerId, "kept", nil)
+	oldLatitude, oldLongitude := 10.0, 20.0
+	newLatitude, newLongitude := -30.5, 140.25
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		// Moved to a position no city is near, so it has no place name.
+		if _, err := transaction.SetPhotoLocation(ownerId, []string{moved.ID, kept.ID}, &db.PhotoLocation{Latitude: newLatitude, Longitude: newLongitude}); err != nil {
+			test.Fatal(err)
+		}
+		stale := &db.PhotoMetadata{Latitude: &oldLatitude, Longitude: &oldLongitude, PlaceName: "Filetown, Exampleland", PlaceNameLatitude: &oldLatitude, PlaceNameLongitude: &oldLongitude}
+		if err := transaction.UpdatePhotoMetadata(moved.ID, stale); err != nil {
+			test.Fatal(err)
+		}
+		found, err := transaction.GetPhoto(ownerId, moved.ID)
+		if err != nil || found.PlaceName != "" || *found.Latitude != newLatitude {
+			test.Fatalf("the name of the old position was put next to the new one: %+v %v", found, err)
+		}
+		current := &db.PhotoMetadata{PlaceName: "Seaview, Exampleland", PlaceNameLatitude: &newLatitude, PlaceNameLongitude: &newLongitude}
+		if err := transaction.UpdatePhotoMetadata(kept.ID, current); err != nil {
+			test.Fatal(err)
+		}
+		found, err = transaction.GetPhoto(ownerId, kept.ID)
+		if err != nil || found.PlaceName != "Seaview, Exampleland" {
+			test.Fatalf("a name of the position the photo has was not kept: %+v %v", found, err)
+		}
+	})
+}
+
 func TestMovingADescribedPhotoClearsItsDescription(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()

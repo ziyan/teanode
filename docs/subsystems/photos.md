@@ -253,9 +253,20 @@ description was written knowing the old place and may name it, which a removed
 location must not leave behind. It is not asked for again on its own, since a
 photo is described only when somebody looks at it or asks; the next
 description is written with the new place. A `describe_photo` job that was
-looking at the photo when it moved keeps nothing and ends its request. A copy a reader
-saved from a shared album keeps the owner's `is_location_removed`, since it is
-made from the owner's original file.
+looking at the photo when it moved keeps nothing and ends its request: it
+holds the photo's row (`LockPhoto`) while it compares the place it was told
+with the place the photo has now, so a move cannot fall between the two. A
+file being read when the photo moved names the position it read
+(`PhotoMetadata.PlaceNameLatitude` and `PlaceNameLongitude`), and that name is
+not put next to a position the photo no longer has. A copy a reader saved from
+a shared album keeps the owner's `is_location_removed`, since it is made from
+the owner's original file.
+
+Removing is for good: TeaNode keeps no copy of the old position, so every
+surface asks first (the dashboard's dialog, the iPhone's question, the
+command line's `--force`, the assistant's card). The original file is not
+changed, so a copy already shared, saved by a reader or downloaded keeps
+what the camera wrote, and every question says so.
 
 `is_location_removed` is why a removed location stays removed: `UpdatePhotoMetadata`
 reads the file again when a Live Photo's video arrives or a retry runs, and

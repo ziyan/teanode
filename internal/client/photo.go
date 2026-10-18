@@ -439,6 +439,50 @@ func SearchPhotoPlaces(ctx context.Context, executor Executor, query string, nea
 	return result.SearchPhotoPlaces, nil
 }
 
+// ErrNoPlaceMatches is words no city in the server's table matches.
+var ErrNoPlaceMatches = errors.New("no city matches")
+
+// ResolvePhotoPlace is the place a set-location goes to: the best match for
+// some words, or a position given as a latitude and a longitude, which the
+// server answers with the nearest city's name or the position itself.
+func ResolvePhotoPlace(ctx context.Context, executor Executor, words string, latitude, longitude *float64) (*PhotoPlace, error) {
+	query := strings.TrimSpace(words)
+	if query == "" {
+		if latitude == nil || longitude == nil {
+			return nil, errors.New("a place needs words, or a latitude and a longitude")
+		}
+		query = strconv.FormatFloat(*latitude, 'f', -1, 64) + ", " + strconv.FormatFloat(*longitude, 'f', -1, 64)
+	}
+	places, err := SearchPhotoPlaces(ctx, executor, query, nil, nil, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(places) == 0 {
+		return nil, fmt.Errorf("%w %q", ErrNoPlaceMatches, query)
+	}
+	return places[0], nil
+}
+
+// PlacedName is the place name the server gave photos set to a position, read
+// from the first of them that moved there. It is the nearest city's, which can
+// be a larger city than the one picked, and empty where no city is near.
+func PlacedName(ctx context.Context, executor Executor, photoIds []string, latitude, longitude float64) string {
+	for _, photoId := range photoIds[:min(len(photoIds), 3)] {
+		view, err := ReadPhoto(ctx, executor, photoId)
+		if err != nil || view.Photo == nil || view.Photo.Latitude == nil || view.Photo.Longitude == nil ||
+			*view.Photo.Latitude != latitude || *view.Photo.Longitude != longitude {
+			continue
+		}
+		return view.Photo.PlaceName
+	}
+	return ""
+}
+
+// PositionText is a position as a person reads it, for a place with no name.
+func PositionText(latitude, longitude float64) string {
+	return strconv.FormatFloat(latitude, 'f', 4, 64) + ", " + strconv.FormatFloat(longitude, 'f', 4, 64)
+}
+
 // SetPhotoLocation says where photos were taken, and how many it changed. The
 // server names the place after the nearest city.
 func SetPhotoLocation(ctx context.Context, executor Executor, photoIds []string, latitude, longitude float64) (int, error) {
