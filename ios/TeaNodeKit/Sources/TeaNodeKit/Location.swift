@@ -425,17 +425,22 @@ public struct PlaceChange: Sendable, Equatable {
 /// CheckInTarget is where a check-in is made: a place of the person's own,
 /// a place found nearby, or just a position, where the server uses the
 /// person's own place there or makes a new one and names it afterwards.
+/// A position may carry how precise the device says it is, in meters; the
+/// server stores it on the visit. Negative or not a number means unknown and
+/// is not sent.
 public enum CheckInTarget: Sendable, Equatable {
     case place(String)
     case found(FoundPlace)
-    case position(latitudeDegrees: Double, longitudeDegrees: Double)
+    case position(latitudeDegrees: Double, longitudeDegrees: Double, accuracyMeters: Double? = nil)
 
     var variables: [String: JSONValue] {
         switch self {
         case .place(let placeId):
             return ["placeId": .string(placeId)]
-        case .position(let latitudeDegrees, let longitudeDegrees):
-            return ["latitudeDegrees": .number(latitudeDegrees), "longitudeDegrees": .number(longitudeDegrees)]
+        case .position(let latitudeDegrees, let longitudeDegrees, let accuracyMeters):
+            var variables: [String: JSONValue] = ["latitudeDegrees": .number(latitudeDegrees), "longitudeDegrees": .number(longitudeDegrees)]
+            if let accuracyMeters, accuracyMeters.isFinite, accuracyMeters >= 0 { variables["accuracyMeters"] = .number(accuracyMeters) }
+            return variables
         case .found(let found):
             return [
                 "latitudeDegrees": .number(found.latitudeDegrees), "longitudeDegrees": .number(found.longitudeDegrees),
@@ -536,8 +541,8 @@ extension Documents {
         mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }
         """
     public static let checkIn = """
-        mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
-          CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) {
+        mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $accuracyMeters: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
+          CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, accuracyMeters: $accuracyMeters, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) {
             \(placeVisitFields)
           }
         }

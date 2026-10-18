@@ -182,10 +182,29 @@ final class LocationTests: XCTestCase {
         XCTAssertTrue(Documents.searchAddresses.contains("SearchAddresses(query: $query, limitCount: $limitCount)"))
     }
 
+    func testKeepsAnAddressAsTypedWithoutMovingThePlace() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"SavePlace":\#(placeAnswer)}}"#)
+        try await connection.savePlace(PlaceChange(placeId: "place-1", addressText: " 3 Fixture Row, Exampleton "))
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]), ["placeId": .string("place-1"), "addressText": .string("3 Fixture Row, Exampleton")])
+    }
+
     func testChecksInAtAPositionWithOnlyItsCoordinates() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"CheckIn":\#(visitAnswer)}}"#)
         try await connection.checkIn(.position(latitudeDegrees: 10.5, longitudeDegrees: 20.5))
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5)])
+    }
+
+    func testChecksInAtAPositionWithHowPreciseItIs() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"CheckIn":\#(visitAnswer)}}"#)
+        try await connection.checkIn(.position(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 850))
+        // The phone could not tell: negative, so nothing is claimed.
+        try await connection.checkIn(.position(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: -1))
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            ["latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5), "accuracyMeters": .number(850)])
+        XCTAssertEqual(try sentVariables(fake.sent[1]), ["latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5)])
+        XCTAssertTrue(Documents.checkIn.contains("accuracyMeters: $accuracyMeters"))
     }
 
     func testChecksInAtAPlaceOrAFoundPlace() async throws {
