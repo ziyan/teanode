@@ -19,6 +19,14 @@ import { usePhotoAltText } from './altText'
 
 export type PhotoGrouping = 'trash' | 'none'
 
+// A photo whose cell shows a spinner: not failed, and no small preview made
+// yet. A photo the server calls ready can be in this state while it makes the
+// small preview again, so the processing state alone does not say whether the
+// cell is still waiting.
+export function isPhotoPreviewPending(photo: Photo): boolean {
+  return photo.photoProcessingState !== 'failed' && !photo.smallPreviewUrl
+}
+
 export function PhotoGrid({
   photos,
   grouping = 'none',
@@ -119,7 +127,7 @@ function PhotoCell({
         // to a range) rather than opens, as in every file browser.
         onClick={(event) => (isSelecting ? onToggle(event.shiftKey) : onOpen())}
       >
-        {photo.photoProcessingState !== 'failed' && !photo.smallPreviewUrl ? (
+        {isPhotoPreviewPending(photo) ? (
           // Waiting, or ready with no small preview yet (the server makes one
           // again): the same wait, not the failure of a photo that has not
           // failed.

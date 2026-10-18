@@ -250,8 +250,14 @@ export function PhotoViewer({
   const [readyOriginal, setReadyOriginal] = useState('')
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
 
-  // Each photo starts fitted and not playing.
+  // Each photo starts fitted and not playing. Only when the photo changes, not
+  // when the viewer opens: everything here already starts that way, and this
+  // runs after the first paint, so a click that lands before it (the pencil
+  // beside the date) would have what it just set undone.
+  const previousPhotoId = useRef(photo.id)
   useEffect(() => {
+    if (previousPhotoId.current === photo.id) return
+    previousPhotoId.current = photo.id
     setIsLive(false)
     setIsWaitingForDescription(false)
     setAskingPhotoId(null)

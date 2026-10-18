@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { FilterIcon } from '../../components/icons'
+import { Children, createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { FilterIcon, MoreIcon } from '../../components/icons'
 import { MenuButton } from '../../components/menuButton'
 import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
@@ -8,22 +8,119 @@ import { FILTER_KINDS, parseDay } from '../../photos/filters'
 import type { OverviewScale } from '../../photos/overview'
 import { DateFormatHint } from './dateFormatHint'
 
+// The width at which the stylesheet turns the toolbar into one row, and so the
+// width at which the actions go behind a More menu.
+const PHONE_QUERY = '(max-width: 600px)'
+
+function useIsPhone(): boolean {
+  const read = () => typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches
+  const [isPhone, setIsPhone] = useState(read)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(PHONE_QUERY)
+    const onChange = (event: MediaQueryListEvent) => setIsPhone(event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+  return isPhone
+}
+
+// Set while the actions are drawn in the More menu: the way to close it, so
+// that choosing an action closes the menu the way it does in every other one.
+const PhotoToolbarMenuContext = createContext<{ close: () => void } | null>(null)
+
 // The one row under the tabs that every page of Photos has: what the page
 // searches and narrows with at the left, what can be done on the page at the
 // right. Under the tabs, not above them, so that the tabs are where they are
 // on every page; a page with nothing to search leaves the left empty and the
 // row keeps its height.
-export function PhotoToolbar({ tools, children }: { tools?: ReactNode; children?: ReactNode }) {
+//
+// On a phone the row stays one row: the search and the filters keep their
+// place, the essentials (the page's own way of looking at the photos, which
+// has to be in reach) stay beside them, and every other action goes into a
+// More menu, since a row of words wrapped onto lines of their own is three
+// rows of different lengths above the photos. A page with nothing to search
+// has the whole row to itself, and keeps its one action in it.
+export function PhotoToolbar({
+  tools,
+  essentials,
+  children,
+}: {
+  tools?: ReactNode
+  essentials?: ReactNode
+  children?: ReactNode
+}) {
+  const { t } = useTranslation()
+  const isPhone = useIsPhone()
+  const isOverflowing = isPhone && Children.toArray(tools).length > 0 && Children.toArray(children).length > 0
   return (
     <div className="photo-toolbar">
       <div className="photo-toolbar-tools">{tools}</div>
-      <div className="photo-toolbar-actions">{children}</div>
+      <div className="photo-toolbar-actions">
+        {essentials}
+        {isOverflowing ? (
+          <MenuButton
+            className="icon-action photo-toolbar-more"
+            label={t('photos.more')}
+            icon={<MoreIcon size={18} />}
+            render={(close) => (
+              <PhotoToolbarMenuContext.Provider value={{ close }}>
+                <div className="photo-toolbar-menu">{children}</div>
+              </PhotoToolbarMenuContext.Provider>
+            )}
+          />
+        ) : (
+          children
+        )}
+      </div>
     </div>
   )
 }
 
+// A page's action with words: a button of the row, or a row of the More menu
+// on a phone, with the same name in both. A button with words alone in the row
+// has an icon in the menu all the same, so that the names of its rows line up.
+export function PhotoToolbarButton({
+  label,
+  icon,
+  menuIcon,
+  isPrimary = false,
+  isPressed,
+  onClick,
+}: {
+  label: string
+  icon?: ReactNode
+  menuIcon?: ReactNode
+  isPrimary?: boolean
+  isPressed?: boolean
+  onClick: () => void
+}) {
+  const menu = useContext(PhotoToolbarMenuContext)
+  if (menu) {
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          menu.close()
+          onClick()
+        }}
+      >
+        {icon ?? menuIcon}
+        {label}
+      </button>
+    )
+  }
+  return (
+    <button type="button" className={isPrimary ? 'primary' : undefined} aria-pressed={isPressed} onClick={onClick}>
+      {icon} {label}
+    </button>
+  )
+}
+
 // A page's action that is an icon: its name is in the tooltip and the label,
-// as every icon button on the dashboard has it.
+// as every icon button on the dashboard has it. In the More menu the name is
+// written out beside the icon, since a menu row has the room.
 export function PhotoIconAction({
   label,
   icon,
@@ -37,6 +134,24 @@ export function PhotoIconAction({
   isDisabled?: boolean
   onClick: () => void
 }) {
+  const menu = useContext(PhotoToolbarMenuContext)
+  if (menu) {
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        className={isDangerous ? 'is-dangerous' : undefined}
+        disabled={isDisabled}
+        onClick={() => {
+          menu.close()
+          onClick()
+        }}
+      >
+        {icon}
+        {label}
+      </button>
+    )
+  }
   return (
     <Tooltip label={label}>
       <button

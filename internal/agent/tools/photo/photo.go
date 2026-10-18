@@ -63,13 +63,13 @@ func init() {
 				"is_redescribed":           tools.BooleanProperty("describe: true asks for a new description of a photo that already has one"),
 				"is_favorite":              tools.BooleanProperty("favorite: true (the default) makes it a favorite, false takes it back. list: true keeps only the favorites"),
 				"is_trashed":               tools.BooleanProperty("list: true lists the Trash instead of the library"),
-				"photo_kind":               tools.EnumProperty("list: only this kind", "picture", "video", "livePhoto"),
+				"photo_kind":               tools.EnumProperty("list: only this kind; any (the default) lists every kind", "any", "picture", "video", "livePhoto"),
 				"taken_after":              tools.StringProperty("list: only photos taken on or after this date, as YYYY-MM-DD or a full time, in the person's zone"),
 				"taken_before":             tools.StringProperty("list: only photos taken before this date, in the same forms"),
 				"search_text":              tools.StringProperty("list: words to find, matched against the photo's place, file name, camera, album titles and, for a described photo, its description and the text in the picture; best match first. A photo nobody has described is found only by the place, file name, camera and album titles, so narrow by date or place and look"),
 				"near_latitude":            numberProperty("list: with near_longitude and near_distance_kilometers, only photos taken near this point"),
 				"near_longitude":           numberProperty("list: the point's longitude"),
-				"near_distance_kilometers": numberProperty("list: how near, in kilometers"),
+				"near_distance_kilometers": numberProperty("list: how near, in kilometers; 0 leaves the place out"),
 				"taken_at":                 tools.StringProperty("set-date: when the photo was taken, an RFC 3339 time with the offset of the place it was taken, such as 2025-07-12T14:30:00+09:00 (Z for a place on UTC)"),
 				"offset":                   tools.IntegerProperty("list, album-list, album-read, people, person-photos and album-shares: how many rows to pass over, the next_offset of the page before, to read the next page; 0 for the first"),
 				"page_size":                tools.IntegerProperty("list, album-list, album-read, people, person-photos and album-shares: rows to a page, 1 to 100; 25 photos or 50 other rows by default"),
@@ -437,10 +437,21 @@ type listedPhoto struct {
 // filterOf reads a listing's arguments. Times are in the person's zone.
 func filterOf(asked *arguments, location *time.Location) (*client.PhotoFilter, error) {
 	filter := &client.PhotoFilter{
-		Offset: asked.Offset, IsFavorite: asked.IsFavorite, IsTrashed: asked.IsTrashed,
-		SearchText: strings.TrimSpace(asked.SearchText), NearLatitude: asked.NearLatitude, NearLongitude: asked.NearLongitude,
-		NearDistanceKilometers: asked.NearDistanceKilometers, PageSize: asked.PageSize, AlbumID: strings.TrimSpace(asked.AlbumID),
+		Offset: asked.Offset, IsTrashed: asked.IsTrashed,
+		SearchText: strings.TrimSpace(asked.SearchText), PageSize: asked.PageSize, AlbumID: strings.TrimSpace(asked.AlbumID),
 		FaceGroupID: strings.TrimSpace(asked.FaceGroupID), ContactID: strings.TrimSpace(asked.ContactID),
+	}
+	// A model hands every field it is shown, with false, zero and the first
+	// choice of each list for the ones it has no view on. Read as filters,
+	// those asked for the photos that are not favorites, of one kind, taken
+	// within no distance of latitude 0, longitude 0, and the server refuses a
+	// distance of 0, so every listing failed. So a flag narrows only when it is true, a place only with a
+	// distance, and a kind only when it names one.
+	if asked.IsFavorite != nil && *asked.IsFavorite {
+		filter.IsFavorite = asked.IsFavorite
+	}
+	if asked.NearDistanceKilometers != nil && *asked.NearDistanceKilometers != 0 {
+		filter.NearLatitude, filter.NearLongitude, filter.NearDistanceKilometers = asked.NearLatitude, asked.NearLongitude, asked.NearDistanceKilometers
 	}
 	if filter.PageSize == 0 {
 		filter.PageSize = defaultPageSize
@@ -451,10 +462,10 @@ func filterOf(asked *arguments, location *time.Location) (*client.PhotoFilter, e
 	if filter.Offset < 0 || filter.Offset > maximumOffset {
 		return nil, fmt.Errorf("offset is from 0 to %d: the next_offset of the page before", maximumOffset)
 	}
-	if asked.PhotoKind != "" {
-		filter.PhotoKind = models.PhotoKind(asked.PhotoKind)
+	if photoKind := strings.TrimSpace(asked.PhotoKind); photoKind != "" && !strings.EqualFold(photoKind, "any") {
+		filter.PhotoKind = models.PhotoKind(photoKind)
 		if !filter.PhotoKind.IsValid() {
-			return nil, fmt.Errorf("photo_kind is picture, video or livePhoto, not %q", asked.PhotoKind)
+			return nil, fmt.Errorf("photo_kind is any, picture, video or livePhoto, not %q", asked.PhotoKind)
 		}
 	}
 	var err error

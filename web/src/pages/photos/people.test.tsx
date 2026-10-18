@@ -406,16 +406,30 @@ it('marks a contact that already names another person, and leaves it choosable',
   expect(plain.textContent).not.toContain('Already names')
 })
 
-it('keeps the room for the Name button on every tile, so that the tiles of a row are one height', async () => {
+it('puts the Name button where the name is, so that every tile is a picture, a line and a count', async () => {
   isContactsEnabled = true
-  serve([group({}), group({ id: 'group-2', contactId: '', contactName: '' })])
+  serve([
+    group({}),
+    group({ id: 'group-2', contactId: '', contactName: '', photoCount: 1 }),
+    group({ id: 'group-3', photoCount: 9 }),
+  ])
   showPeoplePage()
-  await screen.findByRole('link', { name: /Sample Person/ })
+  await screen.findAllByRole('link', { name: /Sample Person/ })
   const tiles = Array.from(document.querySelectorAll('.photo-person-cell'))
-  expect(tiles).toHaveLength(2)
-  for (const tile of tiles) expect(tile.querySelector('.photo-person-foot')).not.toBeNull()
+  expect(tiles).toHaveLength(3)
+  for (const tile of tiles) {
+    expect(tile.querySelector('.photo-person-foot')).toBeNull()
+    expect(tile.querySelectorAll('.photo-person-title')).toHaveLength(1)
+    expect(tile.querySelectorAll('.photo-person-details')).toHaveLength(1)
+  }
+  // The button is the unnamed tile's line, and the count is still under it.
+  const unnamed = tiles[1]
+  expect(unnamed.querySelector('.photo-person-title button')?.textContent).toBe('Name')
+  expect(unnamed.querySelector('.photo-person-details')?.textContent).toBe('1 photo')
   expect(screen.getAllByRole('button', { name: 'Name' })).toHaveLength(1)
-  expect(tiles[0].querySelector('.photo-person-foot')?.querySelector('button')).toBeNull()
+  // Two people with one name are told apart by their counts.
+  expect(tiles[0].querySelector('.photo-person-details')?.textContent).toBe('4 photos')
+  expect(tiles[2].querySelector('.photo-person-details')?.textContent).toBe('9 photos')
 })
 
 // The answer naming a group gives: the group left, the group that went into
