@@ -25157,6 +25157,22 @@
         }
       }
     },
+    "Next check-in soon": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まもなく確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即将检查"
+          }
+        }
+      }
+    },
     "Next day": {
       "localizations": {
         "ja": {

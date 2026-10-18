@@ -35,6 +35,10 @@ struct TeaNodeApp: App {
             .id(language)
             .environment(\.locale, language.locale)
             .environment(app)
+            // TeaNode's green on everything that takes a tint, toggles too:
+            // they are the system's brighter green otherwise, beside the
+            // accent on the same screen.
+            .tint(Color.accentColor)
             .onOpenURL { url in app.open(url) }
             .onAppear {
                 appearance.apply()

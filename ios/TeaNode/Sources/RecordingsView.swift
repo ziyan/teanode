@@ -766,6 +766,11 @@ struct RecordingPlaybackScreen: View {
                             .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
                         }
                     }
+                    // Real buttons under the player: as plain text they read
+                    // as a caption, and gray when there is no connection.
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .padding(.bottom)
                 } else if let problemText {
                     ContentUnavailableView("Cannot play recording", systemImage: "exclamationmark.triangle", description: Text(problemText))
                 } else {

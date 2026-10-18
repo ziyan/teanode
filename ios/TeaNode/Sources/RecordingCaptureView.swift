@@ -149,6 +149,10 @@ struct RecordingCaptureView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+                    // Held at a size that fits under the timer: the list
+                    // keeps its end in view, which at the largest sizes cut
+                    // this note off mid-sentence.
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     ForEach(bubbles) { bubble in
                         RecordingBubbleView(bubble: bubble, playingSegmentId: nil, actions: actions)
                     }
