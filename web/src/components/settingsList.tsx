@@ -61,7 +61,8 @@ function iconActionCount(node: React.ReactNode): number {
       return -1
     }
     const classNames = (child.props.className ?? '').split(/\s+/)
-    if (child.type === 'button' && classNames.includes('icon-action')) {
+    // A copy button is an icon button inside a tooltip of its own.
+    if ((child.type === 'button' && classNames.includes('icon-action')) || child.type === CopyIconButton) {
       count += 1
     } else if (
       child.type === Fragment ||

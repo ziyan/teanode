@@ -1,3 +1,4 @@
+import { CopyIconButton } from './common'
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 
@@ -32,6 +33,17 @@ it('marks a row whose actions are one to three icons, so a phone keeps them besi
         {false}
         {iconButton('Remove')}
       </div>,
+    ).classList.contains('has-icon-actions'),
+  ).toBe(true)
+})
+
+it('counts a copy button as one icon, as the rows of a statement address have it', () => {
+  expect(
+    rowOf(
+      <>
+        <CopyIconButton value="statements@example.com" />
+        {iconButton('Refresh')}
+      </>,
     ).classList.contains('has-icon-actions'),
   ).toBe(true)
 })
