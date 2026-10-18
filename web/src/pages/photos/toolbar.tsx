@@ -132,7 +132,7 @@ export function PhotoFilterMenu({
           {isFiltering && (
             <button
               type="button"
-              className="menu-clear"
+              className="photo-filter-clear"
               onClick={() => {
                 // The button goes once nothing is filtered: closing hands the
                 // keyboard back to Filter rather than dropping it on the page.

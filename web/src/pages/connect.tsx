@@ -92,7 +92,7 @@ export function ConnectPage() {
           <p className="muted">{t('connect.expires', { time: formatClock(code.expiresAt) })}</p>
           <p className="authorize-grant muted">{t('connect.warning')}</p>
           {isOnAPhone() && (
-            <a className="connect-here" href={code.connectLink}>
+            <a className="button primary connect-here" href={code.connectLink}>
               {t('connect.openHere')}
             </a>
           )}

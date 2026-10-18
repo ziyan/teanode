@@ -110,10 +110,10 @@ export function DomainTabsPage() {
              somewhere else is a lie about where you are. They were two large
              tiles for exactly the same two links. */
           <div className="tab-actions">
-            <Link className="tab-action" to={`/manage/mail?domain=${encodeURIComponent(domain.domain)}`}>
+            <Link className="button tab-action" to={`/manage/mail?domain=${encodeURIComponent(domain.domain)}`}>
               {t('domain.viewMail')}
             </Link>
-            <Link className="tab-action" to={`/manage/queue?domain=${encodeURIComponent(domain.domain)}`}>
+            <Link className="button tab-action" to={`/manage/queue?domain=${encodeURIComponent(domain.domain)}`}>
               {t('domain.viewQueue')}
             </Link>
           </div>

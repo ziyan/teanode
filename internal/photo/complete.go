@@ -15,6 +15,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/picture"
 	"github.com/ziyan/teanode/internal/storage"
 )
 
@@ -300,6 +301,11 @@ func settleContentType(declared, filename string, firstBytes []byte) (string, er
 	}
 	if !allowedContentTypes[contentType] {
 		return "", fmt.Errorf("%w: files of type %s are not kept", ErrNotAPhoto, contentType)
+	}
+	// A picture is kept as what its bytes are: a phone sends one saved from a
+	// message as image.jpeg whatever its format.
+	if formatContentType := picture.FormatContentType(firstBytes); strings.HasPrefix(contentType, "image/") && formatContentType != "" {
+		contentType = formatContentType
 	}
 	return contentType, nil
 }

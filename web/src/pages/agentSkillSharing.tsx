@@ -129,9 +129,14 @@ export function SkillSharesCard() {
     <>
       <SettingsSection card title={t('skillShare.title')} description={t('skillShare.intro')}>
         {people.length === 0 ? (
-          <SettingsEmpty>
-            {t('skillShare.noPeople')} <Link to="/circles">{t('circles.open')}</Link>
-          </SettingsEmpty>
+          <>
+            <SettingsEmpty>{t('skillShare.noPeople')}</SettingsEmpty>
+            <div className="page-actions page-actions-end">
+              <Link className="button" to="/circles">
+                {t('circles.open')}
+              </Link>
+            </div>
+          </>
         ) : null}
         {lendable.map((skill) => (
           <SettingsRow
