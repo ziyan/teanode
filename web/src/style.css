@@ -15483,11 +15483,6 @@ button.idea-history-title {
   vertical-align: middle;
 }
 
-.herdr-sessions td > a.link {
-  padding: 0;
-  font: inherit;
-}
-
 .herdr-hooks table {
   width: 100%;
 }

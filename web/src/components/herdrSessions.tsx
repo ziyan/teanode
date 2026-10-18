@@ -862,7 +862,7 @@ export function HerdrSessionsCard() {
                 {data.sessions.map((session) => (
                   <tr key={`${session.computer}/${session.paneId}`}>
                     <td>
-                      <Link className="link" to={codingPagePath(session)} title={session.paneId}>
+                      <Link to={codingPagePath(session)} title={session.paneId}>
                         {paneNameOf(session)}
                       </Link>
                     </td>
