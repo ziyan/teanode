@@ -403,6 +403,8 @@ struct CodingSessionView: View {
     /// input and result; until then they are left out, being most of a
     /// read's size.
     @State private var isToolDetailWanted = false
+    /// Whether the person closed this session here, and the view is leaving.
+    @State private var isClosed = false
     /// The last failure said, so a read failing again every few seconds is
     /// not said again each time.
     @State private var failureText: String?
@@ -423,12 +425,16 @@ struct CodingSessionView: View {
     private var connection: Connection { model.connection }
     private var session: HerdrSession? { model.session(id: selectedId) }
     /// The computer of the session on screen, from its id, which stands
-    /// whether or not the list has it.
-    private var selectedComputer: String { String(selectedId.prefix { $0 != "/" }) }
+    /// whether or not the list has it. A pane's id has no slash; a
+    /// computer's name might.
+    private var selectedComputer: String { String(selectedId[..<(selectedId.lastIndex(of: "/") ?? selectedId.endIndex)]) }
 
     var body: some View {
         Group {
-            if let session {
+            if isClosed {
+                // Closed here and on its way out: nothing to say about it.
+                Color.clear
+            } else if let session {
                 content(session)
             } else if let list = model.list, !list.failedComputerNames.contains(selectedComputer) {
                 // The list was read and the session is not in it: closed on
@@ -803,11 +809,12 @@ struct CodingSessionView: View {
         do {
             _ = try await connection.closeHerdrSession(computer: session.computer, paneId: session.paneId)
             doneText = String(localized: "Closed \(session.tabTitle)")
-            // Back to the list, which holds the workspace's other tabs, and
-            // only then out of it, so the view leaving never says the
-            // session is gone.
-            dismiss()
+            // Back to the list, which holds the workspace's other tabs. The
+            // view stays on screen while it leaves, so it draws nothing
+            // rather than saying the session is gone.
+            isClosed = true
             model.remove(id: session.id)
+            dismiss()
         } catch {
             problemText = app.describe(error)
         }
