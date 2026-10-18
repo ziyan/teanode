@@ -60,6 +60,14 @@ struct LocationPlaceScreen: View {
                     Label("Change address", systemImage: "magnifyingglass")
                 }
                 .frame(minHeight: 44)
+                if place.isAddressTyped {
+                    Button {
+                        Task { await useMapAddress() }
+                    } label: {
+                        Label("Use the map's address", systemImage: "map")
+                    }
+                    .frame(minHeight: 44)
+                }
             }
             Section {
                 // A tap on the map names the new position; the pin shows it
@@ -228,6 +236,14 @@ struct LocationPlaceScreen: View {
         place = saved
         model.doneText = String(localized: "Kept the address as typed")
         return nil
+    }
+
+    /// Gives the typed address back to the map: an empty address text makes
+    /// the server name the place from OpenStreetMap again.
+    private func useMapAddress() async {
+        guard let saved = await model.save(PlaceChange(placeId: place.id, addressText: "")) else { return }
+        place = saved
+        model.doneText = String(localized: "The map will name this place again.")
     }
 
     /// Saves the name when the person changed it. An emptied box puts the

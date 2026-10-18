@@ -60006,6 +60006,38 @@
         }
       }
     },
+    "Use the map's address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図の住所を使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用地图上的地址"
+          }
+        }
+      }
+    },
+    "The map will name this place again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この場所は地図の名前に戻ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地点将重新使用地图上的名称。"
+          }
+        }
+      }
+    },
     "Nothing on the map matches %@.": {
       "localizations": {
         "ja": {

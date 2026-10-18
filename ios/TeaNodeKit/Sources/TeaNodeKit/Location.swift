@@ -87,6 +87,9 @@ public struct LocationPlace: Codable, Identifiable, Hashable, Sendable {
     /// Such as "amenity=cafe".
     public let osmCategory: String
     public let addressText: String
+    /// Whether the person typed the address, so the map no longer names the
+    /// place.
+    public let isAddressTyped: Bool
     public let visitCount: Int
     public let lastVisitAt: String?
     /// Why the name could not be looked up, when it could not.
@@ -105,8 +108,8 @@ public struct LocationPlace: Codable, Identifiable, Hashable, Sendable {
     public init(
         id: String, userId: String = "", placeName: String, isNamedByPerson: Bool = false, placeLabel: String = "", latitudeDegrees: Double,
         longitudeDegrees: Double, radiusMeters: Double = 75, osmType: String = "", osmId: Int64? = nil, osmName: String = "",
-        osmCategory: String = "", addressText: String = "", visitCount: Int = 0, lastVisitAt: String? = nil, namingErrorMessage: String = "",
-        createdAt: String = "", updatedAt: String = ""
+        osmCategory: String = "", addressText: String = "", isAddressTyped: Bool = false, visitCount: Int = 0, lastVisitAt: String? = nil,
+        namingErrorMessage: String = "", createdAt: String = "", updatedAt: String = ""
     ) {
         self.id = id
         self.userId = userId
@@ -121,6 +124,7 @@ public struct LocationPlace: Codable, Identifiable, Hashable, Sendable {
         self.osmName = osmName
         self.osmCategory = osmCategory
         self.addressText = addressText
+        self.isAddressTyped = isAddressTyped
         self.visitCount = visitCount
         self.lastVisitAt = lastVisitAt
         self.namingErrorMessage = namingErrorMessage
@@ -458,13 +462,13 @@ extension Documents {
         latitudeDegrees longitudeDegrees accuracyMeters altitudeMeters speedMetersPerSecond courseDegrees measuredAt locationSource
         """
     static let locationPlaceFields = """
-        id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText
+        id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText isAddressTyped
         visitCount lastVisitAt namingErrorMessage createdAt updatedAt
         """
     static let placeVisitFields = """
         id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
         place {
-          id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText
+          id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText isAddressTyped
           visitCount lastVisitAt namingErrorMessage createdAt updatedAt
         }
         """
@@ -474,7 +478,7 @@ extension Documents {
         openVisit {
           id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
           place {
-            id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText
+            id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText isAddressTyped
             visitCount lastVisitAt namingErrorMessage createdAt updatedAt
           }
         }

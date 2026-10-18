@@ -33,7 +33,7 @@ final class LocationTests: XCTestCase {
     private let placeAnswer = #"""
         {"id":"place-1","userId":"user-1","placeName":"Fixture Park","isNamedByPerson":false,"placeLabel":"","latitudeDegrees":10.5,
          "longitudeDegrees":20.5,"radiusMeters":75,"osmType":"way","osmId":123456789012,"osmName":"Fixture Park","osmCategory":"leisure=park",
-         "addressText":"","visitCount":3,"lastVisitAt":"2024-01-02T10:00:00.123456789Z","namingErrorMessage":"",
+         "addressText":"","isAddressTyped":false,"visitCount":3,"lastVisitAt":"2024-01-02T10:00:00.123456789Z","namingErrorMessage":"",
          "createdAt":"2024-01-01T00:00:00Z","updatedAt":"2024-01-02T10:00:00Z"}
         """#
 
@@ -94,6 +94,17 @@ final class LocationTests: XCTestCase {
                 "from": .string("2024-01-02T00:00:00Z"), "until": .string("2024-01-03T00:00:00Z"), "placeId": .string("place-1"),
                 "offset": .number(50), "limitCount": .number(50),
             ])
+    }
+
+    func testAPlaceKnowsWhetherItsAddressWasTyped() throws {
+        let mapAddressed = try JSONDecoder().decode(LocationPlace.self, from: Data(placeAnswer.utf8))
+        XCTAssertFalse(mapAddressed.isAddressTyped)
+        let typedAnswer = placeAnswer.replacingOccurrences(
+            of: #""addressText":"","isAddressTyped":false,"#, with: #""addressText":"3 Fixture Row","isAddressTyped":true,"#)
+        let typed = try JSONDecoder().decode(LocationPlace.self, from: Data(typedAnswer.utf8))
+        XCTAssertTrue(typed.isAddressTyped)
+        XCTAssertEqual(typed.addressText, "3 Fixture Row")
+        XCTAssertTrue(Documents.savePlace.contains("isAddressTyped"))
     }
 
     func testReadsPlacesAndNearbyPlaces() async throws {
