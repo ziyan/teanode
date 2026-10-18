@@ -1295,6 +1295,14 @@ button.conversation-tile:focus-visible {
   padding: var(--space-6) max(32px, (100% - 1400px) / 2);
 }
 
+/* The mail and knowledge pages never scroll the content (their frames hold the
+   scrolling), so a strip kept for a scrollbar that is never drawn is only an
+   empty band at the window's edge on a classic scrollbar. */
+.content:has(> .mailbox-frame),
+.content:has(> .knowledge-frame) {
+  scrollbar-gutter: auto;
+}
+
 h2 {
   margin-top: 0;
   font-size: 20px;
