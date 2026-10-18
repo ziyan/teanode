@@ -14,8 +14,10 @@ const COMMAND_LINE_GUIDE_URL = 'https://github.com/ziyan/teanode/blob/main/docs/
 // that found nothing.
 export function FirstPhotos({ onChooseFiles }: { onChooseFiles: () => void }) {
   const { t } = useTranslation()
-  const signInCommand = `teanode auth login --url ${window.location.origin}`
-  const uploadCommand = 'teanode photo upload ~/Pictures'
+  const commands = [
+    { command: `teanode auth login --url ${window.location.origin}`, label: t('photos.copySignInCommand') },
+    { command: 'teanode photo upload ~/Pictures', label: t('photos.copyUploadCommand') },
+  ]
   return (
     <>
       <PhotoBackupGuide canConnect />
@@ -42,10 +44,10 @@ export function FirstPhotos({ onChooseFiles }: { onChooseFiles: () => void }) {
             }}
           />
         </p>
-        {[signInCommand, uploadCommand].map((command) => (
+        {commands.map(({ command, label }) => (
           <div className="photo-way-command" key={command}>
             <code>{command}</code>
-            <CopyButton value={command} />
+            <CopyButton value={command} label={label} />
           </div>
         ))}
       </section>

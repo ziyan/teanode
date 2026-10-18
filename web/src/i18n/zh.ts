@@ -5349,6 +5349,8 @@ export const zh: Catalog = {
   'photos.wayCommandLineTitle': '从命令行上传',
   'photos.wayCommandLine': '先登录一次，再上传整个文件夹。照片库里已有的照片会被跳过。{guide}',
   'photos.wayCommandLineGuide': '命令行说明',
+  'photos.copySignInCommand': '复制登录命令',
+  'photos.copyUploadCommand': '复制上传命令',
   'photos.emptyFavorites': '还没有收藏。点击照片上的心形，就会收在这里。',
   'photos.emptyTrash': '废纸篓是空的。',
   'photos.emptySearch': '没有符合搜索的照片。',

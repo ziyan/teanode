@@ -5563,6 +5563,8 @@ export const ja: Catalog = {
   'photos.wayCommandLineTitle': 'コマンドラインからアップロード',
   'photos.wayCommandLine': '一度サインインしてから、フォルダをアップロードします。すでにライブラリにある写真はスキップされます。{guide}',
   'photos.wayCommandLineGuide': 'コマンドラインの説明',
+  'photos.copySignInCommand': 'サインインのコマンドをコピー',
+  'photos.copyUploadCommand': 'アップロードのコマンドをコピー',
   'photos.emptyFavorites': 'お気に入りはまだありません。写真のハートを選ぶとここに入ります。',
   'photos.emptyTrash': 'ゴミ箱は空です。',
   'photos.emptySearch': '検索に一致する写真はありません。',

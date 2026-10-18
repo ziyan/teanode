@@ -5628,6 +5628,8 @@ export const en = {
   'photos.wayCommandLineTitle': 'Upload from the command line',
   'photos.wayCommandLine': 'Sign in once, then upload a folder. A photo the library already has is skipped. {guide}',
   'photos.wayCommandLineGuide': 'The command line guide',
+  'photos.copySignInCommand': 'Copy the sign-in command',
+  'photos.copyUploadCommand': 'Copy the upload command',
   'photos.emptyFavorites': 'No favorites yet. Choose the heart on a photo to keep it here.',
   'photos.emptyTrash': 'The Trash is empty.',
   'photos.emptySearch': 'No photos match your search.',

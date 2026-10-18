@@ -1177,7 +1177,9 @@ it('says how to add the first photos, with a button for each way that opens it',
   expect(pressFileInput).toHaveBeenCalledTimes(1)
   expect(screen.getByText('teanode photo upload ~/Pictures')).toBeTruthy()
   expect(screen.getByText(`teanode auth login --url ${window.location.origin}`)).toBeTruthy()
-  expect(screen.getAllByRole('button', { name: 'Copy' })).toHaveLength(2)
+  // Two copy buttons on one page are told apart by what they copy.
+  expect(screen.getByRole('button', { name: 'Copy the sign-in command' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Copy the upload command' })).toBeTruthy()
   expect(screen.getByRole('link', { name: 'The command line guide' }).getAttribute('href')).toContain(
     'command-line.md#teanode-photo',
   )
