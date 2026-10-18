@@ -12588,6 +12588,12 @@ label.checkbox.is-plain input {
    segmented pair brings its own outline; an icon button is given one. */
 .graph-explore-zoom .segmented {
   background: var(--surface);
+  height: 36px;
+}
+
+.graph-explore-zoom .segmented button {
+  height: 100%;
+  padding: 0 12px;
 }
 
 .graph-explore-zoom .icon-button {
@@ -12596,6 +12602,19 @@ label.checkbox.is-plain input {
   font: inherit;
   font-size: 17px;
   line-height: 1;
+  /* The same height as the Fit and Fullscreen pair beside them. */
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+/* The agent's button floats over the bottom right of every page and covered
+   Fit and Fullscreen there; the top right of the drawing is free. */
+@media (min-width: 641px) {
+  .graph-explore-zoom {
+    bottom: auto;
+    top: var(--space-3);
+  }
 }
 
 .graph-explore-legend {
@@ -12615,9 +12634,9 @@ label.checkbox.is-plain input {
 .graph-explore-swatch {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: var(--muted);
-  font-size: var(--text-label);
+  font-size: 13px;
 }
 
 .graph-explore-swatch i {
@@ -12638,7 +12657,7 @@ label.checkbox.is-plain input {
 
 .graph-explore-hint {
   flex-basis: 100%;
-  font-size: var(--text-label);
+  font-size: 13px;
 }
 
 .graph-explore-nothing {
