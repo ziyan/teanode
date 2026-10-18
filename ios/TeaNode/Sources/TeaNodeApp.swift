@@ -587,6 +587,7 @@ struct SettingsForm: View {
                             PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
+                                .foregroundStyle(.primary)
                         }
                         // Next to the profile, as on the dashboard's account menu: it is about who
                         // the person is among other people.
@@ -611,32 +612,38 @@ struct SettingsForm: View {
                             ChangePasswordView(connection: connection)
                         } label: {
                             Label("Password", systemImage: "key")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             PasskeysView(connection: connection)
                         } label: {
                             Label("Passkeys", systemImage: "person.badge.key")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             TokensView(connection: connection)
                         } label: {
                             Label("API tokens", systemImage: "terminal")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             DevicesView(connection: connection)
                         } label: {
                             Label("Devices", systemImage: "iphone")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             ConnectedAppsView(connection: connection)
                         } label: {
                             Label("Apps", systemImage: "app.badge.checkmark")
+                                .foregroundStyle(.primary)
                         }
                         // Last, as on the dashboard's menu: the account's pages keep one order.
                         NavigationLink {
                             SessionsView(connection: connection)
                         } label: {
                             Label("Sessions", systemImage: "macbook.and.iphone")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -652,6 +659,7 @@ struct SettingsForm: View {
                             PhotoFacesSettingsView(connection: connection)
                         } label: {
                             Label("People in Photos", systemImage: "person.crop.circle")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -661,41 +669,49 @@ struct SettingsForm: View {
                             AgentSettingsView(connection: connection)
                         } label: {
                             Label("Agent settings", systemImage: "slider.horizontal.3")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             KnowledgeSourcesView(connection: connection)
                         } label: {
                             Label("Sources", systemImage: "tray.2")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             AgentMemorySettingsView(connection: connection)
                         } label: {
                             Label("Memory", systemImage: "brain")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             DreamsView(connection: connection)
                         } label: {
                             Label("Dreams", systemImage: "moon.zzz")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             SchedulesView(connection: connection)
                         } label: {
                             Label("Schedules", systemImage: "clock")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             MutedAlertsView(connection: connection)
                         } label: {
                             Label("Alerts", systemImage: "bell.badge")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             ConnectionsView(connection: connection)
                         } label: {
                             Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
+                                .foregroundStyle(.primary)
                         }
                         NavigationLink {
                             AgentActivityView(connection: connection)
                         } label: {
                             Label("Activity", systemImage: "list.bullet.rectangle")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -705,6 +721,7 @@ struct SettingsForm: View {
                             ManageOverviewView(connection: connection)
                         } label: {
                             Label("Manage", systemImage: "server.rack")
+                                .foregroundStyle(.primary)
                         }
                     } footer: {
                         Text("The server: its mail, domains, people and settings.")
@@ -717,6 +734,7 @@ struct SettingsForm: View {
                             MailboxSettingsView(mail: mail)
                         } label: {
                             Label("Mailbox", systemImage: "tray")
+                                .foregroundStyle(.primary)
                         }
                     }
                 }
@@ -1003,6 +1021,7 @@ struct AccountsSection: View {
                 app.isAddingAccount = true
             } label: {
                 Label("Add account", systemImage: "plus")
+                    .actionColor()
             }
         } header: {
             Text("Accounts")

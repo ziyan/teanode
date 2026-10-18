@@ -121,6 +121,7 @@ private struct RestartNote: View {
                 ServerAboutView(connection: connection)
             } label: {
                 Label("Restart it on the About page", systemImage: "arrow.clockwise")
+                    .foregroundStyle(.primary)
             }
         } footer: {
             Text("These are read once, when the server starts. Saving stores the change; the server goes on using what it read until it is restarted.")
@@ -301,6 +302,7 @@ private struct ServerSettingsRows: View {
                         ServerAboutView(connection: model.connection)
                     } label: {
                         Label("About", systemImage: "info.circle")
+                            .foregroundStyle(.primary)
                     }
                 }
                 if tabs.contains(.setup) {
@@ -308,6 +310,7 @@ private struct ServerSettingsRows: View {
                         ServerSetupView(connection: model.connection)
                     } label: {
                         Label("Setup", systemImage: "checklist")
+                            .foregroundStyle(.primary)
                     }
                 }
             } footer: {
@@ -752,6 +755,7 @@ private struct RelayFormView: View {
                     }
                 } label: {
                     Label("Fill in from a provider", systemImage: "wand.and.stars")
+                        .actionColor()
                 }
             } footer: {
                 Text("Sets the host, port and encryption. The username and password are still yours to enter.")
@@ -1088,6 +1092,7 @@ private struct SSOFormView: View {
                 Button("Add a provider", systemImage: "plus") {
                     draft.wrappedValue.providers.append(SSOProviderDraft())
                 }
+                .actionColor()
             }
         }
         .task {
@@ -1226,6 +1231,7 @@ struct ServerAboutView: View {
                     ReleaseNotesView(notes: notes, version: latestText)
                 } label: {
                     Label("What changed in \(latestText)", systemImage: "doc.text")
+                        .foregroundStyle(.primary)
                 }
                 .fullWidthRowSeparator()
             }
@@ -1242,6 +1248,7 @@ struct ServerAboutView: View {
                 Task { await checkForUpgrade() }
             } label: {
                 Label(isChecking ? LocalizedStringKey("Checking…") : "Check now", systemImage: "arrow.triangle.2.circlepath")
+                    .actionColor()
             }
             .disabled(isChecking || isUpgrading || upgrade.isEnabled == false)
             .fullWidthRowSeparator()
@@ -1251,6 +1258,7 @@ struct ServerAboutView: View {
                     isConfirmingUpgrade = true
                 } label: {
                     Label(isUpgrading ? String(localized: "Upgrading…") : String(localized: "Upgrade to \(latestText)"), systemImage: "arrow.down.circle")
+                        .actionColor()
                 }
                 .disabled(isUpgrading || upgrade.isUpgrading)
                 .confirmationDialog(
@@ -1931,41 +1939,41 @@ struct AgentAdminView: View {
         switch tab {
         case .general:
             Section("General") {
-                NavigationLink { AgentListView(connection: connection) } label: { Label("Agents", systemImage: "person.2") }
-                NavigationLink { AgentHouseSettingsView(model: model) } label: { Label("Personal agents", systemImage: "sparkles") }
+                NavigationLink { AgentListView(connection: connection) } label: { Label("Agents", systemImage: "person.2").foregroundStyle(.primary) }
+                NavigationLink { AgentHouseSettingsView(model: model) } label: { Label("Personal agents", systemImage: "sparkles").foregroundStyle(.primary) }
             }
         case .usage:
             Section {
-                NavigationLink { AgentUsageView(connection: connection) } label: { Label("Use and cost", systemImage: "chart.bar") }
+                NavigationLink { AgentUsageView(connection: connection) } label: { Label("Use and cost", systemImage: "chart.bar").foregroundStyle(.primary) }
             }
         case .runs:
             Section {
-                NavigationLink { AgentRunsAdminView(connection: connection) } label: { Label("Runs", systemImage: "list.bullet.rectangle") }
+                NavigationLink { AgentRunsAdminView(connection: connection) } label: { Label("Runs", systemImage: "list.bullet.rectangle").foregroundStyle(.primary) }
             }
         case .models:
             Section("Models") {
-                NavigationLink { AgentProvidersView(model: model) } label: { Label("Providers", systemImage: "cpu") }
-                NavigationLink { AgentModelsFormView(model: model) } label: { Label("Models", systemImage: "square.stack.3d.up") }
-                NavigationLink { AgentVoiceFormView(model: model) } label: { Label("Voice", systemImage: "waveform") }
-                NavigationLink { AgentRecordingFormView(model: model) } label: { Label("Recording", systemImage: "record.circle") }
-                NavigationLink { AgentFeaturesFormView(model: model) } label: { Label("What people may turn on", systemImage: "switch.2") }
-                NavigationLink { AgentLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.67percent") }
+                NavigationLink { AgentProvidersView(model: model) } label: { Label("Providers", systemImage: "cpu").foregroundStyle(.primary) }
+                NavigationLink { AgentModelsFormView(model: model) } label: { Label("Models", systemImage: "square.stack.3d.up").foregroundStyle(.primary) }
+                NavigationLink { AgentVoiceFormView(model: model) } label: { Label("Voice", systemImage: "waveform").foregroundStyle(.primary) }
+                NavigationLink { AgentRecordingFormView(model: model) } label: { Label("Recording", systemImage: "record.circle").foregroundStyle(.primary) }
+                NavigationLink { AgentFeaturesFormView(model: model) } label: { Label("What people may turn on", systemImage: "switch.2").foregroundStyle(.primary) }
+                NavigationLink { AgentLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.67percent").foregroundStyle(.primary) }
             }
         case .tools:
             Section("Tools") {
-                NavigationLink { AgentToolPolicyFormView(model: model) } label: { Label("Tool policy", systemImage: "wrench.and.screwdriver") }
-                NavigationLink { AgentWebSearchFormView(model: model) } label: { Label("Web search", systemImage: "magnifyingglass") }
-                NavigationLink { AgentBrowserFormView(model: model) } label: { Label("Browser", systemImage: "safari") }
-                NavigationLink { ConnectedServersView(model: model) } label: { Label("Connected servers", systemImage: "server.rack") }
+                NavigationLink { AgentToolPolicyFormView(model: model) } label: { Label("Tool policy", systemImage: "wrench.and.screwdriver").foregroundStyle(.primary) }
+                NavigationLink { AgentWebSearchFormView(model: model) } label: { Label("Web search", systemImage: "magnifyingglass").foregroundStyle(.primary) }
+                NavigationLink { AgentBrowserFormView(model: model) } label: { Label("Browser", systemImage: "safari").foregroundStyle(.primary) }
+                NavigationLink { ConnectedServersView(model: model) } label: { Label("Connected servers", systemImage: "server.rack").foregroundStyle(.primary) }
             }
         case .skills:
             Section {
-                NavigationLink { AgentSkillsView(connection: connection) } label: { Label("Skills", systemImage: "puzzlepiece.extension") }
+                NavigationLink { AgentSkillsView(connection: connection) } label: { Label("Skills", systemImage: "puzzlepiece.extension").foregroundStyle(.primary) }
             }
         case .sources:
             Section("Sources") {
-                NavigationLink { AgentSourceTypesView(connection: connection) } label: { Label("Source types", systemImage: "books.vertical") }
-                NavigationLink { AgentFinanceFormView(model: model) } label: { Label("Finance", systemImage: "banknote") }
+                NavigationLink { AgentSourceTypesView(connection: connection) } label: { Label("Source types", systemImage: "books.vertical").foregroundStyle(.primary) }
+                NavigationLink { AgentFinanceFormView(model: model) } label: { Label("Finance", systemImage: "banknote").foregroundStyle(.primary) }
             }
         }
     }
@@ -2703,6 +2711,7 @@ private struct AgentRunsAdminView: View {
                 Button("All runs", systemImage: "line.3.horizontal.decrease.circle") {
                     filter.jobId = nil
                 }
+                .actionColor()
                 .fullWidthRowSeparator()
             }
             if let runs, runs.isEmpty {
@@ -3348,6 +3357,7 @@ struct AgentProviderForm: View {
             Button("Price another model", systemImage: "plus") {
                 draft.modelPrices.append(AgentProviderDraft.ModelPriceDraft())
             }
+            .actionColor()
         } footer: {
             Text("Per million tokens, as the prices above are. The first line whose model matches is the one used, so a pattern ending in * can sit under the exact names it should not cover. Anything not matched costs what the provider costs.")
         }
@@ -3575,6 +3585,7 @@ private struct AgentModelsFormView: View {
                             }))
                 } label: {
                     Label("Add a model people may pick", systemImage: "plus")
+                        .foregroundStyle(.primary)
                 }
             } header: {
                 Text("Models a person may pick")

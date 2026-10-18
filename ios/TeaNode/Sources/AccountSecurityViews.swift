@@ -486,6 +486,7 @@ private struct IssuedTokenList: View {
                     .font(.body.monospaced())
                     .textSelection(.enabled)
                 Button("Copy token", systemImage: "doc.on.doc") { UIPasteboard.general.string = issued.secret }
+                    .actionColor()
             } footer: {
                 Text(
                     "Only the hash of this token is stored, so this is the one moment it can be read. Not even an administrator can recover it afterwards."
@@ -496,6 +497,7 @@ private struct IssuedTokenList: View {
                     .font(.footnote.monospaced())
                     .textSelection(.enabled)
                 Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = issued.environmentLines }
+                    .actionColor()
             } header: {
                 Text("Use it from another machine with:")
             }

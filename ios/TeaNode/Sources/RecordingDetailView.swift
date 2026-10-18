@@ -451,6 +451,7 @@ struct RecordingDetailsSheet: View {
                                     Task { await model.retry(run) }
                                 } label: {
                                     Label("Retry transcription", systemImage: "arrow.clockwise")
+                                        .actionColor()
                                 }
                                 .disabled(!model.isTranscriptionAvailable)
                                 .fullWidthRowSeparator()
@@ -462,6 +463,7 @@ struct RecordingDetailsSheet: View {
                                 RecordingTranscriptScreen(connection: connection, recording: model.recording, transcriptRun: run)
                             } label: {
                                 Label("Transcription details", systemImage: "doc.text.magnifyingglass")
+                                    .foregroundStyle(.primary)
                             }
                         } header: {
                             Text("Transcription")
@@ -481,12 +483,14 @@ struct RecordingDetailsSheet: View {
                                 RecordingSpeakersScreen(connection: connection, recording: model.recording, initial: speakers)
                             } label: {
                                 Label("Speakers and voice references", systemImage: "person.2.wave.2")
+                                    .foregroundStyle(.primary)
                             }
                         }
                         NavigationLink {
                             RecordingTextHistoryScreen(connection: connection, recordingId: model.recording.id)
                         } label: {
                             Label("Transcript edit history", systemImage: "clock.arrow.circlepath")
+                                .foregroundStyle(.primary)
                         }
                     }
                     if !model.recording.captureGaps.isEmpty {
@@ -541,7 +545,7 @@ struct RecordingDetailsSheet: View {
         Section {
             if learning.hasStoppedReading == true {
                 Text("Stopped reading transcripts").foregroundStyle(.secondary)
-                Button("Resume reading", systemImage: "play") { Task { await model.resumeLearning() } }.disabled(model.isSubmitting)
+                Button("Resume reading", systemImage: "play") { Task { await model.resumeLearning() } }.actionColor().disabled(model.isSubmitting)
                     .fullWidthRowSeparator()
                 Text("Previously learned pages remain. Transcript corrections still reconcile outdated material.").font(.callout)
                     .foregroundStyle(.secondary)
@@ -563,9 +567,11 @@ struct RecordingDetailsSheet: View {
                     KnowledgeSourcesView(connection: connection, highlightedSourceId: source.id)
                 } label: {
                     Label("Knowledge source", systemImage: "brain")
+                        .foregroundStyle(.primary)
                 }
                 .fullWidthRowSeparator()
                 Button("Edit this source", systemImage: "pencil") { editingLearningSource = source }
+                    .actionColor()
             } else {
                 Text("Waiting for a completed transcript").foregroundStyle(.secondary)
             }

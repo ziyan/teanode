@@ -292,12 +292,15 @@ struct LocationPersonPanel: View {
         List {
             Section {
                 Button("Back to my location", systemImage: "chevron.backward") { model.clearSelection() }
+                    .actionColor()
             }
             if person.level == .history {
                 Section {
                     Button("Previous day", systemImage: "chevron.left") { model.movePersonDay(by: -1) }
+                        .actionColor()
                     if model.canMovePersonDayLater {
                         Button("Next day", systemImage: "chevron.right") { model.movePersonDay(by: 1) }
+                            .actionColor()
                     }
                     if let problem = model.personProblemText {
                         Text(verbatim: problem).foregroundStyle(.secondary)

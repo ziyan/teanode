@@ -326,6 +326,7 @@ struct DevicesView: View {
                     PhonesView(connection: connection)
                 } label: {
                     Label("Phones", systemImage: "iphone")
+                        .foregroundStyle(.primary)
                 }
             } header: {
                 Text("TeaNode app")
@@ -335,9 +336,11 @@ struct DevicesView: View {
             Section {
                 NavigationLink { DeviceSetupView(connection: connection) } label: {
                     Label("Set up on this iPhone", systemImage: "iphone")
+                        .foregroundStyle(.primary)
                 }
                 NavigationLink { SyncCredentialsView(connection: connection) } label: {
                     Label("Sync passwords", systemImage: "key")
+                        .foregroundStyle(.primary)
                 }
             } header: {
                 Text("Built-in apps")
@@ -551,6 +554,7 @@ struct PhoneSettingsView: View {
                     Button("Send a test notification", systemImage: "bell.badge") {
                         Task { await test() }
                     }
+                    .actionColor()
                 }
             }
         }

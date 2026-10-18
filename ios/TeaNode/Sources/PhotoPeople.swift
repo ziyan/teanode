@@ -628,6 +628,7 @@ struct NamePersonSheet: View {
                             choose { await model.nameWithNewContact(group, contactName: searchText) }
                         } label: {
                             Label("New contact “\(PhotoNaming.trimmedName(searchText))”", systemImage: "person.badge.plus")
+                                .actionColor()
                         }
                         .fullWidthRowSeparator()
                     }
@@ -879,6 +880,7 @@ struct PhotoFacesSettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button("Try again", systemImage: "arrow.clockwise") { Task { await readLibrary() } }
+                        .actionColor()
                 }
             }
             Section {

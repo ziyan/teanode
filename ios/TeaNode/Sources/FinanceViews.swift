@@ -1466,7 +1466,7 @@ struct TransactionDetail: View {
                         Text(description).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     if transaction.isPending == true {
-                        Label("Pending", systemImage: "clock").font(.footnote)
+                        Label("Pending", systemImage: "clock").foregroundStyle(.primary).font(.footnote)
                     }
                 }
                 Section {
@@ -1791,12 +1791,14 @@ struct AccountsView: View {
                         UIPasteboard.general.string = address
                         finance.doneText = String(localized: "Address copied")
                     }
+                    .actionColor()
                     .fullWidthRowSeparator()
                 } else {
                     Text("You have no mailbox address to receive statements at.")
                         .foregroundStyle(.secondary)
                 }
                 Button("New address", systemImage: "arrow.clockwise") { isRegeneratingStatementAddress = true }
+                    .actionColor()
                 .fullWidthRowSeparator()
                 .confirmationDialog("New import address?", isPresented: $isRegeneratingStatementAddress, titleVisibility: .visible) {
                     Button("Make a new address", role: .destructive) {

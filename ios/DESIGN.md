@@ -108,12 +108,13 @@ its pull request is opened.
   receipt", or a standard capsule button. Never a footnote-size link or
   several small buttons side by side in a row or a card. Destructive ones
   are red, symbol and words alike: `role: .destructive` reddens only the
-  words, so the button carries `.tint(.red)` for its symbol
-  (`make check-button-colors` checks it); in a form or list row, where the
-  tint does not reach the symbol, it also takes
-  `.actionColor(isDestructive: true)`. A list button that can be disabled,
-  or an action in a plain list, takes `.actionColor()`: green while it can
-  be pressed, grey while it cannot, symbol and words alike.
+  words, so the button carries `.tint(.red)` for its symbol.
+- A symbol is the color of its words. Actions are green, or red, and grey
+  while they cannot be pressed; a row that opens a page or shows something
+  has its symbol in the text color, as the side menu's parts do. A list row
+  greens its symbol whatever its words are, so in a form or list a button's
+  label takes `.actionColor()` and any other label with a symbol
+  `.foregroundStyle(.primary)` (`make check-button-colors` checks both).
 - Show content, do not fold it. Lines of a receipt, a quoted message, a
   summary: show them whole, in body text, one row each. A long list moves to
   a screen of its own behind a row, as iOS Settings does; it does not open in

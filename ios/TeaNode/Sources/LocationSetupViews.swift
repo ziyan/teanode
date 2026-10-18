@@ -53,6 +53,7 @@ struct LocationSetupList: View {
                             run { await model.shareWithFamily(circle, at: .current) }
                         } label: {
                             Label("Share where I am now with \(circle.name)", systemImage: "location.circle")
+                                .actionColor()
                         }
                         .disabled(isWorking)
                         .frame(minHeight: 44)

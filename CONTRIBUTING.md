@@ -116,18 +116,18 @@ accent, every string in the String Catalog in all three languages.
   and dark. A new screen adds its demo data and its `shoot` lines, and
   somebody opens the screenshots before the pull request merges: CI passing
   says the screen was drawn, not that it looks right.
-- **A button's symbol and words are one color.** Green for an action, red for
-  one that destroys, symbol and words alike. A button with
-  `role: .destructive` gets red words from its role but its symbol takes the
-  app's green tint, so it carries `.tint(.red)` straight after it;
-  `make check-button-colors` fails on one that does not, and
-  `node ios/scripts/check-button-colors.mjs --fix` adds it. In a form or
-  list row the tint does not reach the symbol, so a destructive button there
-  also takes `.actionColor(isDestructive: true)` after it, which the check
-  wants too. A list button that can be disabled, or an action in a plain list
-  such as the side menu, takes `.actionColor()`: disabled there, the words
-  turn black and the symbol stays green, and a plain list draws the words in
-  the text color. Never color the words and the symbol separately.
+- **A symbol is the color of its words.** On a button: green for an action,
+  red for one that destroys, grey while it cannot be pressed. On a row that
+  opens a page or shows something: the text color, as the side menu's parts
+  are. In a form or list row a symbol takes the app's green whatever color
+  its words are, so every row symbol is given its color: a button or menu
+  with `.actionColor()` (`.actionColor(isDestructive: true)` after the
+  `.tint(.red)` of one that destroys), anything else with
+  `.foregroundStyle(.primary)`. A destructive button anywhere carries
+  `.tint(.red)` straight after it, for swipe actions, menus and toolbars.
+  `make check-button-colors` fails on a symbol without its color, and
+  `node ios/scripts/check-button-colors.mjs --fix` adds it. Never color the
+  words and the symbol separately.
 
 ## Comments
 

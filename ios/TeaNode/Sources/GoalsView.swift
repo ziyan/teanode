@@ -132,8 +132,10 @@ struct GoalDetail: View {
                     Button("Open its conversation", systemImage: "bubble.left") {
                         app.openedConversationId = goal.conversationId
                     }
+                    .actionColor()
                     if goal.isOpen {
                         Button("Use a schedule", systemImage: "calendar.badge.clock") { isChoosingSchedule = true }
+                            .actionColor()
                     }
                 }
                 if goal.isOpen {
@@ -179,6 +181,7 @@ struct GoalDetail: View {
                 Section {
                     if goal.isOpen {
                         Button("Mark met", systemImage: "checkmark.circle") { Task { await setState("met", saying: String(localized: "Marked met")) } }
+                            .actionColor()
                         Button("Drop goal", systemImage: "xmark.circle", role: .destructive) { isConfirmingDrop = true }
                             .tint(.red)
                             .actionColor(isDestructive: true)
@@ -189,6 +192,7 @@ struct GoalDetail: View {
                         }
                     } else {
                         Button("Reopen", systemImage: "arrow.uturn.backward") { Task { await setState("working", saying: String(localized: "Reopened")) } }
+                            .actionColor()
                     }
                 }
             } else {

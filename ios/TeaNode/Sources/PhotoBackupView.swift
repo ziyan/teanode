@@ -152,6 +152,7 @@ struct PhotoBackupContent: View {
             if isOnForOtherAccount, let enabledAccountName {
                 Section {
                     Label("Photo backup is on for \(enabledAccountName).", systemImage: "person.crop.circle")
+                        .foregroundStyle(.primary)
                 } footer: {
                     Text("Its progress shows when you are signed in as that account.")
                 }
@@ -171,13 +172,16 @@ struct PhotoBackupContent: View {
                     // that could not be used would only look like a second one.
                     if !status.isPaused {
                         Button("Back up now", systemImage: "icloud.and.arrow.up", action: backUpNow)
+                            .actionColor()
                             .disabled(isWorking || status.phase == .needsSignIn)
                     }
                     if status.isPaused {
                         Button("Resume backup", systemImage: "play.circle", action: togglePause)
+                            .actionColor()
                             .disabled(isWorking)
                     } else {
                         Button("Pause backup", systemImage: "pause.circle", action: togglePause)
+                            .actionColor()
                             .disabled(isWorking)
                     }
                 } footer: {
@@ -215,10 +219,12 @@ struct PhotoBackupContent: View {
                 LabeledContent("Largest file", value: library.maximumFileBytes > 0 ? library.maximumFileBytes.formatted(.byteCount(style: .file)) : String(localized: "No limit"))
             } else if let libraryFailureText {
                 Label("The size of your library could not be read.", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.primary)
                 Text(libraryFailureText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Button("Try again", systemImage: "arrow.clockwise", action: readLibrary)
+                    .actionColor()
             }
         } header: {
             Text("Your library")
@@ -238,9 +244,11 @@ struct PhotoBackupContent: View {
     private func accessSection(_ access: PhotoBackupAccess) -> some View {
         Section {
             Label(accessText(access), systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.primary)
             Button("Open Settings", systemImage: "gear") {
                 if let address = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(address) }
             }
+            .actionColor()
         } footer: {
             Text("Photo backup reads your whole library, so TeaNode needs Full Access. Open Settings, choose Photos, then Full Access.")
         }
@@ -335,7 +343,9 @@ struct PhotoBackupContent: View {
     private var signInSection: some View {
         Section {
             Label("The server did not accept this iPhone's backup password.", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.primary)
             Button("Sign in again", systemImage: "key", action: signInAgain)
+                .actionColor()
                 .disabled(isWorking)
         } footer: {
             Text("This makes a new backup password. Photos already backed up are not sent again.")

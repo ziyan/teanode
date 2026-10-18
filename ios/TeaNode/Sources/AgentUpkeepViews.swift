@@ -2057,6 +2057,7 @@ struct SchedulesView: View {
                 Button("Send one now", systemImage: "paperplane") {
                     Task { await act(saying: String(localized: "Sending one now; it will arrive in a moment.")) { try await connection.runDailyBrief() } }
                 }
+                .actionColor()
                 .fullWidthRowSeparator()
                 Button("Stop", role: .destructive) { Task { await saveBrief(isEnabled: false) } }
             } else {
@@ -2568,6 +2569,7 @@ struct MutedAlertsView: View {
             }
             if followUps != nil {
                 Button("Mute follow-ups", systemImage: "bell.slash") { isMutingFollowUps = true }
+                    .actionColor()
                     .confirmationDialog("Stop telling me about follow-ups", isPresented: $isMutingFollowUps, titleVisibility: .visible) {
                         ForEach(AgentFollowUp.muteKinds, id: \.self) { kind in
                             Button(sentenceCase(followUpKindName(kind))) {
@@ -3044,6 +3046,7 @@ struct ConnectionsView: View {
                 SkillSharingView(connection: connection)
             } label: {
                 Label("Shared skills", systemImage: "person.2")
+                    .foregroundStyle(.primary)
             }
         } footer: {
             Text("Lend a skill to someone in a circle you share, and answer what they ask. Each use runs on your computer, as you.")
@@ -3553,8 +3556,10 @@ struct AgentActivityView: View {
                 Label(
                     String(localized: "Dream at \(dreamStartedAt.map { UpkeepWords.when($0) } ?? dreamJobId)"), systemImage: "moon.stars"
                 )
+                .foregroundStyle(.primary)
                 .fullWidthRowSeparator()
                 Button("Show all", systemImage: "xmark.circle") { self.dreamJobId = nil }
+                    .actionColor()
                     .fullWidthRowSeparator()
             }
             if let runs, runs.isEmpty {
