@@ -190,12 +190,15 @@ struct SidePanel<Panel: View, Content: View>: View {
     @State private var dragged: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var isReducingMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// How far from the left edge a swipe must start to open the panel.
     static var edgeWidth: CGFloat { 28 }
 
-    /// How wide the panel is when it stays open as a column.
-    static var columnWidth: CGFloat { 320 }
+    /// How wide the panel is when it stays open as a column: wider at the
+    /// accessibility text sizes, where a part's name in 320 points was broken
+    /// in the middle of the word.
+    private var columnWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 440 : 320 }
 
     var body: some View {
         if horizontalSizeClass.isMenuColumn {
@@ -211,7 +214,7 @@ struct SidePanel<Panel: View, Content: View>: View {
     private var column: some View {
         HStack(spacing: 0) {
             panel()
-                .frame(width: Self.columnWidth)
+                .frame(width: columnWidth)
                 .environment(\.isMenuPinned, true)
             Divider()
             content()
