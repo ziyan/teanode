@@ -77,13 +77,6 @@ final class CodingModel {
             sessions: current.sessions.filter { $0.id != id })
     }
 
-    /// The sessions of the same workspace as this one, by tab number.
-    func siblings(of session: HerdrSession) -> [HerdrSession] {
-        guard !session.workspaceId.isEmpty else { return [session] }
-        let siblings = (list?.sessions ?? []).filter { $0.computer == session.computer && $0.workspaceId == session.workspaceId }
-        return siblings.sorted { $0.tabNumber < $1.tabNumber }
-    }
-
     /// Every workspace, by computer in name order, so each stays where the
     /// person last saw it, then by workspace number.
     var workspaces: [CodingWorkspace] {
@@ -331,24 +324,39 @@ struct CodingSessionRow: View {
     }
 }
 
-/// CodingStateLabel says a session is working or asking, with a symbol and
-/// words; an idle one is not marked, as the list marks only what calls for
-/// a look.
+/// CodingStateLabel is a session's state as a small capsule tag, as the
+/// dashboard's list shows it: idle on a quiet ground, working in the
+/// accent, asking in orange with a question mark, so color is never the only
+/// thing that says it.
 struct CodingStateLabel: View {
     let session: HerdrSession
 
     var body: some View {
         if session.isAsking {
-            Label("Asking", systemImage: "questionmark.bubble")
-                .labelStyle(.tag)
-                .font(.caption)
-                .foregroundStyle(.orange)
+            tag(color: .orange) {
+                Label("Asking", systemImage: "questionmark").labelStyle(.tag)
+            }
         } else if session.isWorking {
-            Label("Working", systemImage: "ellipsis")
-                .labelStyle(.tag)
-                .font(.caption)
+            tag(color: .accentColor) { Text("Working") }
+        } else {
+            Text("Idle")
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .overlay(Capsule().strokeBorder(Color(.separator)))
+                .fixedSize()
         }
+    }
+
+    private func tag(color: Color, @ViewBuilder words: () -> some View) -> some View {
+        words()
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.15), in: .capsule)
+            .fixedSize()
     }
 }
 
@@ -451,8 +459,9 @@ struct CodingSessionView: View {
 
     @ViewBuilder
     private func content(_ session: HerdrSession) -> some View {
+        // No strip of the workspace's tabs: the list a step back holds them,
+        // and a new tab beside this one is in the actions menu.
         VStack(spacing: 0) {
-            tabStrip(session)
             // Turns or the screen, by one round button floating over the
             // top right of what is shown, rather than a row of its own.
             Group {
@@ -486,75 +495,23 @@ struct CodingSessionView: View {
         }
     }
 
-    /// The workspace's coding sessions, one chip each in tab order, and the
-    /// way to open another beside them. The chips scroll sideways, so the
-    /// largest text size does not cut any off; the plus stays in place.
-    private func tabStrip(_ session: HerdrSession) -> some View {
-        // The chosen tab is kept in view: when the session opens, and
-        // whenever another is chosen or the tabs change. The way to open
-        // another is the strip's last chip, drawn like the tabs and
-        // scrolling with them.
-        ScrollViewReader { reader in
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(model.siblings(of: session)) { tab in
-                        Button {
-                            selectedId = tab.id
-                        } label: {
-                            CodingTabChip(session: tab, isSelected: tab.id == selectedId)
-                        }
-                        .buttonStyle(.plain)
-                        .id(tab.id)
-                    }
-                    Menu {
-                        Button { Task { await openTab(beside: session, codingAgentKind: "claude") } } label: { Text(verbatim: "Claude Code") }
-                        Button { Task { await openTab(beside: session, codingAgentKind: "codex") } } label: { Text(verbatim: "Codex") }
-                    } label: {
-                        Group {
-                            if isOpeningTab {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "plus")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                        }
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .background(Color(.tertiarySystemFill), in: .circle)
-                        .contentShape(.circle)
-                    }
-                    .disabled(isOpeningTab)
-                    // Grey like the tabs' words, not the accent a menu
-                    // takes on its own.
-                    .tint(.secondary)
-                    .accessibilityLabel("New tab")
-                }
-                .padding(.horizontal)
-            }
-            .scrollIndicators(.hidden)
-            // Dragging the tabs sideways scrolls them, never opens the menu.
-            .keepsSidePanelClosed()
-            .onAppear { reader.scrollTo(selectedId) }
-            .onChange(of: selectedId) {
-                withAnimation { reader.scrollTo(selectedId) }
-            }
-            .onChange(of: model.siblings(of: session).count) { reader.scrollTo(selectedId) }
-        }
-        .padding(.vertical, 4)
-    }
-
     private func transcript(_ session: HerdrSession) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 if isTruncated, turnCount < Self.greatestTurnCount {
+                    // As the chat's earlier messages: a small capsule in the
+                    // middle, and reaching it after scrolling up reads them.
                     Button {
                         turnCount = Self.greatestTurnCount
                     } label: {
-                        Text("Show earlier turns").frame(maxWidth: .infinity)
+                        Text("Show earlier turns")
                     }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
-                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .onAppear {
+                        if !isAtEnd { turnCount = Self.greatestTurnCount }
+                    }
                 }
                 ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
                     CodingTurnView(turn: turn)
@@ -659,6 +616,13 @@ struct CodingSessionView: View {
 
     private func actionsMenu(_ session: HerdrSession) -> some View {
         Menu {
+            Menu {
+                Button { Task { await openTab(beside: session, codingAgentKind: "claude") } } label: { Text(verbatim: "Claude Code") }
+                Button { Task { await openTab(beside: session, codingAgentKind: "codex") } } label: { Text(verbatim: "Codex") }
+            } label: {
+                Label("New tab", systemImage: "plus")
+            }
+            .disabled(isOpeningTab)
             Button {
                 Task { await show(session) }
             } label: {
@@ -738,7 +702,7 @@ struct CodingSessionView: View {
                 model.upsert(read.herdrSession)
             }
             isRead = true
-            // The other tabs' states, for the strip.
+            // The list, for this session's state and the list a step back.
             await model.load()
         } catch is CancellationError {
         } catch {
@@ -812,22 +776,11 @@ struct CodingSessionView: View {
 
     private func close(_ session: HerdrSession) async {
         do {
-            // The tab to move to, chosen before this one leaves the list: the
-            // next one in the workspace, else the one before.
-            let tabs = model.siblings(of: session)
-            let position = tabs.firstIndex { $0.id == session.id }
-            let nextTab = position.flatMap { index -> HerdrSession? in
-                if index + 1 < tabs.count { return tabs[index + 1] }
-                return index > 0 ? tabs[index - 1] : nil
-            }
             _ = try await connection.closeHerdrSession(computer: session.computer, paneId: session.paneId)
             model.remove(id: session.id)
             doneText = String(localized: "Closed \(session.tabTitle)")
-            if let nextTab {
-                selectedId = nextTab.id
-            } else {
-                dismiss()
-            }
+            // Back to the list, which holds the workspace's other tabs.
+            dismiss()
         } catch {
             problemText = app.describe(error)
         }
@@ -846,67 +799,6 @@ struct CodingSessionView: View {
         } catch {
             problemText = app.describe(error)
         }
-    }
-}
-
-/// CodingTabChip is one tab of the strip: its name, a dot when herdr shows
-/// it on the computer's screen, and a mark when it works or asks. The one
-/// shown here is on a tinted ground.
-struct CodingTabChip: View {
-    let session: HerdrSession
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            // The room for the dot and the mark is always there, so a tab
-            // gaining or losing focus or work does not move its neighbors.
-            Circle()
-                .fill(.primary)
-                .frame(width: 6, height: 6)
-                .opacity(session.isTabFocused ? 1 : 0)
-                .accessibilityHidden(true)
-            // One weight whether chosen or not, so choosing a tab does not
-            // move the others; the background says which is chosen.
-            Text(verbatim: session.chipTitle)
-                .font(.subheadline)
-                .lineLimit(1)
-                .frame(maxWidth: 220, alignment: .leading)
-            Group {
-                if session.isAsking {
-                    Image(systemName: "questionmark.bubble.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                } else if session.isWorking {
-                    Image(systemName: "ellipsis")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 16, height: 16)
-            // The slot is a fixed size, so its mark stops growing where it
-            // would spill out of it.
-            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            .accessibilityHidden(true)
-        }
-        .foregroundStyle(isSelected ? .primary : .secondary)
-        .padding(.horizontal, 14)
-        .frame(minHeight: 44)
-        .background(isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.2)) : AnyShapeStyle(Color(.tertiarySystemFill)), in: .capsule)
-        .contentShape(.capsule)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private var accessibilityText: String {
-        var parts = [session.chipTitle]
-        if session.isTabFocused { parts.append(String(localized: "On screen")) }
-        if session.isAsking {
-            parts.append(String(localized: "Asking"))
-        } else if session.isWorking {
-            parts.append(String(localized: "Working"))
-        }
-        return parts.joined(separator: ", ")
     }
 }
 
@@ -1354,15 +1246,6 @@ struct CodingOpenSheet: View {
                 .padding()
                 .preferredColorScheme(.dark)
         }
-    }
-
-    #Preview("Tabs, light") {
-        VStack(alignment: .leading) {
-            ForEach(CodingPreviewData.sessions.prefix(3)) { session in
-                CodingTabChip(session: session, isSelected: session.isAsking)
-            }
-        }
-        .padding()
     }
 #endif
 
