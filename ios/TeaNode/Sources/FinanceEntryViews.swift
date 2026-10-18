@@ -520,7 +520,7 @@ struct PaystubEntryView: View {
                     EntryTextRow(title: "Employer", text: $draft.employerName, capitalization: .words)
                     EntryTextRow(title: "Employer ID", placeholder: String(localized: "Optional"), text: $draft.employerTaxId, keyboard: .numbersAndPunctuation, capitalization: .characters)
                     EntryTextRow(title: "Employee", text: $draft.employeeName, capitalization: .words)
-                    EntryTextRow(title: "Taxpayer number, last 4", placeholder: String(localized: "Optional"), text: $draft.employeeTaxIdMask, keyboard: .numberPad)
+                    EntryTextRow(title: "Taxpayer number", placeholder: String(localized: "Last 4, optional"), text: $draft.employeeTaxIdMask, keyboard: .numberPad)
                 } footer: {
                     Text("Only the last four digits of a taxpayer number are kept.")
                 }
@@ -690,7 +690,7 @@ struct TaxFormEntryView: View {
                     EntryTextRow(title: "Payer", text: $draft.payerName, capitalization: .words)
                     EntryTextRow(title: "Payer ID", placeholder: String(localized: "Optional"), text: $draft.payerTaxId, keyboard: .numbersAndPunctuation, capitalization: .characters)
                     EntryTextRow(title: "Recipient", text: $draft.recipientName, capitalization: .words)
-                    EntryTextRow(title: "Taxpayer number, last 4", placeholder: String(localized: "Optional"), text: $draft.recipientTaxIdMask, keyboard: .numberPad)
+                    EntryTextRow(title: "Taxpayer number", placeholder: String(localized: "Last 4, optional"), text: $draft.recipientTaxIdMask, keyboard: .numberPad)
                 } footer: {
                     Text("Only the last four digits of a taxpayer number are kept.")
                 }

@@ -134,9 +134,12 @@ enum FinancePart: String, CaseIterable, Identifiable, Hashable {
 struct FinanceScreen: View {
     let finance: FinanceModel
     let part: FinancePart
+    /// The pages opened on top of the part, emptied when another part is
+    /// chosen so the menu does not leave the last part's list in front.
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 switch part {
                 case .spending: SpendingView()
@@ -163,7 +166,17 @@ struct FinanceScreen: View {
             }
         }
         .environment(finance)
+        .onChange(of: part) { path = NavigationPath() }
         .task { if finance.isShown == nil { await finance.load() } }
+        #if DEBUG
+            .task {
+                // `-TeaNodeScreen finance-part-switch`: a transaction list is
+                // opened on Accounts, then the shell chooses Net worth.
+                guard DemoServer.screen == "finance-part-switch" else { return }
+                try? await Task.sleep(for: .seconds(1))
+                path.append(TransactionLink(filter: FinanceTransactionFilter()))
+            }
+        #endif
         .toast(done: Bindable(finance).doneText, problem: Bindable(finance).problemText)
     }
 }

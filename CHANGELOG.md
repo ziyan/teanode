@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.178.3] - 2026-10-18
+
+### Fixed
+
+- On the iPhone, choosing another Finance part in the side menu closes a transaction list opened on the last one, and the taxpayer number row on a paystub or tax form is no longer cut off. (#581)
+
 ## [0.178.2] - 2026-10-18
 
 ### Changed

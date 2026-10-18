@@ -4735,22 +4735,6 @@
         }
       }
     },
-    "This can't be undone. Copies already shared or downloaded keep the location.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この操作は取り消せません。すでに共有またはダウンロードされたコピーには場所が残ります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此操作无法撤销。已分享或已下载的副本仍保留位置信息。"
-          }
-        }
-      }
-    },
     "This ends %@ in %@ on %@ and closes its pane. What was said stays in its history.": {
       "localizations": {
         "ja": {
@@ -67776,22 +67760,6 @@
         }
       }
     },
-    "Taxpayer number, last 4": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "納税者番号の下 4 桁"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "纳税人号码末 4 位"
-          }
-        }
-      }
-    },
     "The form's PDF or picture. The server does not keep its text, which holds a taxpayer number.": {
       "localizations": {
         "ja": {
@@ -70510,6 +70478,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "它们将进入新账户 %@。"
+          }
+        }
+      }
+    },
+    "Taxpayer number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "納税者番号"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "纳税人号码"
+          }
+        }
+      }
+    },
+    "Last 4, optional": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下 4 桁、任意"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "末 4 位，可选"
+          }
+        }
+      }
+    },
+    "This can't be undone. Copies already shared or downloaded keep the location.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この操作は取り消せません。すでに共有またはダウンロードされたコピーには場所が残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此操作无法撤销。已分享或已下载的副本仍保留位置信息。"
           }
         }
       }
