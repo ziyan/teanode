@@ -10,6 +10,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/calendar"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -389,4 +390,95 @@ func runUnshare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	return tools.JSONResult(map[string]any{"unshared": shareId})
+}
+
+// circleNamed is the circle of the person with this id or name. A name that
+// more than one of their circles has is refused with their ids and sizes, in
+// the words every other surface uses; an id is never ambiguous.
+func circleNamed(ctx context.Context, operations tools.Operations, circle string) (*models.ShareableCircle, error) {
+	circle = strings.TrimSpace(circle)
+	if circle == "" {
+		return nil, fmt.Errorf("which circle? give 'circle', its name or id, from circle list")
+	}
+	circles, err := tools.ShareableCircles(ctx, operations)
+	if err != nil {
+		return nil, err
+	}
+	var named []models.ShareableCircle
+	for _, each := range circles {
+		if each.ID == circle {
+			return &each, nil
+		}
+		if strings.EqualFold(each.Name, circle) {
+			named = append(named, each)
+		}
+	}
+	switch len(named) {
+	case 0:
+		return nil, fmt.Errorf("%q is neither the name nor the id of a circle the person is in", circle)
+	case 1:
+		return &named[0], nil
+	}
+	return nil, models.AmbiguousCircleNameError(circle, named)
+}
+
+// circleWords says which circle a card means, with its name in quotes and how
+// many people it is, so that an id is never what the person is asked to
+// approve. A circle that cannot be looked up is quoted as it was given.
+func circleWords(ctx context.Context, circle string) string {
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return tools.Named(circle, "a circle")
+	}
+	found, err := circleNamed(ctx, run.Operations(), circle)
+	if err != nil {
+		return tools.Named(circle, "a circle")
+	}
+	return models.DescribeCircle(found.Name, found.MemberCount)
+}
+
+// runCircle makes the calendar a circle keeps for itself. The server refuses
+// anybody who is not an admin of the circle and a circle that already has
+// one, so neither is guessed at here.
+func runCircle(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	arguments, err := tools.DecodeArguments[struct {
+		Circle string `json:"circle"`
+		Name   string `json:"name"`
+	}](call)
+	if err != nil {
+		return nil, err
+	}
+	// The diary has to have been given for any of it, as everywhere here.
+	if _, _, err := theCalendar(ctx, run.Operations()); err != nil {
+		return nil, err
+	}
+	circle, err := circleNamed(ctx, run.Operations(), arguments.Circle)
+	if err != nil {
+		return nil, err
+	}
+	variables := map[string]any{"circleId": circle.ID, "name": nil}
+	if name := strings.TrimSpace(arguments.Name); name != "" {
+		variables["name"] = name
+	}
+	var result struct {
+		CreateCircleCalendar struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			CircleName string `json:"circleName"`
+		} `json:"CreateCircleCalendar"`
+	}
+	if err := run.Operations().Execute(ctx, client.DocumentCreateCircleCalendar, variables, &result); err != nil {
+		return nil, err
+	}
+	made := result.CreateCircleCalendar
+	return tools.JSONResult(map[string]any{
+		"made":     made.Name,
+		"circle":   models.DescribeCircleByName(made.CircleName),
+		"calendar": made.ID,
+		"note":     "everyone in the circle reads and writes it, and its events cannot have guests",
+	})
 }
