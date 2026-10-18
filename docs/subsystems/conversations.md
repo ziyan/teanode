@@ -472,6 +472,36 @@ own quick reaction is in the person's conversations with the agent on every
 surface and not in a chat, so in a chat the agent's is the only one), and its fifth, `send`, says something in a chat under the agent's name
 for the person (risk `outward`, so a card unless the person allowed it).
 
+The rest of what a person does with their chats is on the same tool, one action
+each, through the same GraphQL operation as the dashboard and the command line
+(`runChatAction` in `internal/agent/tools/conversation/chat_actions.go`), so the
+server holds the agent to the same rules: only an admin of a group chat changes
+who is in it or its title, only the author edits a message. People are named by
+username, as on the command line, and must share a circle with the person
+(`ListCirclePeople`, which the `circle` tool's `people` action also gives);
+`read` lists a chat's people with their usernames and roles. The risk of each
+is judged from the call (`chatRiskOf`):
+
+| Action | Operation | Risk |
+|---|---|---|
+| `direct` | `OpenDirectChat` | write |
+| `group` | `CreateGroupChat` | write: everyone put in already shares a circle with the person and nothing is said to them, so it is no more than a direct chat |
+| `rename` | `RenameChat` | write |
+| `add_members` | `AddChatMembers` | granting: they read everything said from then on |
+| `remove_member` | `RemoveChatMember` | destructive |
+| `leave` | `LeaveChat` | destructive: an admin has to add the person back |
+| `mute` | `MuteChat` | write; no end time mutes until the person unmutes, as the dashboard does |
+| `mark_read` | `MarkChatRead` | write; through the newest message people said unless one is named |
+| `edit` | `EditChatMessage` | outward, as sending is: everybody reads the new words as the person's, and the old ones are not kept |
+| `delete_message` | `DeleteChatMessage` | destructive |
+| `remember` | `SetChatAgentReading` | write |
+| `others_may_ask` | `SetChatAgentAskableByOthers` | granting when turned on or when the call does not say, write when turned off |
+
+A call that asks shows a card naming the chat and the people, from the agent's
+own conversation for the chat; a message is quoted only in a chat the person
+has a conversation for. A turn somebody else started in a chat is held to
+reading that chat and can do none of this.
+
 Two rules hold in `read`. Another agent's conversation reads exactly like one
 that does not exist, and nothing is loaded before that is checked. And a secret
 a tool showed once — an API token, an app password — is replaced by a note

@@ -52,7 +52,10 @@ import {
   formatDay,
   hasAmount,
   personToday,
+  taxFormKindName,
 } from './financeApi'
+import { PaystubEntryDialog } from './financePaystubEntry'
+import { TaxFormEntryDialog } from './financeTaxFormEntry'
 import { RingSlice, SpendingRing, ringSliceClass } from './spendingRing'
 
 // The Taxes section: one tax year (in the address as ?year=), put
@@ -87,6 +90,8 @@ type Opened =
   | { dialogKind: 'deletePaystub'; paystub: FinancePaystub }
   | { dialogKind: 'taxForm'; taxFormView: TaxFormView }
   | { dialogKind: 'deleteTaxForm'; taxFormView: TaxFormView }
+  | { dialogKind: 'addPaystub' }
+  | { dialogKind: 'addTaxForm' }
 
 function formatDollars(decimal?: string | null): string {
   return formatMoney(amountOf(decimal), TAX_CURRENCY_CODE)
@@ -1452,6 +1457,10 @@ export function FinanceTaxesSection() {
         onClose={() => setOpened(null)}
       />
     )
+  } else if (opened?.dialogKind === 'addPaystub') {
+    dialog = <PaystubEntryDialog onRecorded={() => void reload()} onClose={() => setOpened(null)} />
+  } else if (opened?.dialogKind === 'addTaxForm') {
+    dialog = <TaxFormEntryDialog taxYear={year} onRecorded={() => void reload()} onClose={() => setOpened(null)} />
   } else if (opened?.dialogKind === 'deleteTaxForm') {
     const taxFormView = opened.taxFormView
     dialog = (
@@ -1475,7 +1484,6 @@ export function FinanceTaxesSection() {
       <SettingsSection
         card
         title={t('finance.taxesTitle')}
-        description={t('finance.taxesHint')}
         action={
           <div className="finance-taxes-actions">
             <Select
@@ -1491,6 +1499,12 @@ export function FinanceTaxesSection() {
                 {t('finance.addTaxDocuments')}
               </button>
             </Tooltip>
+            <button type="button" onClick={() => setOpened({ dialogKind: 'addPaystub' })}>
+              {t('finance.addPaystub')}
+            </button>
+            <button type="button" onClick={() => setOpened({ dialogKind: 'addTaxForm' })}>
+              {t('finance.addTaxForm')}
+            </button>
             <input
               ref={picker}
               type="file"
@@ -1906,19 +1920,6 @@ function PaystubDialog({
 }
 
 // --- a W-2 or a 1099 -------------------------------------------------------
-
-// taxFormKindName is a form's kind as it is titled: W-2, 1099-INT.
-export function taxFormKindName(taxFormKind: string): string {
-  return TAX_FORM_KIND_NAMES[taxFormKind] ?? taxFormKind
-}
-
-const TAX_FORM_KIND_NAMES: Record<string, string> = {
-  w2: 'W-2',
-  '1099_int': '1099-INT',
-  '1099_div': '1099-DIV',
-  '1099_b': '1099-B',
-  '1098': '1098',
-}
 
 // BOX_LABELS name each kind's boxes, by box as printed.
 const BOX_LABELS: Record<string, Record<string, Key>> = {

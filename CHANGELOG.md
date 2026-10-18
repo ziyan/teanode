@@ -6,6 +6,30 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.175.0] - 2026-10-18
+
+### Added
+
+- Location: the TeaNode app on your iPhone records the places you visit, when you arrived and how long you stayed, even while it is closed. Places are named from OpenStreetMap, and you can rename them and label them home, work, school, family or gym. Share where you are now, or where you have been too, with a circle or a person in it, and see them on a map; get a notification when someone arrives at or leaves a place they named. Your agent can answer where you went and search for places near you. Operators choose the place provider (OpenStreetMap's public server by default, a Photon server, or off) and the map style in the server settings; with a provider on, the server sends the position of each new place to it to look up its name. (#536)
+
+## [0.174.0] - 2026-10-18
+
+### Added
+
+- Dashboard and iPhone: a Coding page for your herdr sessions. Read a session's transcript as it works, send it a prompt with files, switch between a workspace's tabs, open a new tab beside one, close one, and show a tab on the computer. (#534)
+- Agent and command line: `focus` shows a session's tab on its computer (`teanode computer herdr focus <pane>`), and `open` opens a new tab beside a session (`teanode computer herdr open --pane <pane>`). `list` groups sessions by workspace and marks the tab on screen. `screen --color` keeps the terminal's colors and `read --detail` shows each tool call's input and result. (#534)
+- Dashboard: a swipe from the left edge on a phone opens the side menu. (#534)
+- Dashboard and iPhone: the Coding entry in the side menu counts the coding sessions that ask something. (#534)
+
+### Removed
+
+- The coding session dialog in the assistant's settings: its rows now open the Coding page. (#534)
+
+### Fixed
+
+- The program on each computer reads a pane's screen again only when something says it changed, instead of every pane every 3 seconds, which kept herdr busy on a core. (#534)
+- A prompt typed while a coding session was still working now shows in its transcript. (#534)
+
 ## [0.173.0] - 2026-10-18
 
 ### Added

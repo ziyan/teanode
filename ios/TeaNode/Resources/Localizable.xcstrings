@@ -1,6 +1,38 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Use the three-letter code, such as USD.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USD のように3文字のコードで入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用三个字母的代码，例如 USD。"
+          }
+        }
+      }
+    },
+    "Yours": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的"
+          }
+        }
+      }
+    },
     "%@ (bill: %@)": {
       "localizations": {
         "ja": {
@@ -173,6 +205,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 不接受它刚给这部手机的登录。"
+          }
+        }
+      }
+    },
+    "%@ did not answer, so their sessions are not listed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ から応答がないため、そのセッションは表示されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 没有响应，因此没有列出它们的会话。"
           }
         }
       }
@@ -1181,6 +1229,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个别名"
+          }
+        }
+      }
+    },
+    "%lld asking": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件が質問中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个在提问"
           }
         }
       }
@@ -2975,6 +3039,22 @@
         }
       }
     },
+    "%lld working": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件が作業中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个在工作"
+          }
+        }
+      }
+    },
     "%lld, last at %@": {
       "localizations": {
         "ja": {
@@ -4079,6 +4159,22 @@
         }
       }
     },
+    "Add a follow-up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追いかけるものを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟进一件事"
+          }
+        }
+      }
+    },
     "Add mail, calendars, reminders and contacts to the apps already on an iPhone or Mac.": {
       "localizations": {
         "ja": {
@@ -4175,6 +4271,550 @@
         }
       }
     },
+    "Answer its question first": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に質問に答えてください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先回答它的问题"
+          }
+        }
+      }
+    },
+    "Answer with these": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これで答える"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用这些回答"
+          }
+        }
+      }
+    },
+    "Asking": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "質問中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在提问"
+          }
+        }
+      }
+    },
+    "Close tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭标签页"
+          }
+        }
+      }
+    },
+    "Close this coding session?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このコーディングセッションを閉じますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭这个编程会话？"
+          }
+        }
+      }
+    },
+    "Closed %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を閉じました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭 %@"
+          }
+        }
+      }
+    },
+    "Coding": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディング"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编程"
+          }
+        }
+      }
+    },
+    "Coding agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディングエージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编程助手"
+          }
+        }
+      }
+    },
+    "Directory": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディレクトリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目录"
+          }
+        }
+      }
+    },
+    "Idle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待機中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空闲"
+          }
+        }
+      }
+    },
+    "Name in herdr": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "herdr での名前"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 herdr 中的名称"
+          }
+        }
+      }
+    },
+    "New tab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいタブ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建标签页"
+          }
+        }
+      }
+    },
+    "No coding sessions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディングセッションはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有编程会话"
+          }
+        }
+      }
+    },
+    "Nothing has been said in this session yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションではまだ何も話していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个会话里还没有对话。"
+          }
+        }
+      }
+    },
+    "On screen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "屏幕上"
+          }
+        }
+      }
+    },
+    "Open a coding session": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディングセッションを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开编程会话"
+          }
+        }
+      }
+    },
+    "Open a session": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッションを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开会话"
+          }
+        }
+      }
+    },
+    "Open one with the plus button, or start Claude Code or Codex in herdr on your computer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "＋ボタンで開くか、コンピューターの herdr で Claude Code や Codex を起動してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击加号打开一个，或在电脑的 herdr 中启动 Claude Code 或 Codex。"
+          }
+        }
+      }
+    },
+    "Result": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果"
+          }
+        }
+      }
+    },
+    "Show earlier turns": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前のやり取りを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示更早的对话"
+          }
+        }
+      }
+    },
+    "Show on computer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンピューターで表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在电脑上显示"
+          }
+        }
+      }
+    },
+    "Show the screen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示屏幕"
+          }
+        }
+      }
+    },
+    "Show the turns": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やり取りを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示对话"
+          }
+        }
+      }
+    },
+    "Shown on %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ で表示しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在 %@ 上显示"
+          }
+        }
+      }
+    },
+    "Skip approvals and the sandbox (--yolo)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認とサンドボックスを省く (--yolo)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳过审批和沙箱 (--yolo)"
+          }
+        }
+      }
+    },
+    "Skip permission prompts (--dangerously-skip-permissions)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "権限の確認を省く (--dangerously-skip-permissions)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳过权限确认 (--dangerously-skip-permissions)"
+          }
+        }
+      }
+    },
+    "Tell me when it finishes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終わったら知らせる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成时告诉我"
+          }
+        }
+      }
+    },
+    "Telling you when it finishes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終わったら知らせます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成时会告诉你"
+          }
+        }
+      }
+    },
+    "The coding sessions could not be read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディングセッションを読み込めませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取编程会话"
+          }
+        }
+      }
+    },
+    "This ends %@ in %@ on %@ and closes its pane. What was said stays in its history.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%3$@ の %2$@ の %1$@ を終了し、ペインを閉じます。やり取りは履歴に残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这会结束 %3$@ 上 %2$@ 中的 %1$@ 并关闭其窗格。对话会保留在历史中。"
+          }
+        }
+      }
+    },
+    "This session is no longer open.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションはもう開いていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个会话已不再打开。"
+          }
+        }
+      }
+    },
+    "Type an answer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答を入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入回答"
+          }
+        }
+      }
+    },
+    "Type an instruction for this session": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションへの指示を入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给这个会话输入指令"
+          }
+        }
+      }
+    },
+    "Your agent will tell you when %@ finishes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ が終わったらエージェントが知らせます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 完成时你的助手会告诉你"
+          }
+        }
+      }
+    },
     "all follow-ups": {
       "localizations": {
         "ja": {
@@ -4255,18 +4895,18 @@
         }
       }
     },
-    "Collections": {
+    "Carrier": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "コレクション"
+            "value": "配送業者"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "合集"
+            "value": "承运方"
           }
         }
       }
@@ -4283,6 +4923,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "日期按这部 iPhone 的时间计算，因此在其他时区拍摄的照片可能会落在相邻的一天。"
+          }
+        }
+      }
+    },
+    "Each run of the schedule becomes a turn of this goal, and the goal takes none of its own. Answers appear in the goal's conversation instead of arriving by mail.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スケジュールの実行ごとにこのゴールの1回の動きになり、ゴール自身は動きません。回答はメールではなく、ゴールの会話に表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划的每次运行都会成为这个目标的一轮，目标自己不再另外行动。回答会出现在目标的对话里，而不是通过邮件发送。"
           }
         }
       }
@@ -4315,6 +4971,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在这附近"
+          }
+        }
+      }
+    },
+    "Now following: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追いかけ始めました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已开始跟进：%@"
           }
         }
       }
@@ -4395,72 +5067,6 @@
         }
       }
     },
-    "photos.scaleAll": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "All"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "すべて"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全部"
-          }
-        }
-      }
-    },
-    "photos.scaleMonths": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Months"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "月"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "月"
-          }
-        }
-      }
-    },
-    "photos.scaleYears": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Years"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "年"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "年"
-          }
-        }
-      }
-    },
     "Removes this filter": {
       "localizations": {
         "ja": {
@@ -4473,6 +5079,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "移除此筛选条件"
+          }
+        }
+      }
+    },
+    "Run this goal on a schedule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このゴールをスケジュールで動かす"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让这个目标按计划运行"
           }
         }
       }
@@ -4493,6 +5115,22 @@
         }
       }
     },
+    "Set a day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日付を設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置日期"
+          }
+        }
+      }
+    },
     "Stop sharing with %@?": {
       "localizations": {
         "ja": {
@@ -4509,6 +5147,22 @@
         }
       }
     },
+    "The goal now runs on that schedule.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゴールはそのスケジュールで動くようになりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标现在按该计划运行。"
+          }
+        }
+      }
+    },
     "The photos stay in their owners' libraries.": {
       "localizations": {
         "ja": {
@@ -4521,6 +5175,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "照片仍保留在各自所有者的图库中。"
+          }
+        }
+      }
+    },
+    "There are no other schedules to use.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使えるほかのスケジュールはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有其他可用的计划。"
+          }
+        }
+      }
+    },
+    "Tracking number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追跡番号"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运单号"
           }
         }
       }
@@ -5213,70 +5899,6 @@
         }
       }
     },
-    "Merged with “%@”": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「%@」と統合しました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已与“%@”合并"
-          }
-        }
-      }
-    },
-    "Used this face as their picture": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この顔を連絡先の写真にしました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已将此人脸用作其头像"
-          }
-        }
-      }
-    },
-    "Removed their picture": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "連絡先の写真を削除しました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已移除其头像"
-          }
-        }
-      }
-    },
-    "Already names another person; choosing it merges the two": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "別の人物にすでに使われています。選ぶと2人が統合されます"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已是另一个人物的名称，选择它会合并两人"
-          }
-        }
-      }
-    },
     "Move these photos to the Trash?": {
       "localizations": {
         "ja": {
@@ -5847,38 +6469,6 @@
         }
       }
     },
-    "Replay": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "もう一度再生"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新播放"
-          }
-        }
-      }
-    },
-    "Video position": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ビデオの再生位置"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "视频播放位置"
-          }
-        }
-      }
-    },
     "Remove from album": {
       "localizations": {
         "ja": {
@@ -6423,6 +7013,22 @@
         }
       }
     },
+    "Use a schedule": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スケジュールを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用计划"
+          }
+        }
+      }
+    },
     "Use as album cover": {
       "localizations": {
         "ja": {
@@ -6595,6 +7201,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "关于 %@"
+          }
+        }
+      }
+    },
+    "About %@ left": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残り約%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大约还剩 %@"
           }
         }
       }
@@ -12931,6 +13553,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "估算"
+          }
+        }
+      }
+    },
+    "Estimating the time left": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残り時間を見積もり中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在估算剩余时间"
           }
         }
       }
@@ -25335,6 +25973,22 @@
         }
       }
     },
+    "Next check-in soon": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まもなく確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即将检查"
+          }
+        }
+      }
+    },
     "Next day": {
       "localizations": {
         "ja": {
@@ -32531,38 +33185,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "移除图片"
-          }
-        }
-      }
-    },
-    "Remove the picture of %@?": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ の写真を削除しますか？"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移除 %@ 的图片？"
-          }
-        }
-      }
-    },
-    "Devices synchronizing your address book lose it too.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アドレス帳を同期しているデバイスからも消えます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在同步通讯录的设备也会失去这个图片。"
           }
         }
       }
@@ -45402,6 +46024,22 @@
         }
       }
     },
+    "What to follow": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追いかけるもの"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟进什么"
+          }
+        }
+      }
+    },
     "What to show": {
       "localizations": {
         "ja": {
@@ -45846,6 +46484,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "何时（cron 格式）"
+          }
+        }
+      }
+    },
+    "Where": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点"
           }
         }
       }
@@ -46358,6 +47012,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 的成员"
+          }
+        }
+      }
+    },
+    "Who is to be paid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払い先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "付款给谁"
           }
         }
       }
@@ -53394,6 +54064,38 @@
         }
       }
     },
+    "Pause backup": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップを一時停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停备份"
+          }
+        }
+      }
+    },
+    "Backup is paused. Nothing is sent until you resume. Photos already backed up stay on TeaNode.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップは一時停止中です。再開するまで何も送信されません。バックアップ済みの写真は TeaNode に残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份已暂停。继续之前不会发送任何内容。已备份的照片仍保留在 TeaNode。"
+          }
+        }
+      }
+    },
     "Play": {
       "localizations": {
         "ja": {
@@ -53864,6 +54566,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "继续"
+          }
+        }
+      }
+    },
+    "Resume backup": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップを再開"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续备份"
           }
         }
       }
@@ -56040,6 +56758,22 @@
         }
       }
     },
+    "Reading your photo library: %@ of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真ライブラリを読み込んでいます: %2$@ 件中 %1$@ 件"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取你的照片库：%1$@ / %2$@"
+          }
+        }
+      }
+    },
     "Backing up": {
       "localizations": {
         "ja": {
@@ -56894,6 +57628,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "日历已创建"
+          }
+        }
+      }
+    },
+    "Calendar name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历名称"
+          }
+        }
+      }
+    },
+    "Calendar renamed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー名を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历已重命名"
           }
         }
       }
@@ -58498,6 +59264,38 @@
         }
       }
     },
+    "Rename my calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のカレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名我的日历"
+          }
+        }
+      }
+    },
+    "Rename your calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名日历"
+          }
+        }
+      }
+    },
     "Mute for 8 hours": {
       "localizations": {
         "ja": {
@@ -59470,22 +60268,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "会付款的工具需要设置上限，或选择“每次都问我”才能共享。"
-          }
-        }
-      }
-    },
-    "Share %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@を共有"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共享%@"
           }
         }
       }
@@ -61752,22 +62534,6 @@
         }
       }
     },
-    "usd": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd"
-          }
-        }
-      }
-    },
     "This shares %lld pages: this one and everything under it.": {
       "localizations": {
         "ja": {
@@ -62738,22 +63504,6 @@
         }
       }
     },
-    "Use the three-letter code, such as usd.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd のように3文字のコードで入力してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请使用三个字母的代码，例如 usd。"
-          }
-        }
-      }
-    },
     "Skill calls waiting for your approval": {
       "localizations": {
         "ja": {
@@ -62786,7 +63536,663 @@
         }
       }
     },
-    "Where": {
+    "All labels": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのラベル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部标签"
+          }
+        }
+      }
+    },
+    "Places near you stay listed until you search.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索するまで、近くの場所が表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索之前，会一直列出您附近的地点。"
+          }
+        }
+      }
+    },
+    "Press Search to find places by name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「検索」を押して名前で場所を探す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按“搜索”按名称查找地点"
+          }
+        }
+      }
+    },
+    "Search places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索地点"
+          }
+        }
+      }
+    },
+    "Share where I am and where I have been with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に今いる場所と訪れた場所を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与%@共享我的位置和去过的地方"
+          }
+        }
+      }
+    },
+    "Share where I am now with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に今いる場所を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与%@共享我现在的位置"
+          }
+        }
+      }
+    },
+    "TeaNode could not ask your server what your account may use. Check the connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はこのアカウントで使える機能をサーバーに確認できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法向你的服务器查询此账户可以使用的功能。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
+    "Your agent remembers this chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのエージェントがこのチャットを記憶中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手记住了这个聊天"
+          }
+        }
+      }
+    },
+    "Others may ask your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他の人もあなたのエージェントに頼めます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他人可以呼叫你的助手"
+          }
+        }
+      }
+    },
+    "A place": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "某个地点"
+          }
+        }
+      }
+    },
+    "A visit shows up here after you spend a while somewhere.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "しばらく滞在すると、訪問がここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您在某处停留一段时间后，到访记录会显示在这里。"
+          }
+        }
+      }
+    },
+    "Allow location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報を許可"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许定位"
+          }
+        }
+      }
+    },
+    "At %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@にいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在%@"
+          }
+        }
+      }
+    },
+    "At %@ since %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@から%1$@にいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@起在%1$@"
+          }
+        }
+      }
+    },
+    "Check in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チェックイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "签到"
+          }
+        }
+      }
+    },
+    "Checked in at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@にチェックインしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在%@签到"
+          }
+        }
+      }
+    },
+    "Forget %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要忘记%@吗？"
+          }
+        }
+      }
+    },
+    "Forget this place": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この場所を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忘记此地点"
+          }
+        }
+      }
+    },
+    "Forgot %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已忘记%@"
+          }
+        }
+      }
+    },
+    "Its visits are deleted with it. This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この場所の訪問も一緒に削除されます。この操作は取り消せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它的到访记录也会一并删除。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "Label": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラベル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签"
+          }
+        }
+      }
+    },
+    "Location is turned off for TeaNode, so it cannot show or record where you are.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode の位置情報がオフのため、現在地を表示も記録もできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已为 TeaNode 关闭定位，因此无法显示或记录您的位置。"
+          }
+        }
+      }
+    },
+    "Location settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報の設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定位设置"
+          }
+        }
+      }
+    },
+    "Map": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地图"
+          }
+        }
+      }
+    },
+    "Map of the day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その日の地図"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当天的地图"
+          }
+        }
+      }
+    },
+    "Map of the place and its radius": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所とその半径の地図"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点及其范围的地图"
+          }
+        }
+      }
+    },
+    "Map of where you are": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在地の地図"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您所在位置的地图"
+          }
+        }
+      }
+    },
+    "No places yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所はまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有地点"
+          }
+        }
+      }
+    },
+    "No position recorded yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報はまだ記録されていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有记录位置"
+          }
+        }
+      }
+    },
+    "Nearby": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附近"
+          }
+        }
+      }
+    },
+    "Directions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "経路"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路线"
+          }
+        }
+      }
+    },
+    "No position yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報はまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有位置"
+          }
+        }
+      }
+    },
+    "No visits this day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日の訪問はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一天没有到访记录"
+          }
+        }
+      }
+    },
+    "No visits yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訪問はまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有到访记录"
+          }
+        }
+      }
+    },
+    "Check in here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここでチェックイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此签到"
+          }
+        }
+      }
+    },
+    "Checked in here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここでチェックインしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在此签到"
+          }
+        }
+      }
+    },
+    "Within %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "誤差 %@ 以内"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "误差在 %@ 以内"
+          }
+        }
+      }
+    },
+    "%@. The phone could only find you roughly.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@。iPhoneではおおよその位置しか分かりませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@。手机只能大致确定你的位置。"
+          }
+        }
+      }
+    },
+    "Nothing with a name nearby": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近くに名前のある場所はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附近没有有名称的地点"
+          }
+        }
+      }
+    },
+    "Park": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公園"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公园"
+          }
+        }
+      }
+    },
+    "Place name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所の名前"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点名称"
+          }
+        }
+      }
+    },
+    "Places": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -62802,306 +64208,5332 @@
         }
       }
     },
-    "What to follow": {
+    "Radius": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "追いかけるもの"
+            "value": "半径"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "跟进什么"
+            "value": "半径"
           }
         }
       }
     },
-    "Use a schedule": {
+    "Record where I go": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スケジュールを使う"
+            "value": "行った場所を記録"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用计划"
+            "value": "记录我去过的地方"
           }
         }
       }
     },
-    "Tracking number": {
+    "Record where you go": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "追跡番号"
+            "value": "行った場所を記録"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运单号"
+            "value": "记录您去过的地方"
           }
         }
       }
     },
-    "Run this goal on a schedule": {
+    "School": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このゴールをスケジュールで動かす"
+            "value": "学校"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "让这个目标按计划运行"
+            "value": "学校"
           }
         }
       }
     },
-    "The goal now runs on that schedule.": {
+    "TeaNode follows you only while it is open. Allow location Always to record where you go while it is closed.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ゴールはそのスケジュールで動くようになりました。"
+            "value": "TeaNode はアプリを開いている間だけ位置を追います。アプリを閉じている間も行った場所を記録するには、位置情報を「常に」許可してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "目标现在按该计划运行。"
+            "value": "TeaNode 只在打开时跟随您的位置。请选择始终允许定位，以便在应用关闭时记录您去过的地方。"
           }
         }
       }
     },
-    "Carrier": {
+    "TeaNode is not allowed to know where you are yet.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "配送業者"
+            "value": "TeaNode はまだ現在地を知ることを許可されていません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "承运方"
+            "value": "TeaNode 还没有获准知道您的位置。"
           }
         }
       }
     },
-    "There are no other schedules to use.": {
+    "TeaNode notes where you stop and when you leave, even when the app is closed. Turned off, it records nothing new. What is already recorded stays until you erase it.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "使えるほかのスケジュールはありません。"
+            "value": "アプリを閉じていても、TeaNode はあなたが立ち止まった場所と出発した時刻を記録します。オフにすると新しい記録は残りません。すでにある記録は消去するまで残ります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有其他可用的计划。"
+            "value": "即使应用已关闭，TeaNode 也会记录您在哪里停留、何时离开。关闭后不会再记录新内容。已有的记录会保留，直到您清除。"
           }
         }
       }
     },
-    "Reading your photo library: %@ of %@": {
+    "TeaNode notes where you stop and when you leave, even when the app is closed. You can look back on it, share where you are with your family, and your agent knows your routine. On the next screen, choose Always Allow.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "写真ライブラリを読み込んでいます: %2$@ 件中 %1$@ 件"
+            "value": "アプリを閉じていても、TeaNode はあなたが立ち止まった場所と出発した時刻を記録します。あとで振り返ったり、家族と現在地を共有したり、エージェントがあなたの日課を知ったりできます。次の画面で「常に許可」を選んでください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在读取你的照片库：%1$@ / %2$@"
+            "value": "即使应用已关闭，TeaNode 也会记录您在哪里停留、何时离开。您可以回顾这些记录，与家人分享您的位置，您的智能体也会了解您的日常。在下一个屏幕上，请选择“始终允许”。"
           }
         }
       }
     },
-    "Add a follow-up": {
+    "The phone could not tell where it is.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "追いかけるものを追加"
+            "value": "現在地を取得できませんでした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "跟进一件事"
+            "value": "手机无法确定自己的位置。"
           }
         }
       }
     },
-    "About %@ left": {
+    "The phone could not tell where it is. Check that location is allowed for TeaNode, then try again.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "残り約%@"
+            "value": "現在地を取得できませんでした。TeaNode に位置情報が許可されているか確認して、もう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "大约还剩 %@"
+            "value": "手机无法确定自己的位置。请确认已允许 TeaNode 使用定位，然后重试。"
           }
         }
       }
     },
-    "Now following: %@": {
+    "The places you spend time at show up here, and you can name them.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "追いかけ始めました：%@"
+            "value": "過ごした場所がここに表示されます。名前を付けることもできます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已开始跟进：%@"
+            "value": "您待过的地点会显示在这里，您可以给它们命名。"
           }
         }
       }
     },
-    "Set a day": {
+    "Turn on Record where I go in the settings, and your visits show up here.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "日付を設定"
+            "value": "設定で「行った場所を記録」をオンにすると、訪問がここに表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设置日期"
+            "value": "在设置中打开“记录我去过的地方”，您的到访记录就会显示在这里。"
           }
         }
       }
     },
-    "Resume backup": {
+    "Under a minute": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックアップを再開"
+            "value": "1分未満"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "继续备份"
+            "value": "不到一分钟"
           }
         }
       }
     },
-    "Pause backup": {
+    "Until %@": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックアップを一時停止"
+            "value": "%@まで"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂停备份"
+            "value": "至%@"
           }
         }
       }
     },
-    "Estimating the time left": {
+    "Visits": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "残り時間を見積もり中"
+            "value": "訪問"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在估算剩余时间"
+            "value": "到访"
           }
         }
       }
     },
-    "Who is to be paid": {
+    "Waiting to be sent": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "支払い先"
+            "value": "送信待ち"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "付款给谁"
+            "value": "等待发送"
           }
         }
       }
     },
-    "Each run of the schedule becomes a turn of this goal, and the goal takes none of its own. Answers appear in the goal's conversation instead of arriving by mail.": {
+    "%@, last %@": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スケジュールの実行ごとにこのゴールの1回の動きになり、ゴール自身は動きません。回答はメールではなく、ゴールの会話に表示されます。"
+            "value": "%1$@、最後：%2$@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "计划的每次运行都会成为这个目标的一轮，目标自己不再另外行动。回答会出现在目标的对话里，而不是通过邮件发送。"
+            "value": "%1$@，最近一次：%2$@"
           }
         }
       }
     },
-    "Next check-in soon": {
+    "© OpenStreetMap contributors": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "まもなく確認"
+            "value": "© OpenStreetMap contributors"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "即将检查"
+            "value": "© OpenStreetMap 贡献者"
           }
         }
       }
     },
-    "Backup is paused. Nothing is sent until you resume. Photos already backed up stay on TeaNode.": {
+    "%lld visits": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld visit"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld visits"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 次到访"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 次到访"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 回の訪問"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 回の訪問"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "place-category-cafe": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cafe"
+          }
+        },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックアップは一時停止中です。再開するまで何も送信されません。バックアップ済みの写真は TeaNode に残ります。"
+            "value": "カフェ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "备份已暂停。继续之前不会发送任何内容。已备份的照片仍保留在 TeaNode。"
+            "value": "咖啡馆"
+          }
+        }
+      }
+    },
+    "place-category-restaurant": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurant"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レストラン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "餐厅"
+          }
+        }
+      }
+    },
+    "place-category-fast-food": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fast food"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファストフード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快餐店"
+          }
+        }
+      }
+    },
+    "place-category-pub": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "酒吧"
+          }
+        }
+      }
+    },
+    "place-category-school": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "School"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学校"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学校"
+          }
+        }
+      }
+    },
+    "place-category-university": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "University"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大学"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大学"
+          }
+        }
+      }
+    },
+    "place-category-library": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "図書館"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图书馆"
+          }
+        }
+      }
+    },
+    "place-category-park": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Park"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公園"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公园"
+          }
+        }
+      }
+    },
+    "place-category-playground": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playground"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遊び場"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游乐场"
+          }
+        }
+      }
+    },
+    "place-category-pitch": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sports"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スポーツ施設"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运动场所"
+          }
+        }
+      }
+    },
+    "place-category-fitness-centre": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gym"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "健身房"
+          }
+        }
+      }
+    },
+    "place-category-supermarket": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grocery store"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "食料品店"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "杂货店"
+          }
+        }
+      }
+    },
+    "place-category-bakery": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bakery"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パン屋"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "面包店"
+          }
+        }
+      }
+    },
+    "place-category-clinic": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clinic"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリニック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "诊所"
+          }
+        }
+      }
+    },
+    "place-category-hospital": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hospital"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "病院"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医院"
+          }
+        }
+      }
+    },
+    "place-category-pharmacy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pharmacy"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "薬局"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "药店"
+          }
+        }
+      }
+    },
+    "place-category-place-of-worship": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Place of worship"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "礼拝所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宗教场所"
+          }
+        }
+      }
+    },
+    "place-category-cinema": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cinema"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映画館"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电影院"
+          }
+        }
+      }
+    },
+    "place-category-museum": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Museum"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "博物館"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "博物馆"
+          }
+        }
+      }
+    },
+    "place-category-bank": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bank"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "銀行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行"
+          }
+        }
+      }
+    },
+    "place-category-post-office": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Post office"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "郵便局"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮局"
+          }
+        }
+      }
+    },
+    "place-category-fuel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gas station"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ガソリンスタンド"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加油站"
+          }
+        }
+      }
+    },
+    "place-category-parking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parking"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "駐車場"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停车场"
+          }
+        }
+      }
+    },
+    "place-category-station": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Station"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "駅"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "车站"
+          }
+        }
+      }
+    },
+    "place-category-hotel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hotel"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホテル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "酒店"
+          }
+        }
+      }
+    },
+    "place-label-home": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家"
+          }
+        }
+      }
+    },
+    "place-label-work": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Work"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "職場"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作"
+          }
+        }
+      }
+    },
+    "place-label-school": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "School"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学校"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学校"
+          }
+        }
+      }
+    },
+    "place-label-family": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Family"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家族"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家人"
+          }
+        }
+      }
+    },
+    "place-label-gym": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gym"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "健身房"
+          }
+        }
+      }
+    },
+    "Shows the day on the map": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その日を地図に表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在地图上显示这一天"
+          }
+        }
+      }
+    },
+    "Sharing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享"
+          }
+        }
+      }
+    },
+    "Where I am now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我现在的位置"
+          }
+        }
+      }
+    },
+    "Where I am and where I have been": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所と訪れた場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我现在的位置和去过的地方"
+          }
+        }
+      }
+    },
+    "Shows you on the map": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図に自分を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在地图上显示你"
+          }
+        }
+      }
+    },
+    "Shows your own location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の位置を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示你自己的位置"
+          }
+        }
+      }
+    },
+    "Shows them on the map": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図にその人を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在地图上显示对方"
+          }
+        }
+      }
+    },
+    "Back to my location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の位置に戻る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到我的位置"
+          }
+        }
+      }
+    },
+    "%@ shares where they are now. Their visits and places are not shared with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんは今いる場所だけを共有しています。訪れた場所は共有されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@只与你共享现在的位置,没有共享去过的地方。"
+          }
+        }
+      }
+    },
+    "Your location is not shared with anybody yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの位置はまだ誰とも共有されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的位置还没有与任何人共享。"
+          }
+        }
+      }
+    },
+    "%@ will no longer see where you are.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はあなたの居場所を見られなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@将无法再看到你的位置。"
+          }
+        }
+      }
+    },
+    "Touch a row to change how much they see, or to stop sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行をタップすると、見える範囲の変更や共有の停止ができます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按一行可更改对方能看到的范围,或停止共享。"
+          }
+        }
+      }
+    },
+    "You do not share a circle with anybody yet. Make or join a circle to share where you are.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。居場所を共有するには、サークルを作るか参加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人共处一个圈子。创建或加入圈子后,才能共享你的位置。"
+          }
+        }
+      }
+    },
+    "Share where I am": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の居場所を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享我的位置"
+          }
+        }
+      }
+    },
+    "Changed what %@ can see": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に見える範囲を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更改%@能看到的范围"
+          }
+        }
+      }
+    },
+    "Location is set up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報の設定が完了しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置已设置完成"
+          }
+        }
+      }
+    },
+    "This place is now labeled Home": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この場所に「自宅」のラベルを付けました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将此处标为“家”"
+          }
+        }
+      }
+    },
+    "First while you use the app, then Always, so your visits are recorded when it is closed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まずアプリの使用中のみ、次に「常に」を許可すると、アプリを閉じていても訪問が記録されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先允许使用期间,再允许始终,这样应用关闭时也能记录你的到访。"
+          }
+        }
+      }
+    },
+    "This is home": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここが自宅"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里是家"
+          }
+        }
+      }
+    },
+    "Labels the place you are at now as Home.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所に「自宅」のラベルを付けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把你现在所在的地方标为“家”。"
+          }
+        }
+      }
+    },
+    "Allow location first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に位置情報を許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先允许位置。"
+          }
+        }
+      }
+    },
+    "Share with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@と共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与%@共享"
+          }
+        }
+      }
+    },
+    "Set up Location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報を設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置位置"
+          }
+        }
+      }
+    },
+    "Not now hides this. You can still allow location in the settings, label a place under Places, and share under Sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「今はしない」を押すとこの表示は消えます。位置情報の許可は設定で、場所のラベルは「場所」で、共有は「共有」でいつでもできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点“暂不”会隐藏这里。你仍可在设置中允许位置,在“地点”中给地点加标签,在“共享”中共享位置。"
+          }
+        }
+      }
+    },
+    "Your calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのカレンダー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的日历"
+          }
+        }
+      }
+    },
+    "Where you are": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの居場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的位置"
+          }
+        }
+      }
+    },
+    "Everyone in %@ could see it. You can change this under Sharing in Location.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のメンバー全員に見えます。変更は「位置情報」の「共有」でできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@中的所有人都能看到。你可以在“位置”的“共享”中更改。"
+          }
+        }
+      }
+    },
+    "Share with %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@と共有しますか?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要与%@共享吗?"
+          }
+        }
+      }
+    },
+    "Share where you are with %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "居場所を%@と共有しますか?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要把你的位置共享给%@吗?"
+          }
+        }
+      }
+    },
+    "People who share their location arriving at and leaving places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置を共有している人が場所に着いたときと出たとき"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享位置的人到达和离开某地"
+          }
+        }
+      }
+    },
+    "No visits to places with this label": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このラベルの場所への訪問はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有该标签地点的到访记录"
+          }
+        }
+      }
+    },
+    "Choose another label, or all places, to see the rest.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのラベルか「すべての場所」を選ぶと、残りが表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择其他标签，或选择全部地点，查看其余记录。"
+          }
+        }
+      }
+    },
+    "Erase this day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日を消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除这一天"
+          }
+        }
+      }
+    },
+    "Erase %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を消去しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要清除%@的记录吗？"
+          }
+        }
+      }
+    },
+    "Erases your positions and visits of this day, and the places left with no visit that you did not name or label. Places you named or labeled stay. Anything your agent already learned from those days stays in its memory until you remove it. This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日の位置と訪問、そして訪問がなくなり、名前もラベルも付けていない場所を消去します。名前やラベルを付けた場所は残ります。エージェントがこの日々から覚えたことは、削除するまで記憶に残ります。この操作は取り消せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将清除您这一天的位置和到访记录，以及清除后没有到访记录、且您未命名或未设标签的地点。您命名过或设过标签的地点会保留。您的智能体从这些日子学到的内容会留在它的记忆中，直到您将其移除。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "Shows everyone who shares where they are with you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたに位置を共有しているすべての人を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示所有与您共享位置的人"
+          }
+        }
+      }
+    },
+    "More places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "さらに場所を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更多地点"
+          }
+        }
+      }
+    },
+    "Find a place": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所を探す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找地点"
+          }
+        }
+      }
+    },
+    "No address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有地址"
+          }
+        }
+      }
+    },
+    "Change address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更改地址"
+          }
+        }
+      }
+    },
+    "Use where I am now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在地を使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用我现在的位置"
+          }
+        }
+      }
+    },
+    "Move the place here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所をここへ移動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将地点移到此处"
+          }
+        }
+      }
+    },
+    "Keep it where it was": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の位置のままにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持原位置"
+          }
+        }
+      }
+    },
+    "Tap to choose a new position for the place": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タップして場所の新しい位置を選びます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按以选择地点的新位置"
+          }
+        }
+      }
+    },
+    "Moved %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を移動しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移动%@"
+          }
+        }
+      }
+    },
+    "Kept the address as typed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力したとおりに住所を保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已按输入内容保存地址"
+          }
+        }
+      }
+    },
+    "Use the map's address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図の住所を使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用地图上的地址"
+          }
+        }
+      }
+    },
+    "The map will name this place again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この場所は地図の名前に戻ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地点将重新使用地图上的名称。"
+          }
+        }
+      }
+    },
+    "Nothing on the map matches %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図上に「%@」に一致するものはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地图上没有与“%@”匹配的结果。"
+          }
+        }
+      }
+    },
+    "Not found on the map. Go back and use where I am now, or label a place Home and move its pin on that place's screen.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図に見つかりませんでした。戻って「現在地を使う」を選ぶか、場所に「自宅」のラベルを付けて、その場所の画面でピンを動かしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地图上没有找到。请返回并使用“我现在的位置”，或将某个地点标为“家”，再在该地点的页面中移动图钉。"
+          }
+        }
+      }
+    },
+    "Keep this address as typed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力したとおりに住所を保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按输入内容保存此地址"
+          }
+        }
+      }
+    },
+    "The place stays where it is and shows these words as its address.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所は今の位置のままで、この文字が住所として表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点保持原位置，并将这些文字显示为其地址。"
+          }
+        }
+      }
+    },
+    "Type my address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入我的地址"
+          }
+        }
+      }
+    },
+    "Finds your address and labels it as Home.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を探して、「自宅」のラベルを付けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找你的地址，并标为“家”。"
+          }
+        }
+      }
+    },
+    "Type an address and press Search": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を入力して「検索」を押してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入地址，然后点“搜索”"
+          }
+        }
+      }
+    },
+    "The place moves to the match you tap and keeps its address.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タップした候補の位置に場所が移り、その住所が保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点会移到你点选的结果处，并保留该地址。"
+          }
+        }
+      }
+    },
+    "Type an address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入地址"
+          }
+        }
+      }
+    },
+    "Try again from a place with a shop, park or building on the map, or find a place by its name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図上に店、公園、建物がある場所でもう一度お試しいただくか、名前で場所を探してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在地图上有商店、公园或建筑物的地方重试，或按名称查找地点。"
+          }
+        }
+      }
+    },
+    "Tap the map to choose a new position for the place. A visit counts as here when you are within this distance of the center of the place.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図をタップして場所の新しい位置を選びます。場所の中心からこの距離以内にいるとき、ここへの訪問として数えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按地图以选择地点的新位置。当您与地点中心的距离在此范围内时，就算作到访此处。"
+          }
+        }
+      }
+    },
+    "Your iPhone can only place you within %@ right now. Try again outside, or tap the map where the place is.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone は今、%@ 以内までしか現在地を特定できません。屋外でもう一度試すか、地図で場所をタップしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 目前只能把你定位在 %@ 范围内。请到室外再试一次，或在地图上点按该地点的位置。"
+          }
+        }
+      }
+    },
+    "an unknown distance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明な距離"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知的距离"
+          }
+        }
+      }
+    },
+    "The server did not take what this phone noticed, so recording has stopped: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーがこの iPhone の記録を受け付けなかったため、記録を止めました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器没有接收这部手机记下的内容，所以记录已停止：%@"
+          }
+        }
+      }
+    },
+    "Turn Record where I go off and on again to try once more.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「行った場所を記録」をオフにしてからオンにすると、もう一度試せます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭再打开“记录我去过的地方”即可重试。"
+          }
+        }
+      }
+    },
+    "Erase positions and visits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置と訪問を消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除位置和到访记录"
+          }
+        }
+      }
+    },
+    "Erase your positions and visits?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置と訪問を消去しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要清除您的位置和到访记录吗？"
+          }
+        }
+      }
+    },
+    "Erases your positions and visits, and the places left with no visit that you did not name or label. Places you named or labeled stay. Anything your agent already learned from those days stays in its memory until you remove it. This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置と訪問、そして訪問がなくなり、名前もラベルも付けていない場所を消去します。名前やラベルを付けた場所は残ります。エージェントがこの日々から覚えたことは、削除するまで記憶に残ります。この操作は取り消せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将清除您的位置和到访记录，以及清除后没有到访记录、且您未命名或未设标签的地点。您命名过或设过标签的地点会保留。您的智能体从这些日子学到的内容会留在它的记忆中，直到您将其移除。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "The people you share with can no longer see what is erased.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消去した内容は、共有相手にも表示されなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与您共享的人将无法再看到已清除的内容。"
+          }
+        }
+      }
+    },
+    "Your positions and visits are erased": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置と訪問を消去しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您的位置和到访记录已清除"
+          }
+        }
+      }
+    },
+    "Erased the positions and visits of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の位置と訪問を消去しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清除%@的位置和到访记录"
+          }
+        }
+      }
+    },
+    "Location is not available to you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報は利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您无法使用位置功能"
+          }
+        }
+      }
+    },
+    "Your account is not allowed to record or share where you go. Whoever manages your TeaNode server can allow it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントには、行った場所の記録と共有が許可されていません。TeaNode サーバーの管理者が許可できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您的账户无权记录或共享您去过的地方。管理您 TeaNode 服务器的人可以为您开启。"
+          }
+        }
+      }
+    },
+    "They see where you are now and the place you are at.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所と、いる場所の名前が見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方能看到您现在的位置和您所在的地点。"
+          }
+        }
+      }
+    },
+    "They also see your visits and the places they were at.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訪問と、訪れた場所も見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方还能看到您的到访记录和到访的地点。"
+          }
+        }
+      }
+    },
+    "Choose a person or a circle, and whether they also see your visits and the places they were at.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有する相手（人またはサークル）と、訪問や訪れた場所も見せるかどうかを選びます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人或一个圈子，以及对方是否还能看到您的到访记录和到访的地点。"
+          }
+        }
+      }
+    },
+    "Place names come from OpenStreetMap: your server sends the position of each new place to the place provider to look up its name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所の名前は OpenStreetMap から取得します：サーバーが新しい場所の位置を場所の提供元に送り、名前を調べます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点名称来自 OpenStreetMap：您的服务器会把每个新地点的位置发送给地点服务商，以查询它的名称。"
+          }
+        }
+      }
+    },
+    "Places and maps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所と地図"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点和地图"
+          }
+        }
+      }
+    },
+    "Place name provider": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所の名前の提供元"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点名称服务商"
+          }
+        }
+      }
+    },
+    "Nominatim (OpenStreetMap)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nominatim（OpenStreetMap）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nominatim（OpenStreetMap）"
+          }
+        }
+      }
+    },
+    "Photon (OpenStreetMap data)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photon（OpenStreetMap のデータ）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photon（OpenStreetMap 数据）"
+          }
+        }
+      }
+    },
+    "Off: name places after their city": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフ：場所を市の名前で呼ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭：以所在城市命名地点"
+          }
+        }
+      }
+    },
+    "Provider address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供元のアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务商地址"
+          }
+        }
+      }
+    },
+    "An https address, or http for a server on this machine or your own network, such as one you run yourself.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https のアドレス。この機械や自分のネットワーク上のサーバー（自分で運用しているものなど）なら http でも構いません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https 地址；本机或您自己网络中的服务器（例如您自己运行的）可以用 http。"
+          }
+        }
+      }
+    },
+    "Map style address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図スタイルのアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地图样式地址"
+          }
+        }
+      }
+    },
+    "The MapLibre style the dashboard draws its maps from. This server fetches the style and its tiles from this address’s host and hands them to the browser.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダッシュボードが地図を描くのに使う MapLibre スタイル。このサーバーがこのアドレスのホストからスタイルとタイルを取得し、ブラウザーに渡します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "控制台绘制地图所用的 MapLibre 样式。本服务器会从该地址的主机获取样式和图块，再交给浏览器。"
+          }
+        }
+      }
+    },
+    "Place names come from OpenStreetMap: your server sends the position of each new place to the place provider to look up its name. Switch it off and places keep the name of their city, and people can still name them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所の名前は OpenStreetMap から取得します：サーバーが新しい場所の位置を場所の提供元に送り、名前を調べます。オフにすると場所は市の名前のままになり、名前は各自で付けられます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点名称来自 OpenStreetMap：您的服务器会把每个新地点的位置发送给地点服务商，以查询它的名称。关闭后，地点会沿用所在城市的名称，用户仍可自己为地点命名。"
+          }
+        }
+      }
+    },
+    "Record where you go, and share it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行った場所を記録して共有する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录您去过的地方并共享"
+          }
+        }
+      }
+    },
+    "Collections": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合集"
+          }
+        }
+      }
+    },
+    "photos.scaleAll": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
+    "photos.scaleMonths": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Months"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月"
+          }
+        }
+      }
+    },
+    "photos.scaleYears": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Years"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年"
+          }
+        }
+      }
+    },
+    "Merged with “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」と統合しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已与“%@”合并"
+          }
+        }
+      }
+    },
+    "Used this face as their picture": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この顔を連絡先の写真にしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将此人脸用作其头像"
+          }
+        }
+      }
+    },
+    "Removed their picture": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先の写真を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除其头像"
+          }
+        }
+      }
+    },
+    "Already names another person; choosing it merges the two": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別の人物にすでに使われています。選ぶと2人が統合されます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已是另一个人物的名称，选择它会合并两人"
+          }
+        }
+      }
+    },
+    "Replay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度再生"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新播放"
+          }
+        }
+      }
+    },
+    "Video position": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビデオの再生位置"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频播放位置"
+          }
+        }
+      }
+    },
+    "Remove the picture of %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の写真を削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除 %@ 的图片？"
+          }
+        }
+      }
+    },
+    "Devices synchronizing your address book lose it too.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレス帳を同期しているデバイスからも消えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在同步通讯录的设备也会失去这个图片。"
+          }
+        }
+      }
+    },
+    "1 %@ = %@ %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 %@ = %@ %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 %@ = %@ %@"
+          }
+        }
+      }
+    },
+    "A discount is typed below zero, as it is printed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "割引は印字どおりマイナスで入力します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "折扣按印刷内容填为负数。"
+          }
+        }
+      }
+    },
+    "A paystub whose lines do not add up to its totals and take-home pay is refused unless you record it as it is.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各行の合計が総額や手取りと合わない給与明細は、そのまま記録を選ばない限り拒否されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各行加起来与合计和实发工资不符的工资单会被拒绝，除非选择按原样记录。"
+          }
+        }
+      }
+    },
+    "Add a box": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボックスを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加一栏"
+          }
+        }
+      }
+    },
+    "Add a line": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加一行"
+          }
+        }
+      }
+    },
+    "Add the file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加文件"
+          }
+        }
+      }
+    },
+    "Additional Medicare": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加メディケア税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "额外医疗保险税"
+          }
+        }
+      }
+    },
+    "Amount this period": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今期の金額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本期金额"
+          }
+        }
+      }
+    },
+    "Amount this year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年の金額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年金额"
+          }
+        }
+      }
+    },
+    "As printed, without a sign.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "印字どおりに、符号なしで入力します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按印刷内容填写，不带正负号。"
+          }
+        }
+      }
+    },
+    "Box": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボックス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "栏"
+          }
+        }
+      }
+    },
+    "Box %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボックス %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 栏"
+          }
+        }
+      }
+    },
+    "Card last digits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード番号の下数桁"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卡号末几位"
+          }
+        }
+      }
+    },
+    "Charges it could explain": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応しうる支払い"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可能对应的扣款"
+          }
+        }
+      }
+    },
+    "Choose another file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のファイルを選ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择其他文件"
+          }
+        }
+      }
+    },
+    "Commuter": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通勤手当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通勤补贴"
+          }
+        }
+      }
+    },
+    "Corrected form": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訂正済みの書類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更正表格"
+          }
+        }
+      }
+    },
+    "Deduction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "控除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扣除项"
+          }
+        }
+      }
+    },
+    "Dependent care FSA": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扶養家族ケア FSA"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受抚养人照护 FSA"
+          }
+        }
+      }
+    },
+    "Discount": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "割引"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "折扣"
+          }
+        }
+      }
+    },
+    "Earning": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支給"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收入"
+          }
+        }
+      }
+    },
+    "Employer adds this period": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今期の雇用主負担"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本期雇主补贴"
+          }
+        }
+      }
+    },
+    "Employer adds this year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年の雇用主負担"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年雇主补贴"
+          }
+        }
+      }
+    },
+    "Employer ID": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雇用主 ID"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雇主编号"
+          }
+        }
+      }
+    },
+    "Federal income": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連邦所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联邦所得税"
+          }
+        }
+      }
+    },
+    "Fee": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手数料"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "费用"
+          }
+        }
+      }
+    },
+    "Health FSA": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医療 FSA"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医疗 FSA"
+          }
+        }
+      }
+    },
+    "Health premium": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医療保険料"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "健康保险费"
+          }
+        }
+      }
+    },
+    "Hours": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小时数"
+          }
+        }
+      }
+    },
+    "Insurance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保険"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保险"
+          }
+        }
+      }
+    },
+    "It replaces the receipt already read from this file.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このファイルから読み取り済みのレシートを置き換えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它会替换已从此文件读取的收据。"
+          }
+        }
+      }
+    },
+    "Item": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商品"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商品"
+          }
+        }
+      }
+    },
+    "Letter, state or label": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字、州またはラベル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "字母、州或标签"
+          }
+        }
+      }
+    },
+    "Line %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 行目"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 行"
+          }
+        }
+      }
+    },
+    "Local income": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方所得税"
+          }
+        }
+      }
+    },
+    "Matched when recorded": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録時に照合"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录时匹配"
+          }
+        }
+      }
+    },
+    "No charge matches it yet. It is recorded without one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致する支払いはまだありません。支払いなしで記録されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时没有匹配的扣款，将不关联扣款直接记录。"
+          }
+        }
+      }
+    },
+    "Only the boxes that print something.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "印字のあるボックスだけ入力します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只填有印刷内容的栏。"
+          }
+        }
+      }
+    },
+    "Only the last four digits of a taxpayer number are kept.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "納税者番号は下 4 桁だけが保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "纳税人号码只保存最后四位。"
+          }
+        }
+      }
+    },
+    "Pay date": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发薪日"
+          }
+        }
+      }
+    },
+    "Payer ID": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払者 ID"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "付款方编号"
+          }
+        }
+      }
+    },
+    "Pays for": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用途"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用途"
+          }
+        }
+      }
+    },
+    "Paystub recorded": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細を記録しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资单已记录"
+          }
+        }
+      }
+    },
+    "Period ends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期間の終了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "周期结束"
+          }
+        }
+      }
+    },
+    "Period starts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期間の開始"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "周期开始"
+          }
+        }
+      }
+    },
+    "Preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビュー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预览"
+          }
+        }
+      }
+    },
+    "Quantity": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数量"
+          }
+        }
+      }
+    },
+    "Rate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単価"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "费率"
+          }
+        }
+      }
+    },
+    "Receipt recorded": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを記録しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据已记录"
+          }
+        }
+      }
+    },
+    "Receipt recorded and matched": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを記録して照合しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据已记录并匹配"
+          }
+        }
+      }
+    },
+    "Record it as it is": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのまま記録"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按原样记录"
+          }
+        }
+      }
+    },
+    "Reimbursement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立替精算"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报销"
+          }
+        }
+      }
+    },
+    "Remove the file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを外す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除文件"
+          }
+        }
+      }
+    },
+    "Remove this box": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このボックスを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这一栏"
+          }
+        }
+      }
+    },
+    "Remove this line": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この行を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这一行"
+          }
+        }
+      }
+    },
+    "State disability": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州の障害保険"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州残障保险"
+          }
+        }
+      }
+    },
+    "State income": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州所得税"
+          }
+        }
+      }
+    },
+    "State or place": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州または地域"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州或地区"
+          }
+        }
+      }
+    },
+    "Tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税"
+          }
+        }
+      }
+    },
+    "Tax form recorded": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税務書類を記録しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税表已记录"
+          }
+        }
+      }
+    },
+    "Taxpayer number, last 4": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "納税者番号の下 4 桁"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "纳税人号码末 4 位"
+          }
+        }
+      }
+    },
+    "The form's PDF or picture. The server does not keep its text, which holds a taxpayer number.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書類の PDF または画像。納税者番号を含む文字はサーバーに保存されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表格的 PDF 或图片。服务器不会保存其中含有纳税人号码的文字。"
+          }
+        }
+      }
+    },
+    "The paystub's PDF or picture. The server does not keep its text, which holds a taxpayer number.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細の PDF または画像。納税者番号を含む文字はサーバーに保存されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资单的 PDF 或图片。服务器不会保存其中含有纳税人号码的文字。"
+          }
+        }
+      }
+    },
+    "The picture or file the receipt is from. It is kept with the receipt.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートの元になった画像またはファイル。レシートと一緒に保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收据所依据的图片或文件，会与收据一起保存。"
+          }
+        }
+      }
+    },
+    "Tip": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小费"
+          }
+        }
+      }
+    },
+    "Total deductions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "控除合計"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扣除合计"
+          }
+        }
+      }
+    },
+    "Total taxes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税額合計"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税款合计"
+          }
+        }
+      }
+    },
+    "Type in a paystub": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細を手入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动输入工资单"
+          }
+        }
+      }
+    },
+    "Type in a receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを手入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动输入收据"
+          }
+        }
+      }
+    },
+    "Type in a tax form": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税務書類を手入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动输入税表"
+          }
+        }
+      }
+    },
+    "Unit price": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単価"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单价"
+          }
+        }
+      }
+    },
+    "Wages this period": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今期の課税対象給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本期工资额"
+          }
+        }
+      }
+    },
+    "Wages this year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年の課税対象給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年工资额"
+          }
+        }
+      }
+    },
+    "What recording it does": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記録するとどうなるか"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录后会发生什么"
+          }
+        }
+      }
+    },
+    "Which tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税の種類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税种"
+          }
+        }
+      }
+    },
+    "Set up hooks": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フックを設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置钩子"
+          }
+        }
+      }
+    },
+    "What a session sees": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッションに見える内容"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话看到什么"
+          }
+        }
+      }
+    },
+    "Read new sessions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいセッションを読み取る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取新会话"
+          }
+        }
+      }
+    },
+    "Coding actions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コーディング操作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编程操作"
+          }
+        }
+      }
+    },
+    "Reading new %@ sessions on %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@ の新しい %1$@ セッションを読み取っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取 %2$@ 上新的 %1$@ 会话"
+          }
+        }
+      }
+    },
+    "No source reads %@ sessions on %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@ の %1$@ セッションを読み取るソースがありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有来源在读取 %2$@ 上的 %1$@ 会话。"
+          }
+        }
+      }
+    },
+    "TeaNode can put its own hooks into Claude Code on a computer, beside the ones there. They report what a session does as it does it, so its state is right even where herdr gets it wrong, and they decide nothing. Sessions started afterwards use them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は、コンピューター上の Claude Code に独自のフックを既存のフックと並べて追加できます。フックはセッションの動きをその場で報告するので、herdr が状態を誤る場合でも正しい状態がわかります。フックは何も決定しません。追加後に始めたセッションで使われます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 可以在电脑上的 Claude Code 里加入自己的钩子，与已有的钩子并存。它们会实时报告会话在做什么，因此即使 herdr 判断错了，状态也是对的；它们不做任何决定。之后启动的会话会使用它们。"
+          }
+        }
+      }
+    },
+    "Reporting hooks": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "報告用フック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报告钩子"
+          }
+        }
+      }
+    },
+    "Remove the reporting hooks?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "報告用フックを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除报告钩子？"
+          }
+        }
+      }
+    },
+    "This takes TeaNode's hooks out of Claude Code's settings on %@, and leaves every other hook there as it is.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の Claude Code の設定から TeaNode のフックを削除します。ほかのフックはそのまま残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这会从 %@ 上 Claude Code 的设置中移除 TeaNode 的钩子，其他钩子保持不变。"
+          }
+        }
+      }
+    },
+    "Hooks installed on %@, in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ の %2$@ にフックを追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在 %1$@ 的 %2$@ 安装钩子"
+          }
+        }
+      }
+    },
+    "Hooks removed on %@, from %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ の %2$@ からフックを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从 %1$@ 的 %2$@ 移除钩子"
+          }
+        }
+      }
+    },
+    "Hooks": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钩子"
+          }
+        }
+      }
+    },
+    "Settings file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定ファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置文件"
+          }
+        }
+      }
+    },
+    "Hook script": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フックのスクリプト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钩子脚本"
+          }
+        }
+      }
+    },
+    "Backup of the settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定のバックアップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置的备份"
+          }
+        }
+      }
+    },
+    "Events": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "イベント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "事件"
+          }
+        }
+      }
+    },
+    "Computer (optional)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンピューター（任意）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电脑（可选）"
+          }
+        }
+      }
+    },
+    "Any computer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どのコンピューターでも"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意电脑"
+          }
+        }
+      }
+    },
+    "Question (optional)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "質問（任意）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题（可选）"
+          }
+        }
+      }
+    },
+    "A directory on a computer: shows what a Claude Code or Codex session there is shown by teanode hook. With no question, what a session starting there sees.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あるコンピューター上のディレクトリ：teanode hook がそこの Claude Code や Codex のセッションに見せる内容を表示します。質問がなければ、そこで始まるセッションが見る内容です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "某台电脑上的一个目录：显示 teanode hook 让那里的 Claude Code 或 Codex 会话看到的内容。不填问题时，显示在那里开始的会话所看到的内容。"
+          }
+        }
+      }
+    },
+    "What the session is shown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セッションに見せる内容"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话看到的内容"
+          }
+        }
+      }
+    },
+    "Nothing: your agent knows no checkout holding that directory, or the question recalls nothing from its project.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何もありません。エージェントはそのディレクトリを含むチェックアウトを知らないか、質問がそのプロジェクトから何も思い出しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有内容：你的助手不知道哪个检出目录包含这个目录，或者这个问题在它的项目里什么都想不起来。"
+          }
+        }
+      }
+    },
+    "Buy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "买入"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買付"
+          }
+        }
+      }
+    },
+    "Sell": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卖出"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "売却"
+          }
+        }
+      }
+    },
+    "Trades": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "买卖记录"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "売買"
+          }
+        }
+      }
+    },
+    "No trades": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有买卖记录"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "売買はありません"
+          }
+        }
+      }
+    },
+    "No trades in this account yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账户还没有买卖记录。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この口座の売買はまだありません。"
+          }
+        }
+      }
+    },
+    "Fee %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手续费 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手数料 %@"
+          }
+        }
+      }
+    },
+    "Every buy, sell, cancel and transfer in this account, newest first. The amount is the cash the trade moved: negative when cash left the account.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个账户中的每一笔买入、卖出、撤销和转移，最新的在前。金额是这笔买卖带来的现金变动：现金流出账户时为负数。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この口座でのすべての買付、売却、取消、移管。新しい順です。金額は売買で動いた現金で、口座から現金が出たときはマイナスです。"
+          }
+        }
+      }
+    },
+    "Delete account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除账户"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座を削除"
+          }
+        }
+      }
+    },
+    "Its transactions and its net worth history are deleted for good, and spending, budgets and net worth stop counting them. Spending rules limited to this account are deleted with it. Importing its statements or screenshots again brings the transactions back, but not values you recorded by hand.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它的交易和净资产历史将被永久删除，支出、预算和净资产不再计入它们。仅限于此账户的支出规则也会一并删除。再次导入它的对账单或截图可以找回交易，但您手动记录的数值不会恢复。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この口座の取引と純資産の履歴は完全に削除され、支出・予算・純資産に含まれなくなります。この口座に限定した支出ルールも一緒に削除されます。明細書やスクリーンショットを取り込み直せば取引は戻りますが、手入力した値は戻りません。"
+          }
+        }
+      }
+    },
+    "Deleted %@ and its 1 transaction.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除 %@ 及其 1 笔交易。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ と 1 件の取引を削除しました。"
+          }
+        }
+      }
+    },
+    "Deleted %@ and its %lld transactions.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除 %1$@ 及其 %2$lld 笔交易。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ と %2$lld 件の取引を削除しました。"
+          }
+        }
+      }
+    },
+    "Rename account": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名账户"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座の名前を変更"
+          }
+        }
+      }
+    },
+    "Later imports keep this name.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "之后的导入会保留这个名称。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以降の取り込みでもこの名前が使われます。"
+          }
+        }
+      }
+    },
+    "Account number, last digits": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号末尾数字"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座番号の下桁"
+          }
+        }
+      }
+    },
+    "The last 4 to 8 digits, for statements that show a word or nothing in their place. Later imports keep them, and screenshots showing them are matched to this account. Leave it empty to show the number from the statements.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号的最后 4 到 8 位数字，用于对账单上写的是文字或没有账号的情况。之后的导入会保留它，显示这些数字的截图会导入到这个账户。留空则恢复对账单上的账号。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細に番号ではなく文字が書かれているときや、番号がないときのための、下4〜8桁の数字です。以降の取り込みでもこの番号が使われ、この番号が写ったスクリーンショットはこの口座に取り込まれます。空にすると明細の番号に戻ります。"
+          }
+        }
+      }
+    },
+    "Renamed to %@, and the account number is the one from the statements again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重命名为 %@，账号已恢复为对账单上的账号。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に名前を変更し、口座番号を明細の番号に戻しました。"
+          }
+        }
+      }
+    },
+    "Renamed to %@, and the account number now ends %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重命名为 %1$@，账号末尾已设为 %2$@。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ に名前を変更し、口座番号の下桁を %2$@ にしました。"
+          }
+        }
+      }
+    },
+    "Renamed to %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重命名为 %@。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に名前を変更しました。"
+          }
+        }
+      }
+    },
+    "The account number is the one from the statements again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号已恢复为对账单上的账号。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座番号を明細の番号に戻しました。"
+          }
+        }
+      }
+    },
+    "The account number now ends %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号末尾已设为 %@。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口座番号の下桁を %@ にしました。"
+          }
+        }
+      }
+    },
+    "Suggest rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议规则"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルールを提案"
+          }
+        }
+      }
+    },
+    "Suggested rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议的规则"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提案されたルール"
+          }
+        }
+      }
+    },
+    "Looks at the transactions filed under the category and suggests the words they share. Nothing is saved until you add a rule.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看归在这个类别下的交易，建议它们共有的文字。在您添加规则之前不会保存任何内容。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このカテゴリに分類された取引を調べ、共通する言葉を提案します。ルールを追加するまで何も保存されません。"
+          }
+        }
+      }
+    },
+    "No transactions are filed under this category yet.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个类别下还没有交易。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このカテゴリに分類された取引はまだありません。"
+          }
+        }
+      }
+    },
+    "No rules to suggest: your spending rules already file transactions like these there.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可建议的规则：现有的支出规则已经会把这类交易归到这里。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提案できるルールはありません。こうした取引は既存の支出ルールですでにここに分類されます。"
+          }
+        }
+      }
+    },
+    "Added": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加済み"
+          }
+        }
+      }
+    },
+    "also changes 1 other transaction": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另外会改变 1 条交易"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかの取引 1 件も変わります"
+          }
+        }
+      }
+    },
+    "also changes %lld other transactions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另外会改变 %lld 条交易"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかの取引 %lld 件も変わります"
+          }
+        }
+      }
+    },
+    "1 left out: too short or too generic to be a rule": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "略去 1 条：太短或太笼统，不适合做规则"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 件を除外：短すぎるか一般的すぎてルールになりません"
+          }
+        }
+      }
+    },
+    "%lld left out: too short or too generic to be rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "略去 %lld 条：太短或太笼统，不适合做规则"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件を除外：短すぎるか一般的すぎてルールになりません"
+          }
+        }
+      }
+    },
+    "1 left out: it holds a number that changes each time": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "略去 1 条：其中的数字每次都不同"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 件を除外：毎回変わる番号を含んでいます"
+          }
+        }
+      }
+    },
+    "%lld left out: they hold a number that changes each time": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "略去 %lld 条：其中的数字每次都不同"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件を除外：毎回変わる番号を含んでいます"
+          }
+        }
+      }
+    },
+    "%lld more left out: at most %lld spending rules at a time": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另外略去 %1$lld 条：一次最多保存 %2$lld 条支出规则"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "さらに %1$lld 件を除外：一度に保存できる支出ルールは %2$lld 件までです"
+          }
+        }
+      }
+    },
+    "Bring an existing connection": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入已有的连接"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既存の接続を取り込む"
+          }
+        }
+      }
+    },
+    "Credential": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "凭据"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認証情報"
+          }
+        }
+      }
+    },
+    "The access token of a Plaid link made with this server’s Plaid keys. Bringing it in does not use up another Plaid link the way linking again would.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用这台服务器的 Plaid 密钥建立的 Plaid 关联的访问令牌。导入它不会像重新关联那样再占用一个 Plaid 关联名额。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーの Plaid キーで作られた Plaid 連携のアクセストークンです。取り込んでも、連携し直す場合と違って Plaid の連携枠を新たに使いません。"
+          }
+        }
+      }
+    },
+    "A SimpleFIN access URL already claimed from a setup token, beginning with https:// and holding its own user name and password.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经用设置令牌换取的 SimpleFIN 访问 URL，以 https:// 开头，包含它自己的用户名和密码。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セットアップトークンから取得済みの SimpleFIN アクセス URL です。https:// で始まり、ユーザー名とパスワードを含みます。"
+          }
+        }
+      }
+    },
+    "Institution name (optional)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金融机构名称（可选）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金融機関名（任意）"
+          }
+        }
+      }
+    },
+    "Asked of the provider when left empty": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空则向服务商查询"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空欄ならプロバイダーに問い合わせます"
+          }
+        }
+      }
+    },
+    "Connection brought in. Its first sync starts within the minute.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入连接。第一次同步会在一分钟内开始。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続を取り込みました。最初の同期は 1 分以内に始まります。"
+          }
+        }
+      }
+    },
+    "Choose a file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择文件"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを選択"
+          }
+        }
+      }
+    },
+    "A JSON file of transaction rows, the file the command line’s import-transactions reads. You see what it would do before anything is imported.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一个交易行的 JSON 文件，也就是命令行 import-transactions 读取的文件。导入之前，您会先看到它将做什么。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引行の JSON ファイルです。コマンドラインの import-transactions が読むものと同じです。取り込む前に、何が行われるかを確認できます。"
+          }
+        }
+      }
+    },
+    "Import transactions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入交易"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引を取り込む"
+          }
+        }
+      }
+    },
+    "Import transaction rows": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入交易行"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引行を取り込む"
+          }
+        }
+      }
+    },
+    "What would be imported": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将导入的内容"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り込まれる内容"
+          }
+        }
+      }
+    },
+    "New rows": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增的行"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい行"
+          }
+        }
+      }
+    },
+    "Already there": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有的行"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すでにある行"
+          }
+        }
+      }
+    },
+    "Days": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日期范围"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期間"
+          }
+        }
+      }
+    },
+    "Money in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收入"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入金"
+          }
+        }
+      }
+    },
+    "Money out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支出"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出金"
+          }
+        }
+      }
+    },
+    "A stored transaction of the same amount is within 3 days.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3 天内有一笔金额相同的已有交易。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3 日以内に同じ金額の保存済みの取引があります。"
+          }
+        }
+      }
+    },
+    "A new account would be made for these rows.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将为这些行新建一个账户。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらの行のために新しい口座が作られます。"
+          }
+        }
+      }
+    },
+    "An account you have, found by its id.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您已有的账户，按 ID 找到。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お持ちの口座です。ID で見つかりました。"
+          }
+        }
+      }
+    },
+    "An account you have, found by its number.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您已有的账户，按账号找到。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お持ちの口座です。口座番号で見つかりました。"
+          }
+        }
+      }
+    },
+    "An account you have, found by the last digits of its number.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您已有的账户，按账号末尾数字找到。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お持ちの口座です。口座番号の下桁で見つかりました。"
+          }
+        }
+      }
+    },
+    "An account you have.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您已有的账户。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お持ちの口座です。"
+          }
+        }
+      }
+    },
+    "That file is too large to be transaction rows.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个文件太大，不可能是交易行。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このファイルは大きすぎて、取引行ではありません。"
+          }
+        }
+      }
+    },
+    "That file is not a set of transaction rows.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个文件不是一组交易行。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このファイルは取引行のセットではありません。"
+          }
+        }
+      }
+    },
+    "%lld trades": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld trade"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld trades"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 笔买卖"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の売買"
+          }
+        }
+      }
+    },
+    "%@ is empty": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@が空です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@不能为空"
+          }
+        }
+      }
+    },
+    "%@ is not an amount": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は金額ではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@不是有效金额"
+          }
+        }
+      }
+    },
+    "%@ is not a number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は数値ではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@不是有效数字"
+          }
+        }
+      }
+    },
+    "%@ is not a day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は日付ではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@不是有效日期"
+          }
+        }
+      }
+    },
+    "%@ is not a currency code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は通貨コードではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@不是有效的货币代码"
+          }
+        }
+      }
+    },
+    "%@ is not four digits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は4桁の数字ではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@必须是四位数字"
+          }
+        }
+      }
+    },
+    "%@ is not a year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は年ではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@不是有效年份"
+          }
+        }
+      }
+    },
+    "Add at least one line": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行を1つ以上追加してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请至少添加一行"
+          }
+        }
+      }
+    },
+    "Add at least one box": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボックスを1つ以上追加してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请至少添加一栏"
+          }
+        }
+      }
+    },
+    "Box %lld: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボックス %lld：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 栏：%@"
+          }
+        }
+      }
+    },
+    "Line %lld: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 行目：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 行：%@"
+          }
+        }
+      }
+    },
+    "Add the file first": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にファイルを追加してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先添加文件"
+          }
+        }
+      }
+    },
+    "New transactions whose merchant or description contains these words will be filed under %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引先名や説明にこの語を含む新しい取引は %@ に分類されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商户或描述中包含这些词的新交易将归入 %@。"
           }
         }
       }

@@ -1345,7 +1345,10 @@ waits its turn like any other.
 What a session is shown is wrapped in `<teanode-memory>`, so it can be told
 apart from what the person said. The same blocks are on the memory tool's
 `checkout` action, `ReadAgentCodingContext` and `RecallAgentCodingMemory`,
-`teanode agent memory checkout`, and the Recall dialog's checkout field.
+`teanode agent memory checkout`, the Recall dialog's checkout field, and
+the iPhone's Coding menu. The memory tool's `capture` action
+(`CaptureAgentCodingSession`, `teanode agent memory capture`) has a
+computer's new coding sessions read now.
 
 ## Bootstrapping
 

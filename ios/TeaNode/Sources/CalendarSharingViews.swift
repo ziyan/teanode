@@ -4,8 +4,8 @@ import TeaNodeKit
 /// CalendarListSheet is the calendars the person reaches: their own, their
 /// circles' and the ones shared with them, each with its color and whose it
 /// is, and a switch to show or hide it. What is hidden is hidden on this
-/// phone only. Below the list are the ways to share their own calendar and
-/// to make a circle's.
+/// phone only. Below the list are the ways to rename and share their own
+/// calendar and to make a circle's.
 struct CalendarListSheet: View {
     let model: CalendarModel
     @Environment(\.dismiss) private var dismiss
@@ -13,6 +13,8 @@ struct CalendarListSheet: View {
     @State private var problemText: String?
     @State private var doneText: String?
     @State private var isWorking = false
+    @State private var isRenaming = false
+    @State private var newName = ""
     #if DEBUG
         /// Whether the share screen is pushed for a screenshot.
         @State private var isShowingDemoShare = false
@@ -36,6 +38,16 @@ struct CalendarListSheet: View {
                     Text("Calendars you hide here stay hidden on this phone only.")
                 }
                 if let own = model.calendar {
+                    Section {
+                        Button {
+                            newName = own.name
+                            isRenaming = true
+                        } label: {
+                            Label("Rename my calendar", systemImage: "pencil")
+                                .actionColor()
+                        }
+                        .disabled(isWorking)
+                    }
                     Section {
                         NavigationLink {
                             CalendarShareScreen(model: model, calendar: own)
@@ -64,6 +76,7 @@ struct CalendarListSheet: View {
                                         ? String(localized: "Make a family calendar for \(circle.name)")
                                         : String(localized: "Make a shared calendar for \(circle.name)"),
                                     systemImage: "calendar.badge.plus")
+                                .actionColor()
                             }
                             .disabled(isWorking)
                         }
@@ -80,6 +93,11 @@ struct CalendarListSheet: View {
                 }
             }
             .task { await findCirclesWithoutCalendar() }
+            .alert("Rename your calendar", isPresented: $isRenaming) {
+                TextField("Calendar name", text: $newName)
+                Button("Cancel", role: .cancel) {}
+                Button("Save") { rename() }
+            }
             #if DEBUG
                 // `-TeaNodeScreen calendar-share-sheet`: Share my calendar, open in the sheet.
                 .navigationDestination(isPresented: $isShowingDemoShare) {
@@ -109,6 +127,25 @@ struct CalendarListSheet: View {
         guard let circles = try? await model.connection.circles() else { return }
         let withCalendar = Set(model.calendars.compactMap(\.circleId))
         circlesWithoutCalendar = circles.filter { $0.isAdmin && !withCalendar.contains($0.id) }
+    }
+
+    /// Renames the person's own calendar. Nothing is sent for an empty name or
+    /// the name it already has.
+    private func rename() {
+        guard let own = model.calendar else { return }
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != own.name else { return }
+        isWorking = true
+        Task {
+            do {
+                try await model.connection.saveCalendar(own, name: name)
+                doneText = String(localized: "Calendar renamed")
+                await model.reloadCalendars()
+            } catch {
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            }
+            isWorking = false
+        }
     }
 
     private func make(for circle: PeopleCircle) {
@@ -480,41 +517,74 @@ struct EventReader: View {
 
 /// CircleCalendarOfferSheet is the question asked once, as a person joins a
 /// family or a group of colleagues: share their calendar with everyone in it,
-/// at a level they choose, or not now. The dashboard asks the same on its
-/// Circles page, and the Share my calendar screen has the choice whenever they
-/// want it.
+/// at a level they choose, or not now. For a family the same sheet also asks
+/// about where they are: now and where they have been, only now, or not now,
+/// so they answer once. The dashboard asks the same on its Circles page, and
+/// the Share my calendar screen and Location's Sharing have the choices
+/// whenever they want them.
 struct CircleCalendarOfferSheet: View {
     let connection: Connection
     let offer: CircleCalendarOffer
-    /// Said on the screen behind the sheet once the calendar is shared.
+    /// Said on the screen behind the sheet once something is shared.
     let onShared: (String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var level: CalendarShareLevel = .busy
+    /// nil is "Not now", offered for the calendar only beside the location.
+    /// With no calendar to share it starts as nil: nothing is chosen there.
+    @State private var calendarLevel: CalendarShareLevel?
+    @State private var locationLevel: LocationShareLevel?
     @State private var isWorking = false
     @State private var problemText: String?
     @State private var doneText: String?
 
+    init(connection: Connection, offer: CircleCalendarOffer, onShared: @escaping (String) -> Void) {
+        self.connection = connection
+        self.offer = offer
+        self.onShared = onShared
+        _calendarLevel = State(initialValue: offer.isCalendarOffered ? .busy : nil)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Text("Everyone in \(offer.circleName) could see your calendar, as much as you choose. An event you mark private is only ever shown as busy.")
-                }
-                Section {
-                    Picker("How much", selection: $level) {
-                        ForEach(CircleCalendarOffer.levels, id: \.self) { each in
-                            Text(each.title).tag(each)
-                        }
+                if offer.isCalendarOffered {
+                    Section {
+                        Text("Everyone in \(offer.circleName) could see your calendar, as much as you choose. An event you mark private is only ever shown as busy.")
                     }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                } header: {
-                    Text("How much")
-                } footer: {
-                    Text(level.explanation)
+                    Section {
+                        Picker("How much", selection: $calendarLevel) {
+                            if offer.isLocationOffered {
+                                Text("Not now").tag(CalendarShareLevel?.none)
+                            }
+                            ForEach(CircleCalendarOffer.levels, id: \.self) { each in
+                                Text(each.title).tag(Optional(each))
+                            }
+                        }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                    } header: {
+                        Text("Your calendar")
+                    } footer: {
+                        if let calendarLevel { Text(calendarLevel.explanation) }
+                    }
+                }
+                if offer.isLocationOffered {
+                    Section {
+                        Picker("Share where I am", selection: $locationLevel) {
+                            Text("Not now").tag(LocationShareLevel?.none)
+                            ForEach(CircleCalendarOffer.locationLevels, id: \.self) { each in
+                                Text(each.title).tag(Optional(each))
+                            }
+                        }
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                    } header: {
+                        Text("Where you are")
+                    } footer: {
+                        Text("Everyone in \(offer.circleName) could see it. You can change this under Sharing in Location.")
+                    }
                 }
             }
-            .navigationTitle("Share your calendar with \(offer.circleName)?")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -526,6 +596,7 @@ struct CircleCalendarOfferSheet: View {
                         ProgressView()
                     } else {
                         Button("Share") { Task { await share() } }
+                            .disabled((offer.isCalendarOffered ? calendarLevel : nil) == nil && locationLevel == nil)
                     }
                 }
             }
@@ -534,11 +605,24 @@ struct CircleCalendarOfferSheet: View {
         .presentationDetents([.medium, .large])
     }
 
+    private var title: String {
+        switch (offer.isCalendarOffered, offer.isLocationOffered) {
+        case (true, true): String(localized: "Share with \(offer.circleName)?")
+        case (false, _): String(localized: "Share where you are with \(offer.circleName)?")
+        default: String(localized: "Share your calendar with \(offer.circleName)?")
+        }
+    }
+
     private func share() async {
         isWorking = true
         defer { isWorking = false }
         do {
-            try await connection.shareCalendar(calendarId: offer.calendarId, granteeUserId: nil, granteeCircleId: offer.circleId, level: level)
+            if let calendarId = offer.calendarId, let calendarLevel {
+                try await connection.shareCalendar(calendarId: calendarId, granteeUserId: nil, granteeCircleId: offer.circleId, level: calendarLevel)
+            }
+            if let locationLevel {
+                try await connection.shareLocation(granteeUserId: nil, granteeCircleId: offer.circleId, level: locationLevel)
+            }
             let name = String(localized: "Everyone in \(offer.circleName)")
             onShared(String(localized: "Shared with \(name)"))
             dismiss()

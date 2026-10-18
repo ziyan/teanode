@@ -3492,7 +3492,7 @@ body,
      head-icons (a page's rename and delete): each is a square, two or three
      fit beside a title. A row of words keeps the rule above, since beside
      the title it would squeeze it. */
-  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: var(--space-3);
@@ -3500,23 +3500,23 @@ body,
     align-items: center;
   }
 
-  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child {
     display: contents;
   }
 
-  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) h3 {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) h3 {
     grid-row: 1;
     grid-column: 1;
     margin: 0;
   }
 
-  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child > p {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child > p {
     grid-row: 2;
     grid-column: 1 / -1;
     margin-top: 4px;
   }
 
-  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) > :is(button, .head-icons) {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > :is(button, .head-icons, .menu-button) {
     grid-row: 1;
     grid-column: 2;
     margin-left: 0;
@@ -5330,6 +5330,19 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Inside a field's label the value is what was chosen, not the field's name:
+   "label span" would draw it small and grey, like the name above it. */
+label .select-value {
+  display: block;
+  margin-bottom: 0;
+  color: var(--text);
+  font-size: inherit;
+}
+
+label .select-value.placeholder {
+  color: var(--muted);
 }
 
 .select-list {
@@ -8197,6 +8210,39 @@ button.agent-reaction:focus-visible {
   font-size: var(--text-label);
 }
 
+/* The finance tables' last column is the one the agent's floating button
+   covers where a window is narrow, so it keeps the button's width of room
+   at its end; scrolling to the end brings it clear. */
+@media (max-width: 900px) {
+  .finance-credit-table th:last-child,
+  .finance-credit-table td:last-child,
+  .finance-transactions-table .table-surface th:last-child,
+  .finance-transactions-table .table-surface td:last-child {
+    padding-right: 64px;
+  }
+}
+
+/* On a phone the credit table gives its card name two lines and its cells
+   less padding, so the Used column is reached with a short scroll. */
+@media (max-width: 600px) {
+  .finance-credit-table th,
+  .finance-credit-table td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .finance-credit-table td:first-child {
+    min-width: 7rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .finance-credit-table th:last-child,
+  .finance-credit-table td:last-child {
+    padding-right: 64px;
+  }
+}
+
 /* A table wider than its panel scrolls sideways inside it, staying a
    table. Without this the usage table pushed its card, and then the whole
    page, wider than the window. */
@@ -10417,6 +10463,7 @@ button.with-icon {
 
 .calendar-bar-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
@@ -14137,6 +14184,23 @@ button.idea-history-title {
    two to a line and then one on a phone. */
 .finance-filters {
   margin-bottom: var(--space-3);
+  /* Top-aligned, so the words over each field sit on one line: a dropdown
+     is a little taller than a date, and aligned by their bottoms its words
+     rode higher than the date's. */
+  align-items: flex-start;
+}
+
+/* The ticks under the filters: side by side while they fit, each box kept
+   with its words, wrapping between ticks rather than inside one. */
+.finance-filter-ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+}
+
+.finance-filter-ticks > label.checkbox {
+  margin-bottom: 0;
+  white-space: nowrap;
 }
 
 .finance-filters > label {
@@ -15386,6 +15450,19 @@ button.idea-history-title {
     overflow-wrap: anywhere;
     line-height: 1.35;
   }
+
+  /* The charges a receipt matched take two or three short lines, so the
+     Matched column is read without scrolling to the end of a long one. */
+  .finance-receipt-matched {
+    min-width: 8rem;
+    max-width: 10rem;
+  }
+
+  .finance-receipt-matched .link {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
 }
 
 /* What it is matched to is its own part of the receipt, set apart from
@@ -15515,10 +15592,26 @@ button.idea-history-title {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
-    min-width: 9rem;
-    max-width: 14rem;
+    min-width: 7rem;
+    max-width: 10rem;
     white-space: normal;
     line-height: 1.35;
+  }
+
+  /* Width reclaimed for the category, the column the row is for: the cells
+     pad less and the dropdown is only as wide as its words need. */
+  .finance-transactions-table .table-surface th,
+  .finance-transactions-table .table-surface td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .finance-category-cell {
+    min-width: 9rem;
+  }
+
+  .finance-category-cell .select {
+    min-width: 0;
   }
 }
 
@@ -15632,80 +15725,145 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
-.herdr-session {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.herdr-session-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
 /* The pane as it stands: kept as drawn, so its forms line up, and scrolled
-   sideways in its own box rather than the dialog's. */
+   sideways in its own box rather than the page's. */
+/* A terminal's ground and text in either theme: the colors a program
+   draws on its screen were chosen against a dark one. */
+.terminal-text {
+  --terminal-background: #1e1e1e;
+  --terminal-text: #d4d4d4;
+  background: var(--terminal-background);
+  color: var(--terminal-text);
+}
+
 .herdr-screen {
-  max-height: min(48vh, 420px);
   margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  background: var(--field);
   font-size: 12px;
   line-height: 1.4;
   white-space: pre;
 }
 
+/* The turns are the conversation's own bubbles (.agent-line), in a column. */
 .herdr-turns {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-height: min(48vh, 420px);
   margin: 0;
   padding: 0;
-  overflow-y: auto;
   list-style: none;
 }
 
 .herdr-turn {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
-.herdr-turn-role {
-  font-size: var(--text-label);
-  font-weight: 600;
+.herdr-turn .agent-line.user {
+  align-self: flex-end;
 }
 
-.herdr-turn-text {
+.herdr-turn .agent-line.assistant {
+  align-self: flex-start;
+}
+
+/* A tool call is one muted line in the terminal's own face. */
+.herdr-tool-line {
+  font-family: var(--mono, ui-monospace, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A tool call with its detail: the line is what is clicked, and opens to
+   the input and the answer in the terminal's face. */
+.herdr-tool > summary {
+  display: block;
+  cursor: pointer;
+  list-style: none;
+}
+
+.herdr-tool > summary::-webkit-details-marker {
+  display: none;
+}
+
+.herdr-tool > summary:hover {
+  color: var(--text);
+}
+
+.herdr-tool-detail {
+  margin: var(--space-1) 0 var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+}
+
+.herdr-tool-detail h5 {
+  margin: 0 0 var(--space-1);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.herdr-tool-detail pre {
+  margin: 0 0 var(--space-2);
+  max-height: 24em;
+  overflow: auto;
+  font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.herdr-turn.tool .herdr-turn-text {
-  color: var(--muted);
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: 12px;
+.herdr-tool-detail pre:last-child {
+  margin-bottom: 0;
 }
 
+/* As the drawer's box is: one row, everything in it 36px tall, the
+   paperclip, the box on one line and a round send mark. The box grows with
+   the words from the bottom, and scrolls only past its tallest, so an empty
+   one never shows a scrollbar for a rounding pixel. */
 .herdr-send {
   display: flex;
-  gap: var(--space-2);
+  gap: 8px;
   align-items: flex-end;
 }
 
 .herdr-send textarea {
   flex: 1;
   min-width: 0;
-  resize: vertical;
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  max-height: 160px;
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 20px;
+  resize: none;
+  overflow-y: hidden;
+}
+
+.herdr-send textarea.is-overflowing {
+  overflow-y: auto;
+}
+
+.herdr-send .icon-button {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+}
+
+.herdr-send .herdr-send-button {
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.herdr-send .herdr-send-button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* One line a session, the pane first and how it stands beside it: on a
@@ -15713,11 +15871,6 @@ button.idea-history-title {
 .herdr-sessions td {
   white-space: nowrap;
   vertical-align: middle;
-}
-
-.herdr-sessions td > button.link {
-  padding: 0;
-  font: inherit;
 }
 
 .herdr-hooks table {
@@ -15739,12 +15892,6 @@ button.idea-history-title {
 
 .agent-line.herdr-question-line .herdr-question-card {
   margin-top: 0;
-}
-
-/* A session's dialog holds a terminal's screen, drawn as the terminal drew
-   it: wider than other dialogs, as wide as the window allows. */
-.dialog-wide:has(.herdr-session) {
-  max-width: min(960px, 100%);
 }
 
 /* A coding session's question in the drawer is one box: a head that says
@@ -16238,6 +16385,542 @@ body.has-recording-bar .content {
 .finance-paystub-lines th,
 .finance-paystub-lines td {
   white-space: nowrap;
+}
+
+/* --- recording by hand -------------------------------------------------
+   The dialogs that record a receipt, a paystub, a tax form or the rows of
+   a statement. Their fields sit in a grid that folds to one column on a
+   phone; a repeated line (a receipt line, a box, a row) is a bordered group
+   of its own fields with its remove button at the end. */
+.finance-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dialog.dialog-wide:has(.finance-entry-fields) {
+  max-width: min(780px, calc(100vw - 32px));
+}
+
+.finance-entry-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  column-gap: var(--space-3);
+}
+
+.finance-entry-label {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.finance-entry-fields > div {
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-rate {
+  margin-top: var(--space-1);
+}
+
+.finance-entry-lines {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  min-width: 0;
+}
+
+.finance-entry-lines legend {
+  padding: 0 var(--space-1);
+  font-weight: 600;
+}
+
+.finance-entry-line {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  column-gap: var(--space-2);
+  align-items: end;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-line .finance-entry-wide {
+  grid-column: span 2;
+}
+
+.finance-entry-line .finance-entry-line-number {
+  grid-column: 1 / -1;
+  margin-bottom: var(--space-1);
+}
+
+.finance-entry-line .finance-entry-line-remove {
+  justify-self: end;
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-preview {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-preview p {
+  margin: var(--space-1) 0;
+}
+
+.finance-entry-candidates {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+}
+
+.finance-entry-candidates li {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) 0;
+}
+
+.finance-entry-rows-table {
+  margin-top: var(--space-2);
+}
+
+.finance-entry-rows-table caption {
+  text-align: left;
+  color: var(--muted);
+  font-size: 13px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.finance-entry-rows-table td,
+.finance-entry-rows-table th {
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .finance-entry-line .finance-entry-wide {
+    grid-column: span 1;
+  }
+}
+
+/* --- the Coding page -------------------------------------------------------
+   The frame takes the height left on the page, as the knowledge and the mail
+   pages do, so the transcript scrolls inside it and the box to type into
+   stays at the foot. A list and the session beside it where there is room,
+   one at a time where there is not: the frame's own width decides, and the
+   address says which. */
+.coding-frame {
+  container-type: inline-size;
+  container-name: coding;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+main.content:has(> .coding-frame) {
+  display: flex;
+  flex-direction: column;
+}
+
+main.content:has(> .coding-frame) > :not(.coding-frame) {
+  flex-shrink: 0;
+}
+
+.coding-split {
+  display: grid;
+  /* The mailbox's widths, so the two pages read the same. */
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.coding-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+/* On a phone, where the heading is not drawn, the way to open a session sits
+   at the top of the list, at the right. */
+.coding-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+/* On a phone the list starts right under the top bar, as a list app's does,
+   rather than below the page's usual top margin. */
+@media (max-width: 600px) {
+  main.content:has(> .coding-frame) {
+    padding-top: 0;
+  }
+}
+
+.coding-list-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Each computer is a band across the list, as wide as the rows under it,
+   that stays at the top while its sessions scroll and folds them away. */
+.coding-computer h3 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--field);
+  font-size: inherit;
+}
+
+/* The computer's menu sits at the end of its header, on the same ground. */
+.coding-computer h3 .menu-button {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-right: 6px;
+}
+
+.coding-computer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coding-computer-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coding-computer-counts {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.coding-workspace h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 10px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.coding-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px 8px 30px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coding-row:hover {
+  background: var(--field);
+}
+
+.coding-row.active {
+  background: var(--sidebar-hover);
+}
+
+.coding-row-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.coding-row-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coding-row-text .muted {
+  font-size: 12px;
+}
+
+.coding-question-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: var(--background);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.coding-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.coding-gone {
+  padding: var(--space-4);
+}
+
+.coding-session {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* One row: the way back, the title over where the session is, and the
+   actions. The title and the directory give way to the actions. */
+.coding-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.coding-header-text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.coding-header h2 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coding-header p {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 2px 0 0;
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+
+.coding-header p > .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.coding-header .row-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+/* Only a narrow frame needs the way back to the list. */
+.coding-back {
+  display: none;
+}
+
+.coding-tabstrip {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.coding-tabstrip .tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.coding-tabstrip .tabs button {
+  /* Holds the hidden "On screen" words inside the strip, which scrolls:
+     placed against the page instead, a tab far along the strip pushed the
+     page wider than a phone. */
+  position: relative;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.coding-tabstrip .menu-button {
+  align-self: center;
+}
+
+.herdr-onscreen {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--accent, var(--text));
+}
+
+/* The room is there on every tab, so choosing one moves nothing. */
+.herdr-onscreen.reserved {
+  background: none;
+}
+
+
+/* The transcript, or the screen, with the button that switches between
+   them floating over its top right corner. */
+.coding-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.coding-view-toggle {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  z-index: 1;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+.coding-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.coding-earlier {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: var(--space-2);
+}
+
+.coding-composer {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.coding-composer[hidden] {
+  display: none;
+}
+
+/* At the end of the transcript, scrolling with it. */
+.coding-question {
+  margin-top: var(--space-3);
+}
+
+.coding-composer .agent-attachments {
+  margin-bottom: var(--space-2);
+}
+
+/* The assistant's round button sits over the page's bottom right corner,
+   where Send would be, when the page is wide enough to reach it. */
+@media (min-width: 721px) {
+  .coding-composer {
+    padding-right: calc(var(--space-3) + 52px);
+  }
+}
+
+.herdr-tab-label {
+  display: inline-block;
+  vertical-align: bottom;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@container coding (max-width: 860px) {
+  .coding-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .coding-list {
+    border-right: 0;
+  }
+  .coding-split.reading .coding-list {
+    display: none;
+  }
+  .coding-split:not(.reading) .coding-pane {
+    display: none;
+  }
+  .coding-back {
+    display: flex;
+  }
+}
+
+/* On a phone the page is the list, as the mailbox is: the frame runs to the
+   screen's edges with no border at the sides, rather than spending the
+   width on the page's padding and a box. The terminal's screen, wider than
+   a phone already, takes every column of it. */
+@media (max-width: 600px) {
+  .coding-split {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
+  .coding-scroll.showing-screen {
+    padding: 0;
+  }
+
+  .coding-scroll.showing-screen .herdr-screen {
+    min-height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+
+  .coding-scroll.showing-screen .coding-question {
+    margin: var(--space-3);
+  }
+}
+
+.coding-empty {
+  margin: var(--space-4) 0;
+  text-align: center;
 }
 
 /* --- photos ---------------------------------------------------------------
@@ -18365,6 +19048,231 @@ body.has-recording-bar .content {
   white-space: nowrap;
 }
 
+/* --- the Location page ------------------------------------------------------
+   A map with the people under it, then tabs of rows. The rows are buttons that
+   choose a person, a place or a visit, and keep one height whether chosen or
+   not: the border is there from the start, transparent, and only its color
+   changes. */
+.location-map-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.location-map {
+  position: relative;
+  height: 360px;
+  background: var(--rail);
+}
+
+/* MapLibre's own stylesheet makes this element position: relative, loaded
+   after this one, so its size is given outright rather than by its edges. */
+.location-map-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* MapLibre's styles are light. In dark mode the map is dimmed rather than
+   drawn from a second style; the markers are elements above the canvas, so
+   the pictures and icons on them keep their colors. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .location-map .maplibregl-canvas {
+    filter: brightness(0.8) contrast(1.1);
+  }
+}
+
+:root[data-theme='dark'] .location-map .maplibregl-canvas {
+  filter: brightness(0.8) contrast(1.1);
+}
+
+.location-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-raised);
+  cursor: pointer;
+}
+
+.location-marker-person {
+  width: 40px;
+  height: 40px;
+}
+
+.location-marker-place {
+  width: 28px;
+  height: 28px;
+}
+
+/* A marker is drawn small and pressed at 44px: the pseudo-element is part of
+   the button, so a press on it counts, and a finger finds a place marker that
+   is 28px across. The map positions the button itself (absolute), which is
+   what the pseudo-element is placed against. */
+.location-marker::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.location-marker-person::after {
+  inset: -2px;
+}
+
+.location-marker.is-selected {
+  border-color: var(--leaf);
+}
+
+.location-place-visits {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+}
+
+.location-people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.location-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  color: var(--text);
+}
+
+.location-people .location-row {
+  margin-bottom: 0;
+}
+
+.location-row.is-selected {
+  border-color: var(--leaf);
+  background: color-mix(in srgb, var(--leaf) 10%, var(--surface));
+}
+
+.location-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+}
+
+.location-row-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.location-row-body > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The line under a person's name says where they are and since when. It wraps
+   to a second line rather than losing the time to an ellipsis. */
+.location-people .location-row-body > .muted {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.location-row-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: var(--text-label);
+}
+
+.location-day-picker {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.location-day-head {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+/* The name of a day that chooses it. A heading first, so it is drawn as one
+   and not as a button. */
+.location-day-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+}
+
+.location-day-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.location-credit {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+}
+
+.location-find {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.location-find input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.location-find button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.location-nearby {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 600px) {
+  .location-map {
+    height: 300px;
+  }
+}
+
+/* The map inside the place editor, after the rule above so a phone keeps it
+   small too. */
+.location-map-compact {
+  height: 220px;
+  border-radius: var(--radius-2);
+  overflow: hidden;
+}
+
+.location-keep-typed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
 .photo-circle-chip {
   display: inline-flex;
   flex: 0 0 auto;
@@ -18885,6 +19793,75 @@ label.checkbox.is-plain > span > .muted {
   }
 }
 
+
+.location-here {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+/* The place editor is a column of fields with one gap between them, and a
+   smaller one between a field's name and what it holds. */
+.location-place-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.location-place-editor label,
+.location-place-editor-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.location-place-editor p,
+.location-place-editor h4,
+.location-place-editor .location-place-visits {
+  margin: 0;
+}
+
+.location-place-editor section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.location-address-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.location-address-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The box for the exact number beside the slider for a rough one. */
+.location-radius-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.location-radius-row input[type='number'] {
+  width: 96px;
+  flex: 0 0 auto;
+}
+
+.location-radius-row input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+}
 
 /* --- photos, the look of a photo library ------------------------------------
    The days on the screen under the heading, a switch between the grid and an

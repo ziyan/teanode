@@ -28,6 +28,8 @@
             "alex": DemoPerson(userId: "alex", name: "Alex", avatarColorIndex: 4, hasPicture: false),
             // A name of 60 characters, the longest a row has to hold.
             "jordan": DemoPerson(userId: "jordan", name: "Jordan Alexander Montgomery-Featherstonehaugh Wellington-Amy", avatarColorIndex: 9, hasPicture: true),
+            "casey": DemoPerson(userId: "casey", name: "Casey", avatarColorIndex: 1, hasPicture: false),
+            "morgan": DemoPerson(userId: "morgan", name: "Morgan", avatarColorIndex: 5, hasPicture: false),
         ]
 
         static func demoPerson(_ userId: String) -> DemoPerson { demoPeople[userId]! }
@@ -69,7 +71,7 @@
                 return session.replacingOccurrences(of: #""user:manage","#, with: "")
             }
             if query.contains("ListCalendarFreeBusy") { return calendarFreeBusyAnswer(variables: variables) }
-            if let screen, ["calendar-shared", "calendar-share-sheet", "calendar-find-time"].contains(screen) {
+            if let screen, ["calendar-shared", "calendar-sheet", "calendar-share-sheet", "calendar-find-time"].contains(screen) {
                 if query.contains("ListCalendars") { return #"{"data":{"ListCalendars":[\#(sharedCalendarsJSON)]}}"# }
                 if query.contains("ListCalendarEvents"), screen == "calendar-shared" { return sharedCalendarEvents(variables: variables, body: body) }
             }
@@ -275,12 +277,12 @@
                 #"{"data":{"ReadAgentConversation":{"conversation":\#(conversation),"todos":[],"messages":[\#(messages.joined(separator: ","))],"total":\#(messages.count)},"ListAgentInteractions":[]}}"#
         }
 
-        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-group`
-        /// or `chat-members`), or nil for any other screen.
+        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-group`,
+        /// `chat-members` or `chat-mention`), or nil for any other screen.
         static var openedChat: AgentConversation? {
             switch screen ?? "" {
             case "chat-direct": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
-            case "chat-group", "chat-members": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
+            case "chat-group", "chat-members", "chat-mention": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
             default: nil
             }
         }
@@ -462,6 +464,28 @@
         var body: some View {
             CircleDetailView(directory: directory, circleId: "circle-home")
                 .task { await directory.load() }
+        }
+    }
+
+    /// CircleJoinOfferDemoScreen is the sheet asked as a person joins a
+    /// family (`-TeaNodeScreen circle-join-offer`): the calendar and where
+    /// they are, in one sheet.
+    struct CircleJoinOfferDemoScreen: View {
+        let connection: Connection
+        @State private var isOffering = true
+
+        var body: some View {
+            CirclesView(connection: connection)
+                .sheet(isPresented: $isOffering) {
+                    if let offer = CircleCalendarOffer(
+                        accepting: CircleInvitation(
+                            id: "invitation-demo", circleId: "circle-home", circleName: "Home", circleKind: "family", invitedByName: "Sam",
+                            invitedUsername: "robin", memberRole: "member", createdAt: "2026-10-15T09:00:00Z", expiresAt: "2026-10-29T09:00:00Z"),
+                        calendarId: "home", canShareLocation: true)
+                    {
+                        CircleCalendarOfferSheet(connection: connection, offer: offer) { _ in }
+                    }
+                }
         }
     }
 #endif

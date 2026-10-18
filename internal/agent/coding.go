@@ -415,6 +415,30 @@ func (self *AskRun) CodingMemory(ctx context.Context, directory, computerName, p
 	return self.agent.codingMemory(ctx, self.settings.Agent, self.settings.Owner, directory, computerName, prompt)
 }
 
+// CaptureCodingSession is tools.CodingRemembering for a turn.
+func (self *AskRun) CaptureCodingSession(ctx context.Context, computerName, assistant string) (bool, error) {
+	return self.agent.captureCodingSession(ctx, self.settings.Agent.ID, computerName, assistant)
+}
+
+// captureCodingSession is the same call CaptureAgentCodingSession makes, on
+// the computer named, or the only one attached when none is.
+func (self *Agent) captureCodingSession(ctx context.Context, agentId, computerName, assistant string) (bool, error) {
+	if computerName == "" {
+		if attached := self.computerNamed(agentId, ""); attached != nil {
+			computerName = attached.Name()
+		}
+	}
+	if computerName == "" {
+		return false, fmt.Errorf("which computer? name the one the coding sessions run on")
+	}
+	var isAsked bool
+	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		isAsked, err = CaptureCodingSession(tx, agentId, computerName, assistant)
+		return err
+	})
+	return isAsked, err
+}
+
 // checkoutOfDirectory is the checkout a directory is in, and the project
 // pages it is filed on; nil where memory knows no checkout holding it.
 //

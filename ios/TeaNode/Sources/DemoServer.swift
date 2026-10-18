@@ -29,10 +29,20 @@
             }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if let recordingAnswer = Self.recordingAnswer(query: query) {
+            if let financeEntryAnswer = Self.financeEntryAnswer(query: query) {
+                answer = financeEntryAnswer
+            } else if let recordingAnswer = Self.recordingAnswer(query: query) {
                 answer = recordingAnswer
+            } else if let herdrAnswer = Self.herdrAnswer(query: query, body: request.httpBody) {
+                // Before "ReadAgent" below, which these operation names start with.
+                answer = herdrAnswer
+            } else if let codingSetupAnswer = Self.codingSetupAnswer(query: query, body: request.httpBody) {
+                // Before "ReadAgent" and "RecallAgent", which these operation names start with.
+                answer = codingSetupAnswer
             } else if let circlesAnswer = Self.circlesAnswer(query: query, body: request.httpBody) {
                 answer = circlesAnswer
+            } else if let locationAnswer = Self.locationAnswer(query: query, body: request.httpBody) {
+                answer = locationAnswer
             } else if query.contains("AgentServerUsage") {
                 answer = Self.serverUsage
             } else if query.contains("ReadRecordingLimits") {
@@ -57,6 +67,9 @@
                 answer = Self.threads
             } else if query.contains("AgentGraphChildren") {
                 answer = Self.knowledge
+            } else if let financeManageAnswer = Self.financeManageAnswer(query: query) {
+                // Before "FinanceAccounts" and the rest of finance below.
+                answer = financeManageAnswer
             } else if query.contains("FinanceProviders") {
                 answer = #"{"data":{"FinanceProviders":[{"providerKind":"simplefin","isBrowserRequired":false}],"FinanceSources":[{"id":"bank"}]}}"#
             } else if query.contains("FinanceSpendingSummary") {
@@ -141,6 +154,85 @@
                 answer = #"{"data":{}}"#
             }
             return (Data(answer.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+
+        /// One invented coding session, as the server lists it.
+        private static func herdrSession(
+            computer: String, paneId: String, state: String, directory: String, kind: String = "claude", workspaceId: String,
+            workspaceLabel: String, workspaceNumber: Int, tabLabel: String, tabNumber: Int, isTabFocused: Bool = false, question: String = "null"
+        ) -> String {
+            #"{"computer":"\#(computer)","paneId":"\#(paneId)","paneName":"\#(workspaceLabel) \#(tabLabel)","codingAgentKind":"\#(kind)","codingSessionId":"session-\#(paneId)","herdrSessionState":"\#(state)","herdrAgentStatus":"\#(state)","paneTitle":"","workingDirectory":"\#(directory)","transcriptPath":"~/.claude/projects/website/session-\#(paneId).jsonl","isWatched":false,"workspaceId":"\#(workspaceId)","workspaceLabel":"\#(workspaceLabel)","workspaceNumber":\#(workspaceNumber),"tabId":"\#(workspaceId):\#(tabNumber)","tabLabel":"\#(tabLabel)","tabNumber":\#(tabNumber),"isTabFocused":\#(isTabFocused),"question":\#(question)}"#
+        }
+
+        private static let herdrQuestion = #"{"questionFingerprint":"fingerprint-style","herdrQuestionKind":"question","questionText":"Which style should the new footer link use?","isMultipleChoice":false,"isFromTranscript":false,"options":[{"optionNumber":1,"optionLabel":"Plain text link","optionDescription":"Matches the other footer links","herdrOptionKind":"choice"},{"optionNumber":2,"optionLabel":"Underlined link","optionDescription":"Easier to see on the small screen","herdrOptionKind":"choice"}]}"#
+
+        /// Two invented computers: a workspace of three tabs (working, asking
+        /// with two options, idle) and another with one tab on the first, and a
+        /// second computer with one tab.
+        private static var herdrSessionList: [String] {
+            [
+                herdrSession(
+                    computer: "laptop", paneId: "p1", state: "working", directory: "/work/website", workspaceId: "w1", workspaceLabel: "website",
+                    workspaceNumber: 1, tabLabel: "working", tabNumber: 1),
+                herdrSession(
+                    computer: "laptop", paneId: "p2", state: "asking", directory: "/work/website", workspaceId: "w1", workspaceLabel: "website",
+                    workspaceNumber: 1, tabLabel: "asking", tabNumber: 2, isTabFocused: true, question: herdrQuestion),
+                herdrSession(
+                    computer: "laptop", paneId: "p3", state: "idle", directory: "/work/website", kind: "codex", workspaceId: "w1",
+                    workspaceLabel: "website", workspaceNumber: 1, tabLabel: "idle", tabNumber: 3),
+                herdrSession(
+                    computer: "desk", paneId: "p4", state: "idle", directory: "/work/notes", workspaceId: "w2", workspaceLabel: "notes",
+                    workspaceNumber: 1, tabLabel: "notes", tabNumber: 1, isTabFocused: true),
+            ]
+        }
+
+        /// The coding sessions, their transcripts and the actions on them;
+        /// nil for any other query.
+        static func herdrAnswer(query: String, body: Data?) -> String? {
+            guard query.contains("AgentHerdr") else { return nil }
+            var variables: [String: Any] = [:]
+            if let body, let request = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                variables = request["variables"] as? [String: Any] ?? [:]
+            }
+            let sessions = herdrSessionList
+            let paneId = variables["paneId"] as? String ?? "p2"
+            let named = sessions.first { $0.contains(#""paneId":"\#(paneId)""#) } ?? sessions[1]
+            if query.contains("ListAgentHerdrSessions") {
+                return #"{"data":{"ListAgentHerdrSessions":{"computerNames":["laptop","desk"],"failedComputerNames":[],"sessions":["# + sessions.joined(separator: ",") + "]}}}"
+            } else if query.contains("ReadAgentHerdrSession") {
+                return #"{"data":{"ReadAgentHerdrSession":{"herdrSession":"# + named + #","turns":[{"herdrTurnRole":"person","turnText":"Add a Contact link to the footer, after About.","turnAt":null},{"herdrTurnRole":"agent","turnText":"I will look at the footer component first.","turnAt":null},{"herdrTurnRole":"tool","turnText":"Read src/Footer.tsx","turnAt":null,"toolInputText":"{\n  \"file_path\": \"src/Footer.tsx\"\n}","toolResultText":"export const footerLinks = [\"About\", \"Privacy\"]"},{"herdrTurnRole":"agent","turnText":"The footer lists its links from one array, so the new link is one more entry. I have added it and updated the snapshot test.","turnAt":null}],"isTruncated":false}}}"#
+            } else if query.contains("ReadAgentHerdrScreen") {
+                return #"{"data":{"ReadAgentHerdrScreen":{"herdrSession":"# + named + #","screenText":"$ npm test\n \u001b[1;42;30m PASS \u001b[0m src/Footer.test.tsx\n \u001b[1mTests:\u001b[22m \u001b[32m4 passed\u001b[39m, 4 total"}}}"#
+            }
+            if query.contains("SetUpAgentHerdrHooks") {
+                let isInstalled = (variables["isRemoval"] as? Bool) != true
+                let computer = variables["computer"] as? String ?? "laptop"
+                return #"{"data":{"SetUpAgentHerdrHooks":{"computer":"\#(computer)","isInstalled":\#(isInstalled),"settingsPath":"~/.claude/settings.json","scriptPath":"~/.local/share/teanode/teanode-herdr-hook","backupPath":"~/.claude/settings.json.bak","hookEventNames":["SessionStart","UserPromptSubmit","Stop"]}}}"#
+            }
+            if query.contains("AnswerAgentHerdrQuestion") {
+                return #"{"data":{"AnswerAgentHerdrQuestion":{"herdrSession":"# + named + #","isAnswerAccepted":true,"answeredWith":"Plain text link"}}}"#
+            }
+            // Send, focus, watch, open and close answer with the session.
+            for name in ["SendAgentHerdrSession", "FocusAgentHerdrSession", "WatchAgentHerdrSession", "OpenAgentHerdrSession", "CloseAgentHerdrSession"]
+            where query.contains(name) {
+                return #"{"data":{"\#(name)":"# + named + "}}"
+            }
+            return nil
+        }
+
+        /// The coding setup operations: what a session is shown, and reading new sessions now.
+        static func codingSetupAnswer(query: String, body: Data?) -> String? {
+            if query.contains("CaptureAgentCodingSession") {
+                return #"{"data":{"CaptureAgentCodingSession":true}}"#
+            }
+            guard query.contains("ReadAgentCodingContext") || query.contains("RecallAgentCodingMemory") else { return nil }
+            let isRecall = query.contains("RecallAgentCodingMemory")
+            let operation = isRecall ? "RecallAgentCodingMemory" : "ReadAgentCodingContext"
+            let text =
+                isRecall
+                ? #"Relevant to this prompt:\n- projects/recipe-box: the footer links come from one array in src/Footer.tsx.\n- Lesson: update the snapshot test when a link is added."#
+                : #"Project: projects/recipe-box (~/src/recipe-box)\n- Tests run with npm test.\n- The footer lists its links from one array.\nLast session here stopped after adding the Contact link."#
+            return #"{"data":{"\#(operation)":{"projectPath":"projects/recipe-box","text":"\#(text)"}}}"#
         }
 
         static let goals = #"""
@@ -552,7 +644,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 
@@ -699,7 +791,8 @@
               "sso":{"providers":[]},
               "identity":{"name":"demo.example.com","mailServers":["mx.example.com"],"externalAddresses":["203.0.113.10"],"logLevel":"info","dataDirectory":"/var/lib/teanode"},
               "storage":{"directory":"/var/lib/teanode/messages","spoolRetention":"168h"},
-              "geoip":{"enabled":false,"databaseFile":null}}}}
+              "geoip":{"enabled":false,"databaseFile":null},
+              "places":{"providerKind":"nominatim","providerUrl":"https://nominatim.openstreetmap.org","mapStyleUrl":"https://tiles.openfreemap.org/styles/liberty"}}}}
             """#
     }
 #endif

@@ -164,6 +164,10 @@ final class ConversationModel {
     private let draftKey: String
 
     private func saveDraft() {
+        #if DEBUG
+            // What a screenshot typed is not the next screenshot's draft.
+            if DemoServer.isRequested { return }
+        #endif
         if draft.isEmpty {
             UserDefaults.standard.removeObject(forKey: draftKey)
         } else {
@@ -235,6 +239,8 @@ final class ConversationModel {
             if DemoServer.isRequested, DemoServer.screen == "chat-direct" {
                 typing.note(userId: "sam", name: "Sam", at: Date().addingTimeInterval(60 * 60))
             }
+            // `-TeaNodeScreen chat-mention`: an @ typed in the box, so the menu of agents it offers is open.
+            if DemoServer.isRequested, DemoServer.screen == "chat-mention", draft.isEmpty { draft = "@" }
         #endif
         loadSharedOwnersIfCited()
         // A chat is people: no ideas to start it with, and no call to the
@@ -928,6 +934,20 @@ enum LocationReader {
 
     @MainActor
     static func current() async -> Reading {
+        #if DEBUG
+            // The screenshots run without asking anything of the system: the
+            // phone is at the demo park, where the demo's nearby places are.
+            if DemoServer.isRequested {
+                return Reading(latitudeDegrees: 10.5040, longitudeDegrees: 20.5060, accuracyMeters: 10, measuredAt: Date())
+            }
+        #endif
+        // The recorder follows the person while the app is open: a reading
+        // under a minute old answers without asking Core Location again.
+        if let live = LocationRecorder.shared.livePosition, Date().timeIntervalSince(live.measuredAt) < 60 {
+            return Reading(
+                latitudeDegrees: live.latitudeDegrees, longitudeDegrees: live.longitudeDegrees, accuracyMeters: live.accuracyMeters,
+                measuredAt: live.measuredAt)
+        }
         let manager = CLLocationManager()
         if manager.authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()

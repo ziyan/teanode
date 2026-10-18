@@ -177,9 +177,8 @@ func (self *Agent) DirectTools(ctx context.Context, person *models.Agent, operat
 		case "ask_user", "tool_search":
 			continue
 		}
-		// Nor a tool that moves the dashboard or asks its browser: the
-		// caller is not in it.
-		if tool.DashboardOnly || tool.BrowserOnly {
+		// Nor a tool that moves the dashboard: the caller is not in it.
+		if tool.DashboardOnly {
 			continue
 		}
 		kept = append(kept, tool)
@@ -359,6 +358,17 @@ func (self *directRun) SearchGraphByMeaning(ctx context.Context, words string, l
 // session was shown.
 func (self *directRun) CodingMemory(ctx context.Context, directory, computerName, prompt string) (string, error) {
 	return self.agent.codingMemory(ctx, self.agentModel, self.owner, directory, computerName, prompt)
+}
+
+// Both runs answer the memory tool's coding actions.
+var (
+	_ tools.CodingRemembering = (*AskRun)(nil)
+	_ tools.CodingRemembering = (*directRun)(nil)
+)
+
+// CaptureCodingSession is tools.CodingRemembering for a call from outside.
+func (self *directRun) CaptureCodingSession(ctx context.Context, computerName, assistant string) (bool, error) {
+	return self.agent.captureCodingSession(ctx, self.agentModel.ID, computerName, assistant)
 }
 
 func (self *directRun) SearchKnowledgeByMeaning(ctx context.Context, sourceIds []string, documentPrefix string, words string, limit int) ([]*models.AgentChunk, bool) {

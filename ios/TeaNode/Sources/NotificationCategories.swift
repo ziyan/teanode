@@ -13,6 +13,7 @@ enum NotificationCategories {
     static let chat = "chat"
     static let skillShareCall = "skill_share_call"
     static let circle = "circle"
+    static let location = "location"
     static let questionPrefix = "question-"
 
     /// The categories known before any notification arrives. A question's
@@ -37,6 +38,8 @@ enum NotificationCategories {
             // An invitation is answered on the Circles screen, which Open goes
             // to: it is not a question for the agent, so it has no reply field.
             UNNotificationCategory(identifier: circle, actions: [openAction], intentIdentifiers: []),
+            // Somebody arrived or left: nothing to answer, only Location to open.
+            UNNotificationCategory(identifier: location, actions: [openAction], intentIdentifiers: []),
         ]
     }
 
@@ -72,6 +75,8 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == skillShareCall }
         case "circle":
             return fixed.first { $0.identifier == circle }
+        case "location":
+            return fixed.first { $0.identifier == location }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in
@@ -102,6 +107,8 @@ struct NotificationInfo: Sendable {
     let conversationId: String
     let runId: String
     let callId: String
+    /// For a location notification, the person who arrived or left.
+    let locationUserId: String
     /// A question's choices, by the button that gives them.
     let answers: [String: String]
 
@@ -113,6 +120,7 @@ struct NotificationInfo: Sendable {
         conversationId = content.conversationId ?? ""
         runId = content.runId ?? ""
         callId = content.callId ?? ""
+        locationUserId = content.locationUserId ?? ""
         var answers: [String: String] = [:]
         for button in content.buttons ?? [] where button.buttonAction.hasPrefix("answer:") {
             answers[button.buttonAction] = button.label
@@ -127,13 +135,14 @@ struct NotificationInfo: Sendable {
         conversationId = info["conversationId"] as? String ?? ""
         runId = info["runId"] as? String ?? ""
         callId = info["callId"] as? String ?? ""
+        locationUserId = info["locationUserId"] as? String ?? ""
         answers = info["answers"] as? [String: String] ?? [:]
     }
 
     var dictionary: [String: Any] {
         [
             "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
-            "answers": answers,
+            "locationUserId": locationUserId, "answers": answers,
         ]
     }
 }

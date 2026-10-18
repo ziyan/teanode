@@ -47,7 +47,7 @@ func (self *Agent) phoneTourReason() speakFirstReason {
 				return "", err
 			}
 			return speakFirstMessage(owner, now, "The person has just connected their phone, "+phone.PhoneName+", to you with the TeaNode app. Show them around it.", prepared) +
-				phoneTourInstructions(self.phoneTourFacts(agent, phone, len(mailboxes) > 0)), nil
+				phoneTourInstructions(self.phoneTourFacts(ctx, agent, owner, phone, len(mailboxes) > 0)), nil
 		},
 	}
 }
@@ -90,17 +90,32 @@ type phoneTourFacts struct {
 	isVoiceOn       bool
 	hasCodingAgents bool
 	hasMailbox      bool
+	hasLocation     bool
 }
 
-func (self *Agent) phoneTourFacts(agent *models.Agent, phone *models.AgentPhone, hasMailbox bool) phoneTourFacts {
+func (self *Agent) phoneTourFacts(ctx context.Context, agent *models.Agent, owner *models.User, phone *models.AgentPhone, hasMailbox bool) phoneTourFacts {
 	configuration := self.settings.Configuration()
 	return phoneTourFacts{
+		hasLocation:     self.canUseLocation(ctx, owner),
 		canBeNotified:   phone.CanBeNotified(),
 		isPushEnabled:   configuration.Agent.Push.IsEnabled(),
 		isVoiceOn:       configuration.Agent.Voice.Enabled && configuration.Agent.VoiceProvider() != nil,
 		hasCodingAgents: len(self.herdrComputers(agent.ID)) > 0,
 		hasMailbox:      hasMailbox && configuration.Services.IsEnabled(models.ServiceMailboxes),
 	}
+}
+
+// canUseLocation says the person holds location:use, the permission to record
+// where they go, which is what the offer of Location in the tour depends on.
+func (self *Agent) canUseLocation(ctx context.Context, owner *models.User) bool {
+	if self.operations == nil {
+		return false
+	}
+	operations, err := self.operations(ctx, owner)
+	if err != nil || operations == nil {
+		return false
+	}
+	return operations.Permissions().Has(models.PermissionLocationUse)
 }
 
 // phoneTourInstructions is what the tour offers, in order, from what is on.
@@ -123,6 +138,9 @@ func phoneTourInstructions(facts phoneTourFacts) string {
 	}
 	if facts.hasCodingAgents {
 		offers = append(offers, "Their coding sessions: a Claude Code or Codex question on their computer reaches the phone, and they answer it from the notification.")
+	}
+	if facts.hasLocation {
+		offers = append(offers, "Location: the app can record the places they go, so they can look back on where they were and share where they are with their family. It starts with three short rows they tap through: allow location, mark home, and share with family. If they want it, open it for them with the location tool's set_up action, or say it is Location in the app's menu.")
 	}
 	if facts.hasMailbox {
 		offers = append(offers, "Their mail, calendars and contacts in the iPhone's own apps: the account tool's set_up_phone_mail action takes them to where one tap sets it up.")

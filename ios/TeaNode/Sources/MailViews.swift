@@ -58,9 +58,6 @@ struct MailboxesList: View {
     /// Rows shown above the folders, as the side menu puts its sections
     /// there.
     var leading: AnyView?
-    /// How far the list is scrolled, kept by whoever shows it so that the
-    /// side menu, which is drawn anew each time it opens, comes back to it.
-    var scrollOffsetPoints: Binding<CGFloat?> = .constant(nil)
     let onChoose: (MailPlace) -> Void
 
     var body: some View {
@@ -107,7 +104,6 @@ struct MailboxesList: View {
                 .listSectionSeparator(.hidden)
             }
         }
-        .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: mail.isLoaded)
         .refreshable { await mail.load() }
         .overlay {
             if mail.isLoaded, mail.entries.isEmpty {

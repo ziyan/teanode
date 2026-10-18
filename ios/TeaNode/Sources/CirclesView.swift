@@ -180,11 +180,13 @@ struct CirclesView: View {
                 try await directory.connection.answerCircleInvitation(invitation.id, isAccepted: isAccepted)
             }
             // Joining a family or colleagues offers to share the calendar with
-            // them, once; a person with no calendar of their own is not asked.
-            if isDone, isAccepted, invitation.circleKind != CircleKind.friends.rawValue,
+            // them, once, and a family also where the person is, in the same
+            // sheet; a person with no calendar of their own is asked only
+            // about the family's location.
+            if isDone, isAccepted {
                 let own = CircleCalendarOffer.ownCalendar(among: (try? await directory.connection.calendars()) ?? [])
-            {
-                calendarOffer = CircleCalendarOffer(accepting: invitation, calendarId: own.id)
+                calendarOffer = CircleCalendarOffer(
+                    accepting: invitation, calendarId: own?.id, canShareLocation: AppModel.shared.canUseLocation)
             }
         }
     }
@@ -377,10 +379,8 @@ struct CircleDetailView: View {
                     if isSent { invitationDraft = CircleInvitationDraft() }
                 }
             } label: {
-                // A label inside the button rather than the title and symbol
-                // given to it: given to it, the symbol kept the green while the
-                // disabled words went to black, two colors on one button.
                 Label("Send invitation", systemImage: "paperplane")
+                    .actionColor()
             }
             .disabled(!invitationDraft.canSubmit)
         } header: {
@@ -438,6 +438,7 @@ struct CircleDetailView: View {
                 Button("Rename circle", systemImage: "pencil") { isRenaming = true }
                 Button("Delete circle", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
                     .tint(.red)
+                    .actionColor(isDestructive: true)
                     .confirmationDialog("Delete \(circle.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                         Button("Delete circle", role: .destructive) {
                             Task {
@@ -453,6 +454,7 @@ struct CircleDetailView: View {
             }
             Button("Leave circle", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { isConfirmingLeave = true }
                 .tint(.red)
+                .actionColor(isDestructive: true)
                 .confirmationDialog("Leave the circle \(circle.name)?", isPresented: $isConfirmingLeave, titleVisibility: .visible) {
                     Button("Leave circle", role: .destructive) {
                         Task {

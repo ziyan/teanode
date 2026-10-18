@@ -256,7 +256,7 @@ private struct ServerSettingsRows: View {
     enum SettingsRow: CaseIterable {
         case identity, listeners, certificates, route53, resolver
         case limits, relay, proxy
-        case scanner, antispam, geoIP
+        case scanner, antispam, geoIP, places
         case messageStorage, objectStore
         case sessions, passkeys, identityProviders
 
@@ -271,7 +271,7 @@ private struct ServerSettingsRows: View {
             case .relay, .proxy: .sending
             case .scanner: .scanning
             case .antispam: .spam
-            case .geoIP, .messageStorage, .objectStore: .storage
+            case .geoIP, .places, .messageStorage, .objectStore: .storage
             case .sessions, .passkeys: .sessions
             case .identityProviders: .sso
             }
@@ -288,7 +288,7 @@ private struct ServerSettingsRows: View {
     static let groups = [
         SettingsGroup(title: "Network", rows: [.identity, .listeners, .certificates, .route53, .resolver]),
         SettingsGroup(title: "Mail", rows: [.limits, .relay, .proxy]),
-        SettingsGroup(title: "Filtering", rows: [.scanner, .antispam, .geoIP]),
+        SettingsGroup(title: "Filtering", rows: [.scanner, .antispam, .geoIP, .places]),
         SettingsGroup(title: "Storage", rows: [.messageStorage, .objectStore]),
         SettingsGroup(title: "Sign-in", rows: [.sessions, .passkeys, .identityProviders]),
     ]
@@ -353,6 +353,8 @@ private struct ServerSettingsRows: View {
             NavigationLink { AntispamFormView(model: model) } label: { Label("Spam scoring", systemImage: "xmark.bin") }
         case .geoIP:
             NavigationLink { GeoIPFormView(model: model) } label: { Label("Where senders connect from", systemImage: "mappin.and.ellipse") }
+        case .places:
+            NavigationLink { PlacesFormView(model: model) } label: { Label("Places and maps", systemImage: "map") }
         case .messageStorage:
             NavigationLink { MessageStorageFormView(model: model) } label: { Label("On this machine", systemImage: "internaldrive") }
         case .objectStore:
@@ -701,6 +703,35 @@ private struct GeoIPFormView: View {
     }
 }
 
+/// PlacesFormView is where the names of the places people go to come from,
+/// and the style the maps are drawn from. Off, a place is named after its
+/// city and people can still name it themselves.
+private struct PlacesFormView: View {
+    let model: ServerSettingsModel
+
+    var body: some View {
+        ServerSettingsForm(model: model, title: "Places and maps", makeDraft: { PlacesDraft($0.places) }, variables: { $0.variables }) { draft, _ in
+            Section {
+                Picker("Place name provider", selection: draft.providerKind) {
+                    Text("Nominatim (OpenStreetMap)").tag("nominatim")
+                    Text("Photon (OpenStreetMap data)").tag("photon")
+                    Text("Off: name places after their city").tag("")
+                }
+            } footer: {
+                Text("Place names come from OpenStreetMap: your server sends the position of each new place to the place provider to look up its name. Switch it off and places keep the name of their city, and people can still name them.")
+            }
+            SettingField(
+                label: "Provider address", text: draft.providerUrl,
+                hint: "An https address, or http for a server on this machine or your own network, such as one you run yourself.",
+                prompt: "https://nominatim.openstreetmap.org")
+            SettingField(
+                label: "Map style address", text: draft.mapStyleUrl,
+                hint: "The MapLibre style the dashboard draws its maps from. This server fetches the style and its tiles from this address’s host and hands them to the browser.",
+                prompt: "https://tiles.openfreemap.org/styles/liberty")
+        }
+    }
+}
+
 /// RelayFormView is where outgoing mail is handed when it is not delivered
 /// from this machine. A provider fills in the host, port and encryption it
 /// documents; the username and password are still the operator's.
@@ -1042,6 +1073,7 @@ private struct SSOFormView: View {
                         draft.wrappedValue.providers.removeAll { $0.id == shown.id }
                     }
                     .tint(.red)
+                    .actionColor(isDestructive: true)
                 } header: {
                     Text(verbatim: shown.name.isEmpty ? shown.providerId : shown.name)
                 } footer: {
@@ -1291,6 +1323,7 @@ struct ServerAboutView: View {
                 Label(isRestarting ? LocalizedStringKey("Restarting…") : "Restart this instance", systemImage: "arrow.clockwise")
             }
             .tint(.red)
+            .actionColor(isDestructive: true)
             .disabled(isRestarting)
             .confirmationDialog("Restart this instance?", isPresented: $isConfirmingRestart, titleVisibility: .visible, presenting: serverStatus) { _ in
                 Button("Yes, restart it", role: .destructive) {
@@ -3306,6 +3339,7 @@ struct AgentProviderForm: View {
                     draft.modelPrices.removeAll { $0.id == shown.id }
                 }
                 .tint(.red)
+                .actionColor(isDestructive: true)
             } header: {
                 Text("Prices for particular models")
             }
@@ -4438,6 +4472,7 @@ private struct InstalledSkillView: View {
                     }
                     Button("Remove", systemImage: "trash", role: .destructive) { isRemoving = true }
                         .tint(.red)
+                        .actionColor(isDestructive: true)
                         .confirmationDialog("Remove \(skillName)?", isPresented: $isRemoving, titleVisibility: .visible) {
                             Button("Remove", role: .destructive) {
                                 Task {

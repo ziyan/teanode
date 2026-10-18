@@ -139,39 +139,102 @@ struct ChatTypingLine: View {
     }
 }
 
-/// MentionRow offers the agents an @ in the composer can ask, above the
-/// keyboard: the person's own first, then those whose owners let the others
-/// ask. A tap puts the agent's name in the words and addresses the message to
-/// it.
-struct MentionRow: View {
+/// MentionMenu offers the agents an @ in the composer can ask, as the
+/// dashboard's list does: a row for each with its symbol, its name and whose
+/// it is, the person's own first, then those whose owners let the others ask.
+/// It sits above the composer on glass, shows about five rows (one at the
+/// largest text sizes) and scrolls for more. A tap puts the agent's name in
+/// the words and addresses the message to it.
+struct MentionMenu: View {
     let agents: [AddressableAgent]
     let onChoose: (AddressableAgent) -> Void
+    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 56
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The height of all the rows, measured, since a scroll view would
+    /// otherwise take all the room it is offered even for one row.
+    @State private var rowsHeight: CGFloat = 0
+
+    /// Rows shown before the rest scroll: one at the largest text sizes, where
+    /// a row is about three times as tall, so the menu above the keyboard
+    /// leaves room for the chat.
+    private var visibleRowCount: CGFloat { dynamicTypeSize.isAccessibilitySize ? 1 : 5 }
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack {
+        ScrollView {
+            VStack(spacing: 0) {
                 ForEach(agents) { agent in
-                    Button {
-                        onChoose(agent)
-                    } label: {
-                        // Another person's agent is named by whose it is, as
-                        // it is above its messages; two of them are often both
-                        // called Agent.
-                        Label(
-                            agent.isOwn
-                                ? agent.name
-                                : AgentSpeaker.name(agentName: agent.name, ownerName: agent.ownerName, ownedWords: ChatWords.agentOf),
-                            systemImage: "sparkle")
-                    }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                    .font(.subheadline)
-                    .accessibilityHint(agent.isOwn ? String(localized: "Your agent") : String(localized: "\(agent.ownerName)'s agent"))
+                    MentionMenuRow(agent: agent, isLast: agent.id == agents.last?.id) { onChoose(agent) }
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
         }
-        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(height: min(rowsHeight, rowHeight * visibleRowCount))
+        .clipShape(.rect(cornerRadius: 18, style: .continuous))
+        // Glass, as the composer under it is: the menu floats over the chat.
+        .glassEffect(.regular, in: .rect(cornerRadius: 18, style: .continuous))
+        // Not drawn until the rows are measured, so it does not show as an
+        // empty strip for a moment first.
+        .opacity(rowsHeight == 0 ? 0 : 1)
+        .padding(.horizontal)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Agents you can ask here")
+    }
+}
+
+/// MentionMenuRow is one agent in the mention menu, a plain row button across
+/// the width of the menu.
+private struct MentionMenuRow: View {
+    let agent: AddressableAgent
+    let isLast: Bool
+    let onChoose: () -> Void
+    @ScaledMetric(relativeTo: .body) private var symbolSide: CGFloat = 34
+
+    private static var horizontalPadding: CGFloat { 16 }
+    private static var symbolSpacing: CGFloat { 12 }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: onChoose) {
+                HStack(spacing: Self.symbolSpacing) {
+                    Image(systemName: "sparkles")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.primary)
+                        .frame(width: symbolSide, height: symbolSide)
+                        .background(Color(.tertiarySystemFill), in: .circle)
+                        // Read as the name and whose agent it is, not "sparkles".
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(agent.name)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        // Most agents keep the name "Agent", so whose it is
+                        // tells two of them apart, in the dashboard's words.
+                        Text(agent.isOwn ? String(localized: "Yours") : agent.ownerName)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Self.horizontalPadding)
+                .padding(.vertical, 8)
+                .frame(minHeight: 44)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(MentionRowButtonStyle())
+            if !isLast {
+                Divider().padding(.leading, Self.horizontalPadding + symbolSide + Self.symbolSpacing)
+            }
+        }
+    }
+}
+
+/// MentionRowButtonStyle darkens a row while it is pressed, since a plain
+/// button shows nothing.
+private struct MentionRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.background(configuration.isPressed ? Color(.tertiarySystemFill) : Color.clear)
     }
 }
 

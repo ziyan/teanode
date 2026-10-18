@@ -362,6 +362,7 @@ struct PersonDetailView: View {
                         if !isCurrentUser {
                             Button("Remove this person", systemImage: "trash", role: .destructive) { isRemoving = true }
                                 .tint(.red)
+                                .actionColor(isDestructive: true)
                                 .confirmationDialog("Remove \(user.username)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                     Button("Remove", role: .destructive) {
                                         Task {
@@ -770,6 +771,7 @@ struct GroupDetailView: View {
                     Section {
                         Button("Remove this group", systemImage: "trash", role: .destructive) { isRemoving = true }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                             .confirmationDialog("Remove the group \(group.name)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task {
@@ -1218,6 +1220,7 @@ struct RoleDetailView: View {
                     Section {
                         Button("Remove this role", systemImage: "trash", role: .destructive) { isRemoving = true }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                             .confirmationDialog("Remove the role \(role.name)?", isPresented: $isRemoving, titleVisibility: .visible) {
                                 Button("Remove", role: .destructive) {
                                     Task {
@@ -1674,6 +1677,7 @@ private enum AccessWords {
         case "contacts:use": String(localized: "Keep an address book, and sync it to a device")
         case "calendar:use": String(localized: "Keep a calendar, and sync it to a device")
         case "circle:use": String(localized: "Make circles of people on this server, and join them")
+        case "location:use": String(localized: "Record where you go, and share it")
         case "agent:audit": String(localized: "See every person's agent: what it may reach, its usage and limits, never its content")
         case "agent:act": String(localized: "Read every person's agent conversations and runs, and speak to their agent as them")
         default: permissionKey

@@ -22,7 +22,7 @@ const PathLength = 600
 // pagePrefixes are the parts of the dashboard the tool may show: the
 // person's own pages. Not an operator's page, and never anywhere off the
 // dashboard. The dashboard holds the same list (web/src/components/dashboardPath.ts).
-var pagePrefixes = []string{"/knowledge", "/mailbox", "/settings/agent", "/settings", "/finance"}
+var pagePrefixes = []string{"/knowledge", "/mailbox", "/settings/agent", "/settings", "/finance", "/location"}
 
 func init() {
 	tools.Register(func() []*tools.Tool {

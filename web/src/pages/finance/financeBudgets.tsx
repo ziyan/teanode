@@ -163,7 +163,6 @@ function BudgetsPanel({ categories, onChanged }: { categories: SpendingCategory[
     <SettingsSection
       card
       title={t('finance.budgetsTitle')}
-      description={t('finance.budgetsHint')}
       action={
         <button type="button" className="primary" disabled={categories.length === 0} onClick={() => open()}>
           {t('finance.setBudget')}

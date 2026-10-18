@@ -15,6 +15,12 @@
 // nil`) is checked too, and may give its own tint to match (`.tint(isRisky ?
 // .red : .accentColor)`): what is checked is that a tint follows.
 //
+// In a form or list row the tint does not reach the symbol, which stays
+// green: a destructive button there also takes `.actionColor(isDestructive:
+// true)` after its tint, which colors its label red, or grey while it is
+// disabled. A row is a button whose nearest container is a Section, Form or
+// List; one in a swipe action, a menu or a toolbar is not.
+//
 // Written against the file text, like web/scripts/check-link-buttons.mjs, so
 // it needs no parser and no dependencies. Comments and the inside of strings
 // are blanked out first, so a comment that quotes a button is not one.
@@ -172,6 +178,32 @@ function buttonEnd(code, start) {
   }
 }
 
+// rowContainerOf returns the name of the nearest container around `start`
+// that says where a button is drawn, skipping the `if` and `ForEach` blocks
+// between: a Section, Form or List is a row, and anything else is not.
+const containerPattern =
+  /^(\.swipeActions|\.contextMenu|Menu|ToolbarItem|ToolbarItemGroup|\.toolbar|\.confirmationDialog|\.alert|Section|Form|List|VStack|HStack|LazyVStack|ScrollView|\.safeAreaInset|\.overlay|Picker)$/
+function containerOf(code, start) {
+  let index = start - 1
+  for (let level = 0; level < 12 && index > 0; level++) {
+    let depth = 0
+    for (; index >= 0; index--) {
+      if (code[index] === '}') depth++
+      else if (code[index] === '{') {
+        if (depth === 0) break
+        depth--
+      }
+    }
+    const before = code.slice(Math.max(0, index - 200), index)
+    const words = before.match(/([A-Za-z_.]+)\s*(\((?:[^()]|\([^()]*\))*\))?\s*(?:[a-z]+:\s*)?$/)
+    if (words && containerPattern.test(words[1])) return words[1]
+    if (/-> some View\s*$|var body: some View\s*$/.test(before)) return null
+    index--
+  }
+  return null
+}
+const rowContainers = new Set(['Section', 'Form', 'List'])
+
 const findings = []
 for (const path of swiftFiles(iosDirectory)) {
   let text = readFileSync(path, 'utf8')
@@ -193,32 +225,41 @@ for (const path of swiftFiles(iosDirectory)) {
     // a person can write; any tint passes there. A role that always destroys
     // takes red.
     const isAlwaysDestructive = /^role:\s*\.destructive\b/.test(argumentText.slice(roleIndex))
+    const isRow = isAlwaysDestructive && rowContainers.has(containerOf(code, start))
     const following = code.slice(end)
-    if (isAlwaysDestructive ? /^\s*\.tint\(\s*\.red\s*\)/.test(following) : /^\s*\.tint\(/.test(following)) continue
+    const tint = following.match(/^\s*\.tint\(\s*\.red\s*\)/)
+    const hasRowColor = tint && /^\s*\.actionColor\(\s*isDestructive:\s*true\s*\)/.test(following.slice(tint[0].length))
+    if (isAlwaysDestructive ? tint && (!isRow || hasRowColor) : /^\s*\.tint\(/.test(following)) continue
     const line = text.slice(0, start).split('\n').length
-    findings.push({ place: `${relative(repositoryDirectory, path)}:${line}`, isAlwaysDestructive })
+    findings.push({ place: `${relative(repositoryDirectory, path)}:${line}`, isAlwaysDestructive, isRow })
     if (!isAlwaysDestructive) continue
     // Indented as the modifiers after a button are: one step in when the
     // button is on one line, level with it when it closes on a later one.
     const lineStart = text.lastIndexOf('\n', start) + 1
     const buttonIndentation = text.slice(lineStart).match(/^[ \t]*/)[0]
     const indentation = buttonText.includes('\n') ? buttonIndentation : `${buttonIndentation}    `
-    insertions.push({ end, indentation })
+    const modifiers = [...(tint ? [] : ['.tint(.red)']), ...(isRow ? ['.actionColor(isDestructive: true)'] : [])]
+    insertions.push({ end: tint ? end + tint[0].length : end, indentation, modifiers })
   }
   if (isFixing && insertions.length > 0) {
-    for (const { end, indentation } of insertions.reverse()) {
-      text = `${text.slice(0, end)}\n${indentation}.tint(.red)${text.slice(end)}`
+    for (const { end, indentation, modifiers } of insertions.reverse()) {
+      text = `${text.slice(0, end)}${modifiers.map((modifier) => `\n${indentation}${modifier}`).join('')}${text.slice(end)}`
     }
     writeFileSync(path, text)
   }
 }
 
 const unfixed = isFixing ? findings.filter((finding) => !finding.isAlwaysDestructive) : findings
-if (isFixing) console.log(`added .tint(.red) to ${findings.length - unfixed.length} buttons`)
+if (isFixing) console.log(`colored ${findings.length - unfixed.length} buttons`)
 if (unfixed.length > 0) {
   console.error('A destructive button with a symbol needs a tint straight after it, .tint(.red), so the symbol is red like its words:')
   for (const finding of unfixed) {
-    console.error(`  ${finding.place}${finding.isAlwaysDestructive ? '' : ' (its role is chosen at run time: give it a tint chosen the same way)'}`)
+    const note = !finding.isAlwaysDestructive
+      ? ' (its role is chosen at run time: give it a tint chosen the same way)'
+      : finding.isRow
+        ? ' (in a form or list row: .actionColor(isDestructive: true) after the tint)'
+        : ''
+    console.error(`  ${finding.place}${note}`)
   }
   if (!isFixing) console.error('Run node ios/scripts/check-button-colors.mjs --fix to add it.')
   process.exit(1)

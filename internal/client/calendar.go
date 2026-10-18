@@ -164,6 +164,10 @@ const (
   DeleteCalendarEvent(calendarId: $calendarId, id: $id)
 }`
 
+	DocumentCancelCalendarRequest = `mutation ($requestId: String!) {
+ CancelCalendarRequest(requestId: $requestId) { requestId calendarId objectId operation completedAt isMissing }
+ }`
+
 	DocumentDeleteCalendarEventWithRequest = `mutation ($calendarId: String!, $id: String!, $requestId: String!) {
   DeleteCalendarEvent(calendarId: $calendarId, id: $id, requestId: $requestId)
  }`
@@ -343,9 +347,7 @@ func CancelCalendarRequest(ctx context.Context, connection *Client, requestId st
 	var response struct {
 		CancelCalendarRequest *CalendarRequest `json:"CancelCalendarRequest"`
 	}
-	if err := connection.Execute(ctx, `mutation ($requestId: String!) {
- CancelCalendarRequest(requestId: $requestId) { requestId calendarId objectId operation completedAt isMissing }
- }`, map[string]any{"requestId": requestId}, &response); err != nil {
+	if err := connection.Execute(ctx, DocumentCancelCalendarRequest, map[string]any{"requestId": requestId}, &response); err != nil {
 		return nil, err
 	}
 	return response.CancelCalendarRequest, nil

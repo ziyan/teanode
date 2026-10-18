@@ -268,6 +268,25 @@ jobs:
           shoot calendar-chinese-light light large -TeaNodeDemo -TeaNodeTab calendar -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN
           shoot calendar-day-light light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
           shoot calendar-day-dark dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
+          shoot location-light light large -TeaNodeDemo -TeaNodeTab location
+          shoot location-dark dark large -TeaNodeDemo -TeaNodeTab location
+          shoot location-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location
+          shoot location-day-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
+          shoot location-day-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
+          shoot location-places-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
+          shoot location-places-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
+          shoot location-place-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-place-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-place-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-address-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-address
+          shoot location-address-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-address
+          shoot location-settings-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-settings
+          # Sharing, a person chosen on the map, many people sharing, the check-in sheet, and setting Location up.
+          for location_screen in location-sharing location-person location-people location-checkin location-setup; do
+            shoot "$location_screen-light" light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+            shoot "$location_screen-dark" dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+            shoot "$location_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+          done
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings
@@ -276,6 +295,10 @@ jobs:
             shoot "$recording_screen-dark" dark large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
             shoot "$recording_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
           done
+          shoot coding-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding
+          shoot coding-session-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
+          shoot coding-session-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
+          shoot coding-session-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
           shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
           shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu
@@ -305,6 +328,11 @@ jobs:
           shoot spending-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-groups
           shoot net-worth-chosen-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen net-worth-chosen
           shoot net-worth-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen net-worth
+          # An investment account's trades, and the preview of transaction rows before they are imported.
+          shoot finance-trades-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-trades
+          shoot finance-trades-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-trades
+          shoot finance-import-preview-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-preview
+          shoot finance-import-preview-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-preview
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
@@ -470,27 +498,27 @@ jobs:
           # The circles feature (docs/planning/circles-and-chats-execplan.md),
           # each screen in light, dark and the largest text. Circles, a
           # circle's page as its admin and as somebody who also runs the
-          # server, the picture on the profile, and the sheet and the card of
-          # a shared skill: Settings pushes them.
-          for circles_screen in circles circle-detail circle-detail-operator settings-picture skill-share-sheet skill-share-call; do
+          # server, the offer to join a circle, the picture on the profile, and
+          # the sheet and the card of a shared skill: Settings pushes them.
+          for circles_screen in circles circle-detail circle-detail-operator circle-join-offer settings-picture skill-share-sheet skill-share-call; do
             shoot "$circles_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
           done
           # The conversation list with two chats among the agent's, and the
-          # chats: a direct one, a circle's, and its members sheet.
+          # chats: a direct one, a circle's, its members sheet, and the menu of agents an @ offers.
           shoot conversations-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
           shoot conversations-dark dark large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
           shoot conversations-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
-          # The same menu opened again 120 points down, as a place it kept: set beside the one above, its rows sit 120 points higher.
+          # The same menu scrolled to its chats, then closed and opened again: it should look like the one above, not start at the top.
           shoot conversations-restored-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations-restored
-          for chat_screen in chat-direct chat-group chat-members; do
+          for chat_screen in chat-direct chat-group chat-members chat-mention; do
             shoot "$chat_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
             shoot "$chat_screen-dark" dark large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
             shoot "$chat_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
           done
-          # Calendars other people shared, the screen that shares the person's own, and the one that finds a time they are all free.
-          for calendar_screen in calendar-shared calendar-share-sheet calendar-find-time; do
+          # Calendars other people shared, the list of calendars with its rename row, the screen that shares the person's own, and the one that finds a time they are all free.
+          for calendar_screen in calendar-shared calendar-sheet calendar-share-sheet calendar-find-time; do
             shoot "$calendar_screen-light" light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
             shoot "$calendar_screen-dark" dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
             shoot "$calendar_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"

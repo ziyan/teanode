@@ -37,7 +37,7 @@ export function FinanceCreditUsageSection({ refreshKey }: { refreshKey: number }
   const usageShareTone = usageTone(usage.usageShare ?? 0)
 
   return (
-    <SettingsSection card title={t('finance.creditUsageTitle')} description={t('finance.creditUsageHint')}>
+    <SettingsSection card title={t('finance.creditUsageTitle')}>
       <ErrorMessage error={error} />
       {hasShare ? (
         <div className="finance-worth-summary">
@@ -135,9 +135,9 @@ export function FinanceCreditUsageSection({ refreshKey }: { refreshKey: number }
           </tbody>
         </table>
       </div>
-      {isDerivedShown ? <p className="muted field-hint">{t('finance.creditLimitDerivedNote')}</p> : null}
+      {isDerivedShown ? <p className="muted table-note">{t('finance.creditLimitDerivedNote')}</p> : null}
       {usage.leftOutCardCount > 0 ? (
-        <p className="muted field-hint">
+        <p className="muted table-note">
           {plural(
             usage.leftOutCardCount,
             { one: 'finance.creditLeftOutOne', other: 'finance.creditLeftOutOther' },

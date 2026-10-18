@@ -426,6 +426,7 @@ struct RecordingsScreen: View {
                         } else {
                             Button(action: startRecording) {
                                 Label("Start recording", systemImage: "mic")
+                                    .actionColor()
                             }
                             .disabled(isStarting)
                         }
@@ -747,7 +748,7 @@ struct RecordingPlaybackScreen: View {
                                 isChangingPlayback = true
                                 playbackTask = Task { await useOriginal() }
                             } label: {
-                                if isChangingPlayback { ProgressView() } else { Label("Use original", systemImage: "play.rectangle").fixedSize(horizontal: false, vertical: true) }
+                                if isChangingPlayback { ProgressView() } else { Label("Use original", systemImage: "play.rectangle").fixedSize(horizontal: false, vertical: true).actionColor() }
                             }
                             .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
                         } else if !isCompatibleAudioPreview {
@@ -756,7 +757,7 @@ struct RecordingPlaybackScreen: View {
                                 isChangingPlayback = true
                                 playbackTask = Task { await useAudioPreview() }
                             } label: {
-                                if isChangingPlayback { ProgressView() } else { Label("Use audio preview", systemImage: "waveform").fixedSize(horizontal: false, vertical: true) }
+                                if isChangingPlayback { ProgressView() } else { Label("Use audio preview", systemImage: "waveform").fixedSize(horizontal: false, vertical: true).actionColor() }
                             }
                             .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)
                         }

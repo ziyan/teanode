@@ -43,6 +43,8 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // Reached from the account menu, so the trail starts at the page. A circle
   // adds its own name below.
   { prefix: '/circles', trail: [{ label: 'circles.title', to: '/circles' }] },
+  // A page of its own in the mailbox's rail, after the calendar.
+  { prefix: '/location', trail: [{ label: 'location.title', to: '/location' }] },
   { prefix: '/manage/mail', trail: [{ label: 'nav.mail', to: '/manage/mail' }] },
   { prefix: '/manage/queue', trail: [{ label: 'nav.queue', to: '/manage/queue' }] },
   { prefix: '/manage/reports', trail: [{ label: 'nav.reports', to: '/manage/reports' }] },

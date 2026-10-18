@@ -238,6 +238,17 @@ public struct PhotoBackupBudget: Equatable, Sendable {
     public func allowsFile(sizeBytes: Int64, outstandingCount: Int, outstandingBytes: Int64) -> Bool {
         outstandingCount == 0 || outstandingBytes + sizeBytes <= maximumOutstandingBytes
     }
+
+    /// Whether the rest of an exported file, from the byte the server has, may
+    /// be written beside it. The two exist together until the whole file is
+    /// deleted, which no queued copy has counted, so the rest is held to half
+    /// of the free space; free space that cannot be read allows it. A rest that
+    /// does not fit is not written: the file is sent again from its first byte,
+    /// which needs no room beyond the file.
+    public static func allowsTail(sizeBytes: Int64, freeSpaceBytes: Int64?) -> Bool {
+        guard let freeSpaceBytes else { return true }
+        return sizeBytes <= max(0, freeSpaceBytes) / 2
+    }
 }
 
 // MARK: What the server answered
@@ -429,34 +440,88 @@ public struct PhotoBackupPreferences {
 
 // MARK: The request
 
-/// PhotoBackupRequest is the request that sends one file.
+/// PhotoBackupRequest builds the requests that send one file, in the three steps
+/// of the server's resumable upload protocol (internal/photo/upload.go): create
+/// the upload, ask how much of it the server has, and send the rest.
 public enum PhotoBackupRequest {
     public static let uploadPath = "/api/v1/photos/uploads"
 
-    /// A POST to the upload endpoint with the headers that describe the file
-    /// and the device password. The body is the file, given to the session
-    /// separately. It does not carry the resumable-upload headers: URLSession
-    /// adds its own for a server that answers with the 104, and a second,
-    /// differently written, set would only confuse the server.
+    /// The longest the two small requests (creating an upload, asking where it
+    /// is) wait for an answer. They are made while a pass is queueing files, or
+    /// in the seconds the system gives a woken app, and must not hold it up.
+    public static let smallRequestTimeoutSeconds: TimeInterval = 20
+
+    /// The path of an upload on the server, if this is one the server made:
+    /// what is kept in the index and asked about. Anything else is refused, so
+    /// that an answer cannot send the device password to another path.
+    public static func isUploadPath(_ path: String) -> Bool {
+        let prefix = uploadPath + "/"
+        guard path.hasPrefix(prefix) else { return false }
+        let identifier = path.dropFirst(prefix.count)
+        return !identifier.isEmpty && !identifier.contains("/") && !identifier.contains("?")
+    }
+
+    /// A POST that creates the upload and sends no bytes. It carries the headers
+    /// that describe the file, the size it will have and, when known, the digest
+    /// the server holds it to (a file that does not hash to it is refused) and
+    /// uses to recognize a picture it already has. `Upload-Complete: ?0` says
+    /// the bytes follow in a request of their own. The server answers 201 with
+    /// the upload's address in `Location`, which is how the app learns it before
+    /// any byte has been sent: the answer to a background upload is not seen
+    /// until the upload ends.
     ///
-    /// `sha256` is the digest of the file, which the server holds the upload to
-    /// (a file that does not hash to it is refused) and uses to recognize a
-    /// picture it already has. Only 64 hexadecimal digits are sent.
-    public static func make(
-        server: ServerAddress, credential: PhotoBackupCredential, upload: PhotoBackupUpload, usesMobileData: Bool, sha256: String? = nil
+    /// Only 64 hexadecimal digits are sent as the digest.
+    public static func makeCreation(
+        server: ServerAddress, credential: PhotoBackupCredential, upload: PhotoBackupUpload, sizeBytes: Int64, usesMobileData: Bool,
+        sha256: String? = nil
     ) -> URLRequest {
         var request = URLRequest(url: server.endpoint(uploadPath))
         request.httpMethod = "POST"
         for (name, value) in upload.headers { request.setValue(value, forHTTPHeaderField: name) }
-        if let digest = sha256?.lowercased(), digest.count == 64, digest.allSatisfy({ $0.isASCII && $0.isHexDigit }) {
-            request.setValue(digest, forHTTPHeaderField: PhotoBackupHeader.declaredSha256)
-        }
+        if let digest = declaredDigest(sha256) { request.setValue(digest, forHTTPHeaderField: PhotoBackupHeader.declaredSha256) }
+        request.setValue("?0", forHTTPHeaderField: PhotoBackupHeader.uploadComplete)
+        request.setValue(String(sizeBytes), forHTTPHeaderField: PhotoBackupHeader.uploadLength)
+        return prepared(request, credential: credential, usesMobileData: usesMobileData, isSmall: true)
+    }
+
+    /// A HEAD that asks how many bytes of the upload the server has kept.
+    public static func makeStatus(server: ServerAddress, credential: PhotoBackupCredential, uploadPath: String, usesMobileData: Bool) -> URLRequest {
+        var request = URLRequest(url: server.endpoint(uploadPath))
+        request.httpMethod = "HEAD"
+        return prepared(request, credential: credential, usesMobileData: usesMobileData, isSmall: true)
+    }
+
+    /// A PATCH that sends the rest of the file, from `offsetBytes`, and says it
+    /// is the end, which makes the server complete the upload. The body is the
+    /// file from that byte, given to the background session separately. The
+    /// server takes the bytes only if the offset is where it is.
+    public static func makeContinuation(
+        server: ServerAddress, credential: PhotoBackupCredential, uploadPath: String, offsetBytes: Int64, usesMobileData: Bool
+    ) -> URLRequest {
+        var request = URLRequest(url: server.endpoint(uploadPath))
+        request.httpMethod = "PATCH"
+        request.setValue("application/partial-upload", forHTTPHeaderField: PhotoBackupHeader.contentType)
+        request.setValue(String(offsetBytes), forHTTPHeaderField: PhotoBackupHeader.uploadOffset)
+        request.setValue("?1", forHTTPHeaderField: PhotoBackupHeader.uploadComplete)
+        return prepared(request, credential: credential, usesMobileData: usesMobileData, isSmall: false)
+    }
+
+    private static func prepared(_ request: URLRequest, credential: PhotoBackupCredential, usesMobileData: Bool, isSmall: Bool) -> URLRequest {
+        var request = request
         request.setValue(credential.authorizationHeader, forHTTPHeaderField: "Authorization")
         request.allowsCellularAccess = usesMobileData
         #if !canImport(FoundationNetworking)
             request.allowsExpensiveNetworkAccess = usesMobileData
         #endif
+        if isSmall { request.timeoutInterval = smallRequestTimeoutSeconds }
         return request
+    }
+
+    /// The digest as the server is told it, in lowercase, or nil when it is not
+    /// 64 hexadecimal digits. The index keeps the same text.
+    public static func declaredDigest(_ sha256: String?) -> String? {
+        guard let digest = sha256?.lowercased(), digest.count == 64, digest.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
+        return digest
     }
 }
 
@@ -670,6 +735,7 @@ public actor PhotoBackupCoordinator {
     private let index: PhotoBackupIndex
     private let library: any PhotoBackupLibrary
     private let transfer: any PhotoBackupTransfer
+    private let uploads: any PhotoBackupUploads
     private let lookup: (any PhotoBackupServerLookup)?
     private let network: any PhotoBackupNetwork
     private let outgoingDirectory: URL
@@ -710,6 +776,10 @@ public actor PhotoBackupCoordinator {
     /// Uploads in a row the server answered with a failure; any other answer
     /// starts the count again.
     private var consecutiveServerFailureCount = 0
+    /// Whether a small request made to queue a file (creating its upload, asking
+    /// where it is) found no network. The rest of the pass does not try the other
+    /// files, which would each wait for a timeout to find the same.
+    private var hasLostNetwork = false
     /// Nothing is queued before this time: the server said, with a Retry-After,
     /// how long to wait. Nil when it asked for nothing.
     private var retryNotBefore: Date?
@@ -737,9 +807,9 @@ public actor PhotoBackupCoordinator {
     private var statusHandler: (@Sendable (PhotoBackupStatus) -> Void)?
 
     public init(
-        index: PhotoBackupIndex, library: any PhotoBackupLibrary, transfer: any PhotoBackupTransfer, lookup: (any PhotoBackupServerLookup)?,
-        network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String, credential: PhotoBackupCredential,
-        budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, exportTimeoutSeconds: TimeInterval = 30 * 60,
+        index: PhotoBackupIndex, library: any PhotoBackupLibrary, transfer: any PhotoBackupTransfer, uploads: any PhotoBackupUploads,
+        lookup: (any PhotoBackupServerLookup)?, network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String,
+        credential: PhotoBackupCredential, budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, exportTimeoutSeconds: TimeInterval = 30 * 60,
         freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, now: @escaping @Sendable () -> Date = { Date() },
         fileManager: FileManager = .default, batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false
     ) {
@@ -747,6 +817,7 @@ public actor PhotoBackupCoordinator {
         self.index = index
         self.library = library
         self.transfer = transfer
+        self.uploads = uploads
         self.lookup = lookup
         self.network = network
         self.outgoingDirectory = outgoingDirectory
@@ -818,7 +889,9 @@ public actor PhotoBackupCoordinator {
     /// and the uploads the session holds are cancelled so that the phone stops
     /// sending, along with the files exported for them. What went up stays in
     /// the index, and so does the place the listing got to. A file cut off
-    /// part way is sent again from its start by the pass after the pause.
+    /// part way goes on from the byte the server has when the pass after the
+    /// pause reaches it (the index keeps the address of its upload), unless the
+    /// server no longer has the upload.
     ///
     /// A pass that is working ends a moment after this returns, and may have been
     /// about to queue one more file: the caller waits for the pass and calls
@@ -866,6 +939,7 @@ public actor PhotoBackupCoordinator {
         refusedFileCount = 0
         leftForLaterFileCount = 0
         consecutiveServerFailureCount = 0
+        hasLostNetwork = false
         exportedSizes = [:]
         dealtWithKeys = []
         isPlannedFileCountFromIndex = false
@@ -895,6 +969,7 @@ public actor PhotoBackupCoordinator {
         guard !isRunning, !isPaused else { return 0 }
         isRunning = true
         isStopRequested = false
+        hasLostNetwork = false
         self.settings = settings
         var queuedCount = 0
         defer { isRunning = false }
@@ -927,6 +1002,12 @@ public actor PhotoBackupCoordinator {
                     isBudgetSpent = true
                     break queueing
                 }
+                // The server failing, or no network to make an upload with, is not
+                // a reason to try the next file in the seconds there are.
+                if hasLostNetwork || consecutiveServerFailureCount >= Self.serverFailureLimit || pendingRetryTime != nil {
+                    isBudgetSpent = true
+                    break queueing
+                }
                 let currentBudget = budget.limited(toFreeSpaceBytes: freeSpaceBytes())
                 if !currentBudget.allowsAnother(outstandingCount: outstanding.count, outstandingBytes: outstandingBytes) {
                     isBudgetSpent = true
@@ -944,7 +1025,7 @@ public actor PhotoBackupCoordinator {
                 case .mustWait:
                     isBudgetSpent = true
                     break queueing
-                case .deferred, .refused: continue queueing
+                case .deferred, .refused, .alreadyUploaded: continue queueing
                 }
                 if outstanding.count >= currentBudget.maximumUploadCount {
                     isBudgetSpent = true
@@ -1100,7 +1181,7 @@ public actor PhotoBackupCoordinator {
                 holdBackAfterServerFailures()
                 break
             }
-            if pendingRetryTime != nil { break }
+            if pendingRetryTime != nil || hasLostNetwork { break }
             // The room left on the phone is read before each file is exported,
             // since every file queued is a copy of it.
             let currentBudget = budget.limited(toFreeSpaceBytes: freeSpaceBytes())
@@ -1140,7 +1221,7 @@ public actor PhotoBackupCoordinator {
             phase = uploadingPhase
             await publish()
             switch await queue(upload, timeoutSeconds: timeoutSeconds) {
-            case .queued, .refused:
+            case .queued, .refused, .alreadyUploaded:
                 dealtWithKeys.insert(upload.key)
                 outcome.position += 1
             case .mustWait:
@@ -1312,10 +1393,30 @@ public actor PhotoBackupCoordinator {
 
     private enum QueueResult {
         case queued
+        /// The server turned out to have the whole file already, from an earlier
+        /// try that was not heard to end: nothing is sent.
+        case alreadyUploaded
         /// Too much is in flight to take this file now.
         case mustWait
         case deferred
         case refused
+    }
+
+    /// What is sent for one file, and from which file in the outgoing folder.
+    private struct SendPlan {
+        let request: URLRequest
+        let outgoingFilename: String
+        let sizeBytes: Int64
+    }
+
+    private enum Preparation {
+        case send(SendPlan)
+        /// The server has every byte and the photo exists.
+        case alreadyUploaded(serverPhotoId: String)
+        /// The server did not answer as needed, or the app was stopped.
+        case notSent(PhotoBackupOutcome)
+        /// The rest of the file could not be written beside it.
+        case tailNotWritten(PhotoBackupFailure)
     }
 
     /// Exports one file and hands it to the session. A file that the library
@@ -1355,21 +1456,195 @@ public actor PhotoBackupCoordinator {
             removeTemporaryFile(named: exported.outgoingFilename)
             return .mustWait
         }
+        let plan: SendPlan
+        switch await prepareSending(upload, exported: exported) {
+        case .send(let prepared):
+            plan = prepared
+        case .alreadyUploaded(let serverPhotoId):
+            removeTemporaryFile(named: exported.outgoingFilename)
+            consecutiveServerFailureCount = 0
+            uploadedFileCount += 1
+            finishedFileCount += 1
+            await index.markUploaded(upload: upload, serverPhotoId: serverPhotoId)
+            return .alreadyUploaded
+        case .notSent(let outcome):
+            removeTemporaryFile(named: exported.outgoingFilename)
+            return await settleUnsent(outcome, upload: upload)
+        case .tailNotWritten(let failure):
+            removeTemporaryFile(named: exported.outgoingFilename)
+            removeTemporaryFile(named: Self.tailFilename(of: exported.outgoingFilename))
+            await index.setError(failure: failure)
+            return .deferred
+        }
+        if isStopRequested {
+            removeTemporaryFile(named: plan.outgoingFilename)
+            return .deferred
+        }
         let job = PhotoBackupJob(
             accountKey: accountKey, localIdentifier: upload.localIdentifier, role: upload.role, clientPhotoId: upload.clientPhotoId,
-            filename: upload.filename, assetModificationDate: upload.assetModificationDate, outgoingFilename: exported.outgoingFilename,
-            sizeBytes: exported.sizeBytes)
-        let request = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: settings.usesMobileData, sha256: exported.sha256)
-        outstanding[job.key] = Outstanding(sizeBytes: exported.sizeBytes, filename: upload.filename, outgoingFilename: exported.outgoingFilename)
+            filename: upload.filename, assetModificationDate: upload.assetModificationDate, outgoingFilename: plan.outgoingFilename,
+            sizeBytes: plan.sizeBytes)
+        outstanding[job.key] = Outstanding(sizeBytes: plan.sizeBytes, filename: upload.filename, outgoingFilename: plan.outgoingFilename)
         do {
-            try await transfer.start(request: request, job: job, fileURL: outgoingDirectory.appendingPathComponent(exported.outgoingFilename))
+            try await transfer.start(request: plan.request, job: job, fileURL: outgoingDirectory.appendingPathComponent(plan.outgoingFilename))
         } catch {
             outstanding[job.key] = nil
-            removeTemporaryFile(named: exported.outgoingFilename)
+            removeTemporaryFile(named: plan.outgoingFilename)
             await index.setError(failure: Self.failure(of: error))
             return .deferred
         }
         return .queued
+    }
+
+    /// Settles with the server where a file's upload stands and makes the
+    /// request that sends what the server lacks.
+    ///
+    /// A file the index holds an upload for, with the size and digest the file
+    /// has now, is continued: the server is asked how many bytes it has (it
+    /// counts whole parts it has stored, so a request cut off in the middle of a
+    /// part costs that part), and only the rest is sent. An upload the server no
+    /// longer has, or one for a file that is not this file any more, is dropped
+    /// and the file goes up as a new upload from its first byte. Every file
+    /// goes up as an upload made first, with a small request of its own, because
+    /// the address of an upload sent as one request with its bytes is not heard
+    /// until the request ends, which is too late to continue it.
+    private func prepareSending(_ upload: PhotoBackupUpload, exported: PhotoBackupExportedFile) async -> Preparation {
+        let digest = PhotoBackupRequest.declaredDigest(exported.sha256)
+        let usesMobileData = settings.usesMobileData
+        var uploadPath: String?
+        var offsetBytes: Int64 = 0
+        if let kept = await index.partialUpload(localIdentifier: upload.localIdentifier, role: upload.role) {
+            if let digest, kept.sha256 == digest, kept.sizeBytes == exported.sizeBytes {
+                let statusRequest = PhotoBackupRequest.makeStatus(
+                    server: server, credential: credential, uploadPath: kept.uploadPath, usesMobileData: usesMobileData)
+                switch await uploads.uploadState(statusRequest) {
+                case .answered(.receiving(let receivedBytes)) where receivedBytes <= exported.sizeBytes:
+                    uploadPath = kept.uploadPath
+                    offsetBytes = receivedBytes
+                case .answered(.complete(let serverPhotoId)):
+                    return .alreadyUploaded(serverPhotoId: serverPhotoId)
+                case .unsuccessful(let outcome):
+                    // A refusal of this question is not a refusal of the file:
+                    // the upload is dropped and a new one made. Anything else
+                    // (no network, a sign-in refused, the server failing) is why
+                    // nothing is sent now.
+                    if case .refused = outcome {
+                        break
+                    }
+                    return .notSent(outcome)
+                case .answered(.receiving), .answered(.gone):
+                    break
+                }
+            }
+            if uploadPath == nil {
+                await index.forgetPartialUpload(localIdentifier: upload.localIdentifier, role: upload.role)
+            }
+        }
+        if offsetBytes > 0, !PhotoBackupBudget.allowsTail(sizeBytes: exported.sizeBytes - offsetBytes, freeSpaceBytes: freeSpaceBytes()) {
+            uploadPath = nil
+            offsetBytes = 0
+            await index.forgetPartialUpload(localIdentifier: upload.localIdentifier, role: upload.role)
+        }
+        if uploadPath == nil {
+            let creationRequest = PhotoBackupRequest.makeCreation(
+                server: server, credential: credential, upload: upload, sizeBytes: exported.sizeBytes, usesMobileData: usesMobileData,
+                sha256: digest)
+            switch await uploads.createUpload(creationRequest) {
+            case .answered(let createdPath):
+                uploadPath = createdPath
+                // Kept only for a file that has a digest: an exported file that
+                // cannot be told from the one the server has a part of is not
+                // continued.
+                if let digest {
+                    await index.markUploadStarted(
+                        localIdentifier: upload.localIdentifier, clientPhotoId: upload.clientPhotoId, role: upload.role,
+                        partialUpload: PhotoBackupPartialUpload(uploadPath: createdPath, sizeBytes: exported.sizeBytes, sha256: digest))
+                }
+            case .unsuccessful(let outcome):
+                return .notSent(outcome)
+            }
+        }
+        guard let uploadPath else { return .notSent(.retryLater(failure: nil, isConnectivityFailure: false)) }
+        if isStopRequested { return .notSent(.cancelled) }
+        let request = PhotoBackupRequest.makeContinuation(
+            server: server, credential: credential, uploadPath: uploadPath, offsetBytes: offsetBytes, usesMobileData: usesMobileData)
+        guard offsetBytes > 0 else {
+            return .send(SendPlan(request: request, outgoingFilename: exported.outgoingFilename, sizeBytes: exported.sizeBytes))
+        }
+        // Background uploads read a file, so the rest is written to one, and
+        // the whole file is deleted as soon as it is: only the rest stays on the
+        // phone while it is sent.
+        let tailFilename = Self.tailFilename(of: exported.outgoingFilename)
+        let exportedURL = outgoingDirectory.appendingPathComponent(exported.outgoingFilename)
+        let tailURL = outgoingDirectory.appendingPathComponent(tailFilename)
+        do {
+            try await Task.detached { try Self.writeTail(of: exportedURL, from: offsetBytes, to: tailURL) }.value
+        } catch {
+            return .tailNotWritten(.systemDescription(error.localizedDescription))
+        }
+        removeTemporaryFile(named: exported.outgoingFilename)
+        return .send(SendPlan(request: request, outgoingFilename: tailFilename, sizeBytes: exported.sizeBytes - offsetBytes))
+    }
+
+    /// The name the rest of an exported file is written under, beside it in the
+    /// outgoing folder, where a file nothing refers to is deleted by the next
+    /// pass.
+    static func tailFilename(of outgoingFilename: String) -> String {
+        outgoingFilename + ".tail"
+    }
+
+    /// How much of a file is read and written at a time.
+    private static let tailChunkBytes = 1 << 20
+
+    /// Writes the bytes of a file from `offsetBytes` to its end into a new file.
+    /// A chunk at a time, so that a long video is never held in memory, and each
+    /// in a pool of its own so that what a read hands back is freed with it.
+    private static func writeTail(of sourceURL: URL, from offsetBytes: Int64, to destinationURL: URL) throws {
+        guard FileManager.default.createFile(atPath: destinationURL.path, contents: nil) else { throw CocoaError(.fileWriteUnknown) }
+        let reader = try FileHandle(forReadingFrom: sourceURL)
+        defer { try? reader.close() }
+        let writer = try FileHandle(forWritingTo: destinationURL)
+        defer { try? writer.close() }
+        try reader.seek(toOffset: UInt64(offsetBytes))
+        var isMore = true
+        while isMore {
+            isMore = try inAutoreleasePool {
+                guard let chunk = try reader.read(upToCount: tailChunkBytes), !chunk.isEmpty else { return false }
+                try writer.write(contentsOf: chunk)
+                return true
+            }
+        }
+    }
+
+    private static func inAutoreleasePool<Result>(_ body: () throws -> Result) rethrows -> Result {
+        #if canImport(Darwin)
+            return try autoreleasepool(invoking: body)
+        #else
+            return try body()
+        #endif
+    }
+
+    /// What follows when the server's answer to a small request, made before a
+    /// file was queued, says it cannot be queued now. The file stays in the index
+    /// as still to send, as when a queued upload fails.
+    private func settleUnsent(_ outcome: PhotoBackupOutcome, upload: PhotoBackupUpload) async -> QueueResult {
+        switch outcome {
+        case .uploaded, .cancelled:
+            return .deferred
+        case .signInNeeded:
+            await noteSignInNeeded()
+            return .deferred
+        case .refused(let failure):
+            await noteRefused(
+                localIdentifier: upload.localIdentifier, clientPhotoId: upload.clientPhotoId, role: upload.role, failure: failure)
+            return .refused
+        case .retryLater(let failure, let isConnectivityFailure, let retryAfterSeconds):
+            // Without a network none of the files after this one can be made an
+            // upload either, and each would wait out its timeout to find so.
+            if isConnectivityFailure { hasLostNetwork = true }
+            await noteRetryLater(failure: failure, isConnectivityFailure: isConnectivityFailure, retryAfterSeconds: retryAfterSeconds)
+            return .deferred
+        }
     }
 
     /// Asks the library for the file and waits for it at most `timeoutSeconds`.
@@ -1454,23 +1729,11 @@ public actor PhotoBackupCoordinator {
                 localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, serverPhotoId: serverPhotoId,
                 assetModificationDate: job.assetModificationDate)
         case .signInNeeded:
-            await index.setError(failure: .signInRefused, isSignInNeeded: true)
-            isStopRequested = true
-            await transfer.cancelAll()
-            outstanding.removeAll()
+            await noteSignInNeeded()
         case .refused(let failure):
-            consecutiveServerFailureCount = 0
-            refusedFileCount += 1
-            finishedFileCount += 1
-            await index.markRefused(localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, failure: failure)
-            await index.setError(failure: failure)
+            await noteRefused(localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, failure: failure)
         case .retryLater(let failure, let isConnectivityFailure, let retryAfterSeconds):
-            if !isConnectivityFailure { consecutiveServerFailureCount += 1 }
-            if let retryAfterSeconds {
-                let notBefore = now().addingTimeInterval(TimeInterval(retryAfterSeconds))
-                retryNotBefore = max(retryNotBefore ?? notBefore, notBefore)
-            }
-            if let failure, !isConnectivityFailure { await index.setError(failure: failure) }
+            await noteRetryLater(failure: failure, isConnectivityFailure: isConnectivityFailure, retryAfterSeconds: retryAfterSeconds)
             // The file is still to send and nothing in this pass sends it
             // again: it is counted, so that the pass ends waiting for the
             // network, and one that finished with no pass running puts the
@@ -1494,6 +1757,33 @@ public actor PhotoBackupCoordinator {
         await publish()
         guard hasMadeProgress, !isRunning, !isStopRequested, pendingRetryTime == nil else { return false }
         return await index.pendingFileCount() > outstanding.count
+    }
+
+    // What a file that did not go up comes to, whether the answer was to its
+    // upload or to the small request made before it was queued.
+
+    private func noteSignInNeeded() async {
+        await index.setError(failure: .signInRefused, isSignInNeeded: true)
+        isStopRequested = true
+        await transfer.cancelAll()
+        outstanding.removeAll()
+    }
+
+    private func noteRefused(localIdentifier: String, clientPhotoId: String, role: PhotoBackupFileRole, failure: PhotoBackupFailure) async {
+        consecutiveServerFailureCount = 0
+        refusedFileCount += 1
+        finishedFileCount += 1
+        await index.markRefused(localIdentifier: localIdentifier, clientPhotoId: clientPhotoId, role: role, failure: failure)
+        await index.setError(failure: failure)
+    }
+
+    private func noteRetryLater(failure: PhotoBackupFailure?, isConnectivityFailure: Bool, retryAfterSeconds: Int?) async {
+        if !isConnectivityFailure { consecutiveServerFailureCount += 1 }
+        if let retryAfterSeconds {
+            let notBefore = now().addingTimeInterval(TimeInterval(retryAfterSeconds))
+            retryNotBefore = max(retryNotBefore ?? notBefore, notBefore)
+        }
+        if let failure, !isConnectivityFailure { await index.setError(failure: failure) }
     }
 
     // MARK: Waiting

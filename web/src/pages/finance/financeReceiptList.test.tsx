@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { graphql } from '../../api'
 import { uploadFiles } from '../../upload'
@@ -22,6 +22,14 @@ vi.mock('../../upload', () => ({ uploadFiles: vi.fn() }))
 const execute = vi.mocked(graphql)
 const upload = vi.mocked(uploadFiles)
 
+beforeEach(() => {
+  window.matchMedia = ((query: string) => ({
+    matches: true,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })) as unknown as typeof window.matchMedia
+})
 afterEach(() => {
   cleanup()
   execute.mockReset()

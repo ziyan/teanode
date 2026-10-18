@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isAskedOfThisDrawer, readBrowserLocation, RECENTLY_SENT_MS } from './browserLocation'
+import { isAskedOfThisDrawer, readBrowserLocation, readFreshBrowserLocation, RECENTLY_SENT_MS } from './browserLocation'
 
 function geolocationThat(answer: (success: PositionCallback, failure: PositionErrorCallback) => void): Geolocation {
   return {
@@ -39,6 +39,32 @@ describe('readBrowserLocation', () => {
       throw new Error('asked')
     })
     expect((await readBrowserLocation(geolocation, false)).errorMessage).toMatch(/https/)
+  })
+})
+
+describe('readFreshBrowserLocation', () => {
+  function optionsAskedBy(read: typeof readBrowserLocation): Promise<PositionOptions | undefined> {
+    return new Promise((resolve) => {
+      const geolocation = {
+        getCurrentPosition: (success: PositionCallback, _failure: unknown, options?: PositionOptions) => {
+          success({ coords: { latitude: 1, longitude: 2, accuracy: 3 }, timestamp: 0 } as GeolocationPosition)
+          resolve(options)
+        },
+      } as unknown as Geolocation
+      void read(geolocation, true)
+    })
+  }
+
+  it('never takes a fix the browser kept, and asks for the precise one', async () => {
+    expect(await optionsAskedBy(readFreshBrowserLocation)).toEqual({
+      enableHighAccuracy: true,
+      timeout: 30_000,
+      maximumAge: 0,
+    })
+  })
+
+  it('leaves the agent answer able to take a fix up to five minutes old', async () => {
+    expect(await optionsAskedBy(readBrowserLocation)).toMatchObject({ enableHighAccuracy: true, maximumAge: 300_000 })
   })
 })
 

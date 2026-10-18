@@ -56,6 +56,11 @@ module.exports = {
   module: {
     rules: [
       { test: /\.tsx?$/, use: 'ts-loader', exclude: /node_modules/ },
+      // MapLibre's build for pages that allow no blob: workers is a UMD file
+      // inside a package marked as a module, which webpack would read as a
+      // module and so skip the UMD wrapper's export branch. Read as it is
+      // written.
+      { test: /maplibre-gl-csp\.js$/, type: 'javascript/auto' },
       { test: /\.css$/, use: [MiniCssExtractPlugin.loader, 'css-loader'] },
       { test: /\.(png|svg|ico)$/, type: 'asset/resource' },
     ],
@@ -91,8 +96,17 @@ module.exports = {
     splitChunks: {
       chunks: (chunk) => chunk.name !== 'artifact',
       cacheGroups: {
+        map: {
+          test: /[\\/]node_modules[\\/]maplibre-gl[\\/]/,
+          name: 'map',
+          chunks: 'async',
+          enforce: true,
+        },
         vendor: {
-          test: /[\\/]node_modules[\\/]/,
+          // Not the map: it is a megabyte that only the Location page uses, and
+          // in the libraries' file it would be in everybody's first download.
+          // Left out, it goes with the page that imports it.
+          test: /[\\/]node_modules[\\/](?!maplibre-gl[\\/])/,
           name: 'vendor',
           chunks: (chunk) => chunk.name !== 'artifact',
           enforce: true,
@@ -127,6 +141,9 @@ module.exports = {
         // The microphone's AudioWorklet runs as a file of its own on the
         // audio thread; the content policy takes it only from the server.
         { from: 'src/voice/voiceCaptureWorklet.js', to: 'assets/voice-capture-worklet.js' },
+        // The map's worker, a file of the server's own because the content
+        // policy refuses the blob: address the usual build makes it from.
+        { from: 'node_modules/maplibre-gl/dist/maplibre-gl-csp-worker.js', to: 'assets/maplibre-gl-csp-worker.js' },
       ],
     }),
   ],

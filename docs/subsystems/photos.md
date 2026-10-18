@@ -90,6 +90,15 @@ whatever it was sent as, because an iPhone sends a picture saved from a
 message as `image.jpeg` in whichever format it is; processing reads those
 bytes again before it picks a decoder, for files kept before this check.
 
+A client that cannot see an answer before its request ends, as a background
+upload on a phone cannot, makes the upload first: a `POST` with
+`Upload-Complete: ?0`, `Upload-Length` and no body answers 201 with the
+upload's address and `Upload-Offset: 0`, and the bytes follow in a `PATCH` at
+the offset `HEAD` reports, which ends with `Upload-Complete: ?1`. The `X-Photo-*`
+headers and the declared digest belong to the `POST`; the `PATCH` does not
+repeat them, and a `PATCH` whose bytes do not hash to the digest ends the upload
+(`internal/photo/upload_test.go` has the cases).
+
 The body is stored in parts of at most 8 MiB as it arrives, each with a
 receipt row once it is whole, so the offset a client is told is always bytes
 that are durable and a dropped connection costs at most the part in flight.
@@ -435,6 +444,15 @@ queued first; files that have to come down from iCloud come after them, so
 that the queue fills fast and one slow download does not stand in front of the
 rest.
 
+Every file goes up as an upload made first (see Uploads), so that its address
+is known before a byte is sent. The pass creates the upload with a small
+request of its own (`PhotoBackupRequest.makeCreation`, sent through
+`PhotoBackupUploadClient` while the app runs, since the background session takes
+upload tasks only), keeps the address in the index
+(`PhotoBackupRoleRecord.partialUpload`: the path, the file's size and its
+SHA-256), and hands the background session a `PATCH` of the exported file at
+offset 0.
+
 What continues and what waits:
 
 - Files already queued continue with the app closed. The backup screen says
@@ -461,6 +479,43 @@ What continues and what waits:
   on with the next file. Before this, one such file held up the pass and every
   later attempt to start one, because a pass already running is joined, not
   started twice.
+
+### Continuing a file that was cut off
+
+A file can be cut off: the person pauses backup, the app is killed, or the
+connection drops and iOS gives up on the task. The server keeps the whole parts
+it received, so the next try sends only what it lacks. When a file with a kept
+address is queued again, `PhotoBackupCoordinator.prepareSending`:
+
+- exports the file again (a pause deletes the exported copies, to give the room
+  back) and compares its size and SHA-256 with the ones kept. A file that is not
+  the same bytes is not continued: the old upload is left to the server, which
+  ends an unfinished upload of the same photo and file when a new one starts.
+- asks the server where the upload is (`HEAD`). The answers are: an offset, and
+  the file goes on from there; complete, and the photo is recorded from the
+  `X-Photo-ID` it names without sending a byte (the case of an answer that was
+  lost); gone (404, or an offset past the end of the file), and a new upload is
+  made and the file goes up from its first byte. A question that cannot be
+  answered (no network, the server failing, a sign-in refused) queues nothing and
+  keeps the address for the next pass.
+- writes the bytes from the offset into `<exported name>.tail` in the outgoing
+  folder, since a background upload reads a file, and deletes the whole exported
+  file at once. The queue counts the rest, not the whole file. The rest is
+  deleted when its task ends, whatever the outcome; one left by a killed app is
+  deleted by the next pass like any file nothing queued refers to. The rest is
+  written only if it is at most half of the free space, because the whole file
+  is on the phone until it is done; otherwise the file starts over from its
+  first byte, which needs no room beyond the file.
+
+An offset equal to the file's size means the server has every byte and has not
+completed the upload: the rest is empty and its `PATCH`, at the end of the file
+with `Upload-Complete: ?1`, completes it.
+
+The address is written to the index with the next change after thirty seconds,
+and when the app goes to the background, like the rest of it. A kill between
+two writes loses the address, and the file then starts over in an upload of its
+own. A file whose digest could not be worked out is sent the same way but its
+address is not kept.
 
 ### Reading a large library
 

@@ -19,11 +19,50 @@ export interface BrowserLocationAnswer {
 const LOCATION_TIMEOUT_MS = 30_000
 const LOCATION_MAXIMUM_AGE_MS = 5 * 60_000
 
-// readBrowserLocation asks the browser where it is. It never throws: a
-// refusal is an answer too, and the turn is told why.
+// A browser that knows where it is only to within this many meters (an answer
+// from the Wi-Fi network or the address, since a computer has no GPS) is
+// worse than a person can use to say where they are standing: the dashboard
+// says so and offers to type the address. Past the second, it cannot place
+// a person at all, and what records the position is turned off.
+export const COARSE_ACCURACY_METERS = 100
+export const UNUSABLE_ACCURACY_METERS = 1000
+
+// readBrowserLocation asks the browser where it is, and takes a fix up to five
+// minutes old: enough for the agent's answer. It never throws: a refusal is an
+// answer too, and the turn is told why.
 export function readBrowserLocation(
   geolocation: Geolocation | undefined = typeof navigator === 'undefined' ? undefined : navigator.geolocation,
   isSecure: boolean = typeof window === 'undefined' ? true : window.isSecureContext,
+): Promise<BrowserLocationAnswer> {
+  return askBrowserLocation(geolocation, isSecure, LOCATION_MAXIMUM_AGE_MS)
+}
+
+// readFreshBrowserLocation asks for a new fix, never one the browser kept: a
+// check-in, a home and the map's "Show where I am" record where the person is
+// now, to the precision the device can give.
+export function readFreshBrowserLocation(
+  geolocation: Geolocation | undefined = typeof navigator === 'undefined' ? undefined : navigator.geolocation,
+  isSecure: boolean = typeof window === 'undefined' ? true : window.isSecureContext,
+): Promise<BrowserLocationAnswer> {
+  return askBrowserLocation(geolocation, isSecure, 0)
+}
+
+// isLocationPermissionGranted says whether the person already allowed this
+// site to know where they are, so that reading it asks nothing. A browser
+// that cannot say is taken as not granted.
+export async function isLocationPermissionGranted(): Promise<boolean> {
+  try {
+    const status = await navigator.permissions.query({ name: 'geolocation' })
+    return status.state === 'granted'
+  } catch {
+    return false
+  }
+}
+
+function askBrowserLocation(
+  geolocation: Geolocation | undefined,
+  isSecure: boolean,
+  maximumAgeMilliseconds: number,
 ): Promise<BrowserLocationAnswer> {
   if (!isSecure) {
     return Promise.resolve({
@@ -43,7 +82,7 @@ export function readBrowserLocation(
           measuredAt: new Date(position.timestamp).toISOString(),
         }),
       (error) => resolve({ errorMessage: locationErrorMessage(error.code) }),
-      { enableHighAccuracy: true, timeout: LOCATION_TIMEOUT_MS, maximumAge: LOCATION_MAXIMUM_AGE_MS },
+      { enableHighAccuracy: true, timeout: LOCATION_TIMEOUT_MS, maximumAge: maximumAgeMilliseconds },
     )
   })
 }

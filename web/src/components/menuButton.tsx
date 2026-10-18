@@ -24,6 +24,7 @@ export function MenuButton({
   // the foot of the rail, where a menu opening downwards would open off the
   // bottom of the window.
   placement = 'below',
+  disabled = false,
   // What opens: a menu of things to choose from, or a small dialog-like
   // popover holding a form (radios, date fields), which a screen reader must
   // not announce as a list of menu items.
@@ -34,6 +35,7 @@ export function MenuButton({
   icon: React.ReactNode
   className?: string
   placement?: 'below' | 'above'
+  disabled?: boolean
   popup?: 'menu' | 'dialog'
   render: (close: () => void) => React.ReactNode
 }) {
@@ -162,6 +164,7 @@ export function MenuButton({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={label}
+        disabled={disabled}
         onClick={() => setOpen((previous) => !previous)}
       >
         {icon}

@@ -9,6 +9,11 @@ import (
 // where it is. A run anywhere else -- a terminal, a chat app, a mail, a
 // run with nobody present -- says so instead of guessing.
 type Locating interface {
+	// CanLocate says whether there is a browser or an app to ask at all in
+	// this turn. A turn written anywhere else has none, and the location tool
+	// answers from the positions kept instead.
+	CanLocate() bool
+
 	// Locate asks the browser and waits for its answer. The error says
 	// why there is none: no browser to ask, the person did not allow it,
 	// or the browser did not answer in time.

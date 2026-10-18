@@ -52,12 +52,13 @@ struct TeaNodeApp: App {
                 appearance.apply()
                 PhotoBackupEngine.shared.sceneBecameActive()
             }
-            .onChange(of: scenePhase) { _, phase in
+            .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active {
                     appearance.apply()
                     // Photos taken since are backed up when the app comes back.
                     PhotoBackupEngine.shared.sceneBecameActive()
                 }
+                LocationRecorder.shared.sceneDidChange(isActive: phase == .active, isBackground: phase == .background)
             }
         }
     }
@@ -77,9 +78,10 @@ struct ConversationsSheet: View {
     /// Rows shown above the conversations, as the side menu puts its
     /// sections there.
     var leading: AnyView?
-    /// How far the list is scrolled, kept by whoever shows it so that the
-    /// side menu, which is drawn anew each time it opens, comes back to it.
-    var scrollOffsetPoints: Binding<CGFloat?> = .constant(nil)
+    /// How many times the side menu has been opened. The menu is kept while
+    /// it is closed, so the list stays where it was scrolled; it reads its
+    /// conversations again each time this goes up.
+    var openingCount = 0
     let onChoose: (AgentConversation?) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -101,6 +103,11 @@ struct ConversationsSheet: View {
     @State private var isStartingGroup = false
     /// The row a screenshot scrolls to, to show the rows that start a chat.
     private static let messageSomeoneRowId = "message-someone"
+    /// The room the last rows are given at the bottom of the side menu: the
+    /// search field floats over the bottom of the list there, and without it
+    /// the last chats cannot be scrolled clear of the field. It grows with the
+    /// text, as the field does.
+    @ScaledMetric(relativeTo: .body) private var searchFieldClearance: CGFloat = 56
 
     var body: some View {
         NavigationStack {
@@ -144,6 +151,7 @@ struct ConversationsSheet: View {
                                     Task { await start() }
                                 } label: {
                                     Label("New side chat", systemImage: "plus")
+                                        .actionColor()
                                 }
                                 .menuRow(isSelected: false)
                             }
@@ -152,6 +160,7 @@ struct ConversationsSheet: View {
                                     isMessagingSomeone = true
                                 } label: {
                                     Label("Message someone", systemImage: "person.crop.circle.badge.plus")
+                                        .actionColor()
                                 }
                                 .id(Self.messageSomeoneRowId)
                                 .menuRow(isSelected: false)
@@ -159,6 +168,7 @@ struct ConversationsSheet: View {
                                     isStartingGroup = true
                                 } label: {
                                     Label("New group", systemImage: "person.2")
+                                        .actionColor()
                                 }
                                 .menuRow(isSelected: false)
                             }
@@ -199,16 +209,17 @@ struct ConversationsSheet: View {
                     .task(id: app.canChat) {
                         // `-TeaNodeScreen conversations`: the side menu scrolled to its chats,
                         // to show the rows that start one, once the session says they are there.
-                        guard DemoServer.isRequested, DemoServer.screen == "conversations", leading != nil, app.canChat else { return }
+                        // `conversations-restored` too, which then closes and opens the menu.
+                        guard DemoServer.isRequested, DemoServer.screen == "conversations" || DemoServer.screen == "conversations-restored",
+                            leading != nil, app.canChat
+                        else { return }
                         try? await Task.sleep(for: .seconds(2))
                         withAnimation { scroller.scrollTo(Self.messageSomeoneRowId, anchor: .top) }
                     }
                 #endif
             }
             .menuListStyle(isPanel)
-            // Ready once the rows were read: a failed read leaves no rows, and
-            // giving up on the kept place then would lose it.
-            .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isLoaded && problemText == nil, isPaused: !words.isEmpty)
+            .contentMargins(.bottom, isPanel ? searchFieldClearance : 0, for: .scrollContent)
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
                 // A quarter of a second after the last key, as the drawer
@@ -236,7 +247,7 @@ struct ConversationsSheet: View {
                 }
             }
             .refreshable { await load() }
-            .task { await load() }
+            .task(id: openingCount) { await load() }
             .navigationTitle(isPanel ? "" : String(localized: "Conversations"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -517,6 +528,11 @@ struct ConversationsSheet: View {
     private func load() async {
         do {
             conversations = try await connection.conversations()
+            // The archived ones too, if they were read before, so an opened
+            // list of them is not left as it was.
+            if archived != nil {
+                archived = (try? await connection.conversations(isArchived: true))?.filter { !$0.isMain } ?? archived
+            }
             problemText = nil
             // The list reads without it; only the marks are missing.
             waitingByConversation = (try? await connection.waiting(first: 50))?.countByConversation ?? [:]
@@ -578,9 +594,18 @@ struct SettingsForm: View {
                             NavigationLink {
                                 CirclesView(connection: connection)
                             } label: {
-                                Label("Circles", systemImage: "person.2")
+                                // The count is in the label, as the Photo backup row's status is: a
+                                // badge on the link itself is drawn after the chevron.
+                                HStack {
+                                    Label("Circles", systemImage: "person.2")
+                                    Spacer()
+                                    if openCircleInvitationCount > 0 {
+                                        Text(openCircleInvitationCount, format: .number)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .accessibilityElement(children: .combine)
                             }
-                            .badge(openCircleInvitationCount)
                         }
                         NavigationLink {
                             ChangePasswordView(connection: connection)
@@ -808,6 +833,7 @@ struct SettingsForm: View {
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
                 case "circles": CirclesView(connection: connection)
                 case "circle-detail", "circle-detail-operator": CircleDetailDemoScreen(connection: connection)
+                case "circle-join-offer": CircleJoinOfferDemoScreen(connection: connection)
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
                 case "settings-picture": PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
@@ -906,6 +932,7 @@ struct NotificationKindToggle: View {
         case "circle": String(localized: "Invitations to circles")
         case "chat": String(localized: "Messages from people in your chats")
         case "skill_share_call": String(localized: "Skill calls waiting for your approval")
+        case "location": String(localized: "People who share their location arriving at and leaving places")
         case "photo": String(localized: "Photos added to albums shared with you")
         default: notificationKind
         }

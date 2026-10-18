@@ -21,7 +21,9 @@ import (
 // Chats are on the API, the command line (under "agent conversation") and the
 // agent's conversation tool under the same names: nothing exists on one that
 // the others lack, except what only a person's hands do (typing) and what only
-// the agent does (speaking as itself).
+// the agent does (speaking as itself). The tool's names are the command line's
+// with underscores, and with the object said where the tool has other things
+// the word could mean (add_members, remove_member, mark_read, delete_message).
 func TestChatParity(test *testing.T) {
 	test.Parallel()
 
@@ -33,16 +35,16 @@ func TestChatParity(test *testing.T) {
 		subcommand string
 		action     string
 	}{
-		"OpenDirectChat":    {"direct", ""},
-		"CreateGroupChat":   {"group", ""},
-		"RenameChat":        {"rename", ""},
-		"AddChatMembers":    {"add", ""},
-		"RemoveChatMember":  {"remove", ""},
-		"LeaveChat":         {"leave", ""},
-		"EditChatMessage":   {"edit", ""},
-		"DeleteChatMessage": {"delete-message", ""},
-		"MarkChatRead":      {"read", ""},
-		"MuteChat":          {"mute", ""},
+		"OpenDirectChat":    {"direct", "direct"},
+		"CreateGroupChat":   {"group", "group"},
+		"RenameChat":        {"rename", "rename"},
+		"AddChatMembers":    {"add", "add_members"},
+		"RemoveChatMember":  {"remove", "remove_member"},
+		"LeaveChat":         {"leave", "leave"},
+		"EditChatMessage":   {"edit", "edit"},
+		"DeleteChatMessage": {"delete-message", "delete_message"},
+		"MarkChatRead":      {"read", "mark_read"},
+		"MuteChat":          {"mute", "mute"},
 		"SetChatTyping":     {"", ""},
 		"SayInChatAsAgent":  {"", "send"},
 
@@ -51,9 +53,9 @@ func TestChatParity(test *testing.T) {
 		"ReactInChatAsAgent": {"", "react"},
 
 		// What a member allows their agent in a chat is theirs to switch from a
-		// terminal or a screen, and no business of the agent's own.
-		"SetChatAgentReading":         {"remember", ""},
-		"SetChatAgentAskableByOthers": {"others-may-ask", ""},
+		// terminal, a screen or by asking the agent.
+		"SetChatAgentReading":         {"remember", "remember"},
+		"SetChatAgentAskableByOthers": {"others-may-ask", "others_may_ask"},
 	}
 	for operation := range operations {
 		if _, isListed := table[operation]; !isListed {
