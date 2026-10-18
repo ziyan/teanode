@@ -262,6 +262,18 @@ struct LocationMapHeader: View {
         return recorder.isAuthorizedToLocate
     }
 
+    /// The person's own places to pin, leaving out each one that somebody on
+    /// the map is at now: MapKit draws a pin above every picture, so it would
+    /// cover them, and their picture already says they are there.
+    private var pinnedPlaces: [LocationPlace] {
+        let coordinates: [CLLocationCoordinate2D] = ([model.latestCoordinate] + model.people.map(\.coordinate)).compactMap { $0 }
+        let pictures: [CLLocation] = coordinates.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+        return model.places.filter(\.isOfPersonsOwn).filter { place in
+            let center = CLLocation(latitude: place.latitudeDegrees, longitude: place.longitudeDegrees)
+            return !pictures.contains { $0.distance(from: center) <= place.radiusMeters }
+        }
+    }
+
     var body: some View {
         Map(position: $position) {
             if isShowingPhone {
@@ -283,7 +295,7 @@ struct LocationMapHeader: View {
                     .accessibilityHint("Shows you on the map")
                 }
             }
-            ForEach(model.places.filter(\.isOfPersonsOwn).prefix(40)) { place in
+            ForEach(pinnedPlaces.prefix(40)) { place in
                 Marker(place.shownName, systemImage: place.symbolName, coordinate: place.coordinate)
             }
             ForEach(model.people) { person in
