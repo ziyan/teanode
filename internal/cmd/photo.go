@@ -919,7 +919,13 @@ func runPhotoMove(ctx context.Context, command *cli.Command, move func(context.C
 	if command.Bool("json") {
 		return PrintJSON(map[string]int{countName: count})
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s %d of %d photos\n", verb, count, len(photoIds))
+	_, _ = fmt.Fprintf(command.Writer, "%s %d of %d photos", verb, count, len(photoIds))
+	// Only photos in the Trash are deleted, and the server leaves the rest
+	// alone, so a lower count needs saying why.
+	if countName == "deletedCount" && count < len(photoIds) {
+		_, _ = fmt.Fprint(command.Writer, "; the others were not in the Trash and were left alone")
+	}
+	_, _ = fmt.Fprintln(command.Writer)
 	return nil
 }
 
@@ -960,7 +966,7 @@ func runPhotoEmptyTrash(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(map[string]int{"deletedCount": count})
 	}
-	_, _ = fmt.Fprintf(command.Writer, "deleted %d photos forever\n", count)
+	_, _ = fmt.Fprintf(command.Writer, "deleted %s forever\n", client.PhotosCountText(count))
 	return nil
 }
 

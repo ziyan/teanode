@@ -27,7 +27,7 @@ func TestAlbumListPrintsATableOrJSON(test *testing.T) {
 	}
 }
 
-func TestAlbumShowListsTheAlbumsPhotos(test *testing.T) {
+func TestAlbumReadListsTheAlbumsPhotos(test *testing.T) {
 	server := newPhotoServer(test)
 	_, table, err := server.run(test, "album", "read", "album-1", "--limit", "7", "--continue-after", "photo-9")
 	if err != nil {
@@ -234,33 +234,73 @@ func TestAlbumShareSharesWithAPersonOrACircleAtALevel(test *testing.T) {
 	}
 }
 
-// share-update changes one share by its id, and sets both the level and the
-// places to what the flags say: a flag left out takes that away.
-func TestAlbumShareUpdateSetsTheLevelAndThePlacesOfOneShare(test *testing.T) {
+// share-update changes only what its flags name. The server writes the level
+// and the places together, so the share is read first and what the flags leave
+// out is sent as the share has it. In the test server share-person is view
+// without places, and share-circle is contribute with places.
+func TestAlbumShareUpdateChangesOnlyWhatTheFlagsName(test *testing.T) {
 	server := newPhotoServer(test)
-	output, _, err := server.run(test, "album", "share-update", "share-person", "--contribute", "--with-location")
-	if err != nil || !strings.Contains(output, "shared with ben at contribute, with where the photos were taken (share share-person)") {
+	updates := func() []map[string]any {
+		var found []map[string]any
+		for index, document := range server.documents {
+			if strings.Contains(document, "UpdatePhotoAlbumShare(") {
+				found = append(found, server.variables[index])
+			}
+		}
+		return found
+	}
+	// Places on, and the level the share has stays.
+	output, _, err := server.run(test, "album", "share-update", "album-1", "share-person", "--with-location")
+	if err != nil || !strings.Contains(output, "shared with ben at view, with where the photos were taken (share share-person)") {
 		test.Fatalf("%v: %s", err, output)
 	}
-	variables := server.variables[len(server.variables)-1]
-	if !strings.Contains(server.documents[len(server.documents)-1], "UpdatePhotoAlbumShare(") || variables["photoAlbumShareId"] != "share-person" || variables["shareLevel"] != "contribute" || variables["isLocationIncluded"] != true {
-		test.Fatalf("%v", variables)
+	if found := updates(); len(found) != 1 || found[0]["photoAlbumShareId"] != "share-person" || found[0]["shareLevel"] != "view" || found[0]["isLocationIncluded"] != true {
+		test.Fatalf("%v", found)
 	}
-	output, _, err = server.run(test, "album", "share-update", "share-person")
-	if err != nil || !strings.Contains(output, "shared with ben at view, without where the photos were taken") {
+	// Stopping a circle adding photos keeps the places it sees.
+	if _, _, err := server.run(test, "album", "share-update", "album-1", "share-circle", "--level", "view"); err != nil {
+		test.Fatal(err)
+	}
+	if found := updates(); len(found) != 2 || found[1]["photoAlbumShareId"] != "share-circle" || found[1]["shareLevel"] != "view" || found[1]["isLocationIncluded"] != true {
+		test.Fatalf("narrowing the level took the places away: %v", found)
+	}
+	// Places off keeps the level.
+	if _, _, err := server.run(test, "album", "share-update", "album-1", "share-circle", "--without-location"); err != nil {
+		test.Fatal(err)
+	}
+	if found := updates(); len(found) != 3 || found[2]["shareLevel"] != "contribute" || found[2]["isLocationIncluded"] != false {
+		test.Fatalf("%v", found)
+	}
+	// Both named at once.
+	if _, _, err := server.run(test, "album", "share-update", "album-1", "share-person", "--level", "Contribute", "--with-location"); err != nil {
+		test.Fatal(err)
+	}
+	if found := updates(); len(found) != 4 || found[3]["shareLevel"] != "contribute" || found[3]["isLocationIncluded"] != true {
+		test.Fatalf("%v", found)
+	}
+	// What the share has already is not sent.
+	output, _, err = server.run(test, "album", "share-update", "album-1", "share-circle", "--level", "contribute", "--with-location")
+	if err != nil || !strings.Contains(output, "nothing changed") || len(updates()) != 4 {
 		test.Fatalf("%v: %s", err, output)
-	}
-	if variables := server.variables[len(server.variables)-1]; variables["shareLevel"] != "view" || variables["isLocationIncluded"] != false {
-		test.Fatalf("%v", variables)
 	}
 	before := len(server.documents)
-	for _, arguments := range [][]string{{"album", "share-update"}, {"album", "share-update", "a", "b"}} {
+	for name, arguments := range map[string][]string{
+		"no arguments":            {"album", "share-update"},
+		"no share":                {"album", "share-update", "album-1"},
+		"too many":                {"album", "share-update", "album-1", "share-person", "extra", "--level", "view"},
+		"nothing named":           {"album", "share-update", "album-1", "share-person"},
+		"a level not one":         {"album", "share-update", "album-1", "share-person", "--level", "owner"},
+		"places both ways":        {"album", "share-update", "album-1", "share-person", "--with-location", "--without-location"},
+		"a share the album lacks": {"album", "share-update", "album-1", "share-elsewhere", "--level", "view"},
+	} {
 		if _, _, err := server.run(test, arguments...); err == nil {
-			test.Fatalf("%v was accepted", arguments)
+			test.Errorf("%s was accepted", name)
 		}
 	}
-	if len(server.documents) != before {
-		test.Fatal("a share-update that was refused was sent")
+	for _, document := range server.documents[before:] {
+		if strings.Contains(document, "UpdatePhotoAlbumShare(") {
+			test.Fatal("a share-update that was refused was sent")
+		}
 	}
 }
 
