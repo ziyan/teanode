@@ -32,6 +32,15 @@ type CircleMember struct {
 	AvatarColorIndex int       `json:"avatarColorIndex"`
 	MemberRole       string    `json:"memberRole"`
 	JoinedAt         time.Time `json:"joinedAt"`
+
+	// RelationshipKind is what this person is to the signed-in account,
+	// such as parent or spouse, empty when neither has said.
+	// RelationshipTermGender (masculine, feminine or neutral) is the gender
+	// of the word to show, and RelationshipWord that word in English, such
+	// as father.
+	RelationshipKind       string `json:"relationshipKind"`
+	RelationshipTermGender string `json:"relationshipTermGender"`
+	RelationshipWord       string `json:"relationshipWord"`
 }
 
 // CircleInvitation asks one person to join one circle.
@@ -47,7 +56,7 @@ type CircleInvitation struct {
 	ExpiresAt       time.Time `json:"expiresAt"`
 }
 
-const circleMemberFields = `{ userId username name avatarUrl avatarColorIndex memberRole joinedAt }`
+const circleMemberFields = `{ userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord }`
 
 const circleInvitationFields = `{ id circleId circleName circleKind invitedByName invitedUsername memberRole createdAt expiresAt }`
 
@@ -235,4 +244,59 @@ func AddCircleMember(ctx context.Context, connection *Client, circleId, username
 		return nil, err
 	}
 	return result.AddCircleMember, nil
+}
+
+// circlePersonId turns the username the command line speaks in into the
+// identifier the schema takes, from everybody the signed-in account shares a
+// circle with.
+func circlePersonId(ctx context.Context, connection *Client, username string) (string, error) {
+	people, err := ListCirclePeople(ctx, connection)
+	if err != nil {
+		return "", err
+	}
+	for _, person := range people {
+		if strings.EqualFold(person.Username, strings.TrimSpace(username)) {
+			return person.UserID, nil
+		}
+	}
+	return "", fmt.Errorf("client: nobody called %q shares a circle with you", username)
+}
+
+// SetPersonRelationship says what somebody the signed-in account shares a
+// circle with is to them, with one of the words ListRelationshipTerms gives,
+// such as wife or father_in_law. The other person is told, and sees the
+// opposite. It returns the person as the signed-in account now sees them.
+func SetPersonRelationship(ctx context.Context, connection *Client, username, relationshipTerm string) (*CircleMember, error) {
+	var result struct {
+		SetPersonRelationship *CircleMember `json:"SetPersonRelationship"`
+	}
+	userId, err := circlePersonId(ctx, connection, username)
+	if err != nil {
+		return nil, err
+	}
+	query := `mutation ($userId: String!, $relationshipTerm: String!) {
+		SetPersonRelationship(userId: $userId, relationshipTerm: $relationshipTerm) ` + circleMemberFields + `
+	}`
+	if err := connection.Execute(ctx, query, map[string]any{"userId": userId, "relationshipTerm": relationshipTerm}, &result); err != nil {
+		return nil, err
+	}
+	return result.SetPersonRelationship, nil
+}
+
+// RemovePersonRelationship takes away what the signed-in account and a
+// person are to each other, whichever of them said it. It reports whether
+// there was one.
+func RemovePersonRelationship(ctx context.Context, connection *Client, username string) (bool, error) {
+	var result struct {
+		RemovePersonRelationship bool `json:"RemovePersonRelationship"`
+	}
+	userId, err := circlePersonId(ctx, connection, username)
+	if err != nil {
+		return false, err
+	}
+	query := `mutation ($userId: String!) { RemovePersonRelationship(userId: $userId) }`
+	if err := connection.Execute(ctx, query, map[string]any{"userId": userId}, &result); err != nil {
+		return false, err
+	}
+	return result.RemovePersonRelationship, nil
 }

@@ -443,3 +443,132 @@ func TestTheCircleActionsAreRefusedWithoutThePermissionToUseCircles(t *testing.T
 		t.Errorf("the API was asked: %v", operations.sent)
 	}
 }
+
+// somePeople is everybody the person shares a circle with, as ListCirclePeople
+// answers: the person has said Sam is their father.
+const somePeople = `{"ListCirclePeople":[
+	{"userId":"user-sam","username":"sam","name":"Sam Lee","relationshipKind":"parent","relationshipWord":"father"},
+	{"userId":"user-alex","username":"alex","name":"Alex Kim","relationshipKind":"","relationshipWord":""}]}`
+
+// The schema takes an account id and the person speaks in usernames: relate
+// finds the account among the people they share a circle with, ignoring case,
+// and sends the term as it was said.
+func TestRelateSaysWhatSomebodyIsToThePersonByUsername(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{
+		"ListCirclePeople":      somePeople,
+		"SetPersonRelationship": `{"SetPersonRelationship":{"userId":"user-alex","username":"alex","name":"Alex Kim","relationshipKind":"spouse","relationshipWord":"wife"}}`,
+	}}
+
+	result, err := callAs(t, operations, `{"action":"relate","username":" ALEX ","relationship":"wife"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := operations.sentWith("SetPersonRelationship")
+	if len(set) != 1 || set[0].variables["userId"] != "user-alex" || set[0].variables["relationshipTerm"] != "wife" {
+		t.Errorf("the relationship was %v", operations.sent)
+	}
+	if !strings.Contains(result.Note, "alex is now the person's wife") || !result.Untrusted {
+		t.Errorf("the answer is %+v", result)
+	}
+
+	// A word with two parts goes to the API with its underscores, and says
+	// them with spaces to the person.
+	if _, err := callAs(t, operations, `{"action":"relate","username":"sam","relationship":"father_in_law"}`); err != nil {
+		t.Fatal(err)
+	}
+	set = operations.sentWith("SetPersonRelationship")
+	if len(set) != 2 || set[1].variables["userId"] != "user-sam" || set[1].variables["relationshipTerm"] != "father_in_law" {
+		t.Errorf("the second relationship was %v", set)
+	}
+	mustContain(t, circleTool(t).Preview([]byte(`{"action":"relate","username":"sam","relationship":"father_in_law"}`)),
+		`"sam"`, "father in law", "they are told")
+}
+
+// Somebody who shares no circle with the person is refused by name before
+// any mutation is sent, and so is a word that is not a relationship.
+func TestRelateRefusesSomebodyTheyDoNotShareACircleWith(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{"ListCirclePeople": somePeople}}
+
+	if _, err := callAs(t, operations, `{"action":"relate","username":"stranger","relationship":"father"}`); err == nil || !strings.Contains(err.Error(), "stranger") {
+		t.Errorf("a stranger was not refused by name: %v", err)
+	}
+	if _, err := callAs(t, operations, `{"action":"unrelate","username":"stranger"}`); err == nil || !strings.Contains(err.Error(), "stranger") {
+		t.Errorf("a stranger was not refused by name: %v", err)
+	}
+	if len(operations.sentWith("mutation")) != 0 {
+		t.Errorf("a mutation was sent: %v", operations.sent)
+	}
+
+	properties := circleTool(t).Parameters["properties"].(map[string]any)
+	relationship := properties["relationship"].(map[string]any)
+	offered := map[string]bool{}
+	for _, term := range relationship["enum"].([]string) {
+		offered[term] = true
+	}
+	for _, term := range []string{"wife", "father", "son", "father_in_law", "aunt_or_uncle", "friend"} {
+		if !offered[term] {
+			t.Errorf("the relationship %q is not offered", term)
+		}
+	}
+}
+
+// Unrelating takes the relationship away through RemovePersonRelationship and
+// says when there was nothing to take away.
+func TestUnrelateTakesAwayWhatWasSaid(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{
+		"ListCirclePeople":         somePeople,
+		"RemovePersonRelationship": `{"RemovePersonRelationship":true}`,
+	}}
+	result, err := callAs(t, operations, `{"action":"unrelate","username":"sam"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed := operations.sentWith("RemovePersonRelationship")
+	if len(removed) != 1 || removed[0].variables["userId"] != "user-sam" {
+		t.Errorf("the removal was %v", operations.sent)
+	}
+	if !strings.Contains(result.Content, "took away") {
+		t.Errorf("the answer is %q", result.Content)
+	}
+
+	nothing := &circleOperations{grants: aMember, answers: map[string]string{
+		"ListCirclePeople":         somePeople,
+		"RemovePersonRelationship": `{"RemovePersonRelationship":false}`,
+	}}
+	result, err = callAs(t, nothing, `{"action":"unrelate","username":"alex"}`)
+	if err != nil || !strings.Contains(result.Content, "nothing changed") {
+		t.Errorf("with nothing to take away: %+v %v", result, err)
+	}
+	mustContain(t, circleTool(t).Preview([]byte(`{"action":"unrelate","username":"sam"}`)), `"sam"`, "they are told")
+}
+
+// Both are writes, as the circle's other changes to the person's own
+// arrangements are: no confirmation card. They need the permission to use
+// circles, and the list of people holds what each is to the person.
+func TestRelateAndUnrelateAreWritesThatNeedCircleUse(t *testing.T) {
+	tool := circleTool(t)
+	for _, arguments := range []string{
+		`{"action":"relate","username":"sam","relationship":"father"}`,
+		`{"action":"unrelate","username":"sam"}`,
+	} {
+		if risk := tool.RiskFor([]byte(arguments)); risk != tools.RiskWrite {
+			t.Errorf("%s is %v, not a write", arguments, risk)
+		}
+		operations := &circleOperations{grants: nil}
+		if _, err := callAs(t, operations, arguments); err == nil || !strings.Contains(err.Error(), "not something they may do") {
+			t.Errorf("%s should be refused: %v", arguments, err)
+		}
+		if len(operations.sent) != 0 {
+			t.Errorf("the API was asked: %v", operations.sent)
+		}
+	}
+
+	operations := &circleOperations{grants: aMember, answers: map[string]string{"ListCirclePeople": somePeople}}
+	if _, err := callAs(t, operations, `{"action":"people"}`); err != nil {
+		t.Fatal(err)
+	}
+	people := operations.sentWith("ListCirclePeople")
+	if len(people) != 1 || !strings.Contains(people[0].document, "relationshipKind") || !strings.Contains(people[0].document, "relationshipWord") {
+		t.Errorf("people did not ask what each is to the person: %v", people)
+	}
+}

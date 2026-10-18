@@ -123,6 +123,27 @@ func NewCircleCommand() *cli.Command {
 				Action: runCirclePeople,
 			},
 			{
+				Name:      "relate",
+				Usage:     "say what somebody you share a circle with is to you: father, wife, friend",
+				ArgsUsage: "<username> <relationship>",
+				Description: "The other person is told, and sees you as the opposite (a father sees a son or\n" +
+					"daughter, worded by how you are described: teanode user update --pronoun).\n" +
+					"It is one fact between the two of you: saying it again changes it for both.\n" +
+					"Only the two of you see it, and your agent knows it, so \"my father\" means\n" +
+					"that person.\n\n" +
+					"The relationships are:\n" + relationshipTermsHelp(),
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runCircleRelate,
+			},
+			{
+				Name:        "unrelate",
+				Usage:       "take away what you and somebody are to each other, whichever of you said it",
+				ArgsUsage:   "<username>",
+				Description: "The other person is told.",
+				Flags:       []cli.Flag{JSONFlag()},
+				Action:      runCircleUnrelate,
+			},
+			{
 				Name:      "add",
 				Usage:     "put an account in a circle without an invitation; needs user:manage",
 				ArgsUsage: "<circle-id> <username>",
@@ -461,9 +482,98 @@ func runCirclePeople(ctx context.Context, command *cli.Command) error {
 		if name == "" {
 			name = person.Username
 		}
-		rows = append(rows, []string{forTerminal(person.Username), forTerminal(name)})
+		rows = append(rows, []string{forTerminal(person.Username), forTerminal(name), forTerminal(person.RelationshipWord)})
 	}
-	return printTable([]string{"USERNAME", "NAME"}, rows)
+	return printTable([]string{"USERNAME", "NAME", "RELATIONSHIP"}, rows)
+}
+
+// relationshipTermsHelp lists the words a relationship can be said with, one
+// line for each kind: the neutral word first, then the others in the order
+// models gives them, as they are typed.
+func relationshipTermsHelp() string {
+	var lines []string
+	var line []string
+	var lineKind models.RelationshipKind
+	flush := func() {
+		if len(line) > 0 {
+			lines = append(lines, "  "+strings.Join(line, ", "))
+		}
+		line = nil
+	}
+	for _, term := range models.RelationshipTerms() {
+		if term.RelationshipKind != lineKind {
+			flush()
+			lineKind = term.RelationshipKind
+		}
+		line = append(line, term.Term)
+	}
+	flush()
+	return strings.Join(lines, "\n")
+}
+
+// youAndThem says what a person is to the signed-in account and what the
+// signed-in account is to them: "Sam Lee is your father; they will see you
+// as their son." The second word is the opposite kind in the gender of the
+// signed-in account's own pronoun, neutral when they have not said, which is
+// what the other person is shown.
+func youAndThem(person *client.CircleMember, pronoun string) string {
+	name := person.Name
+	if name == "" {
+		name = person.Username
+	}
+	opposite := models.RelationshipKind(person.RelationshipKind).Opposite()
+	return fmt.Sprintf("%s is your %s; they will see you as their %s.", forTerminal(name), person.RelationshipWord, opposite.Word(models.Pronoun(pronoun).TermGender()))
+}
+
+func runCircleRelate(ctx context.Context, command *cli.Command) error {
+	arguments := command.Args().Slice()
+	if len(arguments) != 2 {
+		return usage("usage: teanode circle relate <username> <relationship>; teanode circle relate --help lists the relationships")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	person, err := client.SetPersonRelationship(ctx, connection, arguments[0], arguments[1])
+	if err != nil {
+		return describeNotFound(command, err, "person "+arguments[0])
+	}
+	if command.Bool("json") {
+		return PrintJSON(person)
+	}
+	// What the other person sees is worded by how the signed-in account is
+	// described. An account that cannot be read (a locally minted token has
+	// none) is worded neutrally, as an account that has not said.
+	pronoun := ""
+	if current, err := client.GetCurrentUser(ctx, connection); err == nil && current != nil {
+		pronoun = current.Pronoun
+	}
+	fmt.Println(youAndThem(person, pronoun))
+	return nil
+}
+
+func runCircleUnrelate(ctx context.Context, command *cli.Command) error {
+	username := command.Args().First()
+	if username == "" || command.Args().Len() != 1 {
+		return usage("usage: teanode circle unrelate <username>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	isRemoved, err := client.RemovePersonRelationship(ctx, connection, username)
+	if err != nil {
+		return describeNotFound(command, err, "person "+username)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]bool{"isRemoved": isRemoved})
+	}
+	if !isRemoved {
+		fmt.Printf("nothing was said between you and %s\n", forTerminal(username))
+		return nil
+	}
+	fmt.Printf("took away how you and %s are related; they were told\n", forTerminal(username))
+	return nil
 }
 
 func runCircleAdd(ctx context.Context, command *cli.Command) error {
