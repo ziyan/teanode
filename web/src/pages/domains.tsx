@@ -67,11 +67,11 @@ export function DomainsPage() {
         filter: 'text',
         value: (entry) => entry.domain,
         sort: (first, second) => first.domain.localeCompare(second.domain),
-        // Plain text: the row is the link, so a second link inside it only
-        // had to be found by its color.
+        // The row opens the domain for a pointer; the name stays a link,
+        // drawn as the row's text, so a keyboard reaches it too.
         render: (entry) => (
           <>
-            {entry.domain}
+            <Link to={`/manage/domains/${entry.id}`}>{entry.domain}</Link>
             {entry.comment && <div className="muted">{entry.comment}</div>}
           </>
         ),
