@@ -159,6 +159,9 @@ export interface ServiceCapabilities {
   isRemindersEnabled: boolean
   isContactsEnabled: boolean
   isPhotosEnabled: boolean
+  // True when an operator turned Photos on in setup; false when it is on only
+  // because nothing was chosen, which is every new server.
+  isPhotosChosen: boolean
   isAssistantEnabled: boolean
   hasPendingServiceRestart: boolean
   hasCompletedSetup: boolean
@@ -215,7 +218,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name avatarUrl avatarColorIndex passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
+  '{ authenticated authenticationRequired username name avatarUrl avatarColorIndex passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isPhotosChosen isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)

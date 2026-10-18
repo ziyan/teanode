@@ -10,6 +10,10 @@ type HostedService struct {
 // Enabled resolves an omitted switch to the legacy enabled behavior.
 func (self HostedService) Enabled() bool { return self.IsEnabled == nil || *self.IsEnabled }
 
+// IsChosenOn says an operator switched the service on, as opposed to Enabled,
+// which is also true when nobody chose anything and the default applies.
+func (self HostedService) IsChosenOn() bool { return self.IsEnabled != nil && *self.IsEnabled }
+
 // Services selects the hosted services this deployment offers.
 type Services struct {
 	MailRouting       HostedService `yaml:"mailRouting" json:"mailRouting"`
