@@ -63,6 +63,7 @@ function place(overrides: Partial<Place> = {}): Place {
     osmName: 'Fixture Park',
     osmCategory: 'leisure',
     addressText: '',
+    isAddressTyped: false,
     visitCount: 2,
     lastVisitAt: '2030-03-05T12:00:00Z',
     ...overrides,
@@ -913,6 +914,28 @@ it('keeps an address as typed for a place, without moving it', async () => {
   await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
   expect(calls('SavePlace')[0][1]).toEqual({ placeId: 'place-one', addressText: '9 Nowhere Lane' })
   expect(await screen.findByText('Kept the address 9 Nowhere Lane')).toBeTruthy()
+})
+
+it('gives a typed address back to the map, and offers that only for a typed address', async () => {
+  answerWith({ places: [place({ addressText: '9 Nowhere Lane', isAddressTyped: true })] })
+  renderAt('/location?tab=places')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: "Use the map's address" }))
+
+  await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
+  expect(calls('SavePlace')[0][1]).toEqual({ placeId: 'place-one', addressText: '' })
+  expect(await screen.findByText('The map will name this place again.')).toBeTruthy()
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
+it('does not offer the map address for a place the map already names', async () => {
+  answerWith({ places: [place({ addressText: '1 Old Road, Exampleton' })] })
+  renderAt('/location?tab=places')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
+  const editor = await screen.findByRole('dialog')
+  expect(within(editor).queryByRole('button', { name: "Use the map's address" })).toBeNull()
 })
 
 it('does not offer to keep a typed address for home, and says to use the phone or move the pin', async () => {

@@ -6052,6 +6052,8 @@ export const ja: Catalog = {
   'location.address': '住所',
   'location.noAddress': '住所なし',
   'location.changeAddress': '住所を変更',
+  'location.useMapAddress': '地図の住所を使う',
+  'location.mapAddressBack': 'この場所の名前は地図から付けられます。',
   'location.addressQuery': '住所を入力',
   'location.addressNoMatch': '一致する住所がありません。市区町村など、もう少し詳しく入力してください。',
   'location.addressMoved': '{address}に移動しました',

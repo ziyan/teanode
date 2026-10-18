@@ -6133,6 +6133,8 @@ export const en = {
   'location.address': 'Address',
   'location.noAddress': 'No address',
   'location.changeAddress': 'Change address',
+  'location.useMapAddress': "Use the map's address",
+  'location.mapAddressBack': 'The map will name this place again.',
   'location.addressQuery': 'Type an address',
   'location.addressNoMatch': 'No address matches. Try more of it, such as the town.',
   'location.addressMoved': 'Moved to {address}',

@@ -973,6 +973,14 @@ function LocationContent({ userId }: { userId: string }) {
             setAddressPlace(editingPlace)
             setEditingPlace(null)
           }}
+          onUseMapAddress={async () => {
+            const isDone = await act(
+              () => graphql(SAVE_PLACE, { placeId: editingPlace.id, addressText: '' }),
+              t('location.mapAddressBack'),
+              t('location.placeFailed'),
+            )
+            if (isDone) setEditingPlace(null)
+          }}
           onSave={async (variables) => {
             const isDone = await act(
               () => graphql(SAVE_PLACE, { placeId: editingPlace.id, ...variables }),
@@ -1082,6 +1090,7 @@ function PlaceEditor({
   onClose,
   onForget,
   onChangeAddress,
+  onUseMapAddress,
   onSave,
 }: {
   place: Place
@@ -1090,6 +1099,7 @@ function PlaceEditor({
   onClose: () => void
   onForget: () => void
   onChangeAddress: () => void
+  onUseMapAddress: () => void
   onSave: (changes: PlaceChanges) => Promise<void>
 }) {
   const { t } = useTranslation()
@@ -1166,6 +1176,11 @@ function PlaceEditor({
         <button type="button" onClick={onChangeAddress}>
           {t('location.changeAddress')}
         </button>
+        {place.isAddressTyped && (
+          <button type="button" disabled={isBusy} onClick={onUseMapAddress}>
+            {t('location.useMapAddress')}
+          </button>
+        )}
       </div>
       <label>
         {t('location.placeLabel')}

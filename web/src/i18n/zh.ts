@@ -5824,6 +5824,8 @@ export const zh: Catalog = {
   'location.address': '地址',
   'location.noAddress': '没有地址',
   'location.changeAddress': '更改地址',
+  'location.useMapAddress': '使用地图上的地址',
+  'location.mapAddressBack': '地图将重新为这个地点命名。',
   'location.addressQuery': '输入地址',
   'location.addressNoMatch': '没有匹配的地址。请多输入一些，例如城市名。',
   'location.addressMoved': '已移到{address}',
