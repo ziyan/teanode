@@ -202,6 +202,24 @@ async function hasChats(): Promise<boolean> {
 // the fourth answer and the commonest one: there is no goal.
 type GoalState = 'working' | 'waiting' | 'met' | 'dropped'
 
+// What a conversation nobody has named is called, in the drawer's list and
+// title and in the conversations page alike: by when it last moved, which is
+// all two of them have to tell them apart by.
+export function untitledConversationName(
+  conversation: { lastAt: string },
+  t: (key: Key, values?: Values) => string,
+  language: string,
+): string {
+  return t('agentConversations.untitledOn', {
+    date: new Date(conversation.lastAt).toLocaleString(language, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }),
+  })
+}
+
 export interface Conversation {
   id: string
   kind: 'main' | 'named' | 'run' | 'goal' | 'chat'
@@ -2722,7 +2740,7 @@ function cardsOf(interactions: OpenInteraction[]): Line[] {
 // extension into another site: always open, filling its frame, and its
 // close mark telling the framing page to hide it.
 export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {}) {
-  const { t, plural } = useTranslation()
+  const { t, plural, language } = useTranslation()
   const toast = useToast()
   const location = useLocation()
   const navigate = useNavigate()
@@ -4762,7 +4780,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       conversation.chat,
                       ownUserId,
                       t('chat.deletedAccount'),
-                      conversation.title || t('agentDrawer.untitled'),
+                      conversation.title || untitledConversationName(conversation, t, language),
                     )}
                   </span>
                   {conversation.chat.isMuted ? (
@@ -4773,7 +4791,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   <UnreadCount count={conversation.chat.unreadCount} />
                 </>
               ) : (
-                conversation.title || t('agentDrawer.untitled')
+                conversation.title || untitledConversationName(conversation, t, language)
               )}
             </span>
             {/* When the conversation was last spoken in,
@@ -4830,9 +4848,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       conversation.chat,
                       ownUserId,
                       t('chat.deletedAccount'),
-                      conversation.title || t('agentDrawer.untitled'),
+                      conversation.title || untitledConversationName(conversation, t, language),
                     )
-                  : conversation.title || t('agentDrawer.untitled')
+                  : conversation.title || untitledConversationName(conversation, t, language)
               }: ${conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')}`}
               onClick={() => void archiveConversation(conversation, !conversation.archivedAt)}
             >
@@ -5456,9 +5474,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             (chat ?? current.chat) as ChatSummary,
             ownUserId,
             deletedNote,
-            current.title || t('agentDrawer.untitled'),
+            current.title || untitledConversationName(current, t, language),
           )
-        : current.title || t('agentDrawer.untitled')
+        : current.title || untitledConversationName(current, t, language)
     : isFindingChat
       ? t('common.loading')
       : t('agentDrawer.main')
@@ -6300,7 +6318,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       {deleting ? (
         <ConfirmDialog
           title={t('agentDrawer.delete')}
-          body={t('agentDrawer.deleteConfirm', { title: deleting.title || t('agentDrawer.untitled') })}
+          body={t('agentDrawer.deleteConfirm', { title: deleting.title || untitledConversationName(deleting, t, language) })}
           confirmLabel={t('agentDrawer.delete')}
           destructive
           onClose={() => setDeleting(null)}

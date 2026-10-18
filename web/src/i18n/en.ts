@@ -1204,7 +1204,6 @@ export const en = {
   'agentDrawer.conversationDeleted': 'That conversation was deleted.',
   'agentDrawer.close': 'Close',
   'agentDrawer.main': 'Main chat',
-  'agentDrawer.untitled': 'Untitled',
   'agentDrawer.waitingForYou': 'Waiting for you',
   'agentDrawer.new': 'New side chat',
   'agentDrawer.archive': 'Archive',

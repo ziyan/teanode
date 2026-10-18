@@ -1157,7 +1157,6 @@ export const zh: Catalog = {
   'agentDrawer.conversationDeleted': '该对话已被删除。',
   'agentDrawer.close': '关闭',
   'agentDrawer.main': '主聊天',
-  'agentDrawer.untitled': '未命名',
   'agentDrawer.waitingForYou': '等你回复',
   'agentDrawer.new': '新的侧边聊天',
   'agentDrawer.archive': '归档',

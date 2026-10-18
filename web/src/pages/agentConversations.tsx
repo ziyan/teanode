@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
 import { useAgentIdentity } from '../agentPreferences'
 import { ChatAvatars, UnreadCount, chatTitleOf } from '../components/agentChat'
-import { CONVERSATIONS, type Conversation } from '../components/agentDrawer'
+import { CONVERSATIONS, untitledConversationName, type Conversation } from '../components/agentDrawer'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Loading } from '../components/common'
 import { HighlightText } from '../components/highlightText'
@@ -50,17 +50,7 @@ export function AgentConversationsPage() {
   // called and by the summary the agent wrote of it.
   const [filter, setFilter] = useState('')
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
-  // A conversation nobody has named is known by when it last moved, which is
-  // all a list of them has to tell two of them apart by.
-  const untitledOf = (conversation: Conversation) =>
-    t('agentConversations.untitledOn', {
-      date: new Date(conversation.lastAt).toLocaleString(language, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }),
-    })
+  const untitledOf = (conversation: Conversation) => untitledConversationName(conversation, t, language)
   // What a conversation is called here: a chat by the people in it.
   const titleOf = (conversation: Conversation) =>
     conversation.kind === 'main'
