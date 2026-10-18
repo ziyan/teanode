@@ -4078,7 +4078,7 @@ a.button.primary:hover {
    of empty box above a quoted thread is a page pretending somebody has a lot
    to say. */
 .mailbox-pane .richtext-editor {
-  min-height: 120px;
+  min-height: 200px;
 }
 
 /* A signature is three lines and a link, not a message. */
@@ -4910,6 +4910,10 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
    right of the column it belongs to. */
 .mailbox-actions input[type='checkbox'] {
   margin: 0;
+}
+/* Nothing to act on in an empty list: no band above "Nothing here". */
+.mailbox-actions[hidden] {
+  display: none;
 }
 .mailbox-actions button,
 .mailbox-actions select {
@@ -8314,28 +8318,19 @@ button.agent-reaction:focus-visible {
 /* What the agent worked out, in the width of a word: the category, whether
    an answer is waited for, and a mark when it said the message matters
    today. Quiet, because every row may carry one. */
-/* Whole chips or none: what does not fit wraps onto a second line that
-   the box is too short to show, so a narrow row ends in a chip and not in
-   half a word. */
+/* At most a mark and one chip, kept whole and pushed to the end of the line,
+   so the chips of every row stand in one column and it is the sender's name
+   that gives way, with an ellipsis, when the row is narrow. */
 .mailbox-row-insight {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
-  align-content: flex-start;
-  row-gap: 18px;
-  max-height: 18px;
   min-width: 0;
-  overflow: hidden;
-  /* And when even the first chip is too wide for what is left, it fades
-     out at the edge rather than stopping at a cut letter. */
-  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+  max-width: 55%;
 }
 
-/* The chips give way before the name does: a row that reads "M…" beside
-   three chips says less than one that reads "Maria" beside one. The name
-   keeps a few characters whatever else is in the line. */
 .mailbox-row-from > .mailbox-row-insight {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .mailbox-row-who {
   min-width: 8ch;
