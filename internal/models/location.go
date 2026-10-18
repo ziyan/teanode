@@ -196,6 +196,10 @@ type Place struct {
 	OSMCategory string `json:"osmCategory,omitempty"`
 	AddressText string `json:"addressText,omitempty"`
 
+	// IsAddressTyped is whether AddressText is one the person typed, which
+	// moving the place keeps and no answer from OpenStreetMap replaces.
+	IsAddressTyped bool `json:"isAddressTyped"`
+
 	// NamedAt is when the provider answered, whatever it answered, and nil
 	// while the place waits for a name. NamingClaimedAt is when an instance
 	// took the place to name. NamingErrorMessage says why the last try failed.

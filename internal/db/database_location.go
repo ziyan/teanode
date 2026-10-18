@@ -203,12 +203,14 @@ type PlaceChanges struct {
 
 	RadiusMeters *float64
 
-	// AddressText is an address the person typed and picked from the
-	// provider's matches, and needs the coordinates of that match. The place
-	// moves there and keeps this address: it counts as named already, so the
-	// naming job does not replace it, and what a provider said about the old
-	// position (object, name, category) is dropped. A place the person did not
-	// name is called by the first part of the address.
+	// AddressText is an address the person typed; empty takes a typed address
+	// away, and the place waits to be named again. With the coordinates of a
+	// match the person picked from the provider, the place moves there and
+	// what a provider said about the old position (object, name, category) is
+	// dropped; without coordinates the place stays where it is and keeps what
+	// the provider said about it. Either way the place keeps this address: it
+	// counts as named already, so the naming job does not replace it. A place
+	// the person did not name is called by the first part of the address.
 	AddressText *string
 
 	// MovedPlaceName is the name a place the person did not name takes when it
@@ -362,6 +364,7 @@ type placeModel struct {
 	OSMName            string     `gorm:"column:osm_name"`
 	OSMCategory        string     `gorm:"column:osm_category"`
 	AddressText        string     `gorm:"column:address_text"`
+	IsAddressTyped     bool       `gorm:"column:is_address_typed"`
 	NamedAt            *time.Time `gorm:"column:named_at"`
 	NamingClaimedAt    *time.Time `gorm:"column:naming_claimed_at"`
 	NamingErrorMessage string     `gorm:"column:naming_error_message"`
@@ -385,6 +388,7 @@ func (self *placeModel) toModel() *models.Place {
 		OSMName:            self.OSMName,
 		OSMCategory:        self.OSMCategory,
 		AddressText:        self.AddressText,
+		IsAddressTyped:     self.IsAddressTyped,
 		NamedAt:            localTime(self.NamedAt),
 		NamingClaimedAt:    localTime(self.NamingClaimedAt),
 		NamingErrorMessage: self.NamingErrorMessage,
@@ -647,6 +651,7 @@ func (self *transaction) CreatePlace(userId string, place *models.Place) (*model
 		OSMName:            cleanPlaceText(place.OSMName, placeNameMaximumLength),
 		OSMCategory:        cleanPlaceText(place.OSMCategory, placeCategoryMaximumLength),
 		AddressText:        cleanPlaceText(place.AddressText, placeAddressMaximumLength),
+		IsAddressTyped:     place.IsAddressTyped,
 		NamedAt:            place.NamedAt,
 		NamingErrorMessage: cleanPlaceText(place.NamingErrorMessage, placeNamingErrorMaximumLength),
 		CreatedAt:          now,
@@ -691,12 +696,7 @@ func (self *transaction) SavePlace(userId, placeId string, changes PlaceChanges)
 	}
 	addressText := ""
 	if changes.AddressText != nil {
-		if changes.LatitudeDegrees == nil {
-			return nil, fmt.Errorf("%w: give the position of the address too", ErrInvalidArguments)
-		}
-		if addressText = cleanPlaceText(*changes.AddressText, placeAddressMaximumLength); addressText == "" {
-			return nil, fmt.Errorf("%w: an address needs some words", ErrInvalidArguments)
-		}
+		addressText = cleanPlaceText(*changes.AddressText, placeAddressMaximumLength)
 	}
 
 	var locked placeModel
@@ -752,37 +752,67 @@ func (self *transaction) SavePlace(userId, placeId string, changes PlaceChanges)
 			updates["osm_id"] = nil
 			updates["osm_name"] = ""
 			updates["osm_category"] = ""
-			updates["address_text"] = ""
-			updates["named_at"] = nil
-			updates["naming_claimed_at"] = nil
-			updates["naming_error_message"] = ""
-			isNamedByPerson := locked.IsNamedByPerson
-			if value, isChanged := updates["is_named_by_person"].(bool); isChanged {
-				isNamedByPerson = value
-			}
-			if !isNamedByPerson {
-				updates["place_name"] = cleanPlaceText(changes.MovedPlaceName, placeNameMaximumLength)
+			// An address the person typed was not the map's to say, so moving
+			// the place (to put its pin on the house) keeps it, keeps the
+			// place named and leaves it out of the naming job.
+			if !locked.IsAddressTyped || changes.AddressText != nil {
+				updates["address_text"] = ""
+				updates["named_at"] = nil
+				updates["naming_claimed_at"] = nil
+				updates["naming_error_message"] = ""
+				isNamedByPerson := locked.IsNamedByPerson
+				if value, isChanged := updates["is_named_by_person"].(bool); isChanged {
+					isNamedByPerson = value
+				}
+				if !isNamedByPerson {
+					updates["place_name"] = cleanPlaceText(changes.MovedPlaceName, placeNameMaximumLength)
+				}
 			}
 		}
 	}
 	if changes.AddressText != nil {
-		// The address was said about the new position, so nothing the provider
-		// said about the old one stays, however short the move.
-		now := time.Now()
-		updates["osm_type"] = ""
-		updates["osm_id"] = nil
-		updates["osm_name"] = ""
-		updates["osm_category"] = ""
-		updates["address_text"] = addressText
-		updates["named_at"] = now
-		updates["naming_claimed_at"] = nil
-		updates["naming_error_message"] = ""
 		isNamedByPerson := locked.IsNamedByPerson
 		if value, isChanged := updates["is_named_by_person"].(bool); isChanged {
 			isNamedByPerson = value
 		}
-		if !isNamedByPerson {
-			updates["place_name"] = cleanPlaceText(strings.SplitN(addressText, ",", 2)[0], placeNameMaximumLength)
+		if addressText == "" {
+			// The typed address is taken away: the place waits to be named
+			// again, and is called by what the map called it until it is.
+			updates["is_address_typed"] = false
+			updates["address_text"] = ""
+			updates["named_at"] = nil
+			updates["naming_claimed_at"] = nil
+			updates["naming_error_message"] = ""
+			if !isNamedByPerson {
+				osmName := locked.OSMName
+				if dropped, isDropped := updates["osm_name"].(string); isDropped {
+					osmName = dropped
+				}
+				placeName := osmName
+				if changes.LatitudeDegrees != nil && osmName == "" {
+					placeName = changes.MovedPlaceName
+				}
+				updates["place_name"] = cleanPlaceText(placeName, placeNameMaximumLength)
+			}
+		} else {
+			if changes.LatitudeDegrees != nil {
+				// The address was said about the new position, so nothing the
+				// provider said about the old one stays, however short the
+				// move. Without coordinates the place stays where it is, and
+				// what the provider said about it stays too.
+				updates["osm_type"] = ""
+				updates["osm_id"] = nil
+				updates["osm_name"] = ""
+				updates["osm_category"] = ""
+			}
+			updates["is_address_typed"] = true
+			updates["address_text"] = addressText
+			updates["named_at"] = time.Now()
+			updates["naming_claimed_at"] = nil
+			updates["naming_error_message"] = ""
+			if !isNamedByPerson {
+				updates["place_name"] = cleanPlaceText(strings.SplitN(addressText, ",", 2)[0], placeNameMaximumLength)
+			}
 		}
 	}
 	if changes.RadiusMeters != nil {
@@ -1519,7 +1549,9 @@ func (self *transaction) SetPlaceNamed(placeId string, claimedAt *time.Time, fou
 			foundName := cleanPlaceText(found.PlaceName, placeNameMaximumLength)
 			updates["osm_name"] = foundName
 			updates["osm_category"] = cleanPlaceText(found.OSMCategory, placeCategoryMaximumLength)
-			updates["address_text"] = cleanPlaceText(found.AddressText, placeAddressMaximumLength)
+			if !locked.IsAddressTyped {
+				updates["address_text"] = cleanPlaceText(found.AddressText, placeAddressMaximumLength)
+			}
 			if found.OSMID != 0 {
 				updates["osm_id"] = found.OSMID
 			} else {

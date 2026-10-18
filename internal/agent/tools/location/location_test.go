@@ -303,6 +303,12 @@ func TestCheckInSendsAFoundPlaceAsItWasFound(t *testing.T) {
 	if answer["is_checked_in"] != true || answer["place_id"] != "p5" {
 		t.Errorf("the answer: %v", answer)
 	}
+	if _, _, err := act(t, runOf(operations), "check_in", `{"latitude_degrees":40,"longitude_degrees":-75,"accuracy_meters":850.5}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if sent = operations.sent["CheckIn"]; sent["accuracyMeters"] != 850.5 {
+		t.Errorf("the accuracy was sent: %v", sent)
+	}
 	if _, _, err := act(t, runOf(operations), "check_in", `{}`, false); err == nil {
 		t.Error("a check-in needs a place")
 	}
@@ -494,11 +500,26 @@ func TestFindAddressGivesWhatSavePlaceTakes(t *testing.T) {
 	if saved["place_display_name"] != "Home" {
 		t.Errorf("the place is called by its label: %v", saved)
 	}
-	if _, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","address_text":"6 Rue Example"}`, false); err == nil || !strings.Contains(err.Error(), "position of the address") {
-		t.Errorf("an address without its position: %v", err)
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_label":"home","address_text":"6 Rue Example"}`, false); err == nil || !strings.Contains(err.Error(), "position of the address") {
+		t.Errorf("an address without its position or a place: %v", err)
 	}
-	if _, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":"  "}`, false); err == nil {
-		t.Error("a blank address")
+	// An address no map knows is kept as typed on a place that stays.
+	delete(operations.sent, "SavePlace")
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","address_text":" 12 Lane Example "}`, false); err != nil {
+		t.Errorf("an address as typed: %v", err)
+	}
+	if sent := operations.sent["SavePlace"]; sent["addressText"] != "12 Lane Example" || sent["latitudeDegrees"] != nil || sent["placeId"] != "p1" {
+		t.Errorf("only the address was sent: %v", sent)
+	}
+	// A blank address with a place takes the typed one away; without one it means nothing.
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","address_text":"  "}`, false); err != nil {
+		t.Errorf("a blank address takes the typed one away: %v", err)
+	}
+	if sent := operations.sent["SavePlace"]; sent["addressText"] != "" {
+		t.Errorf("the blank address was sent: %v", sent)
+	}
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_label":"home","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":"  "}`, false); err == nil {
+		t.Error("a blank address makes no place")
 	}
 	// Making home from an address needs no place_id.
 	if _, _, err := act(t, runOf(operations), "save_place", `{"place_label":"home","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":"6 Rue Example, Exampleton, Testland"}`, false); err != nil {

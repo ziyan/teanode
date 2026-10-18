@@ -35,6 +35,7 @@ type Place struct {
 	OSMName            string     `json:"osmName"`
 	OSMCategory        string     `json:"osmCategory"`
 	AddressText        string     `json:"addressText"`
+	IsAddressTyped     bool       `json:"isAddressTyped"`
 	VisitCount         int        `json:"visitCount"`
 	LastVisitAt        *time.Time `json:"lastVisitAt"`
 	NamingErrorMessage string     `json:"namingErrorMessage"`
@@ -113,7 +114,7 @@ const (
 	locationPointFields = `latitudeDegrees longitudeDegrees accuracyMeters altitudeMeters speedMetersPerSecond courseDegrees measuredAt locationSource`
 
 	placeFields = `id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters
-    osmType osmId osmName osmCategory addressText visitCount lastVisitAt namingErrorMessage createdAt updatedAt`
+    osmType osmId osmName osmCategory addressText isAddressTyped visitCount lastVisitAt namingErrorMessage createdAt updatedAt`
 
 	placeVisitFields = `id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
     place { ` + placeFields + ` }`
@@ -173,8 +174,8 @@ const (
 
 	DocumentForgetPlace = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
 
-	DocumentCheckIn = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
-  CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) {
+	DocumentCheckIn = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String, $accuracyMeters: Float) {
+  CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText, accuracyMeters: $accuracyMeters) {
     ` + placeVisitFields + `
   }
 }`
@@ -386,8 +387,10 @@ type PlaceChange struct {
 	LongitudeDegrees *float64
 	RadiusMeters     *float64
 
-	// AddressText is an address picked from SearchAddresses; it needs the
-	// coordinates of that match.
+	// AddressText is an address picked from SearchAddresses, given with the
+	// coordinates of that match. With a PlaceID and no coordinates it is an
+	// address the provider does not know: the place stays where it is. The
+	// address is kept as typed. Empty takes the typed address away.
 	AddressText *string
 }
 
@@ -444,6 +447,10 @@ type CheckInAt struct {
 	OSMID            int64
 	OSMCategory      string
 	AddressText      string
+
+	// AccuracyMeters is how far off the position may be, as the device said;
+	// nil sends none.
+	AccuracyMeters *float64
 }
 
 // CheckIn records that the caller is at a place now.
@@ -472,6 +479,9 @@ func CheckIn(ctx context.Context, connection *Client, at CheckInAt) (*PlaceVisit
 	}
 	if at.AddressText != "" {
 		variables["addressText"] = at.AddressText
+	}
+	if at.AccuracyMeters != nil {
+		variables["accuracyMeters"] = *at.AccuracyMeters
 	}
 	var result struct {
 		CheckIn *PlaceVisit `json:"CheckIn"`

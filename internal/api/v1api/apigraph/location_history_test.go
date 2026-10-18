@@ -830,10 +830,9 @@ func TestSavePlaceMovedToATypedAddress(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	paths = nil
 
-	if message := world.refused(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, addressText: "6 Rue Example, Exampleton") { id } }`, placeId)); !strings.Contains(message, "position of the address") {
-		t.Errorf("an address without its position: %s", message)
+	if message := world.refused(t, world.ada, `mutation { SavePlace(placeLabel: "home", addressText: "6 Rue Example, Exampleton") { id } }`); !strings.Contains(message, "position of the address") {
+		t.Errorf("an address without its position and without a place: %s", message)
 	}
-	world.refused(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.5, longitudeDegrees: -75.5, addressText: "  ") { id } }`, placeId))
 
 	saved := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.5, longitudeDegrees: -75.5, addressText: "6 Rue Example, Exampleton, Testland") { id placeName placeLabel isNamedByPerson addressText osmId osmType osmName osmCategory latitudeDegrees longitudeDegrees } }`, placeId))["SavePlace"].(map[string]any)
 	if saved["id"] != placeId || saved["placeLabel"] != "home" || saved["placeName"] != "6 Rue Example" || saved["isNamedByPerson"] != false ||
@@ -861,6 +860,68 @@ func TestSavePlaceMovedToATypedAddress(t *testing.T) {
 	named := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.6, longitudeDegrees: -75.6, addressText: "8 Rue Example, Exampleton, Testland") { placeName isNamedByPerson addressText } }`, placeId))["SavePlace"].(map[string]any)
 	if named["placeName"] != "Our flat" || named["isNamedByPerson"] != true || named["addressText"] != "8 Rue Example, Exampleton, Testland" {
 		t.Errorf("the person's name for it: %v", named)
+	}
+}
+
+// An address the place provider does not know is kept as typed, on a place
+// that stays where it is, keeps its label, and is not named again.
+func TestSavePlaceKeepsATypedAddressWithoutMovingThePlace(t *testing.T) {
+	world := newLocationWorld(t)
+	var paths []string
+	world.addressProvider(t, &paths)
+
+	made := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 41.0, longitudeDegrees: -74.0, placeLabel: "home") { id } }`)["SavePlace"].(map[string]any)
+	placeId := made["id"].(string)
+	time.Sleep(500 * time.Millisecond)
+	paths = nil
+
+	saved := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, addressText: "  12 Lane Example, Exampleton ") { id placeName placeLabel isNamedByPerson addressText latitudeDegrees longitudeDegrees } }`, placeId))["SavePlace"].(map[string]any)
+	if saved["id"] != placeId || saved["latitudeDegrees"] != 41.0 || saved["longitudeDegrees"] != -74.0 || saved["placeLabel"] != "home" ||
+		saved["addressText"] != "12 Lane Example, Exampleton" || saved["placeName"] != "12 Lane Example" || saved["isNamedByPerson"] != false {
+		t.Errorf("the address as typed, where the place was: %v", saved)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimPlaceToName(placeId, time.Now())
+		if err != nil || claimed != nil {
+			t.Errorf("the naming job claimed the place: %v, %v", claimed, err)
+		}
+	})
+	time.Sleep(300 * time.Millisecond)
+	if len(paths) != 0 {
+		t.Errorf("the provider was asked after the address was typed: %v", paths)
+	}
+
+	// Moving the place onto the house keeps the address as typed, and the
+	// naming job leaves it alone.
+	moved := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 41.2, longitudeDegrees: -74.2) { addressText isAddressTyped placeName latitudeDegrees } }`, placeId))["SavePlace"].(map[string]any)
+	if moved["addressText"] != "12 Lane Example, Exampleton" || moved["isAddressTyped"] != true || moved["placeName"] != "12 Lane Example" || moved["latitudeDegrees"] != 41.2 {
+		t.Errorf("the move lost the typed address: %v", moved)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimPlaceToName(placeId, time.Now())
+		if err != nil || claimed != nil {
+			t.Errorf("the naming job claimed a place with a typed address: %v, %v", claimed, err)
+		}
+	})
+
+	// An empty address takes it away, and the place is named again.
+	cleared := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, addressText: "") { addressText isAddressTyped } }`, placeId))["SavePlace"].(map[string]any)
+	if cleared["isAddressTyped"] != false {
+		t.Errorf("the typed address was not taken away: %v", cleared)
+	}
+}
+
+// A check-in keeps the accuracy the device reported on its visit.
+func TestCheckInKeepsTheAccuracy(t *testing.T) {
+	world := newLocationWorld(t)
+	answer := world.call(t, world.ada, `mutation { CheckIn(latitudeDegrees: 40.0, longitudeDegrees: -75.0, accuracyMeters: 850) { accuracyMeters } }`)["CheckIn"].(map[string]any)
+	if answer["accuracyMeters"] != 850.0 {
+		t.Errorf("the accuracy was not kept on the visit: %v", answer)
+	}
+	world.refused(t, world.ada, `mutation { CheckIn(latitudeDegrees: 41.0, longitudeDegrees: -75.0, accuracyMeters: -1) { id } }`)
+	plain := world.call(t, world.ada, `mutation { CheckIn(latitudeDegrees: 42.0, longitudeDegrees: -75.0) { accuracyMeters } }`)["CheckIn"].(map[string]any)
+	if plain["accuracyMeters"] != 0.0 {
+		t.Errorf("no accuracy was given: %v", plain)
 	}
 }
 

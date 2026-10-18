@@ -287,6 +287,15 @@ func TestLocationCheckInAtAPointSendsOnlyTheCoordinates(test *testing.T) {
 		variables["placeName"] != nil || variables["osmId"] != nil || variables["osmType"] != nil || variables["placeId"] != nil {
 		test.Errorf("the coordinates alone: %v", variables)
 	}
+	if variables["accuracyMeters"] != nil {
+		test.Errorf("no accuracy was given: %v", variables)
+	}
+	if _, err := runLocationCommand(test, server, "checkin", "--latitude", "40.0005", "--longitude", "-75.0003", "--accuracy", "850"); err != nil {
+		test.Fatal(err)
+	}
+	if variables = called("CheckIn"); variables["accuracyMeters"] != float64(850) {
+		test.Errorf("the accuracy was sent: %v", variables)
+	}
 	if _, err := runLocationCommand(test, server, "checkin", "--place", "p1"); err != nil {
 		test.Fatal(err)
 	}
@@ -466,12 +475,27 @@ func TestLocationSaveAddressTakesTheFirstMatch(test *testing.T) {
 	if variables["latitudeDegrees"] != 40.6 || variables["addressText"] != "8 Rue Example, Exampleton, Testland" {
 		test.Errorf("the exact form: %v", variables)
 	}
+	// An address the map does not know is sent as typed to a place that stays.
+	if _, err := runLocationCommand(test, server, "save", "p1", "--address-text", "12 Lane Example"); err != nil {
+		test.Fatal(err)
+	}
+	variables = called("SavePlace")
+	if variables["placeId"] != "p1" || variables["addressText"] != "12 Lane Example" || variables["latitudeDegrees"] != nil || variables["longitudeDegrees"] != nil {
+		test.Errorf("the address alone: %v", variables)
+	}
+	// An empty address takes the typed one away from a place.
+	if _, err := runLocationCommand(test, server, "save", "p1", "--address-text", ""); err != nil {
+		test.Fatal(err)
+	}
+	if variables = called("SavePlace"); variables["addressText"] != "" || variables["placeId"] != "p1" {
+		test.Errorf("the empty address: %v", variables)
+	}
 	for _, arguments := range [][]string{
-		{"save", "p1", "--address-text", "6 Rue Example"},
+		{"save", "--address-text", ""},
+		{"save", "--address-text", "6 Rue Example"},
 		{"save", "p1", "--address", "   "},
 		{"save", "p1", "--address", "rue example", "--latitude", "40", "--longitude", "-75"},
 		{"save", "p1", "--address", "rue example", "--address-text", "6 Rue Example"},
-		{"save", "p1", "--latitude", "40", "--longitude", "-75", "--address-text", " "},
 	} {
 		if _, err := runLocationCommand(test, server, arguments...); err == nil {
 			test.Errorf("%v should be refused", arguments)

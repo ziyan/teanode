@@ -61,11 +61,25 @@ var notAPlaceCategories = map[string]bool{
 	"highway": true, "railway": true, "public_transport": true, "barrier": true, "power": true, "man_made": true,
 }
 
+// notAPlaceCategoryValues are the "key=value" categories, under keys that
+// also hold places a person goes to (amenity), of things that are only
+// furniture of a street or a car park: a parking lot or space, a bench, a
+// bin, a post box. Naming a place after one would call a person's home
+// "Parking" because a car park is next to it.
+var notAPlaceCategoryValues = map[string]bool{
+	"amenity=parking": true, "amenity=parking_space": true, "amenity=parking_entrance": true,
+	"amenity=bicycle_parking": true, "amenity=motorcycle_parking": true, "amenity=bench": true,
+	"amenity=waste_basket": true, "amenity=waste_disposal": true, "amenity=recycling": true,
+	"amenity=vending_machine": true, "amenity=post_box": true, "amenity=telephone": true,
+	"amenity=drinking_water": true, "amenity=toilets": true, "amenity=shelter": true,
+	"amenity=charging_station": true,
+}
+
 // isNotAPlace says whether an OpenStreetMap category ("key=value") is one of
 // those a person does not go to, or a bare house (which is an address).
 func isNotAPlace(osmCategory string) bool {
 	key, _, _ := strings.Cut(osmCategory, "=")
-	return notAPlaceCategories[key] || osmCategory == "place=house"
+	return notAPlaceCategories[key] || notAPlaceCategoryValues[osmCategory] || osmCategory == "place=house"
 }
 
 // addressName is the name for a place the map has no name for, built from its

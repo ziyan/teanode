@@ -111,7 +111,8 @@ func init() {
 					"A name is the person's own name for it ('Grandma's'); an empty name goes back to OpenStreetMap's. " +
 					"A label (home, work, school, family or gym) is what the place means to them; an empty label takes it off. Only what you give is changed. " +
 					"To give a place an address, use find_address first, then pass the match's address_text with its latitude_degrees and longitude_degrees: the place moves there and keeps that address, and keeps its name and label. " +
-					"Without a place_id, this makes the place at that address, or labels the person's own place that is already there.",
+					"Without a place_id, this makes the place at that address, or labels the person's own place that is already there. " +
+					"When no address is found for a place (find_address answers nothing), pass place_id and address_text alone: the place stays where it is and keeps the address as the person typed it, which nothing replaces.",
 				Parameters: tools.Object(map[string]any{
 					"place_id":          placeIdProperty,
 					"place_name":        tools.StringProperty("the person's own name for the place; empty goes back to the name OpenStreetMap gave it"),
@@ -169,6 +170,7 @@ func init() {
 					"osm_id":            tools.IntegerProperty("for a found place: its OpenStreetMap id, as nearby or search gave it"),
 					"osm_category":      tools.StringProperty("for a found place: its kind, as nearby or search gave it"),
 					"address_text":      addressTextProperty,
+					"accuracy_meters":   tools.NumberProperty("how far off the position may be, in meters, if the device said; a phone's is a few meters, a computer's can be hundreds"),
 				}),
 				Preview: tools.PreviewOf(func(call checkInArguments) string {
 					if strings.TrimSpace(call.PlaceName) != "" {
@@ -300,7 +302,7 @@ var (
 	placeLabelProperty  = tools.StringProperty("home, work, school, family or gym: the places the person has labeled so; for save_place an empty label takes it off")
 	queryProperty       = tools.StringProperty("words: for places, part of a name or address to look for; for search, what to find, such as playground; for find_address, the address as the person said it")
 	limitProperty       = tools.IntegerProperty("how many rows: for visits and places 50 by default and 200 at most, for search 20 and 50, for find_address 8 and 20")
-	addressTextProperty = tools.StringProperty("an address, as nearby, search or find_address gave it: for check_in the address of a found place; for save_place the address of the match the place moves to, given with that match's latitude_degrees and longitude_degrees")
+	addressTextProperty = tools.StringProperty("an address, as nearby, search or find_address gave it: for check_in the address of a found place; for save_place the address of the match the place moves to, given with that match's latitude_degrees and longitude_degrees, or, with place_id alone, an address typed by the person that stays as given and does not move the place, also when the place is moved later; an empty address_text with a place_id takes the typed address away")
 	offsetProperty      = tools.IntegerProperty("skip this many rows, for the next page: the next_offset of the page before")
 	latitudeProperty    = tools.NumberProperty("latitude in degrees; for nearby and search at the person's last reported position unless given")
 	longitudeProperty   = tools.NumberProperty("longitude in degrees, with latitude_degrees")
@@ -332,6 +334,7 @@ type checkInArguments struct {
 	OSMID            int64    `json:"osm_id"`
 	OSMCategory      string   `json:"osm_category"`
 	AddressText      string   `json:"address_text"`
+	AccuracyMeters   *float64 `json:"accuracy_meters"`
 }
 
 // savePlaceCard says what saving a place would do, in the person's words;
@@ -350,7 +353,9 @@ func savePlaceCard(call savePlaceArguments, placeName string) string {
 	if call.PlaceLabel != nil {
 		said += ", label it " + tools.Named(*call.PlaceLabel, "with no label")
 	}
-	if call.AddressText != nil {
+	if call.AddressText != nil && call.LatitudeDegrees == nil {
+		said += ", set its address to " + tools.Named(*call.AddressText, "the one the person gave") + " without moving it"
+	} else if call.AddressText != nil {
 		said += ", move it to the address " + tools.Named(*call.AddressText, "the person gave")
 	}
 	return said

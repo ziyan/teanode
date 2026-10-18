@@ -182,6 +182,10 @@ type PlaceView struct {
 	OSMCategory string `json:"osmCategory"`
 	AddressText string `json:"addressText"`
 
+	// IsAddressTyped says AddressText is one the person typed: moving the
+	// place keeps it and OpenStreetMap does not replace it.
+	IsAddressTyped bool `json:"isAddressTyped"`
+
 	// VisitCount and LastVisitAt are filled in where a place is listed or
 	// saved, and are zero and null where it is shown as part of a visit.
 	VisitCount  int        `json:"visitCount"`
@@ -418,7 +422,12 @@ type SavePlaceArguments struct {
 	// there and keeps this address, which the place provider does not replace
 	// afterwards; a place the person did not name is called by its first part.
 	// A new place (no placeID) at a position inside one of the caller's own
-	// places is that place changed.
+	// places is that place changed. With a placeID and no coordinates the
+	// place stays where it is and only its address is set, for an address the
+	// place provider does not know; without a placeID the position is needed.
+	// The address is then kept as typed (isAddressTyped): moving the place
+	// later keeps it. An empty address takes the typed address away and lets
+	// the place be named from OpenStreetMap again.
 	AddressText *string `json:"addressText" graphapi:"nullable"`
 }
 
@@ -437,6 +446,10 @@ type CheckInArguments struct {
 	OSMID            *int64   `json:"osmId" graphapi:"nullable"`
 	OSMCategory      string   `json:"osmCategory" graphapi:"nullable"`
 	AddressText      string   `json:"addressText" graphapi:"nullable"`
+
+	// AccuracyMeters is how far off the position may be, as the device said;
+	// it is kept on the visit. Left out, the visit records no accuracy (0).
+	AccuracyMeters *float64 `json:"accuracyMeters" graphapi:"nullable"`
 }
 
 type EraseLocationHistoryArguments struct {
@@ -616,7 +629,7 @@ func describePlace(found *models.Place) *PlaceView {
 		ID: found.ID, UserID: found.UserID, PlaceName: found.PlaceName, IsNamedByPerson: found.IsNamedByPerson,
 		PlaceLabel: string(found.PlaceLabel), LatitudeDegrees: found.LatitudeDegrees, LongitudeDegrees: found.LongitudeDegrees,
 		RadiusMeters: found.RadiusMeters, OSMType: found.OSMType, OSMName: found.OSMName, OSMCategory: found.OSMCategory,
-		AddressText: found.AddressText, VisitCount: found.VisitCount, LastVisitAt: found.LastVisitAt,
+		AddressText: found.AddressText, IsAddressTyped: found.IsAddressTyped, VisitCount: found.VisitCount, LastVisitAt: found.LastVisitAt,
 		NamingErrorMessage: found.NamingErrorMessage, CreatedAt: found.CreatedAt, UpdatedAt: found.UpdatedAt,
 	}
 	if found.OSMID != 0 {
@@ -1588,20 +1601,20 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 			return nil, err
 		}
 	}
+	// An empty address takes a typed address away, so it is not an address
+	// to keep: only a place that exists has one to take away.
 	addressText := ""
 	if arguments.AddressText != nil {
-		if arguments.LatitudeDegrees == nil {
+		addressText = strings.TrimSpace(*arguments.AddressText)
+		if addressText != "" && arguments.LatitudeDegrees == nil && strings.TrimSpace(arguments.PlaceID) == "" {
 			return nil, fmt.Errorf("%w: give the position of the address too: latitudeDegrees and longitudeDegrees", api.ErrInvalidArguments)
-		}
-		if addressText = strings.TrimSpace(*arguments.AddressText); addressText == "" {
-			return nil, fmt.Errorf("%w: an address needs some words", api.ErrInvalidArguments)
 		}
 	}
 	tx := self.transaction(ctx)
 	userId := principal.User.ID
 
 	placeId := strings.TrimSpace(arguments.PlaceID)
-	if placeId == "" && arguments.AddressText != nil {
+	if placeId == "" && addressText != "" {
 		// Typing an address for home makes the place, or labels the one the
 		// caller already has there, as a check-in does; two places at one
 		// address would split the visits. One change of a person's location
@@ -1661,7 +1674,8 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 			PlaceName: arguments.PlaceName, PlaceLabel: placeLabel, LatitudeDegrees: arguments.LatitudeDegrees,
 			LongitudeDegrees: arguments.LongitudeDegrees, RadiusMeters: arguments.RadiusMeters,
 		}
-		if addressText != "" {
+		if arguments.AddressText != nil {
+			// Empty takes the typed address away.
 			changes.AddressText = &addressText
 		}
 		// A place moved farther than its radius forgets what was learned about
@@ -1699,6 +1713,13 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	principal, err := self.requireLocationPerson(ctx)
 	if err != nil {
 		return nil, err
+	}
+	accuracyMeters := float64(0)
+	if arguments.AccuracyMeters != nil {
+		accuracyMeters = *arguments.AccuracyMeters
+		if !(accuracyMeters >= 0) || math.IsInf(accuracyMeters, 0) {
+			return nil, fmt.Errorf("%w: an accuracy is zero or more meters", api.ErrInvalidArguments)
+		}
 	}
 	tx := self.transaction(ctx)
 	userId := principal.User.ID
@@ -1762,7 +1783,7 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 
 	visit := &models.PlaceVisit{
 		PlaceID: checkedIn.ID, ArrivedAt: &now, LatitudeDegrees: checkedIn.LatitudeDegrees, LongitudeDegrees: checkedIn.LongitudeDegrees,
-		VisitSource: models.VisitSourceCheckIn, ClientVisitKey: "check_in:" + checkedIn.ID + ":" + now.UTC().Format(time.RFC3339Nano),
+		AccuracyMeters: accuracyMeters, VisitSource: models.VisitSourceCheckIn, ClientVisitKey: "check_in:" + checkedIn.ID + ":" + now.UTC().Format(time.RFC3339Nano),
 	}
 	if _, err := tx.PutPlaceVisit(userId, visit); err != nil {
 		return nil, locationFailure(err)

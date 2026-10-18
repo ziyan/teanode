@@ -75,7 +75,10 @@ Storing a visit takes the person's lock, so two reports at the same moment (a
 phone that resends while the first send is still being stored) take turns and
 make one visit at one place. An arrival, or a check-in, ends every other visit
 of the person that has no departure, at that arrival: a departure the phone never
-delivered does not leave a visit open for ever. Checking in at the place the
+delivered does not leave a visit open for ever. A check-in may carry the `accuracyMeters` the device reported (a browser on a
+computer can be hundreds of meters off, a phone a few), which is stored on the
+visit; without it the visit stores 0.
+Checking in at the place the
 person is already at changes nothing and tells nobody they left and arrived.
 "Where the person is now" is the newest visit with no departure, unless the
 latest position since is outside the place.
@@ -99,8 +102,11 @@ account is also limited to 12 searches or check-in lists a minute and 60 new
 places a minute, may have at most 5000 places, and the naming job takes at most
 three waiting places of each person in a run and none of a person who may not
 use Location. A road, a rail line, a stop, a barrier, a pole or a man-made
-structure such as an elevator is not a point of interest, so the address names
-the place instead (house number and road, then road, then neighborhood, then
+structure such as an elevator is not a point of interest, and neither is street
+furniture such as a car park or parking space, a bench, a bin, a post box, a
+public telephone, drinking water, toilets, a shelter, a vending machine or a
+charging station (`amenity=*`), in a reverse answer and in the check-in list
+alike, so the address names the place instead (house number and road, then road, then neighborhood, then
 city). A
 provider that is too busy to be asked gives the place's claim back, so the next
 run takes it at once, and only the first three places of a report are named right
@@ -135,7 +141,15 @@ it is marked as named at once (`named_at`), so the naming job does not ask the
 provider what is there and replace it, and the OpenStreetMap name, object and
 kind of the old position are dropped, even for a move within the place's radius.
 A place the person did not name is called by the first part of the address.
-An address without a position is refused. Without a `placeId`, the same call
+An address without a position is refused only when there is no `placeId`: with
+one, the place stays where it is, keeps what OpenStreetMap said about it, and
+takes the address exactly as typed, for an address the map does not know. The
+address is then marked as typed (`is_address_typed`, migration
+`0241_place_address_typed.sql`), so moving the place afterwards (to put its pin
+on the house) keeps it and the place stays named; only the object, name and kind
+of the old position are dropped, and the naming job never replaces it. An empty
+`addressText` with a `placeId` takes the typed address away, and the place is
+named from OpenStreetMap again. Without a `placeId`, the same call
 makes the place, or changes the person's own place whose radius holds the
 position (as a check-in does), so typing an address for home never leaves two
 places at one address. The words the person typed leave the server for the

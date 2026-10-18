@@ -15,7 +15,7 @@ import (
 // is made of and no more.
 const (
 	pointFields = `latitudeDegrees longitudeDegrees accuracyMeters measuredAt locationSource`
-	placeFields = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText visitCount lastVisitAt`
+	placeFields = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText isAddressTyped visitCount lastVisitAt`
 	visitFields = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
 	foundFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
@@ -52,8 +52,8 @@ const (
   SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters, addressText: $addressText) { ` + placeFields + ` }
 }`
 	documentForgetPlace = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
-	documentCheckIn     = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
-  CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) { ` + visitFields + ` }
+	documentCheckIn     = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String, $accuracyMeters: Float) {
+  CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText, accuracyMeters: $accuracyMeters) { ` + visitFields + ` }
 }`
 	documentErase = `mutation ($from: DateTime, $until: DateTime) {
   EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
@@ -85,6 +85,7 @@ type placeData struct {
 	OSMName          string     `json:"osmName"`
 	OSMCategory      string     `json:"osmCategory"`
 	AddressText      string     `json:"addressText"`
+	IsAddressTyped   bool       `json:"isAddressTyped"`
 	VisitCount       int        `json:"visitCount"`
 	LastVisitAt      *time.Time `json:"lastVisitAt"`
 }
@@ -282,6 +283,9 @@ func (self *scope) placeRow(place *placeData) map[string]any {
 	}
 	if place.AddressText != "" {
 		row["address_text"] = place.AddressText
+		if place.IsAddressTyped {
+			row["is_address_typed"] = true
+		}
 	}
 	if place.OSMCategory != "" {
 		row["osm_category"] = place.OSMCategory
@@ -788,10 +792,10 @@ func runSavePlace(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 		variables["radiusMeters"] = *arguments.RadiusMeters
 	}
 	if arguments.AddressText != nil {
-		if strings.TrimSpace(*arguments.AddressText) == "" {
-			return nil, fmt.Errorf("address_text is the address a match of find_address gave; leave it out to keep the address as it is")
+		if strings.TrimSpace(*arguments.AddressText) == "" && variables["placeId"] == nil {
+			return nil, fmt.Errorf("address_text is the address a match of find_address gave, or one the person typed; leave it out to keep the address as it is")
 		}
-		if variables["latitudeDegrees"] == nil || variables["longitudeDegrees"] == nil {
+		if strings.TrimSpace(*arguments.AddressText) != "" && variables["placeId"] == nil && (variables["latitudeDegrees"] == nil || variables["longitudeDegrees"] == nil) {
 			return nil, fmt.Errorf("give the position of the address too: latitude_degrees and longitude_degrees of the match")
 		}
 		variables["addressText"] = strings.TrimSpace(*arguments.AddressText)
@@ -861,6 +865,9 @@ func runCheckIn(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if arguments.OSMID != 0 {
 			variables["osmId"] = arguments.OSMID
 		}
+	}
+	if arguments.AccuracyMeters != nil {
+		variables["accuracyMeters"] = *arguments.AccuracyMeters
 	}
 	var result struct {
 		CheckIn visitData `json:"CheckIn"`

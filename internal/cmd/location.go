@@ -113,7 +113,10 @@ func NewLocationCommand() *cli.Command {
 					"--label none takes the label off.\n" +
 					"--address \"<words>\" looks the words up, takes the first match, and moves the place there\n" +
 					"with that address (see 'teanode location addresses'); to choose another match give its\n" +
-					"--latitude, --longitude and --address-text.",
+					"--latitude, --longitude and --address-text. When no address is found, give the place\n" +
+					"and --address-text alone: the place stays where it is and keeps the address as typed,\n" +
+					"also when you move it later. --address-text \"\" takes a typed address away and lets\n" +
+					"OpenStreetMap name the place again.",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "name", Usage: "your name for the place"},
@@ -122,7 +125,7 @@ func NewLocationCommand() *cli.Command {
 					&cli.FloatFlag{Name: "latitude", Usage: "move the place, or put a new one, here"},
 					&cli.FloatFlag{Name: "longitude", Usage: "move the place, or put a new one, here"},
 					&cli.StringFlag{Name: "address", Usage: "words to look up: the place moves to the first match and keeps its address"},
-					&cli.StringFlag{Name: "address-text", Usage: "the address of the match at --latitude and --longitude, as 'teanode location addresses' prints it"},
+					&cli.StringFlag{Name: "address-text", Usage: "the address of the match at --latitude and --longitude, as 'teanode location addresses' prints it; with a place and no position, an address as you type it, which keeps the place where it is"},
 				},
 				Action: runLocationSave,
 			},
@@ -144,6 +147,7 @@ func NewLocationCommand() *cli.Command {
 					&cli.StringFlag{Name: "place", Usage: "one of your places, by id"},
 					&cli.FloatFlag{Name: "latitude", Usage: "latitude in degrees"},
 					&cli.FloatFlag{Name: "longitude", Usage: "longitude in degrees"},
+					&cli.FloatFlag{Name: "accuracy", Usage: "how far off the position may be, in meters, if you know"},
 				},
 				Action: runLocationCheckIn,
 			},
@@ -711,10 +715,10 @@ func runLocationSave(ctx context.Context, command *cli.Command) error {
 	}
 	if command.IsSet("address-text") {
 		addressText := strings.TrimSpace(command.String("address-text"))
-		if addressText == "" {
-			return usage("--address-text needs the address")
+		if addressText == "" && change.PlaceID == "" {
+			return usage("--address-text needs the address; an empty one only takes the typed address off a place")
 		}
-		if latitude == nil {
+		if addressText != "" && latitude == nil && change.PlaceID == "" {
 			return usage("give the position of the address too: --latitude and --longitude")
 		}
 		change.AddressText = &addressText
@@ -797,6 +801,13 @@ func runLocationCheckIn(ctx context.Context, command *cli.Command) error {
 		// position, or makes a new one, called after its city until
 		// OpenStreetMap names it.
 		at = client.CheckInAt{LatitudeDegrees: latitude, LongitudeDegrees: longitude}
+	}
+	if command.IsSet("accuracy") {
+		accuracyMeters := command.Float("accuracy")
+		if accuracyMeters < 0 {
+			return usage("--accuracy is zero or more meters")
+		}
+		at.AccuracyMeters = &accuracyMeters
 	}
 	visit, err := client.CheckIn(ctx, connection, at)
 	if err != nil {
