@@ -737,8 +737,8 @@ a.tile:hover strong {
 }
 
 /* --- the agent's conversations, a tile each ------------------------------ */
-/* The box that narrows the tiles, on a line of its own above them, as wide
-   as a field is allowed to be rather than as wide as the page. */
+/* One row above the tiles: which kind, the search box taking the rest of
+   it, and starting a new conversation at its end. */
 .conversation-toolbar {
   display: flex;
   align-items: center;

@@ -62,7 +62,11 @@ export function AgentConversationsPage() {
   // Which kind is shown is kept in the address ("?kind=chats"), so a reload
   // or a link comes back to it.
   const [parameters, setParameters] = useSearchParams()
-  const kindFilter = kindFilterOf(parameters.get('kind'))
+  // Only while there are chats to tell apart: an address that says chats,
+  // opened by somebody who has none, would show nothing with no control to
+  // go back to all of them.
+  const hasChats = (data?.ListAgentConversations ?? []).some((conversation) => conversation.kind === 'chat')
+  const kindFilter = hasChats ? kindFilterOf(parameters.get('kind')) : 'all'
   const setKindFilter = (next: KindFilter) =>
     setParameters(
       (previous) => {
@@ -137,7 +141,6 @@ export function AgentConversationsPage() {
   }
 
   const hasConversations = (data?.ListAgentConversations.length ?? 0) > 0
-  const hasChats = (data?.ListAgentConversations ?? []).some((conversation) => conversation.kind === 'chat')
 
   return (
     <>
