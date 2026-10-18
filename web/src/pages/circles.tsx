@@ -16,6 +16,16 @@ import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
+import {
+  PRONOUNS,
+  PRONOUN_LABELS,
+  isGenderedKind,
+  oppositeKind,
+  relationshipGroup,
+  relationshipLabel,
+  relationshipWord,
+  termGenderOfPronoun,
+} from '../lib/relationships'
 import { hasPermission, useSession } from '../session'
 
 // What a circle is for, which is how it is named on screen: a circle is called
@@ -31,6 +41,21 @@ export type CircleMember = {
   avatarColorIndex: number
   memberRole: MemberRole
   joinedAt: string
+  // What this person is to the signed-in one ("father"), as the kind and the
+  // gender of the word to show; both empty until it is said, and always empty
+  // for the signed-in person themselves. The English word is the server's, for
+  // a kind this dashboard has no words for.
+  relationshipKind: string
+  relationshipTermGender: string
+  relationshipWord: string
+}
+
+// One word a relationship can be said with, as the server lists them.
+export type RelationshipTerm = {
+  term: string
+  relationshipKind: string
+  termGender: string
+  word: string
 }
 
 export type CircleInvitation = {
@@ -70,7 +95,8 @@ const KIND_LABELS: Record<CircleKind, Key> = {
   colleagues: 'circles.kind.colleagues',
 }
 
-const MEMBER_FIELDS = '{ userId username name avatarUrl avatarColorIndex memberRole joinedAt }'
+const MEMBER_FIELDS =
+  '{ userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord }'
 const INVITATION_FIELDS =
   '{ id circleId circleName circleKind invitedByName invitedUsername memberRole createdAt expiresAt }'
 const CIRCLE_FIELDS = `{ id name circleKind createdAt memberRole members ${MEMBER_FIELDS} pendingInvitations ${INVITATION_FIELDS} }`
@@ -111,6 +137,20 @@ const ADD_CIRCLE_MEMBER = `
   mutation ($circleId: String!, $username: String!, $memberRole: String!) {
     AddCircleMember(circleId: $circleId, username: $username, memberRole: $memberRole) { id }
   }`
+
+// Saying what somebody is to the person. The terms are asked when the dialog
+// opens; the person's own pronoun is asked with the page, because whether the
+// dialog asks how they are described depends on it.
+const LIST_RELATIONSHIP_TERMS = `query { ListRelationshipTerms { term relationshipKind termGender word } }`
+const SET_PERSON_RELATIONSHIP = `
+  mutation ($userId: String!, $relationshipTerm: String!) {
+    SetPersonRelationship(userId: $userId, relationshipTerm: $relationshipTerm) {
+      userId relationshipKind relationshipTermGender relationshipWord
+    }
+  }`
+const REMOVE_PERSON_RELATIONSHIP = `mutation ($userId: String!) { RemovePersonRelationship(userId: $userId) }`
+const GET_CURRENT_PRONOUN = `query { GetCurrentUser { id pronoun } }`
+const UPDATE_PRONOUN = `mutation ($userId: String!, $pronoun: String!) { UpdateUser(userId: $userId, pronoun: $pronoun) { id pronoun } }`
 
 // Sharing where the person is with a whole circle: offered, with the calendar,
 // as they join a family.
@@ -175,6 +215,140 @@ function useAct(reload: () => Promise<unknown>) {
   }
 
   return { act, isBusy, problem, clearProblem: () => setProblem(null) }
+}
+
+// RelationshipDialog is where the person says what somebody in a circle is to
+// them: one fact between the two, so it also says what the other will see. The
+// pronoun question is asked only when it would change that line, that is when
+// the person has not said how they are described and the opposite word has a
+// gendered form; the answer is saved to their profile first, so that the
+// relationship is worded for them from the start.
+function RelationshipDialog({
+  member,
+  ownPronoun,
+  ownUserId,
+  act,
+  isBusy,
+  problem,
+  onPronounSaved,
+  onClose,
+}: {
+  member: CircleMember
+  // Null while it is not known, which asks nothing.
+  ownPronoun: string | null
+  ownUserId: string
+  act: (work: () => Promise<unknown>, successMessage: string | null, isInDialog?: boolean) => Promise<boolean>
+  isBusy: boolean
+  problem: string | null
+  onPronounSaved: () => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const memberName = nameOf(member)
+  const terms = useQuery(
+    async () =>
+      (await graphql<{ ListRelationshipTerms: RelationshipTerm[] }>(LIST_RELATIONSHIP_TERMS)).ListRelationshipTerms,
+    [],
+    { refresh: false },
+  )
+  const termList = terms.data ?? []
+  const currentTerm =
+    termList.find(
+      (found) =>
+        found.relationshipKind === member.relationshipKind && found.termGender === member.relationshipTermGender,
+    )?.term ?? ''
+
+  // Null until somebody chooses, so that the term the person has now is what
+  // the select shows once the list has arrived.
+  const [chosenTerm, setChosenTerm] = useState<string | null>(null)
+  const [chosenPronoun, setChosenPronoun] = useState('')
+  const selectedTerm = chosenTerm ?? currentTerm
+  const selected = termList.find((found) => found.term === selectedTerm)
+
+  // What the other person is to them: the opposite kind, worded by how the
+  // person is described.
+  const isPronounAsked =
+    ownPronoun === '' && selected !== undefined && isGenderedKind(oppositeKind(selected.relationshipKind))
+  const effectivePronoun = ownPronoun || chosenPronoun
+  const seenAsWord = selected
+    ? relationshipWord(t, oppositeKind(selected.relationshipKind), termGenderOfPronoun(effectivePronoun))
+    : ''
+
+  const isChanged = selectedTerm !== currentTerm || (isPronounAsked && chosenPronoun !== '')
+  const groups = (['family', 'friends', 'colleagues'] as const).map((group) => ({
+    group,
+    terms: termList.filter((found) => relationshipGroup(found.relationshipKind) === group),
+  }))
+
+  return (
+    <FormDialog
+      title={t('circles.relationship.title', { name: memberName })}
+      submitLabel={t('common.save')}
+      busy={isBusy}
+      error={problem ?? (terms.error instanceof Error ? terms.error.message : null)}
+      canSubmit={terms.data !== null && isChanged}
+      onClose={onClose}
+      onSubmit={async () => {
+        const isRemoving = selectedTerm === ''
+        const isSaved = await act(
+          async () => {
+            // The pronoun first: if the relationship then fails, trying again
+            // saves the same pronoun once more, which changes nothing.
+            if (isPronounAsked && chosenPronoun !== '') {
+              await graphql(UPDATE_PRONOUN, { userId: ownUserId, pronoun: chosenPronoun })
+            }
+            if (isRemoving) {
+              await graphql(REMOVE_PERSON_RELATIONSHIP, { userId: member.userId })
+            } else {
+              await graphql(SET_PERSON_RELATIONSHIP, { userId: member.userId, relationshipTerm: selectedTerm })
+            }
+          },
+          t(isRemoving ? 'circles.relationship.removed' : 'circles.relationship.saved', { name: memberName }),
+          true,
+        )
+        if (isSaved) {
+          if (isPronounAsked && chosenPronoun !== '') onPronounSaved()
+          onClose()
+        }
+      }}
+    >
+      <label>
+        {t('circles.relationship.termLabel', { name: memberName })}
+        <select value={selectedTerm} onChange={(event) => setChosenTerm(event.target.value)}>
+          <option value="">{t('circles.relationship.none')}</option>
+          {groups.map(
+            ({ group, terms: groupTerms }) =>
+              groupTerms.length > 0 && (
+                <optgroup key={group} label={t(KIND_LABELS[group])}>
+                  {groupTerms.map((found) => (
+                    <option key={found.term} value={found.term}>
+                      {relationshipLabel(t, found.relationshipKind, found.termGender, found.word)}
+                    </option>
+                  ))}
+                </optgroup>
+              ),
+          )}
+        </select>
+      </label>
+      {selected && <p className="muted">{t('circles.relationship.seenAs', { name: memberName, word: seenAsWord })}</p>}
+      {!selected && currentTerm !== '' && (
+        <p className="muted">{t('circles.relationship.removeNote', { name: memberName })}</p>
+      )}
+      {isPronounAsked && (
+        <label>
+          {t('circles.relationship.pronounQuestion')}
+          <select value={chosenPronoun} onChange={(event) => setChosenPronoun(event.target.value)}>
+            <option value="">{t('profile.pronounNone')}</option>
+            {PRONOUNS.map((pronoun) => (
+              <option key={pronoun} value={pronoun}>
+                {t(PRONOUN_LABELS[pronoun])}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </FormDialog>
+  )
 }
 
 // CirclesOff is what /circles and a circle's page say to a person whose account
@@ -529,6 +703,16 @@ function CircleDetail() {
     { refresh: false },
   )
 
+  // How the person is described, which the relationship dialog asks about only
+  // when it is not said yet. Null when it could not be read, which asks nothing.
+  const ownPerson = useQuery(
+    async () =>
+      (await graphql<{ GetCurrentUser: { pronoun?: string | null } | null }>(GET_CURRENT_PRONOUN)).GetCurrentUser,
+    [],
+    { refresh: false },
+  )
+  const ownPronoun = ownPerson.data ? (ownPerson.data.pronoun ?? '') : null
+
   const [inviteUsername, setInviteUsername] = useState('')
   const [isInviteAdmin, setInviteAdmin] = useState(false)
   const [isRenaming, setRenaming] = useState(false)
@@ -536,6 +720,7 @@ function CircleDetail() {
   const [isDeleting, setDeleting] = useState(false)
   const [isLeaving, setLeaving] = useState(false)
   const [removingMember, setRemovingMember] = useState<CircleMember | null>(null)
+  const [relatingMember, setRelatingMember] = useState<CircleMember | null>(null)
   const [isMakingAccount, setMakingAccount] = useState(false)
   const [accountDraft, setAccountDraft] = useState<AccountDraft>(EMPTY_ACCOUNT)
   // The username of an account that was made but could not be put in the
@@ -631,12 +816,23 @@ function CircleDetail() {
               // The username only where it says something the title did not:
               // somebody without a name is titled by their username already.
               subtitle={
-                [member.name?.trim() ? member.username : '', isYou ? t('circles.you') : '']
+                [
+                  !isYou && member.relationshipKind
+                    ? relationshipLabel(
+                        t,
+                        member.relationshipKind,
+                        member.relationshipTermGender,
+                        member.relationshipWord,
+                      )
+                    : '',
+                  member.name?.trim() ? member.username : '',
+                  isYou ? t('circles.you') : '',
+                ]
                   .filter(Boolean)
                   .join(' · ') || undefined
               }
               actions={
-                isAdmin && !isYou ? (
+                !isYou ? (
                   <MenuButton
                     className="icon-action"
                     label={`${nameOf(member)}: ${t('circles.memberMenu')}`}
@@ -646,25 +842,40 @@ function CircleDetail() {
                         <button
                           type="button"
                           role="menuitem"
-                          disabled={isBusy}
-                          onClick={() => {
-                            close()
-                            setRole(member, member.memberRole === 'admin' ? 'member' : 'admin')
-                          }}
-                        >
-                          {member.memberRole === 'admin' ? t('circles.makeMember') : t('circles.makeAdmin')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
                           onClick={() => {
                             close()
                             clearProblem()
-                            setRemovingMember(member)
+                            setRelatingMember(member)
                           }}
                         >
-                          {t('circles.removeMember')}
+                          {t('circles.relationship.action')}
                         </button>
+                        {isAdmin && (
+                          <>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              disabled={isBusy}
+                              onClick={() => {
+                                close()
+                                setRole(member, member.memberRole === 'admin' ? 'member' : 'admin')
+                              }}
+                            >
+                              {member.memberRole === 'admin' ? t('circles.makeMember') : t('circles.makeAdmin')}
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => {
+                                close()
+                                clearProblem()
+                                setRemovingMember(member)
+                              }}
+                            >
+                              {t('circles.removeMember')}
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                   />
@@ -997,6 +1208,19 @@ function CircleDetail() {
             }
           }}
           onClose={() => setLeaving(false)}
+        />
+      )}
+
+      {relatingMember && (
+        <RelationshipDialog
+          member={relatingMember}
+          ownPronoun={ownPronoun}
+          ownUserId={session.userId ?? ''}
+          act={act}
+          isBusy={isBusy}
+          problem={problem}
+          onPronounSaved={() => void ownPerson.reload()}
+          onClose={() => setRelatingMember(null)}
         />
       )}
 

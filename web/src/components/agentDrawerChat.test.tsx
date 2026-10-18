@@ -911,6 +911,47 @@ it('puts a note only the asker sees where the agent could not be asked', async (
   expect(await screen.findByText('Only the owner of Benny can ask it in this chat.')).toBeTruthy()
 })
 
+it('words the note that somebody set how the person is related, in their language', async () => {
+  answerWith({ hasAgents: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee set how you are related: Sam Lee is your father.',
+    noteKind: 'relationship_set',
+    noteDetail: JSON.stringify({
+      personName: 'Sam Lee',
+      relationshipKind: 'parent',
+      termGender: 'masculine',
+      relationshipWord: 'father',
+    }),
+  })
+  expect(
+    await screen.findByText(
+      /Sam Lee set how you are related: Sam Lee is your father\. You can change it on the Circles page\./,
+    ),
+  ).toBeTruthy()
+})
+
+it('words the note that somebody removed how the person is related', async () => {
+  answerWith({ hasAgents: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'Sam Lee removed how you are related.',
+    noteKind: 'relationship_removed',
+    noteDetail: JSON.stringify({ personName: 'Sam Lee', relationshipKind: '', termGender: '', relationshipWord: '' }),
+  })
+  expect(await screen.findByText('Sam Lee removed how you are related.')).toBeTruthy()
+})
+
 it('has the two switches for the person’s own agent in the members, and turns each on with its own call', async () => {
   answerWith({ hasAgents: true })
   openOnChat()

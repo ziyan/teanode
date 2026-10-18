@@ -9,18 +9,19 @@ import { useToast } from '../../components/toast'
 import { ConfirmDialog } from '../../components/dialog'
 import { useTranslation } from '../../i18n/i18n'
 import { Select } from '../../components/select'
+import { PRONOUNS, PRONOUN_LABELS } from '../../lib/relationships'
 import { FaceRecognitionPreferences } from '../photos/people'
 
-const CURRENT_USER = `{ GetCurrentUser { id username name email avatarUrl avatarColorIndex timezone timezoneMode } }`
+const CURRENT_USER = `{ GetCurrentUser { id username name email avatarUrl avatarColorIndex timezone timezoneMode pronoun } }`
 
 // An account is named by its identifier, and "username" is the name to sign in
 // with from here on. This page used to send the old username as the identity
 // and the new one as "newUsername", which the schema stopped taking: saving
 // the page failed with "unknown argument" and nothing was changed.
 const UPDATE = `
-  mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String) {
-    UpdateUser(userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode) {
-      id username name email avatarUrl avatarColorIndex timezone timezoneMode
+  mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String, $pronoun: String) {
+    UpdateUser(userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode, pronoun: $pronoun) {
+      id username name email avatarUrl avatarColorIndex timezone timezoneMode pronoun
     }
   }`
 
@@ -46,6 +47,7 @@ type User = {
   avatarColorIndex?: number
   timezone?: string
   timezoneMode?: string
+  pronoun?: string
 }
 
 // The account itself: what to call you, what you sign in with, and where
@@ -64,6 +66,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const [editedEmail, setEditedEmail] = useState<string | null>(null)
   const [editedTimezone, setEditedTimezone] = useState<string | null>(null)
   const [editedMode, setEditedMode] = useState<string | null>(null)
+  const [editedPronoun, setEditedPronoun] = useState<string | null>(null)
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [confirmingRename, setConfirmingRename] = useState(false)
@@ -89,6 +92,7 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const email = editedEmail ?? user.email ?? ''
   const timezone = editedTimezone ?? user.timezone ?? ''
   const timezoneMode = editedMode ?? user.timezoneMode ?? 'auto'
+  const pronoun = editedPronoun ?? user.pronoun ?? ''
   const browserZone = (() => {
     try {
       return Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -103,7 +107,8 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
     name.trim() !== (user.name ?? '') ||
     email.trim() !== (user.email ?? '') ||
     timezone.trim() !== (user.timezone ?? '') ||
-    timezoneMode !== (user.timezoneMode || 'auto')
+    timezoneMode !== (user.timezoneMode || 'auto') ||
+    pronoun !== (user.pronoun ?? '')
   const ready = changed && username.trim().length > 0 && !busy
 
   async function save() {
@@ -116,12 +121,14 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
         username: username.trim(),
         timezone: timezoneMode === 'fixed' ? timezone.trim() : '',
         timezoneMode,
+        pronoun,
       })
       setEditedName(null)
       setEditedUsername(null)
       setEditedEmail(null)
       setEditedTimezone(null)
       setEditedMode(null)
+      setEditedPronoun(null)
       toast.done(t('profile.saved'))
       await reload()
       // Always, not only on a rename. The rail greets you by your name, so
@@ -305,6 +312,21 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
             />
           ) : null}
           <p className="muted field-hint">{t('profile.timezoneHint')}</p>
+
+          <label>
+            <span>{t('profile.pronoun')}</span>
+            <Select
+              block
+              value={pronoun}
+              label={t('profile.pronoun')}
+              options={[
+                { value: '', label: t('profile.pronounNone') },
+                ...PRONOUNS.map((option) => ({ value: option, label: t(PRONOUN_LABELS[option]) })),
+              ]}
+              onChange={setEditedPronoun}
+            />
+          </label>
+          <p className="muted field-hint">{t('profile.pronounHint')}</p>
         </div>
 
         <button className="primary" type="submit" disabled={!ready}>
