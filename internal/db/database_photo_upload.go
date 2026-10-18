@@ -77,9 +77,9 @@ func (self *transaction) CreatePhotoUpload(upload *models.PhotoUpload) (*models.
 		(upload.DeclaredSizeBytes != nil && *upload.DeclaredSizeBytes < 0) {
 		return nil, ErrInvalidArguments
 	}
-	// NO KEY UPDATE, as SetPhotoFile takes it: it orders the uploads of one
-	// account without waiting on the key share locks rows that refer to the
-	// account hold.
+	// The same lock as SetPhotoFile takes, so that the two take turns with
+	// each other, and neither waits for the key share locks that rows
+	// referring to the account hold.
 	var owner userModel
 	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Where("id = ?", upload.UserID), &owner)
 	if err != nil {

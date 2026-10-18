@@ -1064,11 +1064,12 @@ func (self *transaction) SetPhotoFile(userId, photoId string, file *models.Photo
 		return false, ErrInvalidArguments
 	}
 	// The account's row is locked so that two files arriving together are
-	// each counted against the other. NO KEY UPDATE, not UPDATE: making the
-	// photo earlier in the same transaction took a key share lock on this row
-	// (the photo refers to it), which UPDATE would have to wait out in every
-	// other upload holding one too, and those wait for this one: a deadlock
-	// between two files of one account. NO KEY UPDATE still excludes itself.
+	// each counted against the other. Making the photo earlier in this
+	// transaction took a key share lock on this row, because the photo refers
+	// to it. FOR UPDATE conflicts with key share, so two uploads of one
+	// account would each wait for the other's key share lock and deadlock.
+	// FOR NO KEY UPDATE does not conflict with key share but still conflicts
+	// with itself, so the uploads still take turns.
 	var owner userModel
 	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "NO KEY UPDATE"}).Where("id = ?", userId), &owner)
 	if err != nil {
