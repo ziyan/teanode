@@ -57,6 +57,10 @@ export function SetupPage() {
   // and the address is cleaned so that a reload does not tick it again.
   const [parameters, setParameters] = useSearchParams()
   const chooseOnArrival = useRef(parameters.get('choose'))
+  // Somebody sent here for their photos has said they did not come for an
+  // assistant, so its steps are an optional one for as long as this page is
+  // open. The address forgets ?choose= at once, which is why this is kept apart.
+  const [isHereForPhotos] = useState(() => parameters.get('choose') === 'photos')
   const { data, error, loading, reload } = useQuery(() => graphql<SetupAnswer>(SETUP))
   const agentQuery = useQuery(() => graphql<AgentAnswer>(READ_AGENT).catch(() => null))
   const [choices, setChoices] = useState<ServiceCapabilities | null>(null)
@@ -99,14 +103,17 @@ export function SetupPage() {
   // assistant is not waiting on a model: its steps are the services', and the
   // assistant's are offered as one optional step instead of three to do. Photos
   // runs on a new server without being chosen, so it alone says nothing about
-  // what the operator wants, until setup is finished without an assistant.
+  // what the operator wants, until setup is finished without an assistant, or
+  // until they say they came for their photos.
   const hasOtherHostedService = hostedKeys.some(
     (serviceKey) => serviceKey !== 'isPhotosEnabled' && setup.selectedServices[serviceKey],
   )
   const isAssistantWanted =
     setup.selectedServices.isAssistantEnabled ||
     setup.hasModelProvider ||
-    (!hasOtherHostedService && (!setup.selectedServices.hasCompletedSetup || !setup.selectedServices.isPhotosEnabled))
+    (!isHereForPhotos &&
+      !hasOtherHostedService &&
+      (!setup.selectedServices.hasCompletedSetup || !setup.selectedServices.isPhotosEnabled))
   const readAgent = agentQuery.data?.ReadAgent
   const isAgentOn = readAgent?.agent?.enabled === true
   const canTurnOnAgent = setup.runningServices.isAssistantEnabled && readAgent?.allowed.enabled === true
@@ -365,9 +372,16 @@ export function SetupPage() {
               )}
               action={
                 setup.runningServices.isPhotosEnabled && (
-                  <Link className="button primary" to="/photos">
-                    {t('services.openPhotos')}
-                  </Link>
+                  <>
+                    {/* Where the iPhone's backup is explained, which is the
+                        other thing somebody here for photos came to do. */}
+                    <Link className="button" to="/settings/devices">
+                      {t('photoBackup.title')}
+                    </Link>
+                    <Link className="button primary" to="/photos">
+                      {t('services.openPhotos')}
+                    </Link>
+                  </>
                 )
               }
             />
