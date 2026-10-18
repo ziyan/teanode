@@ -422,12 +422,15 @@ struct CodingSessionView: View {
 
     private var connection: Connection { model.connection }
     private var session: HerdrSession? { model.session(id: selectedId) }
+    /// The computer of the session on screen, from its id, which stands
+    /// whether or not the list has it.
+    private var selectedComputer: String { String(selectedId.prefix { $0 != "/" }) }
 
     var body: some View {
         Group {
             if let session {
                 content(session)
-            } else if model.list != nil {
+            } else if let list = model.list, !list.failedComputerNames.contains(selectedComputer) {
                 // The list was read and the session is not in it: closed on
                 // the computer, or its agent ended. The back button leads on.
                 ContentUnavailableView("This session is no longer open.", systemImage: "xmark.circle")
@@ -799,10 +802,12 @@ struct CodingSessionView: View {
     private func close(_ session: HerdrSession) async {
         do {
             _ = try await connection.closeHerdrSession(computer: session.computer, paneId: session.paneId)
-            model.remove(id: session.id)
             doneText = String(localized: "Closed \(session.tabTitle)")
-            // Back to the list, which holds the workspace's other tabs.
+            // Back to the list, which holds the workspace's other tabs, and
+            // only then out of it, so the view leaving never says the
+            // session is gone.
             dismiss()
+            model.remove(id: session.id)
         } catch {
             problemText = app.describe(error)
         }

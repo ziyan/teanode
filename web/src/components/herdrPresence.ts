@@ -62,13 +62,19 @@ export function useHerdrPresence(isAsked: boolean): HerdrPresence {
       window.removeEventListener('focus', recheck)
     }
   }, [isAsked])
-  // How many answers the rail's own ask has had, counted as each arrives.
-  const answerCount = useRef(0)
-  const lastAnswer = useRef<unknown>(null)
+  // What the rail's own ask last answered, and how many answers it has had,
+  // so an announced count can say which answer it came after. Kept through
+  // a failed recheck, so a row the person already had does not vanish for
+  // one lost request.
+  const [known, setKnown] = useState<{ presence: HerdrPresence; answerCount: number } | null>(null)
+  const knownRef = useRef(known)
+  useEffect(() => {
+    knownRef.current = known
+  }, [known])
   useEffect(() => {
     const onAnnounced = (event: Event) => {
       const askingCount = (event as CustomEvent<number>).detail
-      if (typeof askingCount === 'number') setAnnounced({ askingCount, after: answerCount.current })
+      if (typeof askingCount === 'number') setAnnounced({ askingCount, after: knownRef.current?.answerCount ?? 0 })
     }
     window.addEventListener(ASKING_EVENT, onAnnounced)
     return () => window.removeEventListener(ASKING_EVENT, onAnnounced)
@@ -81,24 +87,19 @@ export function useHerdrPresence(isAsked: boolean): HerdrPresence {
     [isAsked, recheckCount],
     { refresh: false },
   )
-  // The last answer stands through a failed recheck, so a row the person
-  // already had does not vanish for one lost request.
-  const lastKnown = useRef<HerdrPresence | null>(null)
-  if (data && !error && data !== lastAnswer.current) {
-    lastAnswer.current = data
-    answerCount.current += 1
-  }
-  if (!isAsked) return { isPresent: false, askingCount: 0 }
-  if (data?.isAsked && !error) {
+  useEffect(() => {
+    if (!data?.isAsked || error) return
     const list = data.ListAgentHerdrSessions
-    lastKnown.current = {
+    const presence = {
       isPresent: list.computerNames.length > 0,
       askingCount: list.sessions.filter((session) => session.herdrSessionState === 'asking').length,
     }
-  }
+    setKnown((previous) => ({ presence, answerCount: (previous?.answerCount ?? 0) + 1 }))
+  }, [data, error])
+  if (!isAsked) return { isPresent: false, askingCount: 0 }
+  if (known === null) return { isPresent: error ? false : null, askingCount: 0 }
   // A count the Coding page announced since the last answer is the newer one.
   const askingCount =
-    announced && announced.after === answerCount.current ? announced.askingCount : (lastKnown.current?.askingCount ?? 0)
-  if (lastKnown.current !== null) return { isPresent: lastKnown.current.isPresent, askingCount }
-  return { isPresent: error ? false : null, askingCount: 0 }
+    announced && announced.after === known.answerCount ? announced.askingCount : known.presence.askingCount
+  return { isPresent: known.presence.isPresent, askingCount }
 }
