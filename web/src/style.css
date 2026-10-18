@@ -4087,6 +4087,12 @@ a.button.primary:hover {
    of empty box above a quoted thread is a page pretending somebody has a lot
    to say. */
 .mailbox-pane .richtext-editor {
+  min-height: 120px;
+}
+
+/* A draft opened from the thread is a message that was already written, so its
+   editor starts taller than an empty reply's. */
+.mailbox-pane .mailbox-thread-compose.is-draft .richtext-editor {
   min-height: 200px;
 }
 

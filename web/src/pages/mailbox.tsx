@@ -1100,10 +1100,12 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             )}
           </form>
 
-          {/* Acting on a selection. Shown always rather than only once
-              something is selected, so the row does not appear and push the
-              list down at the moment somebody clicks a checkbox. */}
-          <div className="mailbox-actions" hidden={threads.length === 0}>
+          {/* Acting on a selection. Shown whether or not something is selected,
+              so the row does not appear and push the list down at the moment
+              somebody clicks a checkbox, and while the list loads, so it does
+              not jump when the rows arrive. It is hidden only once the list
+              has loaded and is empty, when there is nothing to act on. */}
+          <div className="mailbox-actions" hidden={!loading && threads.length === 0}>
             <input
               type="checkbox"
               aria-label={t('mailbox.selectAll')}
@@ -2215,7 +2217,7 @@ function Reader({
       {view.summary && (view.summary.summary || view.summary.pending) && <ThreadSummaryStrip summary={view.summary} />}
 
       {writing && (
-        <div className="mailbox-thread-compose">
+        <div className={`mailbox-thread-compose${writing.kind === 'draft' ? ' is-draft' : ''}`}>
           <MailboxComposer
             key={`${writing.kind}-${writing.itemId}`}
             replyTo={writing.kind === 'forward' || writing.kind === 'draft' ? null : writing.itemId}
