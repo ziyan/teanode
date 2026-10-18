@@ -224,6 +224,15 @@ struct LocationPlaceScreen: View {
         isMoving = true
         defer { isMoving = false }
         guard let reading = await model.currentReading() else { return }
+        // A negative accuracy means the phone could not say how rough the
+        // reading is; the live reading is already no older than 60 s.
+        guard reading.accuracyMeters >= 0, reading.accuracyMeters <= LocationText.roughAccuracyMeters else {
+            let roughness = reading.accuracyMeters >= 0
+                ? LocationText.distance(reading.accuracyMeters.rounded()) : String(localized: "an unknown distance")
+            model.problemText = String(
+                localized: "Your iPhone can only place you within \(roughness) right now. Try again outside, or tap the map where the place is.")
+            return
+        }
         await move(to: CLLocationCoordinate2D(latitude: reading.latitudeDegrees, longitude: reading.longitudeDegrees))
     }
 
@@ -446,7 +455,7 @@ struct CheckInSheet: View {
     private var precisionText: String? {
         guard let positionAccuracyMeters, positionAccuracyMeters >= 0 else { return nil }
         let withinText = String(localized: "Within \(LocationText.distance(positionAccuracyMeters.rounded()))")
-        guard positionAccuracyMeters > 300 else { return withinText }
+        guard positionAccuracyMeters > LocationText.roughAccuracyMeters else { return withinText }
         return String(localized: "\(withinText). The phone could only find you roughly.")
     }
 

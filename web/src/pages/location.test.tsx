@@ -972,3 +972,22 @@ it('moves a place by its pin in the editor and saves the new position with Save'
   await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
   expect(calls('SavePlace')[0][1]).toEqual({ placeId: 'place-one', latitudeDegrees: 11.5, longitudeDegrees: 21.5 })
 })
+
+it('keeps the address buttons off while the editor has unsaved changes', async () => {
+  answerWith({ places: [place({ addressText: '9 Nowhere Lane', isAddressTyped: true })] })
+  renderAt('/location?tab=places')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
+  const editor = await screen.findByRole('dialog')
+  const changeButton = within(editor).getByRole('button', { name: 'Change address' }) as HTMLButtonElement
+  const mapButton = within(editor).getByRole('button', { name: "Use the map's address" }) as HTMLButtonElement
+  expect(changeButton.disabled).toBe(false)
+  expect(mapButton.disabled).toBe(false)
+
+  fireEvent.change(within(editor).getByLabelText('Name'), { target: { value: 'Unsaved name' } })
+  expect(changeButton.disabled).toBe(true)
+  expect(mapButton.disabled).toBe(true)
+  expect(within(editor).getByText(/Save your changes first/)).toBeTruthy()
+  fireEvent.click(mapButton)
+  expect(calls('SavePlace')).toHaveLength(0)
+})

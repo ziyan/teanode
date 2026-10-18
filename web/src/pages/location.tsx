@@ -1122,6 +1122,8 @@ function PlaceEditor({
     changes.latitudeDegrees = position.latitudeDegrees
     changes.longitudeDegrees = position.longitudeDegrees
   }
+  // Changing the address closes the editor, which would throw these away.
+  const hasPendingChanges = Object.keys(changes).length > 0
   const mapPlaces = useMemo(
     (): MapPlace[] => [
       {
@@ -1143,7 +1145,7 @@ function PlaceEditor({
       submitLabel={t('common.save')}
       busy={isBusy}
       error={error}
-      canSubmit={isRadiusValid && Object.keys(changes).length > 0}
+      canSubmit={isRadiusValid && hasPendingChanges}
       onClose={onClose}
       onSubmit={() => void onSave(changes)}
       otherAction={
@@ -1173,15 +1175,16 @@ function PlaceEditor({
           <span className="muted">{t('location.address')}</span>
           <span>{place.addressText.trim() || t('location.noAddress')}</span>
         </span>
-        <button type="button" onClick={onChangeAddress}>
+        <button type="button" disabled={isBusy || hasPendingChanges} onClick={onChangeAddress}>
           {t('location.changeAddress')}
         </button>
         {place.isAddressTyped && (
-          <button type="button" disabled={isBusy} onClick={onUseMapAddress}>
+          <button type="button" disabled={isBusy || hasPendingChanges} onClick={onUseMapAddress}>
             {t('location.useMapAddress')}
           </button>
         )}
       </div>
+      {hasPendingChanges && <p className="muted">{t('location.saveBeforeAddress')}</p>}
       <label>
         {t('location.placeLabel')}
         <select value={placeLabel} onChange={(event) => setPlaceLabel(event.target.value)}>
