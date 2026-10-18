@@ -69,7 +69,7 @@
                 return session.replacingOccurrences(of: #""user:manage","#, with: "")
             }
             if query.contains("ListCalendarFreeBusy") { return calendarFreeBusyAnswer(variables: variables) }
-            if let screen, ["calendar-shared", "calendar-share-sheet", "calendar-find-time"].contains(screen) {
+            if let screen, ["calendar-shared", "calendar-sheet", "calendar-share-sheet", "calendar-find-time"].contains(screen) {
                 if query.contains("ListCalendars") { return #"{"data":{"ListCalendars":[\#(sharedCalendarsJSON)]}}"# }
                 if query.contains("ListCalendarEvents"), screen == "calendar-shared" { return sharedCalendarEvents(variables: variables, body: body) }
             }

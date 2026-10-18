@@ -57632,6 +57632,38 @@
         }
       }
     },
+    "Calendar name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历名称"
+          }
+        }
+      }
+    },
+    "Calendar renamed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー名を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历已重命名"
+          }
+        }
+      }
+    },
     "Calendars": {
       "localizations": {
         "ja": {
@@ -59228,6 +59260,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "重命名群聊"
+          }
+        }
+      }
+    },
+    "Rename my calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のカレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名我的日历"
+          }
+        }
+      }
+    },
+    "Rename your calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーの名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名日历"
           }
         }
       }
