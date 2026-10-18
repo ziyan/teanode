@@ -982,8 +982,10 @@ func (self *transaction) SetPhotoLocation(userId string, photoIds []string, loca
 		return change, nil
 	}
 	var found []photoModel
+	// Rows are locked in one order, so two changes of photos in common wait
+	// for each other rather than deadlock.
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "described_at", "place_name", "is_location_removed").
-		Where("user_id = ? AND id IN ? AND trashed_at IS NULL", userId, photoIds).Find(&found).Error; err != nil {
+		Where("user_id = ? AND id IN ? AND trashed_at IS NULL", userId, photoIds).Order("id").Find(&found).Error; err != nil {
 		return nil, err
 	}
 	newPlaceName := ""

@@ -997,13 +997,17 @@ func runPhotoSetLocation(ctx context.Context, command *cli.Command) error {
 	}
 	// The name the photos have now, which is the nearest city's and can be
 	// another than the one picked, or none.
-	placeName := client.PlacedName(ctx, connection, photoIds, found.Latitude, found.Longitude)
+	// Where none of the photos could be read back, the city looked up says it.
+	placeName, isRead := client.PlacedName(ctx, connection, photoIds, found.Latitude, found.Longitude)
+	if !isRead {
+		placeName = found.PlaceName
+	}
 	if command.Bool("json") {
 		return PrintJSON(map[string]any{"changedCount": changedCount, "latitude": found.Latitude, "longitude": found.Longitude, "placeName": placeName})
 	}
 	placedText := placeName
 	if placedText == "" {
-		placedText = client.PositionText(found.Latitude, found.Longitude)
+		placedText = client.PositionText(found.Latitude, found.Longitude) + " (no city is near)"
 	}
 	_, _ = fmt.Fprintf(command.Writer, "set the location of %d of %d photos to %s\n", changedCount, len(photoIds), forTerminal(placedText))
 	return nil

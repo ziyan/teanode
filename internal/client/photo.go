@@ -465,17 +465,19 @@ func ResolvePhotoPlace(ctx context.Context, executor Executor, words string, lat
 
 // PlacedName is the place name the server gave photos set to a position, read
 // from the first of them that moved there. It is the nearest city's, which can
-// be a larger city than the one picked, and empty where no city is near.
-func PlacedName(ctx context.Context, executor Executor, photoIds []string, latitude, longitude float64) string {
+// be a larger city than the one picked, and empty where no city is near. The
+// second value says a photo was read at all: none was when the first few
+// were skipped, or could not be read.
+func PlacedName(ctx context.Context, executor Executor, photoIds []string, latitude, longitude float64) (string, bool) {
 	for _, photoId := range photoIds[:min(len(photoIds), 3)] {
 		view, err := ReadPhoto(ctx, executor, photoId)
 		if err != nil || view.Photo == nil || view.Photo.Latitude == nil || view.Photo.Longitude == nil ||
 			*view.Photo.Latitude != latitude || *view.Photo.Longitude != longitude {
 			continue
 		}
-		return view.Photo.PlaceName
+		return view.Photo.PlaceName, true
 	}
-	return ""
+	return "", false
 }
 
 // PositionText is a position as a person reads it, for a place with no name.

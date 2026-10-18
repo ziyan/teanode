@@ -233,9 +233,9 @@ func previewOf(asked arguments) string {
 		return "Search the cities for " + tools.Named(asked.Query, "a place")
 	case "set-location":
 		if strings.TrimSpace(asked.Place) != "" {
-			return "Set where " + photos() + " were taken to " + tools.Named(asked.Place, "another place")
+			return "Set the location of " + photos() + " to " + tools.Named(asked.Place, "another place")
 		}
-		return "Set where " + photos() + " were taken to another position"
+		return "Set the location of " + photos() + " to another position"
 	case "remove-location":
 		return "Remove the location from " + photos() + " for good; copies already shared or downloaded keep it"
 	case "favorite":
@@ -709,9 +709,11 @@ func setLocation(ctx context.Context, executor client.Executor, asked *arguments
 	}
 	// The name the photos have now: the nearest city's, which can be another
 	// than the one matched, or none.
-	placedText := client.PlacedName(ctx, executor, photoIds, found.Latitude, found.Longitude)
-	if placedText == "" {
-		placedText = client.PositionText(found.Latitude, found.Longitude) + ", where no city is near"
+	placedText, isRead := client.PlacedName(ctx, executor, photoIds, found.Latitude, found.Longitude)
+	if !isRead {
+		placedText = found.PlaceName
+	} else if placedText == "" {
+		placedText = client.PositionText(found.Latitude, found.Longitude) + " (no city is near)"
 	}
 	return tools.TextResult("%d of %d photos were set to %s", count, len(photoIds), placedText), nil
 }
@@ -728,15 +730,20 @@ func cardPreview(ctx context.Context, callArguments json.RawMessage) string {
 	if err != nil {
 		return ""
 	}
+	photoIds, err := photoIdsOf(&asked, asked.Operation, maximumMovePhotoCount)
+	if err != nil {
+		return ""
+	}
 	found, err := client.ResolvePhotoPlace(ctx, current.Operations(), asked.Place, asked.Latitude, asked.Longitude)
 	if err != nil {
 		return ""
 	}
+	// A position no city is near is named by its numbers, said once.
 	where := client.PositionText(found.Latitude, found.Longitude)
-	if found.PlaceName != where {
+	if strings.ContainsFunc(found.PlaceName, unicode.IsLetter) {
 		where = found.PlaceName + " (" + where + ")"
 	}
-	return "Set where " + client.PhotosCountText(len(asked.PhotoIDs)) + " were taken to " + where
+	return "Set the location of " + client.PhotosCountText(len(photoIds)) + " to " + where
 }
 
 func read(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {

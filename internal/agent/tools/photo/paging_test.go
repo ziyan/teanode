@@ -227,8 +227,13 @@ func TestSetLocationUsesTheBestMatchOrAPositionAndNeverBoth(test *testing.T) {
 	current.operations.photos = map[string]string{"photo-one": `{"photo":{"id":"photo-one","latitude":10.5,"longitude":20.25,"placeName":"Harbor City, Exampleland"},"photoFiles":[],"photoPreviews":[]}`}
 	// The card says the city the words matched, not the words.
 	encoded, _ := json.Marshal(map[string]any{"operation": "set-location", "photo_ids": []string{"photo-one", "photo-two"}, "place": "harbor"})
-	if line := cardPreview(tools.WithRun(context.Background(), current), encoded); line != "Set where 2 photos were taken to Harborview, Exampleland (10.5000, 20.2500)" {
+	if line := cardPreview(tools.WithRun(context.Background(), current), encoded); line != "Set the location of 2 photos to Harborview, Exampleland (10.5000, 20.2500)" {
 		test.Fatalf("the card says %q", line)
+	}
+	// One photo named alone is counted as one.
+	encoded, _ = json.Marshal(map[string]any{"operation": "set-location", "photo_id": "photo-one", "place": "harbor"})
+	if line := cardPreview(tools.WithRun(context.Background(), current), encoded); line != "Set the location of 1 photo to Harborview, Exampleland (10.5000, 20.2500)" {
+		test.Fatalf("the card for one photo says %q", line)
 	}
 	result, err := current.call(map[string]any{"operation": "set-location", "photo_ids": []string{"photo-one", "photo-two", "photo-three"}, "place": "harborview"})
 	if err != nil || !strings.Contains(result.Content, "2 of 3 photos were set to Harbor City, Exampleland") {
@@ -238,7 +243,7 @@ func TestSetLocationUsesTheBestMatchOrAPositionAndNeverBoth(test *testing.T) {
 	if len(asked) != 1 || asked[0]["latitude"] != 10.5 || asked[0]["longitude"] != 20.25 || len(asked[0]["photoIds"].([]string)) != 3 {
 		test.Fatalf("%v", asked)
 	}
-	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 2 || searched[1]["query"] != "harborview" || searched[1]["limitCount"] != 1 {
+	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 3 || searched[2]["query"] != "harborview" || searched[2]["limitCount"] != 1 {
 		test.Fatalf("%v", searched)
 	}
 
@@ -247,7 +252,7 @@ func TestSetLocationUsesTheBestMatchOrAPositionAndNeverBoth(test *testing.T) {
 	if err != nil || !strings.Contains(result.Content, "were set to Harbor City, Exampleland") {
 		test.Fatalf("%v %v", result, err)
 	}
-	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 3 || searched[2]["query"] != "10.5, 20.25" {
+	if searched := current.operations.asked("SearchPhotoPlaces"); len(searched) != 4 || searched[3]["query"] != "10.5, 20.25" {
 		test.Fatalf("%v", searched)
 	}
 
