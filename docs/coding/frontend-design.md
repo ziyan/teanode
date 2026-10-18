@@ -133,9 +133,12 @@ middle of text. A page-level action beside Save is a real button
 (`className="danger"` when it removes the thing).
 
 `make lint-ci` holds this line: a button with the link class fails
-`check-link-buttons` unless its opening tag says why, as
-`<button /* link-button: words inside a sentence */ ...>`. An anchor with the
-class is not checked, since it goes somewhere.
+`check-link-buttons` unless the line of its tag, the line above it or the
+first line inside it says why, as
+`<button /* link-button: words inside a sentence */ ...>`. The class counts
+wherever it sits in a `className` (a template or a ternary too). An anchor
+with an `href` is not checked, since it goes somewhere; an anchor without one,
+and a router `Link` carrying the class, always fail.
 
 The exception is a row that is itself a button, such as an idea on the
 agent's Ideas tab: its one other action is an icon in the row's corner.
