@@ -6,6 +6,28 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.177.0] - 2026-10-18
+
+### Added
+
+- The iPhone app continues an interrupted photo upload from where it stopped. (#570)
+- A server used only for photos opens on Photos, and an empty photo library says how to fill it. (#570)
+
+### Changed
+
+- The first row of the side menu and the dashboard's sidebar is named Chats, since it holds the chats with people and groups as well as the agent's; the dashboard's filter for the chats with people says People. (#570)
+- New conversations, groups and messages to someone start from the new-conversation menu at the top right, not rows in the chat list. (#570)
+- Photo backup is in the Photos More menu; Location's lists are side menu rows. (#570)
+- A file or photo in a chat opens with a tap, and its other actions are in the long-press menu. (#570)
+
+### Fixed
+
+- In the iPhone app, a row's symbol is the color of its words. (#570)
+- In the iPhone app, the side menu opens on the items of Photos, Location or Finance instead of leaving them below the bottom of the screen. (#570)
+- Sharing a file from a chat on the iPhone sends the original file under its name, not a converted copy. (#570)
+- Choosing a collection from the side menu while Photo backup is open closes Photo backup. (#570)
+- People on the iPhone says when everyone found is hidden, and "Show hidden" goes away when nobody is. (#570)
+
 ## [0.176.0] - 2026-10-18
 
 ### Added
