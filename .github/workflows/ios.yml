@@ -230,6 +230,18 @@ jobs:
             xcrun simctl terminate "$device" "$bundle" 2>/dev/null || true
             xcrun simctl launch "$device" "$bundle" "$@"
             settle "screenshots/$name.png"
+            # A window turned to landscape on a simulator held upright may be
+            # captured upright, with the screen on its side: turn the picture
+            # so that it reads, as an iPad held sideways shows it.
+            case "$name" in
+              *-landscape|store-ipad/*)
+                pixel_width=$(sips -g pixelWidth "screenshots/$name.png" | awk '/pixelWidth/ {print $2}')
+                pixel_height=$(sips -g pixelHeight "screenshots/$name.png" | awk '/pixelHeight/ {print $2}')
+                if [ "$pixel_height" -gt "$pixel_width" ]; then
+                  sips -r 270 "screenshots/$name.png" >/dev/null
+                fi
+                ;;
+            esac
             case "$name" in
               recordings-*|recording-*|device-setup-*|knowledge-records-*|conversation-long-message-*)
                 # The screen may still be loading its demo answers: look
