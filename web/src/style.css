@@ -12057,6 +12057,10 @@ main.content:has(> .knowledge-frame) {
   display: flex;
   flex-direction: column;
   max-height: min(55vh, 22rem);
+  /* In a window too short for the list at that height the list is what gives
+     way, down to a few rows, and the rows are what scroll. */
+  min-height: 7rem;
+  flex: 0 1 auto;
   overflow-y: auto;
   margin-top: var(--space-2);
   border: 1px solid var(--border);
@@ -12074,6 +12078,9 @@ main.content:has(> .knowledge-frame) {
    text, a line between. */
 .contact-picker-row {
   display: flex;
+  /* Rows keep the height their words need; a list that is taller than its box
+     scrolls, it does not squeeze the rows into each other. */
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--space-3);
   margin: 0;
@@ -12109,6 +12116,31 @@ label.checkbox.is-plain input {
   flex: 0 0 auto;
   min-height: 0;
   margin: 0;
+}
+
+/* The dialog that holds the list is never taller than the window: the list
+   shrinks first, and what is still too tall scrolls inside the dialog with
+   Cancel and Save kept in view. */
+.dialog:has(.contact-picker) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--space-4) * 2);
+  overflow-y: auto;
+}
+
+.dialog:has(.contact-picker) > * {
+  flex: 0 0 auto;
+}
+
+.dialog:has(.contact-picker) > .contact-picker {
+  flex: 0 1 auto;
+}
+
+/* The line under the list is under it. A hint under a field pulls itself up
+   to sit close to the field; under a box that scrolls it pulled up into the
+   last row. */
+.contact-picker + .field-hint {
+  margin: var(--space-2) 0 var(--space-3);
 }
 
 .contact-picker-text {
