@@ -89,7 +89,16 @@ struct GoalRow: View {
                 Text(goal.goalStatus).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
             if goal.isOpen, let next = ServerTime.date(goal.goalNextAt) {
-                Text("Next \(next.formatted(.relative(presentation: .named)))").font(.caption).foregroundStyle(.tertiary)
+                // A check-in whose time has passed is about to run, not
+                // "next 17 hours ago".
+                Group {
+                    if next > Date() {
+                        Text("Next \(next.formatted(.relative(presentation: .named)))")
+                    } else {
+                        Text("Next check-in soon")
+                    }
+                }
+                .font(.caption).foregroundStyle(.tertiary)
             }
         }
         .padding(.vertical, 2)

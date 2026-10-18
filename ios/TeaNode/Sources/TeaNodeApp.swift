@@ -43,6 +43,10 @@ struct TeaNodeApp: App {
             // thing set whichever way the change went.
             .onChange(of: appearance) { appearance.apply() }
             .environment(app)
+            // Switches in TeaNode's green: they are the system's brighter
+            // green otherwise, beside the accent on the same screen. Only
+            // switches: a tint here would also turn every toolbar button green.
+            .toggleStyle(AccentSwitchToggleStyle())
             .onOpenURL { url in app.open(url) }
             .onAppear {
                 appearance.apply()
@@ -983,3 +987,11 @@ struct AccountsSection: View {
     }
 }
 
+/// AccentSwitchToggleStyle is the system switch in the accent color, as the
+/// app's default toggle style. The switch style is named inside, so the style
+/// does not apply itself again.
+struct AccentSwitchToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Toggle(configuration).toggleStyle(.switch).tint(Color.accentColor)
+    }
+}
