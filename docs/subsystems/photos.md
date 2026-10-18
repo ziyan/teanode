@@ -69,10 +69,13 @@ to be backed up too.
 ## Uploads
 
 Every client uploads through one endpoint, `/api/v1/photos/uploads`, which
-speaks the IETF resumable upload draft, because the iPhone's background
-uploads do: `OPTIONS` says the largest file allowed, `POST` creates an upload
+speaks the IETF resumable upload draft, so that any client that knows the
+draft can continue an upload and any other can send a file in one `POST`
+(the iPhone does not use the system's resumable upload support: it makes its own
+`POST`, `HEAD` and `PATCH`, described under the iPhone's backup): `OPTIONS` says the largest file allowed, `POST` creates an upload
 and answers an interim `104` with its address before reading the body,
-`HEAD` says how many bytes are stored, `PATCH` appends from there. `OPTIONS`
+`HEAD` says how many bytes are stored (and is never cached:
+`Cache-Control: no-store`), `PATCH` appends from there. `OPTIONS`
 writes the limit as `max-size=<bytes>` for a client that names revision 5 or
 later of the draft in `Upload-Draft-Interop-Version`, and as the bare number
 for one that names an earlier revision or none. What the
@@ -94,7 +97,11 @@ upload's address and `Upload-Offset: 0`, and the bytes follow in a `PATCH` at
 the offset `HEAD` reports, which ends with `Upload-Complete: ?1`. The `X-Photo-*`
 headers and the declared digest belong to the `POST`; the `PATCH` does not
 repeat them, and a `PATCH` whose bytes do not hash to the digest ends the upload
-(`internal/photo/upload_test.go` has the cases).
+(`internal/photo/upload_test.go` has the cases). A header that says the end of
+the file twice counts as saying it once when every item agrees: iOS 17 and later
+may add resumable upload headers of its own to a background upload, so
+`Upload-Complete` can arrive as `?1, ?1` or on two lines. Items that disagree
+(`?1, ?0`) are refused with a 400.
 
 The body is stored in parts of at most 8 MiB as it arrives, each with a
 receipt row once it is whole, so the offset a client is told is always bytes
@@ -410,6 +417,18 @@ What continues and what waits:
 
 - Files already queued continue with the app closed. The backup screen says
   "Uploading in the background: N files queued".
+- A file can be queued only after its upload has been made, and the app makes
+  that request itself (the background session takes upload tasks only), so
+  queueing needs the app running and a network it may use. With "Wi-Fi only" on
+  mobile data, or with no network, a pass queues nothing new, and the first
+  request that finds there is no network ends the pass's queueing (the rest
+  would each wait out a timeout to find the same). Before uploads were made
+  first, a file could be queued to wait for Wi-Fi and start with the app closed;
+  now only files that were queued while Wi-Fi was there do. The others wait for
+  the app to be opened, the network to come back, or the overnight task. The
+  cost is a `POST` round trip for every file queued (and a `HEAD` before it for
+  a file with an address), which a wake's top-up pays within its 18 seconds, so
+  it queues fewer files than it did.
 - When an upload finishes and the app is open, the app starts the next pass
   (`finished` says whether to), so the library is worked through as uploads
   finish and not only when the app is next opened. Only an upload that went up
@@ -448,9 +467,13 @@ address is queued again, `PhotoBackupCoordinator.prepareSending`:
   the file goes on from there; complete, and the photo is recorded from the
   `X-Photo-ID` it names without sending a byte (the case of an answer that was
   lost); gone (404, or an offset past the end of the file), and a new upload is
-  made and the file goes up from its first byte. A question that cannot be
-  answered (no network, the server failing, a sign-in refused) queues nothing and
-  keeps the address for the next pass.
+  made and the file goes up from its first byte. A refused question (any 4xx
+  other than a 401, a 404 or 410, and the answers that say to wait: 408, 425,
+  429) also drops the address and makes a new upload. A 403 is one of them: a
+  `HEAD` has no body, so it cannot tell a device password made without photos
+  from any other refusal, and the request that makes the new upload has a body
+  that can. A question that cannot be answered (no network, the server failing,
+  a sign-in refused) queues nothing and keeps the address for the next pass.
 - writes the bytes from the offset into `<exported name>.tail` in the outgoing
   folder, since a background upload reads a file, and deletes the whole exported
   file at once. The queue counts the rest, not the whole file. The rest is
@@ -458,11 +481,43 @@ address is queued again, `PhotoBackupCoordinator.prepareSending`:
   deleted by the next pass like any file nothing queued refers to. The rest is
   written only if it is at most half of the free space, because the whole file
   is on the phone until it is done; otherwise the file starts over from its
-  first byte, which needs no room beyond the file.
+  first byte, which needs no room beyond the file. The rest has the attributes
+  of the exported file (readable by the app alone, and protected until the
+  phone's first unlock). It is written a piece at a time on a task of its own,
+  and pausing, turning backup off or cancelling the pass ends the write between
+  two pieces and deletes what was written. If the write fails (a full disk), the
+  address is forgotten, the upload is dropped on the server, and the whole
+  file, still on the phone, goes up as a new upload, so the same failure does
+  not come back at every pass.
 
 An offset equal to the file's size means the server has every byte and has not
-completed the upload: the rest is empty and its `PATCH`, at the end of the file
-with `Upload-Complete: ?1`, completes it.
+completed the upload: the rest is empty. Its `PATCH`, at the end of the file
+with `Upload-Complete: ?1`, is not given to the background session, which may
+not run a task for a file of no bytes. The app sends it itself, as a plain
+request with a body of nothing, and records the photo from its answer. The
+server completes the upload whether or not the app hears the answer in time, so
+a request that times out is harmless: the next `HEAD` says the upload is
+complete and names the photo.
+
+A `PATCH` the background session sends can be answered 409 (the server has
+another number of bytes than the request said, as when the part that was in
+flight lands after the question was asked) or 404 or 410 (the upload is gone).
+The file is not at fault and the server is not failing, so this is no error on
+the screen and no failure toward the three that stop a pass
+(`PhotoBackupOutcome.uploadMovedOn`). `finished` says to start a pass at once,
+which asks `HEAD` again: a new offset is continued from, and a gone upload makes
+a new one. A file for which this happens three times in a row is counted as the
+server failing, so that a file that is never where it is said to be cannot start
+passes without end.
+
+When the app forgets the address of an upload that the server may still hold
+(the file is not the same bytes any more, the offset is beyond the file, the
+rest could not be written, the photo was deleted from the library, or backup was
+turned off), it sends `DELETE` for the upload. This is best effort and is not
+waited for, except when backup is turned off, where the requests are sent
+before the device password they carry is revoked. An upload the server said it
+does not have is not deleted. An upload nobody continues is ended by the server
+after a week in any case; the `DELETE` gives its room back sooner.
 
 The address is written to the index with the next change after thirty seconds,
 and when the app goes to the background, like the rest of it. A kill between
