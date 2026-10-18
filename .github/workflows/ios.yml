@@ -336,7 +336,7 @@ jobs:
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
-          # The side menu on Photos: the collections and the photo backup under the parts.
+          # The side menu on Photos: the collections under the parts.
           shoot photos-menu-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
           shoot photos-menu-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
           # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its

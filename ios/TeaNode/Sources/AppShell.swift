@@ -124,9 +124,6 @@ struct MainView: View {
     /// The photo library, held here so the side menu can list its collections
     /// as it lists the mail folders.
     @State private var photos: PhotosModel
-    /// Whether the photo backup screen is open on the Photos part; the side
-    /// menu's Photo backup row sets it.
-    @State private var isShowingPhotoBackup = false
     @State private var composing: ComposeStart?
     /// How many times the side menu has been opened, for what it reads again
     /// each time. The menu itself is kept while closed, so its lists stay
@@ -149,7 +146,7 @@ struct MainView: View {
         SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail && section != .location) {
             SideMenu(
                 connection: connection, mail: mail, photos: photos, section: $section, conversation: $conversation, mailPlace: $mailPlace,
-                financePart: $financePart, isShowingPhotoBackup: $isShowingPhotoBackup, composing: $composing, openingCount: menuOpeningCount
+                financePart: $financePart, composing: $composing, openingCount: menuOpeningCount
             ) {
                 isMenuOpen = false
             }
@@ -410,7 +407,7 @@ struct MainView: View {
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:
-            PhotosScreen(model: photos, isShowingBackup: $isShowingPhotoBackup)
+            PhotosScreen(model: photos)
         case .goals:
             GoalsScreen(connection: connection)
         case .ideas:
@@ -515,7 +512,6 @@ struct SideMenu: View {
     @Binding var conversation: AgentConversation?
     @Binding var mailPlace: MailPlace?
     @Binding var financePart: FinancePart
-    @Binding var isShowingPhotoBackup: Bool
     @Binding var composing: ComposeStart?
     /// How many times the menu has been opened: the conversations are read
     /// again each time.
@@ -581,8 +577,6 @@ struct SideMenu: View {
                             ForEach(photos.sections) { collection in
                                 Button {
                                     photos.section = collection
-                                    // A backup screen left open would stay over the collection chosen.
-                                    isShowingPhotoBackup = false
                                     onClose()
                                 } label: {
                                     Label(collection.title, systemImage: collection.symbolName)
@@ -590,14 +584,6 @@ struct SideMenu: View {
                                 }
                                 .menuRow(isSelected: photos.section == collection)
                             }
-                            Button {
-                                isShowingPhotoBackup = true
-                                onClose()
-                            } label: {
-                                Label("Photo backup", systemImage: "icloud.and.arrow.up")
-                                    .foregroundStyle(.primary)
-                            }
-                            .menuRow(isSelected: false)
                         }
                         .listSectionSeparator(.hidden)
                         .id(Self.partItemsSectionId)
