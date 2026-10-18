@@ -1,3 +1,4 @@
+import AVFoundation
 import AVKit
 import Photos
 import SwiftUI
@@ -131,7 +132,9 @@ struct PhotoViewer: View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(photos) { photo in
-                    PhotoPage(photo: photo, model: model, isCurrent: photo.id == currentPhotoId, isZoomed: $isZoomed, onSingleTap: { toggleChrome() })
+                    PhotoPage(
+                        photo: photo, model: model, isCurrent: photo.id == currentPhotoId, isZoomed: $isZoomed, isChromeHidden: isChromeHidden,
+                        onSingleTap: { toggleChrome() }, onSetChromeHidden: { isHidden in setChromeHidden(isHidden) })
                         .containerRelativeFrame([.horizontal, .vertical])
                         .id(photo.id)
                 }
@@ -156,6 +159,13 @@ struct PhotoViewer: View {
 
     private func toggleChrome() {
         withAnimation(barsAnimation) { isChromeHidden.toggle() }
+    }
+
+    /// Hides or shows the bars and the strip, for a video that hides them by
+    /// itself while it plays and shows them again when it ends.
+    private func setChromeHidden(_ isHidden: Bool) {
+        guard isChromeHidden != isHidden else { return }
+        withAnimation(barsAnimation) { isChromeHidden = isHidden }
     }
 
     // MARK: Drag down to close
@@ -559,10 +569,21 @@ struct PhotoPage: View {
     let model: PhotosModel
     let isCurrent: Bool
     @Binding var isZoomed: Bool
+    /// Whether the bars around the picture are hidden. A video's controls go
+    /// and come with them.
+    var isChromeHidden = false
     /// What a tap on the picture does, such as hiding the bars around it.
     var onSingleTap: (() -> Void)?
+    /// Hides or shows the bars around the picture, which a video does by itself:
+    /// it hides them while it plays untouched, and shows them when it ends.
+    var onSetChromeHidden: ((Bool) -> Void)?
     @State private var picture: UIImage?
+    /// The player of a Live Photo's video. A video has its own, in `playback`.
     @State private var player: AVPlayer?
+    @State private var playback: VideoPlayback?
+    /// How many times the controls have been used. A new count restarts the
+    /// wait before they hide.
+    @State private var controlUseCount = 0
     @State private var videoProblemText: String?
     @State private var isPlayingLiveVideo = false
 
@@ -609,7 +630,10 @@ struct PhotoPage: View {
         .task(id: isCurrent) {
             await loadVideo()
         }
-
+        .task(id: hideTimerKey) {
+            await hideControlsWhenLeftAlone()
+        }
+        .onDisappear { stopVideo() }
         .overlay(alignment: .topLeading) {
             // Only a Live Photo whose video the reader can have: a photo shared without
             // places comes with its picture only.
@@ -618,7 +642,14 @@ struct PhotoPage: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
-            if isPlayingLiveVideo, (notification.object as? AVPlayerItem) === player?.currentItem { stopLiveVideo() }
+            let endedItem = notification.object as? AVPlayerItem
+            if isPlayingLiveVideo, endedItem === player?.currentItem {
+                stopLiveVideo()
+            } else if let playback, endedItem === playback.player.currentItem {
+                // The video stays on its last frame with the controls and the bars shown.
+                playback.didReachEnd()
+                onSetChromeHidden?(false)
+            }
         }
         .accessibilityElement(children: .contain)
     }
@@ -631,8 +662,30 @@ struct PhotoPage: View {
 
     @ViewBuilder
     private var videoBody: some View {
-        if let player {
-            VideoPlayer(player: player)
+        if let playback {
+            ZStack {
+                // The poster shows until the first frame is ready, so there is no flash of black.
+                if let picture {
+                    Image(uiImage: picture)
+                        .resizable()
+                        .scaledToFit()
+                }
+                VideoLayerView(player: playback.player)
+            }
+            // The whole page answers a tap, the black beside the video too.
+            .contentShape(.rect)
+            .onTapGesture { onSingleTap?() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityText)
+            .accessibilityAddTraits(.isImage)
+            .overlay(alignment: .bottom) {
+                VideoControlsBar(playback: playback, onUse: { controlUseCount += 1 })
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .opacity(isChromeHidden ? 0 : 1)
+                    .allowsHitTesting(!isChromeHidden)
+                    .accessibilityHidden(isChromeHidden)
+            }
         } else {
             ZStack {
                 if let picture {
@@ -705,6 +758,7 @@ struct PhotoPage: View {
             player?.pause()
             player = nil
             isPlayingLiveVideo = false
+            stopVideo()
             return
         }
         guard photo.isVideo, photo.videoPath != nil else { return }
@@ -712,10 +766,63 @@ struct PhotoPage: View {
             let address = try await model.connection.photoPlaybackAddress(photo.id, source: .preview("video"))
             guard !Task.isCancelled else { return }
             videoProblemText = nil
-            player = AVPlayer(url: address)
+            stopVideo()
+            // The video starts as soon as its page is the one on screen, as in the Photos app.
+            let startedPlayback = VideoPlayback(url: address, fallbackDurationSeconds: Double(photo.durationMS) / 1000)
+            playback = startedPlayback
+            startedPlayback.play()
+            #if DEBUG
+                // `-TeaNodeScreen photos-video-viewer` is a video stopped a third of the way in, so that the
+                // controls, which hide three seconds into playing, are on screen for the screenshot.
+                if DemoServer.isRequested, DemoServer.screen == "photos-video-viewer" {
+                    startedPlayback.pause(atSeconds: 2)
+                }
+            #endif
         } catch {
             if !Task.isCancelled { videoProblemText = model.describe(error) }
         }
+    }
+
+    /// Pauses the video and lets go of its player, when its page stops being
+    /// the one on screen.
+    private func stopVideo() {
+        playback?.stop()
+        playback = nil
+    }
+
+    // MARK: The controls hiding by themselves
+
+    /// What the wait before the controls hide starts again for: the bars
+    /// coming back, the video starting, pausing or ending, a finger on the
+    /// progress bar, and any use of the controls.
+    private struct HideTimerKey: Hashable {
+        let isCurrent: Bool
+        let isChromeHidden: Bool
+        let isPlaying: Bool
+        let hasEnded: Bool
+        let isScrubbing: Bool
+        let controlUseCount: Int
+    }
+
+    private var hideTimerKey: HideTimerKey {
+        HideTimerKey(
+            isCurrent: isCurrent, isChromeHidden: isChromeHidden, isPlaying: playback?.isPlaying ?? false, hasEnded: playback?.hasEnded ?? false,
+            isScrubbing: playback?.isScrubbing ?? false, controlUseCount: controlUseCount)
+    }
+
+    /// Hides the controls, the bars and the strip together once a playing video
+    /// has been left alone for a few seconds. The wait ends, and starts again,
+    /// whenever the key changes; leaving the page ends it.
+    private func hideControlsWhenLeftAlone() async {
+        guard isCurrent, !isChromeHidden, let playback else { return }
+        guard
+            VideoControls.shouldHide(
+                isPlaying: playback.isPlaying, hasEnded: playback.hasEnded, isScrubbing: playback.isScrubbing,
+                isVoiceOverRunning: UIAccessibility.isVoiceOverRunning)
+        else { return }
+        try? await Task.sleep(for: .seconds(VideoControls.hideDelaySeconds))
+        guard !Task.isCancelled else { return }
+        onSetChromeHidden?(true)
     }
 
     /// Plays the video of a Live Photo in place of its picture.
