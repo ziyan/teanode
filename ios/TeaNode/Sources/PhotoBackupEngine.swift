@@ -422,12 +422,18 @@ final class PhotoBackupEngine {
         // cancelled, report back, and none of that may start another pass.
         isTurningOff = true
         defer { isTurningOff = false }
+        // Made before the account is forgotten: it is what asks the server to
+        // drop the uploads the app kept a part of, which needs the password.
+        let departing = try? makeCoordinator()
         preferences.enabledAccountKey = nil
         enabledAccountKey = nil
         // Turned on again later, backup starts running, not paused.
         preferences.isPaused = false
         isPaused = false
         await stopEverything()
+        // Nothing will continue them now, and the password they are dropped
+        // with is revoked below.
+        await departing?.abandonKeptUploads()
         stopWatchingNetwork()
         credentialName = nil
         accessProblem = nil
