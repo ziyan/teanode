@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.173.0] - 2026-10-18
+
+### Added
+
+- On the dashboard and in the iPhone app, a follow-up can be added by hand, and a goal can be given one of the agent's schedules to run on. (#564)
+- The iPhone app's photo backup says how much time is left, and can be paused and resumed. (#564)
+
+### Fixed
+
+- In the iPhone app: every mail row is the same height; a destructive button's symbol is red; Settings shows each account with its picture and name; the side menu opens where it was left; switches use TeaNode's green; a recording's preview actions are real buttons that fit at the largest text sizes; a goal no longer says its next check-in was hours ago; photo backup works through a large library in batches. (#564)
+
 ## [0.172.4] - 2026-10-18
 
 ### Changed
