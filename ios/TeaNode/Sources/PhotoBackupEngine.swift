@@ -44,6 +44,10 @@ final class PhotoBackupEngine {
     /// How much of the library the app may read, when that is not enough.
     private(set) var accessProblem: PhotoBackupAccess?
     private(set) var isWorking = false
+    /// Whether the person paused backup, which lasts until they resume, across
+    /// launches (PhotoBackupPreferences.isPaused). Not the same as off: the
+    /// password, the index and the place the listing got to are kept.
+    private(set) var isPaused: Bool
     /// How many times backup has finished something (a pass ended, or the app
     /// queued more files after being woken). The Photo backup screen reads the
     /// size of the library from the server when this changes, and not otherwise.
@@ -118,6 +122,7 @@ final class PhotoBackupEngine {
         usesMobileData = preferences.usesMobileData
         includesHidden = preferences.includesHidden
         enabledAccountKey = preferences.enabledAccountKey
+        isPaused = preferences.isPaused
         // The index is written every thirty seconds at most; going to the
         // background writes what is left, as the app may be suspended at once.
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
@@ -224,7 +229,7 @@ final class PhotoBackupEngine {
     /// iCloud wait for the app to be opened or for the night. A pass that is
     /// working is left to do this itself.
     func topUpAfterWake() async {
-        guard isEnabled, !isTurningOff, let coordinator = try? makeCoordinator() else { return }
+        guard isEnabled, !isPaused, !isTurningOff, let coordinator = try? makeCoordinator() else { return }
         await coordinator.topUp(settings: currentSettings, until: Date().addingTimeInterval(Self.wakeTopUpSeconds))
         await refresh()
         finishedWorkCount += 1
@@ -328,6 +333,7 @@ final class PhotoBackupEngine {
         } else if summary.isSignInNeeded {
             phase = .needsSignIn
         }
+        if isPaused { phase = .paused }
         apply(
             PhotoBackupStatus(
                 phase: phase, backedUpItemCount: summary.backedUpItemCount, libraryItemCount: summary.libraryItemCount,
@@ -418,6 +424,9 @@ final class PhotoBackupEngine {
         defer { isTurningOff = false }
         preferences.enabledAccountKey = nil
         enabledAccountKey = nil
+        // Turned on again later, backup starts running, not paused.
+        preferences.isPaused = false
+        isPaused = false
         await stopEverything()
         stopWatchingNetwork()
         credentialName = nil
@@ -519,7 +528,7 @@ final class PhotoBackupEngine {
     /// again, runs a pass at once, and asks the system for a continued
     /// processing task so that the pass goes on with the app in the background.
     func backUpNow() async {
-        guard isEnabled else { return }
+        guard isEnabled, !isPaused else { return }
         problemText = nil
         if let index = try? makeIndex() {
             await index.clearRefusals()
@@ -535,6 +544,46 @@ final class PhotoBackupEngine {
         await refresh()
     }
 
+    /// Pauses backup until the person resumes: the pass that is working is
+    /// stopped, the uploads the background session holds are cancelled so that
+    /// the phone stops sending, and no pass, background task or retry starts
+    /// until `resume()`. What went up, the index and the place the listing got
+    /// to are kept. A file that was part way up starts again from its first
+    /// byte after the pause, since the app starts each file as a new upload.
+    func pause() async {
+        guard isEnabled, !isPaused, !isTurningOff else { return }
+        isPaused = true
+        preferences.isPaused = true
+        problemText = nil
+        retryTask?.cancel()
+        retryTask = nil
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.processingIdentifier)
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.continuedIdentifier)
+        let working = passTask
+        working?.cancel()
+        await coordinator?.pause()
+        if let working { await Self.wait(for: working, upTo: .seconds(5)) }
+        // Whatever the pass queued as it was stopping, and the files exported
+        // for it. Also the uploads of an earlier launch, when no coordinator
+        // has been made in this one.
+        await coordinator?.pause()
+        await PhotoBackupSession.shared.cancelAll()
+        passTask = nil
+        passGeneration += 1
+        await refresh()
+    }
+
+    /// Lets backup go on, and starts a pass at once.
+    func resume() async {
+        guard isEnabled, isPaused, !isTurningOff else { return }
+        isPaused = false
+        preferences.isPaused = false
+        await coordinator?.resume()
+        startWatchingNetwork()
+        startPasses()
+        await refresh()
+    }
+
     /// Runs passes until one sends nothing new, and then again whenever an
     /// upload finishes (`sessionFinished`) while files are still to send, so
     /// that the library keeps being worked through as uploads finish, not only
@@ -543,7 +592,7 @@ final class PhotoBackupEngine {
     @discardableResult
     func startPasses() -> Task<Void, Never>? {
         if let passTask { return passTask }
-        guard !isTurningOff, let coordinator = try? makeCoordinator() else { return nil }
+        guard !isPaused, !isTurningOff, let coordinator = try? makeCoordinator() else { return nil }
         passGeneration += 1
         let generation = passGeneration
         let task = Task { [weak self] in
@@ -578,7 +627,7 @@ final class PhotoBackupEngine {
     private func scheduleRetryPass() async {
         retryTask?.cancel()
         retryTask = nil
-        guard isEnabled, let retryTime = await coordinator?.pendingRetryTime else { return }
+        guard isEnabled, !isPaused, let retryTime = await coordinator?.pendingRetryTime else { return }
         retryTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(max(1, retryTime.timeIntervalSinceNow)))
             guard !Task.isCancelled else { return }
@@ -594,13 +643,13 @@ final class PhotoBackupEngine {
     /// stopped, the session's tasks are cancelled, and a new pass queues the
     /// files again under the new setting.
     private func restartPasses() async {
-        guard isEnabled, !isTurningOff else { return }
+        guard isEnabled, !isPaused, !isTurningOff else { return }
         let working = passTask
         working?.cancel()
         await coordinator?.stop()
         if let working { await Self.wait(for: working, upTo: .seconds(5)) }
-        // Not for a backup turned off while this waited.
-        guard isEnabled, !isTurningOff else { return }
+        // Not for a backup turned off or paused while this waited.
+        guard isEnabled, !isPaused, !isTurningOff else { return }
         await PhotoBackupSession.shared.cancelAll()
         passTask = nil
         passGeneration += 1
@@ -621,7 +670,7 @@ final class PhotoBackupEngine {
         let made = PhotoBackupCoordinator(
             index: try makeIndex(), library: PhotoKitLibrary(), transfer: PhotoBackupSession.shared, lookup: connection, network: DeviceNetwork(),
             outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential,
-            freeSpaceBytes: { Self.freeSpaceBytes(at: outgoing) })
+            freeSpaceBytes: { Self.freeSpaceBytes(at: outgoing) }, isPaused: isPaused)
         coordinator = made
         coordinatorAccountKey = accountKey
         // A pass started by a background task launch has not come through the
@@ -675,17 +724,20 @@ final class PhotoBackupEngine {
     /// Asks the system for a pass overnight, when the phone is on power and a
     /// network.
     func scheduleOvernightPass() {
-        guard isEnabled else { return }
+        guard isEnabled, !isPaused else { return }
         let request = BGProcessingTaskRequest(identifier: Self.processingIdentifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = true
-        // Soon when files wait for the network, otherwise only a look for new photos.
-        request.earliestBeginDate = Date(timeIntervalSinceNow: PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: status.leftForLaterFileCount + status.waitingFileCount))
+        // Soon when files wait for the network or the listing of the library is not
+        // over, otherwise only a look for new photos.
+        request.earliestBeginDate = Date(
+            timeIntervalSinceNow: PhotoBackupSchedule.earliestBeginDelaySeconds(
+                leftForLaterFileCount: status.leftForLaterFileCount + status.waitingFileCount, isListingUnfinished: status.isListingUnfinished))
         try? BGTaskScheduler.shared.submit(request)
     }
 
     private func runOvernight(_ task: BGProcessingTask) async {
-        guard isEnabled else {
+        guard isEnabled, !isPaused else {
             task.setTaskCompleted(success: true)
             return
         }
@@ -706,7 +758,7 @@ final class PhotoBackupEngine {
     private static let continuedProgressUnitCount: Int64 = 1_000
 
     private func runContinued(_ task: BGContinuedProcessingTask) async {
-        guard isEnabled else {
+        guard isEnabled, !isPaused else {
             task.setTaskCompleted(success: true)
             return
         }
@@ -742,7 +794,7 @@ final class PhotoBackupEngine {
         if status.phase == .listing, let listedItemCount = status.listedItemCount {
             return String(localized: "Reading your photo library: \(listedItemCount.formatted()) of \(status.libraryItemCount.formatted())")
         }
-        return String(localized: "\(status.finishedFileCount) of \(status.plannedFileCount) files")
+        return String(localized: "\(status.shownFinishedFileCount) of \(status.plannedFileCount) files")
     }
 
     // MARK: Demo
@@ -754,7 +806,9 @@ final class PhotoBackupEngine {
             // `photos-backup-background`: the app was left, the system is sending a long queue, and
             // more files wait for the app to be opened or for the night.
             let isInBackground = DemoServer.screen == "photos-backup-background"
-            let isOn = DemoServer.screen == "photos-backup-on" || isWaiting || isInBackground
+            // `photos-backup-paused`: the person paused backup part way through the library.
+            let isPausedDemo = DemoServer.screen == "photos-backup-paused"
+            let isOn = DemoServer.screen == "photos-backup-on" || isWaiting || isInBackground || isPausedDemo
             // `settings-photo-backup-other-account` and `photos-backup-other-account` have backup on for a
             // different account than the one signed in.
             let isOnForOtherAccount = DemoServer.screen == "settings-photo-backup-other-account" || DemoServer.screen == "photos-backup-other-account"
@@ -769,6 +823,11 @@ final class PhotoBackupEngine {
                     lastFailure: .serverReason("photo storage is unavailable"), lastPassFinishedAt: Date(timeIntervalSinceNow: -600))
                 return
             }
+            if isPausedDemo {
+                status = PhotoBackupStatus(
+                    phase: .paused, backedUpItemCount: 1_284, libraryItemCount: 3_912, lastPassFinishedAt: Date(timeIntervalSinceNow: -3_600))
+                return
+            }
             if isInBackground {
                 status = PhotoBackupStatus(
                     phase: .idle, backedUpItemCount: 1_284, libraryItemCount: 3_912, queuedFileCount: 200,
@@ -779,7 +838,7 @@ final class PhotoBackupEngine {
                 isOn
                 ? PhotoBackupStatus(
                     phase: .uploading, backedUpItemCount: 1284, libraryItemCount: 3912, plannedFileCount: 2891, finishedFileCount: 1284,
-                    queuedFileCount: 4, currentFilename: "IMG_2041.MOV", lastPassFinishedAt: Date(timeIntervalSinceNow: -86_400))
+                    queuedFileCount: 4, lastPassFinishedAt: Date(timeIntervalSinceNow: -86_400), estimatedSecondsLeft: 3 * 3_600 + 200)
                 : (isOnForOtherAccount
                     ? PhotoBackupStatus(phase: .idle, backedUpItemCount: 3_912, libraryItemCount: 3_912, lastPassFinishedAt: Date(timeIntervalSinceNow: -3_600))
                     : PhotoBackupStatus(phase: .off))

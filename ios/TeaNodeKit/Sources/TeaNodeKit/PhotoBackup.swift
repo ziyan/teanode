@@ -380,8 +380,10 @@ public struct PhotoBackupRecord: Codable, Equatable, Sendable {
 }
 
 /// PhotoBackupResumePoint is where a listing of the whole library stopped: the
-/// last item it handled. The library is listed newest first, so the next batch
-/// holds the items that come after this one.
+/// creation date of the last item it handled. The library is listed newest
+/// first, so the next batch holds the items made before this date (see
+/// `PhotoBackupListingWindow`). A saved index that still has the identifier of
+/// that item, which an earlier version kept, is read all the same.
 public struct PhotoBackupResumePoint: Codable, Equatable, Sendable {
     /// The item's creation date as seconds since the reference date, kept
     /// exactly: the index's other dates are written to the second, and a
@@ -389,11 +391,9 @@ public struct PhotoBackupResumePoint: Codable, Equatable, Sendable {
     /// reference date is the one the library keeps its dates against, so the
     /// number comes back as the very same date.
     public let creationSecondsSinceReferenceDate: Double
-    public let localIdentifier: String
 
-    public init(creationDate: Date, localIdentifier: String) {
+    public init(creationDate: Date) {
         creationSecondsSinceReferenceDate = creationDate.timeIntervalSinceReferenceDate
-        self.localIdentifier = localIdentifier
     }
 
     public var creationDate: Date { Date(timeIntervalSinceReferenceDate: creationSecondsSinceReferenceDate) }

@@ -36421,22 +36421,6 @@
         }
       }
     },
-    "Sending": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "送信"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发送"
-          }
-        }
-      }
-    },
     "Sending one now; it will arrive in a moment.": {
       "localizations": {
         "ja": {
@@ -66428,6 +66412,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "已将此人脸用作其头像"
+          }
+        }
+      }
+    },
+    "Resume backup": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップを再開"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续备份"
+          }
+        }
+      }
+    },
+    "About %@ left": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残り約%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大约还剩 %@"
+          }
+        }
+      }
+    },
+    "Backup is paused. Nothing is sent until you resume. Photos already backed up stay on TeaNode.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップは一時停止中です。再開するまで何も送信されません。バックアップ済みの写真は TeaNode に残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份已暂停。继续之前不会发送任何内容。已备份的照片仍保留在 TeaNode。"
+          }
+        }
+      }
+    },
+    "Estimating the time left": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残り時間を見積もり中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在估算剩余时间"
+          }
+        }
+      }
+    },
+    "Pause backup": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップを一時停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停备份"
           }
         }
       }

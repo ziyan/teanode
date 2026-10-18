@@ -29,9 +29,9 @@ extension PhotoBackupFailure {
         case .serverDidNotSayWhichPhoto:
             String(localized: "The server took a file but did not say which photo it was.")
         case .fileRefused(let serverReason):
-            serverReason.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "The server would not take this file.")
+            serverReason.flatMap { $0.isEmpty ? nil : $0.asReasonSentence } ?? String(localized: "The server would not take this file.")
         case .serverReason(let serverReason):
-            serverReason
+            serverReason.asReasonSentence
         case .fileIsEmpty:
             String(localized: "The photo library gave an empty file.")
         case .fileIsNotInLibrary:
@@ -41,7 +41,7 @@ extension PhotoBackupFailure {
         case .fileTookTooLongToRead:
             String(localized: "A file took too long to come from your photo library or iCloud. Backup went on without it and tries it again later.")
         case .systemDescription(let systemText):
-            systemText
+            systemText.asReasonSentence
         }
     }
 }

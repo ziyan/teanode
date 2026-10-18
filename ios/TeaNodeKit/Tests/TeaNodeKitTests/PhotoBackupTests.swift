@@ -724,9 +724,12 @@ final class PhotoBackupServerTests: XCTestCase {
         XCTAssertFalse(shouldResume(from: wifi, to: mobile, usesMobileData: true), "mobile data replacing Wi-Fi is not a network that came")
     }
 
-    func testTheBackgroundTaskIsAskedForSoonWhenFilesWait() {
-        XCTAssertEqual(PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: 4), 15 * 60)
-        XCTAssertEqual(PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: 0), 60 * 60)
+    func testTheBackgroundTaskIsAskedForSoonWhenFilesWaitOrTheListingIsNotOver() {
+        XCTAssertEqual(PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: 4, isListingUnfinished: false), 15 * 60)
+        XCTAssertEqual(PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: 0, isListingUnfinished: false), 60 * 60)
+        XCTAssertEqual(
+            PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: 0, isListingUnfinished: true), 15 * 60,
+            "photos the listing has not reached are work left, though no file waits")
     }
 
     func testTheDevicePasswordIsKeptPerAccount() throws {
@@ -758,6 +761,20 @@ final class PhotoBackupServerTests: XCTestCase {
         XCTAssertNil(PhotoBackupPreferences(defaults: defaults).enabledAccountKey)
     }
 
+    func testThePausedFlagIsOffByDefaultAndSurvivesAReloadOfTheSavedSettings() throws {
+        let suiteName = "photo-backup-paused-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: suiteName) }
+        XCTAssertFalse(PhotoBackupPreferences(defaults: defaults).isPaused)
+        PhotoBackupPreferences(defaults: defaults).isPaused = true
+        XCTAssertTrue(PhotoBackupPreferences(defaults: defaults).isPaused, "paused until the person resumes, whatever the launch")
+        // Pausing is not turning off: the account stays.
+        PhotoBackupPreferences(defaults: defaults).enabledAccountKey = "one|robin"
+        XCTAssertEqual(PhotoBackupPreferences(defaults: defaults).enabledAccountKey, "one|robin")
+        PhotoBackupPreferences(defaults: defaults).isPaused = false
+        XCTAssertFalse(PhotoBackupPreferences(defaults: defaults).isPaused)
+    }
+
     func testTheDocumentsAskForWhatTheDecodersRead() throws {
         XCTAssertTrue(Documents.createPhotoBackupCredential.contains("hasPhotosAccess: true"))
         XCTAssertTrue(Documents.createPhotoBackupCredential.contains("hasCalendarAccess: false"))
@@ -781,9 +798,12 @@ final class PhotoBackupServerTests: XCTestCase {
 
 private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     private let lock = NSLock()
-    private var allItems: [PhotoBackupItem] { didSet { orderedItems = nil; itemsByIdentifier = nil } }
-    /// The items newest first, made once, as a real library keeps its own order.
+    private var allItems: [PhotoBackupItem] { didSet { orderedItems = nil; undatedItems = nil; itemsByIdentifier = nil } }
+    /// The items with a creation date newest first, made once, as a real library
+    /// keeps its own order.
     private var orderedItems: [PhotoBackupItem]?
+    /// The items with no creation date, which the listing ends with.
+    private var undatedItems: [PhotoBackupItem]?
     private var itemsByIdentifier: [String: PhotoBackupItem]?
     private var exportedBytes: [String: Int64] = [:]
     private var exportedDigests: [String: String] = [:]
@@ -799,6 +819,8 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     private var largestRequest = 0
     private var listedResumePoints: [PhotoBackupResumePoint?] = []
     private var batchHook: (@Sendable (Int) async -> Void)?
+    private var itemsHook: (@Sendable (Int) async -> Void)?
+    private var itemRequestCount = 0
     private var exportedIncludesHidden: [Bool] = []
     private var hungKeys: Set<String> = []
     private var secondsPerExport: TimeInterval = 0
@@ -849,6 +871,8 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     var batchResumePoints: [PhotoBackupResumePoint?] { lock.withLock { listedResumePoints } }
     /// Called after each batch is listed with how many batches there have been.
     func set(afterBatch hook: (@Sendable (Int) async -> Void)?) { lock.withLock { batchHook = hook } }
+    /// Called after each request for items is answered with how many requests there have been.
+    func set(afterItems hook: (@Sendable (Int) async -> Void)?) { lock.withLock { itemsHook = hook } }
 
     func access() -> PhotoBackupAccess { lock.withLock { accessLevel } }
 
@@ -859,44 +883,40 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
         }
     }
 
-    /// Newest first, the same date by identifier, no date last.
+    /// Newest first, the same date by identifier.
     private static func comesBefore(_ first: PhotoBackupItem, _ second: PhotoBackupItem) -> Bool {
-        switch (first.creationDate, second.creationDate) {
-        case (let firstDate?, let secondDate?):
-            if firstDate != secondDate { return firstDate > secondDate }
-        case (nil, _?): return false
-        case (_?, nil): return true
-        case (nil, nil): break
-        }
+        if let firstDate = first.creationDate, let secondDate = second.creationDate, firstDate != secondDate { return firstDate > secondDate }
         return first.localIdentifier < second.localIdentifier
     }
 
-    /// Whether an item comes after the resume point in the library's order.
-    private static func comesAfter(_ item: PhotoBackupItem, _ resumePoint: PhotoBackupResumePoint) -> Bool {
-        guard let date = item.creationDate else { return true }
-        if date != resumePoint.creationDate { return date < resumePoint.creationDate }
-        return item.localIdentifier > resumePoint.localIdentifier
-    }
-
+    /// A batch as the real library makes it: the dated items after the resume
+    /// point, where `PhotoBackupListingWindow` says the batch ends, and the
+    /// undated items once, with the batch that reaches the end of the dated ones.
     func listBatch(after resumePoint: PhotoBackupResumePoint?, limit: Int, includesHidden: Bool) async throws -> PhotoBackupListingBatch {
         let (batch, hook, batchCount) = lock.withLock { () -> (PhotoBackupListingBatch, (@Sendable (Int) async -> Void)?, Int) in
             listedResumePoints.append(resumePoint)
-            let ordered = orderedItems ?? allItems.sorted(by: Self.comesBefore)
+            let ordered = orderedItems ?? allItems.filter { $0.creationDate != nil }.sorted(by: Self.comesBefore)
             orderedItems = ordered
-            // The first item after the resume point, found by halving: the order
-            // is the library's, so the items after it are all after it.
+            let undated = undatedItems ?? allItems.filter { $0.creationDate == nil }.sorted { $0.localIdentifier < $1.localIdentifier }
+            undatedItems = undated
+            // The first item the query for the batch holds, found by halving: the
+            // dates only go down.
             var low = 0
-            var high = ordered.count
             if let resumePoint {
+                let newestDate = PhotoBackupListingWindow.newestCreationDate(after: resumePoint)
+                var high = ordered.count
                 while low < high {
                     let middle = (low + high) / 2
-                    if Self.comesAfter(ordered[middle], resumePoint) { high = middle } else { low = middle + 1 }
+                    if let date = ordered[middle].creationDate, date <= newestDate { high = middle } else { low = middle + 1 }
                 }
             }
-            let entries = ordered[low..<min(low + limit, ordered.count)].map {
-                PhotoBackupLibraryEntry(localIdentifier: $0.localIdentifier, creationDate: $0.creationDate)
-            }
-            return (PhotoBackupListingBatch(entries: entries, isLast: low + limit >= ordered.count), batchHook, listedResumePoints.count)
+            let candidateCount = ordered.count - low
+            let takeCount = PhotoBackupListingWindow.takeCount(candidateCount: candidateCount, limit: limit) { ordered[low + $0].creationDate ?? .distantPast }
+            var items = Array(ordered[low..<(low + takeCount)])
+            let isEndOfDatedItems = takeCount >= candidateCount
+            if isEndOfDatedItems { items.append(contentsOf: undated) }
+            let entries = items.map { PhotoBackupLibraryEntry(localIdentifier: $0.localIdentifier, creationDate: $0.creationDate) }
+            return (PhotoBackupListingBatch(entries: entries, isLast: isEndOfDatedItems), batchHook, listedResumePoints.count)
         }
         await hook?(batchCount)
         return batch
@@ -905,15 +925,18 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     func removeFromLibrary(_ localIdentifier: String) { lock.withLock { allItems.removeAll { $0.localIdentifier == localIdentifier } } }
 
     func items(withLocalIdentifiers localIdentifiers: [String], includesHidden: Bool) async throws -> [PhotoBackupItem] {
-        lock.withLock {
+        let (found, hook, requestCount) = lock.withLock { () -> ([PhotoBackupItem], (@Sendable (Int) async -> Void)?, Int) in
+            itemRequestCount += 1
             builtIdentifiers.append(contentsOf: localIdentifiers)
             largestRequest = max(largestRequest, localIdentifiers.count)
             var byIdentifier = itemsByIdentifier ?? Dictionary(allItems.map { ($0.localIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
             itemsByIdentifier = byIdentifier
             // What changed is read as it is now, in place of what it was.
             for item in changedItems { byIdentifier[item.localIdentifier] = item }
-            return localIdentifiers.compactMap { byIdentifier[$0] }
+            return (localIdentifiers.compactMap { byIdentifier[$0] }, itemsHook, itemRequestCount)
         }
+        await hook?(requestCount)
+        return found
     }
 
     func changes(since token: Data, includesHidden: Bool) async throws -> PhotoBackupChanges {
@@ -1033,7 +1056,7 @@ private func makeRig(
     _ test: XCTestCase, items: [PhotoBackupItem], lookup: FakeLookup? = nil, network: FakeNetwork = FakeNetwork(), budget: PhotoBackupBudget = legacyBudget,
     index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300,
     exportTimeoutSeconds: TimeInterval = 30 * 60, freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, clock: ManualClock? = nil,
-    batchSize: Int = PhotoBackupCoordinator.standardBatchSize
+    batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false
 ) throws -> Rig {
     let directory = try existingDirectory ?? temporaryDirectory(test)
     let outgoing = directory.appendingPathComponent("outgoing")
@@ -1047,7 +1070,7 @@ private func makeRig(
         server: try ServerAddress(parsing: "photos.example.com"), accountKey: "photos.example.com|robin",
         credential: PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret"),
         budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, exportTimeoutSeconds: exportTimeoutSeconds, freeSpaceBytes: freeSpaceBytes,
-        now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) }, batchSize: batchSize)
+        now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) }, batchSize: batchSize, isPaused: isPaused)
     return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, coordinator: coordinator)
 }
 
@@ -2167,9 +2190,14 @@ private final class PassNotes: @unchecked Sendable {
     var isListingProgressMissing: Bool { lock.withLock { isListingProgressMissingValue } }
 }
 
-/// Items made a ten seconds apart, the highest number the newest.
-private func makeLibraryItems(count: Int) -> [PhotoBackupItem] {
-    (0..<count).map { makeItem("item\($0)", secondsSince2026: Double($0) * 10) }
+/// Items made ten seconds apart, the highest number the newest. With
+/// `itemsPerMoment` above one, that many in a row share one creation date, as a
+/// burst does; `undatedCount` more are named `undated0`, `undated1`, and have no
+/// creation date at all.
+private func makeLibraryItems(count: Int, itemsPerMoment: Int = 1, undatedCount: Int = 0) -> [PhotoBackupItem] {
+    let dated = (0..<count).map { makeItem("item\($0)", secondsSince2026: Double($0 / itemsPerMoment) * 10) }
+    let undated = (0..<undatedCount).map { makeItem("undated\($0)", secondsSince2026: nil) }
+    return dated + undated
 }
 
 final class PhotoBackupLargeLibraryTests: XCTestCase {
@@ -2234,7 +2262,7 @@ final class PhotoBackupLargeLibraryTests: XCTestCase {
         let storedProgress = await rig.index.listingProgress
         let progress = try XCTUnwrap(storedProgress)
         XCTAssertEqual(progress.listedItemCount, 1_200)
-        XCTAssertEqual(progress.resumePoint?.localIdentifier, "item1800", "the oldest item of the four batches, newest first")
+        XCTAssertEqual(progress.resumePoint, PhotoBackupResumePoint(creationDate: items[1_800].creationDate!), "the oldest item of the four batches, newest first")
         let tokenAfterFirst = await rig.index.changeToken
         XCTAssertNil(tokenAfterFirst, "the library has not been listed to the end")
         XCTAssertEqual(progress.changeToken, Data("token-1".utf8))
@@ -2298,6 +2326,141 @@ final class PhotoBackupLargeLibraryTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Set(fractions).count, 10)
     }
 
+    /// Finishes the first few uploads a test sees and leaves the rest held.
+    private final class FirstUploadsFinisher: @unchecked Sendable {
+        private let lock = NSLock()
+        private var startedCount = 0
+        let finishedLimit: Int
+        init(finishedLimit: Int) { self.finishedLimit = finishedLimit }
+        func shouldFinishNextUpload() -> Bool {
+            lock.withLock {
+                startedCount += 1
+                return startedCount <= finishedLimit
+            }
+        }
+    }
+
+    func testABurstOfOneDateAcrossABatchBoundaryAndPhotosWithNoDateAreEachUploadedOnce() async throws {
+        // Twelve photos in two bursts of six, and three with no date, in
+        // batches of five: the newer burst is one batch of six, and the older
+        // one comes with the photos without a date.
+        let items = makeLibraryItems(count: 12, itemsPerMoment: 6, undatedCount: 3)
+        let rig = try makeRig(self, items: items, batchSize: 5)
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-" + job.localIdentifier)) }
+        }
+        let result = await coordinator.runPass(settings: settings)
+        XCTAssertFalse(result.wasStopped)
+        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier).sorted(), items.map(\.localIdentifier).sorted(), "every item once, none twice")
+        XCTAssertEqual(rig.library.batchResumePoints.count, 2, "one batch for each burst")
+        XCTAssertLessThanOrEqual(rig.library.largestItemRequestCount, 5, "no more than a batch of items is built at once")
+        let summary = await rig.index.summary()
+        XCTAssertEqual(summary.backedUpItemCount, 15)
+        let listing = await rig.index.listingProgress
+        XCTAssertNil(listing, "the listing is over")
+        let known = await rig.index.knownLocalIdentifiers()
+        XCTAssertEqual(known.count, 15)
+    }
+
+    func testAMomentLargerThanTheBatchIsWorkedThroughABatchAtATimeAndItsResumePointIsSavedWhenWhole() async throws {
+        // Eleven photos made at one instant, and two with no date, in batches of four.
+        let items = makeLibraryItems(count: 11, itemsPerMoment: 11, undatedCount: 2)
+        let rig = try makeRig(self, items: items, idleTimeoutSeconds: 0.05, batchSize: 4)
+        let coordinator = rig.coordinator
+        // The pass is stopped while the first four items are being read.
+        rig.library.set(afterItems: { requestCount in if requestCount == 1 { await coordinator.stop() } })
+        let first = await coordinator.runPass(settings: settings)
+        XCTAssertTrue(first.wasStopped)
+        let storedProgress = await rig.index.listingProgress
+        let progress = try XCTUnwrap(storedProgress)
+        XCTAssertNil(progress.resumePoint, "the moment is not whole, so no resume point is saved")
+        XCTAssertEqual(progress.listedItemCount, 0)
+        let knownAfterFirst = await rig.index.knownLocalIdentifiers()
+        XCTAssertEqual(knownAfterFirst.count, 4, "the first four are in the index, and the rest of the moment is not read")
+        XCTAssertEqual(rig.library.largestItemRequestCount, 4)
+        let stoppedStatus = await coordinator.status()
+        XCTAssertTrue(stoppedStatus.isListingUnfinished)
+
+        // The next pass lists the moment again from the start, skipping the four.
+        rig.library.set(afterItems: nil)
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-" + job.localIdentifier)) }
+        }
+        let second = await coordinator.runPass(settings: settings)
+        XCTAssertFalse(second.wasStopped)
+        XCTAssertEqual(rig.library.batchResumePoints.count, 2)
+        XCTAssertNil(rig.library.batchResumePoints[1], "asked from the start again")
+        XCTAssertLessThanOrEqual(rig.library.largestItemRequestCount, 4, "a moment of eleven is built four at a time")
+        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier).sorted(), items.map(\.localIdentifier).sorted(), "every item once, none twice")
+        let listing = await rig.index.listingProgress
+        XCTAssertNil(listing)
+        let endedStatus = await coordinator.status()
+        XCTAssertFalse(endedStatus.isListingUnfinished)
+    }
+
+    func testAfterTheListingTheProgressIsWhatIsDoneOutOfWhatIsDoneAndWhatIsLeft() async throws {
+        let rig = try makeRig(self, items: makeLibraryItems(count: 700), idleTimeoutSeconds: 0.05)
+        let coordinator = rig.coordinator
+        let index = rig.index
+        let finisher = FirstUploadsFinisher(finishedLimit: 4)
+        rig.transfer.onStart = { job in
+            guard finisher.shouldFinishNextUpload() else { return }
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-" + job.localIdentifier)) }
+        }
+        // The second batch is read after the first four uploads are on the server.
+        rig.library.set(afterBatch: { batchCount in
+            guard batchCount == 2 else { return }
+            let deadline = Date().addingTimeInterval(5)
+            while await index.summary().backedUpItemCount < finisher.finishedLimit, Date() < deadline {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+        })
+        let seen = StatusLog()
+        await coordinator.setStatusHandler { seen.add($0) }
+        _ = await coordinator.runPass(settings: settings)
+        let afterListing = try XCTUnwrap(seen.all.last { $0.phase == .uploading && $0.listedItemCount != nil })
+        XCTAssertEqual(afterListing.finishedFileCount, 4)
+        XCTAssertEqual(afterListing.plannedFileCount, 700, "four done and 696 left")
+        let expected = PhotoBackupStatus.listingShareOfProgress + (1 - PhotoBackupStatus.listingShareOfProgress) * 4.0 / 700.0
+        XCTAssertEqual(afterListing.progressFraction, expected, accuracy: 0.0001, "just over the share of the listing, not near the end")
+        XCTAssertLessThan(afterListing.progressFraction, 0.5)
+    }
+
+    func testTheFilesShownAsDoneNeverExceedTheFilesPlanned() {
+        XCTAssertEqual(PhotoBackupStatus(plannedFileCount: 5, finishedFileCount: 8).shownFinishedFileCount, 5)
+        XCTAssertEqual(PhotoBackupStatus(plannedFileCount: 5, finishedFileCount: 3).shownFinishedFileCount, 3)
+    }
+
+    func testAResumePointSavedWithTheIdentifierOfItsItemIsStillRead() async throws {
+        let directory = try temporaryDirectory(self)
+        let index = try PhotoBackupIndex(directory: directory)
+        await index.adopt(accountKey: "photos.example.com|robin")
+        await index.beginListing(changeToken: Data([7]), libraryItemCount: 900)
+        let point = PhotoBackupResumePoint(creationDate: Date(timeIntervalSince1970: 1_767_225_600.625))
+        await index.recordListed(batchItemCount: 300, resumePoint: point)
+        await index.flush()
+        // The file as an earlier version wrote it, with the identifier beside the date.
+        let indexFile = directory.appendingPathComponent(PhotoBackupIndex.indexFilename)
+        var document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: indexFile)) as? [String: Any])
+        var listing = try XCTUnwrap(document["listing"] as? [String: Any])
+        var savedPoint = try XCTUnwrap(listing["resumePoint"] as? [String: Any])
+        savedPoint["localIdentifier"] = "x/L0/001"
+        listing["resumePoint"] = savedPoint
+        document["listing"] = listing
+        try JSONSerialization.data(withJSONObject: document).write(to: indexFile)
+
+        let reopened = try PhotoBackupIndex(directory: directory)
+        let wasStartedOver = await reopened.wasStartedOver
+        XCTAssertFalse(wasStartedOver, "the file is read, not thrown away")
+        let progress = await reopened.listingProgress
+        XCTAssertEqual(progress?.resumePoint, point)
+        XCTAssertEqual(progress?.listedItemCount, 300)
+    }
+
     func testAPassThatReadsOnlyChangesDoesNotCountAListing() {
         let status = PhotoBackupStatus(phase: .uploading, libraryItemCount: 35_000, plannedFileCount: 10, finishedFileCount: 5)
         XCTAssertNil(status.listedItemCount)
@@ -2330,7 +2493,7 @@ final class PhotoBackupLargeLibraryTests: XCTestCase {
         for batchStart in stride(from: 0, to: items.count, by: 300) {
             let batch = Array(items[batchStart..<min(batchStart + 300, items.count)])
             await index.markPending(PhotoBackupPlanner.plan(items: batch, records: [:]), shouldWriteAtOnce: false)
-            await index.recordListed(batchItemCount: batch.count, resumePoint: batch.last.flatMap { item in item.creationDate.map { PhotoBackupResumePoint(creationDate: $0, localIdentifier: item.localIdentifier) } })
+            await index.recordListed(batchItemCount: batch.count, resumePoint: batch.last?.creationDate.map { PhotoBackupResumePoint(creationDate: $0) })
         }
         let batchesDuration = start.duration(to: .now)
         let sizeAfterBatches = try FileManager.default.attributesOfItem(atPath: indexFile.path)[.size] as? Int
@@ -2356,7 +2519,7 @@ final class PhotoBackupLargeLibraryTests: XCTestCase {
         let index = try PhotoBackupIndex(directory: directory)
         await index.adopt(accountKey: "photos.example.com|robin")
         await index.beginListing(changeToken: Data([7]), libraryItemCount: 900)
-        let point = PhotoBackupResumePoint(creationDate: Date(timeIntervalSince1970: 1_767_225_600.625), localIdentifier: "x/L0/001")
+        let point = PhotoBackupResumePoint(creationDate: Date(timeIntervalSince1970: 1_767_225_600.625))
         await index.recordListed(batchItemCount: 300, resumePoint: point)
         await index.flush()
         let reopened = try PhotoBackupIndex(directory: directory)
@@ -2414,11 +2577,189 @@ final class PhotoBackupLargeLibraryTests: XCTestCase {
     }
 }
 
+/// The rule for where a batch of the listing ends, on bare dates.
+final class PhotoBackupListingWindowTests: XCTestCase {
+    private let newest = Date(timeIntervalSince1970: 1_767_225_600)
+
+    func testTwoItemsOfOneDateStraddlingTheLimitAreTakenTogether() {
+        let dates = [newest, newest.addingTimeInterval(-10), newest.addingTimeInterval(-10), newest.addingTimeInterval(-20)]
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: dates.count, limit: 2) { dates[$0] }, 3, "the third was made at the moment of the second")
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: dates.count, limit: 1) { dates[$0] }, 1, "the second was made earlier than the first")
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: dates.count, limit: 3) { dates[$0] }, 3)
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: dates.count, limit: 10) { dates[$0] }, 4, "a limit above what is left takes what is left")
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: 0, limit: 2) { _ in newest }, 0)
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: dates.count, limit: 0) { dates[$0] }, 1, "a batch takes one item at least")
+    }
+
+    func testAChainOfItemsLessThanAMillisecondApartCrossesTheLimit() {
+        // Each is 0.9 milliseconds after the one before it, so none is a
+        // millisecond from its neighbor although the chain spans nine.
+        var dates = (0..<10).map { newest.addingTimeInterval(-0.0009 * Double($0)) }
+        dates.append(newest.addingTimeInterval(-1))
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: dates.count, limit: 3) { dates[$0] }, 10, "the whole chain, and not the item a second before it")
+    }
+
+    func testTheBoundaryIsExactlyAMillisecondBeforeTheLastItemTaken() {
+        let boundary = newest.addingTimeInterval(-PhotoBackupListingWindow.sameMomentSeconds)
+        let justInside = newest.addingTimeInterval(-0.0009)
+        let justOutside = newest.addingTimeInterval(-0.0011)
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: 2, limit: 1) { [newest, boundary][$0] }, 1, "a millisecond before is the next moment")
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: 2, limit: 1) { [newest, justInside][$0] }, 2)
+        XCTAssertEqual(PhotoBackupListingWindow.takeCount(candidateCount: 2, limit: 1) { [newest, justOutside][$0] }, 1)
+
+        // The next batch starts at that boundary, included, so an item is in
+        // this batch or in the next, never in both and never in neither.
+        let resumePoint = PhotoBackupResumePoint(creationDate: newest)
+        XCTAssertEqual(PhotoBackupListingWindow.newestCreationDate(after: resumePoint), boundary)
+        for date in [boundary, justInside, justOutside, newest.addingTimeInterval(-0.002)] {
+            let isInThisBatch = PhotoBackupListingWindow.takeCount(candidateCount: 2, limit: 1) { [newest, date][$0] } == 2
+            let isInNextBatch = date <= PhotoBackupListingWindow.newestCreationDate(after: resumePoint)
+            XCTAssertNotEqual(isInThisBatch, isInNextBatch, "\(newest.timeIntervalSince(date)) seconds before the last item taken")
+        }
+    }
+}
+
+/// The fake library lists as the real one does, which these check by paging through it.
+final class PhotoBackupListingBatchTests: XCTestCase {
+    private func listEverything(_ library: FakeLibrary, limit: Int) async throws -> [PhotoBackupListingBatch] {
+        var batches: [PhotoBackupListingBatch] = []
+        var resumePoint: PhotoBackupResumePoint?
+        while batches.count < 1_000 {
+            let batch = try await library.listBatch(after: resumePoint, limit: limit, includesHidden: false)
+            batches.append(batch)
+            if batch.isLast || batch.entries.isEmpty { return batches }
+            resumePoint = batch.entries.compactMap { entry in entry.creationDate.map { PhotoBackupResumePoint(creationDate: $0) } }.last ?? resumePoint
+        }
+        XCTFail("the listing did not end")
+        return batches
+    }
+
+    func testPagingThroughALibraryListsEveryItemOnceWithNoGapAndNoDuplicate() async throws {
+        // Seven items in moments of three, then two with no date.
+        let library = FakeLibrary(items: makeLibraryItems(count: 7, itemsPerMoment: 3, undatedCount: 2))
+        let batches = try await listEverything(library, limit: 2)
+        let listed = batches.flatMap(\.entries).map(\.localIdentifier)
+        XCTAssertEqual(listed.sorted(), (0..<7).map { "item\($0)" }.sorted() + ["undated0", "undated1"], "every item once")
+        XCTAssertEqual(batches.map(\.entries.count), [4, 5], "limit two, extended to the end of the moment of the second: 4, then three more and the two without a date")
+        // No batch ends inside a moment: the date of its last dated item is not
+        // that of the first item of the next.
+        for (batch, next) in zip(batches, batches.dropFirst()) {
+            let lastDate = batch.entries.compactMap(\.creationDate).last
+            XCTAssertNotEqual(lastDate, next.entries.first?.creationDate)
+        }
+    }
+
+    func testItemsWithNoDateAreListedOnceWithTheLastBatchOnly() async throws {
+        let library = FakeLibrary(items: makeLibraryItems(count: 5, undatedCount: 3))
+        let batches = try await listEverything(library, limit: 2)
+        XCTAssertEqual(batches.map(\.isLast), [false, false, true])
+        for batch in batches.dropLast() {
+            XCTAssertTrue(batch.entries.allSatisfy { $0.creationDate != nil })
+        }
+        XCTAssertEqual(batches.last?.entries.map(\.localIdentifier), ["item0", "undated0", "undated1", "undated2"])
+        // Asked again after the last dated item, the undated ones come again
+        // only because the dated ones ended: a library of undated items alone
+        // lists them in its one batch.
+        let onlyUndated = FakeLibrary(items: makeLibraryItems(count: 0, undatedCount: 2))
+        let undatedBatches = try await listEverything(onlyUndated, limit: 5)
+        XCTAssertEqual(undatedBatches.count, 1)
+        XCTAssertEqual(undatedBatches.first?.entries.map(\.localIdentifier), ["undated0", "undated1"])
+    }
+
+    func testAChainOfItemsLessThanAMillisecondApartIsOneBatchWhateverTheLimit() async throws {
+        let chain = (0..<10).map { makeItem("chain\($0)", secondsSince2026: 100 - 0.0009 * Double($0)) }
+        let earlier = makeItem("earlier", secondsSince2026: 50)
+        let library = FakeLibrary(items: chain + [earlier])
+        let batches = try await listEverything(library, limit: 4)
+        XCTAssertEqual(batches.map(\.entries.count), [10, 1])
+        XCTAssertEqual(batches.last?.entries.map(\.localIdentifier), ["earlier"])
+    }
+}
+
 private final class StatusLog: @unchecked Sendable {
     private let lock = NSLock()
     private var statuses: [PhotoBackupStatus] = []
     func add(_ status: PhotoBackupStatus) { lock.withLock { statuses.append(status) } }
     var all: [PhotoBackupStatus] { lock.withLock { statuses } }
+}
+
+final class PhotoBackupPauseTests: XCTestCase {
+    func testAPausedBackupStartsNoPassAndQueuesNothing() async throws {
+        let items = (0..<4).map { makeItem("item\($0)", secondsSince2026: Double($0)) }
+        let rig = try makeRig(self, items: items, isPaused: true)
+        let result = await rig.coordinator.runPass(settings: settings)
+        XCTAssertTrue(result.wasPaused)
+        XCTAssertEqual(result.plannedFileCount, 0)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 0)
+        XCTAssertEqual(rig.library.exportedUploadKeys.count, 0, "not even read from the library")
+        let queuedByWake = await rig.coordinator.topUp(settings: settings, until: Date(timeIntervalSince1970: 1_800_000_060))
+        XCTAssertEqual(queuedByWake, 0, "the wake in the background does nothing either")
+        let status = await rig.coordinator.status()
+        XCTAssertEqual(status.phase, .paused)
+        XCTAssertTrue(status.isPaused)
+    }
+
+    func testResumingAllowsThePassAgain() async throws {
+        let items = (0..<3).map { makeItem("item\($0)", secondsSince2026: Double($0)) }
+        let rig = try makeRig(self, items: items, isPaused: true)
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-" + job.localIdentifier)) }
+        }
+        let whilePaused = await coordinator.runPass(settings: settings)
+        XCTAssertTrue(whilePaused.wasPaused)
+        await coordinator.resume()
+        let afterResume = await coordinator.runPass(settings: settings)
+        XCTAssertFalse(afterResume.wasPaused)
+        XCTAssertEqual(afterResume.uploadedFileCount, 3)
+        let status = await coordinator.status()
+        XCTAssertNotEqual(status.phase, .paused)
+    }
+
+    func testPausingCancelsTheUploadsTheSessionHoldsAndKeepsWhatWentUp() async throws {
+        let rig = try makeRig(self, items: (0..<10).map { makeItem("item\($0)", secondsSince2026: Double($0)) })
+        let coordinator = rig.coordinator
+        let pass = Task { await coordinator.runPass(settings: settings) }
+        try await waitUntil("four uploads queued") { rig.transfer.startedJobs.count == 4 }
+        // One of them went up before the pause.
+        let first = try XCTUnwrap(rig.transfer.startedJobs.first)
+        rig.transfer.release(first)
+        _ = await coordinator.finished(first, outcome: .uploaded(serverPhotoId: "p-" + first.localIdentifier))
+
+        await coordinator.pause()
+        _ = await pass.value
+        // The call the app makes once the pass has ended.
+        await coordinator.pause()
+
+        XCTAssertTrue(rig.transfer.isCancelled, "the phone stops sending")
+        let held = await rig.transfer.queuedJobs()
+        XCTAssertEqual(held.count, 0)
+        let status = await coordinator.status()
+        XCTAssertEqual(status.phase, .paused)
+        XCTAssertEqual(status.queuedFileCount, 0)
+        XCTAssertFalse(status.isUploading)
+        XCTAssertNil(status.estimatedSecondsLeft)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "the exported files are deleted")
+        let summary = await rig.index.summary()
+        XCTAssertEqual(summary.libraryItemCount, 10, "the index is kept")
+        XCTAssertEqual(summary.backedUpItemCount, 1, "what went up stays recorded")
+        let startedCount = rig.transfer.startedJobs.count
+        let again = await coordinator.runPass(settings: settings)
+        XCTAssertTrue(again.wasPaused)
+        XCTAssertEqual(rig.transfer.startedJobs.count, startedCount, "nothing is queued while paused")
+    }
+
+    func testPausedShowsNeitherTheTimeLeftNorBackgroundUploading() {
+        let status = PhotoBackupStatus(
+            phase: .paused, backedUpItemCount: 10, libraryItemCount: 100, queuedFileCount: 3, waitingFileCount: 5, estimatedSecondsLeft: 600)
+        XCTAssertTrue(status.isEnabled, "paused is not off")
+        XCTAssertTrue(status.isPaused)
+        XCTAssertFalse(status.isUploading)
+        XCTAssertFalse(status.shouldShowTimeLeft)
+        XCTAssertFalse(status.isUploadingInBackground)
+        XCTAssertFalse(status.hasFilesWaitingForTheApp)
+    }
 }
 
 #if canImport(CryptoKit)
