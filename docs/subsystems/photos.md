@@ -15,7 +15,8 @@ upload into a photo, the processing job, faces and their groups, album
 suggestions, signed playback addresses and cleanup. It knows the database and
 the blob store and nothing about HTTP routes or GraphQL.
 
-`internal/picture` reads pictures and videos: decoding JPEG and PNG upright,
+`internal/picture` reads pictures and videos: decoding JPEG, PNG, GIF and WebP
+upright (WebP through the Go team's `golang.org/x/image/webp`),
 scaling, EXIF from JPEG and HEIC, HEIC through libheif's `heif-dec`, and video
 through `ffprobe` and `ffmpeg`. `internal/place` names the city a photo was
 taken in from a table bundled with the server. `internal/faces` runs
@@ -84,7 +85,7 @@ nothing but the file. Only `X-Photo-Client-ID` is required. When the request
 names its content type, a type the library does not keep is refused with a 415
 before a byte is read; a request that names none, or `application/octet-stream`,
 is judged by its file name and its bytes once they have all arrived. A
-picture whose first bytes are a JPEG, PNG, GIF or HEIC is kept as that type
+picture whose first bytes are a JPEG, PNG, GIF, WebP or HEIC is kept as that type
 whatever it was sent as, because an iPhone sends a picture saved from a
 message as `image.jpeg` in whichever format it is; processing reads those
 bytes again before it picks a decoder, for files kept before this check.
@@ -185,7 +186,7 @@ decodes every top-level picture and not only the primary one: each is bounded
 picture that does not say its size is refused. Thumbnails, auxiliary pictures
 and the tiles of a grid (`thmb`, `auxl`, `dimg`) are not top-level. The pixels
 of all of them are taken from the same budget decoded JPEGs use for as long as
-`heif-dec` runs. A PNG or GIF with a side over
+`heif-dec` runs. A PNG, GIF or WebP with a side over
 65535 pixels is refused from its header too: a strip a billion pixels wide is
 under the pixel limit and would still make the scaler allocate a row of
 gigabytes. The size a JPEG's EXIF block gives is swapped for an orientation of
