@@ -414,11 +414,3 @@ private let previewBackground = PhotoBackupStatus(
 #Preview("Not allowed, light") {
     previewContent(PhotoBackupStatus(phase: .off), credentialName: nil, isPermitted: false)
 }
-
-private extension View {
-    /// The line under a row starts at the row's edge, as under a row with no
-    /// symbol, instead of after the symbol, where a list starts it by default.
-    func fullWidthRowSeparator() -> some View {
-        alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-    }
-}
