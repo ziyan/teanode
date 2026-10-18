@@ -231,7 +231,8 @@ it('saves the label chosen for a place', async () => {
 
   fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
   const dialog = await screen.findByRole('dialog')
-  fireEvent.change(within(dialog).getByLabelText('Label'), { target: { value: 'work' } })
+  fireEvent.click(within(dialog).getByRole('combobox', { name: 'Label' }))
+  fireEvent.click(screen.getByRole('option', { name: 'Work' }))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
 
   await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
@@ -242,10 +243,10 @@ it('shares where the person has been with the circle member chosen', async () =>
   answerWith({ people: [{ userId: 'person-b', username: 'person-b-login', name: 'Person B' }] })
   renderAt('/location?tab=sharing')
 
-  const choice = await screen.findByLabelText('Share with')
-  await screen.findByRole('option', { name: /Person B/ })
-  fireEvent.change(choice, { target: { value: 'user:person-b' } })
-  fireEvent.change(screen.getByLabelText(/What they see/), { target: { value: 'history' } })
+  fireEvent.click(await screen.findByRole('combobox', { name: 'Share with' }))
+  fireEvent.click(await screen.findByRole('option', { name: /Person B/ }))
+  fireEvent.click(screen.getByRole('combobox', { name: /What they see/ }))
+  fireEvent.click(screen.getByRole('option', { name: /where I have been/ }))
   fireEvent.click(screen.getByRole('button', { name: 'Share' }))
 
   await waitFor(() => expect(calls('ShareLocation(')).toHaveLength(1))
@@ -494,7 +495,8 @@ it('narrows the visits by label and the places by label and by the words typed',
   renderAt('/location')
   await screen.findByText('Fixture Park')
 
-  fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'home' } })
+  fireEvent.click(screen.getByRole('combobox', { name: 'Label' }))
+  fireEvent.click(screen.getByRole('option', { name: 'Home' }))
   await waitFor(() =>
     expect(
       calls('ListLocationVisits').some(([, variables]) => (variables as { placeLabel?: string }).placeLabel === 'home'),
@@ -507,7 +509,8 @@ it('narrows the visits by label and the places by label and by the words typed',
   renderAt('/location?tab=places')
   await screen.findByRole('button', { name: /Fixture Park/ })
 
-  fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'work' } })
+  fireEvent.click(screen.getByRole('combobox', { name: 'Label' }))
+  fireEvent.click(screen.getByRole('option', { name: 'Work' }))
   await waitFor(() =>
     expect(
       calls('ListPlaces(userId').some(([, variables]) => (variables as { placeLabel?: string }).placeLabel === 'work'),
