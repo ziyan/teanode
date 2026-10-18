@@ -1122,6 +1122,23 @@ func TestMovingADescribedPhotoClearsItsDescription(test *testing.T) {
 		test.Fatalf("the description finds %v before the move", found)
 	}
 
+	// Moved within the city it is already named after, it keeps its description.
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if _, err := transaction.SetPhotoLocation(ownerId, []string{described.ID}, &db.PhotoLocation{Latitude: 1, Longitude: 2, PlaceName: "Filetown, Exampleland"}); err != nil {
+			test.Fatal(err)
+		}
+		change, err := transaction.SetPhotoLocation(ownerId, []string{described.ID}, &db.PhotoLocation{Latitude: 1.01, Longitude: 2.01, PlaceName: "Filetown, Exampleland"})
+		if err != nil || len(change.DescribedPhotoIDs) != 0 {
+			test.Fatalf("a move within the same city cleared the description: %+v %v", change, err)
+		}
+	})
+	describePhoto(test, database, ownerId, described.ID, "A lighthouse on a rocky point in Filetown", "")
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.PutPhotoVector(ownerId, described.ID, "test-model", []float32{1, 0, 0, 0}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
 	// The description named the old place, so it goes with it, and the caller
 	// is told which photos to describe again.
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {

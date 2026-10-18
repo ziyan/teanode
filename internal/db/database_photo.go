@@ -388,7 +388,8 @@ type PhotoLocation struct {
 }
 
 // PhotoLocationChange is what SetPhotoLocation changed: the photos it moved,
-// and of those the ones whose description it cleared, to be described again.
+// and of those the ones whose description it cleared because their place
+// changed.
 type PhotoLocationChange struct {
 	ChangedPhotoIDs   []string
 	DescribedPhotoIDs []string
@@ -942,13 +943,19 @@ func (self *transaction) SetPhotoLocation(userId string, photoIds []string, loca
 		return change, nil
 	}
 	var found []photoModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "described_at").
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "described_at", "place_name", "is_location_removed").
 		Where("user_id = ? AND id IN ? AND trashed_at IS NULL", userId, photoIds).Find(&found).Error; err != nil {
 		return nil, err
 	}
+	newPlaceName := ""
+	if location != nil {
+		newPlaceName = location.PlaceName
+	}
 	for _, each := range found {
 		change.ChangedPhotoIDs = append(change.ChangedPhotoIDs, each.ID)
-		if each.DescribedAt != nil {
+		// A photo that stays in the same city keeps a description that names it.
+		isPlaceKept := each.PlaceName == newPlaceName && each.IsLocationRemoved == (location == nil)
+		if each.DescribedAt != nil && !isPlaceKept {
 			change.DescribedPhotoIDs = append(change.DescribedPhotoIDs, each.ID)
 		}
 	}
