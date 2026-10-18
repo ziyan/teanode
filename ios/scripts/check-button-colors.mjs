@@ -180,16 +180,22 @@ for (const path of swiftFiles(iosDirectory)) {
   for (const match of code.matchAll(/\bButton\s*\(/g)) {
     const start = match.index
     const argumentsEnd = skipBalanced(code, code.indexOf('(', start))
-    if (!/\brole:[^,)]*\.destructive\b/.test(code.slice(start, argumentsEnd))) continue
+    // From the role to the end of the arguments, so a role worked out by a
+    // call with arguments of its own is read whole.
+    const argumentText = code.slice(start, argumentsEnd)
+    const roleIndex = argumentText.search(/\brole:/)
+    if (roleIndex === -1 || !/\.destructive\b/.test(argumentText.slice(roleIndex))) continue
     const end = buttonEnd(code, start)
     const buttonText = code.slice(start, end)
     const hasSymbol = /systemImage:|\bLabel\s*\(|\bImage\s*\(/.test(buttonText)
     if (!hasSymbol) continue
-    if (/^\s*\.tint\(/.test(code.slice(end))) continue
-    const line = text.slice(0, start).split('\n').length
     // A role chosen at run time needs a tint chosen the same way, which only
-    // a person can write.
-    const isAlwaysDestructive = /\brole:\s*\.destructive\b/.test(code.slice(start, argumentsEnd))
+    // a person can write; any tint passes there. A role that always destroys
+    // takes red.
+    const isAlwaysDestructive = /^role:\s*\.destructive\b/.test(argumentText.slice(roleIndex))
+    const following = code.slice(end)
+    if (isAlwaysDestructive ? /^\s*\.tint\(\s*\.red\s*\)/.test(following) : /^\s*\.tint\(/.test(following)) continue
+    const line = text.slice(0, start).split('\n').length
     findings.push({ place: `${relative(repositoryDirectory, path)}:${line}`, isAlwaysDestructive })
     if (!isAlwaysDestructive) continue
     // Indented as the modifiers after a button are: one step in when the
