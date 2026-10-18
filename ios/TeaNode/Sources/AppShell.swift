@@ -173,6 +173,7 @@ struct MainView: View {
             #if DEBUG
                 if let tab = DemoServer.tab, let chosen = AppSection(rawValue: tab) { section = chosen }
                 if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
+                if DemoServer.screen?.hasPrefix("finance-") == true { financePart = .accounts }
                 if DemoServer.isMenuRequested { isMenuOpen = true }
                 if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
                 // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`).

@@ -1753,12 +1753,15 @@ struct AccountsView: View {
                                 }
                             }
                         }
+                        .statementAccountActions(account) { await load() }
+                        if account.accountKind == "investment" { AccountTradesLink(account: account) }
                     }
                 }
             }
             statementImportSection
         }
         .navigationTitle("Accounts")
+        .financeManageDemoScreens(accounts: accounts) { Task { await load(); await loadStatementImport() } }
         .task {
             while !Task.isCancelled {
                 await load()
@@ -1818,6 +1821,7 @@ struct AccountsView: View {
                         Text(day).font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                ImportTransactionRowsLink { Task { await load(); await loadStatementImport() } }
             } header: {
                 Text("Import statements")
             } footer: {
