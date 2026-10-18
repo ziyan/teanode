@@ -113,7 +113,6 @@ export const en = {
     'Until this is done, anyone who can reach this page can claim the server. Do it now, or bind it to localhost.',
 
   'password.title': 'Password',
-  'password.signedInAs': 'Signed in as {username}.',
   'password.current': 'Current password',
   'password.new': 'New password',
   'password.newAgain': 'New password again',
@@ -273,10 +272,6 @@ export const en = {
   'domains.credentials': 'Credentials',
   'domains.dns': 'DNS',
   'domains.notPublished': 'Not all published',
-  'domains.aliasOne': '1 alias',
-  'domains.aliasOther': '{count} aliases',
-  'domains.credentialOne': '1 credential',
-  'domains.credentialOther': '{count} credentials',
   'domains.viewMail': 'View mail',
   'domains.countOne': '1 domain',
   'domains.countOther': '{count} domains',
@@ -547,7 +542,6 @@ export const en = {
   'impersonation.returnFailed': 'Could not return to your account',
 
   'settings.password.description': 'Change the password for this account.',
-  'settings.profile.description': 'What to call you, what you sign in with, and where notifications go.',
 
   'profile.title': 'Profile',
   'preferences.title': 'Preferences',
@@ -639,6 +633,7 @@ export const en = {
   'tokens.createdAt': 'created {time}',
   'tokens.lastUsedLabel': 'last used',
   'tokens.actsAsName': 'acts as {username}',
+  'tokens.neverExpires': 'never expires',
   'tokens.expiresAt': 'expires {time}',
   'tokens.shownOnce':
     'Only the hash of this token is stored, so this is the one moment it can be read. Not even an administrator can recover it afterwards.',
@@ -1017,7 +1012,7 @@ export const en = {
   'phones.notified': 'Notifications on',
   'phones.notRegistered': 'Notifications off on this phone',
   'phones.lastFailed': 'Last notification failed',
-  'phones.test': 'Test',
+  'phones.test': 'Send a test notification',
   'phones.tested': 'Sent {name} a notification; it should arrive in a few seconds.',
   'phones.editTitle': 'Edit phone',
   'phones.name': 'Name',
@@ -2780,7 +2775,6 @@ export const en = {
   'mailbox.messageGone': 'This message is no longer stored.',
   'mailbox.unreadCount': '{count} unread',
   'mailboxSettings.tabGeneral': 'General',
-  'mailboxSettings.generalHint': 'The name mail goes out under, and what is added to the bottom of what you send.',
   'mailboxSettings.tabFolders': 'Folders',
   'mailboxSettings.tabRules': 'Rules',
   'mailboxSettings.tabAutoReply': 'Auto reply',

@@ -198,7 +198,6 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
         }}
       >
         <h3>{t('profile.title')}</h3>
-        <p className="muted">{t('settings.profile.description')}</p>
 
         <div className="form-narrow">
           {/* Not a label: it holds two buttons, and a label would make
