@@ -2408,7 +2408,7 @@ struct MutedAlertsView: View {
         .sheet(isPresented: $isAddingFollowUp) {
             AddFollowUpSheet(connection: connection, kindName: { sentenceCase(followUpKindName($0, isSingular: true)) }) { title in
                 doneText = String(localized: "Now following: \(title)")
-                Task { await load(isQuiet: false) }
+                Task { await load() }
             }
         }
         .overlay { if !isAgentRead { ProgressView() } }
