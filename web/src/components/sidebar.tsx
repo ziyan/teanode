@@ -233,18 +233,9 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    [
-      '/agent',
-      '/knowledge',
-      '/recordings',
-      '/coding',
-      '/finance',
-      '/calendar',
-      '/contacts',
-      '/reminders',
-      '/photos',
-      '/circles',
-    ].some((path) => location.pathname === path || location.pathname.startsWith(path + '/')) ||
+    ['/agent', '/knowledge', '/recordings', '/coding', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/circles'].some(
+      (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
+    ) ||
     location.pathname === '/mailbox' ||
     location.pathname.startsWith('/mailbox/') ||
     (hasMailbox && (location.pathname === '/agent' || surface?.rail === 'mailbox'))
