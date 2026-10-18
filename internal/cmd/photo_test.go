@@ -55,9 +55,14 @@ func TestPhotoParity(test *testing.T) {
 		// command line nor the agent plays anything.
 		"PhotoPlaybackAddress": {client.DocumentPhotoPlaybackAddress, nil, nil},
 		// Marking a favorite and correcting a date are both an update of the photo.
-		"UpdatePhoto":   {client.DocumentUpdatePhoto, []string{"favorite", "set-date"}, []string{"favorite", "set-date"}},
-		"TrashPhotos":   {client.DocumentTrashPhotos, []string{"trash"}, []string{"trash"}},
-		"RestorePhotos": {client.DocumentRestorePhotos, []string{"restore"}, []string{"restore"}},
+		"UpdatePhoto": {client.DocumentUpdatePhoto, []string{"favorite", "set-date"}, []string{"favorite", "set-date"}},
+		// Where a photo was taken: finding a city to pick, setting the place
+		// from one or from a position, and taking the place away.
+		"SearchPhotoPlaces":   {client.DocumentSearchPhotoPlaces, []string{"search-places", "set-location"}, []string{"search-places", "set-location"}},
+		"SetPhotoLocation":    {client.DocumentSetPhotoLocation, []string{"set-location"}, []string{"set-location"}},
+		"RemovePhotoLocation": {client.DocumentRemovePhotoLocation, []string{"remove-location"}, []string{"remove-location"}},
+		"TrashPhotos":         {client.DocumentTrashPhotos, []string{"trash"}, []string{"trash"}},
+		"RestorePhotos":       {client.DocumentRestorePhotos, []string{"restore"}, []string{"restore"}},
 		// Making the previews of photos again: a person whose photo failed, or
 		// looks wrong, and the agent they ask to do it.
 		"RetryPhotoProcessing": {client.DocumentRetryPhotoProcessing, []string{"retry"}, []string{"retry"}},
@@ -331,6 +336,20 @@ func newPhotoServer(test *testing.T) *photoServer {
 				_, _ = response.Write([]byte(`{"data":{"UpdatePhotoAlbumShare":{"id":"` + asked.Variables["photoAlbumShareId"].(string) + `","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `}}}`))
 			case strings.Contains(asked.Query, "RemovePhotoAlbumShare("):
 				_, _ = response.Write([]byte(`{"data":{"RemovePhotoAlbumShare":true}}`))
+			case strings.Contains(asked.Query, "SearchPhotoPlaces("):
+				if strings.Contains(asked.Variables["query"].(string), "atlantis") {
+					_, _ = response.Write([]byte(`{"data":{"SearchPhotoPlaces":[]}}`))
+					return
+				}
+				distance := "null"
+				if asked.Variables["nearLatitude"] != nil {
+					distance = "3.5"
+				}
+				_, _ = response.Write([]byte(`{"data":{"SearchPhotoPlaces":[{"placeName":"Harborview, Exampleland","latitude":10.5,"longitude":20.25,"distanceKilometers":` + distance + `}]}}`))
+			case strings.Contains(asked.Query, "SetPhotoLocation("):
+				_, _ = response.Write([]byte(`{"data":{"SetPhotoLocation":2}}`))
+			case strings.Contains(asked.Query, "RemovePhotoLocation("):
+				_, _ = response.Write([]byte(`{"data":{"RemovePhotoLocation":1}}`))
 			case strings.Contains(asked.Query, "UpdatePhoto("):
 				_, _ = response.Write([]byte(`{"data":{"UpdatePhoto":{"id":"` + asked.Variables["photoId"].(string) + `","photoKind":"picture","takenAt":"2025-07-12T05:30:00Z","takenAtOffsetMinutes":540}}}`))
 			case strings.Contains(asked.Query, "SavePhotoFromAttachment("):
@@ -713,6 +732,137 @@ func TestSetDateCorrectsWhenAPhotoWasTakenAndRefusesATimeWithoutAnOffset(test *t
 	}
 	if _, _, err := server.run(test, "set-date", "photo-1", "2025-07-12T05:30:00Z"); err != nil {
 		test.Fatalf("a time on UTC: %v", err)
+	}
+}
+
+func TestSearchPlacesListsCitiesAndSendsThePointItIsNear(test *testing.T) {
+	server := newPhotoServer(test)
+	_, output, err := server.run(test, "search-places", "harbor", "view", "--near", "10, 20", "--limit", "5")
+	if err != nil || !strings.Contains(output, "Harborview, Exampleland") || !strings.Contains(output, "kilometers") || !strings.Contains(output, "3.5") {
+		test.Fatalf("%v %q", err, output)
+	}
+	sent := server.variables[len(server.variables)-1]
+	if sent["query"] != "harbor view" || sent["nearLatitude"] != 10.0 || sent["nearLongitude"] != 20.0 || sent["limitCount"] != 5.0 {
+		test.Fatalf("sent %v", sent)
+	}
+	_, output, err = server.run(test, "search-places", "harbor")
+	if err != nil || !strings.Contains(output, "Harborview") || strings.Contains(output, "kilometers") {
+		test.Fatalf("%v %q", err, output)
+	}
+	if sent := server.variables[len(server.variables)-1]; sent["nearLatitude"] != nil || sent["nearLongitude"] != nil {
+		test.Fatalf("a point nobody gave was sent: %v", sent)
+	}
+	if output, _, err = server.run(test, "search-places", "atlantis"); err != nil || !strings.Contains(output, "no city matches") {
+		test.Fatalf("%v %q", err, output)
+	}
+	if _, output, err = server.run(test, "search-places", "--json", "harbor"); err != nil || !strings.Contains(output, `"placeName": "Harborview, Exampleland"`) {
+		test.Fatalf("%v %q", err, output)
+	}
+	count := len(server.documents)
+	for _, arguments := range [][]string{
+		{"search-places"}, {"search-places", "harbor", "--near", "10"}, {"search-places", "harbor", "--near", "95,20"}, {"search-places", "harbor", "--near", "10,200"},
+		{"search-places", "harbor", "--near", "ten,twenty"}, {"search-places", "harbor", "--limit", "0"}, {"search-places", "harbor", "--limit", "51"},
+	} {
+		if _, _, err := server.run(test, arguments...); err == nil {
+			test.Errorf("%v was accepted", arguments)
+		}
+	}
+	if len(server.documents) != count {
+		test.Fatal("a search that was refused reached the server")
+	}
+}
+
+// set-location takes the best match for some words, or a position, and exactly
+// one of them.
+func TestSetLocationTakesAPlaceOrAPositionAndNeverBoth(test *testing.T) {
+	server := newPhotoServer(test)
+	// The server names the photo after the larger city near the one picked.
+	server.photoViews["photo-1"] = `{"photo":{"id":"photo-1","latitude":10.5,"longitude":20.25,"placeName":"Harbor City, Exampleland"},"photoFiles":[],"photoPreviews":[]}`
+	lastVariablesOf := func(operation string) map[string]any {
+		for index := len(server.documents) - 1; index >= 0; index-- {
+			if strings.Contains(server.documents[index], operation+"(") {
+				return server.variables[index]
+			}
+		}
+		return nil
+	}
+	output, _, err := server.run(test, "set-location", "photo-1", "photo-2", "--place", "harbor view")
+	if err != nil || !strings.Contains(output, "set the location of 2 of 2 photos to Harbor City, Exampleland") {
+		test.Fatalf("%v %q", err, output)
+	}
+	if lookup := lastVariablesOf("SearchPhotoPlaces"); lookup["query"] != "harbor view" || lookup["limitCount"] != 1.0 {
+		test.Fatalf("looked up %v", lookup)
+	}
+	sent := lastVariablesOf("SetPhotoLocation")
+	if sent["latitude"] != 10.5 || sent["longitude"] != 20.25 || !reflect.DeepEqual(sent["photoIds"], []any{"photo-1", "photo-2"}) {
+		test.Fatalf("sent %v", sent)
+	}
+
+	// A position is looked up for its name, as the words are.
+	_, output, err = server.run(test, "set-location", "photo-1", "--at", "10.5, 20.25", "--json")
+	if err != nil || !strings.Contains(output, `"changedCount": 2`) || !strings.Contains(output, `"placeName": "Harbor City, Exampleland"`) {
+		test.Fatalf("%v %q", err, output)
+	}
+	if lookup := lastVariablesOf("SearchPhotoPlaces"); lookup["query"] != "10.5, 20.25" {
+		test.Fatalf("looked up %v", lookup)
+	}
+
+	// A position no city is near is said as the position.
+	server.photoViews["photo-3"] = `{"photo":{"id":"photo-3","latitude":10.5,"longitude":20.25,"placeName":""},"photoFiles":[],"photoPreviews":[]}`
+	if output, _, err := server.run(test, "set-location", "photo-3", "--place", "harbor"); err != nil || !strings.Contains(output, "to 10.5000, 20.2500") {
+		test.Fatalf("%v %q", err, output)
+	}
+
+	count := len(server.documents)
+	for name, arguments := range map[string][]string{
+		"neither":          {"set-location", "photo-1"},
+		"both":             {"set-location", "photo-1", "--place", "harbor", "--at", "10.5,20.25"},
+		"no photos":        {"set-location", "--place", "harbor"},
+		"latitude too big": {"set-location", "photo-1", "--at", "91,20"},
+		"longitude small":  {"set-location", "photo-1", "--at", "10,-181"},
+		"one number":       {"set-location", "photo-1", "--at", "10"},
+		"not numbers":      {"set-location", "photo-1", "--at", "here"},
+		"blank place":      {"set-location", "photo-1", "--place", "  "},
+	} {
+		if _, _, err := server.run(test, arguments...); err == nil {
+			test.Errorf("%s was accepted", name)
+		}
+	}
+	if len(server.documents) != count {
+		test.Fatal("a location that was refused reached the server")
+	}
+
+	// Words no city matches set nothing, and say what to do instead.
+	if _, _, err := server.run(test, "set-location", "photo-1", "--place", "atlantis"); err == nil || !strings.Contains(err.Error(), "no city matches") {
+		test.Fatalf("%v", err)
+	}
+	if strings.Contains(server.documents[len(server.documents)-1], "SetPhotoLocation(") {
+		test.Fatal("a place that matched nothing was sent")
+	}
+}
+
+func TestRemoveLocationNamesThePhotosAndSaysHowManyChanged(test *testing.T) {
+	server := newPhotoServer(test)
+	output, _, err := server.run(test, "remove-location", "--force", "photo-1", "photo-2")
+	if err != nil || !strings.Contains(output, "removed the location from 1 of 2 photos") {
+		test.Fatalf("%v: %s", err, output)
+	}
+	if got := server.variables[len(server.variables)-1]["photoIds"]; !reflect.DeepEqual(got, []any{"photo-1", "photo-2"}) {
+		test.Fatalf("%v", got)
+	}
+	if _, output, err = server.run(test, "remove-location", "--force", "--json", "photo-1"); err != nil || !strings.Contains(output, `"changedCount": 1`) {
+		test.Fatalf("%v: %s", err, output)
+	}
+	// Removing is for good, so with nobody at a terminal to ask it needs --force.
+	count := len(server.documents)
+	if _, _, err := server.run(test, "remove-location", "photo-1"); err == nil || !strings.Contains(err.Error(), "--force") {
+		test.Fatalf("a removal without --force was not refused: %v", err)
+	}
+	if len(server.documents) != count {
+		test.Fatal("a refused removal reached the server")
+	}
+	if _, _, err := server.run(test, "remove-location"); err == nil {
+		test.Fatal("removing nothing was accepted")
 	}
 }
 

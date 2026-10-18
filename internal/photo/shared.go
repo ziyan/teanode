@@ -119,7 +119,8 @@ func (self *Store) saveSharedFiles(ctx context.Context, readerUserId, clientPhot
 			UserID: readerUserId, ClientPhotoID: clientPhotoId, PhotoKind: shared.Photo.PhotoKind, PhotoSource: models.PhotoSourceShared,
 			TakenAt: shared.Photo.TakenAt, TakenAtOffsetMinutes: shared.Photo.TakenAtOffsetMinutes,
 			WidthPixels: shared.Photo.WidthPixels, HeightPixels: shared.Photo.HeightPixels, DurationMS: shared.Photo.DurationMS,
-			Latitude: shared.Photo.Latitude, Longitude: shared.Photo.Longitude, PlaceName: shared.Photo.PlaceName,
+			// A location the owner removed is not read back from the copied original.
+			Latitude: shared.Photo.Latitude, Longitude: shared.Photo.Longitude, PlaceName: shared.Photo.PlaceName, IsLocationRemoved: shared.Photo.IsLocationRemoved,
 			CameraMake: shared.Photo.CameraMake, CameraModel: shared.Photo.CameraModel,
 			OriginalFilename: shared.Photo.OriginalFilename, IsScreenshot: shared.Photo.IsScreenshot,
 		})

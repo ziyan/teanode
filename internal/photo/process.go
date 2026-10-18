@@ -742,6 +742,7 @@ func (self *processedPhoto) namePlace() {
 	}
 	if name, isFound := place.Nearest(*latitude, *longitude); isFound {
 		self.metadata.PlaceName = name
+		self.metadata.PlaceNameLatitude, self.metadata.PlaceNameLongitude = latitude, longitude
 	}
 }
 

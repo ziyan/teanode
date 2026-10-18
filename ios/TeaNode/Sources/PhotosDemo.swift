@@ -12,7 +12,8 @@
     /// `photos-empty`, `photos-select`, `photos-trash-select`, `photos-search`, `photos-viewer-failed`,
     /// `photos-albums`, `photos-album`, `photos-people`, `photos-person`,
     /// `photos-shared-albums`, `photos-share`, `photos-shared-album`, `photos-shared-viewer`,
-    /// `photos-filter`, `photos-filter-dates`, `photos-near`, `photos-change-date`,
+    /// `photos-filter`, `photos-filter-dates`, `photos-near`, `photos-change-date`, `photos-location` (the cities
+    /// to choose from, over Info),
     /// `photos-shared-info` (Info over a photo another person shared), `photos-share-stop` (the question
     /// before a share is stopped) or `photos-new-circle-album` (the question for the title of a circle's album)
     /// (and `photos-faces`, `photos-conversation-card`, `photos-backup-background`, `photos-backup-paused`, `photos-backup-other-account` and
@@ -308,6 +309,11 @@
                 json = #"{"data":{"ReadPhotoFaceGroup":\#(faceGroupJSON(person))}}"#
             } else if body.contains("DescribePhoto") {
                 json = #"{"data":{"DescribePhoto":{"photoDescription":"","descriptionVisibleText":"","describedAt":null,"isDescriptionRequested":true}}}"#
+            } else if body.contains("SearchPhotoPlaces") {
+                json = #"{"data":{"SearchPhotoPlaces":\#(demoPlacesJSON(words: variables["query"] as? String ?? "", variables: variables))}}"#
+            } else if body.contains("SetPhotoLocation") || body.contains("RemovePhotoLocation") {
+                let name = body.contains("SetPhotoLocation") ? "SetPhotoLocation" : "RemovePhotoLocation"
+                json = #"{"data":{"\#(name)":\#((variables["photoIds"] as? [Any])?.count ?? 0)}}"#
             } else if body.contains("RetryPhotoProcessing") {
                 json = #"{"data":{"RetryPhotoProcessing":1}}"#
             } else if body.contains("ListPhotos") {
@@ -367,6 +373,41 @@
                 return nil
             }
             return Data(json.utf8)
+        }
+
+        private struct DemoCity {
+            let placeName: String
+            let latitude: Double
+            let longitude: Double
+        }
+
+        /// Cities the demo can place a photo at, as the server names them.
+        private static let demoCities: [DemoCity] = [
+            DemoCity(placeName: "Lisbon, Portugal", latitude: 38.72, longitude: -9.14),
+            DemoCity(placeName: "Lima, Peru", latitude: -12.05, longitude: -77.04),
+            DemoCity(placeName: "Lille, France", latitude: 50.63, longitude: 3.06),
+            DemoCity(placeName: "Liverpool, United Kingdom", latitude: 53.41, longitude: -2.99),
+            DemoCity(placeName: "Lyon, France", latitude: 45.76, longitude: 4.84),
+            DemoCity(placeName: "Leipzig, Germany", latitude: 51.34, longitude: 12.37),
+        ]
+
+        /// The cities whose name has the words, nearest to the point asked about first when one was
+        /// given (and then each says how far it is), otherwise in the order above.
+        private static func demoPlacesJSON(words: String, variables: [String: Any]) -> String {
+            var cities = demoCities.filter { $0.placeName.localizedCaseInsensitiveContains(words) }
+            var distances: [String: Double] = [:]
+            if let nearLatitude = variables["nearLatitude"] as? Double, let nearLongitude = variables["nearLongitude"] as? Double {
+                for city in cities {
+                    distances[city.placeName] = kilometers(fromLatitude: nearLatitude, fromLongitude: nearLongitude, toLatitude: city.latitude, toLongitude: city.longitude)
+                }
+                cities.sort { (distances[$0.placeName] ?? 0) < (distances[$1.placeName] ?? 0) }
+            }
+            var objects: [String] = []
+            for city in cities {
+                let distanceText = distances[city.placeName].map { String(format: "%.1f", $0) } ?? "null"
+                objects.append(#"{"placeName":"\#(city.placeName)","latitude":\#(city.latitude),"longitude":\#(city.longitude),"distanceKilometers":\#(distanceText)}"#)
+            }
+            return "[" + objects.joined(separator: ",") + "]"
         }
 
         /// A picture for a face's address, `/api/v1/photos/faces/<id>/picture`: a

@@ -162,7 +162,21 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 	// by its words.
 	meaningText := strings.TrimSpace(strings.Join([]string{description, visibleText, photo.PlaceName}, "\n"))
 	found := self.meaningOf(ctx, run.Agent.ID, string(models.AgentJobDescribePhoto), cutRunes(meaningText, graphEmbedCharacters))
+	isPlaceChanged := false
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		// The person may have moved the photo while the model looked, and a
+		// description of the old place must not land after the move cleared
+		// it. The row is held until the description is written, so a move
+		// waits for it or comes first. The request ends; asking again
+		// describes the new place.
+		current, err := tx.LockPhoto(ownerId, photoId)
+		if err != nil {
+			return err
+		}
+		if current.PlaceName != photo.PlaceName || current.IsLocationRemoved != photo.IsLocationRemoved {
+			isPlaceChanged = true
+			return tx.ClearPhotoDescriptionRequest(ownerId, photoId)
+		}
 		if err := tx.SetPhotoDescription(ownerId, photoId, &db.PhotoDescription{
 			PhotoDescription: description, VisibleText: visibleText, ModelName: run.Configuration().Agent.Models.ForWork(config.AgentWorkScan),
 		}); err != nil {
@@ -177,6 +191,10 @@ func (self *Agent) runDescribePhoto(ctx context.Context, run *Run) error {
 			return nil // the photo was deleted while the model looked
 		}
 		return err
+	}
+	if isPlaceChanged {
+		self.retitle(ctx, run, thinking.Conversation, "Looked at a photo that was moved meanwhile, and kept nothing")
+		return nil
 	}
 	self.retitle(ctx, run, thinking.Conversation, "Described a photo: "+cutRunes(description, 120))
 	return nil

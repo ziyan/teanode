@@ -425,6 +425,10 @@ jobs:
           shoot photos-filter-dates-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-filter-dates
           shoot photos-change-date-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-change-date
           shoot photos-change-date-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-change-date
+          # The cities to place a photo at, over Info, with the words typed and the nearest first.
+          shoot photos-location-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-location
+          shoot photos-location-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-location
+          shoot photos-location-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-location
           # The library narrowed to the photos taken near a place, with the chip that takes it off.
           shoot photos-near-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-near
           shoot photos-near-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-near

@@ -11,6 +11,7 @@ import {
   CloseIcon,
   DownloadIcon,
   HeartIcon,
+  LocationIcon,
   PencilIcon,
   PhotoSaveIcon,
   PlusIcon,
@@ -87,6 +88,7 @@ import { hasPermission, useSession } from '../../session'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
 import { AddPhotosDialog, AlbumOwnerMark, ShareAlbumDialog } from './albumSharing'
+import { ChangeLocationDialog } from './changeLocation'
 import { useShowDateRange, useVisibleDayRange } from './dateRange'
 import { FirstPhotos } from './firstPhotos'
 import { PhotoGrid, isPhotoPreviewPending, type PhotoGrouping } from './grid'
@@ -153,6 +155,8 @@ function AccountPhotosPage() {
   const [favoriteOverrides, setFavoriteOverrides] = useState<ReadonlyMap<string, boolean>>(new Map())
   // The photos a new album is being named for, from a selection or the viewer.
   const [newAlbumPhotos, setNewAlbumPhotos] = useState<Photo[] | null>(null)
+  // The photos whose place is being changed, from a selection or the viewer.
+  const [locationPhotos, setLocationPhotos] = useState<Photo[] | null>(null)
   const [isRenamingAlbum, setIsRenamingAlbum] = useState(false)
   const [isSharingAlbum, setIsSharingAlbum] = useState(false)
   const [isAddingPhotos, setIsAddingPhotos] = useState(false)
@@ -1280,6 +1284,18 @@ function AccountPhotosPage() {
                   </button>
                 </Tooltip>
               )}
+              {areAllSelectedMine && (
+                <Tooltip label={t('photos.changeLocation')}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t('photos.changeLocation')}
+                    onClick={() => setLocationPhotos(selectedPhotos)}
+                  >
+                    <LocationIcon size={18} />
+                  </button>
+                </Tooltip>
+              )}
               <Tooltip label={t('photos.download')}>
                 <button
                   type="button"
@@ -1527,6 +1543,7 @@ function AccountPhotosPage() {
           isPaused={
             confirmation !== null ||
             newAlbumPhotos !== null ||
+            locationPhotos !== null ||
             isRenamingAlbum ||
             isSharingAlbum ||
             isAddingPhotos ||
@@ -1537,6 +1554,7 @@ function AccountPhotosPage() {
           photoLibrary={info.data}
           onSaveToLibrary={(photo) => saveToLibrary([photo])}
           onChangeDate={changeDate}
+          onChangeLocation={(photo) => setLocationPhotos([photo])}
           onDescribe={describe}
           onAskAssistant={isAssistantOn ? askAssistant : undefined}
           onRetryProcessing={(photo) => retryProcessing([photo])}
@@ -1647,6 +1665,16 @@ function AccountPhotosPage() {
           isBusy={isBusy}
           onSubmit={(albumTitle, circleId) => void createAlbumWith(newAlbumPhotos, albumTitle, circleId)}
           onClose={() => setNewAlbumPhotos(null)}
+        />
+      )}
+      {locationPhotos && (
+        <ChangeLocationDialog
+          photos={locationPhotos}
+          onChanged={() => {
+            clearSelection()
+            void refresh()
+          }}
+          onClose={() => setLocationPhotos(null)}
         />
       )}
       {isSharingAlbum && shownAlbum && (

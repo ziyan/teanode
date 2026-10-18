@@ -154,6 +154,10 @@ type Photo struct {
 	ProcessingNotBefore *time.Time `json:"-"`
 	TrashedAt           *time.Time `json:"trashedAt" graphapi:"nullable"`
 
+	// IsLocationRemoved says the person removed the photo's location, so
+	// that reading the file again does not put the camera's back.
+	IsLocationRemoved bool `json:"-"`
+
 	// FacesFoundAt is when the photo's faces were found, null until then.
 	FacesFoundAt *time.Time `json:"-"`
 

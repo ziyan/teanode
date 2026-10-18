@@ -602,6 +602,57 @@ final class PhotosModel {
         }
     }
 
+    /// Says where photos were taken, at a city the person picked. True when
+    /// the server took it. The photos held in the lists are read anew, so that
+    /// Info and the next change see the new place.
+    func changeLocation(of photos: [Photo], to place: PhotoPlace) async -> Bool {
+        do {
+            try await connection.setPhotoLocation(photoIds: photos.map(\.id), latitude: place.latitude, longitude: place.longitude)
+            await refreshHeldPhotos(changed: photos)
+            doneText = String(localized: "Location changed")
+            return true
+        } catch {
+            problemText = describe(error)
+            return false
+        }
+    }
+
+    /// Takes the place off photos, for good: it is not put back when the
+    /// photo's file is read again. True when the server took it.
+    func removeLocation(of photos: [Photo]) async -> Bool {
+        do {
+            try await connection.removePhotoLocation(photoIds: photos.map(\.id))
+            await refreshHeldPhotos(changed: photos)
+            doneText = String(localized: "Location removed")
+            return true
+        } catch {
+            problemText = describe(error)
+            return false
+        }
+    }
+
+    /// Reads photos whose place changed anew into every list that holds them.
+    /// A few are read one by one; for more, each list is read again from its
+    /// top, as far as the photos it holds (at most 500). A search keeps the
+    /// photos it holds, so a viewer open over it does not lose its place.
+    private func refreshHeldPhotos(changed photos: [Photo]) async {
+        if photos.count <= 20 {
+            for photo in photos {
+                if let fresh = try? await connection.photoDetail(photo.id).photo {
+                    for key in Array(listings.keys) { listings[key]?.replace(fresh) }
+                }
+            }
+        } else {
+            for key in Array(listings.keys) {
+                guard let held = listings[key] else { continue }
+                if let page = try? await fetchPage(key, pageSize: min(max(held.photos.count, 1), 500)) {
+                    listings[key]?.replaceHeld(by: page)
+                }
+            }
+        }
+        if hasReadSuggestions { await reloadSuggestions() }
+    }
+
     /// Reads the circles the person is in, once, for the albums that can be
     /// made for one. A failure leaves the choice out.
     func loadCircles() async {
@@ -995,19 +1046,8 @@ struct PhotosScreen: View {
                         await model.loadAlbumsSection()
                     }
                 }
-                .task { await model.loadLibrary() }
-                // The albums the Add to Album menus list, and the circles an album can be for.
-                .task { await model.loadAlbums() }
-                .task { await model.loadCircles() }
                 .task(id: PhotoFollowID(key: key, hasWaitingPhotos: key.map { model.hasWaitingPhotos(in: $0) } ?? false)) {
                     if let key, model.hasWaitingPhotos(in: key) { await model.followWaitingPhotos(in: key) }
-                }
-                .onChange(of: model.section) { _, _ in
-                    endSelection()
-                    isSearchPresented = false
-                    // The side menu can be opened by a swipe while Photo backup is shown;
-                    // choosing a collection there must not leave the backup screen on top of it.
-                    isShowingBackup = false
                 }
                 .onChange(of: key) { _, _ in dateRangeText = "" }
                 .onChange(of: scale) { _, _ in dateRangeText = "" }
@@ -1030,6 +1070,24 @@ struct PhotosScreen: View {
                     }
                 #endif
         }
+        // A collection chosen in the side menu opens on its own first page: an album
+        // or a person opened in the collection before is not left on top of it.
+        .id(model.section)
+        .onChange(of: model.section) { _, _ in
+            endSelection()
+            isSearchPresented = false
+            // The rebuilt stack does not see the list change, so the days of the
+            // last collection's photos are cleared here.
+            dateRangeText = ""
+            // The side menu can be opened by a swipe while Photo backup is shown;
+            // choosing a collection there must not leave the backup screen on top of it.
+            isShowingBackup = false
+        }
+        // Read once for the whole screen, not again for each collection.
+        .task { await model.loadLibrary() }
+        // The albums the Add to Album menus list, and the circles an album can be for.
+        .task { await model.loadAlbums() }
+        .task { await model.loadCircles() }
         .fullScreenCover(item: $opened) { opened in
             PhotoViewer(model: model, listKey: key ?? .library, openedPhotoId: opened.id)
         }
@@ -1063,7 +1121,7 @@ struct PhotosScreen: View {
             // `photos-viewer-failed` opens Info over a photo that could not be made ready.
             .task(id: model.photos(in: .library).first?.id) {
                 let screen = DemoServer.screen
-                guard DemoServer.isRequested, ["photos-viewer", "photos-viewer-described", "photos-viewer-info", "photos-viewer-hidden", "photos-video-viewer", "photos-viewer-failed", "photos-change-date"].contains(screen ?? ""), !isDemoViewerOpened else { return }
+                guard DemoServer.isRequested, ["photos-viewer", "photos-viewer-described", "photos-viewer-info", "photos-viewer-hidden", "photos-video-viewer", "photos-viewer-failed", "photos-change-date", "photos-location"].contains(screen ?? ""), !isDemoViewerOpened else { return }
                 let photoId: String?
                 switch screen {
                 case "photos-viewer-failed": photoId = "demo-08"

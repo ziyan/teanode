@@ -31,6 +31,8 @@ type photoProvider struct {
 	answers    []string
 	chatBodies []string
 	embedded   []string
+	// onChat runs while the model is being asked, before it answers.
+	onChat func()
 }
 
 func (self *photoProvider) serve(test *testing.T) *httptest.Server {
@@ -57,6 +59,9 @@ func (self *photoProvider) serve(test *testing.T) *httptest.Server {
 			}
 			_ = json.NewEncoder(writer).Encode(map[string]any{"data": data, "usage": map[string]int{"prompt_tokens": 7, "total_tokens": 7}})
 			return
+		}
+		if self.onChat != nil {
+			self.onChat()
 		}
 		self.mutex.Lock()
 		answer := self.answers[min(len(self.chatBodies), len(self.answers)-1)]
@@ -398,6 +403,30 @@ func TestThePhotoJobDescribesAgainOnlyWhenAskedTo(test *testing.T) {
 	}
 	if found := fixture.search(test, "bridge"); len(found) != 1 {
 		test.Fatalf("the new one does not: %v", found)
+	}
+}
+
+// A photo moved while the model looked at it keeps no description: it was
+// written knowing the old place, which the move cleared.
+func TestThePhotoJobKeepsNothingForAPhotoMovedMeanwhile(test *testing.T) {
+	fixture := newPhotoJobFixture(test, true, lighthouseAnswer)
+	fixture.request(test, fixture.photo)
+	fixture.provider.onChat = func() {
+		dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+			if _, err := transaction.SetPhotoLocation(fixture.photo.UserID, []string{fixture.photo.ID}, nil); err != nil {
+				test.Error(err)
+			}
+		})
+	}
+	if err := fixture.worker.runDescribePhoto(test.Context(), fixture.run(fixture.photo)); err != nil {
+		test.Fatal(err)
+	}
+	photo := fixture.read(test, fixture.photo)
+	if photo.DescribedAt != nil || photo.IsDescriptionRequested || photo.PhotoDescription != "" {
+		test.Fatalf("a description of the old place landed after the move: %+v", photo)
+	}
+	if found := fixture.search(test, "lighthouse"); len(found) != 0 {
+		test.Fatalf("the photo is found by a description it does not have: %v", found)
 	}
 }
 

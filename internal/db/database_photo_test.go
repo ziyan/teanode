@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -1015,6 +1016,182 @@ func TestPhotoMetadataKeepsWhatThePhotoAlreadyHas(test *testing.T) {
 			test.Fatalf("the file's reading was not taken: %+v", found)
 		}
 	})
+}
+
+func TestAPhotosLocationIsSetRemovedAndKeptWhenTheFileIsReadAgain(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-location-owner")
+	otherId := dbtest.CreateUser(test, database, "photo-location-other")
+	fileLatitude, fileLongitude := 10.0, 20.0
+	fileMetadata := &db.PhotoMetadata{Latitude: &fileLatitude, Longitude: &fileLongitude, PlaceName: "Filetown, Exampleland"}
+
+	set := newTestPhoto(test, database, ownerId, "set", nil)
+	removed := newTestPhoto(test, database, ownerId, "removed", nil)
+	trashed := newTestPhoto(test, database, ownerId, "trashed", nil)
+	foreign := newTestPhoto(test, database, otherId, "foreign", nil)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if _, err := transaction.TrashPhotos(ownerId, []string{trashed.ID}); err != nil {
+			test.Fatal(err)
+		}
+		// Only the photos the person owns that are not in the Trash are counted.
+		change, err := transaction.SetPhotoLocation(ownerId, []string{set.ID, trashed.ID, foreign.ID, "no-such-photo"}, &db.PhotoLocation{Latitude: 35.5, Longitude: 135.25, PlaceName: "Harborview, Exampleland"})
+		if err != nil || !equalIds(change.ChangedPhotoIDs, []string{set.ID}) || len(change.DescribedPhotoIDs) != 0 {
+			test.Fatalf("set location changed %+v: %v", change, err)
+		}
+		change, err = transaction.SetPhotoLocation(ownerId, []string{removed.ID, trashed.ID, foreign.ID}, nil)
+		if err != nil || !equalIds(change.ChangedPhotoIDs, []string{removed.ID}) {
+			test.Fatalf("remove location changed %+v: %v", change, err)
+		}
+		if change, err := transaction.SetPhotoLocation(ownerId, nil, nil); err != nil || len(change.ChangedPhotoIDs) != 0 {
+			test.Fatalf("an empty list changed %+v: %v", change, err)
+		}
+		if _, err := transaction.SetPhotoLocation(ownerId, make([]string, 501), nil); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("501 photos were accepted: %v", err)
+		}
+		if _, err := transaction.SetPhotoLocation(ownerId, []string{set.ID}, &db.PhotoLocation{Latitude: 91, Longitude: 0}); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("a latitude past the pole was accepted: %v", err)
+		}
+		if _, err := transaction.SetPhotoLocation(ownerId, []string{set.ID}, &db.PhotoLocation{Latitude: 0, Longitude: math.NaN()}); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("a longitude that is not a number was accepted: %v", err)
+		}
+		found, err := transaction.GetPhoto(otherId, foreign.ID)
+		if err != nil || found.Latitude != nil || found.IsLocationRemoved {
+			test.Fatalf("another person's photo was changed: %+v %v", found, err)
+		}
+		found, err = transaction.GetPhoto(ownerId, trashed.ID)
+		if err != nil || found.Latitude != nil || found.IsLocationRemoved || found.PlaceName != "" {
+			test.Fatalf("a trashed photo was changed: %+v %v", found, err)
+		}
+	})
+
+	// The file is read again, as when a Live Photo's video arrives or a retry runs.
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		for _, photoId := range []string{set.ID, removed.ID} {
+			if err := transaction.UpdatePhotoMetadata(photoId, fileMetadata); err != nil {
+				test.Fatal(err)
+			}
+		}
+		found, err := transaction.GetPhoto(ownerId, set.ID)
+		if err != nil || found.Latitude == nil || *found.Latitude != 35.5 || *found.Longitude != 135.25 || found.PlaceName != "Harborview, Exampleland" || found.IsLocationRemoved {
+			test.Fatalf("the location the person set was replaced by the file's: %+v %v", found, err)
+		}
+		found, err = transaction.GetPhoto(ownerId, removed.ID)
+		if err != nil || found.Latitude != nil || found.Longitude != nil || found.PlaceName != "" || !found.IsLocationRemoved {
+			test.Fatalf("the location the person removed came back from the file: %+v %v", found, err)
+		}
+	})
+
+	// The search follows the place: the removed place no longer finds the photo.
+	if found := searchPhotoIds(test, database, ownerId, "harborview", nil); !equalIds(found, []string{set.ID}) {
+		test.Fatalf("the new place finds %v", found)
+	}
+	if found := searchPhotoIds(test, database, ownerId, "filetown", nil); len(found) != 0 {
+		test.Fatalf("the file's place still finds %v", found)
+	}
+
+	// Setting a location after removing one gives the photo a place again, and
+	// reading the file leaves it alone from then on.
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if change, err := transaction.SetPhotoLocation(ownerId, []string{removed.ID}, &db.PhotoLocation{Latitude: -12.5, Longitude: 77.5}); err != nil || len(change.ChangedPhotoIDs) != 1 {
+			test.Fatalf("set location changed %+v: %v", change, err)
+		}
+		if err := transaction.UpdatePhotoMetadata(removed.ID, fileMetadata); err != nil {
+			test.Fatal(err)
+		}
+		found, err := transaction.GetPhoto(ownerId, removed.ID)
+		if err != nil || found.Latitude == nil || *found.Latitude != -12.5 || found.IsLocationRemoved {
+			test.Fatalf("a location set after removing one is gone: %+v %v", found, err)
+		}
+	})
+}
+
+// A file read before the person moved the photo names the place it was taken
+// by its old position; the name is not put next to the new one.
+func TestAPlaceNameReadBeforeAMoveIsNotKept(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-location-reading")
+	moved := newTestPhoto(test, database, ownerId, "moved", nil)
+	kept := newTestPhoto(test, database, ownerId, "kept", nil)
+	oldLatitude, oldLongitude := 10.0, 20.0
+	newLatitude, newLongitude := -30.5, 140.25
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		// Moved to a position no city is near, so it has no place name.
+		if _, err := transaction.SetPhotoLocation(ownerId, []string{moved.ID, kept.ID}, &db.PhotoLocation{Latitude: newLatitude, Longitude: newLongitude}); err != nil {
+			test.Fatal(err)
+		}
+		stale := &db.PhotoMetadata{Latitude: &oldLatitude, Longitude: &oldLongitude, PlaceName: "Filetown, Exampleland", PlaceNameLatitude: &oldLatitude, PlaceNameLongitude: &oldLongitude}
+		if err := transaction.UpdatePhotoMetadata(moved.ID, stale); err != nil {
+			test.Fatal(err)
+		}
+		found, err := transaction.GetPhoto(ownerId, moved.ID)
+		if err != nil || found.PlaceName != "" || *found.Latitude != newLatitude {
+			test.Fatalf("the name of the old position was put next to the new one: %+v %v", found, err)
+		}
+		current := &db.PhotoMetadata{PlaceName: "Seaview, Exampleland", PlaceNameLatitude: &newLatitude, PlaceNameLongitude: &newLongitude}
+		if err := transaction.UpdatePhotoMetadata(kept.ID, current); err != nil {
+			test.Fatal(err)
+		}
+		found, err = transaction.GetPhoto(ownerId, kept.ID)
+		if err != nil || found.PlaceName != "Seaview, Exampleland" {
+			test.Fatalf("a name of the position the photo has was not kept: %+v %v", found, err)
+		}
+	})
+}
+
+func TestMovingADescribedPhotoClearsItsDescription(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-location-described")
+	described := newTestPhoto(test, database, ownerId, "described", nil)
+	plain := newTestPhoto(test, database, ownerId, "plain", nil)
+	describePhoto(test, database, ownerId, described.ID, "A lighthouse on a rocky point in Filetown", "")
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.PutPhotoVector(ownerId, described.ID, "test-model", []float32{1, 0, 0, 0}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if found := searchPhotoIds(test, database, ownerId, "lighthouse", nil); !equalIds(found, []string{described.ID}) {
+		test.Fatalf("the description finds %v before the move", found)
+	}
+
+	// Moved within the city it is already named after, it keeps its description.
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if _, err := transaction.SetPhotoLocation(ownerId, []string{described.ID}, &db.PhotoLocation{Latitude: 1, Longitude: 2, PlaceName: "Filetown, Exampleland"}); err != nil {
+			test.Fatal(err)
+		}
+		change, err := transaction.SetPhotoLocation(ownerId, []string{described.ID}, &db.PhotoLocation{Latitude: 1.01, Longitude: 2.01, PlaceName: "Filetown, Exampleland"})
+		if err != nil || len(change.DescribedPhotoIDs) != 0 {
+			test.Fatalf("a move within the same city cleared the description: %+v %v", change, err)
+		}
+	})
+	describePhoto(test, database, ownerId, described.ID, "A lighthouse on a rocky point in Filetown", "")
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.PutPhotoVector(ownerId, described.ID, "test-model", []float32{1, 0, 0, 0}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	// The description named the old place, so it goes with it, and the caller
+	// is told which photos to describe again.
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		change, err := transaction.SetPhotoLocation(ownerId, []string{described.ID, plain.ID}, nil)
+		if err != nil || len(change.ChangedPhotoIDs) != 2 || !equalIds(change.DescribedPhotoIDs, []string{described.ID}) {
+			test.Fatalf("remove location changed %+v: %v", change, err)
+		}
+		found, err := transaction.GetPhoto(ownerId, described.ID)
+		if err != nil || found.PhotoDescription != "" || found.DescribedAt != nil {
+			test.Fatalf("the description written knowing the old place was kept: %+v %v", found, err)
+		}
+	})
+	if found := searchPhotoIds(test, database, ownerId, "lighthouse", nil); len(found) != 0 {
+		test.Fatalf("the cleared description still finds %v", found)
+	}
+	meaning := &db.PhotoSearchMeaning{ModelName: "test-model", Vector: []float32{1, 0, 0, 0}}
+	if found := searchPhotoIds(test, database, ownerId, "rocky point", meaning); len(found) != 0 {
+		test.Fatalf("the vector read from the old description still finds %v", found)
+	}
 }
 
 func TestReadyPhotosWithoutASmallPreviewAreQueuedAgain(test *testing.T) {

@@ -618,6 +618,41 @@ it('offers Try again in the selection bar when every selected photo has failed, 
   expect(screen.queryByRole('toolbar')).toBeNull()
 })
 
+it('changes the place of the selected photos through the dialog, and reads the list again', async () => {
+  extraAnswer = (document, variables) =>
+    document.includes('SearchPhotoPlaces(')
+      ? {
+          SearchPhotoPlaces: [
+            { placeName: 'Lisbon, Portugal', latitude: 38.72, longitude: -9.14, distanceKilometers: null },
+          ],
+        }
+      : document.includes('SetPhotoLocation(')
+        ? { SetPhotoLocation: (variables.photoIds as string[]).length }
+        : undefined
+  show('/photos')
+  await selectPhotos('photo-1', 'photo-2')
+  const listsBefore = callsTo('ListPhotos').length
+  fireEvent.click(await screen.findByRole('button', { name: 'Change location' }))
+  fireEvent.change(await screen.findByRole('searchbox', { name: 'Search for a city' }), { target: { value: 'Lisb' } })
+  fireEvent.click(await screen.findByRole('button', { name: /Lisbon, Portugal/ }))
+  await waitFor(() =>
+    expect(callsTo('SetPhotoLocation')).toEqual([
+      { photoIds: ['photo-1', 'photo-2'], latitude: 38.72, longitude: -9.14 },
+    ]),
+  )
+  expect(await screen.findByText('Location changed for 2 photos')).toBeTruthy()
+  await waitFor(() => expect(callsTo('ListPhotos').length).toBeGreaterThan(listsBefore))
+  expect(screen.queryByRole('toolbar')).toBeNull()
+})
+
+it('offers no Change location for a selection with a photo that is not the person\u2019s own', async () => {
+  library = library.map((photo) => (photo.id === 'photo-2' ? { ...photo, isOwnedByCaller: false } : photo))
+  show('/photos')
+  await selectPhotos('photo-1', 'photo-2')
+  await screen.findByRole('toolbar')
+  expect(screen.queryByRole('button', { name: 'Change location' })).toBeNull()
+})
+
 it('offers no Try again when a selected photo has not failed', async () => {
   library = library.map((photo) =>
     photo.id === 'photo-1' ? { ...photo, photoProcessingState: 'failed', smallPreviewUrl: '' } : photo,
