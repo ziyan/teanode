@@ -87,6 +87,9 @@ export function NavigationShortcuts({ onToggleSidebar }: { onToggleSidebar?: () 
     if (hasAgentUse) {
       list.push(go('r', t('recordings.title'), '/recordings'))
     }
+    if (hasAgentUse) {
+      list.push(go('o', t('nav.coding'), '/coding'))
+    }
     if (agent.isAvailable) {
       list.push(go('f', t('finance.title'), '/finance'))
     }
