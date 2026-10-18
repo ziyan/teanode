@@ -4,7 +4,8 @@
 
     // The invented accounts, trades, rule suggestions and rows that the
     // screenshots of the finance management screens photograph
-    // (`-TeaNodeDemo -TeaNodeScreen finance-trades`, `finance-import-preview`).
+    // (`-TeaNodeDemo -TeaNodeScreen finance-trades`, `finance-import-preview`,
+    // and the screens for typing in a receipt, a paystub or a tax form).
     // DemoServer answers the app's GraphQL here for the operations only
     // these screens ask.
 
@@ -36,7 +37,8 @@
             if query.contains("StatementImport") {
                 return #"{"data":{"StatementImport":{"sourceId":"source-statements","importAddress":"robin+statements-demo0token01@example.com","isEnabled":true,"lastStatementImport":{"importedAt":"2026-10-12T09:30:00Z","statementImportOrigin":"mail","addedTransactionCount":3,"updatedTransactionCount":0,"unchangedTransactionCount":1,"financeAccountNames":["Everyday card ··4321"],"importErrorMessage":""}}}}"#
             }
-            let isManageScreen = ["finance-trades", "finance-import"].contains { screen?.hasPrefix($0) == true }
+            // Every `finance-` screen opens on the accounts, as AppShell does.
+            let isManageScreen = screen?.hasPrefix("finance-") == true
             if isManageScreen, query.contains("FinanceTransactions") {
                 return #"{"data":{"FinanceTransactions":{"financeTransactions":[\#(demoTransactionJSON(id: "transaction-1", description: "Corner Market 0412")),\#(demoTransactionJSON(id: "transaction-2", description: "Corner Market 0977"))],"totalCount":2,"leftOutDuplicateCount":0}}}"#
             }

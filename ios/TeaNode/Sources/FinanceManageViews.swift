@@ -58,7 +58,10 @@ struct TradesView: View {
                 }
             } footer: {
                 if !trades.isEmpty {
+                    // A plain list leaves its footers in body text.
                     Text("Every buy, sell, cancel and transfer in this account, newest first. The amount is the cash the trade moved: negative when cash left the account.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -138,19 +141,32 @@ struct AccountTradesLink: View {
 }
 
 /// FinanceManageDemoScreens opens the screens a screenshot names
-/// (`-TeaNodeScreen finance-trades`, `finance-import-preview`) once the
-/// accounts are shown, so the screenshot does not depend on how far the list
-/// is scrolled. It does nothing in a release build or without the name.
+/// (`-TeaNodeScreen finance-trades`, `finance-import-preview`,
+/// `finance-receipt-entry`, `finance-paystub-entry`, `finance-tax-form-entry`)
+/// once the accounts are shown, so the screenshot does not depend on how far
+/// the list is scrolled. It does nothing in a release build or without the name.
 struct FinanceManageDemoScreens: ViewModifier {
+    @Environment(FinanceModel.self) private var finance
     let accounts: [FinanceAccount]
     let onImported: () -> Void
     @State private var demoTradesAccount: FinanceAccount?
     @State private var isDemoImportOpen = false
+    @State private var demoEntryScreen: DemoEntryScreen?
 
     func body(content: Content) -> some View {
         content
             .navigationDestination(item: $demoTradesAccount) { TradesView(account: $0) }
             .navigationDestination(isPresented: $isDemoImportOpen) { ImportTransactionRowsView(onImported: onImported) }
+            .sheet(item: $demoEntryScreen) { screen in
+                switch screen {
+                case .receipt:
+                    ReceiptEntryView(currencyCode: finance.reportingCurrency, today: finance.today) {}
+                case .paystub:
+                    PaystubEntryView(currencyCode: finance.reportingCurrency, today: finance.today) {}
+                case .taxForm:
+                    TaxFormEntryView(taxYear: finance.dates.component(.year, from: Date()) - 1) {}
+                }
+            }
             .task(id: accounts.count) {
                 #if DEBUG
                     guard !accounts.isEmpty, let screen = DemoServer.screen else { return }
@@ -159,10 +175,21 @@ struct FinanceManageDemoScreens: ViewModifier {
                         demoTradesAccount = accounts.first { $0.accountKind == "investment" }
                     } else if screen == "finance-import-preview" {
                         isDemoImportOpen = true
+                    } else {
+                        demoEntryScreen = DemoEntryScreen(rawValue: screen)
                     }
                 #endif
             }
     }
+}
+
+/// DemoEntryScreen is a screen for typing in a record that a screenshot opens.
+private enum DemoEntryScreen: String, Identifiable {
+    case receipt = "finance-receipt-entry"
+    case paystub = "finance-paystub-entry"
+    case taxForm = "finance-tax-form-entry"
+
+    var id: String { rawValue }
 }
 
 extension View {
@@ -652,8 +679,12 @@ struct ImportTransactionRowsView: View {
     private func previewSections(_ preview: TransactionRowsPreview) -> some View {
         let currencyCode = preview.currencyCode
         Section("Account") {
-            LabeledContent("Account", value: preview.accountName ?? "")
-            Text(accountWords(preview)).font(.callout).foregroundStyle(.secondary)
+            if preview.isNewAccount == true {
+                Text("They would go into a new account, \(preview.accountName ?? "").")
+            } else {
+                LabeledContent("Account", value: preview.accountName ?? "")
+                Text(accountWords(preview)).font(.callout).foregroundStyle(.secondary)
+            }
         }
         Section("What would be imported") {
             LabeledContent("New rows", value: String(preview.newRows.count))
@@ -666,7 +697,9 @@ struct ImportTransactionRowsView: View {
                 LabeledContent("Money out", value: FinanceMoney.shown(preview.moneyOutAmount, currencyCode: currencyCode))
             }
             if let summary = preview.verificationSummary, !summary.isEmpty {
-                LabeledContent("Checked", value: summary)
+                // The server's summary is a phrase in lower case, as the
+                // command line prints it after a colon.
+                LabeledContent("Checked", value: String(summary.prefix(1)).uppercased() + String(summary.dropFirst()))
             }
         }
         if !preview.newRows.isEmpty {
@@ -692,9 +725,8 @@ struct ImportTransactionRowsView: View {
         }
     }
 
-    /// Which account the rows would go into and how it was found.
+    /// How the account the rows would go into was found.
     private func accountWords(_ preview: TransactionRowsPreview) -> String {
-        if preview.isNewAccount == true { return String(localized: "A new account would be made for these rows.") }
         switch preview.accountMatch {
         case "finance_account_id": return String(localized: "An account you have, found by its id.")
         case "account_number": return String(localized: "An account you have, found by its number.")

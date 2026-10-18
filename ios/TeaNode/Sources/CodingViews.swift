@@ -259,6 +259,13 @@ struct CodingScreen: View {
                         path.append(CodingTarget(computer: "laptop", paneId: "p2"))
                     }
                 }
+                // A screenshot of the reporting hooks, once the computers
+                // are known (`-TeaNodeScreen coding-hooks`).
+                .task(id: model.list?.computerNames.count ?? 0) {
+                    if DemoServer.isRequested, DemoServer.screen == "coding-hooks", tool == nil, model.list?.computerNames.isEmpty == false {
+                        tool = .hooks
+                    }
+                }
             #endif
         }
         .toast(done: $doneText, problem: $problemText)
