@@ -367,7 +367,7 @@ struct CircleDetailView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             Toggle("Make them an admin", isOn: $invitationDraft.isAdmin)
-            Button("Send invitation", systemImage: "paperplane") {
+            Button {
                 Task {
                     // The server answers the same whether or not the account
                     // exists, so this must not say the person was found.
@@ -376,6 +376,11 @@ struct CircleDetailView: View {
                     }
                     if isSent { invitationDraft = CircleInvitationDraft() }
                 }
+            } label: {
+                // A label inside the button rather than the title and symbol
+                // given to it: given to it, the symbol kept the green while the
+                // disabled words went to black, two colors on one button.
+                Label("Send invitation", systemImage: "paperplane")
             }
             .disabled(!invitationDraft.canSubmit)
         } header: {
