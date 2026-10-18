@@ -14,13 +14,16 @@ describe('check-link-buttons', () => {
 
   it('allows a reason on the same line or the line above', () => {
     expect(findProblems('<button /* link-button: words inside a sentence */ className="link">Go</button>')).toEqual([])
-    expect(findProblems('{/* link-button: words inside a sentence */}\n<button\n  type="button"\n  className="link"\n>Go</button>')).toEqual(
-      [],
-    )
+    expect(
+      findProblems(
+        '{/* link-button: words inside a sentence */}\n<button\n  type="button"\n  className="link"\n>Go</button>',
+      ),
+    ).toEqual([])
   })
 
   it('does not accept a reason further away', () => {
-    const text = '// link-button: not this one\n\n\n<button\n  type="button"\n  onClick={go}\n  className="link"\n>Go</button>'
+    const text =
+      '// link-button: not this one\n\n\n<button\n  type="button"\n  onClick={go}\n  className="link"\n>Go</button>'
     expect(findProblems(text)).toHaveLength(1)
   })
 
