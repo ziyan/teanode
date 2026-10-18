@@ -62,21 +62,26 @@ func isChatAction(action string) bool {
 // they each share a circle with the person already, and could be written to
 // in a direct chat, and nothing is said to them until the person says
 // something, which is outward on its own. The command line and the dashboard
-// start one without asking, as they do a direct chat. Everything else changes
-// the person's own view of a chat or their own words, which they can change
-// back.
+// start one without asking, as they do a direct chat.
+//
+// Editing a message is outward, as sending one is: everybody in the chat
+// reads the new words as the person's, and what it said before is not kept.
+// Everything else changes the person's own view of a chat, which they can
+// change back.
 func chatRiskOf(asked conversationArguments) tools.Risk {
 	switch strings.TrimSpace(asked.Action) {
 	case "add_members":
 		return tools.RiskGranting
 	case "remove_member", "leave", "delete_message":
 		return tools.RiskDestructive
+	case "edit":
+		return tools.RiskOutward
 	case "others_may_ask":
 		if asked.IsOn != nil && !*asked.IsOn {
 			return tools.RiskWrite
 		}
 		return tools.RiskGranting
-	case "direct", "group", "rename", "mute", "mark_read", "edit", "remember":
+	case "direct", "group", "rename", "mute", "mark_read", "remember":
 		return tools.RiskWrite
 	}
 	return tools.RiskRead
@@ -139,10 +144,12 @@ func chatResult(operationResult map[string]any, operation, note string) (*tools.
 		return nil, fmt.Errorf("the answer to %s is not a conversation: %w", operation, err)
 	}
 	answer := map[string]any{"conversation_id": answered.ID, "kind": "chat", "title": answered.Title}
-	people := make([]string, 0, len(answered.Chat.Members))
+	// The same shape as read's: by username too, which remove_member and
+	// add_members take.
+	people := make([]map[string]string, 0, len(answered.Chat.Members))
 	for _, member := range answered.Chat.Members {
 		if !member.IsRemoved {
-			people = append(people, member.Name)
+			people = append(people, map[string]string{"name": member.Name, "username": member.Username, "role": member.MemberRole})
 		}
 	}
 	answer["people_in_it"] = people
@@ -322,7 +329,10 @@ func runChatAction(ctx context.Context, run tools.Run, arguments conversationArg
 			}
 		}
 		if len(newPeople) == 0 {
-			return tools.TextResult("%s already in this chat; added nobody", strings.Join(alreadyIn, ", ")), nil
+			// The names are the ones those people chose.
+			result := tools.TextResult("%s already in this chat; added nobody", strings.Join(alreadyIn, ", "))
+			result.Untrusted = true
+			return result, nil
 		}
 		result, err := operator.Execute(ctx, documentAddChatMembers, map[string]any{"conversationId": conversationId, "userIds": userIDsOf(newPeople)})
 		if err != nil {
@@ -563,7 +573,12 @@ func chatPreview(ctx context.Context, call conversationArguments) string {
 	case "leave":
 		return "Leave " + where + ". The person stops getting its messages and can read it only up to now; an admin of the group has to add them again"
 	case "delete_message":
-		return deletePreview(ctx, call)
+		said, where := messagePreview(ctx, call)
+		return "Delete " + said + " in " + where + " for everybody there, who will see \"Message deleted\" in its place"
+	case "edit":
+		said, where := messagePreview(ctx, call)
+		return "Change " + said + " in " + where + " to say " + tools.Named(cutRunes(strings.TrimSpace(call.Text), 100), "nothing") +
+			"; everybody there reads it as yours, marked edited, and what it said before is not kept"
 	case "others_may_ask":
 		if call.IsOn != nil && !*call.IsOn {
 			return ""
@@ -573,11 +588,11 @@ func chatPreview(ctx context.Context, call conversationArguments) string {
 	return ""
 }
 
-// deletePreview names the message that would be deleted, whose it is and the
-// chat it is in, when it is one of a chat the person is in. A delete names
+// messagePreview names the message a delete or an edit is about, whose it is
+// and the chat it is in, when it is one of a chat the person is in. Both name
 // only the message, so the chat is found from it.
-func deletePreview(ctx context.Context, call conversationArguments) string {
-	said, where := "a message", "a chat"
+func messagePreview(ctx context.Context, call conversationArguments) (said string, where string) {
+	said, where = "a message", "a chat"
 	if run, err := tools.RunFrom(ctx); err == nil && run.Database() != nil {
 		_ = run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			chatMessage, err := tx.GetChatMessage(strings.TrimSpace(call.ChatMessageID))
@@ -608,7 +623,7 @@ func deletePreview(ctx context.Context, call conversationArguments) string {
 			return nil
 		})
 	}
-	return "Delete " + said + " in " + where + " for everybody there, who will see \"Message deleted\" in its place"
+	return said, where
 }
 
 // previewChat is the conversation a card is about, found only among the

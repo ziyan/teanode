@@ -933,7 +933,7 @@ func TestChatActionsAreJudgedByWhatTheyCost(t *testing.T) {
 		`{"action":"leave","conversation_id":"c"}`:                                  tools.RiskDestructive,
 		`{"action":"mute","conversation_id":"c"}`:                                   tools.RiskWrite,
 		`{"action":"mark_read","conversation_id":"c"}`:                              tools.RiskWrite,
-		`{"action":"edit","chat_message_id":"m","text":"on my way"}`:                tools.RiskWrite,
+		`{"action":"edit","chat_message_id":"m","text":"on my way"}`:                tools.RiskOutward,
 		`{"action":"delete_message","chat_message_id":"m"}`:                         tools.RiskDestructive,
 		`{"action":"remember","conversation_id":"c","is_on":true}`:                  tools.RiskWrite,
 		`{"action":"remember","conversation_id":"c","is_on":false}`:                 tools.RiskWrite,
@@ -1179,6 +1179,10 @@ func TestChatActionsRunTheOperationsAndAskInPlainWords(t *testing.T) {
 	}
 	if line := tool.PreviewLine(ctx, deleting); line != `Delete the message "the moorings are booked" from "Example Friend" in the chat "Weekend plans" for everybody there, who will see "Message deleted" in its place` {
 		t.Errorf("the card for deleting says %q", line)
+	}
+	editing := json.RawMessage(`{"action":"edit","chat_message_id":"` + friendsMessage.ID + `","text":"on my way"}`)
+	if line := tool.PreviewLine(ctx, editing); line != `Change the message "the moorings are booked" from "Example Friend" in the chat "Weekend plans" to say "on my way"; everybody there reads it as yours, marked edited, and what it said before is not kept` {
+		t.Errorf("the card for editing says %q", line)
 	}
 	// A message of a chat the person has no conversation for is not quoted.
 	if line := tool.PreviewLine(ctx, json.RawMessage(`{"action":"delete_message","chat_message_id":"no-such-message"}`)); strings.Contains(line, "moorings") || !strings.HasPrefix(line, "Delete a message in a chat") {
