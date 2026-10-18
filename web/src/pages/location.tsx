@@ -869,7 +869,7 @@ function LocationContent({ userId }: { userId: string }) {
         >
           <div className="location-day-picker">
             <label>
-              {t('location.searchPlaces')}
+              <span>{t('location.searchPlaces')}</span>
               <input
                 type="search"
                 value={placesSearchText}
@@ -1205,7 +1205,7 @@ function PlaceEditor({
           {hasPendingChanges && <p className="muted">{t('location.saveBeforeAddress')}</p>}
         </div>
         <label>
-          <span>{t('location.placeLabel')}</span>
+          {t('location.placeLabel')}
           <Select
             block
             value={placeLabel}
