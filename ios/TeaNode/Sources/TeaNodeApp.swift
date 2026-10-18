@@ -790,7 +790,7 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
-                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-background", "photos-backup-other-account":
+                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-background", "photos-backup-paused", "photos-backup-other-account":
                     PhotoBackupView(connection: connection)
                 case "photos-faces": PhotoFacesSettingsView(connection: connection)
                 case "photos-conversation-card": PhotoConversationCardDemo()
@@ -845,7 +845,7 @@ struct PhotoBackupSettingsRow: View {
     /// which one, since this account's backup is off.
     private var statusText: Text {
         guard let enabledAccountKey = engine.enabledAccountKey else { return Text("Off") }
-        if enabledAccountKey == app.connection?.accountKey { return Text("On") }
+        if enabledAccountKey == app.connection?.accountKey { return engine.isPaused ? Text("Paused") : Text("On") }
         return Text("On for \(PhotoBackupEngine.name(ofAccountKey: enabledAccountKey))")
     }
 }
