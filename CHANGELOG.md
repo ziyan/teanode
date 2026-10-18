@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.177.3] - 2026-10-18
+
+### Fixed
+
+- On the Location map, a person's picture shows above the pin of the place they are at, and on a phone the place pins are round again. (#577)
+
 ## [0.177.2] - 2026-10-18
 
 ### Changed
