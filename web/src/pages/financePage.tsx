@@ -51,9 +51,12 @@ export function FinancePage() {
     return (
       <div className="card">
         <h3>{t('finance.title')}</h3>
-        <p className="muted">
-          {t('finance.notShown')} <Link to="/settings/agent">{t('finance.openAgentPage')}</Link>
-        </p>
+        <p className="muted">{t('finance.notShown')}</p>
+        <div className="page-actions">
+          <Link className="button" to="/settings/agent">
+            {t('finance.openAgentPage')}
+          </Link>
+        </div>
       </div>
     )
   }
@@ -73,9 +76,14 @@ export function FinancePage() {
     <>
       <Tabs items={FINANCE_SECTIONS} active={section} onSelect={openSection} />
       {!presence.hasSources ? (
-        <p className="muted finance-pointer">
-          {t('finance.nothingLinkedPointer')} <Link to={FINANCE_SETUP_PATH}>{t('finance.openFinanceSetup')}</Link>
-        </p>
+        <div className="finance-pointer">
+          <p className="muted">{t('finance.nothingLinkedPointer')}</p>
+          <div className="page-actions">
+            <Link className="button" to={FINANCE_SETUP_PATH}>
+              {t('finance.openFinanceSetup')}
+            </Link>
+          </div>
+        </div>
       ) : null}
       {section === 'spending' ? <FinanceSpendingSection /> : null}
       {section === 'transactions' ? <FinanceTransactionsSection /> : null}
