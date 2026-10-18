@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1167,4 +1168,64 @@ func TestCorrectingAPhotosDateReplacesItsOffsetWithTheOneThatCameWithIt(test *te
 			test.Fatalf("an offset without a date: %v", err)
 		}
 	})
+}
+
+// Two files of one account recorded at once, each in a transaction that had
+// already made its photo: making a photo takes a key share lock on the
+// account's row (the photo refers to it), so a lock on that row that also
+// excludes key share locks would wait on the other upload and it on this one.
+// The account's lock for the quota excludes only itself, and both files are
+// recorded, one after the other.
+func TestTwoFilesRecordedAtOnceForOneAccountDoNotDeadlock(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-deadlock-owner")
+	digests := []string{photoDigest("at once one"), photoDigest("at once two")}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		for _, digest := range digests {
+			if _, err := transaction.InsertPhotoBlobIfAbsent(&models.PhotoBlob{BlobSHA256: digest, BlobSizeBytes: 100}); err != nil {
+				test.Fatal(err)
+			}
+		}
+	})
+	var made sync.WaitGroup
+	made.Add(len(digests))
+	failures := make(chan error, len(digests))
+	var finished sync.WaitGroup
+	for index, digest := range digests {
+		finished.Add(1)
+		go func() {
+			defer finished.Done()
+			hasSignalled := false
+			failures <- database.Transaction(func(transaction db.Transaction) error {
+				photo, _, err := transaction.CreatePhoto(&models.Photo{
+					UserID: ownerId, ClientPhotoID: fmt.Sprintf("at-once-%d", index), PhotoKind: models.PhotoKindPicture, PhotoSource: models.PhotoSourceCommandLine,
+				})
+				if !hasSignalled {
+					hasSignalled = true
+					made.Done()
+				}
+				if err != nil {
+					return err
+				}
+				// Both photos are made, so both transactions hold their key
+				// share lock, before either asks for the account's lock.
+				made.Wait()
+				_, err = transaction.SetPhotoFile(ownerId, photo.ID, &models.PhotoFile{
+					PhotoFileRole: models.PhotoFileRoleOriginal, BlobSHA256: digest, FileSizeBytes: 100, ContentType: "image/jpeg",
+				}, 1000)
+				return err
+			})
+		}()
+	}
+	finished.Wait()
+	close(failures)
+	for err := range failures {
+		if err != nil {
+			test.Fatalf("recording two files at once failed: %v", err)
+		}
+	}
+	if count := dbtest.QueryString(test, database, "SELECT count(*) FROM photo_file f JOIN photo p ON p.id = f.photo_id WHERE p.user_id = '"+ownerId+"'"); count != "2" {
+		test.Fatalf("%s files recorded, want 2", count)
+	}
 }

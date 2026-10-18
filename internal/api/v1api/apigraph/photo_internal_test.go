@@ -273,6 +273,14 @@ func (self *photoWorld) storePhoto(userId, clientPhotoId, filename string, origi
 				self.test.Fatal(err)
 			}
 		}
+		// Recording the file moved the photo's update time on, into a later
+		// second when the clock ticked over meanwhile. A preview's address
+		// carries that time, so the photo handed back is read again, after
+		// the writes, and says the time the database holds.
+		stored, err = transaction.GetPhoto(userId, stored.ID)
+		if err != nil {
+			self.test.Fatal(err)
+		}
 	})
 	return stored
 }
