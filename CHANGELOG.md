@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.176.0] - 2026-10-18
+
+### Added
+
+- Photos: one person per contact, a face as the contact's picture, Live Photo playback, a video player in the iPhone app, collections in the side menu, WebP pictures, and zoom and pan on the dashboard. (#567)
+- The assistant and the command line do with albums, faces, the trash, chats, circles, calendars, coding sessions and finance entry what the dashboard does. (#567)
+- The iPhone app sets up the coding hooks, and photo backup resumes an interrupted upload. (#567)
+
+### Fixed
+
+- iPhone screens fit at the largest text, a disabled button is grey as a whole, and the side menu opens where it was left. (#567)
+
 ## [0.175.0] - 2026-10-18
 
 ### Added
