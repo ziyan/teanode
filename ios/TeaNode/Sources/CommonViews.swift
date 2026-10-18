@@ -359,9 +359,12 @@ struct SidePanelPan: UIGestureRecognizerRepresentable {
         }
 
         /// Up and down still scroll the screen; only a sideways drag is
-        /// the panel's, and it begins only then.
+        /// the panel's, and it begins only then. Only a scroll view's own
+        /// pan runs beside it: a tap was allowed to as well, and since the
+        /// screen moves with the finger, the touch never left the photo or
+        /// row it began on, which then opened as the menu did.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            true
+            other is UIPanGestureRecognizer
         }
     }
 }
