@@ -216,10 +216,12 @@ it('does not say Needs you while the session works or is idle', () => {
   expect(within(idleCard).getByText('idle')).toBeTruthy()
 })
 
-it('says the session has started no agents, with no heading and no tree', () => {
+it('says the session has started no agents, with an empty heading and no tree', () => {
   renderView({ subagents: [] })
   expect(screen.getByText('This session has not started any agents for this request.')).toBeTruthy()
-  expect(screen.queryByRole('heading')).toBeNull()
+  // The heading row stays, empty, so the view switch over its corner does not
+  // cover the session's card.
+  expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('')
   expect(document.querySelector('ul.agents-top')).toBeNull()
   // The session's own card is still there.
   expect(screen.getByText('Claude Code')).toBeTruthy()

@@ -283,19 +283,23 @@ export function HerdrSubagentsView({ read }: { read: HerdrSubagentsRead }) {
     })
   return (
     <div className="agents-view">
-      {read.subagents.length > 0 ? (
-        <h3 className="agents-heading">
-          <span>
-            {[
-              plural(read.subagents.length, { one: 'herdr.agents.countOne', other: 'herdr.agents.countOther' }),
-              runningCount > 0 ? t('herdr.agents.runningCount', { count: runningCount }) : '',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-          {read.isTruncated ? <span className="muted">{t('herdr.agents.newestOnly')}</span> : null}
-        </h3>
-      ) : null}
+      {/* Always there, if empty: the view switch floats over its corner, and
+          with no heading it would cover the session's card. */}
+      <h3 className="agents-heading">
+        {read.subagents.length > 0 ? (
+          <>
+            <span>
+              {[
+                plural(read.subagents.length, { one: 'herdr.agents.countOne', other: 'herdr.agents.countOther' }),
+                runningCount > 0 ? t('herdr.agents.runningCount', { count: runningCount }) : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            {read.isTruncated ? <span className="muted">{t('herdr.agents.newestOnly')}</span> : null}
+          </>
+        ) : null}
+      </h3>
       <div ref={treeRef} className="agents-tree">
         <div className="agents-graph">
           <div className="agents-root">
