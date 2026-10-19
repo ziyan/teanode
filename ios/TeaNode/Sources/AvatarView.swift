@@ -16,7 +16,10 @@ struct AvatarView: View {
     /// use: the list of accounts draws each from its own server.
     let account: Account?
     @ScaledMetric private var diameter: CGFloat
-    @Environment(AppModel.self) private var app
+    /// Optional, so a picture drawn where the app's environment does not
+    /// reach (a map's annotation) shows its initials instead of stopping the
+    /// app.
+    @Environment(AppModel.self) private var app: AppModel?
     @Environment(\.displayScale) private var displayScale
     @State private var picture: UIImage?
 
@@ -53,9 +56,9 @@ struct AvatarView: View {
             guard let avatarUrl, !avatarUrl.isEmpty else { return }
             let path = Self.sized(avatarUrl, pixels: diameter * displayScale)
             if let account {
-                picture = await app.picture(path, of: account)
+                picture = await app?.picture(path, of: account)
             } else {
-                picture = await app.picture(path)
+                picture = await app?.picture(path)
             }
         }
     }
