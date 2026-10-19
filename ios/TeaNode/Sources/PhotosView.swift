@@ -1007,6 +1007,14 @@ struct PhotosScreen: View {
                         .padding(.horizontal)
                         .padding(.bottom, 8)
                     }
+                    if model.photoFilter.takenAfter != nil || model.photoFilter.takenBefore != nil, model.section.collection != nil {
+                        PhotoWindowChip(takenAfter: model.photoFilter.takenAfter, takenBefore: model.photoFilter.takenBefore) {
+                            model.photoFilter.takenAfter = nil
+                            model.photoFilter.takenBefore = nil
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                    }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if isBottomBarShown {
@@ -1064,6 +1072,13 @@ struct PhotosScreen: View {
                 // "Photos taken near here" shows the library, so words typed in its search are put away.
                 .onChange(of: model.photoFilter.photoNearFilter) { _, photoNearFilter in
                     if photoNearFilter != nil { searchText = "" }
+                }
+                // Photos opened from a visit show the visit's photos, so old search words are put away.
+                .onChange(of: model.photoFilter.takenAfter) { _, takenAfter in
+                    if takenAfter != nil { searchText = "" }
+                }
+                .onAppear {
+                    if model.photoFilter.takenAfter != nil { searchText = "" }
                 }
                 .sheet(isPresented: $isChoosingDates) { PhotoDateFilterSheet(model: model) }
                 .albumTitleAlert(model: model, scope: .library, isActive: opened == nil)

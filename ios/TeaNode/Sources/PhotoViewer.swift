@@ -1,5 +1,6 @@
 import AVFoundation
 import AVKit
+import MapKit
 import Photos
 import SwiftUI
 import TeaNodeKit
@@ -526,6 +527,37 @@ struct PhotoThumbnailStrip: View {
     }
 }
 
+/// PhotoPositionMap is a small map with one pin where a photo was taken. It
+/// does not take the scroll of the details it is in; pressing it opens the
+/// position in Apple Maps.
+struct PhotoPositionMap: View {
+    let coordinate: CLLocationCoordinate2D
+    let title: String
+
+    private var region: MKCoordinateRegion {
+        MKCoordinateRegion(center: coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200)
+    }
+
+    var body: some View {
+        Button {
+            let item = MKMapItem(location: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude), address: nil)
+            item.name = title.isEmpty ? nil : title
+            item.openInMaps()
+        } label: {
+            Map(initialPosition: .region(region), interactionModes: []) {
+                Marker(title, coordinate: coordinate)
+            }
+            .allowsHitTesting(false)
+            .frame(height: 180)
+            .clipShape(.rect(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        .accessibilityLabel(String(localized: "Map of where the photo was taken"))
+        .accessibilityHint(String(localized: "Opens in Maps"))
+    }
+}
+
 /// PhotoThumbnailImage is the preview of a photo, filling the space it is
 /// given: the small one for a thumbnail in the viewer's strip, and with
 /// `isLarge` the large one for a picture of a month or a year, which shows the
@@ -875,6 +907,9 @@ struct PhotoInfoView: View {
     @State private var namingGroup: PhotoFaceGroup?
     @State private var isExplainingContacts = false
     @State private var detail: PhotoDetail?
+    /// Where the photo was taken by the person's own places and the street,
+    /// read again with the details; nil when it has no position or none is known.
+    @State private var positionPlace: PhotoPositionPlace?
     /// Why the photo's details could not be read; nil when they could, or have
     /// not been asked for yet.
     @State private var detailFailureText: String?
@@ -894,6 +929,13 @@ struct PhotoInfoView: View {
     private var coordinatesText: String? {
         guard let latitude = shownPhoto.latitude, let longitude = shownPhoto.longitude else { return nil }
         return String(format: "%.4f, %.4f", latitude, longitude)
+    }
+    /// The name of the place the photo was taken at, when the server knows a
+    /// better one than the city: the person's own place, else the street.
+    private var positionName: String? {
+        if let locationPlace = positionPlace?.locationPlace { return locationPlace.shownName }
+        guard let addressText = positionPlace?.addressText, !addressText.isEmpty else { return nil }
+        return addressText
     }
     private var description: PhotoDescription { detail?.photoDescription ?? PhotoDescription() }
     private var isDescriptionAvailable: Bool { model.library?.isDescriptionAvailable == true }
@@ -934,11 +976,18 @@ struct PhotoInfoView: View {
                         .actionColor()
                         .fullWidthRowSeparator()
                 }
-                if !shownPhoto.placeName.isEmpty {
+                // The person's own place, else the street, else the city near it.
+                if let positionName {
+                    LabeledContent("Place") { Text(verbatim: positionName) }
+                } else if !shownPhoto.placeName.isEmpty {
                     LabeledContent("Place") { Text(shownPhoto.placeName) }
                 } else if let coordinatesText {
                     // A position with no city near it is shown as it is.
                     LabeledContent("Place") { Text(verbatim: coordinatesText) }
+                }
+                if let latitude = shownPhoto.latitude, let longitude = shownPhoto.longitude {
+                    PhotoPositionMap(
+                        coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude), title: positionName ?? shownPhoto.placeName)
                 }
                 if shownPhoto.isOwnedByCaller, !shownPhoto.isTrashed {
                     Button("Change location", systemImage: "mappin") { isChangingLocation = true }
@@ -1035,7 +1084,19 @@ struct PhotoInfoView: View {
         } catch {
             guard !Task.isCancelled else { return }
             detailFailureText = model.describe(error)
+            return
         }
+        await loadPositionPlace()
+    }
+
+    /// Reads where the photo was taken. A photo moved or without a position
+    /// has none; a failure leaves the city and the numbers to say it.
+    private func loadPositionPlace() async {
+        guard shownPhoto.latitude != nil, shownPhoto.longitude != nil else {
+            positionPlace = nil
+            return
+        }
+        positionPlace = try? await connection.readPhotoPlace(photo.id)
     }
 
     // MARK: When the details cannot be read, or the photo failed

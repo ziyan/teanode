@@ -220,6 +220,8 @@ const (
   }
 }`
 
+	DocumentReadPhotoPlace = `query ($photoId: String!) { ReadPhotoPlace(photoId: $photoId) { locationPlace { ` + placeFields + ` } addressText } }`
+
 	DocumentReadPhotoLibrary = `query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled isDescriptionAvailable descriptionUnavailableMessage } }`
 
 	DocumentFindPhotos = `query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) ` + photoSelection + ` }`
@@ -303,6 +305,31 @@ func ReadPhoto(ctx context.Context, executor Executor, photoId string) (*PhotoVi
 		return nil, fmt.Errorf("%w: no photo %s", ErrNotFound, photoId)
 	}
 	return result.ReadPhoto, nil
+}
+
+// PhotoPositionPlaceView is where a photo was taken, finer than the city the photo
+// carries.
+type PhotoPositionPlaceView struct {
+	// LocationPlace is the caller's own Location place the position is inside,
+	// nil when there is none or the caller cannot use Location.
+	LocationPlace *Place `json:"locationPlace"`
+
+	// AddressText is the street address from the server's place provider, ""
+	// when LocationPlace is set, when no provider is switched on, or when the
+	// lookup failed.
+	AddressText string `json:"addressText"`
+}
+
+// ReadPhotoPlace is where a photo was taken, by the caller's own place or the
+// street. It is nil when the photo has no position the caller may see.
+func ReadPhotoPlace(ctx context.Context, executor Executor, photoId string) (*PhotoPositionPlaceView, error) {
+	var result struct {
+		ReadPhotoPlace *PhotoPositionPlaceView `json:"ReadPhotoPlace"`
+	}
+	if err := executor.Execute(ctx, DocumentReadPhotoPlace, map[string]any{"photoId": photoId}, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadPhotoPlace, nil
 }
 
 // ReadPhotoLibrary is what the library holds and may hold.

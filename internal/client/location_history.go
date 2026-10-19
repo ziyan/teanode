@@ -54,6 +54,20 @@ type PlaceVisit struct {
 	LongitudeDegrees float64    `json:"longitudeDegrees"`
 	AccuracyMeters   float64    `json:"accuracyMeters"`
 	VisitSource      string     `json:"visitSource"`
+
+	// PhotoCount and Photos are the person's own photos taken during the
+	// visit (the first few, earliest first). Both are nil for somebody
+	// else's visits, without Photos, and for a visit with no arrival.
+	PhotoCount        *int          `json:"photoCount"`
+	Photos            []*VisitPhoto `json:"photos"`
+	PhotosTakenBefore *time.Time    `json:"photosTakenBefore"`
+}
+
+// VisitPhoto is one picture shown under a visit.
+type VisitPhoto struct {
+	ID              string     `json:"id"`
+	SmallPreviewURL string     `json:"smallPreviewUrl"`
+	TakenAt         *time.Time `json:"takenAt"`
 }
 
 // Location is where a person is.
@@ -119,6 +133,9 @@ const (
 	placeVisitFields = `id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
     place { ` + placeFields + ` }`
 
+	listedVisitFields = placeVisitFields + `
+    photoCount photosTakenBefore photos { id smallPreviewUrl takenAt }`
+
 	foundPlaceFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
 	DocumentGetLocation = `query ($userId: String) {
@@ -132,7 +149,7 @@ const (
 	DocumentListLocationVisits = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String, $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel, offset: $offset, limitCount: $limitCount) {
     nextOffset
-    placeVisits { ` + placeVisitFields + ` }
+    placeVisits { ` + listedVisitFields + ` }
   }
 }`
 
@@ -141,6 +158,10 @@ const (
     nextOffset
     places { ` + placeFields + ` }
   }
+}`
+
+	DocumentReadPlace = `query ($placeId: String!, $userId: String) {
+  ReadPlace(placeId: $placeId, userId: $userId) { ` + placeFields + ` }
 }`
 
 	DocumentListNearbyPlaces = `query ($latitudeDegrees: Float!, $longitudeDegrees: Float!, $radiusMeters: Float) {
@@ -284,6 +305,22 @@ func ListPlaces(ctx context.Context, connection *Client, query PlacesQuery) (*Pl
 		return nil, err
 	}
 	return result.ListPlaces, nil
+}
+
+// ReadPlace is one place by its id, of the caller or, with a userId, of
+// somebody who shares their history with them.
+func ReadPlace(ctx context.Context, connection *Client, userId, placeId string) (*Place, error) {
+	variables := map[string]any{"placeId": placeId}
+	if userId != "" {
+		variables["userId"] = userId
+	}
+	var result struct {
+		ReadPlace *Place `json:"ReadPlace"`
+	}
+	if err := connection.Execute(ctx, DocumentReadPlace, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadPlace, nil
 }
 
 // ListNearbyPlaces is what is at and around a point; a nil radius is the

@@ -148,6 +148,9 @@ export function LocationMap({
   onSelectPlace,
   onPlaceMoved,
   isCompact = false,
+  singlePointZoom = 14,
+  isScrollZoomEnabled = true,
+  mapLabel,
 }: {
   people: MapPerson[]
   places: MapPlace[]
@@ -160,6 +163,13 @@ export function LocationMap({
   onPlaceMoved?: (latitudeDegrees: number, longitudeDegrees: number) => void
   // A smaller map, for inside a dialog.
   isCompact?: boolean
+  // How close the view is when there is one point to show.
+  singlePointZoom?: number
+  // False for a map inside a page that scrolls: the wheel scrolls the page,
+  // and the zoom buttons zoom.
+  isScrollZoomEnabled?: boolean
+  // What the map is called to a screen reader; the Location page's by default.
+  mapLabel?: string
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -189,6 +199,7 @@ export function LocationMap({
       center: [0, 20],
       zoom: 1.5,
       attributionControl: false,
+      scrollZoom: isScrollZoomEnabled,
       // The dashboard framed by the browser extension signs in with a header
       // rather than a cookie, and the server's map answers only the signed in.
       transformRequest: (url) => (url.startsWith(window.location.origin) ? { url, headers: authorization() } : { url }),
@@ -203,13 +214,6 @@ export function LocationMap({
         ],
       }),
     )
-    // A compact credit starts open, which on a small map covers half of it;
-    // folded, it is the "i" button that opens it.
-    map.once('load', () => {
-      const attribution = container.current?.querySelector('.maplibregl-ctrl-attrib')
-      attribution?.classList.remove('maplibregl-compact-show')
-      attribution?.removeAttribute('open')
-    })
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     const leafColor = readThemeColor('--leaf', '#729d39')
     const blueColor = readThemeColor('--avatar-7', '#2f5fb3')
@@ -252,17 +256,26 @@ export function LocationMap({
       setStyleReady(true)
     }
     map.on('style.load', addLayers)
-    // On a phone the credit starts as its small button, not opened across a
-    // quarter of the map; MapLibre opens it for a compact control, so it is
-    // closed once the map has loaded. A wider map keeps what MapLibre does.
-    map.once('load', () => {
+    // On a narrow map (a phone, a photo's details) the credit starts as its
+    // small button, not opened across a quarter of the map. MapLibre opens it
+    // when the style's sources first name their credits, whenever that is, so
+    // it is folded the first time it opens; after that, the button is the
+    // person's. A wider map keeps what MapLibre does.
+    const credit = map.getContainer().querySelector('.maplibregl-ctrl-attrib')
+    const creditObserver = new MutationObserver(() => {
+      if (!credit?.classList.contains('maplibregl-compact-show')) {
+        return
+      }
+      creditObserver.disconnect()
       if (map.getCanvasContainer().offsetWidth > NARROW_MAP_WIDTH_PIXELS) {
         return
       }
-      const credit = map.getContainer().querySelector('.maplibregl-ctrl-attrib')
-      credit?.removeAttribute('open')
-      credit?.classList.remove('maplibregl-compact-show')
+      credit.removeAttribute('open')
+      credit.classList.remove('maplibregl-compact-show')
     })
+    if (credit) {
+      creditObserver.observe(credit, { attributes: true, attributeFilter: ['class'] })
+    }
     // Only a map that cannot be drawn is said: the style that did not come, or
     // a source whose description did not. One tile, glyph range or sprite
     // missing leaves a map that is usable, and says nothing.
@@ -290,11 +303,14 @@ export function LocationMap({
     return () => {
       markers.forEach(({ marker }) => marker.remove())
       markers.clear()
+      creditObserver.disconnect()
       map.remove()
       mapRef.current = null
       setStyleReady(false)
       setSlots([])
     }
+    // The map is made once; whether the wheel zooms it is read at that time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // The circles and the path, once the map has its layers.
@@ -423,7 +439,7 @@ export function LocationMap({
       return
     }
     if (points.length === 1) {
-      map.jumpTo({ center: points[0], zoom: 14 })
+      map.jumpTo({ center: points[0], zoom: singlePointZoom })
       return
     }
     const bounds = points.reduce((box, point) => box.extend(point), new maplibregl.LngLatBounds(points[0], points[0]))
@@ -464,7 +480,7 @@ export function LocationMap({
     <div
       className={isCompact ? 'location-map location-map-compact' : 'location-map'}
       role="region"
-      aria-label={t('location.mapLabel')}
+      aria-label={mapLabel ?? t('location.mapLabel')}
     >
       <div className="location-map-canvas" ref={container} />
       {slots.map((slot) => {

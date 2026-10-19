@@ -164,7 +164,7 @@ func TestNowAsksWhereItCanAndFallsBack(t *testing.T) {
 // Visits are read in the person's zone and paged.
 func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ListLocationVisits": `{"nextOffset":20,"placeVisits":[
-		{"arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T10:15:00Z","durationSeconds":2700,"place":{"id":"p1","placeName":"Maple Park","osmName":"Maple Park","placeLabel":"home"}},
+		{"arrivedAt":"2026-10-17T09:30:30Z","departedAt":"2026-10-17T10:15:40Z","durationSeconds":2710,"photoCount":3,"photosTakenBefore":"2026-10-17T10:15:40.7Z","place":{"id":"p1","placeName":"Maple Park","osmName":"Maple Park","placeLabel":"home"}},
 		{"arrivedAt":"2026-10-17T11:00:00Z","place":{"id":"p2","placeName":"Elm Library"}}]}`}}
 	answer, result, err := act(t, runOf(operations), "visits", `{"from":"2026-10-17","until":"2026-10-19","place_label":"Home","limit":20}`, false)
 	if err != nil {
@@ -174,6 +174,18 @@ func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	first, second := visits[0].(map[string]any), visits[1].(map[string]any)
 	if first["place_display_name"] != "Home" || first["osm_name"] != "Maple Park" || first["place_label"] != "home" || first["visit_duration"] != "45 minutes" || first["arrived"] != "2026-10-17 09:30" {
 		t.Errorf("a finished visit: %v", first)
+	}
+	if first["photo_count"] != float64(3) || second["photo_count"] != nil {
+		t.Errorf("the photo count is told when there are photos: %v %v", first, second)
+	}
+	// The window is given exactly, a fraction of a second included, and reads
+	// back as the same instants.
+	for key, wanted := range map[string]string{"photos_taken_after": "2026-10-17T09:30:30Z", "photos_taken_before": "2026-10-17T10:15:40.7Z"} {
+		given, _ := first[key].(string)
+		parsed, err := tools.ParseTime(given, time.UTC, time.Now())
+		if err != nil || parsed.UTC().Format(time.RFC3339Nano) != wanted {
+			t.Errorf("%s is %q, read back as %v (%v)", key, given, parsed, err)
+		}
 	}
 	if second["left"] != "still there" {
 		t.Errorf("a visit in progress: %v", second)
@@ -241,7 +253,7 @@ func TestSearchAndNearbyAreAroundWhereTheyWere(t *testing.T) {
 func TestWritesAndTheirRisks(t *testing.T) {
 	merged := tools.Build().Get("location")
 	risks := map[string]tools.Risk{
-		"now": tools.RiskRead, "visits": tools.RiskRead, "places": tools.RiskRead, "nearby": tools.RiskRead, "search": tools.RiskRead, "find_address": tools.RiskRead,
+		"now": tools.RiskRead, "visits": tools.RiskRead, "path": tools.RiskRead, "places": tools.RiskRead, "nearby": tools.RiskRead, "search": tools.RiskRead, "find_address": tools.RiskRead,
 		"people": tools.RiskRead, "shares": tools.RiskRead, "set_up": tools.RiskRead,
 		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite,
 		"forget_place": tools.RiskDestructive, "erase": tools.RiskDestructive, "share": tools.RiskGranting,
@@ -376,7 +388,7 @@ func TestHistoryOfSomebodySharingOnlyNowIsRefusedInWords(t *testing.T) {
 		"ListLocationVisits":  `{"placeVisits":[]}`,
 		"GetLocation":         `{"userId":"u-cleo","username":"cleo","shareLevel":"current","latestPoint":null,"openVisit":{"place":{"id":"p1","placeName":"Elm Cafe"}}}`,
 	}}
-	for _, action := range []string{"visits", "places"} {
+	for _, action := range []string{"visits", "path", "places"} {
 		if _, _, err := act(t, runOf(operations), action, `{"person":"cleo"}`, false); err == nil || !strings.Contains(err.Error(), "cleo shares only where they are now") {
 			t.Errorf("%s: %v", action, err)
 		}
@@ -403,7 +415,7 @@ func TestAnotherPersonsLocationIsNotRepeatedIntoAChat(t *testing.T) {
 	if _, _, err := act(t, run, "people", `{}`, false); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
 		t.Errorf("people in a chat: %v", err)
 	}
-	for _, action := range []string{"now", "visits", "places"} {
+	for _, action := range []string{"now", "visits", "path", "places"} {
 		if _, _, err := act(t, run, action, `{"person":"ben"}`, false); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
 			t.Errorf("%s about somebody else in a chat: %v", action, err)
 		}
@@ -544,5 +556,95 @@ func TestFindAddressGivesWhatSavePlaceTakes(t *testing.T) {
 	line := merged.PreviewLine(context.Background(), json.RawMessage(`{"action":"save_place","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":"6 Rue Example"}`))
 	if !strings.Contains(line, "6 Rue Example") || strings.Contains(line, `":`) {
 		t.Errorf("the card says %q", line)
+	}
+}
+
+// dayOfPositions answers ListLocationPoints with the positions inside the
+// window asked, as the server does, and keeps each window asked.
+type dayOfPositions struct {
+	routing
+	measuredTimes []time.Time
+	positions     []string
+	asked         [][2]string
+}
+
+func (self *dayOfPositions) Execute(ctx context.Context, document string, variables map[string]any, result any) error {
+	from, _ := time.Parse(time.RFC3339, variables["from"].(string))
+	until, _ := time.Parse(time.RFC3339, variables["until"].(string))
+	self.asked = append(self.asked, [2]string{variables["from"].(string), variables["until"].(string)})
+	var inside []string
+	for index, measuredAt := range self.measuredTimes {
+		if !measuredAt.Before(from) && measuredAt.Before(until) {
+			inside = append(inside, self.positions[index])
+		}
+	}
+	self.answers = map[string]string{"ListLocationPoints": "[" + strings.Join(inside, ",") + "]"}
+	return self.routing.Execute(ctx, document, variables, result)
+}
+
+// A day's path is read for the day in the person's zone, a quarter at a time,
+// and answers the count, the first and last time, the distance and a sample
+// of at most 60.
+func TestPathAnswersADayWithASample(t *testing.T) {
+	operations := &dayOfPositions{}
+	for index := 0; index < 100; index++ {
+		// From 04:00 for 100 minutes, across the first quarter's end.
+		measuredAt := time.Date(2026, 10, 17, 4, 50, 0, 0, time.UTC).Add(time.Duration(index) * time.Minute)
+		operations.measuredTimes = append(operations.measuredTimes, measuredAt)
+		operations.positions = append(operations.positions, fmt.Sprintf(`{"latitudeDegrees":%v,"longitudeDegrees":-75,"accuracyMeters":10,"measuredAt":%q,"locationSource":"phone"}`, 40+float64(index)*0.001, measuredAt.Format(time.RFC3339)))
+	}
+	answer, result, err := act(t, runOf(operations), "path", `{"day":"2026-10-17"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer["point_count"] != float64(100) || answer["first_at"] != "04:50:00" || answer["last_at"] != "06:29:00" || answer["is_truncated"] != true {
+		t.Errorf("the day: %v", answer)
+	}
+	// 99 steps of 0.001 degrees of latitude are about 11 kilometers.
+	if kilometers := answer["distance_travelled_kilometers"].(float64); kilometers < 10.9 || kilometers > 11.1 {
+		t.Errorf("the distance: %v", kilometers)
+	}
+	sampled := answer["points"].([]any)
+	if len(sampled) != 60 || sampled[0].(map[string]any)["time"] != "04:50:00" || sampled[59].(map[string]any)["time"] != "06:29:00" {
+		t.Errorf("the sample keeps the first and the last: %d %v", len(sampled), sampled)
+	}
+	wanted := [][2]string{
+		{"2026-10-17T00:00:00Z", "2026-10-17T06:00:00Z"},
+		{"2026-10-17T06:00:00Z", "2026-10-17T12:00:00Z"},
+		{"2026-10-17T12:00:00Z", "2026-10-17T18:00:00Z"},
+		{"2026-10-17T18:00:00Z", "2026-10-18T00:00:00Z"},
+	}
+	if fmt.Sprint(operations.asked) != fmt.Sprint(wanted) {
+		t.Errorf("what was asked: %v", operations.asked)
+	}
+	if !result.Untrusted {
+		t.Error("a path is the person's data")
+	}
+	if _, _, err := act(t, runOf(operations), "path", `{"day":"yesterday"}`, false); err == nil {
+		t.Error("a day nobody can read should be refused")
+	}
+}
+
+func TestPathOfADayWithNoPositionsSaysSo(t *testing.T) {
+	operations := &routing{answers: map[string]string{"ListLocationPoints": `[]`}}
+	answer, _, err := act(t, runOf(operations), "path", `{}`, false)
+	if err != nil || answer["point_count"] != float64(0) || answer["points"] != nil {
+		t.Errorf("%v %v", answer, err)
+	}
+}
+
+// One place is read by its id, and the id is passed on as given.
+func TestPlaceIsReadByItsID(t *testing.T) {
+	operations := &routing{answers: map[string]string{"ReadPlace": `{"id":"p7","placeName":"Fixture Park","visitCount":4,"lastVisitAt":"2026-10-17T09:30:00Z"}`}}
+	answer, _, err := act(t, runOf(operations), "places", `{"place_id":"p7"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := answer["places"].([]any)
+	if len(rows) != 1 || rows[0].(map[string]any)["visit_count"] != float64(4) || rows[0].(map[string]any)["last_visit"] != "2026-10-17 09:30" {
+		t.Errorf("the place: %v", answer)
+	}
+	if operations.sent["ReadPlace"]["placeId"] != "p7" {
+		t.Errorf("what was sent: %v", operations.sent["ReadPlace"])
 	}
 }

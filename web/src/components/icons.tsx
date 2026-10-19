@@ -178,6 +178,17 @@ export function KeptPersonIcon(props: IconProps) {
   )
 }
 
+// A folded map: what a day's path is drawn on.
+export function MapIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3Z" />
+      <path d="M9 3v15" />
+      <path d="M15 6v15" />
+    </Icon>
+  )
+}
+
 export function PinIcon(props: IconProps) {
   return (
     <Icon {...props}>

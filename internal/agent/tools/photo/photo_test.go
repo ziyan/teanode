@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,10 @@ type fakeOperations struct {
 	// photos is what ReadPhoto answers for each photo, by its id; a photo
 	// not here is not found.
 	photos map[string]string
+
+	// photoPlaces is what ReadPhotoPlace answers for a photo; a photo not in
+	// it is answered null.
+	photoPlaces map[string]string
 	// refusals is the error each operation answers with, by name, as a
 	// server does that refuses it.
 	refusals  map[string]string
@@ -43,6 +48,13 @@ func (self *fakeOperations) Execute(ctx context.Context, document string, variab
 		if strings.Contains(document, operationName+"(") {
 			return errors.New(message)
 		}
+	}
+	if strings.Contains(document, "ReadPhotoPlace(") {
+		answer, isKnown := self.photoPlaces[variables["photoId"].(string)]
+		if !isKnown {
+			answer = "null"
+		}
+		return json.Unmarshal([]byte(`{"ReadPhotoPlace":`+answer+`}`), answered)
 	}
 	if strings.Contains(document, "ReadPhoto(") {
 		answer, isKnown := self.photos[variables["photoId"].(string)]
@@ -656,5 +668,35 @@ func TestTheFirstSentenceStopsAtTheEndOfASentenceAndNotInsideANumber(test *testi
 	}
 	if long := firstSentenceOf(strings.Repeat("word ", 100)); len([]rune(long)) != maximumFirstSentenceCharacters+1 || !strings.HasSuffix(long, "…") {
 		test.Errorf("a sentence without an end is cut: %d", len([]rune(long)))
+	}
+}
+
+// read says where a photo was taken more finely than the city: the person's own
+// place, else the street, and nothing more when the server knows neither.
+func TestReadGivesTheOwnPlaceOrTheStreetBesideTheCity(test *testing.T) {
+	current := newRun(test, nil)
+	const photoRow = `{"photo":{"id":"%s","photoKind":"picture","latitude":10.5,"longitude":20.25,"placeName":"Harbor City, Exampleland"},"photoFiles":[],"photoPreviews":[],"albums":[]}`
+	current.operations = &fakeOperations{
+		photos: map[string]string{
+			"photo-own":    fmt.Sprintf(photoRow, "photo-own"),
+			"photo-street": fmt.Sprintf(photoRow, "photo-street"),
+			"photo-city":   fmt.Sprintf(photoRow, "photo-city"),
+		},
+		photoPlaces: map[string]string{
+			"photo-own":    `{"locationPlace":{"id":"place-1","placeName":"Fixture Home","placeLabel":"home"},"addressText":""}`,
+			"photo-street": `{"locationPlace":null,"addressText":"1 Fixture Road, Harbor City"}`,
+		},
+	}
+	result, err := current.call(map[string]any{"operation": "read", "photo_id": "photo-own"})
+	if err != nil || !strings.Contains(result.Content, `"location_place":{"id":"place-1","place_label":"home","place_name":"Fixture Home"}`) || strings.Contains(result.Content, "address_text") {
+		test.Fatalf("%v %v", err, result)
+	}
+	result, err = current.call(map[string]any{"operation": "read", "photo_id": "photo-street"})
+	if err != nil || !strings.Contains(result.Content, `"address_text":"1 Fixture Road, Harbor City"`) || strings.Contains(result.Content, "location_place") {
+		test.Fatalf("%v %v", err, result)
+	}
+	result, err = current.call(map[string]any{"operation": "read", "photo_id": "photo-city"})
+	if err != nil || strings.Contains(result.Content, "address_text") || strings.Contains(result.Content, "location_place") || !strings.Contains(result.Content, `"place_name":"Harbor City, Exampleland"`) {
+		test.Fatalf("%v %v", err, result)
 	}
 }

@@ -13,6 +13,21 @@ vi.mock('../../api', async (importOriginal) => ({
   graphql: vi.fn(),
 }))
 
+// WebGL is not there to draw a map in; the viewer's part is the position it hands the map.
+vi.mock('../../components/locationMap', () => ({
+  LocationMap: ({
+    places,
+    singlePointZoom,
+  }: {
+    places: { latitudeDegrees: number; longitudeDegrees: number }[]
+    singlePointZoom?: number
+  }) => (
+    <div data-testid="map" data-zoom={singlePointZoom}>
+      {places.map((place) => `${place.latitudeDegrees},${place.longitudeDegrees}`).join(' ')}
+    </div>
+  ),
+}))
+
 const photo = {
   id: 'photo-1',
   createdAt: '2030-01-01T00:00:00Z',
@@ -1172,4 +1187,105 @@ it('offers no Change location for somebody else\u2019s photo, one in the Trash, 
   show(vi.fn(), { photo: { ...photo, isOwnedByCaller: false }, onChangeLocation })
   await screen.findByText('Date')
   expect(screen.queryByText('Place')).toBeNull()
+})
+
+describe('where the photo was taken', () => {
+  const placedPhoto = { ...photo, latitude: 11.5, longitude: 21.5, placeName: 'Fixture City, Fixtureland' }
+  const placeQueries = () =>
+    vi.mocked(graphql).mock.calls.filter(([document]) => String(document).includes('ReadPhotoPlace('))
+  const servePlace = (answer: unknown) =>
+    vi
+      .mocked(graphql)
+      .mockImplementation((async (document: string) =>
+        String(document).includes('ReadPhotoPlace(')
+          ? { ReadPhotoPlace: answer }
+          : { ReadPhoto: { photo: placedPhoto, photoFiles: [], albums: [], faces: [] } }) as never)
+
+  it('names the person\u2019s own place, a link to it on Location, with a map at the position', async () => {
+    servePlace({ locationPlace: { id: 'place-1', placeName: 'Fixture Park', placeLabel: 'home' }, addressText: '' })
+    show(vi.fn(), { photo: placedPhoto })
+    const link = await screen.findByRole('link', { name: 'Fixture Park' })
+    expect(link.getAttribute('href')).toBe('/location?tab=places&place=place-1')
+    expect(screen.queryByText('Fixture City, Fixtureland')).toBeNull()
+    const map = screen.getByTestId('map')
+    expect(map.textContent).toBe('11.5,21.5')
+    expect(map.getAttribute('data-zoom')).toBe('16')
+  })
+
+  it('leaves the arrow keys to the map instead of turning to the next photo', async () => {
+    servePlace({ locationPlace: null, addressText: '' })
+    const onNavigate = vi.fn()
+    const next = { ...placedPhoto, id: 'photo-2' } as Photo
+    show(vi.fn(), { photo: placedPhoto, nextPhoto: next, onNavigate })
+    const map = await screen.findByTestId('map')
+    expect(map.closest('.photo-viewer-map')).not.toBeNull()
+    fireEvent.keyDown(map, { key: 'ArrowRight' })
+    expect(onNavigate).not.toHaveBeenCalled()
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(onNavigate).toHaveBeenCalledWith(next)
+  })
+
+  it('shows the street address when no place is the person\u2019s own', async () => {
+    servePlace({ locationPlace: null, addressText: '1 Fixture Street, Fixture City' })
+    show(vi.fn(), { photo: placedPhoto })
+    await screen.findByText('1 Fixture Street, Fixture City')
+    expect(screen.queryByText('Fixture City, Fixtureland')).toBeNull()
+  })
+
+  it('keeps the city when the lookup answers null or fails', async () => {
+    servePlace(null)
+    show(vi.fn(), { photo: placedPhoto })
+    await screen.findByText('Fixture City, Fixtureland')
+    await waitFor(() => expect(placeQueries().length).toBe(1))
+    cleanup()
+    vi.mocked(graphql).mockImplementation((async (document: string) => {
+      if (String(document).includes('ReadPhotoPlace(')) throw new Error('connection refused')
+      return { ReadPhoto: { photo: placedPhoto, photoFiles: [], albums: [], faces: [] } }
+    }) as never)
+    show(vi.fn(), { photo: placedPhoto })
+    await screen.findByText('Fixture City, Fixtureland')
+  })
+
+  it('asks for nothing and draws no map for a photo without a position', async () => {
+    servePlace(null)
+    show(vi.fn(), { photo: { ...photo, placeName: 'Fixture City, Fixtureland' } })
+    await screen.findByText('Fixture City, Fixtureland')
+    expect(placeQueries().length).toBe(0)
+    expect(screen.queryByTestId('map')).toBeNull()
+  })
+
+  it('asks again after the position changes', async () => {
+    servePlace({ locationPlace: null, addressText: '1 Fixture Street, Fixture City' })
+    const tree = (shown: Photo) => (
+      <TranslationProvider>
+        <ToastProvider>
+          <MemoryRouter>
+            <PhotoViewer
+              photo={shown}
+              previousPhoto={null}
+              nextPhoto={null}
+              isTrashed={false}
+              isPaused={false}
+              onNavigate={vi.fn()}
+              onClose={vi.fn()}
+              onToggleFavorite={vi.fn()}
+              onTrash={vi.fn()}
+              onRestore={vi.fn()}
+              onDeleteForever={vi.fn()}
+              onAddToAlbum={vi.fn()}
+              onNewAlbum={vi.fn()}
+            />
+          </MemoryRouter>
+        </ToastProvider>
+      </TranslationProvider>
+    )
+    const { rerender } = render(tree(placedPhoto))
+    await screen.findByText('1 Fixture Street, Fixture City')
+    expect(placeQueries().length).toBe(1)
+    servePlace({ locationPlace: null, addressText: '2 Fixture Lane, Fixture Town' })
+    rerender(tree({ ...placedPhoto, latitude: 12.5, longitude: 22.5 }))
+    await screen.findByText('2 Fixture Lane, Fixture Town')
+    expect(placeQueries().length).toBe(2)
+    expect(screen.getByTestId('map').textContent).toBe('12.5,22.5')
+  })
 })

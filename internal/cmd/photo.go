@@ -337,6 +337,26 @@ func printPhotoTable(photos []*models.Photo) error {
 	return printTable(headers, rows)
 }
 
+// photoPlaceText is where a photo was taken as a person reads it: the name of
+// their own place when it was taken inside one, else the street, else the city
+// the photo carries.
+func photoPlaceText(photo *models.Photo, photoPlace *client.PhotoPositionPlaceView) string {
+	if photoPlace != nil {
+		if ownPlace := photoPlace.LocationPlace; ownPlace != nil {
+			if ownPlace.PlaceName != "" {
+				return forTerminal(ownPlace.PlaceName)
+			}
+			if ownPlace.PlaceLabel != "" {
+				return forTerminal(ownPlace.PlaceLabel)
+			}
+		}
+		if photoPlace.AddressText != "" {
+			return forTerminal(photoPlace.AddressText)
+		}
+	}
+	return photo.PlaceName
+}
+
 func runPhotoRead(ctx context.Context, command *cli.Command) error {
 	photoId := command.Args().First()
 	if photoId == "" {
@@ -350,12 +370,28 @@ func runPhotoRead(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
+	// The finer place is a courtesy: a photo is read without it when it
+	// cannot be had.
+	var photoPlace *client.PhotoPositionPlaceView
+	if view.Photo.Latitude != nil && view.Photo.Longitude != nil {
+		if found, err := client.ReadPhotoPlace(ctx, connection, photoId); err == nil {
+			photoPlace = found
+		}
+	}
 	if command.Bool("json") {
-		return PrintJSON(view)
+		shown := struct {
+			*client.PhotoView
+			LocationPlace *client.Place `json:"locationPlace"`
+			AddressText   string        `json:"addressText"`
+		}{PhotoView: view}
+		if photoPlace != nil {
+			shown.LocationPlace, shown.AddressText = photoPlace.LocationPlace, photoPlace.AddressText
+		}
+		return PrintJSON(shown)
 	}
 	photo := view.Photo
 	fields := [][2]string{
-		{"id", photo.ID}, {"kind", string(photo.PhotoKind)}, {"date", photoDateText(photo)}, {"place", photo.PlaceName},
+		{"id", photo.ID}, {"kind", string(photo.PhotoKind)}, {"date", photoDateText(photo)}, {"place", photoPlaceText(photo, photoPlace)},
 		{"size", photoSizeText(photo)}, {"length", photoDurationText(photo)}, {"camera", strings.TrimSpace(photo.CameraMake + " " + photo.CameraModel)},
 		{"file name", photo.OriginalFilename}, {"favorite", yesNo(photo.IsFavorite)}, {"from", string(photo.PhotoSource)},
 		{"added", photo.CreatedAt.Local().Format("2006-01-02 15:04")}, {"processing", string(photo.PhotoProcessingState)},

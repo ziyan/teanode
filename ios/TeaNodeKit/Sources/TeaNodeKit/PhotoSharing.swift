@@ -55,21 +55,40 @@ public struct PhotoNearFilter: Hashable, Sendable {
 public struct PhotoFilter: Hashable, Sendable {
     public var photoKindFilter: PhotoKindFilter
     /// The first day to keep, as any moment on that day; nil for no start.
-    public var firstDay: Date?
+    /// Setting it, even to nil, drops a visit window, which would hide it.
+    public var firstDay: Date? {
+        didSet { takenAfter = nil; takenBefore = nil }
+    }
     /// The last day to keep, as any moment on that day; nil for no end.
-    public var lastDay: Date?
+    /// Setting it, even to nil, drops a visit window, which would hide it.
+    public var lastDay: Date? {
+        didSet { takenAfter = nil; takenBefore = nil }
+    }
     /// The place the photos kept were taken near; nil for anywhere.
     public var photoNearFilter: PhotoNearFilter?
+    /// The first moment to keep, such as when a visit began; nil for none.
+    /// When set it is sent in place of the first day.
+    public var takenAfter: Date?
+    /// The moment to stop at, such as when a visit ended; nil for none. When
+    /// set it is sent in place of the last day.
+    public var takenBefore: Date?
 
-    public init(photoKindFilter: PhotoKindFilter = .all, firstDay: Date? = nil, lastDay: Date? = nil, photoNearFilter: PhotoNearFilter? = nil) {
+    public init(
+        photoKindFilter: PhotoKindFilter = .all, firstDay: Date? = nil, lastDay: Date? = nil, photoNearFilter: PhotoNearFilter? = nil,
+        takenAfter: Date? = nil, takenBefore: Date? = nil
+    ) {
         self.photoKindFilter = photoKindFilter
         self.firstDay = firstDay
         self.lastDay = lastDay
         self.photoNearFilter = photoNearFilter
+        self.takenAfter = takenAfter
+        self.takenBefore = takenBefore
     }
 
     /// Whether anything is filtered.
-    public var isActive: Bool { photoKindFilter != .all || firstDay != nil || lastDay != nil || photoNearFilter != nil }
+    public var isActive: Bool {
+        photoKindFilter != .all || firstDay != nil || lastDay != nil || photoNearFilter != nil || takenAfter != nil || takenBefore != nil
+    }
 
     /// Whether the days are asked for backwards, which no photo is in.
     public var isRangeBackwards: Bool {
@@ -85,8 +104,14 @@ public struct PhotoFilter: Hashable, Sendable {
     public func variables(calendar: Calendar = .current) -> [String: JSONValue] {
         var variables: [String: JSONValue] = [:]
         if photoKindFilter != .all { variables["photoKind"] = .string(photoKindFilter.rawValue) }
-        if let firstDay { variables["takenAfter"] = .string(Self.text(of: calendar.startOfDay(for: firstDay))) }
-        if let lastDay, let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: lastDay)) {
+        if let takenAfter {
+            variables["takenAfter"] = .string(Self.text(of: takenAfter))
+        } else if let firstDay {
+            variables["takenAfter"] = .string(Self.text(of: calendar.startOfDay(for: firstDay)))
+        }
+        if let takenBefore {
+            variables["takenBefore"] = .string(Self.text(of: takenBefore))
+        } else if let lastDay, let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: lastDay)) {
             variables["takenBefore"] = .string(Self.text(of: next))
         }
         // The server wants all three of the place or none.
