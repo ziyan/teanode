@@ -17047,10 +17047,18 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   overflow-x: visible;
 }
 
-/* The heading stays at the pane's left while the tree scrolls under it. */
+/* The heading stays at the pane's left while the tree scrolls under it: the
+   view is as wide as the tree, and the heading only as wide as its words, so
+   that it has room to stay. */
+.coding-scroll.showing-agents .agents-view {
+  width: max-content;
+  min-width: 100%;
+}
+
 .coding-scroll.showing-agents .agents-heading {
   position: sticky;
   left: 0;
+  width: fit-content;
 }
 
 .coding-earlier {
