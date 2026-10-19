@@ -8,12 +8,15 @@ import TeaNodeKit
 struct HealthTypeScreen: View {
     let model: HealthModel
     let type: HealthTypeView
-    @State private var rangeChoice = HealthRange.ninetyDays
+    @State private var rangeChoice = HealthRange.thirtyDays
     @State private var periodChoice = HealthPeriod.day
     /// Whether the person chose the period, which the range then leaves be.
     @State private var isPeriodChosen = false
     @State private var plan: HealthChartPlan?
     @State private var loadFailedText: String?
+    /// Said under the chart when the range was shortened to what the server
+    /// answers.
+    @State private var rangeCutText: String?
     /// Where a finger is on the chart.
     @State private var selectedKey: String?
     @State private var isConfirmingErase = false
@@ -34,11 +37,11 @@ struct HealthTypeScreen: View {
                 Picker("Range", selection: $rangeChoice) {
                     Text("30 days").tag(HealthRange.thirtyDays)
                     Text("90 days").tag(HealthRange.ninetyDays)
-                    Text("A year").tag(HealthRange.year)
+                    Text(HealthWords.yearRangeTitle).tag(HealthRange.year)
                     Text("All").tag(HealthRange.all)
                 }
                 .pickerStyle(.segmented)
-                Picker("Period", selection: periodBinding) {
+                Picker(HealthWords.periodTitle, selection: periodBinding) {
                     Text("Day").tag(HealthPeriod.day)
                     Text("Week").tag(HealthPeriod.week)
                     Text("Month").tag(HealthPeriod.month)
@@ -89,6 +92,11 @@ struct HealthTypeScreen: View {
                         .opacity(selectedKey == nil ? 1 : 0)
                     HealthChartView(plan: plan, selectedKey: $selectedKey)
                         .padding(.top, 8)
+                    if let rangeCutText {
+                        Text(verbatim: rangeCutText)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } else {
                 Text("Nothing was recorded in this range.").foregroundStyle(.secondary)
@@ -145,16 +153,30 @@ struct HealthTypeScreen: View {
                 }
             }
         } message: {
-            Text("Every reading, summary and route of \(name) kept on your server is deleted. This cannot be undone.")
+            Text(
+                "Erases every reading, day summary and route of \(name) that this server keeps. The iPhone app keeps sending new readings of it while Health is on. Anything your agent already learned stays in its memory until you remove it. This cannot be undone."
+            )
         }
     }
 
     // MARK: Reading
 
+    /// The most days a chart by this period can reach back: the server
+    /// answers at most 400 periods, and a week the range starts inside counts
+    /// as one of them, so a chart by week reaches back one fewer. A chart by
+    /// month is not cut.
+    private static func mostDays(of period: HealthPeriod) -> Int? {
+        switch period {
+        case .day: return 400
+        case .week: return 399 * 7
+        case .month: return nil
+        }
+    }
+
     /// The days the chart reaches over: the range back from today, or from the
-    /// first day there is data. A chart by day never asks for more days than
-    /// the server answers.
-    private var window: (fromDay: String, toDay: String) {
+    /// first day there is data, and whether that was shortened to what the
+    /// server answers.
+    private var window: (fromDay: String, toDay: String, mostPeriodCount: Int?) {
         let toDay = HealthDays.text(of: Date(), calendar: Calendar.current)
         var fromDay: String
         if rangeChoice == .all {
@@ -162,11 +184,15 @@ struct HealthTypeScreen: View {
         } else {
             fromDay = HealthText.day(toDay, adding: 1 - rangeChoice.rawValue)
         }
-        if periodChoice == .day {
-            let earliestDay = HealthText.day(toDay, adding: -399)
-            if fromDay < earliestDay { fromDay = earliestDay }
+        var mostPeriodCount: Int?
+        if let mostDays = Self.mostDays(of: periodChoice) {
+            let earliestDay = HealthText.day(toDay, adding: 1 - mostDays)
+            if fromDay < earliestDay {
+                fromDay = earliestDay
+                mostPeriodCount = periodChoice == .week ? 399 : 400
+            }
         }
-        return (fromDay, toDay)
+        return (fromDay, toDay, mostPeriodCount)
     }
 
     private func load() async {
@@ -179,12 +205,19 @@ struct HealthTypeScreen: View {
             if Task.isCancelled { return }
             plan = HealthChartPlan.make(
                 summary: summary, type: type, period: requestedPeriod, fromDay: requestedWindow.fromDay, toDay: requestedWindow.toDay)
+            rangeCutText = Self.rangeCutText(period: requestedPeriod, mostPeriodCount: requestedWindow.mostPeriodCount)
             loadFailedText = nil
         } catch {
             if Task.isCancelled { return }
             // A chart already drawn stays; only a first read that failed says so.
             if plan == nil { loadFailedText = error.loadProblemText }
         }
+    }
+
+    private static func rangeCutText(period: HealthPeriod, mostPeriodCount: Int?) -> String? {
+        guard let mostPeriodCount else { return nil }
+        if period == .week { return String(localized: "Only the latest \(mostPeriodCount) weeks are drawn.") }
+        return String(localized: "Only the latest \(mostPeriodCount) days are drawn.")
     }
 }
 

@@ -19,7 +19,7 @@ struct HealthSettingsRow: View {
             }
             .foregroundStyle(.primary)
             Spacer()
-            if HealthSyncSnapshot.current().isOn {
+            if sync.isOn {
                 Text("On").foregroundStyle(.secondary)
             } else {
                 Text("Off").foregroundStyle(.secondary)
@@ -45,11 +45,15 @@ struct HealthSettingsScreen: View {
     var body: some View {
         let snapshot = HealthSyncSnapshot.current()
         Form {
+            if let loadFailedText = model.loadFailedText, model.settings == nil {
+                loadFailedSection(loadFailedText)
+            }
             copyingSection(snapshot)
             if snapshot.isOn {
                 statusSection(snapshot)
             }
             agentSection
+            aboutSection
             HealthSharingSections(model: model, isSharing: $isSharing)
             eraseSection
         }
@@ -66,6 +70,22 @@ struct HealthSettingsScreen: View {
                 if DemoServer.isRequested, DemoServer.screen == "health-setup" { isSettingUp = true }
             }
         #endif
+    }
+
+    // MARK: Reading
+
+    /// What the server holds could not be read: why, and the way to try again.
+    private func loadFailedSection(_ loadFailedText: String) -> some View {
+        Section {
+            Label {
+                Text(verbatim: loadFailedText.asReasonSentence)
+            } icon: {
+                Image(systemName: "wifi.exclamationmark")
+            }
+            .foregroundStyle(.primary)
+            Button("Try again") { Task { await model.load() } }
+                .actionColor()
+        }
     }
 
     // MARK: Copying
@@ -109,7 +129,7 @@ struct HealthSettingsScreen: View {
                 }
             }
             if snapshot.pendingDayCount > 0 {
-                LabeledContent("Days waiting to be added up") {
+                LabeledContent("Days to be recalculated") {
                     Text(snapshot.pendingDayCount, format: .number).monospacedDigit()
                 }
             }
@@ -128,11 +148,15 @@ struct HealthSettingsScreen: View {
             .disabled(snapshot.isSyncing)
         } header: {
             Text("Status")
+        } footer: {
+            if snapshot.isHistoryDone, snapshot.sentSampleCount == 0 {
+                Text("If readings you expect are missing, open Settings, then Health, then Data Access & Devices, then TeaNode, and allow them.")
+            }
         }
     }
 
     private func syncButtonTitle(_ snapshot: HealthSyncSnapshot) -> String {
-        snapshot.isSyncing ? String(localized: "Sending…") : String(localized: "Sync Now")
+        snapshot.isSyncing ? String(localized: "Sending…") : String(localized: "Send now")
     }
 
     // MARK: The agent
@@ -153,11 +177,35 @@ struct HealthSettingsScreen: View {
         }
     }
 
-    /// Where what the agent reads goes: to the provider of its model.
+    /// Where what the agent reads goes (to the provider of its model), and
+    /// whose Health it reads.
     private var agentFooterText: String {
         let providerName = model.settings?.modelProviderName ?? ""
-        if providerName.isEmpty { return String(localized: "What the agent reads goes to the provider of its model.") }
-        return String(localized: "What the agent reads goes to \(providerName).")
+        let ownOnlyText = String(localized: "The agent reads only your own Health data, never what other people share with you.")
+        if providerName.isEmpty {
+            return String(localized: "What the agent reads goes to the provider of its model.") + " " + ownOnlyText
+        }
+        return String(localized: "What the agent reads goes to \(providerName).") + " " + ownOnlyText
+    }
+
+    // MARK: About the person
+
+    /// The facts the Health app holds about the person, read only.
+    @ViewBuilder
+    private var aboutSection: some View {
+        if !model.aboutRows.isEmpty {
+            Section {
+                ForEach(model.aboutRows) { row in
+                    LabeledContent(row.labelText) {
+                        Text(verbatim: row.valueText)
+                    }
+                }
+            } header: {
+                Text("About you")
+            } footer: {
+                Text("Set in the Health app on your iPhone, and shown here as the app copied it. Change them there.")
+            }
+        }
     }
 
     // MARK: Erasing
@@ -168,18 +216,18 @@ struct HealthSettingsScreen: View {
                 isConfirmingErase = true
             } label: {
                 // The icon takes the tint unless it is colored too.
-                Label("Erase Health Data", systemImage: "trash").foregroundStyle(.red)
+                Label("Erase all Health data", systemImage: "trash").foregroundStyle(.red)
             }
             .tint(.red)
             .actionColor(isDestructive: true)
             .disabled(model.isBusy)
             .confirmationDialog("Erase all Health data?", isPresented: $isConfirmingErase, titleVisibility: .visible) {
-                Button("Erase Health Data", role: .destructive) {
+                Button("Erase", role: .destructive) {
                     Task { await model.eraseEverything() }
                 }
             } message: {
                 Text(
-                    "Every reading, summary and route kept on your server is deleted. This cannot be undone, and the app stops sending until you turn Health on again."
+                    "Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. Anything your agent already learned stays in its memory until you remove it. This cannot be undone."
                 )
             }
         }

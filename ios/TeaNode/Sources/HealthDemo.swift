@@ -104,9 +104,9 @@
             return value
         }
 
-        private static func daySummaryJSON(info: HealthTypeInfo, dayText: String, data: DayData) -> [String: Any] {
+        private static func daySummaryJSON(typeInfo: HealthTypeInfo, dayText: String, data: DayData) -> [String: Any] {
             [
-                "summaryDay": dayText, "quantityUnit": info.quantityUnit, "sumValue": number(data.sumValue),
+                "summaryDay": dayText, "quantityUnit": typeInfo.quantityUnit, "sumValue": number(data.sumValue),
                 "averageValue": number(data.averageValue), "minimumValue": number(data.minimumValue),
                 "maximumValue": number(data.maximumValue), "sampleCount": data.sampleCount, "durationSeconds": number(data.durationSeconds),
                 "categorySeconds": data.categorySeconds,
@@ -115,19 +115,19 @@
 
         /// A kind as `ListHealthTypes` gives it.
         static func typeJSON(healthType: String, scale: Double = 1) -> [String: Any]? {
-            guard let info = HealthTypes.info(for: healthType) else { return nil }
+            guard let typeInfo = HealthTypes.info(for: healthType) else { return nil }
             var latestDaySummary: Any = NSNull()
             for daysAgo in 0..<8 {
                 if let data = dayData(healthType: healthType, daysAgo: daysAgo, scale: scale) {
-                    latestDaySummary = daySummaryJSON(info: info, dayText: dayText(daysAgo: daysAgo), data: data)
+                    latestDaySummary = daySummaryJSON(typeInfo: typeInfo, dayText: dayText(daysAgo: daysAgo), data: data)
                     break
                 }
             }
             var summaryKind: Any = NSNull()
-            if let kind = info.summaryKind { summaryKind = kind.rawValue }
+            if let kind = typeInfo.summaryKind { summaryKind = kind.rawValue }
             return [
-                "healthType": info.healthType, "healthCategory": info.healthCategory.rawValue, "typeName": info.typeName,
-                "valueKind": info.valueKind.rawValue, "quantityUnit": info.quantityUnit, "summaryKind": summaryKind,
+                "healthType": typeInfo.healthType, "healthCategory": typeInfo.healthCategory.rawValue, "typeName": typeInfo.typeName,
+                "valueKind": typeInfo.valueKind.rawValue, "quantityUnit": typeInfo.quantityUnit, "summaryKind": summaryKind,
                 "firstDay": dayText(daysAgo: dayCount - 1), "lastDay": dayText(daysAgo: 0), "sampleCount": 3000,
                 "latestDaySummary": latestDaySummary,
             ]
@@ -138,7 +138,7 @@
         static func typesJSON(ownerUserId: String?) -> [[String: Any]] {
             let isSharer = ownerUserId == sharingPersonId
             return healthTypes.compactMap { healthType in
-                if isSharer, let info = HealthTypes.info(for: healthType), !sharedCategories.contains(info.healthCategory.rawValue) { return nil }
+                if isSharer, let typeInfo = HealthTypes.info(for: healthType), !sharedCategories.contains(typeInfo.healthCategory.rawValue) { return nil }
                 return typeJSON(healthType: healthType, scale: isSharer ? 0.9 : 1)
             }
         }
@@ -211,6 +211,7 @@
                     "maximumValue": number(days.compactMap(\.maximumValue).max()),
                     "sampleCount": sampleCount,
                     "durationSeconds": number(durationSeconds),
+                    "dayCount": days.count,
                     "categorySeconds": categorySeconds,
                 ]
             }
@@ -342,7 +343,11 @@
             [
                 "canAgentReadHealth": canAgentReadHealth, "healthErasedAt": NSNull(), "sampleCount": 18432,
                 "lastReceivedAt": CalendarDates.text(Date().addingTimeInterval(-12 * 60)), "modelProviderName": "Example AI",
-                "characteristics": [Any](),
+                "characteristics": [
+                    ["healthType": "dateOfBirth", "characteristicValue": "1990-04-12"],
+                    ["healthType": "biologicalSex", "characteristicValue": "female"],
+                    ["healthType": "bloodType", "characteristicValue": "oPositive"],
+                ],
             ]
         }
 
@@ -406,17 +411,17 @@
                 let toDay = min((variables["toDay"] as? String).flatMap { HealthText.date(ofDay: $0) } ?? today, today)
                 let period = variables["period"] as? String ?? "day"
                 let isSharer = ownerUserId == HealthDemo.sharingPersonId
-                let info = HealthTypes.info(for: healthType)
-                let isHidden = isSharer && !HealthDemo.sharedCategories.contains(info?.healthCategory.rawValue ?? "")
+                let typeInfo = HealthTypes.info(for: healthType)
+                let isHidden = isSharer && !HealthDemo.sharedCategories.contains(typeInfo?.healthCategory.rawValue ?? "")
                 var periods: [[String: Any]] = []
                 if !isHidden {
                     periods = HealthDemo.periodsJSON(
                         healthType: healthType, fromDay: fromDay, toDay: toDay, period: period, scale: isSharer ? 0.9 : 1)
                 }
                 var summaryKind: Any = NSNull()
-                if let kind = info?.summaryKind { summaryKind = kind.rawValue }
+                if let kind = typeInfo?.summaryKind { summaryKind = kind.rawValue }
                 let summary: [String: Any] = [
-                    "healthType": healthType, "quantityUnit": info?.quantityUnit ?? "", "summaryKind": summaryKind, "periods": periods,
+                    "healthType": healthType, "quantityUnit": typeInfo?.quantityUnit ?? "", "summaryKind": summaryKind, "periods": periods,
                 ]
                 return healthJSON("ReadHealthSummary", summary)
             }

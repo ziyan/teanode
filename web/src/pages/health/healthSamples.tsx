@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
@@ -6,6 +6,7 @@ import { Column, DataTable, Range } from '../../components/dataTable'
 import { CloseIcon, LocationIcon } from '../../components/icons'
 import { LocationMap } from '../../components/locationMap'
 import { SettingsSection } from '../../components/settingsList'
+import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
@@ -18,10 +19,12 @@ import {
   READ_HEALTH_ROUTE,
   SLEEP_VALUE_NAMES,
   addDays,
+  displayUnit,
   durationText,
   quantityText,
   stageName,
   typeName,
+  wholeNumberText,
   workoutName,
 } from './healthApi'
 
@@ -34,11 +37,11 @@ const NO_MAP_PEOPLE: never[] = []
 const NO_MAP_PLACES: never[] = []
 
 export function HealthSamples({
-  type,
+  chosenType,
   routeId,
   onRoute,
 }: {
-  type: HealthType
+  chosenType: HealthType
   routeId: string | null
   onRoute: (healthSampleId: string | null) => void
 }) {
@@ -48,16 +51,18 @@ export function HealthSamples({
 
   // From a day before the first reading to a day after today, so a reading
   // near midnight in any zone is inside.
-  const from = type.firstDay ? `${addDays(type.firstDay.slice(0, 10), -1)}T00:00:00Z` : '2000-01-01T00:00:00Z'
+  const from = chosenType.firstDay
+    ? `${addDays(chosenType.firstDay.slice(0, 10), -1)}T00:00:00Z`
+    : '2000-01-01T00:00:00Z'
   const until = `${addDays(new Date().toISOString().slice(0, 10), 1)}T00:00:00Z`
-  const page = useQuery(
+  const samplePage = useQuery(
     async () =>
       range
         ? {
-            requestKey: JSON.stringify([type.healthType, range.offset, range.limit]),
+            requestKey: JSON.stringify([chosenType.healthType, range.offset, range.limit]),
             answer: (
               await graphql<{ ListHealthSamples: HealthSamplePage }>(LIST_HEALTH_SAMPLES, {
-                healthType: type.healthType,
+                healthType: chosenType.healthType,
                 from,
                 to: until,
                 limitCount: range.limit,
@@ -66,36 +71,45 @@ export function HealthSamples({
             ).ListHealthSamples,
           }
         : null,
-    [type.healthType, from, until, range?.offset, range?.limit],
+    [chosenType.healthType, from, until, range?.offset, range?.limit],
     { refresh: false },
   )
   const shown =
-    page.data && range && page.data.requestKey === JSON.stringify([type.healthType, range.offset, range.limit])
-      ? page.data.answer
+    samplePage.data &&
+    range &&
+    samplePage.data.requestKey === JSON.stringify([chosenType.healthType, range.offset, range.limit])
+      ? samplePage.data.answer
       : null
 
   const momentFormat = useMemo(
     () => new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }),
     [language],
   )
-  const name = typeName(t, type.healthType, type.typeName)
+  const name = typeName(t, chosenType.healthType, chosenType.typeName)
 
   const secondsOf = (sample: HealthSample) =>
     Math.max(0, (new Date(sample.endedAt).getTime() - new Date(sample.startedAt).getTime()) / 1000)
   const readingOf = (sample: HealthSample): string => {
     if (sample.quantityValue !== null) {
-      return quantityText(sample.quantityValue, sample.quantityUnit || type.quantityUnit, language)
+      return quantityText(
+        sample.quantityValue,
+        displayUnit(chosenType.healthType, sample.quantityUnit || chosenType.quantityUnit),
+        language,
+        t,
+      )
     }
-    if (type.valueKind === 'workout') {
+    if (chosenType.valueKind === 'workout') {
       return `${workoutName(t, sample.workoutActivityType)}, ${durationText(secondsOf(sample), t)}`
     }
-    if (type.healthType === 'sleepAnalysis' && sample.categoryValue !== null) {
+    if (chosenType.healthType === 'sleepAnalysis' && sample.categoryValue !== null) {
       const stage = SLEEP_VALUE_NAMES[sample.categoryValue]
       return stage
         ? `${stageName(t, stage)}, ${durationText(secondsOf(sample), t)}`
         : durationText(secondsOf(sample), t)
     }
-    return durationText(secondsOf(sample), t)
+    // A reading of a kind whose value is a time (a stand hour, a recording)
+    // that covers no time says nothing in seconds: show what kind it is.
+    return secondsOf(sample) >= 1 ? durationText(secondsOf(sample), t) : name
   }
 
   const columns: Column<HealthSample>[] = [
@@ -117,7 +131,7 @@ export function HealthSamples({
       truncate: true,
       value: (row) => row.sourceName,
     },
-    ...(type.valueKind === 'workout'
+    ...(chosenType.valueKind === 'workout'
       ? [
           {
             key: 'route',
@@ -142,20 +156,21 @@ export function HealthSamples({
   ]
 
   const routedSample = routeId ? (shown?.samples.find((each) => each.healthSampleId === routeId) ?? null) : null
+  const dayFormat = useMemo(() => new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric' }), [language])
+  // The workout as the readings list it, with the day: "Running, Oct 17, 36 min".
+  const routeLine = routedSample
+    ? [
+        workoutName(t, routedSample.workoutActivityType),
+        dayFormat.format(new Date(routedSample.startedAt)),
+        durationText(secondsOf(routedSample), t),
+      ].join(', ')
+    : t('health.routeTitleUnknown')
 
   return (
     <>
-      {routeId && (
-        <WorkoutRoute
-          healthSampleId={routeId}
-          title={t('health.routeTitle', {
-            name: routedSample ? workoutName(t, routedSample.workoutActivityType) : name,
-          })}
-          onClose={() => onRoute(null)}
-        />
-      )}
+      {routeId && <WorkoutRoute healthSampleId={routeId} line={routeLine} onClose={() => onRoute(null)} />}
       <SettingsSection card title={t('health.samplesTitle')}>
-        <ErrorMessage error={page.error} />
+        <ErrorMessage error={samplePage.error} />
         <DataTable
           columns={columns}
           rows={shown?.samples ?? []}
@@ -163,24 +178,53 @@ export function HealthSamples({
           loading={!shown}
           remote={{ total: shown?.totalCount ?? 0, onRange }}
           emptyMessage={t('health.noSamples')}
-          countLabel={(count) => plural(count, { one: 'health.sampleCountOne', other: 'health.sampleCount' })}
+          countLabel={(sampleCount) =>
+            plural(
+              sampleCount,
+              { one: 'health.sampleCountOne', other: 'health.sampleCount' },
+              { count: wholeNumberText(sampleCount, language) },
+            )
+          }
         />
       </SettingsSection>
     </>
   )
 }
 
-// WorkoutRoute is a workout's path on the map.
+// routeLengthMeters is how far a route goes, along its points. A point is
+// [seconds, latitude, longitude, altitude].
+function routeLengthMeters(points: { latitudeDegrees: number; longitudeDegrees: number }[]): number {
+  const earthRadiusMeters = 6_371_000
+  const radians = (degrees: number) => (degrees * Math.PI) / 180
+  let meters = 0
+  for (let index = 1; index < points.length; index++) {
+    const from = points[index - 1]
+    const to = points[index]
+    const latitudeChange = radians(to.latitudeDegrees - from.latitudeDegrees)
+    const longitudeChange = radians(to.longitudeDegrees - from.longitudeDegrees)
+    const half =
+      Math.sin(latitudeChange / 2) ** 2 +
+      Math.cos(radians(from.latitudeDegrees)) *
+        Math.cos(radians(to.latitudeDegrees)) *
+        Math.sin(longitudeChange / 2) ** 2
+    meters += 2 * earthRadiusMeters * Math.asin(Math.min(1, Math.sqrt(half)))
+  }
+  return meters
+}
+
+// WorkoutRoute is a workout's path on the map, titled with the workout's own
+// line and, once the path is read, how far it went.
 function WorkoutRoute({
   healthSampleId,
-  title,
+  line,
   onClose,
 }: {
   healthSampleId: string
-  title: string
+  line: string
   onClose: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
+  const toast = useToast()
   const route = useQuery(
     async () =>
       (await graphql<{ ReadHealthRoute: HealthRoute | null }>(READ_HEALTH_ROUTE, { healthSampleId })).ReadHealthRoute,
@@ -191,23 +235,29 @@ function WorkoutRoute({
     () => (route.data?.routePoints ?? []).map((point) => ({ latitudeDegrees: point[1], longitudeDegrees: point[2] })),
     [route.data],
   )
+  // A route that is not there is told as a failure is, and the card closes.
+  const isMissing = route.data === null && !route.loading && !route.error
+  useEffect(() => {
+    if (!isMissing) return
+    toast.failed(t('health.routeFailed'))
+    onClose()
+    // Once per route found missing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMissing])
+  const lengthMeters = routeLengthMeters(path)
+  const title = lengthMeters > 0 ? `${line}, ${quantityText(lengthMeters, 'm', language, t)}` : line
   return (
-    <SettingsSection
-      card
-      title={title}
-      action={
+    <SettingsSection card>
+      <div className="health-route-head">
+        <h3>{title}</h3>
         <Tooltip label={t('common.close')}>
           <button type="button" className="icon-action" aria-label={t('common.close')} onClick={onClose}>
             <CloseIcon size={16} />
           </button>
         </Tooltip>
-      }
-    >
+      </div>
       <ErrorMessage error={route.error} />
       {route.loading && !route.data ? <Loading /> : null}
-      {route.data === null && !route.loading && !route.error ? (
-        <p className="muted">{t('health.routeFailed')}</p>
-      ) : null}
       {path.length > 0 ? (
         <div className="health-route-map">
           <LocationMap people={NO_MAP_PEOPLE} places={NO_MAP_PLACES} path={path} />

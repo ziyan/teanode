@@ -5,4 +5,8 @@ DROP TABLE "health_share";
 DROP TABLE "health_characteristic";
 DROP TABLE "health_workout_route";
 DROP TABLE "health_day_summary";
+DROP TABLE "health_deleted_sample";
+DROP TABLE "health_type_total";
 DROP TABLE "health_sample";
+DROP FUNCTION "health_sample_count_deleted"();
+DROP FUNCTION "health_sample_count_inserted"();

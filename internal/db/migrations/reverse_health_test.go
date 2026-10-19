@@ -9,9 +9,10 @@ import (
 
 // The health migration refuses a reading reported twice, a reading that ends
 // before it starts, a share with no grantee or two or no categories, and a
-// second share with the same grantee. A person's account takes all of it
-// away, and its reverse file takes the five tables, the two columns and the
-// permission away.
+// second share with the same grantee. The totals of readings follow every
+// insert and delete by themselves. A person's account takes all of it away,
+// and its reverse file takes the tables, the functions, the two columns and
+// the permission away.
 func TestTheHealthMigrationKeepsItsConstraintsAndReverses(t *testing.T) {
 	t.Parallel()
 
@@ -60,12 +61,33 @@ func TestTheHealthMigrationKeepsItsConstraintsAndReverses(t *testing.T) {
 		}
 	}
 
+	// The count of readings is kept by the database: one reading sent, one
+	// counted, and none once it is deleted.
+	if got := dbtest.QueryString(t, database, `SELECT sample_count::text FROM "health_type_total" WHERE "user_id" = '`+userId+`' AND "health_type" = 'stepCount'`); got != "1" {
+		t.Errorf("the total after one reading: %q", got)
+	}
+	dbtest.Exec(t, database, `INSERT INTO "health_sample" ("id", "user_id", "health_sample_id", "health_type", "started_at", "ended_at", "received_at") VALUES ('reverse-health-second', '`+userId+`', 'sample-second', 'stepCount', '2026-01-02T10:00:00Z', '2026-01-02T10:05:00Z', now())`)
+	if got := dbtest.QueryString(t, database, `SELECT sample_count::text FROM "health_type_total" WHERE "user_id" = '`+userId+`' AND "health_type" = 'stepCount'`); got != "2" {
+		t.Errorf("the total after two readings: %q", got)
+	}
+	dbtest.Exec(t, database, `DELETE FROM "health_sample" WHERE "id" = 'reverse-health-second'`)
+	if got := dbtest.QueryString(t, database, `SELECT sample_count::text FROM "health_type_total" WHERE "user_id" = '`+userId+`' AND "health_type" = 'stepCount'`); got != "1" {
+		t.Errorf("the total after deleting one: %q", got)
+	}
+
 	// The same HealthKit identifier is a different reading for a different
 	// person.
 	dbtest.Exec(t, database, `INSERT INTO "health_sample" ("id", "user_id", "health_sample_id", "health_type", "started_at", "ended_at", "received_at") VALUES ('reverse-health-other-sample', '`+otherId+`', 'sample-one', 'stepCount', '2026-01-01T10:00:00Z', '2026-01-01T10:05:00Z', now())`)
 
+	dbtest.Exec(t, database, `INSERT INTO "health_deleted_sample" ("user_id", "health_sample_id", "health_type", "started_at", "ended_at", "deleted_at") VALUES ('`+otherId+`', 'gone', 'stepCount', now(), now(), now())`)
+
 	// An account takes everything of its own with it.
 	dbtest.Exec(t, database, `DELETE FROM "user" WHERE "id" = '`+otherId+`'`)
+	for _, table := range []string{"health_type_total", "health_deleted_sample"} {
+		if got := dbtest.QueryString(t, database, `SELECT count(*) FROM "`+table+`" WHERE "user_id" = '`+otherId+`'`); got != "0" {
+			t.Errorf("a deleted account leaves %s rows in %s", got, table)
+		}
+	}
 	if got := dbtest.QueryString(t, database, `SELECT count(*) FROM "health_sample" WHERE "user_id" = '`+otherId+`'`); got != "0" {
 		t.Errorf("a deleted account leaves %s readings", got)
 	}
@@ -78,10 +100,13 @@ func TestTheHealthMigrationKeepsItsConstraintsAndReverses(t *testing.T) {
 		t.Fatalf("ReadFile: %s", err)
 	}
 	dbtest.Exec(t, database, string(reverse))
-	for _, table := range []string{"health_sample", "health_day_summary", "health_workout_route", "health_characteristic", "health_share"} {
+	for _, table := range []string{"health_sample", "health_day_summary", "health_workout_route", "health_characteristic", "health_share", "health_type_total", "health_deleted_sample"} {
 		if got := dbtest.QueryString(t, database, `SELECT coalesce(to_regclass('"`+table+`"')::text, '')`); got != "" {
 			t.Errorf("the %s table is still there: %q", table, got)
 		}
+	}
+	if got := dbtest.QueryString(t, database, `SELECT count(*) FROM pg_proc WHERE proname LIKE 'health\_sample\_count%'`); got != "0" {
+		t.Errorf("%s functions are still there", got)
 	}
 	if got := dbtest.QueryString(t, database, `SELECT count(*) FROM information_schema.columns WHERE table_name = 'user' AND column_name IN ('can_agent_read_health', 'health_erased_at')`); got != "0" {
 		t.Errorf("%s of the two user columns are still there", got)

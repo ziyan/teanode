@@ -2,7 +2,7 @@ import SwiftUI
 import TeaNodeKit
 
 // Who the person's Health data is shared with, and which Health categories.
-// A person or a circle sees the charts by day of the categories chosen, never
+// A person or a circle sees the day summaries of the categories chosen, never
 // single readings or routes.
 
 /// HealthSharing names a share and what it shares.
@@ -31,7 +31,7 @@ struct HealthSharingSections: View {
 
     var body: some View {
         Section {
-            if model.hasLoaded, model.ownShares.isEmpty {
+            if model.isOwnSharesKnown, model.ownShares.isEmpty {
                 Text("You do not share Health data with anyone.").foregroundStyle(.secondary)
             }
             ForEach(model.ownShares) { share in
@@ -46,7 +46,7 @@ struct HealthSharingSections: View {
         } header: {
             Text("Sharing")
         } footer: {
-            Text("People you share with see the charts by day of the categories you choose, never single readings or routes.")
+            Text("People you share with see the day summaries of the categories you choose, never single readings or routes.")
         }
     }
 }
@@ -123,7 +123,7 @@ struct HealthShareScreen: View {
             } header: {
                 Text("Shared with \(name)")
             } footer: {
-                Text("They see the charts by day of these categories, never single readings or routes.")
+                Text("They see the day summaries of these categories, never single readings or routes.")
             }
             Section {
                 Button(role: .destructive) {
@@ -141,7 +141,7 @@ struct HealthShareScreen: View {
                         }
                     }
                 } message: {
-                    Text("\(name) will no longer see your Health charts.")
+                    Text("\(name) will no longer see your Health data.")
                 }
             }
         }
@@ -180,7 +180,7 @@ struct HealthShareSheet: View {
             Form {
                 if isLoaded && people.isEmpty && circles.isEmpty {
                     Section {
-                        Text("You do not share a circle with anybody yet. Make or join a circle to share your Health data.")
+                        Text("You are not in a circle with anyone yet.")
                             .foregroundStyle(.secondary)
                         OpenCirclesLink(connection: model.connection)
                     }
@@ -195,7 +195,7 @@ struct HealthShareSheet: View {
                     } header: {
                         Text("What they see")
                     } footer: {
-                        Text("They see the charts by day of the categories you choose, never single readings or routes.")
+                        Text("They see the day summaries of the categories you choose, never single readings or routes.")
                     }
                 }
             }

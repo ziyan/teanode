@@ -35,9 +35,12 @@ type HealthOperation interface {
 
 	// DeleteHealthSamples deletes the readings with these HealthKit
 	// identifiers, and the routes of the workouts among them, and answers the
-	// kind and times of each that was there, oldest first. A phone that deleted
-	// a reading knows only its identifier; the answer is how it learns which
-	// days to work out again. The summaries of the days are not changed.
+	// kind and times of each that was deleted, oldest first. A phone that
+	// deleted a reading knows only its identifier; the answer is how it learns
+	// which days to work out again. The answer is the same when the phone
+	// asks again for readings already deleted, because what was deleted is
+	// kept for models.HealthDeletedSampleDays. The summaries of the days are
+	// not changed.
 	DeleteHealthSamples(userId string, healthSampleIds []string) ([]*models.DeletedHealthSample, error)
 
 	// UpsertHealthDaySummaries stores the days the phone worked out, replacing
@@ -48,20 +51,26 @@ type HealthOperation interface {
 	UpsertHealthDaySummaries(userId string, summaries []*models.HealthDaySummary) (int, error)
 
 	// UpsertHealthRoutes stores the paths of workouts, replacing one it
-	// already had, and says how many were kept. A route whose workout the
-	// server does not have is left out: it would be a path nobody could reach
-	// and that an erase of the workouts could not find.
-	UpsertHealthRoutes(userId string, routes []*models.HealthRoute) (int, error)
+	// already had, and says how many were kept and the identifiers of those
+	// left out. A route whose workout the server does not have is left out: it
+	// would be a path nobody could reach and that an erase of the workouts
+	// could not find. Every route is checked before the first is stored.
+	UpsertHealthRoutes(userId string, routes []*models.HealthRoute) (keptCount int, unmatchedHealthSampleIds []string, err error)
 
 	// UpsertHealthCharacteristics stores the facts about the person,
 	// replacing the value of a kind it already had.
 	UpsertHealthCharacteristics(userId string, characteristics []*models.HealthCharacteristic) error
 
 	// ListHealthTypes lists the kinds of reading the person has, by kind: the
-	// readings kept, the first and last day with a summary and the latest
-	// day's summary. A kind with readings and no summary, or a summary and no
+	// readings kept (from the totals the database keeps, not by counting
+	// them), the first and last day with a summary and the latest day's
+	// summary. A kind with readings and no summary, or a summary and no
 	// readings, is listed. Characteristics are not readings and are not here.
 	ListHealthTypes(userId string) ([]*models.HealthTypeSummary, error)
+
+	// ListHealthTypeNames lists the kinds the person has readings of, from the
+	// totals the database keeps.
+	ListHealthTypeNames(userId string) ([]string, error)
 
 	// ListHealthPeriods adds up a kind's days from fromDay to toDay, both
 	// included and written YYYY-MM-DD, into days, weeks that start on Monday,
@@ -71,15 +80,22 @@ type HealthOperation interface {
 	ListHealthPeriods(userId, healthType, fromDay, toDay string, period health.Period) (periods []*models.HealthPeriodSummary, quantityUnit string, err error)
 
 	// ListHealthSamples pages the readings of one kind that started in the
-	// range (either end may be nil), newest first, with how many there are in
-	// all. limitCount is at least one.
-	ListHealthSamples(userId, healthType string, from, until *time.Time, limitCount, offset int) (samples []*models.HealthSample, totalCount int, err error)
+	// range (either end may be nil), newest first. limitCount is at least one.
+	// Whether a reading follows the page is found by reading one more, and
+	// the count is only made when shouldCountTotal: with no range it is the
+	// total the database keeps, and with one it counts at most
+	// models.HealthSampleCountMost.
+	ListHealthSamples(userId, healthType string, from, until *time.Time, limitCount, offset int, shouldCountTotal bool) (*models.HealthSamplePage, error)
 
 	// GetHealthRoute is the path of a workout, or ErrNotFound.
 	GetHealthRoute(userId, healthSampleId string) (*models.HealthRoute, error)
 
+	// GetHealthChoices is what the person has decided about their Health, read
+	// from their account alone. ErrNotFound for a person who does not exist.
+	GetHealthChoices(userId string) (*models.HealthChoices, error)
+
 	// GetHealthStatus is what the person's Health holds and what they have
-	// decided about it.
+	// decided about it. ErrNotFound for a person who does not exist.
 	GetHealthStatus(userId string) (*models.HealthStatus, error)
 
 	// SetCanAgentReadHealth turns the agent's health tool on or off for the
@@ -161,6 +177,10 @@ type healthDaySummaryModel struct {
 	DurationSeconds *float64  `gorm:"column:duration_seconds"`
 	CategorySeconds []byte    `gorm:"column:category_seconds;type:jsonb"`
 	UpdatedAt       time.Time `gorm:"column:updated_at"`
+
+	// FirstDay is read by the listing of kinds, which asks for it; it is not a
+	// column.
+	FirstDay string `gorm:"column:first_day;->"`
 }
 
 func (healthDaySummaryModel) TableName() string { return "health_day_summary" }
@@ -179,7 +199,7 @@ func (self *healthDaySummaryModel) toPeriod() (*models.HealthPeriodSummary, erro
 	return &models.HealthPeriodSummary{
 		StartDay: self.SummaryDay, EndDay: self.SummaryDay,
 		SumValue: self.SumValue, AverageValue: self.AverageValue, MinimumValue: self.MinimumValue, MaximumValue: self.MaximumValue,
-		SampleCount: self.SampleCount, DurationSeconds: self.DurationSeconds, CategorySeconds: categorySeconds,
+		SampleCount: self.SampleCount, DurationSeconds: self.DurationSeconds, DayCount: 1, CategorySeconds: categorySeconds,
 	}, nil
 }
 
@@ -287,16 +307,34 @@ func (self *transaction) DeleteHealthSamples(userId string, healthSampleIds []st
 	if len(healthSampleIds) == 0 {
 		return deleted, nil
 	}
+	now := time.Now()
+	// What is known of a reading is written down as it is deleted, so that the
+	// phone, asking again because it never got the answer, gets it again.
+	if err := self.tx.Exec(`WITH deleted AS (
+			DELETE FROM "health_sample" WHERE "user_id" = ? AND "health_sample_id" IN ?
+			RETURNING "health_sample_id", "health_type", "started_at", "ended_at")
+		INSERT INTO "health_deleted_sample" ("user_id", "health_sample_id", "health_type", "started_at", "ended_at", "deleted_at")
+		SELECT ?, "health_sample_id", "health_type", "started_at", "ended_at", ? FROM deleted
+		ON CONFLICT ("user_id", "health_sample_id") DO UPDATE SET "health_type" = EXCLUDED."health_type",
+			"started_at" = EXCLUDED."started_at", "ended_at" = EXCLUDED."ended_at", "deleted_at" = EXCLUDED."deleted_at"`,
+		userId, healthSampleIds, userId, now).Error; err != nil {
+		return nil, err
+	}
+	if err := self.tx.Exec(`DELETE FROM "health_workout_route" WHERE "user_id" = ? AND "health_sample_id" IN ?`, userId, healthSampleIds).Error; err != nil {
+		return nil, err
+	}
+	// Forgotten after 30 days, by whoever deletes next.
+	if err := self.tx.Exec(`DELETE FROM "health_deleted_sample" WHERE "user_id" = ? AND "deleted_at" < ?`,
+		userId, now.AddDate(0, 0, -models.HealthDeletedSampleDays)).Error; err != nil {
+		return nil, err
+	}
 	var rows []struct {
 		HealthType string    `gorm:"column:health_type"`
 		StartedAt  time.Time `gorm:"column:started_at"`
 		EndedAt    time.Time `gorm:"column:ended_at"`
 	}
-	if err := self.tx.Raw(`DELETE FROM "health_sample" WHERE "user_id" = ? AND "health_sample_id" IN ?
-		RETURNING "health_type", "started_at", "ended_at"`, userId, healthSampleIds).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	if err := self.tx.Exec(`DELETE FROM "health_workout_route" WHERE "user_id" = ? AND "health_sample_id" IN ?`, userId, healthSampleIds).Error; err != nil {
+	if err := self.tx.Raw(`SELECT "health_type", "started_at", "ended_at" FROM "health_deleted_sample"
+		WHERE "user_id" = ? AND "health_sample_id" IN ?`, userId, healthSampleIds).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	sort.Slice(rows, func(first, second int) bool {
@@ -372,20 +410,24 @@ func (self *transaction) UpsertHealthDaySummaries(userId string, summaries []*mo
 	return len(rows), nil
 }
 
-func (self *transaction) UpsertHealthRoutes(userId string, routes []*models.HealthRoute) (int, error) {
+func (self *transaction) UpsertHealthRoutes(userId string, routes []*models.HealthRoute) (int, []string, error) {
 	if userId == "" {
-		return 0, ErrInvalidArguments
+		return 0, nil, ErrInvalidArguments
 	}
-	now := time.Now()
-	keptCount := 0
+	// Every route is checked before the first is stored.
+	type encodedRoute struct {
+		healthSampleId string
+		points         string
+	}
+	encodedRoutes := make([]encodedRoute, 0, len(routes))
 	for _, route := range routes {
 		if route == nil || route.HealthSampleID == "" || len(route.HealthSampleID) > 64 || hasNullCharacter(route.HealthSampleID) {
-			return 0, fmt.Errorf("%w: a route needs the identifier of its workout", ErrInvalidArguments)
+			return 0, nil, fmt.Errorf("%w: a route needs the identifier of its workout", ErrInvalidArguments)
 		}
 		for _, point := range route.RoutePoints {
 			for _, number := range point {
 				if math.IsNaN(number) || math.IsInf(number, 0) {
-					return 0, fmt.Errorf("%w: the numbers of a route must be finite", ErrInvalidArguments)
+					return 0, nil, fmt.Errorf("%w: the numbers of a route must be finite", ErrInvalidArguments)
 				}
 			}
 		}
@@ -395,19 +437,29 @@ func (self *transaction) UpsertHealthRoutes(userId string, routes []*models.Heal
 		}
 		encoded, err := json.Marshal(points)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
+		encodedRoutes = append(encodedRoutes, encodedRoute{healthSampleId: route.HealthSampleID, points: string(encoded)})
+	}
+	now := time.Now()
+	keptCount := 0
+	unmatchedHealthSampleIds := []string{}
+	for _, route := range encodedRoutes {
 		result := self.tx.Exec(`INSERT INTO "health_workout_route" ("user_id", "health_sample_id", "route_points", "received_at")
 			SELECT ?, ?, ?::jsonb, ?
 			WHERE EXISTS (SELECT 1 FROM "health_sample" WHERE "user_id" = ? AND "health_sample_id" = ? AND "health_type" = 'workout')
 			ON CONFLICT ("user_id", "health_sample_id") DO UPDATE SET "route_points" = EXCLUDED."route_points", "received_at" = EXCLUDED."received_at"`,
-			userId, route.HealthSampleID, string(encoded), now, userId, route.HealthSampleID)
+			userId, route.healthSampleId, route.points, now, userId, route.healthSampleId)
 		if result.Error != nil {
-			return 0, result.Error
+			return 0, nil, result.Error
 		}
-		keptCount += int(result.RowsAffected)
+		if result.RowsAffected == 0 {
+			unmatchedHealthSampleIds = append(unmatchedHealthSampleIds, route.healthSampleId)
+			continue
+		}
+		keptCount++
 	}
-	return keptCount, nil
+	return keptCount, unmatchedHealthSampleIds, nil
 }
 
 func (self *transaction) UpsertHealthCharacteristics(userId string, characteristics []*models.HealthCharacteristic) error {
@@ -442,21 +494,25 @@ func (self *transaction) ListHealthTypes(userId string) ([]*models.HealthTypeSum
 		HealthType  string `gorm:"column:health_type"`
 		SampleCount int    `gorm:"column:sample_count"`
 	}
-	if err := self.tx.Raw(`SELECT "health_type", count(*) AS "sample_count" FROM "health_sample" WHERE "user_id" = ? GROUP BY "health_type"`, userId).Scan(&counts).Error; err != nil {
+	if err := self.tx.Raw(`SELECT "health_type", "sample_count" FROM "health_type_total" WHERE "user_id" = ?`, userId).Scan(&counts).Error; err != nil {
 		return nil, err
 	}
-	var bounds []struct {
-		HealthType string `gorm:"column:health_type"`
-		FirstDay   string `gorm:"column:first_day"`
-		LastDay    string `gorm:"column:last_day"`
-	}
-	if err := self.tx.Raw(`SELECT "health_type", to_char(min("summary_day"), 'YYYY-MM-DD') AS "first_day", to_char(max("summary_day"), 'YYYY-MM-DD') AS "last_day"
-		FROM "health_day_summary" WHERE "user_id" = ? GROUP BY "health_type"`, userId).Scan(&bounds).Error; err != nil {
-		return nil, err
-	}
+	// Each kind's first day and latest day are looked up in the index one kind
+	// at a time, so that a person with years of days does not have every one of
+	// them read to find three figures a kind.
 	var latestRows []healthDaySummaryModel
-	if err := self.tx.Raw(`SELECT DISTINCT ON ("health_type") `+healthDaySummarySelect+`
-		FROM "health_day_summary" WHERE "user_id" = ? ORDER BY "health_type", "summary_day" DESC`, userId).Scan(&latestRows).Error; err != nil {
+	if err := self.tx.Raw(`WITH RECURSIVE kinds("health_type") AS (
+			(SELECT "health_type" FROM "health_day_summary" WHERE "user_id" = @user ORDER BY "health_type" LIMIT 1)
+			UNION ALL
+			SELECT (SELECT "health_type" FROM "health_day_summary" WHERE "user_id" = @user AND "health_type" > kinds."health_type" ORDER BY "health_type" LIMIT 1)
+			FROM kinds WHERE kinds."health_type" IS NOT NULL
+		)
+		SELECT latest.*, first_day."first_day" FROM kinds
+		CROSS JOIN LATERAL (SELECT `+healthDaySummarySelect+` FROM "health_day_summary"
+			WHERE "user_id" = @user AND "health_type" = kinds."health_type" ORDER BY "summary_day" DESC LIMIT 1) latest
+		CROSS JOIN LATERAL (SELECT to_char("summary_day", 'YYYY-MM-DD') AS "first_day" FROM "health_day_summary"
+			WHERE "user_id" = @user AND "health_type" = kinds."health_type" ORDER BY "summary_day" ASC LIMIT 1) first_day
+		WHERE kinds."health_type" IS NOT NULL`, map[string]any{"user": userId}).Scan(&latestRows).Error; err != nil {
 		return nil, err
 	}
 
@@ -472,16 +528,13 @@ func (self *transaction) ListHealthTypes(userId string) ([]*models.HealthTypeSum
 	for _, count := range counts {
 		entry(count.HealthType).SampleCount = count.SampleCount
 	}
-	for _, bound := range bounds {
-		found := entry(bound.HealthType)
-		found.FirstDay, found.LastDay = bound.FirstDay, bound.LastDay
-	}
 	for index := range latestRows {
 		period, err := latestRows[index].toPeriod()
 		if err != nil {
 			return nil, err
 		}
 		found := entry(latestRows[index].HealthType)
+		found.FirstDay, found.LastDay = latestRows[index].FirstDay, latestRows[index].SummaryDay
 		found.LatestDaySummary, found.QuantityUnit = period, latestRows[index].QuantityUnit
 	}
 	listed := make([]*models.HealthTypeSummary, 0, len(byType))
@@ -492,16 +545,25 @@ func (self *transaction) ListHealthTypes(userId string) ([]*models.HealthTypeSum
 	return listed, nil
 }
 
+func (self *transaction) ListHealthTypeNames(userId string) ([]string, error) {
+	if userId == "" {
+		return []string{}, nil
+	}
+	names := []string{}
+	if err := self.tx.Raw(`SELECT "health_type" FROM "health_type_total" WHERE "user_id" = ? ORDER BY "health_type"`, userId).Scan(&names).Error; err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 // periodTotals is the days of one period as they are added up.
 type periodTotals struct {
 	summary *models.HealthPeriodSummary
 
 	// weightedSum and weightedCount are the days' averages times their
-	// readings, and the readings, for the days that had both; averageSum and
-	// averageDays are the fallback for days that gave an average and no count.
+	// readings, and the readings. A day with an average and no readings counts
+	// as one reading, so that it is not left out of the average.
 	weightedSum, weightedCount float64
-	averageSum                 float64
-	averageDays                int
 }
 
 func (self *periodTotals) add(day *models.HealthPeriodSummary) {
@@ -519,13 +581,11 @@ func (self *periodTotals) add(day *models.HealthPeriodSummary) {
 	addTo(&summary.SumValue, day.SumValue)
 	addTo(&summary.DurationSeconds, day.DurationSeconds)
 	summary.SampleCount += day.SampleCount
+	summary.DayCount++
 	if day.AverageValue != nil {
-		if day.SampleCount > 0 {
-			self.weightedSum += *day.AverageValue * float64(day.SampleCount)
-			self.weightedCount += float64(day.SampleCount)
-		}
-		self.averageSum += *day.AverageValue
-		self.averageDays++
+		weight := math.Max(float64(day.SampleCount), 1)
+		self.weightedSum += *day.AverageValue * weight
+		self.weightedCount += weight
 	}
 	if day.MinimumValue != nil && (summary.MinimumValue == nil || *day.MinimumValue < *summary.MinimumValue) {
 		minimum := *day.MinimumValue
@@ -541,12 +601,8 @@ func (self *periodTotals) add(day *models.HealthPeriodSummary) {
 }
 
 func (self *periodTotals) finish() *models.HealthPeriodSummary {
-	switch {
-	case self.weightedCount > 0:
+	if self.weightedCount > 0 {
 		average := self.weightedSum / self.weightedCount
-		self.summary.AverageValue = &average
-	case self.averageDays > 0:
-		average := self.averageSum / float64(self.averageDays)
 		self.summary.AverageValue = &average
 	}
 	return self.summary
@@ -598,12 +654,13 @@ func (self *transaction) ListHealthPeriods(userId, healthType, fromDay, toDay st
 	return periods, quantityUnit, nil
 }
 
-func (self *transaction) ListHealthSamples(userId, healthType string, from, until *time.Time, limitCount, offset int) ([]*models.HealthSample, int, error) {
+func (self *transaction) ListHealthSamples(userId, healthType string, from, until *time.Time, limitCount, offset int, shouldCountTotal bool) (*models.HealthSamplePage, error) {
 	if userId == "" || !health.IsValidIdentifier(healthType) || limitCount < 1 || offset < 0 {
-		return nil, 0, ErrInvalidArguments
+		return nil, ErrInvalidArguments
 	}
 	conditions := `s."user_id" = @user AND s."health_type" = @type`
-	arguments := map[string]any{"user": userId, "type": healthType, "limit": limitCount, "offset": offset}
+	// One more than the page, to know whether a reading follows it.
+	arguments := map[string]any{"user": userId, "type": healthType, "limit": limitCount + 1, "offset": offset}
 	if from != nil {
 		conditions += ` AND s."started_at" >= @from`
 		arguments["from"] = *from
@@ -612,21 +669,46 @@ func (self *transaction) ListHealthSamples(userId, healthType string, from, unti
 		conditions += ` AND s."started_at" < @until`
 		arguments["until"] = *until
 	}
-	var totalCount int64
-	if err := self.tx.Raw(`SELECT count(*) FROM "health_sample" s WHERE `+conditions, arguments).Scan(&totalCount).Error; err != nil {
-		return nil, 0, err
-	}
 	var rows []healthSampleModel
 	if err := self.tx.Raw(`SELECT s.*, EXISTS (SELECT 1 FROM "health_workout_route" r
 			WHERE r."user_id" = s."user_id" AND r."health_sample_id" = s."health_sample_id") AS "has_route"
 		FROM "health_sample" s WHERE `+conditions+` ORDER BY s."started_at" DESC, s."id" DESC LIMIT @limit OFFSET @offset`, arguments).Scan(&rows).Error; err != nil {
-		return nil, 0, err
+		return nil, err
 	}
-	samples := make([]*models.HealthSample, 0, len(rows))
+	page := &models.HealthSamplePage{HasMore: len(rows) > limitCount}
+	if page.HasMore {
+		rows = rows[:limitCount]
+	}
+	page.Samples = make([]*models.HealthSample, 0, len(rows))
 	for index := range rows {
-		samples = append(samples, rows[index].toModel())
+		page.Samples = append(page.Samples, rows[index].toModel())
 	}
-	return samples, int(totalCount), nil
+	if !shouldCountTotal {
+		return page, nil
+	}
+	if from == nil && until == nil {
+		// Every reading of the kind: the total the database keeps.
+		var totals []int64
+		if err := self.tx.Raw(`SELECT "sample_count" FROM "health_type_total" WHERE "user_id" = ? AND "health_type" = ?`, userId, healthType).Scan(&totals).Error; err != nil {
+			return nil, err
+		}
+		if len(totals) > 0 {
+			page.TotalCount = int(totals[0])
+		}
+		return page, nil
+	}
+	// A range is counted up to a limit: a person's readings of one kind are
+	// millions, and a page should not wait for all of them.
+	arguments["countLimit"] = models.HealthSampleCountMost + 1
+	var totalCount int64
+	if err := self.tx.Raw(`SELECT count(*) FROM (SELECT 1 FROM "health_sample" s WHERE `+conditions+` LIMIT @countLimit) counted`, arguments).Scan(&totalCount).Error; err != nil {
+		return nil, err
+	}
+	page.TotalCount = int(totalCount)
+	if totalCount > models.HealthSampleCountMost {
+		page.TotalCount, page.IsTotalCountCapped = models.HealthSampleCountMost, true
+	}
+	return page, nil
 }
 
 func (self *transaction) GetHealthRoute(userId, healthSampleId string) (*models.HealthRoute, error) {
@@ -654,7 +736,7 @@ func (self *transaction) GetHealthRoute(userId, healthSampleId string) (*models.
 	return route, nil
 }
 
-func (self *transaction) GetHealthStatus(userId string) (*models.HealthStatus, error) {
+func (self *transaction) GetHealthChoices(userId string) (*models.HealthChoices, error) {
 	if userId == "" {
 		return nil, ErrNotFound
 	}
@@ -668,16 +750,26 @@ func (self *transaction) GetHealthStatus(userId string) (*models.HealthStatus, e
 	if len(users) == 0 {
 		return nil, ErrNotFound
 	}
-	status := &models.HealthStatus{CanAgentReadHealth: users[0].CanAgentReadHealth, Characteristics: []*models.HealthCharacteristic{}}
+	choices := &models.HealthChoices{CanAgentReadHealth: users[0].CanAgentReadHealth}
 	if users[0].HealthErasedAt != nil {
 		erasedAt := users[0].HealthErasedAt.In(time.Local)
-		status.HealthErasedAt = &erasedAt
+		choices.HealthErasedAt = &erasedAt
 	}
+	return choices, nil
+}
+
+func (self *transaction) GetHealthStatus(userId string) (*models.HealthStatus, error) {
+	choices, err := self.GetHealthChoices(userId)
+	if err != nil {
+		return nil, err
+	}
+	status := &models.HealthStatus{HealthChoices: *choices, Characteristics: []*models.HealthCharacteristic{}}
 	var totals struct {
 		SampleCount    int        `gorm:"column:sample_count"`
 		LastReceivedAt *time.Time `gorm:"column:last_received_at"`
 	}
-	if err := self.tx.Raw(`SELECT count(*) AS "sample_count", max("received_at") AS "last_received_at" FROM "health_sample" WHERE "user_id" = ?`, userId).Scan(&totals).Error; err != nil {
+	if err := self.tx.Raw(`SELECT coalesce(sum("sample_count"), 0) AS "sample_count", max("last_received_at") AS "last_received_at"
+		FROM "health_type_total" WHERE "user_id" = ?`, userId).Scan(&totals).Error; err != nil {
 		return nil, err
 	}
 	status.SampleCount = totals.SampleCount
@@ -724,7 +816,7 @@ func (self *transaction) EraseHealthData(userId, healthType string) (int, error)
 		if erased.Error != nil {
 			return 0, erased.Error
 		}
-		for _, table := range []string{"health_day_summary", "health_workout_route", "health_characteristic"} {
+		for _, table := range []string{"health_day_summary", "health_workout_route", "health_characteristic", "health_deleted_sample"} {
 			if err := self.tx.Exec(`DELETE FROM "`+table+`" WHERE "user_id" = ?`, userId).Error; err != nil {
 				return 0, err
 			}
@@ -748,7 +840,7 @@ func (self *transaction) EraseHealthData(userId, healthType string) (int, error)
 	if erased.Error != nil {
 		return 0, erased.Error
 	}
-	for _, table := range []string{"health_day_summary", "health_characteristic"} {
+	for _, table := range []string{"health_day_summary", "health_characteristic", "health_deleted_sample"} {
 		if err := self.tx.Exec(`DELETE FROM "`+table+`" WHERE "user_id" = ? AND "health_type" = ?`, userId, healthType).Error; err != nil {
 			return 0, err
 		}

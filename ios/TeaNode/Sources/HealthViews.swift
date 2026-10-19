@@ -71,7 +71,7 @@ struct HealthScreen: View {
                     switch destination {
                     case .type(let healthType): typeScreen(healthType)
                     case .route(let request): HealthRouteScreen(connection: model.connection, request: request)
-                    case .settings: HealthSettingsView(connection: model.connection)
+                    case .settings: HealthSettingsScreen(connection: model.connection)
                     }
                 }
         }
@@ -108,6 +108,14 @@ struct HealthScreen: View {
             HealthTypeScreen(model: model, type: type)
         } else if !model.hasLoaded {
             ProgressView()
+        } else {
+            // A link to a kind that does not exist, or that was erased or is
+            // not shared; the way back is the bar's.
+            ContentUnavailableView {
+                Label("This kind of data is not here", systemImage: AppSection.health.systemImage)
+            } description: {
+                Text("It may have been erased, or it is not shared with you.")
+            }
         }
     }
 
@@ -222,10 +230,14 @@ struct HealthEmptyView: View {
             ContentUnavailableView {
                 Label("No Health data yet", systemImage: AppSection.health.systemImage)
             } description: {
-                Text(descriptionText)
+                if let problemText {
+                    Text(verbatim: problemText)
+                } else {
+                    Text(descriptionText)
+                }
             } actions: {
                 if sync.isAvailable, !sync.isOn {
-                    Button("Turn On Health", action: turnOn)
+                    Button("Turn on Health", action: turnOn)
                         .buttonStyle(.borderedProminent)
                 }
             }
@@ -237,6 +249,9 @@ struct HealthEmptyView: View {
         if sync.isOn { return "Your Apple Health data is being copied to your server. It shows here as it arrives." }
         return "Health copies your Apple Health data to your own TeaNode server, and nowhere else."
     }
+
+    /// Why nothing is arriving, when the copying met a problem.
+    private var problemText: String? { sync.isOn ? sync.problemText : nil }
 }
 
 /// HealthNotAllowedView is what Health says to an account that may not use

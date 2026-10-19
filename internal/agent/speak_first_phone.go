@@ -97,8 +97,8 @@ type phoneTourFacts struct {
 func (self *Agent) phoneTourFacts(ctx context.Context, agent *models.Agent, owner *models.User, phone *models.AgentPhone, hasMailbox bool) phoneTourFacts {
 	configuration := self.settings.Configuration()
 	return phoneTourFacts{
-		hasLocation:     self.holds(ctx, owner, models.PermissionLocationUse),
-		hasHealth:       self.holds(ctx, owner, models.PermissionHealthUse),
+		hasLocation:     self.hasPermission(ctx, owner, models.PermissionLocationUse),
+		hasHealth:       self.hasPermission(ctx, owner, models.PermissionHealthUse),
 		canBeNotified:   phone.CanBeNotified(),
 		isPushEnabled:   configuration.Agent.Push.IsEnabled(),
 		isVoiceOn:       configuration.Agent.Voice.Enabled && configuration.Agent.VoiceProvider() != nil,
@@ -107,9 +107,9 @@ func (self *Agent) phoneTourFacts(ctx context.Context, agent *models.Agent, owne
 	}
 }
 
-// holds says the person holds a permission, which is what the offers of
-// Location (location:use) and Health (health:use) in the tour depend on.
-func (self *Agent) holds(ctx context.Context, owner *models.User, permission models.Permission) bool {
+// hasPermission says the person holds a permission, which is what the offers
+// of Location (location:use) and Health (health:use) in the tour depend on.
+func (self *Agent) hasPermission(ctx context.Context, owner *models.User, permission models.Permission) bool {
 	if self.operations == nil {
 		return false
 	}
@@ -145,7 +145,7 @@ func phoneTourInstructions(facts phoneTourFacts) string {
 		offers = append(offers, "Location: the app can record the places they go, so they can look back on where they were and share where they are with their family. It starts with three short rows they tap through: allow location, mark home, and share with family. If they want it, open it for them with the location tool's set_up action, or say it is Location in the app's menu.")
 	}
 	if facts.hasHealth {
-		offers = append(offers, "Health: the app can copy their Apple Health data (steps, sleep, heart rate, workouts and the rest, whatever they choose in Apple's sheet) to this server, so they see it as charts on the dashboard and in the app, and can share some of it with their family. You read it only if they turn on Let the agent read Health data. If they want it, open it for them with the health tool's set_up action, or say it is Health in the app's Settings.")
+		offers = append(offers, "Health: the app can copy their Apple Health data (steps, sleep, heart rate, workouts and the rest, whatever they allow on Apple's Health permissions screen) to this server, so they see it as charts on the dashboard and in the app, and can share some of it with their family. You read it only if they turn on Let the agent read Health data. If they want it, open it for them with the health tool's set_up action, or say it is Health in the app's Settings.")
 	}
 	if facts.hasMailbox {
 		offers = append(offers, "Their mail, calendars and contacts in the iPhone's own apps: the account tool's set_up_phone_mail action takes them to where one tap sets it up.")

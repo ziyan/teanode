@@ -73710,22 +73710,6 @@
         }
       }
     },
-    "People you share with see the charts by day of the categories you choose, never single readings or routes.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共有した相手には、選んだカテゴリの日ごとのグラフだけが表示され、個々の記録やルートは表示されません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "与你共享的人只能看到你所选类别的每日图表，看不到单条读数或路线。"
-          }
-        }
-      }
-    },
     "You do not share Health data with anyone.": {
       "localizations": {
         "ja": {
@@ -73838,22 +73822,6 @@
         }
       }
     },
-    "Every reading, summary and route of %@ kept on your server is deleted. This cannot be undone.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバーにある%@の記録、集計、ルートがすべて削除されます。この操作は元に戻せません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你服务器上所有%@的读数、汇总和路线都会被删除。此操作无法撤销。"
-          }
-        }
-      }
-    },
     "%@ shares no Health data with you yet.": {
       "localizations": {
         "ja": {
@@ -73934,22 +73902,6 @@
         }
       }
     },
-    "Days waiting to be added up": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "集計待ちの日数"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等待汇总的天数"
-          }
-        }
-      }
-    },
     "Distance": {
       "localizations": {
         "ja": {
@@ -73994,38 +73946,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "能量"
-          }
-        }
-      }
-    },
-    "Erase Health Data": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ヘルスケアのデータを消去"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清除健康数据"
-          }
-        }
-      }
-    },
-    "Every reading, summary and route kept on your server is deleted. This cannot be undone, and the app stops sending until you turn Health on again.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サーバーに保存されている記録、集計、ルートがすべて削除されます。この操作は元に戻せません。ヘルスケアを再びオンにするまで、アプリは送信を停止します。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你服务器上保存的所有读数、汇总和路线都会被删除。此操作无法撤销，在你重新开启健康之前，应用不会再发送数据。"
           }
         }
       }
@@ -74270,22 +74190,6 @@
         }
       }
     },
-    "Sync Now": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今すぐ同期"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "立即同步"
-          }
-        }
-      }
-    },
     "The Health data you allow on the next screen: steps, heart rate, sleep, workouts with their routes, and more. TeaNode copies your history first, then keeps it up to date.": {
       "localizations": {
         "ja": {
@@ -74298,54 +74202,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "你在下一个屏幕上允许的健康数据：步数、心率、睡眠、带路线的锻炼等。TeaNode 会先复制你的历史数据，然后保持更新。"
-          }
-        }
-      }
-    },
-    "They see the charts by day of the categories you choose, never single readings or routes.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "相手には、選んだカテゴリの日ごとのグラフだけが表示され、個々の記録やルートは表示されません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对方只能看到你所选类别的每日图表，看不到单条读数或路线。"
-          }
-        }
-      }
-    },
-    "They see the charts by day of these categories, never single readings or routes.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "相手には、これらのカテゴリの日ごとのグラフだけが表示され、個々の記録やルートは表示されません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对方只能看到这些类别的每日图表，看不到单条读数或路线。"
-          }
-        }
-      }
-    },
-    "Turn On Health": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ヘルスケアをオンにする"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开启健康"
           }
         }
       }
@@ -74430,22 +74286,6 @@
         }
       }
     },
-    "You do not share a circle with anybody yet. Make or join a circle to share your Health data.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "まだ誰ともサークルを共有していません。サークルを作成するか参加すると、ヘルスケアのデータを共有できます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你还没有和任何人在同一个圈子里。创建或加入一个圈子，即可共享你的健康数据。"
-          }
-        }
-      }
-    },
     "Your Apple Health data is being copied to your server. It shows here as it arrives.": {
       "localizations": {
         "ja": {
@@ -74506,22 +74346,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "只有在你开启“允许助手读取健康数据”后，助手才会读取。除非你共享其中一部分，否则其他人都看不到。"
-          }
-        }
-      }
-    },
-    "%@ will no longer see your Health charts.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@はあなたのヘルスケアのグラフを見られなくなります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@将无法再看到你的健康图表。"
           }
         }
       }
@@ -74708,6 +74532,1250 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存来自 iPhone 的健康数据，并分享其中一部分"
+          }
+        }
+      }
+    },
+    "Erases every reading, day summary and route of %@ that this server keeps. The iPhone app keeps sending new readings of it while Health is on. Anything your agent already learned stays in its memory until you remove it. This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーに保存されている%@の記録、日ごとの集計、ルートをすべて消去します。ヘルスケアがオンの間、iPhone アプリは新しい記録を送り続けます。エージェントがすでに学んだ内容は、あなたが削除するまでその記憶に残ります。この操作は元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除这台服务器上保存的所有%@的读数、每日汇总和路线。只要健康保持开启，iPhone 应用仍会继续发送新的读数。助手已经学到的内容会留在它的记忆中，直到你将其移除。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. Anything your agent already learned stays in its memory until you remove it. This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーに保存されている記録、日ごとの集計、ルートをすべて消去し、ヘルスケアを再びオンにするまで iPhone アプリは送信を停止します。エージェントがすでに学んだ内容は、あなたが削除するまでその記憶に残ります。この操作は元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除这台服务器上保存的所有读数、每日汇总和路线，在你重新开启健康之前，iPhone 应用不会再发送数据。助手已经学到的内容会留在它的记忆中，直到你将其移除。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "The agent reads only your own Health data, never what other people share with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが読み取るのはあなた自身のヘルスケアのデータだけで、他の人があなたと共有したデータは読み取りません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手只会读取你自己的健康数据，不会读取别人与你共享的数据。"
+          }
+        }
+      }
+    },
+    "Set in the Health app on your iPhone, and shown here as the app copied it. Change them there.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone の「ヘルスケア」App で設定したものを、アプリがコピーした内容のまま表示しています。変更はそちらで行ってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 iPhone 的“健康”App 中设置，此处显示的是应用复制的内容。如需修改，请在那里修改。"
+          }
+        }
+      }
+    },
+    "People you share with see the day summaries of the categories you choose, never single readings or routes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有した相手には、選んだカテゴリの日ごとの集計だけが表示され、個々の記録やルートは表示されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你共享的人只能看到你所选类别的每日汇总，看不到单条读数或路线。"
+          }
+        }
+      }
+    },
+    "Erase all Health data": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘルスケアのデータをすべて消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除全部健康数据"
+          }
+        }
+      }
+    },
+    "Erase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除"
+          }
+        }
+      }
+    },
+    "About you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたについて"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关于你"
+          }
+        }
+      }
+    },
+    "Date of birth": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生年月日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出生日期"
+          }
+        }
+      }
+    },
+    "Sex": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "性別"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "性别"
+          }
+        }
+      }
+    },
+    "Blood type": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "血液型"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "血型"
+          }
+        }
+      }
+    },
+    "Female": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "女性"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "女性"
+          }
+        }
+      }
+    },
+    "Male": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "男性"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "男性"
+          }
+        }
+      }
+    },
+    "%@ h": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 小时"
+          }
+        }
+      }
+    },
+    "%@ min": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 分钟"
+          }
+        }
+      }
+    },
+    "%@ steps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@歩"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 步"
+          }
+        }
+      }
+    },
+    "%@ will no longer see your Health data.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はあなたのヘルスケアのデータを見られなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@将无法再看到你的健康数据。"
+          }
+        }
+      }
+    },
+    "Days to be recalculated": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再計算が必要な日数"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待重新计算的天数"
+          }
+        }
+      }
+    },
+    "Health could not be turned on. Try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘルスケアをオンにできませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法开启健康。请再试一次。"
+          }
+        }
+      }
+    },
+    "If readings you expect are missing, open Settings, then Health, then Data Access & Devices, then TeaNode, and allow them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期待している記録が届かない場合は、「設定」、「ヘルスケア」、「データアクセスとデバイス」、「TeaNode」の順に開き、許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果缺少你期望的读数，请依次打开“设置”、“健康”、“数据访问与设备”、“TeaNode”，并允许访问。"
+          }
+        }
+      }
+    },
+    "It may have been erased, or it is not shared with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消去されたか、共有されていない可能性があります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它可能已被清除，或没有与你共享。"
+          }
+        }
+      }
+    },
+    "This kind of data is not here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この種類のデータはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里没有这类数据"
+          }
+        }
+      }
+    },
+    "Only the latest %lld days are drawn.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直近%lld日分だけを表示しています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只显示最近 %lld 天。"
+          }
+        }
+      }
+    },
+    "Only the latest %lld weeks are drawn.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直近%lld週分だけを表示しています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只显示最近 %lld 周。"
+          }
+        }
+      }
+    },
+    "They see the day summaries of the categories you choose, never single readings or routes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手には、選んだカテゴリの日ごとの集計だけが表示され、個々の記録やルートは表示されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他们只能看到你所选类别的每日汇总，看不到单条读数或路线。"
+          }
+        }
+      }
+    },
+    "They see the day summaries of these categories, never single readings or routes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手には、これらのカテゴリの日ごとの集計だけが表示され、個々の記録やルートは表示されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他们只能看到这些类别的每日汇总，看不到单条读数或路线。"
+          }
+        }
+      }
+    },
+    "Send now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐ送信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即发送"
+          }
+        }
+      }
+    },
+    "Sign in to turn on Health.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘルスケアをオンにするには、先にサインインしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先登录，再开启健康。"
+          }
+        }
+      }
+    },
+    "Stage": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ステージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阶段"
+          }
+        }
+      }
+    },
+    "Turn on Health": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘルスケアをオンにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启健康"
+          }
+        }
+      }
+    },
+    "health-period": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Period"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単位"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "统计单位"
+          }
+        }
+      }
+    },
+    "health-range-year": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Year"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1年"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一年"
+          }
+        }
+      }
+    },
+    "health-total": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合計"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总计"
+          }
+        }
+      }
+    },
+    "health-type-distanceWheelchair": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wheelchair distance"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "車いすの距離"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轮椅距离"
+          }
+        }
+      }
+    },
+    "health-type-pushCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wheelchair pushes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "車いすのプッシュ数"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轮椅推动次数"
+          }
+        }
+      }
+    },
+    "health-type-swimmingStrokeCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swimming strokes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "水泳のストローク数"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游泳划水次数"
+          }
+        }
+      }
+    },
+    "health-type-physicalEffort": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Physical effort"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "運動強度"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "体力消耗"
+          }
+        }
+      }
+    },
+    "health-type-cyclingSpeed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cycling speed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイクリングの速度"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "骑行速度"
+          }
+        }
+      }
+    },
+    "health-type-cyclingPower": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cycling power"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイクリングのパワー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "骑行功率"
+          }
+        }
+      }
+    },
+    "health-type-cyclingCadence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cycling cadence"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイクリングのケイデンス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "骑行踏频"
+          }
+        }
+      }
+    },
+    "health-type-runningPower": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running power"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ランニングのパワー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跑步功率"
+          }
+        }
+      }
+    },
+    "health-type-runningStrideLength": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running stride length"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ランニングの歩幅"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跑步步幅"
+          }
+        }
+      }
+    },
+    "health-type-runningGroundContactTime": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ground contact time"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接地時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "触地时间"
+          }
+        }
+      }
+    },
+    "health-type-runningVerticalOscillation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vertical oscillation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "垂直振幅"
+          }
+        }
+      }
+    },
+    "health-type-atrialFibrillationBurden": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AFib burden"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "心房細動の履歴"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "房颤负荷"
+          }
+        }
+      }
+    },
+    "health-type-highHeartRateEvent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High heart rate events"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高心拍数の通知"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "心率过高事件"
+          }
+        }
+      }
+    },
+    "health-type-lowHeartRateEvent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low heart rate events"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低心拍数の通知"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "心率过低事件"
+          }
+        }
+      }
+    },
+    "health-type-irregularHeartRhythmEvent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Irregular rhythm events"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不規則な心拍の通知"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "心律不齐事件"
+          }
+        }
+      }
+    },
+    "health-type-basalBodyTemperature": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Basal body temperature"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基礎体温"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基础体温"
+          }
+        }
+      }
+    },
+    "health-type-bloodAlcoholContent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blood alcohol content"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "血中アルコール濃度"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "血液酒精含量"
+          }
+        }
+      }
+    },
+    "health-type-forcedVitalCapacity": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forced vital capacity"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "努力性肺活量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用力肺活量"
+          }
+        }
+      }
+    },
+    "health-type-forcedExpiratoryVolume1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forced expiratory volume"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1秒量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一秒用力呼气量"
+          }
+        }
+      }
+    },
+    "health-type-peakExpiratoryFlowRate": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Peak expiratory flow"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大呼気流量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "呼气峰流速"
+          }
+        }
+      }
+    },
+    "health-type-inhalerUsage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inhaler usage"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "吸入器の使用回数"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "吸入器使用次数"
+          }
+        }
+      }
+    },
+    "health-type-environmentalSoundReduction": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Environmental sound reduction"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "環境音の低減"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "环境声音降低"
+          }
+        }
+      }
+    },
+    "health-type-audiogram": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audiograms"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オージオグラム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "听力图"
+          }
+        }
+      }
+    },
+    "health-type-dietaryCholesterol": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cholesterol"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレステロール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "胆固醇"
+          }
+        }
+      }
+    },
+    "health-type-menstrualFlow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menstrual flow"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月経"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "经期流量"
+          }
+        }
+      }
+    },
+    "health-type-intermenstrualBleeding": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spotting"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不正出血"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点状出血"
+          }
+        }
+      }
+    },
+    "health-type-ovulationTestResult": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ovulation test result"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排卵検査の結果"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排卵检测结果"
+          }
+        }
+      }
+    },
+    "health-type-sexualActivity": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sexual activity"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "性行為"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "性行为"
+          }
+        }
+      }
+    },
+    "health-type-cervicalMucusQuality": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cervical mucus quality"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "頸管粘液の質"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宫颈黏液质量"
+          }
+        }
+      }
+    },
+    "health-type-contraceptive": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contraceptive"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "避妊"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "避孕措施"
+          }
+        }
+      }
+    },
+    "health-type-insulinDelivery": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Insulin delivery"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インスリン投与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "胰岛素注射"
+          }
+        }
+      }
+    },
+    "You are not in a circle with anyone yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人在同一个圈子里。"
           }
         }
       }

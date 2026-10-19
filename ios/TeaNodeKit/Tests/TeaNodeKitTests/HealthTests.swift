@@ -151,7 +151,7 @@ final class HealthTests: XCTestCase {
         let batch = HealthBatch(
             samples: [sample(1)], deletedHealthSampleIds: ["gone-1"], daySummaries: [summary(1)], routes: [route("workout-1")],
             characteristics: [HealthCharacteristicInput(healthType: "biologicalSex", characteristicValue: "female")])
-        let result = try await connection.reportHealth(batch, agentPhoneId: "phone-1")
+        let result = try await connection.reportHealth(batch, agentPhoneId: "phone-1", healthTurnedOnAt: date("2024-03-01T00:00:00Z"))
         XCTAssertEqual(result.newSampleCount, 1)
         XCTAssertEqual(result.deletedSampleCount, 2)
         XCTAssertEqual(result.updatedDayCount, 3)
@@ -160,10 +160,37 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(result.healthErasedDate, date("2024-03-02T00:00:00Z"))
         let variables = try sentVariables(fake.sent[0])
         XCTAssertEqual(variables["agentPhoneId"], .string("phone-1"))
-        XCTAssertEqual(Set(variables.keys), ["agentPhoneId", "samples", "deletedHealthSampleIds", "daySummaries", "routes", "characteristics"])
+        XCTAssertEqual(
+            Set(variables.keys),
+            ["agentPhoneId", "healthTurnedOnAt", "samples", "deletedHealthSampleIds", "daySummaries", "routes", "characteristics"])
+        XCTAssertEqual(variables["healthTurnedOnAt"], .string("2024-03-01T00:00:00Z"))
         XCTAssertEqual(variables["deletedHealthSampleIds"], .array([.string("gone-1")]))
         XCTAssertEqual(variables["samples"], .array([sample(1).variables]))
         XCTAssertEqual(variables["routes"], .array([route("workout-1").variables]))
+    }
+
+
+    func testEveryReportSaysWhenHealthWasTurnedOnOrNullWhenItIsNotKnown() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"ReportHealth":{"newSampleCount":0,"deletedSampleCount":0,"updatedDayCount":0}}}"#)
+        _ = try await connection.reportHealth(HealthBatch(samples: [sample(1)]), healthTurnedOnAt: date("2024-03-01T08:30:15Z"))
+        _ = try await connection.reportHealth(HealthBatch(samples: [sample(1)]), healthTurnedOnAt: nil)
+        XCTAssertEqual(try sentVariables(fake.sent[0])["healthTurnedOnAt"], .string("2024-03-01T08:30:15Z"))
+        XCTAssertEqual(try sentVariables(fake.sent[1])["healthTurnedOnAt"], JSONValue.null)
+        let query = try XCTUnwrap(String(data: try XCTUnwrap(fake.sent[0].httpBody), encoding: .utf8))
+        XCTAssertTrue(query.contains("healthTurnedOnAt: $healthTurnedOnAt"))
+    }
+
+    func testAnAnswerReadsTheRoutesLeftOutForWantOfTheirWorkout() throws {
+        let result = try JSONDecoder().decode(
+            ReportHealthResult.self,
+            from: Data(
+                #"{"newSampleCount":2,"deletedSampleCount":0,"updatedDayCount":0,"deletedSamples":[],"unmatchedRouteHealthSampleIds":["workout-9"],"healthErasedAt":null}"#
+                    .utf8))
+        XCTAssertEqual(result.unmatchedRouteHealthSampleIds, ["workout-9"])
+        let both = result.merged(with: ReportHealthResult(newSampleCount: 1, deletedSampleCount: 0, updatedDayCount: 0, unmatchedRouteHealthSampleIds: ["workout-10"]))
+        XCTAssertEqual(both.unmatchedRouteHealthSampleIds, ["workout-9", "workout-10"])
+        let none = try JSONDecoder().decode(ReportHealthResult.self, from: Data(#"{"newSampleCount":0}"#.utf8))
+        XCTAssertTrue(none.unmatchedRouteHealthSampleIds.isEmpty)
     }
 
     // MARK: The views
@@ -219,6 +246,16 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(none.categorySeconds.isEmpty)
     }
 
+    func testAPeriodSaysHowManyOfItsDaysHaveASummary() throws {
+        let period = try JSONDecoder().decode(
+            HealthPeriodView.self,
+            from: Data(#"{"startDay":"2024-03-01","endDay":"2024-03-31","sampleCount":12,"dayCount":12,"sumValue":96000}"#.utf8))
+        XCTAssertEqual(period.dayCount, 12)
+        let older = try JSONDecoder().decode(HealthPeriodView.self, from: Data(#"{"startDay":"2024-03-04","endDay":"2024-03-04"}"#.utf8))
+        XCTAssertEqual(older.dayCount, 0)
+        XCTAssertTrue(Documents.healthSummary.contains("dayCount"))
+    }
+
     func testReadsAPageOfSamplesWithTheirMetadata() async throws {
         let (connection, fake) = connection(
             answering: #"""
@@ -249,6 +286,17 @@ final class HealthTests: XCTestCase {
         let route = try await connection.healthRoute(healthSampleId: "workout-1")
         XCTAssertEqual(route.points.count, 2)
         XCTAssertEqual(route.points[1], HealthRoutePoint(secondsFromStart: 60, latitudeDegrees: 10.6, longitudeDegrees: 20.6, altitudeMeters: 4.5))
+    }
+
+    func testTheSettingsReadWhenTheServerSendsNullForTheListOfFacts() throws {
+        let settings = try JSONDecoder().decode(
+            HealthSettingsView.self,
+            from: Data(#"{"canAgentReadHealth":true,"healthErasedAt":null,"sampleCount":3,"lastReceivedAt":null,"modelProviderName":"","characteristics":null}"#.utf8))
+        XCTAssertTrue(settings.canAgentReadHealth)
+        XCTAssertTrue(settings.characteristics.isEmpty)
+        let asked = try JSONDecoder().decode(HealthSettingsView.self, from: Data(#"{"canAgentReadHealth":false}"#.utf8))
+        XCTAssertEqual(asked.sampleCount, 0)
+        XCTAssertEqual(asked.modelProviderName, "")
     }
 
     func testReadsAndUpdatesTheSettings() async throws {
@@ -362,6 +410,65 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(HealthBatch.requests().requests.isEmpty)
     }
 
+    func testBatchesTooBigToSendAreCutInHalvesUntilTheyFit() {
+        // Five routes of ten thousand points are a few megabytes of JSON.
+        func longRoute(_ workoutId: String) -> HealthRouteInput {
+            var rows: [[Double]] = []
+            for index in 0..<10_000 {
+                let offset = Double(index) * 0.00001
+                rows.append([Double(index), 10.5 + offset, 20.5 + offset, 3])
+            }
+            return HealthRouteInput(healthSampleId: workoutId, routePoints: rows)
+        }
+        let routes = (0..<5).map { longRoute("workout-\($0)") }
+        let whole = HealthBatch(routes: routes)
+        XCTAssertGreaterThan(whole.encodedByteCount, 1_000_000)
+        let pieces = whole.cutToFit(byteCountMost: whole.encodedByteCount / 2)
+        XCTAssertGreaterThan(pieces.count, 1)
+        XCTAssertEqual(pieces.flatMap(\.routes).map(\.healthSampleId), (0..<5).map { "workout-\($0)" })
+        XCTAssertTrue(pieces.allSatisfy { $0.encodedByteCount <= whole.encodedByteCount / 2 || $0.entryCount == 1 })
+        // A single entry is never cut, and what fits is left as it is.
+        XCTAssertEqual(HealthBatch(routes: [routes[0]]).cutToFit(byteCountMost: 10).count, 1)
+        XCTAssertEqual(whole.cutToFit(byteCountMost: HealthBatch.encodedByteCountMost).count, 1)
+        // The plan applies the same limit.
+        XCTAssertTrue(HealthBatch.requests(samples: (0..<3).map { sample($0) }).requests.allSatisfy { $0.encodedByteCount < HealthBatch.encodedByteCountMost })
+    }
+
+    func testMetadataOverTheServersLimitLosesKeysAndNeverTheSample() {
+        let writerKeys: [String: JSONValue] = [
+            "HKExternalUUID": .string(String(repeating: "x", count: 5000)), "HKWasUserEntered": .bool(true),
+            "note": .string(String(repeating: "n", count: 4000)),
+        ]
+        let ownKeys: [String: JSONValue] = [
+            HealthWorkoutMetadata.totalDistanceMeters: .number(6800), HealthWorkoutMetadata.totalEnergyBurnedKilocalories: .number(480),
+        ]
+        let big = HealthSampleInput(
+            healthSampleId: "workout-1", healthType: "workout", startedAt: date("2024-03-01T10:00:00Z"), endedAt: date("2024-03-01T10:40:00Z"),
+            workoutActivityType: "running", sampleMetadata: writerKeys.merging(ownKeys) { first, _ in first })
+        XCTAssertLessThanOrEqual(HealthJSON.text(big.sampleMetadata).utf8.count, HealthMetadataFit.byteCountMost)
+        // The writing app's longest keys go first; the app's own totals and the small key stay.
+        XCTAssertNil(big.sampleMetadata["HKExternalUUID"])
+        XCTAssertEqual(big.sampleMetadata[HealthWorkoutMetadata.totalDistanceMeters], .number(6800))
+        XCTAssertEqual(big.sampleMetadata["HKWasUserEntered"], .bool(true))
+        XCTAssertTrue(big.isAcceptable)
+
+        // Metadata that fits is left alone, and a text beyond the limit in an
+        // own key goes last of all, not the sample.
+        let small: [String: JSONValue] = ["HKWasUserEntered": .bool(false)]
+        XCTAssertEqual(HealthMetadataFit.fitting(small), small)
+        let onlyOwn = HealthMetadataFit.fitting(["audiogramPoints": .string(String(repeating: "a", count: 20_000))])
+        XCTAssertTrue(onlyOwn.isEmpty)
+    }
+
+    func testANullCharacterIsTakenOutOfTheTextTheServerWouldRefuse() {
+        let sample = HealthSampleInput(
+            healthSampleId: "sample-1", healthType: "stepCount", startedAt: date("2024-03-01T10:00:00Z"), endedAt: date("2024-03-01T10:05:00Z"),
+            quantityValue: 1, quantityUnit: "count", sourceName: "Wa\u{0}tch", sampleMetadata: ["note": .string("a\u{0}b")])
+        XCTAssertEqual(sample.sourceName, "Watch")
+        XCTAssertEqual(sample.sampleMetadata["note"], .string("ab"))
+        XCTAssertFalse(HealthJSON.text(sample.sampleMetadata).contains("\\u0000"))
+    }
+
     func testABatchTheServerCallsInvalidIsSplitUntilTheOneEntryIsFound() throws {
         let batch = HealthBatch(
             samples: [sample(1), sample(2), sample(3)], deletedHealthSampleIds: ["gone-1"], daySummaries: [summary(1)], routes: [route("sample-1")])
@@ -470,7 +577,7 @@ final class HealthTests: XCTestCase {
     func testTheUnitsAreOnesHealthKitKnows() {
         let known: Set<String> = [
             "count", "count/min", "m", "m/s", "cm", "kg", "kcal", "min", "ms", "%", "degC", "mg/dL", "mmHg", "ml/(kg*min)", "W", "dBASPL", "S",
-            "L", "L/min", "IU", "g", "mg", "mcg", "mL", "kcal/(kg*hr)", "appleEffortScore",
+            "L", "L/min", "IU", "g", "mg", "mcg", "mL", "kcal/(kg*hr)",
         ]
         for info in HealthTypes.types(of: .quantity) {
             XCTAssertTrue(known.contains(info.quantityUnit), "\(info.healthType): \(info.quantityUnit)")
@@ -780,6 +887,75 @@ final class HealthTests: XCTestCase {
         XCTAssertNotEqual(HealthSyncState.fileName(accountKey: "account-a"), HealthSyncState.fileName(accountKey: "account-b"))
         try Data("not json".utf8).write(to: directory.appendingPathComponent(HealthSyncState.fileName(accountKey: "account-a")))
         XCTAssertEqual(HealthSyncState.load(accountKey: "account-a", inDirectory: directory), HealthSyncState(accountKey: "account-a"))
+    }
+
+    func testTheAnswerToABatchIsTakenOnlyWhenTheServerStoredIt() {
+        var state = HealthSyncState(accountKey: "account-a")
+        state.turnOn(at: date("2024-03-01T00:00:00Z"))
+        state.setAnchor(Data([1]), for: "stepCount")
+        let batch = HealthBatch(samples: [sample(1), sample(2)])
+
+        // Taken: counted by what was new to the server, and the caller may move anchors.
+        XCTAssertTrue(state.accept(ReportHealthResult(newSampleCount: 1, deletedSampleCount: 0, updatedDayCount: 0), for: batch, at: date("2024-03-01T01:00:00Z")))
+        XCTAssertEqual(state.sentSampleCount, 1)
+        XCTAssertEqual(state.lastSentAt, date("2024-03-01T01:00:00Z"))
+
+        // The server stored nothing because the person erased everything after
+        // Health was turned on: nothing is counted, the anchors are forgotten
+        // and Health is off.
+        let erased = ReportHealthResult(newSampleCount: 0, deletedSampleCount: 0, updatedDayCount: 0, healthErasedAt: "2024-03-02T00:00:00Z")
+        XCTAssertFalse(state.accept(erased, for: batch, at: date("2024-03-02T01:00:00Z")))
+        XCTAssertFalse(state.isTurnedOn)
+        XCTAssertTrue(state.anchors.isEmpty)
+        XCTAssertEqual(state.sentSampleCount, 0)
+        XCTAssertNil(state.lastSentAt)
+
+        // An erase from before Health was turned on again is not news.
+        state.turnOn(at: date("2024-03-03T00:00:00Z"))
+        XCTAssertTrue(state.accept(erased, for: batch, at: date("2024-03-03T01:00:00Z")))
+        XCTAssertTrue(state.isTurnedOn)
+    }
+
+    func testTurningOnKeepsWholeSecondsSoTheFileAndTheServerAgree() throws {
+        var state = HealthSyncState(accountKey: "account-a")
+        state.turnOn(at: Date(timeIntervalSince1970: 1_709_251_200.9))
+        XCTAssertEqual(state.healthTurnedOnAt, Date(timeIntervalSince1970: 1_709_251_200))
+        let loaded = try HealthSyncState.decoded(from: try state.encoded())
+        XCTAssertEqual(loaded.healthTurnedOnAt, state.healthTurnedOnAt)
+    }
+
+    func testTheRoutesSentAndTheHistoryAreKeptInTheFileAndForgottenOnReset() throws {
+        var state = HealthSyncState(accountKey: "account-a")
+        state.turnOn(at: date("2024-03-01T00:00:00Z"))
+        XCTAssertFalse(state.hasSentRoute(healthSampleId: "workout-1"))
+        state.recordRouteSent(healthSampleId: "workout-1")
+        state.recordRouteSent(healthSampleId: "workout-1")
+        XCTAssertEqual(state.sentRouteHealthSampleIds, ["workout-1"])
+        state.markHistoryDone()
+        let loaded = try HealthSyncState.decoded(from: try state.encoded())
+        XCTAssertTrue(loaded.hasSentRoute(healthSampleId: "workout-1"))
+        XCTAssertTrue(loaded.isHistoryDone)
+        // Only the latest are remembered.
+        for number in 0..<(HealthSyncState.sentRouteCountMost + 5) { state.recordRouteSent(healthSampleId: "run-\(number)") }
+        XCTAssertEqual(state.sentRouteHealthSampleIds.count, HealthSyncState.sentRouteCountMost)
+        XCTAssertEqual(state.sentRouteHealthSampleIds.last, "run-\(HealthSyncState.sentRouteCountMost + 4)")
+        state.turnOff()
+        XCTAssertFalse(state.isHistoryDone)
+        XCTAssertTrue(state.sentRouteHealthSampleIds.isEmpty)
+    }
+
+    func testTheAccountsHealthIsOnForAreFoundFromTheirFiles() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("health-state-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertTrue(HealthSyncState.accountKeysTurnedOn(inDirectory: directory).isEmpty)
+        var on = HealthSyncState(accountKey: "https://mail.example.com|robin")
+        on.turnOn(at: date("2024-03-01T00:00:00Z"))
+        try on.save(inDirectory: directory)
+        try HealthSyncState(accountKey: "account-off").save(inDirectory: directory)
+        try Data("not json".utf8).write(to: directory.appendingPathComponent("health-broken.json"))
+        XCTAssertEqual(HealthSyncState.accountKeysTurnedOn(inDirectory: directory), ["https://mail.example.com|robin"])
+        HealthSyncState.remove(accountKey: "https://mail.example.com|robin", inDirectory: directory)
+        XCTAssertTrue(HealthSyncState.accountKeysTurnedOn(inDirectory: directory).isEmpty)
     }
 
     func testAnEraseAfterHealthWasTurnedOnResetsTheStateAndTurnsHealthOff() {

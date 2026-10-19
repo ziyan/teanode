@@ -142,7 +142,7 @@ func TestEveryActionRefusesInOneSentenceWhileTheSwitchIsOff(t *testing.T) {
 			t.Fatalf("%s should answer, not fail: %s", action, err)
 		}
 		if !strings.Contains(content, "has not let you read their Health data") ||
-			!strings.Contains(content, "Settings > Health") || !strings.Contains(content, "iPhone app") || !strings.Contains(content, "set_up") {
+			!strings.Contains(content, "the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings") || !strings.Contains(content, "set_up") {
 			t.Errorf("%s: %q", action, content)
 		}
 		if strings.Contains(content, "\n") || strings.HasPrefix(strings.TrimSpace(content), "{") {
@@ -160,31 +160,45 @@ func TestEveryActionRefusesInOneSentenceWhileTheSwitchIsOff(t *testing.T) {
 }
 
 // set_up reads no Health data, so it works while the switch is off: it opens
-// the Health page where there is a dashboard, and says where Health is
-// otherwise.
+// the Settings tab of the Health page, where the switch is, where there is a
+// dashboard, and says where Health is otherwise. With the switch on it opens
+// the Health page itself.
 func TestSetUpWorksWhileTheSwitchIsOff(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ReadHealthSettings": switchOff}}
 	run := runOf(operations)
 	run.canShow = true
 	answer, _ := actJSON(t, run, "set_up", `{}`)
-	if run.shownPath != "/health" || answer["is_shown"] != true || answer["page_path"] != "/health" ||
+	if run.shownPath != "/health?tab=settings" || answer["is_shown"] != true || answer["page_path"] != "/health?tab=settings" ||
 		!strings.Contains(answer["setup_instructions"].(string), "iPhone") {
-		t.Errorf("the dashboard was taken to Health: %v %q", answer, run.shownPath)
+		t.Errorf("the dashboard was taken to where the switch is: %v %q", answer, run.shownPath)
 	}
+	operations = &routing{answers: map[string]string{"ReadHealthSettings": switchOn}}
+	run = runOf(operations)
+	run.canShow = true
+	if answer, _ = actJSON(t, run, "set_up", `{}`); run.shownPath != "/health" || answer["page_path"] != "/health" {
+		t.Errorf("with the switch on, the Health page: %v %q", answer, run.shownPath)
+	}
+
+	operations = &routing{answers: map[string]string{"ReadHealthSettings": switchOff}}
 	answer, _ = actJSON(t, runOf(operations), "set_up", `{}`)
-	if answer["is_shown"] != false || !strings.Contains(answer["setup_instructions"].(string), "side menu") ||
-		!strings.Contains(answer["setup_instructions"].(string), "Apple's sheet") {
+	words, _ := answer["setup_instructions"].(string)
+	if answer["is_shown"] != false || !strings.Contains(words, "side menu") || !strings.Contains(words, "Apple's Health permissions screen") ||
+		!strings.Contains(words, "the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings") ||
+		strings.Contains(words, "Settings > Health") || strings.Contains(words, "Apple's sheet") {
 		t.Errorf("where Health is: %v", answer)
 	}
 	if _, isCalled := operations.called("ReadHealthSettings"); isCalled {
-		t.Error("set_up asks nothing of the switch")
+		t.Error("where there is no dashboard to take, set_up asks nothing of the switch")
 	}
 }
 
 // types lists the kinds the person has with the latest day on one line each.
 func TestTypesListsWhatThePersonHas(t *testing.T) {
+	born := time.Now().UTC().AddDate(-40, 0, -1).Format(time.DateOnly)
 	operations := &routing{answers: map[string]string{
-		"ReadHealthSettings": switchOn,
+		"ReadHealthSettings": `{"canAgentReadHealth":true,"characteristics":[
+			{"healthType":"dateOfBirth","characteristicValue":"` + born + `"},{"healthType":"bloodType","characteristicValue":"oNegative"},
+			{"healthType":"biologicalSex","characteristicValue":"female"}]}`,
 		"ListHealthTypes": `[
 			{"healthType":"stepCount","healthCategory":"activity","typeName":"Steps","valueKind":"quantity","quantityUnit":"count","summaryKind":"sum",
 			 "firstDay":"2026-01-02","lastDay":"2026-10-17","sampleCount":4000,"latestDaySummary":{"summaryDay":"2026-10-17","sumValue":9120,"sampleCount":40}},
@@ -197,15 +211,37 @@ func TestTypesListsWhatThePersonHas(t *testing.T) {
 		t.Fatalf("the types: %v", answer)
 	}
 	steps, sleep := rows[0].(map[string]any), rows[1].(map[string]any)
-	if steps["health_type"] != "stepCount" || steps["unit"] != "count" || steps["latest_day"] != "2026-10-17: total 9,120 count; 40 readings" {
+	if steps["health_type"] != "stepCount" || steps["unit_text"] != "steps" || steps["sample_count"] != float64(4000) || steps["latest_day"] != "2026-10-17: total 9,120 steps; 40 readings" {
 		t.Errorf("steps: %v", steps)
 	}
-	if sleep["latest_day"] != "2026-10-17: time 7h 15m; 12 readings" {
+	if sleep["latest_day"] != "2026-10-17: asleep 7h 15m; 12 readings" {
 		t.Errorf("sleep: %v", sleep)
+	}
+	// What the Health app keeps once is here too, a date of birth as an age.
+	characteristics, _ := answer["characteristics"].([]any)
+	if len(characteristics) != 3 {
+		t.Fatalf("the characteristics: %v", answer["characteristics"])
+	}
+	age, bloodType := characteristics[0].(map[string]any), characteristics[1].(map[string]any)
+	if age["characteristic_name"] != "Age" || age["characteristic_text"] != "40 years" || bloodType["characteristic_text"] != "O-" ||
+		characteristics[2].(map[string]any)["characteristic_text"] != "female" {
+		t.Errorf("the characteristics: %v", characteristics)
+	}
+	if strings.Contains(string(mustMarshal(t, answer)), born) {
+		t.Error("a date of birth is told as an age, not as a date")
 	}
 	if variables, _ := operations.called("ListHealthTypes"); variables["ownerUserId"] != nil {
 		t.Errorf("the person's own types name no owner: %v", variables)
 	}
+}
+
+func mustMarshal(t *testing.T, value any) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
 }
 
 // Nothing kept yet says how to get Health going.
@@ -223,10 +259,10 @@ func TestSummaryIsOneLinePerPeriodWithUnits(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ReadHealthSettings": switchOn, "ReadHealthSummary": stepsSummary()}}
 	answer, result := actJSON(t, runOf(operations), "summary", `{"health_type":"stepCount"}`)
 	periods := answer["periods"].([]any)
-	if len(periods) != 2 || periods[0] != "2026-10-12: total 8,412 count; 96 readings" || periods[1] != "2026-10-13: total 10,250 count; 120 readings" {
+	if len(periods) != 2 || periods[0] != "2026-10-12: total 8,412 steps; 96 readings" || periods[1] != "2026-10-13: total 10,250 steps; 120 readings" {
 		t.Errorf("the periods: %v", periods)
 	}
-	if answer["unit"] != "count" || answer["period"] != "day" {
+	if answer["unit_text"] != "steps" || answer["period"] != "day" {
 		t.Errorf("the unit and period: %v", answer)
 	}
 	if result.Untrusted {
@@ -256,7 +292,7 @@ func TestSummaryLinesForAveragesAndSleep(t *testing.T) {
 			{"startDay":"2026-10-12","endDay":"2026-10-18","averageValue":71.46,"minimumValue":48,"maximumValue":152,"sampleCount":900}]}`,
 	}}
 	answer, _ := actJSON(t, runOf(operations), "summary", `{"health_type":"heartRate","period":"week"}`)
-	if line := answer["periods"].([]any)[0]; line != "2026-10-12 to 2026-10-18: average 71.46 count/min (lowest 48, highest 152); 900 readings" {
+	if line := answer["periods"].([]any)[0]; line != "2026-10-12 to 2026-10-18: average 71 bpm (lowest 48 bpm, highest 152 bpm); 900 readings" {
 		t.Errorf("the week: %v", line)
 	}
 
@@ -264,7 +300,7 @@ func TestSummaryLinesForAveragesAndSleep(t *testing.T) {
 		{"startDay":"2026-10-17","endDay":"2026-10-17","durationSeconds":26100,"sampleCount":14,
 		 "categorySeconds":{"asleepCore":12600,"asleepDeep":3000,"asleepREM":5400,"awake":600,"inBed":27000}}]}`
 	answer, _ = actJSON(t, runOf(operations), "summary", `{"health_type":"sleepAnalysis"}`)
-	want := "2026-10-17: time 7h 15m (inBed 7h 30m, asleepCore 3h 30m, asleepREM 1h 30m, asleepDeep 50m, awake 10m); 14 readings"
+	want := "2026-10-17: asleep 7h 15m (Deep 50m, Core 3h 30m, REM 1h 30m, Awake 10m, In bed 7h 30m); 14 readings"
 	if line := answer["periods"].([]any)[0]; line != want {
 		t.Errorf("sleep: %v", line)
 	}
@@ -273,8 +309,29 @@ func TestSummaryLinesForAveragesAndSleep(t *testing.T) {
 	operations.answers["ReadHealthSummary"] = `{"healthType":"sleepAnalysis","summaryKind":"duration","periods":[
 		{"startDay":"2026-10-17","endDay":"2026-10-17","durationSeconds":3600,"sampleCount":1,"categorySeconds":"{\"asleepCore\":3600}"}]}`
 	answer, _ = actJSON(t, runOf(operations), "summary", `{"health_type":"sleepAnalysis"}`)
-	if line := answer["periods"].([]any)[0]; line != "2026-10-17: time 1h (asleepCore 1h); 1 reading" {
+	if line := answer["periods"].([]any)[0]; line != "2026-10-17: asleep 1h (Core 1h); 1 reading" {
 		t.Errorf("stages as a string: %v", line)
+	}
+
+	// A week of sleep is the average night with the total, as the dashboard
+	// shows it, and the stages are those of an average night.
+	operations.answers["ReadHealthSummary"] = `{"healthType":"sleepAnalysis","summaryKind":"duration","periods":[
+		{"startDay":"2026-10-12","endDay":"2026-10-18","durationSeconds":151200,"sampleCount":80,"dayCount":6,
+		 "categorySeconds":{"asleep":151200,"asleepCore":75600,"asleepDeep":21600,"asleepREM":32400,"awake":7200}}]}`
+	answer, _ = actJSON(t, runOf(operations), "summary", `{"health_type":"sleepAnalysis","period":"week"}`)
+	want = "2026-10-12 to 2026-10-18: asleep average 7h a night over 6 nights, total 42h (a night: Deep 1h, Core 3h 30m, REM 1h 30m, Awake 20m); 80 readings"
+	if line := answer["periods"].([]any)[0]; line != want {
+		t.Errorf("a week of sleep:\n got %v\nwant %v", line, want)
+	}
+
+	// A month of steps is the total and the average day over the days that
+	// have data.
+	operations.answers["ReadHealthSummary"] = `{"healthType":"stepCount","quantityUnit":"count","summaryKind":"sum","periods":[
+		{"startDay":"2026-09-01","endDay":"2026-09-30","sumValue":240000,"sampleCount":900,"dayCount":24}]}`
+	answer, _ = actJSON(t, runOf(operations), "summary", `{"health_type":"stepCount","period":"month","from":"2026-09-01","to":"2026-09-30"}`)
+	want = "2026-09-01 to 2026-09-30: total 240,000 steps; average 10,000 steps a day over 24 days; 900 readings"
+	if line := answer["periods"].([]any)[0]; line != want {
+		t.Errorf("a month of steps:\n got %v\nwant %v", line, want)
 	}
 }
 
@@ -302,47 +359,39 @@ func TestSummaryEmptyAndTooLong(t *testing.T) {
 	}
 }
 
-// A username finds the sharer among the shares made to the person, and the
-// summary is asked as that sharer; somebody who shares nothing is refused.
-func TestSummaryOfSomebodyWhoSharesHealth(t *testing.T) {
+// The tool reads the person's own Health and nothing else: it has no username
+// to name a sharer, never asks for the shares made to the person, and never
+// sends an owner. A person who shares Health shares it with people, not with
+// their agents' model providers.
+func TestTheToolReadsOnlyThePersonsOwnHealth(t *testing.T) {
 	operations := &routing{answers: map[string]string{
 		"ReadHealthSettings": switchOn,
 		"ReadHealthSummary":  stepsSummary(),
 		"ListHealthTypes":    `[]`,
-		"ListHealthShares": `[
-			{"id":"s1","ownerUserId":"u-ada","ownerUsername":"ada","granteeUserId":"u-ben","granteeUsername":"ben","healthCategories":["sleep"]},
-			{"id":"s2","ownerUserId":"u-cleo","ownerUsername":"cleo","granteeCircleId":"c1","granteeCircleName":"Family","healthCategories":["activity"]}]`,
+		"ListHealthShares":   `[{"id":"s2","ownerUserId":"u-cleo","ownerUsername":"cleo","granteeCircleId":"c1","healthCategories":["activity"]}]`,
 	}}
-	if _, _, err := act(t, runOf(operations), "summary", `{"health_type":"stepCount","username":"Cleo"}`); err != nil {
-		t.Fatal(err)
+	for _, run := range []tools.Run{runOf(operations), chattingRun{runOf(operations)}} {
+		if _, _, err := act(t, run, "summary", `{"health_type":"stepCount"}`); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := act(t, run, "types", `{}`); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if variables, _ := operations.called("ReadHealthSummary"); variables["ownerUserId"] != "u-cleo" {
-		t.Errorf("asked as the sharer: %v", variables)
+	for _, operation := range []string{"ReadHealthSummary", "ListHealthTypes"} {
+		if variables, _ := operations.called(operation); variables["ownerUserId"] != nil {
+			t.Errorf("%s asked as somebody else: %v", operation, variables)
+		}
 	}
-	if _, _, err := act(t, runOf(operations), "types", `{"username":"cleo"}`); err != nil {
-		t.Fatal(err)
+	if _, isCalled := operations.called("ListHealthShares"); isCalled {
+		t.Error("the shares made to the person are not the tool's business")
 	}
-	if variables, _ := operations.called("ListHealthTypes"); variables["ownerUserId"] != "u-cleo" {
-		t.Errorf("types as the sharer: %v", variables)
-	}
-
-	// ben is shared with, not sharing; the person's own name is their own data.
-	if _, _, err := act(t, runOf(operations), "summary", `{"health_type":"stepCount","username":"ben"}`); err == nil || !strings.Contains(err.Error(), "does not share Health") {
-		t.Errorf("ben shares nothing: %v", err)
-	}
-	if _, _, err := act(t, runOf(operations), "summary", `{"health_type":"stepCount","username":"ada"}`); err != nil {
-		t.Fatal(err)
+	// Naming somebody does not reach their data either.
+	if _, _, err := act(t, runOf(operations), "summary", `{"health_type":"stepCount","username":"cleo"}`); err != nil {
+		t.Logf("a username is refused or ignored: %s", err)
 	}
 	if variables, _ := operations.called("ReadHealthSummary"); variables["ownerUserId"] != nil {
-		t.Errorf("the person's own name reads their own data: %v", variables)
-	}
-
-	// Nobody else's Health is repeated into a chat.
-	if _, _, err := act(t, chattingRun{runOf(operations)}, "summary", `{"health_type":"stepCount","username":"cleo"}`); err == nil || !strings.Contains(err.Error(), "chat") {
-		t.Errorf("in a chat: %v", err)
-	}
-	if _, _, err := act(t, chattingRun{runOf(operations)}, "summary", `{"health_type":"stepCount"}`); err != nil {
-		t.Errorf("the person's own in a chat: %v", err)
+		t.Errorf("a username must not reach somebody else's data: %v", variables)
 	}
 }
 
@@ -359,7 +408,7 @@ func heartRateSamples(nextOffset string) string {
 func TestSamplesPageAndSayWhenThereIsMore(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ReadHealthSettings": switchOn, "ListHealthSamples": heartRateSamples("20")}}
 	answer, result := actJSON(t, runOf(operations), "samples", `{"health_type":"heartRate","from":"2026-10-17","to":"2026-10-17"}`)
-	if answer["has_more"] != true || answer["next_offset"] != float64(20) || answer["total_count"] != float64(45) {
+	if answer["has_more"] != true || answer["next_offset"] != float64(20) || answer["total_sample_count"] != float64(45) {
 		t.Errorf("the first page: %v", answer)
 	}
 	if !result.Untrusted {
@@ -367,11 +416,11 @@ func TestSamplesPageAndSayWhenThereIsMore(t *testing.T) {
 	}
 	rows := answer["samples"].([]any)
 	first, second := rows[0].(map[string]any), rows[1].(map[string]any)
-	if first["reading"] != "72 count/min" || first["started"] != "2026-10-17 07:12" || first["source_name"] != "Watch" {
+	if first["reading_text"] != "72 bpm" || first["started_local"] != "2026-10-17 07:12" || first["source_name"] != "Watch" {
 		t.Errorf("a reading: %v", first)
 	}
-	if second["workout_activity_type"] != "running" || second["lasted"] != "35m" || second["has_route"] != true ||
-		second["details"].(map[string]any)["totalDistanceMeters"] != float64(5200) {
+	if second["workout_activity_type"] != "running" || second["duration_text"] != "35m" || second["has_route"] != true ||
+		second["sample_metadata"].(map[string]any)["totalDistanceMeters"] != float64(5200) {
 		t.Errorf("a workout: %v", second)
 	}
 	variables, _ := operations.called("ListHealthSamples")
@@ -393,7 +442,8 @@ func TestSamplesPageAndSayWhenThereIsMore(t *testing.T) {
 	}
 }
 
-// Sleep readings are named by stage, and the limit and the owner are held.
+// Sleep readings are named by stage, as the dashboard names them, and the
+// limit is held.
 func TestSamplesNameSleepStagesAndHoldTheLimits(t *testing.T) {
 	operations := &routing{answers: map[string]string{
 		"ReadHealthSettings": switchOn,
@@ -403,16 +453,13 @@ func TestSamplesNameSleepStagesAndHoldTheLimits(t *testing.T) {
 	}}
 	answer, _ := actJSON(t, runOf(operations), "samples", `{"health_type":"sleepAnalysis"}`)
 	rows := answer["samples"].([]any)
-	if rows[0].(map[string]any)["reading"] != "asleepCore" || rows[0].(map[string]any)["lasted"] != "3h 30m" || rows[1].(map[string]any)["reading"] != "asleepDeep" {
+	if rows[0].(map[string]any)["reading_text"] != "Core" || rows[0].(map[string]any)["duration_text"] != "3h 30m" || rows[1].(map[string]any)["reading_text"] != "Deep" {
 		t.Errorf("the stages: %v", rows)
 	}
-	for _, arguments := range []string{`{"health_type":"heartRate","limit":0}`, `{"health_type":"heartRate","limit":500}`, `{}`, `{"health_type":"heartRate","username":"cleo"}`} {
+	for _, arguments := range []string{`{"health_type":"heartRate","limit":0}`, `{"health_type":"heartRate","limit":500}`, `{}`} {
 		if _, _, err := act(t, runOf(operations), "samples", arguments); err == nil {
 			t.Errorf("%s should be refused", arguments)
 		}
-	}
-	if _, _, err := act(t, runOf(operations), "samples", `{"health_type":"heartRate","username":"ada"}`); err != nil {
-		t.Errorf("the person's own name is their own data: %v", err)
 	}
 }
 
@@ -432,15 +479,20 @@ func TestTheToolIsReadOnlyAndSaysWhatToPrefer(t *testing.T) {
 	if !hasPermission {
 		t.Errorf("permissions %v", tool.Permissions)
 	}
-	for _, words := range []string{"Prefer summary", "samples only for particular readings", "workout", "sleepAnalysis", "category seconds", "unit"} {
+	for _, words := range []string{"Prefer summary", "samples only for particular readings", "workout", "sleepAnalysis", "Deep, Core, REM, Awake", "unit",
+		"never what other people share with them", "not with their agents' model providers",
+		"the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings"} {
 		if !strings.Contains(tool.Description, words) {
 			t.Errorf("the description should say %q", words)
 		}
 	}
 	properties, _ := tool.Parameters["properties"].(map[string]any)
-	for _, name := range []string{"action", "health_type", "from", "to", "period", "username", "limit", "offset"} {
+	for _, name := range []string{"action", "health_type", "from", "to", "period", "limit", "offset"} {
 		if properties[name] == nil {
 			t.Errorf("no parameter %s", name)
 		}
+	}
+	if properties["username"] != nil {
+		t.Error("the tool has no way to name another person")
 	}
 }

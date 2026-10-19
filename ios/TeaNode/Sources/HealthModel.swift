@@ -52,6 +52,9 @@ final class HealthModel {
     /// The people sharing Health with the person, once each however many
     /// shares reach them, by name.
     var sharers: [HealthSharer] {
+        // The person's own shares are told apart by who they are, so none are
+        // listed until that is known.
+        guard let ownUserId else { return [] }
         var found: [String: HealthSharer] = [:]
         for share in shares where share.ownerUserId != ownUserId {
             if found[share.ownerUserId] == nil {

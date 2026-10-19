@@ -84,9 +84,9 @@ func (self *healthWorld) refusal(t *testing.T, user *models.User, query string, 
 }
 
 const (
-	reportHealthQuery = `mutation ($agentPhoneId: String, $samples: [HealthSampleInput!], $deletedHealthSampleIds: [String!], $daySummaries: [HealthDaySummaryInput!], $routes: [HealthRouteInput!], $characteristics: [HealthCharacteristicInput!]) {
-  ReportHealth(agentPhoneId: $agentPhoneId, samples: $samples, deletedHealthSampleIds: $deletedHealthSampleIds, daySummaries: $daySummaries, routes: $routes, characteristics: $characteristics) {
-    newSampleCount deletedSampleCount updatedDayCount healthErasedAt deletedSamples { healthType startedAt endedAt }
+	reportHealthQuery = `mutation ($agentPhoneId: String, $healthTurnedOnAt: DateTime, $samples: [HealthSampleInput!], $deletedHealthSampleIds: [String!], $daySummaries: [HealthDaySummaryInput!], $routes: [HealthRouteInput!], $characteristics: [HealthCharacteristicInput!]) {
+  ReportHealth(agentPhoneId: $agentPhoneId, healthTurnedOnAt: $healthTurnedOnAt, samples: $samples, deletedHealthSampleIds: $deletedHealthSampleIds, daySummaries: $daySummaries, routes: $routes, characteristics: $characteristics) {
+    newSampleCount deletedSampleCount updatedDayCount healthErasedAt unmatchedRouteHealthSampleIds deletedSamples { healthType startedAt endedAt }
   }
 }`
 	healthSettingsQuery = `query { ReadHealthSettings { canAgentReadHealth healthErasedAt sampleCount lastReceivedAt modelProviderName characteristics { healthType characteristicValue } } }`
@@ -97,12 +97,12 @@ const (
 	healthSummaryQuery = `query ($healthType: String!, $fromDay: String!, $toDay: String!, $period: String, $ownerUserId: String) {
   ReadHealthSummary(healthType: $healthType, fromDay: $fromDay, toDay: $toDay, period: $period, ownerUserId: $ownerUserId) {
     healthType quantityUnit summaryKind
-    periods { startDay endDay sumValue averageValue minimumValue maximumValue sampleCount durationSeconds categorySeconds }
+    periods { startDay endDay sumValue averageValue minimumValue maximumValue sampleCount durationSeconds dayCount categorySeconds }
   }
 }`
 	healthSamplesQuery = `query ($healthType: String!, $from: DateTime, $to: DateTime, $limitCount: Int, $offset: Int) {
   ListHealthSamples(healthType: $healthType, from: $from, to: $to, limitCount: $limitCount, offset: $offset) {
-    totalCount nextOffset
+    totalCount isTotalCountCapped nextOffset
     samples { healthSampleId healthType startedAt endedAt quantityValue quantityUnit categoryValue workoutActivityType sourceName sourceBundleId deviceName sampleMetadataJson receivedAt hasRoute }
   }
 }`
@@ -318,10 +318,11 @@ func TestHealthTypesAndSummariesByWeekAndMonth(t *testing.T) {
 	if weeks["quantityUnit"] != "count" || weeks["summaryKind"] != "sum" || len(periods) != 2 {
 		t.Fatalf("the weeks: %v", weeks)
 	}
-	if first := periods[0].(map[string]any); first["startDay"] != "2026-02-23" || first["endDay"] != "2026-03-01" || first["sumValue"] != float64(500) {
+	if first := periods[0].(map[string]any); first["startDay"] != "2026-02-23" || first["endDay"] != "2026-03-01" || first["sumValue"] != float64(500) || first["dayCount"] != float64(1) {
 		t.Errorf("Sunday ends the week before: %v", first)
 	}
-	if second := periods[1].(map[string]any); second["startDay"] != "2026-03-02" || second["endDay"] != "2026-03-08" || second["sumValue"] != float64(3000) {
+	// A per-day average divides by the days that have a summary: two of seven.
+	if second := periods[1].(map[string]any); second["startDay"] != "2026-03-02" || second["endDay"] != "2026-03-08" || second["sumValue"] != float64(3000) || second["dayCount"] != float64(2) {
 		t.Errorf("Monday starts a week: %v", second)
 	}
 	months := world.run(t, world.ada, healthSummaryQuery, map[string]any{"healthType": "heartRate", "fromDay": "2026-03-01", "toDay": "2026-03-31", "period": "month"})["ReadHealthSummary"].(map[string]any)
@@ -652,7 +653,9 @@ func TestAHealthReportThatCannotBeRightStoresNothing(t *testing.T) {
 }
 
 // The agent switch is off until the person turns it on, and the settings name
-// the provider whose servers see what the agent reads.
+// the provider whose servers see what the agent reads, as people know it:
+// OpenAI, Anthropic, Google, or the operator's own name for a service at an
+// address of its own.
 func TestHealthSettingsNameTheModelProviderAndTheAgentSwitch(t *testing.T) {
 	world := newHealthWorld(t)
 	settings := world.run(t, world.ada, healthSettingsQuery, nil)["ReadHealthSettings"].(map[string]any)
@@ -662,7 +665,9 @@ func TestHealthSettingsNameTheModelProviderAndTheAgentSwitch(t *testing.T) {
 	if err := world.graph.config.Update(func(configuration *config.Configuration) error {
 		configuration.Agent.Providers = []config.AgentProvider{
 			{Name: "primary", Kind: config.AgentProviderKindOpenAI, APIKey: "test-key"},
-			{Name: "secondary", Kind: config.AgentProviderKindOpenAI, APIKey: "test-key"},
+			{Name: "secondary", Kind: config.AgentProviderKindAnthropic, APIKey: "test-key"},
+			{Name: "third", Kind: config.AgentProviderKindGemini, APIKey: "test-key"},
+			{Name: "Local Gateway", Kind: config.AgentProviderKindOpenAI, BaseURL: "http://gateway.example.test/v1", APIKey: "test-key"},
 		}
 		configuration.Agent.Models.Default = "primary:large-model"
 		configuration.Agent.Models.Quick = "secondary:small-model"
@@ -671,20 +676,28 @@ func TestHealthSettingsNameTheModelProviderAndTheAgentSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated := world.run(t, world.ada, `mutation { UpdateHealthSettings(canAgentReadHealth: true) { canAgentReadHealth modelProviderName } }`, nil)["UpdateHealthSettings"].(map[string]any)
-	if updated["canAgentReadHealth"] != true || updated["modelProviderName"] != "primary and secondary" {
-		t.Errorf("turned on, with both providers named: %v", updated)
+	if updated["canAgentReadHealth"] != true || updated["modelProviderName"] != "OpenAI and Anthropic" {
+		t.Errorf("turned on, with both providers named as people know them: %v", updated)
 	}
 	if other := world.run(t, world.ben, healthSettingsQuery, nil)["ReadHealthSettings"].(map[string]any); other["canAgentReadHealth"] != false {
 		t.Errorf("the switch is each person's own: %v", other)
 	}
-	if err := world.graph.config.Update(func(configuration *config.Configuration) error {
-		configuration.Agent.Models.Quick = "primary:small-model"
-		return nil
-	}); err != nil {
-		t.Fatal(err)
+	for quick, want := range map[string]string{
+		"primary:small-model": "OpenAI", "third:small-model": "OpenAI and Google", "Local Gateway:small-model": "OpenAI and Local Gateway",
+	} {
+		if err := world.graph.config.Update(func(configuration *config.Configuration) error {
+			configuration.Agent.Models.Quick = quick
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if got := world.run(t, world.ada, healthSettingsQuery, nil)["ReadHealthSettings"].(map[string]any); got["modelProviderName"] != want {
+			t.Errorf("a quick model %q names %q, not %v", quick, want, got["modelProviderName"])
+		}
 	}
-	if one := world.run(t, world.ada, healthSettingsQuery, nil)["ReadHealthSettings"].(map[string]any); one["modelProviderName"] != "primary" {
-		t.Errorf("one provider is named once: %v", one)
+	// Asking for the switch alone is enough, and reads nothing else.
+	if only := world.run(t, world.ada, `query { ReadHealthSettings { canAgentReadHealth } }`, nil)["ReadHealthSettings"].(map[string]any); only["canAgentReadHealth"] != true || len(only) != 1 {
+		t.Errorf("the switch alone: %v", only)
 	}
 	off := world.run(t, world.ada, `mutation { UpdateHealthSettings(canAgentReadHealth: false) { canAgentReadHealth } }`, nil)["UpdateHealthSettings"].(map[string]any)
 	if off["canAgentReadHealth"] != false {

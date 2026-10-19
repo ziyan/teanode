@@ -39,7 +39,7 @@ extension View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let number = value.as(Double.self) {
-                        Text(verbatim: HealthText.axisText(number) + plan.axisUnitSuffix)
+                        Text(verbatim: plan.axisText(number))
                     }
                 }
             }

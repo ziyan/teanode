@@ -22,6 +22,9 @@ struct HealthSetupView: View {
     /// Called when the person has answered, either way.
     let onFinish: () -> Void
     @State private var isTurningOn = false
+    /// Why Health could not be turned on, said above the buttons while the
+    /// sheet stays open.
+    @State private var problemText: String?
 
     var body: some View {
         ScrollView {
@@ -51,15 +54,24 @@ struct HealthSetupView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                Button {
-                    Task {
-                        isTurningOn = true
-                        await HealthSync.shared.turnOn()
-                        isTurningOn = false
-                        onFinish()
+                if let problemText {
+                    Label {
+                        Text(verbatim: problemText)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
                     }
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Button {
+                    Task { await turnOn() }
                 } label: {
-                    Text("Continue").frame(maxWidth: .infinity)
+                    if isTurningOn {
+                        ProgressView().frame(maxWidth: .infinity)
+                    } else {
+                        Text("Continue").frame(maxWidth: .infinity)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -74,6 +86,21 @@ struct HealthSetupView: View {
                 .disabled(isTurningOn)
             }
             .padding()
+        }
+    }
+
+    /// Turns Health on and closes once Apple's sheet is answered and the first
+    /// readings are on the server; the rest of the history is copied after
+    /// that. If Health could not be turned on the sheet stays, with why.
+    private func turnOn() async {
+        isTurningOn = true
+        problemText = nil
+        await HealthSync.shared.turnOn()
+        isTurningOn = false
+        if HealthSync.shared.isOn {
+            onFinish()
+        } else {
+            problemText = HealthSync.shared.problemText ?? String(localized: "Health could not be turned on. Try again.")
         }
     }
 }

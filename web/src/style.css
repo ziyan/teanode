@@ -14494,31 +14494,56 @@ button.idea-history-title {
   stroke-width: 2;
 }
 
-/* The stages of a night's sleep, from the deepest up, and the band behind a
-   line of averages that reaches from the period's lowest reading to its
-   highest. Mixed from the page's own colors, so both themes follow. */
+/* The stages of a night's sleep, from the deepest up, as the Health app draws
+   them: deep a dark indigo, core a mid blue, REM a light cyan blue and awake
+   orange. Each is at least 3:1 against the card in its theme, and the neighbors
+   differ in lightness or hue. And the band behind a line of averages that
+   reaches from the period's lowest reading to its highest. */
+:root {
+  --sleep-deep: #2a1f77;
+  --sleep-core: #3a5ccf;
+  --sleep-rem: #0e9fc6;
+  --sleep-awake: #e0760b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --sleep-deep: #6558ec;
+    --sleep-core: #6aaeff;
+    --sleep-rem: #6fe3f5;
+    --sleep-awake: #fb923c;
+  }
+}
+
+:root[data-theme='dark'] {
+  --sleep-deep: #6558ec;
+  --sleep-core: #6aaeff;
+  --sleep-rem: #6fe3f5;
+  --sleep-awake: #fb923c;
+}
+
 .usage-chart-column.deep,
 .usage-chart-swatch.deep {
-  fill: var(--avatar-7);
-  background: var(--avatar-7);
+  fill: var(--sleep-deep);
+  background: var(--sleep-deep);
 }
 
 .usage-chart-column.core,
 .usage-chart-swatch.core {
-  fill: color-mix(in srgb, var(--avatar-7) 60%, var(--surface));
-  background: color-mix(in srgb, var(--avatar-7) 60%, var(--surface));
+  fill: var(--sleep-core);
+  background: var(--sleep-core);
 }
 
 .usage-chart-column.rem,
 .usage-chart-swatch.rem {
-  fill: var(--leaf);
-  background: var(--leaf);
+  fill: var(--sleep-rem);
+  background: var(--sleep-rem);
 }
 
 .usage-chart-column.awake,
 .usage-chart-swatch.awake {
-  fill: color-mix(in srgb, var(--warn) 75%, var(--surface));
-  background: color-mix(in srgb, var(--warn) 75%, var(--surface));
+  fill: var(--sleep-awake);
+  background: var(--sleep-awake);
 }
 
 .series-chart-band {
@@ -20272,6 +20297,35 @@ label.checkbox.is-plain > span > .muted {
   flex-wrap: wrap;
   gap: var(--space-2);
   justify-content: flex-end;
+  margin-bottom: var(--space-3);
+}
+
+/* The chart under the buttons while the next one is read: the same chart,
+   dimmed, so the card does not jump and the button just pressed stays. */
+.health-chart {
+  transition: opacity 0.15s ease;
+}
+
+.health-chart.is-stale {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.health-status {
+  margin: 0 0 var(--space-3);
+}
+
+.health-route-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.health-route-head h3 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .health-numbers {

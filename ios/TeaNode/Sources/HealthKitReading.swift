@@ -16,7 +16,6 @@ import TeaNodeKit
 struct HealthKitPage: Sendable {
     var samples: [HealthSampleInput] = []
     var deletedHealthSampleIds: [String] = []
-    var routes: [HealthRouteInput] = []
     /// HealthKit's anchor after this page, archived; nil only when the page
     /// holds nothing.
     var newAnchorData: Data?
@@ -46,8 +45,8 @@ final class HealthKitReader: @unchecked Sendable {
     private static let metadataKeyCountMost = 40
     private static let metadataTextLengthMost = 500
     /// The most days read in one query: a day of heart rate can be thousands
-    /// of samples.
-    private static let dayCountPerQueryMost = 14
+    /// of samples, and each is held until it has been counted.
+    private static let dayCountPerQueryMost = 7
 
     private let store = HKHealthStore()
     private let lock = NSLock()
@@ -59,8 +58,8 @@ final class HealthKitReader: @unchecked Sendable {
     /// written: the app never writes to Health.
     func requestAuthorization() async throws {
         var readTypes = Set<HKObjectType>()
-        for info in HealthTypes.all {
-            if let objectType = Self.objectType(for: info) { readTypes.insert(objectType) }
+        for typeInfo in HealthTypes.all {
+            if let objectType = Self.objectType(for: typeInfo) { readTypes.insert(objectType) }
         }
         readTypes.insert(HKSeriesType.workoutRoute())
         try await store.requestAuthorization(toShare: Set<HKSampleType>(), read: readTypes)
@@ -75,21 +74,21 @@ final class HealthKitReader: @unchecked Sendable {
 
     // MARK: Types
 
-    private static func objectType(for info: HealthTypeInfo) -> HKObjectType? {
-        if info.valueKind == .characteristic {
-            guard let identifier = info.healthKitIdentifier else { return nil }
+    private static func objectType(for typeInfo: HealthTypeInfo) -> HKObjectType? {
+        if typeInfo.valueKind == .characteristic {
+            guard let identifier = typeInfo.healthKitIdentifier else { return nil }
             return HKCharacteristicType.characteristicType(forIdentifier: HKCharacteristicTypeIdentifier(rawValue: identifier))
         }
-        return sampleType(for: info)
+        return sampleType(for: typeInfo)
     }
 
-    private static func sampleType(for info: HealthTypeInfo) -> HKSampleType? {
-        switch info.valueKind {
+    private static func sampleType(for typeInfo: HealthTypeInfo) -> HKSampleType? {
+        switch typeInfo.valueKind {
         case .quantity:
-            guard let identifier = info.healthKitIdentifier else { return nil }
+            guard let identifier = typeInfo.healthKitIdentifier else { return nil }
             return HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: identifier))
         case .category:
-            guard let identifier = info.healthKitIdentifier else { return nil }
+            guard let identifier = typeInfo.healthKitIdentifier else { return nil }
             return HKCategoryType.categoryType(forIdentifier: HKCategoryTypeIdentifier(rawValue: identifier))
         case .workout:
             return HKObjectType.workoutType()
@@ -107,7 +106,7 @@ final class HealthKitReader: @unchecked Sendable {
     /// The unit a type is read in, built from HealthKit's own constructors.
     /// `HKUnit(from:)` is not used: it stops the app with an exception on text
     /// it does not understand. A unit not listed here leaves the type unread.
-    private static func unit(for unitText: String) -> HKUnit? {
+    private static func healthKitUnit(for unitText: String) -> HKUnit? {
         switch unitText {
         case "count": return HKUnit.count()
         case "m": return HKUnit.meter()
@@ -120,7 +119,6 @@ final class HealthKitReader: @unchecked Sendable {
         case "count/min": return HKUnit.count().unitDivided(by: HKUnit.minute())
         case "kcal/(kg*hr)":
             return HKUnit.kilocalorie().unitDivided(by: HKUnit.gramUnit(with: .kilo).unitMultiplied(by: HKUnit.hour()))
-        case "appleEffortScore": return HKUnit.appleEffortScore()
         case "degC": return HKUnit.degreeCelsius()
         case "kg": return HKUnit.gramUnit(with: .kilo)
         case "g": return HKUnit.gram()
@@ -144,9 +142,12 @@ final class HealthKitReader: @unchecked Sendable {
     // MARK: Reading a page
 
     /// Reads up to `limit` objects of a type after the anchor (all of them
-    /// when there is none), and for workouts their routes.
-    func readPage(info: HealthTypeInfo, anchorData: Data?, limit: Int) async throws -> HealthKitPage {
-        guard let sampleType = Self.sampleType(for: info) else { return HealthKitPage() }
+    /// when there is none). A workout's route is not read here: a page can
+    /// hold a thousand workouts, and every route of them held at once is
+    /// hundreds of megabytes. HealthSync asks for each (routeInput) as it
+    /// sends the workout.
+    func readPage(typeInfo: HealthTypeInfo, anchorData: Data?, limit: Int) async throws -> HealthKitPage {
+        guard let sampleType = Self.sampleType(for: typeInfo) else { return HealthKitPage() }
         var anchor: HKQueryAnchor?
         if let anchorData {
             // An anchor that cannot be read means reading from the beginning,
@@ -155,45 +156,37 @@ final class HealthKitReader: @unchecked Sendable {
         }
         let descriptor = HKAnchoredObjectQueryDescriptor<HKSample>(
             predicates: [HKSamplePredicate<HKSample>.sample(type: sampleType)], anchor: anchor, limit: limit)
-        let result = try await descriptor.result(for: store)
+        let anchoredResult = try await descriptor.result(for: store)
 
         var page = HealthKitPage()
-        page.itemCount = result.addedSamples.count + result.deletedObjects.count
-        page.deletedHealthSampleIds = result.deletedObjects.map { $0.uuid.uuidString }
-        var workouts: [HKWorkout] = []
-        for sample in result.addedSamples {
-            guard let input = Self.sampleInput(from: sample, info: info) else { continue }
-            page.samples.append(input)
-            if let workout = sample as? HKWorkout { workouts.append(workout) }
-        }
-        for workout in workouts {
-            // A route that cannot be read now is found again by the sweep of
-            // recent workouts, so it does not fail the page.
-            guard let points = try? await routePoints(of: workout), !points.isEmpty else { continue }
-            page.routes.append(HealthRouteInput(healthSampleId: workout.uuid.uuidString, points: points))
+        page.itemCount = anchoredResult.addedSamples.count + anchoredResult.deletedObjects.count
+        page.deletedHealthSampleIds = anchoredResult.deletedObjects.map { $0.uuid.uuidString }
+        for sample in anchoredResult.addedSamples {
+            guard let sampleInput = Self.sampleInput(from: sample, typeInfo: typeInfo) else { continue }
+            page.samples.append(sampleInput)
         }
         if page.itemCount > 0 {
-            page.newAnchorData = try NSKeyedArchiver.archivedData(withRootObject: result.newAnchor, requiringSecureCoding: true)
+            page.newAnchorData = try NSKeyedArchiver.archivedData(withRootObject: anchoredResult.newAnchor, requiringSecureCoding: true)
         }
         return page
     }
 
     // MARK: Turning a sample into what is sent
 
-    private static func sampleInput(from sample: HKSample, info: HealthTypeInfo) -> HealthSampleInput? {
+    private static func sampleInput(from sample: HKSample, typeInfo: HealthTypeInfo) -> HealthSampleInput? {
         var metadata = plainMetadata(sample.metadata)
         var quantityValue: Double?
         var quantityUnit = ""
         var categoryValue: Int?
         var workoutActivityType = ""
 
-        switch info.valueKind {
+        switch typeInfo.valueKind {
         case .quantity:
-            guard let quantitySample = sample as? HKQuantitySample, let unit = unit(for: info.quantityUnit),
-                quantitySample.quantity.is(compatibleWith: unit)
+            guard let quantitySample = sample as? HKQuantitySample, let readUnit = healthKitUnit(for: typeInfo.quantityUnit),
+                quantitySample.quantity.is(compatibleWith: readUnit)
             else { return nil }
-            quantityValue = quantitySample.quantity.doubleValue(for: unit)
-            quantityUnit = info.quantityUnit
+            quantityValue = quantitySample.quantity.doubleValue(for: readUnit)
+            quantityUnit = typeInfo.quantityUnit
         case .category:
             guard let categorySample = sample as? HKCategorySample else { return nil }
             categoryValue = categorySample.value
@@ -224,7 +217,7 @@ final class HealthKitReader: @unchecked Sendable {
 
         let source = sample.sourceRevision.source
         return HealthSampleInput(
-            healthSampleId: sample.uuid.uuidString, healthType: info.healthType, startedAt: sample.startDate, endedAt: sample.endDate,
+            healthSampleId: sample.uuid.uuidString, healthType: typeInfo.healthType, startedAt: sample.startDate, endedAt: sample.endDate,
             quantityValue: quantityValue, quantityUnit: quantityUnit, categoryValue: categoryValue, workoutActivityType: workoutActivityType,
             sourceName: source.name, sourceBundleId: source.bundleIdentifier, deviceName: sample.device?.name ?? "", sampleMetadata: metadata)
     }
@@ -254,23 +247,44 @@ final class HealthKitReader: @unchecked Sendable {
     /// summaries read them by.
     private static func workoutTotals(of workout: HKWorkout) -> [String: JSONValue] {
         var totals: [String: JSONValue] = [:]
-        let energyType = HKQuantityType(.activeEnergyBurned)
-        if let energy = workout.statistics(for: energyType)?.sumQuantity(), energy.is(compatibleWith: HKUnit.kilocalorie()) {
-            totals[HealthWorkoutMetadata.totalEnergyBurnedKilocalories] = .number(energy.doubleValue(for: HKUnit.kilocalorie()))
+        let kilocalories = HKUnit.kilocalorie()
+        let meters = HKUnit.meter()
+        if let energy = workout.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity(), energy.is(compatibleWith: kilocalories) {
+            totals[HealthWorkoutMetadata.totalEnergyBurnedKilocalories] = .number(energy.doubleValue(for: kilocalories))
         }
         // A workout counts its distance under the type of its sport.
-        let distanceTypes: [HKQuantityType] = [
-            HKQuantityType(.distanceWalkingRunning), HKQuantityType(.distanceCycling), HKQuantityType(.distanceSwimming),
-            HKQuantityType(.distanceWheelchair), HKQuantityType(.distanceDownhillSnowSports), HKQuantityType(.distanceCrossCountrySkiing),
-            HKQuantityType(.distancePaddleSports), HKQuantityType(.distanceRowing), HKQuantityType(.distanceSkatingSports),
-        ]
-        for distanceType in distanceTypes {
-            if let distance = workout.statistics(for: distanceType)?.sumQuantity(), distance.is(compatibleWith: HKUnit.meter()) {
-                totals[HealthWorkoutMetadata.totalDistanceMeters] = .number(distance.doubleValue(for: HKUnit.meter()))
+        for distanceType in Self.distanceTypes() {
+            if let distance = workout.statistics(for: distanceType)?.sumQuantity(), distance.is(compatibleWith: meters) {
+                totals[HealthWorkoutMetadata.totalDistanceMeters] = .number(distance.doubleValue(for: meters))
                 break
             }
         }
+        // A workout written by an older app has its totals on the workout
+        // itself and no statistics. These two properties are deprecated, and
+        // still there.
+        if totals[HealthWorkoutMetadata.totalEnergyBurnedKilocalories] == nil, let energy = workout.totalEnergyBurned,
+            energy.is(compatibleWith: kilocalories)
+        {
+            totals[HealthWorkoutMetadata.totalEnergyBurnedKilocalories] = .number(energy.doubleValue(for: kilocalories))
+        }
+        if totals[HealthWorkoutMetadata.totalDistanceMeters] == nil, let distance = workout.totalDistance, distance.is(compatibleWith: meters) {
+            totals[HealthWorkoutMetadata.totalDistanceMeters] = .number(distance.doubleValue(for: meters))
+        }
         return totals
+    }
+
+    /// The distance types a workout may count its distance under, looked up
+    /// by HealthKit's name for each so that a type the system does not have
+    /// is left out rather than stopping the build. A function and not a
+    /// stored property: the types are not Sendable.
+    private static func distanceTypes() -> [HKQuantityType] {
+        let names = [
+            "DistanceWalkingRunning", "DistanceCycling", "DistanceSwimming", "DistanceWheelchair", "DistanceDownhillSnowSports",
+            "DistanceCrossCountrySkiing", "DistancePaddleSports", "DistanceRowing", "DistanceSkatingSports",
+        ]
+        return names.compactMap { name in
+            HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: "HKQuantityTypeIdentifier" + name))
+        }
     }
 
     private static func audiogramPoints(of audiogram: HKAudiogramSample) -> [JSONValue] {
@@ -302,56 +316,20 @@ final class HealthKitReader: @unchecked Sendable {
         switch kind {
         case .momentaryEmotion: return "momentaryEmotion"
         case .dailyMood: return "dailyMood"
-        default: return "unrecognized"
+        default: return "kind\(kind.rawValue)"
         }
     }
 
+    /// A label is named by HealthKit's number for it: the list of labels
+    /// grows with each system, and a number is what stays the same.
     private static func stateOfMindLabelName(_ label: HKStateOfMind.Label) -> String {
-        switch label {
-        case .amazed: return "amazed"
-        case .amused: return "amused"
-        case .angry: return "angry"
-        case .annoyed: return "annoyed"
-        case .anxious: return "anxious"
-        case .ashamed: return "ashamed"
-        case .brave: return "brave"
-        case .calm: return "calm"
-        case .confident: return "confident"
-        case .content: return "content"
-        case .disappointed: return "disappointed"
-        case .discouraged: return "discouraged"
-        case .disgusted: return "disgusted"
-        case .drained: return "drained"
-        case .embarrassed: return "embarrassed"
-        case .excited: return "excited"
-        case .frustrated: return "frustrated"
-        case .grateful: return "grateful"
-        case .guilty: return "guilty"
-        case .happy: return "happy"
-        case .hopeful: return "hopeful"
-        case .hopeless: return "hopeless"
-        case .indifferent: return "indifferent"
-        case .irritated: return "irritated"
-        case .jealous: return "jealous"
-        case .joyful: return "joyful"
-        case .lonely: return "lonely"
-        case .overwhelmed: return "overwhelmed"
-        case .passionate: return "passionate"
-        case .peaceful: return "peaceful"
-        case .proud: return "proud"
-        case .relieved: return "relieved"
-        case .sad: return "sad"
-        case .satisfied: return "satisfied"
-        case .scared: return "scared"
-        case .stressed: return "stressed"
-        case .surprised: return "surprised"
-        case .worried: return "worried"
-        default: return "label\(label.rawValue)"
-        }
+        "label\(label.rawValue)"
     }
 
-    /// A workout's sport by name. A sport this list does not have is "other";
-    /// the raw value is in the sample's metadata too.
+    /// A workout's sport by name, for the sports that have been in HealthKit
+    /// for years. Any other is "other", and its number is in the sample's
+    /// metadata too (workoutActivityTypeRawValue). Both kinds of dance are
+    /// "dance".
     private static func activityTypeName(_ activityType: HKWorkoutActivityType) -> String {
         switch activityType {
         case .americanFootball: return "americanFootball"
@@ -363,7 +341,6 @@ final class HealthKitReader: @unchecked Sendable {
         case .basketball: return "basketball"
         case .bowling: return "bowling"
         case .boxing: return "boxing"
-        case .cardioDance: return "cardioDance"
         case .climbing: return "climbing"
         case .cooldown: return "cooldown"
         case .coreTraining: return "coreTraining"
@@ -372,7 +349,6 @@ final class HealthKitReader: @unchecked Sendable {
         case .crossTraining: return "crossTraining"
         case .curling: return "curling"
         case .cycling: return "cycling"
-        case .dance: return "dance"
         case .discSports: return "discSports"
         case .downhillSkiing: return "downhillSkiing"
         case .elliptical: return "elliptical"
@@ -397,10 +373,9 @@ final class HealthKitReader: @unchecked Sendable {
         case .mindAndBody: return "mindAndBody"
         case .mixedCardio: return "mixedCardio"
         case .paddleSports: return "paddleSports"
-        case .pickleball: return "pickleball"
-        case .pilates: return "pilates"
         case .play: return "play"
         case .preparationAndRecovery: return "preparationAndRecovery"
+        case .pilates: return "pilates"
         case .racquetball: return "racquetball"
         case .rowing: return "rowing"
         case .rugby: return "rugby"
@@ -410,22 +385,18 @@ final class HealthKitReader: @unchecked Sendable {
         case .snowSports: return "snowSports"
         case .snowboarding: return "snowboarding"
         case .soccer: return "soccer"
-        case .socialDance: return "socialDance"
         case .softball: return "softball"
         case .squash: return "squash"
         case .stairClimbing: return "stairClimbing"
         case .stairs: return "stairs"
         case .stepTraining: return "stepTraining"
         case .surfingSports: return "surfingSports"
-        case .swimBikeRun: return "swimBikeRun"
         case .swimming: return "swimming"
         case .tableTennis: return "tableTennis"
         case .taiChi: return "taiChi"
         case .tennis: return "tennis"
         case .trackAndField: return "trackAndField"
         case .traditionalStrengthTraining: return "traditionalStrengthTraining"
-        case .transition: return "transition"
-        case .underwaterDiving: return "underwaterDiving"
         case .volleyball: return "volleyball"
         case .walking: return "walking"
         case .waterFitness: return "waterFitness"
@@ -435,6 +406,7 @@ final class HealthKitReader: @unchecked Sendable {
         case .wheelchairWalkPace: return "wheelchairWalkPace"
         case .wrestling: return "wrestling"
         case .yoga: return "yoga"
+        case .cardioDance, .socialDance: return "dance"
         default: return "other"
         }
     }
@@ -472,20 +444,26 @@ final class HealthKitReader: @unchecked Sendable {
         }
     }
 
-    /// Workouts of the last days whose route has not been sent: a route is
-    /// often saved a little after its workout, so the page that carried the
-    /// workout did not have it.
-    func recentWorkoutRoutes(since date: Date, excluding sentHealthSampleIds: Set<String>) async throws -> [HealthRouteInput] {
+    /// The workouts of the last days, whose route may have been saved after
+    /// the workout was read.
+    func recentWorkoutHealthSampleIds(since date: Date) async throws -> [String] {
         let predicate = HKQuery.predicateForSamples(withStart: date, end: nil, options: [])
         let workoutDescriptor = HKSampleQueryDescriptor<HKWorkout>(
             predicates: [HKSamplePredicate<HKWorkout>.workout(predicate)], sortDescriptors: [], limit: nil)
         let workouts = try await workoutDescriptor.result(for: store)
-        var routes: [HealthRouteInput] = []
-        for workout in workouts where !sentHealthSampleIds.contains(workout.uuid.uuidString) {
-            let points = try await routePoints(of: workout)
-            if !points.isEmpty { routes.append(HealthRouteInput(healthSampleId: workout.uuid.uuidString, points: points)) }
-        }
-        return routes
+        return workouts.map { $0.uuid.uuidString }
+    }
+
+    /// The route of one workout, read when it is about to be sent; nil if the
+    /// workout has none (yet).
+    func routeInput(forWorkoutHealthSampleId healthSampleId: String) async throws -> HealthRouteInput? {
+        guard let workoutUUID = UUID(uuidString: healthSampleId) else { return nil }
+        let workoutDescriptor = HKSampleQueryDescriptor<HKWorkout>(
+            predicates: [HKSamplePredicate<HKWorkout>.workout(HKQuery.predicateForObject(with: workoutUUID))], sortDescriptors: [], limit: 1)
+        guard let workout = try await workoutDescriptor.result(for: store).first else { return nil }
+        let points = try await routePoints(of: workout)
+        guard !points.isEmpty else { return nil }
+        return HealthRouteInput(healthSampleId: healthSampleId, points: points)
     }
 
     // MARK: Day summaries
@@ -495,25 +473,26 @@ final class HealthKitReader: @unchecked Sendable {
     /// does; everything else from the samples of the day, by TeaNodeKit. A day
     /// with nothing on it comes back as an empty summary, which tells the
     /// server the day is empty now.
-    func daySummaries(info: HealthTypeInfo, days: [String], calendar: Calendar) async throws -> [HealthDaySummaryInput] {
+    func daySummaries(typeInfo: HealthTypeInfo, days: [String], calendar: Calendar) async throws -> [HealthDaySummaryInput] {
         var summaries: [HealthDaySummaryInput] = []
         for run in Self.runs(of: days, calendar: calendar) {
-            switch info.valueKind {
+            switch typeInfo.valueKind {
             case .quantity:
-                summaries += try await quantitySummaries(info: info, days: run.days, interval: run.interval, calendar: calendar)
+                summaries += try await quantitySummaries(typeInfo: typeInfo, days: run.days, interval: run.interval, calendar: calendar)
             case .category:
-                summaries += try await categoryDaySummaries(info: info, days: run.days, interval: run.interval, calendar: calendar)
+                summaries += try await categoryDaySummaries(typeInfo: typeInfo, days: run.days, interval: run.interval, calendar: calendar)
             case .workout:
                 summaries += try await workoutDaySummaries(days: run.days, interval: run.interval, calendar: calendar)
             case .electrocardiogram, .audiogram, .stateOfMind:
-                summaries += try await countedDaySummaries(info: info, days: run.days, interval: run.interval, calendar: calendar)
+                summaries += try await countedDaySummaries(typeInfo: typeInfo, days: run.days, interval: run.interval, calendar: calendar)
             case .characteristic:
                 break
             }
         }
         let summarizedDays = Set(summaries.map(\.summaryDay))
         for day in days where !summarizedDays.contains(day) {
-            summaries.append(HealthDaySummaryInput(healthType: info.healthType, summaryDay: day, quantityUnit: info.quantityUnit, sampleCount: 0))
+            summaries.append(
+                HealthDaySummaryInput(healthType: typeInfo.healthType, summaryDay: day, quantityUnit: typeInfo.quantityUnit, sampleCount: 0))
         }
         return summaries
     }
@@ -527,7 +506,7 @@ final class HealthKitReader: @unchecked Sendable {
         var runEnd: Date?
         for day in Set(days).sorted() {
             guard let interval = HealthDays.interval(ofDay: day, calendar: calendar) else { continue }
-            if let end = runEnd, runDays.count < dayCountPerQueryMost, abs(interval.start.timeIntervalSince(end)) < 1 {
+            if let runEndDate = runEnd, runDays.count < dayCountPerQueryMost, abs(interval.start.timeIntervalSince(runEndDate)) < 1 {
                 runDays.append(day)
                 runEnd = interval.end
             } else {
@@ -542,10 +521,13 @@ final class HealthKitReader: @unchecked Sendable {
     }
 
     private func quantitySummaries(
-        info: HealthTypeInfo, days: [String], interval: DateInterval, calendar: Calendar
+        typeInfo: HealthTypeInfo, days: [String], interval: DateInterval, calendar: Calendar
     ) async throws -> [HealthDaySummaryInput] {
-        guard let quantityType = Self.sampleType(for: info) as? HKQuantityType, let unit = Self.unit(for: info.quantityUnit) else { return [] }
-        let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
+        guard let quantityType = Self.sampleType(for: typeInfo) as? HKQuantityType, let readUnit = Self.healthKitUnit(for: typeInfo.quantityUnit)
+        else { return [] }
+        // No option: a reading that begins before midnight and ends after it
+        // is split between the days, as the Health app counts it.
+        let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: [])
         // What HealthKit allows depends on how the type adds up: asking for
         // an average of steps stops the app with an exception.
         let isCumulative = quantityType.aggregationStyle == .cumulative
@@ -554,28 +536,36 @@ final class HealthKitReader: @unchecked Sendable {
             predicate: HKSamplePredicate<HKQuantitySample>.quantitySample(type: quantityType, predicate: predicate), options: options,
             anchorDate: interval.start, intervalComponents: DateComponents(day: 1))
         let collection = try await statisticsDescriptor.result(for: store)
-
-        // HealthKit does not count the samples behind a statistic, and the
-        // server weights a month's average by them.
-        let sampleDescriptor = HKSampleQueryDescriptor<HKQuantitySample>(
-            predicates: [HKSamplePredicate<HKQuantitySample>.quantitySample(type: quantityType, predicate: predicate)], sortDescriptors: [],
-            limit: nil)
-        let samples = try await sampleDescriptor.result(for: store)
-        var sampleCounts: [String: Int] = [:]
-        for sample in samples { sampleCounts[HealthDays.text(of: sample.startDate, calendar: calendar), default: 0] += 1 }
+        let sampleCounts = try await sampleCountsByDay(quantityType: quantityType, interval: interval, calendar: calendar)
 
         var summaries: [HealthDaySummaryInput] = []
         for statistics in collection.statistics() {
             let day = HealthDays.text(of: statistics.startDate, calendar: calendar)
             guard days.contains(day) else { continue }
             let measured = HealthQuantityStatistics(
-                sumValue: Self.number(statistics.sumQuantity(), unit: unit), averageValue: Self.number(statistics.averageQuantity(), unit: unit),
-                minimumValue: Self.number(statistics.minimumQuantity(), unit: unit),
-                maximumValue: Self.number(statistics.maximumQuantity(), unit: unit), sampleCount: sampleCounts[day] ?? 0)
+                sumValue: Self.number(statistics.sumQuantity(), unit: readUnit), averageValue: Self.number(statistics.averageQuantity(), unit: readUnit),
+                minimumValue: Self.number(statistics.minimumQuantity(), unit: readUnit),
+                maximumValue: Self.number(statistics.maximumQuantity(), unit: readUnit), sampleCount: sampleCounts[day] ?? 0)
             summaries.append(
-                HealthDaySummaries.quantitySummary(healthType: info.healthType, summaryDay: day, statistics: measured, quantityUnit: info.quantityUnit))
+                HealthDaySummaries.quantitySummary(
+                    healthType: typeInfo.healthType, summaryDay: day, statistics: measured, quantityUnit: typeInfo.quantityUnit))
         }
         return summaries
+    }
+
+    /// How many readings begin on each day of the interval. HealthKit does
+    /// not count the readings behind a statistic, and the server weights a
+    /// month's average by them. They are counted and let go, a few days at a
+    /// time.
+    private func sampleCountsByDay(quantityType: HKQuantityType, interval: DateInterval, calendar: Calendar) async throws -> [String: Int] {
+        let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
+        let sampleDescriptor = HKSampleQueryDescriptor<HKQuantitySample>(
+            predicates: [HKSamplePredicate<HKQuantitySample>.quantitySample(type: quantityType, predicate: predicate)], sortDescriptors: [],
+            limit: nil)
+        let samples = try await sampleDescriptor.result(for: store)
+        var sampleCounts: [String: Int] = [:]
+        for sample in samples { sampleCounts[HealthDays.text(of: sample.startDate, calendar: calendar), default: 0] += 1 }
+        return sampleCounts
     }
 
     private static func number(_ quantity: HKQuantity?, unit: HKUnit) -> Double? {
@@ -585,9 +575,9 @@ final class HealthKitReader: @unchecked Sendable {
     }
 
     private func categoryDaySummaries(
-        info: HealthTypeInfo, days: [String], interval: DateInterval, calendar: Calendar
+        typeInfo: HealthTypeInfo, days: [String], interval: DateInterval, calendar: Calendar
     ) async throws -> [HealthDaySummaryInput] {
-        guard let categoryType = Self.sampleType(for: info) as? HKCategoryType else { return [] }
+        guard let categoryType = Self.sampleType(for: typeInfo) as? HKCategoryType else { return [] }
         // Every sample that overlaps the days, not only those that begin in
         // them: a night's sleep begins the evening before.
         let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: [])
@@ -598,7 +588,7 @@ final class HealthKitReader: @unchecked Sendable {
         let categorySamples = samples.map {
             HealthCategorySample(healthSampleId: $0.uuid.uuidString, startedAt: $0.startDate, endedAt: $0.endDate, categoryValue: $0.value)
         }
-        return HealthDaySummaries.categorySummaries(healthType: info.healthType, samples: categorySamples, calendar: calendar, days: Set(days))
+        return HealthDaySummaries.categorySummaries(healthType: typeInfo.healthType, samples: categorySamples, calendar: calendar, days: Set(days))
     }
 
     private func workoutDaySummaries(days: [String], interval: DateInterval, calendar: Calendar) async throws -> [HealthDaySummaryInput] {
@@ -608,11 +598,11 @@ final class HealthKitReader: @unchecked Sendable {
         let workouts = try await descriptor.result(for: store)
         // The same conversion as for sending, so the summary and the samples
         // agree on a workout's totals.
-        let workoutInfo = HealthTypes.info(for: "workout")
+        let workoutTypeInfo = HealthTypes.info(for: "workout")
         var workoutSamples: [HealthWorkoutSample] = []
-        if let workoutInfo {
+        if let workoutTypeInfo {
             for workout in workouts {
-                if let input = Self.sampleInput(from: workout, info: workoutInfo), let workoutSample = HealthWorkoutSample(input) {
+                if let input = Self.sampleInput(from: workout, typeInfo: workoutTypeInfo), let workoutSample = HealthWorkoutSample(input) {
                     workoutSamples.append(workoutSample)
                 }
             }
@@ -623,9 +613,9 @@ final class HealthKitReader: @unchecked Sendable {
     /// Electrocardiograms, audiograms and State of Mind entries are counted by
     /// the day they began.
     private func countedDaySummaries(
-        info: HealthTypeInfo, days: [String], interval: DateInterval, calendar: Calendar
+        typeInfo: HealthTypeInfo, days: [String], interval: DateInterval, calendar: Calendar
     ) async throws -> [HealthDaySummaryInput] {
-        guard let sampleType = Self.sampleType(for: info) else { return [] }
+        guard let sampleType = Self.sampleType(for: typeInfo) else { return [] }
         let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
         let descriptor = HKSampleQueryDescriptor<HKSample>(
             predicates: [HKSamplePredicate<HKSample>.sample(type: sampleType, predicate: predicate)], sortDescriptors: [], limit: nil)
@@ -633,7 +623,7 @@ final class HealthKitReader: @unchecked Sendable {
         let categorySamples = samples.map {
             HealthCategorySample(healthSampleId: $0.uuid.uuidString, startedAt: $0.startDate, endedAt: $0.endDate, categoryValue: 0)
         }
-        return HealthDaySummaries.countSummaries(healthType: info.healthType, samples: categorySamples, calendar: calendar, days: Set(days))
+        return HealthDaySummaries.countSummaries(healthType: typeInfo.healthType, samples: categorySamples, calendar: calendar, days: Set(days))
     }
 
     // MARK: Characteristics
@@ -697,16 +687,30 @@ final class HealthKitReader: @unchecked Sendable {
     /// Starts one observer for each readable type, and asks iOS to wake the
     /// app about each at most hourly. Called as the app launches, whether the
     /// person opened it or iOS relaunched it for new data: iOS delivers the
-    /// event to an observer that exists then.
+    /// event to an observer that exists then, so every observer is made and
+    /// started before anything is awaited, and the background deliveries are
+    /// asked for afterwards, all at once.
     func startObserving(handler: @escaping HealthKitObserverHandler) async {
         var targets: [(healthType: String, sampleType: HKSampleType)] = []
-        for info in HealthTypes.all where info.valueKind != .characteristic {
-            if let sampleType = Self.sampleType(for: info) { targets.append((info.healthType, sampleType)) }
+        for typeInfo in HealthTypes.all where typeInfo.valueKind != .characteristic {
+            if let sampleType = Self.sampleType(for: typeInfo) { targets.append((typeInfo.healthType, sampleType)) }
         }
         targets.append((Self.workoutRouteHealthType, HKSeriesType.workoutRoute()))
-        for target in targets {
+        let started = startObservers(for: targets, handler: handler)
+        await enableBackgroundDelivery(for: started)
+    }
+
+    /// Makes and executes an observer for each target that has none. The
+    /// check and the remembering are one step under the lock, so two calls at
+    /// once (the launch, and the account being known) make one observer for
+    /// each type between them. Returns the sample types it made one for.
+    private func startObservers(for targets: [(healthType: String, sampleType: HKSampleType)], handler: @escaping HealthKitObserverHandler)
+        -> [HKSampleType]
+    {
+        var made: [(sampleType: HKSampleType, query: HKObserverQuery)] = []
+        lock.lock()
+        for target in targets where observerQueries[target.healthType] == nil {
             let healthType = target.healthType
-            guard !isObserving(healthType) else { continue }
             let query = HKObserverQuery(sampleType: target.sampleType, predicate: nil) { _, completionHandler, error in
                 // iOS hands the completion handler over to be called once, on
                 // whichever thread finishes the work.
@@ -717,11 +721,25 @@ final class HealthKitReader: @unchecked Sendable {
                 }
                 handler(healthType) { finish() }
             }
-            remember(query, for: healthType)
-            store.execute(query)
-            // The person may not have allowed this type, which fails here and
-            // is no reason to stop the others.
-            try? await store.enableBackgroundDelivery(for: target.sampleType, frequency: .hourly)
+            observerQueries[healthType] = query
+            made.append((target.sampleType, query))
+        }
+        lock.unlock()
+        for observer in made { store.execute(observer.query) }
+        return made.map(\.sampleType)
+    }
+
+    /// Asks iOS to wake the app about each type at most hourly. The person
+    /// may not have allowed a type, which fails for that type and is no
+    /// reason to stop the others.
+    private func enableBackgroundDelivery(for sampleTypes: [HKSampleType]) async {
+        nonisolated(unsafe) let types = sampleTypes
+        await withTaskGroup(of: Void.self) { group in
+            for index in types.indices {
+                group.addTask {
+                    _ = try? await self.store.enableBackgroundDelivery(for: types[index], frequency: .hourly)
+                }
+            }
         }
     }
 
@@ -729,18 +747,6 @@ final class HealthKitReader: @unchecked Sendable {
     func stopObserving() async {
         for query in forgetObserverQueries() { store.stop(query) }
         try? await store.disableAllBackgroundDelivery()
-    }
-
-    private func isObserving(_ healthType: String) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return observerQueries[healthType] != nil
-    }
-
-    private func remember(_ query: HKObserverQuery, for healthType: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        observerQueries[healthType] = query
     }
 
     private func forgetObserverQueries() -> [HKObserverQuery] {

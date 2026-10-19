@@ -228,8 +228,6 @@ public enum HealthTypes {
         quantity("paddleSportsSpeed", .activity, "m/s", .average, "Paddle Sports Speed"),
         quantity("rowingSpeed", .activity, "m/s", .average, "Rowing Speed"),
         quantity("physicalEffort", .activity, "kcal/(kg*hr)", .average, "Physical Effort"),
-        quantity("workoutEffortScore", .activity, "appleEffortScore", .average, "Workout Effort Score"),
-        quantity("estimatedWorkoutEffortScore", .activity, "appleEffortScore", .average, "Estimated Workout Effort Score"),
         quantity("underwaterDepth", .activity, "m", .average, "Underwater Depth"),
         quantity("waterTemperature", .activity, "degC", .average, "Water Temperature"),
         category("appleStandHour", .activity, .count, "Stand Hours"),

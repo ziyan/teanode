@@ -56,7 +56,7 @@ type HealthSample struct {
 
 // DeletedHealthSample is what is left to say about a reading that was
 // deleted: which kind it was and when, so that the phone can work out the
-// days it touched again.
+// days it touched again. It is kept for HealthDeletedSampleDays.
 type DeletedHealthSample struct {
 	HealthType string    `json:"healthType"`
 	StartedAt  time.Time `json:"startedAt"`
@@ -94,7 +94,7 @@ type HealthDaySummary struct {
 
 // HealthPeriodSummary is the days of one period added up. A sum is the days'
 // sums added, an average the days' averages weighted by how many readings each
-// had, a minimum the lowest of the days' minimums, a maximum the highest of the
+// had (a day with none counts as one), a minimum the lowest of the days' minimums, a maximum the highest of the
 // maximums, and the durations and the seconds of each category added.
 type HealthPeriodSummary struct {
 	// StartDay and EndDay are the first and last day of the period, written
@@ -109,6 +109,11 @@ type HealthPeriodSummary struct {
 
 	SampleCount     int      `json:"sampleCount"`
 	DurationSeconds *float64 `json:"durationSeconds,omitempty"`
+
+	// DayCount is how many days of the period have a summary, which is what
+	// a per-day average of a sum or a duration divides by: a month the phone
+	// sent twelve days of is twelve days, not thirty.
+	DayCount int `json:"dayCount"`
 
 	// CategorySeconds is the seconds of each of the category's words.
 	CategorySeconds map[string]float64 `json:"categorySeconds"`
@@ -151,8 +156,10 @@ type HealthCharacteristic struct {
 	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
-// HealthStatus is what a person's Health holds, for their settings.
-type HealthStatus struct {
+// HealthChoices is what a person has decided about their Health, which lives
+// on their account and is cheap to read: every report and every check of the
+// agent's switch reads it.
+type HealthChoices struct {
 	// CanAgentReadHealth is the person's switch for the agent's health tool;
 	// off until they turn it on.
 	CanAgentReadHealth bool `json:"canAgentReadHealth"`
@@ -160,6 +167,30 @@ type HealthStatus struct {
 	// HealthErasedAt is when the person last erased all of their Health data,
 	// nil if they never did.
 	HealthErasedAt *time.Time `json:"healthErasedAt,omitempty"`
+}
+
+// HealthSamplePage is a page of readings, newest first.
+type HealthSamplePage struct {
+	Samples []*HealthSample `json:"samples"`
+
+	// HasMore is whether a reading follows the page.
+	HasMore bool `json:"hasMore"`
+
+	// TotalCount is how many readings match, when it was asked for: exact
+	// up to HealthSampleCountMost, and that number when there are more
+	// (IsTotalCountCapped).
+	TotalCount         int  `json:"totalCount"`
+	IsTotalCountCapped bool `json:"isTotalCountCapped"`
+}
+
+// HealthSampleCountMost is the most readings a count of a range goes on to
+// count: counting more of a person's millions of readings would make every
+// page slow.
+const HealthSampleCountMost = 100000
+
+// HealthStatus is what a person's Health holds, for their settings.
+type HealthStatus struct {
+	HealthChoices
 
 	SampleCount int `json:"sampleCount"`
 
@@ -199,3 +230,8 @@ type HealthShare struct {
 	GranteeName       string `json:"granteeName,omitempty"`
 	GranteeCircleName string `json:"granteeCircleName,omitempty"`
 }
+
+// HealthDeletedSampleDays is how many days what is known of a deleted reading
+// is kept, which is how long a phone may take to learn that its deletion went
+// through.
+const HealthDeletedSampleDays = 30

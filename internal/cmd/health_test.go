@@ -27,8 +27,8 @@ func healthServer(test *testing.T) (*httptest.Server, func(string) map[string]an
 			{"healthType":"sleepAnalysis","healthCategory":"sleep","typeName":"Sleep","valueKind":"category","summaryKind":"duration",
 			 "firstDay":"2026-09-01","lastDay":"2026-10-17","sampleCount":900,"latestDaySummary":{"summaryDay":"2026-10-17","durationSeconds":26100,"sampleCount":12}}]`,
 		"ReadHealthSummary": `{"healthType":"stepCount","quantityUnit":"count","summaryKind":"sum","periods":[
-			{"startDay":"2026-10-12","endDay":"2026-10-18","sumValue":61250.6,"sampleCount":700},
-			{"startDay":"2026-10-19","endDay":"2026-10-19","sumValue":8000,"sampleCount":90}]}`,
+			{"startDay":"2026-10-12","endDay":"2026-10-18","sumValue":61250.6,"sampleCount":700,"dayCount":6},
+			{"startDay":"2026-10-19","endDay":"2026-10-19","sumValue":8000,"sampleCount":90,"dayCount":1}]}`,
 		"ListHealthSamples": `{"totalCount":45,"nextOffset":20,"samples":[
 			{"healthSampleId":"h1","healthType":"heartRate","startedAt":"2026-10-17T07:12:00Z","endedAt":"2026-10-17T07:12:00Z","quantityValue":72,"quantityUnit":"count/min","sourceName":"Watch","hasRoute":false},
 			{"healthSampleId":"h2","healthType":"workout","startedAt":"2026-10-17T06:00:00Z","endedAt":"2026-10-17T06:35:00Z","workoutActivityType":"running","sourceName":"Watch","hasRoute":true}]}`,
@@ -86,14 +86,15 @@ func runHealthCommand(test *testing.T, server *httptest.Server, arguments ...str
 	return output, err
 }
 
-// types is a table with the unit, the days, and the latest day in words.
+// types is a table with the unit's word, the days, and the latest day in
+// words, and then the facts about the person that Health keeps.
 func TestHealthTypesPrintsATable(test *testing.T) {
 	server, _ := healthServer(test)
 	output, err := runHealthCommand(test, server, "types")
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{"stepCount", "activity", "Steps", "count", "2026-01-02 to 2026-10-17", "4000", "2026-10-17: 9,120 count", "2026-10-17: 7h 15m"} {
+	for _, want := range []string{"stepCount", "activity", "Steps", "steps", "2026-01-02 to 2026-10-17", "4000", "2026-10-17: 9,120 steps", "2026-10-17: 7h 15m", "Blood Type", "A+"} {
 		if !strings.Contains(output, want) {
 			test.Errorf("the table should hold %q: %q", want, output)
 		}
@@ -114,7 +115,9 @@ func TestHealthSummaryDefaultsAndColumns(test *testing.T) {
 	if variables["healthType"] != "stepCount" || variables["period"] != "day" || variables["toDay"] != today || variables["fromDay"] != thirtyDaysBack || variables["ownerUserId"] != nil {
 		test.Errorf("the defaults: %v", variables)
 	}
-	if !strings.Contains(output, "2026-10-12 to 2026-10-18") || !strings.Contains(output, "61,251 count") || !strings.Contains(output, "total") || strings.Contains(output, "average") {
+	// A week also says how many days it holds and the average day over them.
+	if !strings.Contains(output, "2026-10-12 to 2026-10-18") || !strings.Contains(output, "61,251 steps") || !strings.Contains(output, "total") ||
+		!strings.Contains(output, "per day") || !strings.Contains(output, "10,208 steps") || strings.Contains(output, "average") {
 		test.Errorf("the table: %q", output)
 	}
 
@@ -145,22 +148,27 @@ func TestHealthSummaryRefusesWhatIsNotARange(test *testing.T) {
 	}
 }
 
-// --user finds the sharer among the shares made to the caller.
+// --person finds the sharer among the shares made to the caller, and shows no
+// count of readings for what is shared.
 func TestHealthSummaryOfSomebodyWhoShares(test *testing.T) {
 	server, called := healthServer(test)
-	if _, err := runHealthCommand(test, server, "summary", "stepCount", "--user", "Cleo"); err != nil {
+	if _, err := runHealthCommand(test, server, "summary", "stepCount", "--person", "Cleo"); err != nil {
 		test.Fatal(err)
 	}
 	if called("ReadHealthSummary")["ownerUserId"] != "u-cleo" {
 		test.Errorf("cleo's account was asked about: %v", called("ReadHealthSummary"))
 	}
-	if _, err := runHealthCommand(test, server, "types", "--user", "cleo"); err != nil {
+	output, err := runHealthCommand(test, server, "types", "--person", "cleo")
+	if err != nil {
 		test.Fatal(err)
+	}
+	if strings.Contains(output, "4000") || strings.Contains(output, "Blood Type") {
+		test.Errorf("somebody else's types show neither a count of readings nor the facts about the caller: %q", output)
 	}
 	if called("ListHealthTypes")["ownerUserId"] != "u-cleo" {
 		test.Errorf("cleo's types: %v", called("ListHealthTypes"))
 	}
-	if _, err := runHealthCommand(test, server, "summary", "stepCount", "--user", "stranger"); err == nil || !strings.Contains(err.Error(), "does not share Health") {
+	if _, err := runHealthCommand(test, server, "summary", "stepCount", "--person", "stranger"); err == nil || !strings.Contains(err.Error(), "does not share Health") {
 		test.Errorf("a stranger: %v", err)
 	}
 }
@@ -181,7 +189,7 @@ func TestHealthSamplesPage(test *testing.T) {
 	if to.Sub(from) < 23*time.Hour || to.Sub(from) > 25*time.Hour {
 		test.Errorf("a whole day: %v to %v", from, to)
 	}
-	for _, want := range []string{"72 count/min", "Watch", "running", "35m", "h2"} {
+	for _, want := range []string{"72 bpm", "Watch", "running", "35m", "h2"} {
 		if !strings.Contains(output, want) {
 			test.Errorf("the table should hold %q: %q", want, output)
 		}

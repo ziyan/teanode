@@ -10,17 +10,23 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/health"
 )
 
 const (
 	// defaultDayCount is how many days a summary or a list of readings goes
-	// back when no range is given, counting the last day.
+	// back when no range is given, counting the last day: the same on every
+	// surface.
 	defaultDayCount = 30
 
 	// periodLimit is the most periods the API answers. Day periods reach it
 	// first, so the tool says so in words before asking.
 	periodLimit = 400
 
+	// defaultSampleLimit is 20 readings where the dashboard and the command
+	// line show 50: every reading goes into the model's context, with its
+	// metadata, and a page of fifty workouts would fill it. The model asks for
+	// more with limit and next_offset.
 	defaultSampleLimit = 20
 	largestSampleLimit = 200
 )
@@ -29,20 +35,14 @@ const (
 // let the agent read their Health data. It is an answer, not an error, so that
 // the model tells the person where the switch is rather than trying again.
 const notAllowedWords = "The person has not let you read their Health data. " +
-	"They can turn on \"Let the agent read Health data\" in Settings > Health on the dashboard or in the iPhone app, and then ask again. " +
-	"You can offer to open Health with set_up."
-
-// errOthersInChat is what an action answers when it is asked for somebody
-// else's Health in a chat: the answer would be posted to everybody in the
-// room, and the person shared it with the owner of the agent alone.
-var errOthersInChat = errors.New("another person's Health is not repeated into a chat, because everybody in it would read it: " +
-	"the person can ask in a private conversation with you instead")
+	"They can turn on \"Let the agent read Health data\" in the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings, and then ask again. " +
+	"You can offer to open it with set_up."
 
 // scope is what every action needs: the run, the person's zone and now.
 type scope struct {
 	run        tools.Run
 	operations tools.Operations
-	where      *time.Location
+	timeZone   *time.Location
 	now        time.Time
 }
 
@@ -51,43 +51,20 @@ func scopeOf(ctx context.Context) (*scope, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &scope{run: run, operations: run.Operations(), where: tools.Location(run.Owner()), now: time.Now()}, nil
+	return &scope{run: run, operations: run.Operations(), timeZone: tools.Location(run.Owner()), now: time.Now()}, nil
 }
 
 // isAllowed says whether the person has let the agent read their Health data.
+// It asks for that one fact, which the server reads from the person's account
+// without touching their readings.
 func (self *scope) isAllowed(ctx context.Context) (bool, error) {
 	var result struct {
 		ReadHealthSettings *client.HealthSettingsView `json:"ReadHealthSettings"`
 	}
-	if err := self.operations.Execute(ctx, client.DocumentReadHealthSettings, nil, &result); err != nil {
+	if err := self.operations.Execute(ctx, client.DocumentReadHealthAgentSwitch, nil, &result); err != nil {
 		return false, err
 	}
 	return result.ReadHealthSettings != nil && result.ReadHealthSettings.CanAgentReadHealth, nil
-}
-
-// ownerUserId is the account of somebody who shares Health with the person,
-// by username, found among the shares made to the person; empty is the
-// person's own. In a chat turn nobody else's Health is read.
-func (self *scope) ownerUserId(ctx context.Context, username string) (string, error) {
-	username = strings.TrimSpace(username)
-	if username == "" || strings.EqualFold(username, self.run.Owner().Username) {
-		return "", nil
-	}
-	if tools.IsAnsweringInChat(self.run) {
-		return "", errOthersInChat
-	}
-	var result struct {
-		ListHealthShares []*client.HealthShareView `json:"ListHealthShares"`
-	}
-	if err := self.operations.Execute(ctx, client.DocumentListHealthShares, nil, &result); err != nil {
-		return "", err
-	}
-	for _, share := range result.ListHealthShares {
-		if share.OwnerUserID != self.run.Owner().ID && strings.EqualFold(share.OwnerUsername, username) {
-			return share.OwnerUserID, nil
-		}
-	}
-	return "", fmt.Errorf("%q does not share Health with the person", username)
 }
 
 // day reads a first or last day in the person's zone.
@@ -96,7 +73,7 @@ func (self *scope) day(name, value string, fallback time.Time) (time.Time, error
 	if value == "" {
 		return fallback, nil
 	}
-	parsed, err := time.ParseInLocation(time.DateOnly, value, self.where)
+	parsed, err := time.ParseInLocation(time.DateOnly, value, self.timeZone)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("%s %q is not a day: write YYYY-MM-DD", name, value)
 	}
@@ -105,8 +82,8 @@ func (self *scope) day(name, value string, fallback time.Time) (time.Time, error
 
 // days is the range asked for: the last 30 days ending today unless given.
 func (self *scope) days(from, to string) (time.Time, time.Time, error) {
-	local := self.now.In(self.where)
-	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, self.where)
+	local := self.now.In(self.timeZone)
+	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, self.timeZone)
 	lastDay, err := self.day("to", to, today)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
@@ -133,48 +110,6 @@ func periodCount(firstDay, lastDay time.Time, period string) int {
 	return dayCount
 }
 
-// countWords is a count with its noun, as a person writes it.
-func countWords(count int, noun string) string {
-	if count == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%s %ss", client.HealthNumberWords(float64(count)), noun)
-}
-
-// periodLine is one period as a line: what the days added up to, in the way
-// the type adds up, and how many readings it came from.
-func periodLine(period *client.HealthPeriodView, quantityUnit string) string {
-	label := period.StartDay
-	if period.EndDay != "" && period.EndDay != period.StartDay {
-		label += " to " + period.EndDay
-	}
-	var parts []string
-	if period.SumValue != nil {
-		parts = append(parts, "total "+client.HealthValueWords(*period.SumValue, quantityUnit))
-	}
-	if period.AverageValue != nil {
-		average := "average " + client.HealthValueWords(*period.AverageValue, quantityUnit)
-		if period.MinimumValue != nil && period.MaximumValue != nil {
-			average += fmt.Sprintf(" (lowest %s, highest %s)", client.HealthNumberWords(client.HealthShownValue(*period.MinimumValue, quantityUnit)), client.HealthNumberWords(client.HealthShownValue(*period.MaximumValue, quantityUnit)))
-		}
-		parts = append(parts, average)
-	}
-	if period.DurationSeconds != nil {
-		duration := "time " + client.HealthDurationWords(*period.DurationSeconds)
-		if stages := period.CategorySeconds.Words(); stages != "" {
-			duration += " (" + stages + ")"
-		}
-		parts = append(parts, duration)
-	}
-	if period.SampleCount > 0 {
-		parts = append(parts, countWords(period.SampleCount, "reading"))
-	}
-	if len(parts) == 0 {
-		parts = append(parts, "no readings")
-	}
-	return label + ": " + strings.Join(parts, "; ")
-}
-
 // withGate runs an action only when the person has let the agent read their
 // Health data, and otherwise answers in one sentence that they have not.
 func withGate(run func(ctx context.Context, call *tools.Call, here *scope) (*tools.Result, error)) func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -194,53 +129,57 @@ func withGate(run func(ctx context.Context, call *tools.Call, here *scope) (*too
 	}
 }
 
-type typesArguments struct {
-	Username string `json:"username"`
-}
-
 var runTypes = withGate(func(ctx context.Context, call *tools.Call, here *scope) (*tools.Result, error) {
-	arguments, err := tools.DecodeArguments[typesArguments](call)
-	if err != nil {
-		return nil, err
-	}
-	ownerUserId, err := here.ownerUserId(ctx, arguments.Username)
-	if err != nil {
-		return nil, err
-	}
-	variables := map[string]any{}
-	if ownerUserId != "" {
-		variables["ownerUserId"] = ownerUserId
-	}
 	var result struct {
 		ListHealthTypes []*client.HealthTypeView `json:"ListHealthTypes"`
 	}
-	if err := here.operations.Execute(ctx, client.DocumentListHealthTypes, variables, &result); err != nil {
+	if err := here.operations.Execute(ctx, client.DocumentListHealthTypes, map[string]any{}, &result); err != nil {
 		return nil, err
 	}
 	rows := make([]map[string]any, 0, len(result.ListHealthTypes))
 	for _, each := range result.ListHealthTypes {
 		row := map[string]any{
 			"health_type": each.HealthType, "type_name": each.TypeName, "health_category": each.HealthCategory,
-			"summary_kind": each.SummaryKind, "reading_count": each.SampleCount,
+			"summary_kind": each.SummaryKind, "sample_count": each.SampleCount,
 		}
-		if each.QuantityUnit != "" {
-			row["unit"] = each.QuantityUnit
+		if unit := health.UnitWords(each.HealthType, each.QuantityUnit); unit != "" {
+			row["unit_text"] = unit
 		}
 		if each.FirstDay != "" {
 			row["first_day"], row["last_day"] = each.FirstDay, each.LastDay
 		}
 		if latest := each.LatestDaySummary; latest != nil {
-			row["latest_day"] = periodLine(&client.HealthPeriodView{
+			row["latest_day"] = client.HealthPeriodWords(&client.HealthPeriodView{
 				StartDay: latest.SummaryDay, SumValue: latest.SumValue, AverageValue: latest.AverageValue,
 				MinimumValue: latest.MinimumValue, MaximumValue: latest.MaximumValue,
-				SampleCount: latest.SampleCount, DurationSeconds: latest.DurationSeconds,
-			}, each.QuantityUnit)
+				SampleCount: latest.SampleCount, DurationSeconds: latest.DurationSeconds, CategorySeconds: latest.CategorySeconds,
+			}, each.HealthType, each.QuantityUnit)
 		}
 		rows = append(rows, row)
 	}
 	answer := map[string]any{"types": rows}
 	if len(rows) == 0 {
-		answer["note"] = "no Health data is kept yet: the person turns Health on in the TeaNode app on their iPhone"
+		answer["note"] = "no Health data is kept yet: the person turns on Health in the TeaNode app on their iPhone"
+	}
+
+	// The facts about the person that the Health app keeps once help answer
+	// questions about the rest (a heart rate means something different at
+	// 25 and at 70), so they are here with the kinds.
+	var settings struct {
+		ReadHealthSettings *client.HealthSettingsView `json:"ReadHealthSettings"`
+	}
+	if err := here.operations.Execute(ctx, client.DocumentReadHealthSettings, nil, &settings); err != nil {
+		return nil, err
+	}
+	if settings.ReadHealthSettings != nil && len(settings.ReadHealthSettings.Characteristics) > 0 {
+		characteristics := make([]map[string]any, 0, len(settings.ReadHealthSettings.Characteristics))
+		for _, characteristic := range settings.ReadHealthSettings.Characteristics {
+			characteristics = append(characteristics, map[string]any{
+				"health_type": characteristic.HealthType, "characteristic_name": health.CharacteristicName(characteristic.HealthType),
+				"characteristic_text": health.CharacteristicWords(characteristic.HealthType, characteristic.CharacteristicValue, here.now.In(here.timeZone)),
+			})
+		}
+		answer["characteristics"] = characteristics
 	}
 	return tools.JSONResult(answer)
 })
@@ -250,7 +189,6 @@ type summaryArguments struct {
 	From       string `json:"from"`
 	To         string `json:"to"`
 	Period     string `json:"period"`
-	Username   string `json:"username"`
 }
 
 var runSummary = withGate(func(ctx context.Context, call *tools.Call, here *scope) (*tools.Result, error) {
@@ -276,35 +214,28 @@ var runSummary = withGate(func(ctx context.Context, call *tools.Call, here *scop
 	if periodCount(firstDay, lastDay, period) > periodLimit {
 		return nil, fmt.Errorf("that range makes more than %d periods: ask for a shorter range, or use period week or month", periodLimit)
 	}
-	ownerUserId, err := here.ownerUserId(ctx, arguments.Username)
-	if err != nil {
-		return nil, err
-	}
 	variables := map[string]any{
 		"healthType": healthType, "fromDay": firstDay.Format(time.DateOnly), "toDay": lastDay.Format(time.DateOnly), "period": period,
-	}
-	if ownerUserId != "" {
-		variables["ownerUserId"] = ownerUserId
 	}
 	var result struct {
 		ReadHealthSummary *client.HealthSummaryView `json:"ReadHealthSummary"`
 	}
 	if err := here.operations.Execute(ctx, client.DocumentReadHealthSummary, variables, &result); err != nil {
-		if ownerUserId != "" && errors.Is(err, client.ErrNotFound) {
-			return nil, fmt.Errorf("%s does not share %s with the person: types with username says what they share", arguments.Username, healthType)
-		}
 		return nil, err
 	}
 	summary := result.ReadHealthSummary
 	answer := map[string]any{
-		"health_type": healthType, "period": period, "timezone": here.where.String(),
+		"health_type": healthType, "period": period, "time_zone": here.timeZone.String(),
 		"from": firstDay.Format(time.DateOnly), "to": lastDay.Format(time.DateOnly),
 	}
 	lines := []string{}
 	if summary != nil {
-		answer["unit"], answer["summary_kind"] = summary.QuantityUnit, summary.SummaryKind
+		if unit := health.UnitWords(healthType, summary.QuantityUnit); unit != "" {
+			answer["unit_text"] = unit
+		}
+		answer["summary_kind"] = summary.SummaryKind
 		for _, each := range summary.Periods {
-			lines = append(lines, periodLine(each, summary.QuantityUnit))
+			lines = append(lines, client.HealthPeriodWords(each, healthType, summary.QuantityUnit))
 		}
 	}
 	answer["periods"] = lines
@@ -318,13 +249,9 @@ type samplesArguments struct {
 	HealthType string `json:"health_type"`
 	From       string `json:"from"`
 	To         string `json:"to"`
-	Username   string `json:"username"`
 	Limit      *int   `json:"limit"`
 	Offset     *int   `json:"offset"`
 }
-
-// sleepStageNames are the values of HealthKit's sleep analysis, by raw value.
-var sleepStageNames = map[int]string{0: "inBed", 1: "asleepUnspecified", 2: "awake", 3: "asleepCore", 4: "asleepDeep", 5: "asleepREM"}
 
 var runSamples = withGate(func(ctx context.Context, call *tools.Call, here *scope) (*tools.Result, error) {
 	arguments, err := tools.DecodeArguments[samplesArguments](call)
@@ -334,9 +261,6 @@ var runSamples = withGate(func(ctx context.Context, call *tools.Call, here *scop
 	healthType := strings.TrimSpace(arguments.HealthType)
 	if healthType == "" {
 		return nil, errors.New("health_type is required: types lists the ones the person has")
-	}
-	if strings.TrimSpace(arguments.Username) != "" && !strings.EqualFold(strings.TrimSpace(arguments.Username), here.run.Owner().Username) {
-		return nil, errors.New("readings are the person's own only: somebody who shares Health shares day summaries, which summary with username reads")
 	}
 	limit := defaultSampleLimit
 	if arguments.Limit != nil {
@@ -372,35 +296,40 @@ var runSamples = withGate(func(ctx context.Context, call *tools.Call, here *scop
 	for _, sample := range page.Samples {
 		rows = append(rows, here.sampleRow(sample))
 	}
-	answer := map[string]any{"timezone": here.where.String(), "samples": rows, "total_count": page.TotalCount, "has_more": page.NextOffset != nil}
+	answer := map[string]any{
+		"time_zone": here.timeZone.String(), "samples": rows, "total_sample_count": page.TotalCount, "has_more": page.NextOffset != nil,
+	}
+	if page.IsTotalCountCapped {
+		answer["is_total_sample_count_capped"] = true
+	}
 	if page.NextOffset != nil {
 		answer["next_offset"] = *page.NextOffset
 	}
 	if len(rows) == 0 {
 		answer["note"] = "no readings in this range"
 	}
-	result2, err := tools.JSONResult(answer)
-	if result2 != nil {
-		// Sources and details are written by other apps.
-		result2.Untrusted = true
+	jsonResult, err := tools.JSONResult(answer)
+	if jsonResult != nil {
+		// Sources and metadata are written by other apps.
+		jsonResult.Untrusted = true
 	}
-	return result2, err
+	return jsonResult, err
 })
 
 // sampleRow is one reading as the model reads it: when, how long, what it
 // said with its unit, and where it came from.
 func (self *scope) sampleRow(sample *client.HealthSampleView) map[string]any {
 	row := map[string]any{
-		"sample_id": sample.HealthSampleID,
-		"started":   sample.StartedAt.In(self.where).Format("2006-01-02 15:04"),
-		"lasted":    client.HealthDurationWords(sample.EndedAt.Sub(sample.StartedAt).Seconds()),
+		"sample_id":     sample.HealthSampleID,
+		"started_local": sample.StartedAt.In(self.timeZone).Format("2006-01-02 15:04"),
+		"duration_text": client.HealthDurationWords(sample.EndedAt.Sub(sample.StartedAt).Seconds()),
 	}
 	switch {
 	case sample.QuantityValue != nil:
-		row["reading"] = client.HealthValueWords(*sample.QuantityValue, sample.QuantityUnit)
+		row["reading_text"] = client.HealthValueWords(sample.HealthType, *sample.QuantityValue, sample.QuantityUnit)
 	case sample.CategoryValue != nil:
-		if name, isKnown := sleepStageNames[*sample.CategoryValue]; isKnown && sample.HealthType == "sleepAnalysis" {
-			row["reading"] = name
+		if key, isKnown := health.SleepStageKeys[*sample.CategoryValue]; isKnown && sample.HealthType == "sleepAnalysis" {
+			row["reading_text"] = health.StageName(key)
 		} else {
 			row["category_value"] = *sample.CategoryValue
 		}
@@ -417,37 +346,48 @@ func (self *scope) sampleRow(sample *client.HealthSampleView) map[string]any {
 	if sample.HasRoute {
 		row["has_route"] = true
 	}
-	var details map[string]any
-	if json.Unmarshal([]byte(sample.SampleMetadataJSON), &details) == nil && len(details) > 0 {
-		row["details"] = details
+	var metadata map[string]any
+	if json.Unmarshal([]byte(sample.SampleMetadataJSON), &metadata) == nil && len(metadata) > 0 {
+		row["sample_metadata"] = metadata
 	}
 	return row
 }
 
-// pagePath is the Health page of the dashboard.
-const pagePath = "/health"
+// pagePath is the Health page of the dashboard, and settingsPagePath its
+// Settings tab, where the switch that lets the agent read Health is.
+const (
+	pagePath         = "/health"
+	settingsPagePath = "/health?tab=settings"
+)
 
 // setUpWords is where Health comes from, which is all there is to say about
 // setting it up: the phone does the reading.
 const setUpWords = "Health is in the side menu of the dashboard, and in the TeaNode app on their iPhone, which copies the Health data to their server. " +
-	"They turn on Health in the app's Settings and choose what to share in Apple's sheet. " +
-	"Letting you read it is a separate switch, \"Let the agent read Health data\", in Settings > Health."
+	"They turn on Health in the app's Settings and allow the Health data they want on Apple's Health permissions screen. " +
+	"Letting you read it is a separate switch, \"Let the agent read Health data\", in the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings."
 
 // runSetUp takes the dashboard the person reads this in to the Health page,
 // or says where to find it where there is no dashboard to take. It reads no
-// Health data, so it is not behind the switch.
+// Health data, so it is not behind the switch. While the switch is off it
+// opens the Settings tab, where the switch is.
 func runSetUp(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	showing, ok := tools.MustRun(ctx).(tools.Showing)
 	if !ok || !showing.CanShowPages() {
 		return tools.JSONResult(map[string]any{"is_shown": false, "setup_instructions": setUpWords})
 	}
-	showing.ShowPage(pagePath)
+	path := pagePath
+	if here, err := scopeOf(ctx); err == nil {
+		if isAllowed, err := here.isAllowed(ctx); err == nil && !isAllowed {
+			path = settingsPagePath
+		}
+	}
+	showing.ShowPage(path)
 	result, err := tools.JSONResult(map[string]any{
-		"is_shown": true, "page_path": pagePath, "setup_instructions": "Health is open. " + setUpWords,
+		"is_shown": true, "page_path": path, "setup_instructions": "Health is open. " + setUpWords,
 	})
 	if err != nil {
 		return nil, err
 	}
-	result.Note = "Opened " + pagePath
+	result.Note = "Opened " + path
 	return result, nil
 }

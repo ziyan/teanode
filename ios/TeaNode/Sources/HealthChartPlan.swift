@@ -7,7 +7,7 @@ import TeaNodeKit
 // reading for what is read as a level (heart rate, weight). The same plan as
 // the dashboard's (web/src/pages/health/healthChart.tsx).
 
-/// HealthRange is how far back a chart reaches.
+/// HealthRange is how far back a chart reaches. A chart opens on the last 30 days.
 enum HealthRange: Int, CaseIterable, Identifiable {
     case thirtyDays = 30
     case ninetyDays = 90
@@ -94,6 +94,13 @@ struct HealthChartPlan {
     let plots: [HealthPlot]
     let stageSegments: [HealthStageSegment]
     let numbers: HealthNumbers
+    /// The stages a chart of sleep has marks for, from the deepest up: those
+    /// the periods have time in, and time in bed only when that is all there
+    /// is.
+    let drawnStages: [HealthSleepStage]
+    /// How many seconds one unit of a bar's height is: an hour for sleep, a
+    /// minute for workouts.
+    let chartUnitSeconds: Double
 
     /// The stages of sleep a chart stacks, from the deepest up. In bed is
     /// left out: it covers the time asleep.
@@ -121,19 +128,29 @@ struct HealthChartPlan {
         return HealthText.shortDayText(periodKey)
     }
 
-    /// What follows a number on the value axis: hours for a time, nothing
-    /// for the rest (the headline has the unit).
-    var axisUnitSuffix: String { summaryKind == .duration ? " h" : "" }
+    /// A number on the value axis: hours or minutes for a time, as the person
+    /// reads a percentage for one, and nothing else added (the headline has
+    /// the unit).
+    func axisText(_ value: Double) -> String {
+        if summaryKind == .duration {
+            let number = HealthText.axisText(value)
+            return chartUnitSeconds == Self.minuteSeconds ? String(localized: "\(number) min") : String(localized: "\(number) h")
+        }
+        return HealthText.axisText(quantityUnit == "%" ? value * 100 : value)
+    }
+
+    static let hourSeconds = 3600.0
+    static let minuteSeconds = 60.0
 
     // MARK: The legend of sleep
 
     var stageKeyEntries: [ChartKeyEntry] {
-        Self.shownStages.map { ChartKeyEntry(label: HealthWords.stageName($0), color: Self.color(of: $0)) }
+        drawnStages.map { ChartKeyEntry(label: HealthWords.stageName($0), color: Self.color(of: $0)) }
     }
 
-    var stageTitles: [String] { Self.shownStages.map { HealthWords.stageName($0) } }
+    var stageTitles: [String] { drawnStages.map { HealthWords.stageName($0) } }
 
-    var stageColors: [Color] { Self.shownStages.map { Self.color(of: $0) } }
+    var stageColors: [Color] { drawnStages.map { Self.color(of: $0) } }
 
     static func color(of stage: HealthSleepStage) -> Color {
         switch stage {
@@ -161,11 +178,11 @@ struct HealthChartPlan {
                 HealthFigureRow(label: String(localized: "Highest"), valueText: text(numbers.highestValue)),
             ]
         case .count:
-            return [HealthFigureRow(label: String(localized: "Total"), valueText: text(numbers.totalValue))]
+            return [HealthFigureRow(label: HealthWords.totalTitle, valueText: text(numbers.totalValue))]
         case .sum, .duration:
             return [
                 HealthFigureRow(label: String(localized: "Average per day"), valueText: text(numbers.averagePerDayValue)),
-                HealthFigureRow(label: String(localized: "Total"), valueText: text(numbers.totalValue)),
+                HealthFigureRow(label: HealthWords.totalTitle, valueText: text(numbers.totalValue)),
             ]
         }
     }
@@ -176,7 +193,9 @@ struct HealthChartPlan {
     /// `toDay` ("YYYY-MM-DD").
     static func make(summary: HealthSummaryView, type: HealthTypeView, period: HealthPeriod, fromDay: String, toDay: String) -> HealthChartPlan {
         let summaryKind = summary.summaryKindValue ?? type.summaryKindValue ?? .sum
-        let quantityUnit = summary.quantityUnit.isEmpty ? type.quantityUnit : summary.quantityUnit
+        let sentUnit = summary.quantityUnit.isEmpty ? type.quantityUnit : summary.quantityUnit
+        let quantityUnit = HealthText.displayUnit(healthType: type.healthType, quantityUnit: sentUnit)
+        let chartUnitSeconds = type.valueKindValue == .workout ? minuteSeconds : hourSeconds
         let filledPeriods = summary.periods.filter { $0.sampleCount > 0 }
         let rowsByKey = Dictionary(filledPeriods.map { (String($0.startDay.prefix(10)), $0) }, uniquingKeysWith: { first, _ in first })
         let periodKeys: [String]
@@ -185,10 +204,11 @@ struct HealthChartPlan {
         } else {
             periodKeys = summary.periods.map { String($0.startDay.prefix(10)) }
         }
-        let isStaged = summaryKind == .duration && filledPeriods.contains { row in Self.stageSeconds(of: row).values.contains { $0 > 0 } }
+        let isStaged = summaryKind == .duration && filledPeriods.contains { row in !Self.stageSeconds(of: row).isEmpty }
         let shape: Shape = isStaged ? .stages : (summaryKind == .average ? .level : .bars)
         let builder = HealthPlotBuilder(
-            summaryKind: summaryKind, quantityUnit: quantityUnit, period: period, fromDay: fromDay, toDay: toDay, shape: shape)
+            summaryKind: summaryKind, quantityUnit: quantityUnit, period: period, fromDay: fromDay, toDay: toDay, shape: shape,
+            chartUnitSeconds: chartUnitSeconds)
         var plots: [HealthPlot] = []
         var stageSegments: [HealthStageSegment] = []
         for periodKey in periodKeys {
@@ -196,19 +216,33 @@ struct HealthChartPlan {
             plots.append(builder.plot(for: row, periodKey: periodKey))
             if isStaged { stageSegments.append(contentsOf: builder.segments(for: row, periodKey: periodKey)) }
         }
+        let segmentStages = Set(stageSegments.map(\.stage))
+        let drawnStages = (shownStages + [HealthSleepStage.inBed]).filter { segmentStages.contains($0) }
         return HealthChartPlan(
             shape: shape, summaryKind: summaryKind, quantityUnit: quantityUnit, period: period, periodKeys: periodKeys, plots: plots,
             stageSegments: stageSegments,
-            numbers: numbers(of: filledPeriods, summaryKind: summaryKind, fromDay: fromDay, toDay: toDay))
+            numbers: numbers(of: filledPeriods, summaryKind: summaryKind, fromDay: fromDay, toDay: toDay), drawnStages: drawnStages,
+            chartUnitSeconds: chartUnitSeconds)
     }
 
-    /// The seconds in each stage of a period, by the stage's name.
+    /// The seconds in each stage of a period, by the stage's name: the stages
+    /// asleep and awake that have any time, or, for a night that was only
+    /// recorded as in bed, that.
     static func stageSeconds(of row: HealthPeriodView) -> [String: Double] {
         var seconds: [String: Double] = [:]
         for stage in shownStages {
-            if let stageValue = row.categorySeconds[stage.stageName] { seconds[stage.stageName] = stageValue }
+            if let stageValue = row.categorySeconds[stage.stageName], stageValue > 0 { seconds[stage.stageName] = stageValue }
+        }
+        if seconds.isEmpty, let inBedSeconds = row.categorySeconds[HealthSleepStage.inBed.stageName], inBedSeconds > 0 {
+            seconds[HealthSleepStage.inBed.stageName] = inBedSeconds
         }
         return seconds
+    }
+
+    /// The stages a period draws, from the deepest up.
+    static func stages(of row: HealthPeriodView) -> [HealthSleepStage] {
+        let seconds = stageSeconds(of: row)
+        return (shownStages + [HealthSleepStage.inBed]).filter { seconds[$0.stageName] != nil }
     }
 
     private static func numbers(of rows: [HealthPeriodView], summaryKind: HealthSummaryKind, fromDay: String, toDay: String) -> HealthNumbers {
@@ -245,10 +279,16 @@ struct HealthPlotBuilder {
     let fromDay: String
     let toDay: String
     let shape: HealthChartPlan.Shape
+    let chartUnitSeconds: Double
 
-    /// How many days of a period the chart reaches over: the current week or
-    /// month has not ended, and the range may start inside one.
+    /// How many days of a period an amount is divided by to be read per day:
+    /// the days that have a day summary, as the server counts them, so that a
+    /// month with twelve days sent is averaged over twelve and not thirty.
+    /// When the server did not say, the days the chart reaches over: the
+    /// current week or month has not ended, and the range may start inside
+    /// one.
     static func dayCount(of row: HealthPeriodView, fromDay: String, toDay: String) -> Int {
+        if row.dayCount > 0 { return row.dayCount }
         let startDay = String(row.startDay.prefix(10))
         let endDay = String(row.endDay.prefix(10))
         let first = startDay > fromDay ? startDay : fromDay
@@ -308,33 +348,40 @@ struct HealthPlotBuilder {
     }
 
     private func stagesPlot(for row: HealthPeriodView, periodKey: String, titleText: String) -> HealthPlot {
+        let seconds = HealthChartPlan.stageSeconds(of: row)
         var figures: [ChartFigure] = []
-        for stage in HealthChartPlan.shownStages {
-            guard let seconds = row.categorySeconds[stage.stageName], seconds > 0 else { continue }
+        for stage in HealthChartPlan.stages(of: row) {
+            guard let stageSeconds = seconds[stage.stageName] else { continue }
             figures.append(
                 ChartFigure(
-                    label: HealthWords.stageName(stage), valueText: HealthText.durationText(perDay(row, seconds)),
+                    label: HealthWords.stageName(stage), valueText: HealthText.durationText(perDay(row, stageSeconds)),
                     color: HealthChartPlan.color(of: stage)))
         }
-        let asleepSeconds = row.categorySeconds[HealthSleepStage.asleepKey] ?? row.durationSeconds
-        let asleepText = HealthText.durationText(perDay(row, asleepSeconds ?? 0))
+        // The total is the time asleep, as the headline is: the time awake is
+        // a stage of its own and not part of it.
+        var asleepSeconds = row.categorySeconds[HealthSleepStage.asleepKey] ?? row.durationSeconds ?? 0
+        if asleepSeconds <= 0, let inBedSeconds = seconds[HealthSleepStage.inBed.stageName] { asleepSeconds = inBedSeconds }
+        let asleepText = HealthText.durationText(perDay(row, asleepSeconds))
+        figures.append(ChartFigure(label: HealthWords.totalTitle, valueText: asleepText))
         return HealthPlot(
-            periodKey: periodKey, titleText: titleText, amountValue: asleepSeconds.map { perDay(row, $0) / 3600 }, figures: figures,
+            periodKey: periodKey, titleText: titleText, amountValue: perDay(row, asleepSeconds) / chartUnitSeconds, figures: figures,
             spokenText: asleepText)
     }
 
     func segments(for row: HealthPeriodView, periodKey: String) -> [HealthStageSegment] {
-        HealthChartPlan.shownStages.compactMap { stage in
-            guard let seconds = row.categorySeconds[stage.stageName], seconds > 0 else { return nil }
+        let seconds = HealthChartPlan.stageSeconds(of: row)
+        return HealthChartPlan.stages(of: row).compactMap { stage in
+            guard let stageSeconds = seconds[stage.stageName] else { return nil }
             return HealthStageSegment(
-                periodKey: periodKey, stage: stage, stageTitle: HealthWords.stageName(stage), hours: perDay(row, seconds) / 3600)
+                periodKey: periodKey, stage: stage, stageTitle: HealthWords.stageName(stage), hours: perDay(row, stageSeconds) / chartUnitSeconds)
         }
     }
 
-    /// The height of a bar: hours for a time, else the amount.
+    /// The height of a bar: hours for sleep, minutes for workouts, else the
+    /// amount.
     private func chartAmount(_ value: Double?) -> Double? {
         guard let value else { return nil }
-        return summaryKind == .duration ? value / 3600 : value
+        return summaryKind == .duration ? value / chartUnitSeconds : value
     }
 
     private func periodTitle(_ row: HealthPeriodView, periodKey: String) -> String {

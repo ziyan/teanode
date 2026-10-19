@@ -41,6 +41,15 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
     public private(set) var sentDeletedSampleCount = 0
     public private(set) var sentDaySummaryCount = 0
     public private(set) var sentRouteCount = 0
+    /// Whether the first full read of everything has finished.
+    public private(set) var isHistoryDone = false
+    /// The workouts whose route the server took, the latest last, so that the
+    /// look at recent workouts for a route saved late does not send one
+    /// again. Only the latest are kept.
+    public private(set) var sentRouteHealthSampleIds: [String] = []
+
+    /// How many workouts the state remembers a route sent for.
+    public static let sentRouteCountMost = 200
 
     public init(accountKey: String? = nil) { self.accountKey = accountKey }
 
@@ -52,7 +61,8 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
     /// turning it off and on does not read everything twice; but see
     /// `turnOff`.
     public mutating func turnOn(at date: Date) {
-        if healthTurnedOnAt == nil { healthTurnedOnAt = date }
+        // Whole seconds, as the file keeps it and the server is told it.
+        if healthTurnedOnAt == nil { healthTurnedOnAt = Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)) }
     }
 
     /// Forgets everything: anchors, waiting days, counts and when it was
@@ -82,7 +92,12 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
         sentDeletedSampleCount = 0
         sentDaySummaryCount = 0
         sentRouteCount = 0
+        isHistoryDone = false
+        sentRouteHealthSampleIds = []
     }
+
+    /// Notes that every type was read to its end.
+    public mutating func markHistoryDone() { isHistoryDone = true }
 
     // MARK: Anchors
 
@@ -123,20 +138,49 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
 
     // MARK: Sending
 
-    /// Notes that the server took a batch.
+    /// Notes that the server took a batch. The readings counted are the ones
+    /// that were new to it, so a page read again after a later failure is not
+    /// counted twice.
     public mutating func recordSent(_ batch: HealthBatch, result: ReportHealthResult, at date: Date) {
         lastSentAt = date
-        sentSampleCount += batch.samples.count
+        sentSampleCount += result.newSampleCount
         sentDeletedSampleCount += result.deletedSampleCount
         sentDaySummaryCount += batch.daySummaries.count
         sentRouteCount += batch.routes.count
+    }
+
+    /// Takes the server's answer to a batch. If the answer says the person
+    /// erased all of their Health after it was turned on here, the server
+    /// stored nothing: the state is reset (Health is off, no anchor is kept,
+    /// and nothing of the batch is counted) and this answers false. Else the
+    /// batch is noted as sent and this answers true, and the caller may move
+    /// the anchors of what the batch carried.
+    @discardableResult
+    public mutating func accept(_ result: ReportHealthResult, for batch: HealthBatch, at date: Date) -> Bool {
+        if applyServerErase(healthErasedAt: result.healthErasedDate) { return false }
+        recordSent(batch, result: result, at: date)
+        return true
+    }
+
+    // MARK: Routes
+
+    public func hasSentRoute(healthSampleId: String) -> Bool { sentRouteHealthSampleIds.contains(healthSampleId) }
+
+    /// Notes that the server took a workout's route. A route the server could
+    /// not match to a workout yet is not noted, so it is sent again.
+    public mutating func recordRouteSent(healthSampleId: String) {
+        guard !sentRouteHealthSampleIds.contains(healthSampleId) else { return }
+        sentRouteHealthSampleIds.append(healthSampleId)
+        if sentRouteHealthSampleIds.count > Self.sentRouteCountMost {
+            sentRouteHealthSampleIds.removeFirst(sentRouteHealthSampleIds.count - Self.sentRouteCountMost)
+        }
     }
 
     // MARK: The file
 
     private enum CodingKeys: String, CodingKey {
         case accountKey, anchors, pendingDays, healthTurnedOnAt, lastSentAt, sentSampleCount, sentDeletedSampleCount, sentDaySummaryCount
-        case sentRouteCount
+        case sentRouteCount, isHistoryDone, sentRouteHealthSampleIds
     }
 
     public init(from decoder: Decoder) throws {
@@ -150,6 +194,8 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
         sentDeletedSampleCount = try container.decodeIfPresent(Int.self, forKey: .sentDeletedSampleCount) ?? 0
         sentDaySummaryCount = try container.decodeIfPresent(Int.self, forKey: .sentDaySummaryCount) ?? 0
         sentRouteCount = try container.decodeIfPresent(Int.self, forKey: .sentRouteCount) ?? 0
+        isHistoryDone = try container.decodeIfPresent(Bool.self, forKey: .isHistoryDone) ?? false
+        sentRouteHealthSampleIds = try container.decodeIfPresent([String].self, forKey: .sentRouteHealthSampleIds) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -163,6 +209,8 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
         try container.encode(sentDeletedSampleCount, forKey: .sentDeletedSampleCount)
         try container.encode(sentDaySummaryCount, forKey: .sentDaySummaryCount)
         try container.encode(sentRouteCount, forKey: .sentRouteCount)
+        try container.encode(isHistoryDone, forKey: .isHistoryDone)
+        try container.encode(sentRouteHealthSampleIds, forKey: .sentRouteHealthSampleIds)
     }
 
     /// The name of the file an account's state is kept in: one file for each
@@ -221,5 +269,26 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
             return HealthSyncState(accountKey: accountKey)
         }
         return state
+    }
+
+    /// The accounts Health is turned on for, from the state files in a
+    /// directory. Launch needs this before any account is known, to decide
+    /// whether to watch HealthKit for new data, so it is kept nowhere but
+    /// in the files that say what to forget when Health is turned off.
+    public static func accountKeysTurnedOn(inDirectory directory: URL) -> Set<String> {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        var accountKeys: Set<String> = []
+        for name in names where name.hasPrefix("health-") && name.hasSuffix(".json") {
+            guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)), let state = try? decoded(from: data),
+                let accountKey = state.accountKey, state.isTurnedOn, fileName(accountKey: accountKey) == name
+            else { continue }
+            accountKeys.insert(accountKey)
+        }
+        return accountKeys
+    }
+
+    /// Deletes an account's state file, which turns Health off for it.
+    public static func remove(accountKey: String, inDirectory directory: URL) {
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent(fileName(accountKey: accountKey)))
     }
 }

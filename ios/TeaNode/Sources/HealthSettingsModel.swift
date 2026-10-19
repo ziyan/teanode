@@ -25,6 +25,15 @@ struct HealthSyncSnapshot {
     }
 }
 
+/// HealthAboutRow is one fact the Health app holds about the person, as the
+/// settings show it.
+struct HealthAboutRow: Identifiable {
+    let healthType: String
+    let labelText: String
+    let valueText: String
+    var id: String { healthType }
+}
+
 /// HealthSettingsModel is the Health settings: whether the agent may read
 /// Health data, who it is shared with, and erasing it.
 @MainActor
@@ -36,6 +45,9 @@ final class HealthSettingsModel {
     private(set) var shares: [HealthShareView] = []
     private(set) var ownUserId: String?
     private(set) var hasLoaded = false
+    /// Whether the shares were read, so that "no shares" is only said when
+    /// that is known.
+    private(set) var hasReadShares = false
     private(set) var loadFailedText: String?
     private(set) var isBusy = false
     var problemText: String?
@@ -46,7 +58,68 @@ final class HealthSettingsModel {
     }
 
     /// The person's own shares: the people and circles they share Health with.
-    var ownShares: [HealthShareView] { shares.filter { $0.ownerUserId == ownUserId } }
+    var ownShares: [HealthShareView] {
+        // Told apart by who the person is, so none until that is known.
+        guard let ownUserId else { return [] }
+        return shares.filter { $0.ownerUserId == ownUserId }
+    }
+
+    /// Whether the person's shares are known: who they are, and the list.
+    var isOwnSharesKnown: Bool { hasReadShares && ownUserId != nil }
+
+    // MARK: About the person
+
+    /// The facts the Health app holds about the person, read only: the
+    /// date of birth, sex and blood type, as the dashboard shows them. The
+    /// others it keeps (skin type, wheelchair use, how Activity is measured)
+    /// are not shown.
+    var aboutRows: [HealthAboutRow] {
+        let characteristics = settings?.characteristics ?? []
+        var rows: [HealthAboutRow] = []
+        for healthType in ["dateOfBirth", "biologicalSex", "bloodType"] {
+            guard let found = characteristics.first(where: { $0.healthType == healthType }) else { continue }
+            rows.append(
+                HealthAboutRow(
+                    healthType: healthType, labelText: Self.aboutLabel(healthType),
+                    valueText: Self.aboutValue(healthType: healthType, characteristicValue: found.characteristicValue)))
+        }
+        return rows
+    }
+
+    private static func aboutLabel(_ healthType: String) -> String {
+        switch healthType {
+        case "dateOfBirth": return String(localized: "Date of birth")
+        case "biologicalSex": return String(localized: "Sex")
+        default: return String(localized: "Blood type")
+        }
+    }
+
+    private static func aboutValue(healthType: String, characteristicValue: String) -> String {
+        switch healthType {
+        case "dateOfBirth":
+            guard let date = HealthText.date(ofDay: characteristicValue) else { return characteristicValue }
+            return date.formatted(date: .long, time: .omitted)
+        case "biologicalSex":
+            switch characteristicValue {
+            case "female": return String(localized: "Female")
+            case "male": return String(localized: "Male")
+            case "other": return String(localized: "Other")
+            default: return characteristicValue
+            }
+        default:
+            return bloodTypeText(characteristicValue)
+        }
+    }
+
+    /// A blood type as it is on a card: "aPositive" is "A+".
+    static func bloodTypeText(_ characteristicValue: String) -> String {
+        let bloodGroups = [("a", "A"), ("b", "B"), ("ab", "AB"), ("o", "O")]
+        for (prefix, letters) in bloodGroups {
+            if characteristicValue == prefix + "Positive" { return letters + "+" }
+            if characteristicValue == prefix + "Negative" { return letters + "-" }
+        }
+        return characteristicValue
+    }
 
     // MARK: Reading
 
@@ -58,7 +131,10 @@ final class HealthSettingsModel {
         } catch {
             if settings == nil { loadFailedText = error.loadProblemText } else { problemText = error.loadProblemText }
         }
-        if let readShares = try? await connection.healthShares() { shares = readShares }
+        if let readShares = try? await connection.healthShares() {
+            shares = readShares
+            hasReadShares = true
+        }
         hasLoaded = true
     }
 

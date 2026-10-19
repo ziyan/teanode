@@ -14,9 +14,13 @@ import (
 
 // Health is on the API, the command line and the agent's health tool under the
 // same names. Only the iPhone reports, so ReportHealth has neither. The tool
-// only reads: the route is for drawing a map, and the switch that lets the
-// agent read Health, erasing and sharing are the person's own choices, which
-// the agent does not make for them.
+// only reads the person's own Health: the route is a trail of coordinates as
+// private as Location, the switch that lets the agent read Health is the
+// person's consent to send it to a model provider, erasing cannot be undone
+// and sharing discloses Health to other people, so none of them are the
+// agent's to do. It does not read what others share with the person either
+// (ownerUserId): a person who shares Health shares it with people, not with
+// their agents' model providers.
 func TestHealthParity(test *testing.T) {
 	test.Parallel()
 
@@ -99,13 +103,15 @@ func TestHealthParity(test *testing.T) {
 	// subcommand and a property of its tool action, under the name that
 	// surface gives it, or is exempt with the reason.
 	flagNames := map[string]string{
-		"ownerUserId": "user", "fromDay": "from", "toDay": "to", "period": "period", "from": "from", "to": "to", "limitCount": "limit", "offset": "offset",
+		"ownerUserId": "person", "fromDay": "from", "toDay": "to", "period": "period", "from": "from", "to": "to", "limitCount": "limit", "offset": "offset",
 	}
 	propertyNames := map[string]string{
 		"healthType": "health_type", "ownerUserId": "username", "fromDay": "from", "toDay": "to", "period": "period", "from": "from", "to": "to", "limitCount": "limit", "offset": "offset",
 	}
 	// "<Operation>.<argument>.<surface>" is exempt for the reason given.
 	exempt := map[string]string{
+		"ListHealthTypes.ownerUserId.tool":       "a person who shares Health shares it with people, not with their agents' model providers",
+		"ReadHealthSummary.ownerUserId.tool":     "a person who shares Health shares it with people, not with their agents' model providers",
 		"ReadHealthSummary.healthType.command":   "the type is the argument of the subcommand",
 		"ListHealthSamples.healthType.command":   "the type is the argument of the subcommand",
 		"ReadHealthRoute.healthSampleId.command": "the workout is the argument of the subcommand",
@@ -130,7 +136,7 @@ func TestHealthParity(test *testing.T) {
 			if _, isExempt := exempt[operation+"."+argument+".command"]; !isExempt && !flags[flagNames[argument]] {
 				test.Errorf("teanode health %s has no flag for the argument %s of %s", names.subcommand, argument, operation)
 			}
-			if names.action != "" && properties[propertyNames[argument]] == nil {
+			if _, isExempt := exempt[operation+"."+argument+".tool"]; names.action != "" && !isExempt && properties[propertyNames[argument]] == nil {
 				test.Errorf("the health tool action %s has no property for the argument %s of %s", names.action, argument, operation)
 			}
 		}

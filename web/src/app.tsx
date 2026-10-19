@@ -62,7 +62,7 @@ const LocationPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "location" */ './pages/location')).LocationPage,
 }))
 const HealthPage = lazyPage(async () => ({
-  default: (await import(/* webpackChunkName: "location" */ './pages/health/healthPage')).HealthPage,
+  default: (await import(/* webpackChunkName: "health" */ './pages/health/healthPage')).HealthPage,
 }))
 const MailDetailPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "operations" */ './pages/mailDetail')).MailDetailPage,

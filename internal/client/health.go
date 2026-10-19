@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/health"
 )
 
 // Health: the operations behind `teanode health` and the agent's health tool.
@@ -39,38 +40,70 @@ func (self *HealthCategorySeconds) UnmarshalJSON(encoded []byte) error {
 	return nil
 }
 
-// Words lists the values with the most time first, each with its time in
-// hours and minutes: "asleepCore 3h 30m, asleepDeep 50m".
+// Words lists what a day or a period spent in each value, as the dashboard
+// words it: the stages of a night from the deepest up (Deep 1h 5m, Core 3h,
+// REM 1h 30m, Awake 20m), then anything else a type keeps (a workout's energy
+// and distance). The night's total (the key "asleep") is not a stage and is
+// left out; AsleepSeconds is that.
 func (self HealthCategorySeconds) Words() string {
+	return self.WordsPerDay(1)
+}
+
+// WordsPerDay is Words with every figure divided by this many days, which is
+// how a week or a month is told as a night or a day. Fewer than one day is
+// one.
+func (self HealthCategorySeconds) WordsPerDay(dayCount int) string {
+	if dayCount < 1 {
+		dayCount = 1
+	}
+	seen := map[string]bool{}
 	names := make([]string, 0, len(self))
-	for name, seconds := range self {
-		if seconds > 0 {
+	for _, name := range health.StageOrder {
+		seen[name] = true
+		if self[name] > 0 {
 			names = append(names, name)
 		}
 	}
-	sort.Slice(names, func(left, right int) bool {
-		if self[names[left]] != self[names[right]] {
-			return self[names[left]] > self[names[right]]
+	others := make([]string, 0, len(self))
+	for name, amount := range self {
+		if !seen[name] && name != health.SleepAsleepKey && amount > 0 {
+			others = append(others, name)
 		}
-		return names[left] < names[right]
-	})
-	parts := make([]string, 0, len(names))
-	for _, name := range names {
-		parts = append(parts, name+" "+HealthDurationWords(self[name]))
+	}
+	sort.Strings(others)
+	parts := make([]string, 0, len(names)+len(others))
+	for _, name := range append(names, others...) {
+		amount := self[name] / float64(dayCount)
+		switch name {
+		case "energyKilocalories":
+			parts = append(parts, "energy "+health.NumberWords(math.Round(amount))+" kcal")
+		case "distanceMeters":
+			parts = append(parts, "distance "+health.ValueWords("", amount, "m"))
+		default:
+			parts = append(parts, health.StageName(name)+" "+health.DurationWords(amount))
+		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// AsleepSeconds is the night's total time asleep, and whether the type has
+// one.
+func (self HealthCategorySeconds) AsleepSeconds() (float64, bool) {
+	seconds, isPresent := self[health.SleepAsleepKey]
+	return seconds, isPresent
 }
 
 // HealthDaySummaryView is one type on one day, as the type list shows the
 // latest day.
 type HealthDaySummaryView struct {
-	SummaryDay      string   `json:"summaryDay"`
-	SumValue        *float64 `json:"sumValue"`
-	AverageValue    *float64 `json:"averageValue"`
-	MinimumValue    *float64 `json:"minimumValue"`
-	MaximumValue    *float64 `json:"maximumValue"`
-	SampleCount     int      `json:"sampleCount"`
-	DurationSeconds *float64 `json:"durationSeconds"`
+	SummaryDay      string                `json:"summaryDay"`
+	SumValue        *float64              `json:"sumValue"`
+	AverageValue    *float64              `json:"averageValue"`
+	MinimumValue    *float64              `json:"minimumValue"`
+	MaximumValue    *float64              `json:"maximumValue"`
+	SampleCount     int                   `json:"sampleCount"`
+	DurationSeconds *float64              `json:"durationSeconds"`
+	CategorySeconds HealthCategorySeconds `json:"categorySeconds"`
 }
 
 // HealthTypeView is one kind of data the person (or somebody who shares with
@@ -90,6 +123,8 @@ type HealthTypeView struct {
 }
 
 // HealthPeriodView is one day, week (from Monday) or month of one type.
+// DayCount is how many of its days have a summary, which a per-day average
+// divides by; it is 0 from a server that does not say.
 type HealthPeriodView struct {
 	StartDay        string                `json:"startDay"`
 	EndDay          string                `json:"endDay"`
@@ -99,7 +134,24 @@ type HealthPeriodView struct {
 	MaximumValue    *float64              `json:"maximumValue"`
 	SampleCount     int                   `json:"sampleCount"`
 	DurationSeconds *float64              `json:"durationSeconds"`
+	DayCount        int                   `json:"dayCount"`
 	CategorySeconds HealthCategorySeconds `json:"categorySeconds"`
+}
+
+// IsSeveralDays is whether the period is a week or a month (or any run of
+// days with a summary), which is what is told as a total and a per-day
+// average.
+func (self *HealthPeriodView) IsSeveralDays() bool {
+	return self.EndDay != "" && self.EndDay != self.StartDay && self.DayCount > 0
+}
+
+// HealthPerDayNoun is the word for one of the days a sum or a time is averaged
+// over: a night for sleep, a day for anything else.
+func HealthPerDayNoun(healthType string) string {
+	if healthType == "sleepAnalysis" {
+		return "night"
+	}
+	return "day"
 }
 
 // HealthSummaryView is one type over a range of days, by period.
@@ -132,9 +184,10 @@ type HealthSampleView struct {
 // HealthSamplePage is a page of samples: how many there are in all, and where
 // the next page starts, null on the last.
 type HealthSamplePage struct {
-	Samples    []*HealthSampleView `json:"samples"`
-	TotalCount int                 `json:"totalCount"`
-	NextOffset *int                `json:"nextOffset"`
+	Samples            []*HealthSampleView `json:"samples"`
+	TotalCount         int                 `json:"totalCount"`
+	IsTotalCountCapped bool                `json:"isTotalCountCapped"`
+	NextOffset         *int                `json:"nextOffset"`
 }
 
 // HealthRouteView is a workout's path: [secondsFromStart, latitudeDegrees,
@@ -182,7 +235,7 @@ type HealthShareView struct {
 }
 
 const (
-	healthDayFields = `summaryDay sumValue averageValue minimumValue maximumValue sampleCount durationSeconds`
+	healthDayFields = `summaryDay sumValue averageValue minimumValue maximumValue sampleCount durationSeconds categorySeconds`
 
 	healthSampleFields = `healthSampleId healthType startedAt endedAt quantityValue quantityUnit categoryValue workoutActivityType
     sourceName sourceBundleId deviceName sampleMetadataJson receivedAt hasRoute`
@@ -202,13 +255,13 @@ const (
 	DocumentReadHealthSummary = `query ($healthType: String!, $fromDay: String!, $toDay: String!, $period: String!, $ownerUserId: String) {
   ReadHealthSummary(healthType: $healthType, fromDay: $fromDay, toDay: $toDay, period: $period, ownerUserId: $ownerUserId) {
     healthType quantityUnit summaryKind
-    periods { startDay endDay sumValue averageValue minimumValue maximumValue sampleCount durationSeconds categorySeconds }
+    periods { startDay endDay sumValue averageValue minimumValue maximumValue sampleCount durationSeconds dayCount categorySeconds }
   }
 }`
 
 	DocumentListHealthSamples = `query ($healthType: String!, $from: DateTime!, $to: DateTime!, $limitCount: Int, $offset: Int) {
   ListHealthSamples(healthType: $healthType, from: $from, to: $to, limitCount: $limitCount, offset: $offset) {
-    totalCount nextOffset
+    totalCount isTotalCountCapped nextOffset
     samples { ` + healthSampleFields + ` }
   }
 }`
@@ -218,6 +271,10 @@ const (
 }`
 
 	DocumentReadHealthSettings = `query { ReadHealthSettings { ` + healthSettingsFields + ` } }`
+
+	// DocumentReadHealthAgentSwitch asks only whether the agent may read
+	// Health, which the server answers from one row of the account.
+	DocumentReadHealthAgentSwitch = `query { ReadHealthSettings { canAgentReadHealth } }`
 
 	DocumentUpdateHealthSettings = `mutation ($canAgentReadHealth: Boolean!) {
   UpdateHealthSettings(canAgentReadHealth: $canAgentReadHealth) { ` + healthSettingsFields + ` }
@@ -396,70 +453,116 @@ func SetHealthShare(ctx context.Context, connection *Client, granteeUserId, gran
 
 // HealthNumberWords writes a reading the way a person says it: thousands
 // separated, and only as many decimals as the size of the number is worth
-// (8,412 steps, 72.4 kg, 0.35 m/s).
+// (8,412, 72.4, 0.35).
 func HealthNumberWords(value float64) string {
-	decimals := 2
-	switch magnitude := math.Abs(value); {
-	case magnitude >= 1000:
-		decimals = 0
-	case magnitude >= 100:
-		decimals = 1
-	}
-	text := strconv.FormatFloat(value, 'f', decimals, 64)
-	if decimals > 0 {
-		text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
-	}
-	sign := ""
-	if strings.HasPrefix(text, "-") {
-		sign, text = "-", text[1:]
-	}
-	whole, fraction, hasFraction := strings.Cut(text, ".")
-	var grouped strings.Builder
-	for index, digit := range whole {
-		if index > 0 && (len(whole)-index)%3 == 0 {
-			grouped.WriteByte(',')
-		}
-		grouped.WriteRune(digit)
-	}
-	if hasFraction {
-		return sign + grouped.String() + "." + fraction
-	}
-	return sign + grouped.String()
+	return health.NumberWords(value)
 }
 
 // HealthDurationWords writes a time covered in hours and minutes, as the
 // Health app does: 7h 12m, 35m, 45s.
 func HealthDurationWords(seconds float64) string {
-	if seconds < 60 {
-		return fmt.Sprintf("%ds", int(math.Round(seconds)))
-	}
-	minutes := int(math.Round(seconds / 60))
-	hours, minutes := minutes/60, minutes%60
-	switch {
-	case hours == 0:
-		return fmt.Sprintf("%dm", minutes)
-	case minutes == 0:
-		return fmt.Sprintf("%dh", hours)
-	}
-	return fmt.Sprintf("%dh %dm", hours, minutes)
+	return health.DurationWords(seconds)
 }
 
-// HealthValueWords is a reading with its unit.
-func HealthValueWords(value float64, quantityUnit string) string {
-	switch quantityUnit {
-	case "":
-		return HealthNumberWords(value)
-	case "%":
-		return HealthNumberWords(HealthShownValue(value, quantityUnit)) + "%"
-	}
-	return HealthNumberWords(value) + " " + quantityUnit
+// HealthValueWords is a reading of this type with its unit, in the words the
+// table in internal/health gives: 8,412 steps, 74 bpm, 97%, 36.6°C, 5.2 km.
+func HealthValueWords(healthType string, value float64, quantityUnit string) string {
+	return health.ValueWords(healthType, value, quantityUnit)
 }
 
 // HealthShownValue is a value as a person reads it. HealthKit keeps a
 // percentage as a fraction (0.97 for 97%), and so does the server.
 func HealthShownValue(value float64, quantityUnit string) float64 {
-	if quantityUnit == "%" {
-		return value * 100
+	return health.ShownValue(value, quantityUnit)
+}
+
+// PerDay is a figure of a period divided by the days that have a summary, and
+// whether that could be worked out: a day, or a period from a server that does
+// not say how many days it holds, has no average per day.
+func (self *HealthPeriodView) PerDay(value float64) (float64, bool) {
+	if !self.IsSeveralDays() {
+		return 0, false
 	}
-	return value
+	return value / float64(self.DayCount), true
+}
+
+// healthCountWords is a count with its noun: 1 night, 7 nights.
+func healthCountWords(count int, noun string) string {
+	if count == 1 {
+		return "1 " + noun
+	}
+	return health.NumberWords(float64(count)) + " " + noun + "s"
+}
+
+// HealthPeriodWords tells one period of one type in a line of figures, the
+// same in the command line and the agent's tool. What adds up (steps, energy)
+// is the total and, for a week or a month, the average per day over the days
+// that have a summary; what is a level (heart rate, weight) is the average
+// with the lowest and highest; a time (sleep, workouts) is the time, for a week
+// or a month the average per night or day with the total, and for sleep its
+// stages. The figures are in the words of internal/health, so that a value
+// reads the same here as on the dashboard.
+func HealthPeriodWords(period *HealthPeriodView, healthType, quantityUnit string) string {
+	label := period.StartDay
+	if period.EndDay != "" && period.EndDay != period.StartDay {
+		label += " to " + period.EndDay
+	}
+	noun := HealthPerDayNoun(healthType)
+	over := ""
+	if period.IsSeveralDays() {
+		over = " over " + healthCountWords(period.DayCount, noun)
+	}
+	var parts []string
+	if period.SumValue != nil {
+		part := "total " + HealthValueWords(healthType, *period.SumValue, quantityUnit)
+		if perDay, isKnown := period.PerDay(*period.SumValue); isKnown {
+			part += "; average " + HealthValueWords(healthType, perDay, quantityUnit) + " a " + noun + over
+		}
+		parts = append(parts, part)
+	}
+	if period.AverageValue != nil {
+		average := "average " + HealthValueWords(healthType, *period.AverageValue, quantityUnit)
+		if period.MinimumValue != nil && period.MaximumValue != nil {
+			average += fmt.Sprintf(" (lowest %s, highest %s)", HealthValueWords(healthType, *period.MinimumValue, quantityUnit),
+				HealthValueWords(healthType, *period.MaximumValue, quantityUnit))
+		}
+		parts = append(parts, average)
+	}
+	if period.DurationSeconds != nil {
+		parts = append(parts, healthDurationPeriodWords(period, healthType, noun, over))
+	}
+	if period.SampleCount > 0 {
+		parts = append(parts, healthCountWords(period.SampleCount, "reading"))
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "no readings")
+	}
+	return label + ": " + strings.Join(parts, "; ")
+}
+
+// healthDurationPeriodWords is the time of a period: for sleep the time
+// asleep with its stages, for any other type the time covered.
+func healthDurationPeriodWords(period *HealthPeriodView, healthType, noun, over string) string {
+	seconds := *period.DurationSeconds
+	name := "time"
+	if healthType == "sleepAnalysis" {
+		name = "asleep"
+		if asleep, isPresent := period.CategorySeconds.AsleepSeconds(); isPresent {
+			seconds = asleep
+		}
+	}
+	text := name + " " + HealthDurationWords(seconds)
+	stages := period.CategorySeconds.Words()
+	if perDay, isKnown := period.PerDay(seconds); isKnown {
+		text = name + " average " + HealthDurationWords(perDay) + " a " + noun + over + ", total " + HealthDurationWords(seconds)
+		if healthType == "sleepAnalysis" {
+			if stages = period.CategorySeconds.WordsPerDay(period.DayCount); stages != "" {
+				stages = "a " + noun + ": " + stages
+			}
+		}
+	}
+	if stages != "" {
+		text += " (" + stages + ")"
+	}
+	return text
 }

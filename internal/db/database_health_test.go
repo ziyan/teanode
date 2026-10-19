@@ -15,6 +15,15 @@ import (
 
 func number(value float64) *float64 { return &value }
 
+// listSamples is a page of readings with the count of them made.
+func listSamples(tx db.Transaction, userId, healthType string, from, until *time.Time, limitCount, offset int) ([]*models.HealthSample, int, error) {
+	page, err := tx.ListHealthSamples(userId, healthType, from, until, limitCount, offset, true)
+	if err != nil {
+		return nil, 0, err
+	}
+	return page.Samples, page.TotalCount, nil
+}
+
 func stepSample(healthSampleId string, startedAt time.Time, steps float64) *models.HealthSample {
 	return &models.HealthSample{
 		HealthSampleID: healthSampleId, HealthType: "stepCount", StartedAt: startedAt, EndedAt: startedAt.Add(5 * time.Minute),
@@ -54,7 +63,7 @@ func TestHealthSamplesAreStoredOnceAndKeptApartPerPerson(t *testing.T) {
 			t.Fatalf("another person's reading with the same identifier is their own: %d new, %v", newCount, err)
 		}
 
-		samples, totalCount, err := tx.ListHealthSamples(world.ada.ID, "stepCount", nil, nil, 10, 0)
+		samples, totalCount, err := listSamples(tx, world.ada.ID, "stepCount", nil, nil, 10, 0)
 		if err != nil || totalCount != 2 || len(samples) != 2 {
 			t.Fatalf("ada's readings: %d of %d, %v", len(samples), totalCount, err)
 		}
@@ -69,19 +78,19 @@ func TestHealthSamplesAreStoredOnceAndKeptApartPerPerson(t *testing.T) {
 		}
 
 		// Paging and ranges.
-		page, totalCount, err := tx.ListHealthSamples(world.ada.ID, "stepCount", nil, nil, 1, 1)
+		page, totalCount, err := listSamples(tx, world.ada.ID, "stepCount", nil, nil, 1, 1)
 		if err != nil || totalCount != 2 || len(page) != 1 || page[0].HealthSampleID != "sample-1" {
 			t.Errorf("the second page of one: %v of %d, %v", page, totalCount, err)
 		}
 		from, until := morning.Add(30*time.Minute), morning.Add(2*time.Hour)
-		inRange, totalCount, err := tx.ListHealthSamples(world.ada.ID, "stepCount", &from, &until, 10, 0)
+		inRange, totalCount, err := listSamples(tx, world.ada.ID, "stepCount", &from, &until, 10, 0)
 		if err != nil || totalCount != 1 || inRange[0].HealthSampleID != "sample-2" {
 			t.Errorf("the readings that started in a range: %v of %d, %v", inRange, totalCount, err)
 		}
-		if other, total, _ := tx.ListHealthSamples(world.ada.ID, "heartRate", nil, nil, 10, 0); len(other) != 0 || total != 0 {
+		if other, total, _ := listSamples(tx, world.ada.ID, "heartRate", nil, nil, 10, 0); len(other) != 0 || total != 0 {
 			t.Errorf("another kind has none: %v", other)
 		}
-		if others, total, _ := tx.ListHealthSamples(world.cora.ID, "stepCount", nil, nil, 10, 0); len(others) != 0 || total != 0 {
+		if others, total, _ := listSamples(tx, world.cora.ID, "stepCount", nil, nil, 10, 0); len(others) != 0 || total != 0 {
 			t.Errorf("a person who reported nothing has none: %v", others)
 		}
 
@@ -102,7 +111,7 @@ func TestHealthSamplesAreStoredOnceAndKeptApartPerPerson(t *testing.T) {
 				t.Errorf("%s: %v", name, err)
 			}
 		}
-		if _, total, _ := tx.ListHealthSamples(world.ada.ID, "stepCount", nil, nil, 10, 0); total != 2 {
+		if _, total, _ := listSamples(tx, world.ada.ID, "stepCount", nil, nil, 10, 0); total != 2 {
 			t.Errorf("a refused batch stored something: %d", total)
 		}
 	})
@@ -127,7 +136,7 @@ func TestDeletingHealthSamplesAnswersTheirTimesAndLeavesTheDays(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("InsertHealthSamples: %s", err)
 			}
-			if kept, err := tx.UpsertHealthRoutes(person.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: [][]float64{{0, 10.5, 20.5, 3}, {60, 10.51, 20.51, 4}}}}); err != nil || kept != 1 {
+			if kept, _, err := tx.UpsertHealthRoutes(person.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: [][]float64{{0, 10.5, 20.5, 3}, {60, 10.51, 20.51, 4}}}}); err != nil || kept != 1 {
 				t.Fatalf("UpsertHealthRoutes: %d, %v", kept, err)
 			}
 			if _, err := tx.UpsertHealthDaySummaries(person.ID, []*models.HealthDaySummary{
@@ -137,7 +146,7 @@ func TestDeletingHealthSamplesAnswersTheirTimesAndLeavesTheDays(t *testing.T) {
 			}
 		}
 
-		listed, _, _ := tx.ListHealthSamples(world.ada.ID, "workout", nil, nil, 10, 0)
+		listed, _, _ := listSamples(tx, world.ada.ID, "workout", nil, nil, 10, 0)
 		if len(listed) != 1 || !listed[0].HasRoute || listed[0].SampleMetadataJSON == "" {
 			t.Fatalf("the workout has its route: %+v", listed)
 		}
@@ -150,8 +159,15 @@ func TestDeletingHealthSamplesAnswersTheirTimesAndLeavesTheDays(t *testing.T) {
 			deleted[1].HealthType != "stepCount" || !deleted[1].StartedAt.Equal(morning.Add(2*time.Hour)) || !deleted[1].EndedAt.Equal(morning.Add(2*time.Hour+5*time.Minute)) {
 			t.Fatalf("what was deleted, oldest first: %+v %+v", deleted[0], deleted[len(deleted)-1])
 		}
-		if again, err := tx.DeleteHealthSamples(world.ada.ID, []string{"sample-2"}); err != nil || len(again) != 0 {
-			t.Errorf("deleting what is gone answers nothing: %v %v", again, err)
+		// A phone that never got the answer sends the same identifiers again,
+		// and gets the same answer, although the readings are gone.
+		again, err := tx.DeleteHealthSamples(world.ada.ID, []string{"sample-2", "run-1", "never-had-this"})
+		if err != nil || len(again) != 2 || again[0].HealthType != "workout" || !again[0].StartedAt.Equal(morning) ||
+			again[1].HealthType != "stepCount" || !again[1].StartedAt.Equal(morning.Add(2*time.Hour)) {
+			t.Errorf("deleting what is gone answers what it was: %+v %v", again, err)
+		}
+		if other, err := tx.DeleteHealthSamples(world.ben.ID, []string{"never-had-this"}); err != nil || len(other) != 0 {
+			t.Errorf("what is known of a deleted reading is its person's: %v %v", other, err)
 		}
 		if none, err := tx.DeleteHealthSamples(world.ada.ID, nil); err != nil || len(none) != 0 {
 			t.Errorf("deleting nothing: %v %v", none, err)
@@ -163,7 +179,7 @@ func TestDeletingHealthSamplesAnswersTheirTimesAndLeavesTheDays(t *testing.T) {
 		if _, err := tx.GetHealthRoute(world.ben.ID, "run-1"); err != nil {
 			t.Errorf("ben's route stays: %v", err)
 		}
-		if _, total, _ := tx.ListHealthSamples(world.ben.ID, "stepCount", nil, nil, 10, 0); total != 2 {
+		if _, total, _ := listSamples(tx, world.ben.ID, "stepCount", nil, nil, 10, 0); total != 2 {
 			t.Errorf("ben's readings stay: %d", total)
 		}
 		// The phone sends the days again; deleting readings does not change them.
@@ -190,7 +206,7 @@ func TestAHealthRouteNeedsItsWorkout(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := [][]float64{{0, 10.5, 20.5, 3}}
-		kept, err := tx.UpsertHealthRoutes(world.ada.ID, []*models.HealthRoute{
+		kept, unmatched, err := tx.UpsertHealthRoutes(world.ada.ID, []*models.HealthRoute{
 			{HealthSampleID: "run-1", RoutePoints: path},
 			{HealthSampleID: "steps-1", RoutePoints: path},
 			{HealthSampleID: "never-had-this", RoutePoints: path},
@@ -198,21 +214,30 @@ func TestAHealthRouteNeedsItsWorkout(t *testing.T) {
 		if err != nil || kept != 1 {
 			t.Fatalf("only the workout's route is kept: %d, %v", kept, err)
 		}
-		if _, err := tx.UpsertHealthRoutes(world.ben.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: path}}); err != nil {
+		if len(unmatched) != 2 || unmatched[0] != "steps-1" || unmatched[1] != "never-had-this" {
+			t.Errorf("the routes left out are named, so the phone sends them again after their workout: %v", unmatched)
+		}
+		if _, _, err := tx.UpsertHealthRoutes(world.ben.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: path}}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tx.GetHealthRoute(world.ben.ID, "run-1"); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("ben has no such workout, so no route: %v", err)
 		}
-		if _, err := tx.UpsertHealthRoutes(world.ada.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: [][]float64{{0, 11, 21, 3}, {5, 11.1, 21.1, 3}}}}); err != nil {
+		if _, _, err := tx.UpsertHealthRoutes(world.ada.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: [][]float64{{0, 11, 21, 3}, {5, 11.1, 21.1, 3}}}}); err != nil {
 			t.Fatal(err)
 		}
 		route, err := tx.GetHealthRoute(world.ada.ID, "run-1")
 		if err != nil || len(route.RoutePoints) != 2 || route.RoutePoints[1][1] != 11.1 {
 			t.Errorf("a route replaces the one before: %+v %v", route, err)
 		}
-		if _, err := tx.UpsertHealthRoutes(world.ada.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: [][]float64{{math.NaN(), 1, 1, 1}}}}); !errors.Is(err, db.ErrInvalidArguments) {
+		if _, _, err := tx.UpsertHealthRoutes(world.ada.ID, []*models.HealthRoute{
+			{HealthSampleID: "run-1", RoutePoints: [][]float64{{0, 12, 22, 3}}},
+			{HealthSampleID: "run-1", RoutePoints: [][]float64{{math.NaN(), 1, 1, 1}}},
+		}); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("a route that is not finite: %v", err)
+		}
+		if route, _ := tx.GetHealthRoute(world.ada.ID, "run-1"); route == nil || route.RoutePoints[0][1] != 11 {
+			t.Errorf("every route is checked before the first is stored: %+v", route)
 		}
 	})
 }
@@ -292,11 +317,19 @@ func TestHealthDaysAddUpIntoWeeksAndMonths(t *testing.T) {
 		if weeks[1].AverageValue != nil || weeks[1].DurationSeconds != nil || len(weeks[1].CategorySeconds) != 0 {
 			t.Errorf("a sum has no average or duration: %+v", weeks[1])
 		}
+		// A per-day average divides by the days that have a summary, not by
+		// the days of the week: two days in the first week, two in the second.
+		if weeks[0].DayCount != 2 || weeks[1].DayCount != 2 || days[0].DayCount != 1 {
+			t.Errorf("the days a period holds: %d, %d, %d", weeks[0].DayCount, weeks[1].DayCount, days[0].DayCount)
+		}
 
 		months, _, err := tx.ListHealthPeriods(world.ada.ID, "stepCount", "2026-02-01", "2026-03-31", health.PeriodMonth)
 		if err != nil || len(months) != 2 || months[0].StartDay != "2026-02-01" || months[0].EndDay != "2026-02-28" || *months[0].SumValue != 1000 ||
 			months[1].StartDay != "2026-03-01" || months[1].EndDay != "2026-03-31" || *months[1].SumValue != 14500 {
 			t.Errorf("the months: %+v %v", months, err)
+		}
+		if months[0].DayCount != 1 || months[1].DayCount != 3 {
+			t.Errorf("a month of three days has three days: %d and %d", months[0].DayCount, months[1].DayCount)
 		}
 
 		// A range inside one week adds only the days asked for.
@@ -305,8 +338,8 @@ func TestHealthDaysAddUpIntoWeeksAndMonths(t *testing.T) {
 			t.Errorf("only the days in the range: %+v", narrow)
 		}
 
-		// An average is weighted by readings; a day with none counts by itself
-		// only when nothing in the period has a count.
+		// An average is weighted by readings; a day with an average and no
+		// readings counts as one reading, so it is never left out.
 		heart, unit, err := tx.ListHealthPeriods(world.ada.ID, "heartRate", "2026-03-01", "2026-04-30", health.PeriodMonth)
 		if err != nil || len(heart) != 2 || unit != "count/min" {
 			t.Fatalf("heart rate by month: %+v %q %v", heart, unit, err)
@@ -318,8 +351,25 @@ func TestHealthDaysAddUpIntoWeeksAndMonths(t *testing.T) {
 			t.Errorf("a day with an average and no count: %+v", heart[1])
 		}
 
+		if _, err := tx.UpsertHealthDaySummaries(world.ada.ID, []*models.HealthDaySummary{
+			daySummary("bodyMass", "2026-03-02", func(summary *models.HealthDaySummary) {
+				summary.QuantityUnit = "kg"
+				summary.AverageValue, summary.SampleCount = number(70), 10
+			}),
+			daySummary("bodyMass", "2026-03-03", func(summary *models.HealthDaySummary) {
+				summary.QuantityUnit = "kg"
+				summary.AverageValue, summary.SampleCount = number(81), 0
+			}),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		mass, _, err := tx.ListHealthPeriods(world.ada.ID, "bodyMass", "2026-03-01", "2026-03-31", health.PeriodMonth)
+		if want := (70.0*10 + 81.0*1) / 11; err != nil || len(mass) != 1 || math.Abs(*mass[0].AverageValue-want) > 1e-9 || mass[0].DayCount != 2 {
+			t.Errorf("a day with no readings is not left out of the average: %+v %v (want %v)", mass, err, want)
+		}
+
 		sleep, _, err := tx.ListHealthPeriods(world.ada.ID, "sleepAnalysis", "2026-03-01", "2026-03-31", health.PeriodWeek)
-		if err != nil || len(sleep) != 1 || *sleep[0].DurationSeconds != 52200 || sleep[0].SampleCount != 10 {
+		if err != nil || len(sleep) != 1 || *sleep[0].DurationSeconds != 52200 || sleep[0].SampleCount != 10 || sleep[0].DayCount != 2 {
 			t.Fatalf("a week of sleep: %+v %v", sleep, err)
 		}
 		if want := map[string]float64{"asleepCore": 22600, "asleepDeep": 3000, "asleepREM": 5400, "awake": 600}; len(sleep[0].CategorySeconds) != len(want) {
@@ -457,7 +507,7 @@ func TestErasingHealthDataOfOneKindAndOfAll(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := tx.UpsertHealthRoutes(person.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: [][]float64{{0, 1, 1, 1}}}}); err != nil {
+			if _, _, err := tx.UpsertHealthRoutes(person.ID, []*models.HealthRoute{{HealthSampleID: "run-1", RoutePoints: [][]float64{{0, 1, 1, 1}}}}); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := tx.UpsertHealthDaySummaries(person.ID, []*models.HealthDaySummary{

@@ -2,7 +2,7 @@ import Foundation
 import TeaNodeKit
 
 // The words the Health screens say for Health's own things, in the person's
-// language: the Health app's groups, the most common kinds of data, workouts
+// language: the Health app's groups, the kinds of data the dashboard names, workouts
 // and the stages of sleep. Each is written under a key of its own because
 // "Health" and "Activity" are already words of the app with another meaning
 // (the spending category, the agent's activity). Anything not listed falls
@@ -11,6 +11,17 @@ import TeaNodeKit
 enum HealthWords {
     /// The feature's name: the side menu, the screen and the setting.
     static var title: String { String(localized: "health-title", defaultValue: "Health") }
+
+    /// The choice of day, week or month a chart is drawn by. Its own key: the
+    /// word is read in Chinese as a cycle elsewhere in the app, and here as the
+    /// unit of the chart, as the dashboard writes it.
+    static var periodTitle: String { String(localized: "health-period", defaultValue: "Period") }
+
+    /// The range of a year back. Its own key, as the dashboard writes it.
+    static var yearRangeTitle: String { String(localized: "health-range-year", defaultValue: "Year") }
+
+    /// The total of a chart. Its own key, as the dashboard writes it.
+    static var totalTitle: String { String(localized: "health-total", defaultValue: "Total") }
 
     /// A Health category as the Health app names it.
     static func categoryName(_ healthCategory: HealthCategory) -> String {
@@ -39,7 +50,7 @@ enum HealthWords {
         return HealthTypes.typeName(for: healthType)
     }
 
-    /// The most common sixty kinds of data, translated.
+    /// The kinds of data the dashboard names, in the same words as it does.
     private static func translatedTypeName(_ healthType: String) -> String? {
         switch healthType {
         case "stepCount": return String(localized: "health-type-stepCount", defaultValue: "Steps")
@@ -102,6 +113,37 @@ enum HealthWords {
         case "numberOfTimesFallen": return String(localized: "health-type-numberOfTimesFallen", defaultValue: "Falls")
         case "handwashingEvent": return String(localized: "health-type-handwashingEvent", defaultValue: "Handwashing")
         case "toothbrushingEvent": return String(localized: "health-type-toothbrushingEvent", defaultValue: "Toothbrushing")
+        case "distanceWheelchair": return String(localized: "health-type-distanceWheelchair", defaultValue: "Wheelchair distance")
+        case "pushCount": return String(localized: "health-type-pushCount", defaultValue: "Wheelchair pushes")
+        case "swimmingStrokeCount": return String(localized: "health-type-swimmingStrokeCount", defaultValue: "Swimming strokes")
+        case "physicalEffort": return String(localized: "health-type-physicalEffort", defaultValue: "Physical effort")
+        case "cyclingSpeed": return String(localized: "health-type-cyclingSpeed", defaultValue: "Cycling speed")
+        case "cyclingPower": return String(localized: "health-type-cyclingPower", defaultValue: "Cycling power")
+        case "cyclingCadence": return String(localized: "health-type-cyclingCadence", defaultValue: "Cycling cadence")
+        case "runningPower": return String(localized: "health-type-runningPower", defaultValue: "Running power")
+        case "runningStrideLength": return String(localized: "health-type-runningStrideLength", defaultValue: "Running stride length")
+        case "runningGroundContactTime": return String(localized: "health-type-runningGroundContactTime", defaultValue: "Ground contact time")
+        case "runningVerticalOscillation": return String(localized: "health-type-runningVerticalOscillation", defaultValue: "Vertical oscillation")
+        case "atrialFibrillationBurden": return String(localized: "health-type-atrialFibrillationBurden", defaultValue: "AFib burden")
+        case "highHeartRateEvent": return String(localized: "health-type-highHeartRateEvent", defaultValue: "High heart rate events")
+        case "lowHeartRateEvent": return String(localized: "health-type-lowHeartRateEvent", defaultValue: "Low heart rate events")
+        case "irregularHeartRhythmEvent": return String(localized: "health-type-irregularHeartRhythmEvent", defaultValue: "Irregular rhythm events")
+        case "basalBodyTemperature": return String(localized: "health-type-basalBodyTemperature", defaultValue: "Basal body temperature")
+        case "bloodAlcoholContent": return String(localized: "health-type-bloodAlcoholContent", defaultValue: "Blood alcohol content")
+        case "forcedVitalCapacity": return String(localized: "health-type-forcedVitalCapacity", defaultValue: "Forced vital capacity")
+        case "forcedExpiratoryVolume1": return String(localized: "health-type-forcedExpiratoryVolume1", defaultValue: "Forced expiratory volume")
+        case "peakExpiratoryFlowRate": return String(localized: "health-type-peakExpiratoryFlowRate", defaultValue: "Peak expiratory flow")
+        case "inhalerUsage": return String(localized: "health-type-inhalerUsage", defaultValue: "Inhaler usage")
+        case "environmentalSoundReduction": return String(localized: "health-type-environmentalSoundReduction", defaultValue: "Environmental sound reduction")
+        case "audiogram": return String(localized: "health-type-audiogram", defaultValue: "Audiograms")
+        case "dietaryCholesterol": return String(localized: "health-type-dietaryCholesterol", defaultValue: "Cholesterol")
+        case "menstrualFlow": return String(localized: "health-type-menstrualFlow", defaultValue: "Menstrual flow")
+        case "intermenstrualBleeding": return String(localized: "health-type-intermenstrualBleeding", defaultValue: "Spotting")
+        case "ovulationTestResult": return String(localized: "health-type-ovulationTestResult", defaultValue: "Ovulation test result")
+        case "sexualActivity": return String(localized: "health-type-sexualActivity", defaultValue: "Sexual activity")
+        case "cervicalMucusQuality": return String(localized: "health-type-cervicalMucusQuality", defaultValue: "Cervical mucus quality")
+        case "contraceptive": return String(localized: "health-type-contraceptive", defaultValue: "Contraceptive")
+        case "insulinDelivery": return String(localized: "health-type-insulinDelivery", defaultValue: "Insulin delivery")
         default:
             return nil
         }

@@ -89,10 +89,12 @@ public struct HealthSampleInput: Codable, Hashable, Sendable {
         self.quantityUnit = quantityUnit
         self.categoryValue = categoryValue
         self.workoutActivityType = workoutActivityType
-        self.sourceName = sourceName
-        self.sourceBundleId = sourceBundleId
-        self.deviceName = deviceName
-        self.sampleMetadata = sampleMetadata
+        // The server refuses a null character in any text, and metadata over
+        // its limit: the sample is kept and the least useful keys are not.
+        self.sourceName = HealthMetadataFit.withoutNull(sourceName)
+        self.sourceBundleId = HealthMetadataFit.withoutNull(sourceBundleId)
+        self.deviceName = HealthMetadataFit.withoutNull(deviceName)
+        self.sampleMetadata = HealthMetadataFit.fitting(sampleMetadata)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -314,6 +316,10 @@ public struct HealthBatch: Sendable, Equatable {
     public static let daySummaryCountMost = 1000
     public static let routeCountMost = 5
     public static let characteristicCountMost = 20
+    /// The most bytes of JSON a call carries before it is cut in two. The
+    /// signed-in endpoint refuses a body over 12 MB before it reads it, and a
+    /// refusal that names nothing would have the same page sent for ever.
+    public static let encodedByteCountMost = 8 * 1024 * 1024
 
     public let samples: [HealthSampleInput]
     public let deletedHealthSampleIds: [String]
@@ -396,7 +402,20 @@ public struct HealthBatch: Sendable, Equatable {
                 routes: index < routeSlices.count ? routeSlices[index] : [],
                 characteristics: index < characteristicSlices.count ? characteristicSlices[index] : [])
         }.filter { !$0.isEmpty }
-        return (requests, rejectedEntryCount)
+        return (requests.flatMap { $0.cutToFit(byteCountMost: encodedByteCountMost) }, rejectedEntryCount)
+    }
+
+    /// How many bytes of JSON the call carries.
+    public var encodedByteCount: Int {
+        guard let encoded = try? HealthJSON.makeEncoder().encode(JSONValue.object(variables)) else { return 0 }
+        return encoded.count
+    }
+
+    /// The batch, or its halves, and their halves, until each is within the
+    /// most bytes; a single entry is never cut.
+    func cutToFit(byteCountMost: Int) -> [HealthBatch] {
+        guard entryCount > 1, encodedByteCount > byteCountMost, let halves = split() else { return [self] }
+        return halves.first.cutToFit(byteCountMost: byteCountMost) + halves.second.cutToFit(byteCountMost: byteCountMost)
     }
 
     /// The two smaller batches to send when the server calls this one invalid
@@ -480,6 +499,9 @@ public struct ReportHealthResult: Codable, Hashable, Sendable {
     public let deletedSampleCount: Int
     public let updatedDayCount: Int
     public let deletedSamples: [HealthDeletedSample]
+    /// The workouts whose routes the server left out because it has no such
+    /// workout yet; they are sent again after the workout.
+    public let unmatchedRouteHealthSampleIds: [String]
     /// When the person last erased their Health data on the server, RFC 3339;
     /// nil if never. When this is later than when Health was turned on in the
     /// app, the app stops (HealthSyncState.applyServerErase).
@@ -488,12 +510,14 @@ public struct ReportHealthResult: Codable, Hashable, Sendable {
     public var healthErasedDate: Date? { ServerTime.date(healthErasedAt) }
 
     public init(
-        newSampleCount: Int, deletedSampleCount: Int, updatedDayCount: Int, deletedSamples: [HealthDeletedSample] = [], healthErasedAt: String? = nil
+        newSampleCount: Int, deletedSampleCount: Int, updatedDayCount: Int, deletedSamples: [HealthDeletedSample] = [],
+        unmatchedRouteHealthSampleIds: [String] = [], healthErasedAt: String? = nil
     ) {
         self.newSampleCount = newSampleCount
         self.deletedSampleCount = deletedSampleCount
         self.updatedDayCount = updatedDayCount
         self.deletedSamples = deletedSamples
+        self.unmatchedRouteHealthSampleIds = unmatchedRouteHealthSampleIds
         self.healthErasedAt = healthErasedAt
     }
 
@@ -503,6 +527,7 @@ public struct ReportHealthResult: Codable, Hashable, Sendable {
         deletedSampleCount = try container.decodeIfPresent(Int.self, forKey: .deletedSampleCount) ?? 0
         updatedDayCount = try container.decodeIfPresent(Int.self, forKey: .updatedDayCount) ?? 0
         deletedSamples = try container.decodeIfPresent([HealthDeletedSample].self, forKey: .deletedSamples) ?? []
+        unmatchedRouteHealthSampleIds = try container.decodeIfPresent([String].self, forKey: .unmatchedRouteHealthSampleIds) ?? []
         healthErasedAt = try container.decodeIfPresent(String.self, forKey: .healthErasedAt)
     }
 
@@ -517,7 +542,8 @@ public struct ReportHealthResult: Codable, Hashable, Sendable {
         }
         return ReportHealthResult(
             newSampleCount: newSampleCount + other.newSampleCount, deletedSampleCount: deletedSampleCount + other.deletedSampleCount,
-            updatedDayCount: updatedDayCount + other.updatedDayCount, deletedSamples: deletedSamples + other.deletedSamples, healthErasedAt: later)
+            updatedDayCount: updatedDayCount + other.updatedDayCount, deletedSamples: deletedSamples + other.deletedSamples,
+            unmatchedRouteHealthSampleIds: unmatchedRouteHealthSampleIds + other.unmatchedRouteHealthSampleIds, healthErasedAt: later)
     }
 
     public static let nothing = ReportHealthResult(newSampleCount: 0, deletedSampleCount: 0, updatedDayCount: 0)
@@ -631,16 +657,21 @@ public struct HealthPeriodView: Codable, Hashable, Sendable {
     public let maximumValue: Double?
     public let sampleCount: Int
     public let durationSeconds: Double?
+    /// How many days of the period have a day summary: what the amount of a
+    /// week or a month is divided by to be read per day, so that a month with
+    /// twelve days sent is averaged over twelve and not thirty. Zero when the
+    /// server did not say.
+    public let dayCount: Int
     /// Seconds by sleep stage, and "asleep"; see HealthDaySummaryInput.
     public let categorySeconds: [String: Double]
 
     private enum CodingKeys: String, CodingKey {
-        case startDay, endDay, sumValue, averageValue, minimumValue, maximumValue, sampleCount, durationSeconds, categorySeconds
+        case startDay, endDay, sumValue, averageValue, minimumValue, maximumValue, sampleCount, durationSeconds, dayCount, categorySeconds
     }
 
     public init(
         startDay: String, endDay: String, sumValue: Double? = nil, averageValue: Double? = nil, minimumValue: Double? = nil,
-        maximumValue: Double? = nil, sampleCount: Int, durationSeconds: Double? = nil, categorySeconds: [String: Double] = [:]
+        maximumValue: Double? = nil, sampleCount: Int, durationSeconds: Double? = nil, dayCount: Int = 0, categorySeconds: [String: Double] = [:]
     ) {
         self.startDay = startDay
         self.endDay = endDay
@@ -650,6 +681,7 @@ public struct HealthPeriodView: Codable, Hashable, Sendable {
         self.maximumValue = maximumValue
         self.sampleCount = sampleCount
         self.durationSeconds = durationSeconds
+        self.dayCount = dayCount
         self.categorySeconds = categorySeconds
     }
 
@@ -663,6 +695,7 @@ public struct HealthPeriodView: Codable, Hashable, Sendable {
         maximumValue = try container.decodeIfPresent(Double.self, forKey: .maximumValue)
         sampleCount = try container.decodeIfPresent(Int.self, forKey: .sampleCount) ?? 0
         durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        dayCount = try container.decodeIfPresent(Int.self, forKey: .dayCount) ?? 0
         categorySeconds = HealthJSON.seconds(container, .categorySeconds)
     }
 }
@@ -837,6 +870,22 @@ public struct HealthSettingsView: Codable, Hashable, Sendable {
 
     public var healthErasedDate: Date? { ServerTime.date(healthErasedAt) }
     public var lastReceivedDate: Date? { ServerTime.date(lastReceivedAt) }
+
+    private enum CodingKeys: String, CodingKey {
+        case canAgentReadHealth, healthErasedAt, sampleCount, lastReceivedAt, modelProviderName, characteristics
+    }
+
+    /// The server sends null for a list with nothing in it, and leaves out what
+    /// was not asked for.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        canAgentReadHealth = try container.decodeIfPresent(Bool.self, forKey: .canAgentReadHealth) ?? false
+        healthErasedAt = try container.decodeIfPresent(String.self, forKey: .healthErasedAt)
+        sampleCount = try container.decodeIfPresent(Int.self, forKey: .sampleCount) ?? 0
+        lastReceivedAt = try container.decodeIfPresent(String.self, forKey: .lastReceivedAt)
+        modelProviderName = try container.decodeIfPresent(String.self, forKey: .modelProviderName) ?? ""
+        characteristics = try container.decodeIfPresent([HealthCharacteristicView].self, forKey: .characteristics) ?? []
+    }
 }
 
 /// EraseHealthDataResult is what an erase removed.
@@ -871,7 +920,7 @@ extension Documents {
     // Each shared list of fields is written out in full, nested ones too: the
     // server's test of the app's documents fills in one level of them.
     static let healthPeriodFields = """
-        startDay endDay sumValue averageValue minimumValue maximumValue sampleCount durationSeconds categorySeconds
+        startDay endDay dayCount sumValue averageValue minimumValue maximumValue sampleCount durationSeconds categorySeconds
         """
     static let healthTypeFields = """
         healthType healthCategory typeName valueKind quantityUnit summaryKind firstDay lastDay sampleCount
@@ -889,9 +938,9 @@ extension Documents {
         """
 
     public static let reportHealth = """
-        mutation ($agentPhoneId: String, $samples: [HealthSampleInput!]!, $deletedHealthSampleIds: [String!]!, $daySummaries: [HealthDaySummaryInput!]!, $routes: [HealthRouteInput!]!, $characteristics: [HealthCharacteristicInput!]!) {
-          ReportHealth(agentPhoneId: $agentPhoneId, samples: $samples, deletedHealthSampleIds: $deletedHealthSampleIds, daySummaries: $daySummaries, routes: $routes, characteristics: $characteristics) {
-            newSampleCount deletedSampleCount updatedDayCount deletedSamples { healthType startedAt endedAt } healthErasedAt
+        mutation ($agentPhoneId: String, $healthTurnedOnAt: DateTime, $samples: [HealthSampleInput!]!, $deletedHealthSampleIds: [String!]!, $daySummaries: [HealthDaySummaryInput!]!, $routes: [HealthRouteInput!]!, $characteristics: [HealthCharacteristicInput!]!) {
+          ReportHealth(agentPhoneId: $agentPhoneId, healthTurnedOnAt: $healthTurnedOnAt, samples: $samples, deletedHealthSampleIds: $deletedHealthSampleIds, daySummaries: $daySummaries, routes: $routes, characteristics: $characteristics) {
+            newSampleCount deletedSampleCount updatedDayCount deletedSamples { healthType startedAt endedAt } unmatchedRouteHealthSampleIds healthErasedAt
           }
         }
         """
@@ -946,11 +995,20 @@ extension Documents {
 
 extension Connection {
     /// Hands the server a batch. Safe to send twice: the server knows a sample
-    /// by HealthKit's identifier and replaces a day's summary.
-    public func reportHealth(_ batch: HealthBatch, agentPhoneId: String? = nil) async throws -> ReportHealthResult {
+    /// by HealthKit's identifier and replaces a day's summary. With every call
+    /// goes when Health was turned on in the app: a person who erased all of
+    /// their Health after that is not undone by a batch still on its way, so
+    /// the server stores nothing from a phone that turned Health on before the
+    /// erase (or that does not say), and answers with the time of the erase.
+    public func reportHealth(_ batch: HealthBatch, agentPhoneId: String? = nil, healthTurnedOnAt: Date?) async throws -> ReportHealthResult {
         struct Answer: Decodable, Sendable { let ReportHealth: ReportHealthResult }
         var variables = batch.variables
         if let agentPhoneId { variables["agentPhoneId"] = .string(agentPhoneId) }
+        if let healthTurnedOnAt {
+            variables["healthTurnedOnAt"] = .string(CalendarDates.text(healthTurnedOnAt))
+        } else {
+            variables["healthTurnedOnAt"] = .null
+        }
         return try await execute(Documents.reportHealth, variables: variables, as: Answer.self).ReportHealth
     }
 

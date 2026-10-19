@@ -42,6 +42,70 @@ CREATE TABLE "health_sample" (
 -- newest first.
 CREATE INDEX "health_sample_user_type_started" ON "health_sample" ("user_id", "health_type", "started_at" DESC);
 
+-- Removing a phone sets agent_phone_id to null on every reading it sent, and
+-- without this index PostgreSQL would read the whole table, every person's,
+-- to find them.
+CREATE INDEX "health_sample_agent_phone" ON "health_sample" ("agent_phone_id") WHERE "agent_phone_id" IS NOT NULL;
+
+-- How many readings of each kind a person has, and when the latest arrived.
+-- A person has millions of readings, so counting them each time a page, a
+-- report or the agent asks would read all of them; these rows are kept by the
+-- two triggers below, which run once for each insert or delete statement and
+-- not once for each row, so they are right however the readings come and go
+-- (a report, a deletion, an erase). last_received_at is when the latest
+-- reading of the kind arrived and is not lowered when that reading is deleted.
+CREATE TABLE "health_type_total" (
+    "user_id"          character varying(32)    NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
+    "health_type"      character varying(96)    NOT NULL,
+    "sample_count"     bigint                   NOT NULL CHECK ("sample_count" >= 0),
+    "last_received_at" timestamp with time zone NOT NULL,
+    PRIMARY KEY ("user_id", "health_type")
+);
+
+CREATE FUNCTION "health_sample_count_inserted"() RETURNS trigger AS $$
+BEGIN
+    INSERT INTO "health_type_total" ("user_id", "health_type", "sample_count", "last_received_at")
+    SELECT "user_id", "health_type", count(*), max("received_at") FROM inserted_rows GROUP BY "user_id", "health_type"
+    ON CONFLICT ("user_id", "health_type") DO UPDATE SET
+        "sample_count" = "health_type_total"."sample_count" + EXCLUDED."sample_count",
+        "last_received_at" = greatest("health_type_total"."last_received_at", EXCLUDED."last_received_at");
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER "health_sample_inserted" AFTER INSERT ON "health_sample"
+    REFERENCING NEW TABLE AS inserted_rows FOR EACH STATEMENT EXECUTE FUNCTION "health_sample_count_inserted"();
+
+CREATE FUNCTION "health_sample_count_deleted"() RETURNS trigger AS $$
+BEGIN
+    UPDATE "health_type_total" SET "sample_count" = "health_type_total"."sample_count" - deleted_counts."deleted_count"
+    FROM (SELECT "user_id", "health_type", count(*) AS "deleted_count" FROM deleted_rows GROUP BY "user_id", "health_type") deleted_counts
+    WHERE "health_type_total"."user_id" = deleted_counts."user_id" AND "health_type_total"."health_type" = deleted_counts."health_type";
+    DELETE FROM "health_type_total" USING (SELECT DISTINCT "user_id", "health_type" FROM deleted_rows) deleted_types
+    WHERE "health_type_total"."user_id" = deleted_types."user_id" AND "health_type_total"."health_type" = deleted_types."health_type"
+        AND "health_type_total"."sample_count" <= 0;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER "health_sample_deleted" AFTER DELETE ON "health_sample"
+    REFERENCING OLD TABLE AS deleted_rows FOR EACH STATEMENT EXECUTE FUNCTION "health_sample_count_deleted"();
+
+-- A reading that was deleted, and what it was, for 30 days. A phone that
+-- deleted a reading sends its identifier and learns from the answer which
+-- days to work out again; if the answer is lost, the phone sends the
+-- identifier again and must get the same answer, although the reading is
+-- already gone. The code that deletes readings writes this, answers from it,
+-- and forgets what is older than 30 days.
+CREATE TABLE "health_deleted_sample" (
+    "user_id"          character varying(32)    NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
+    "health_sample_id" character varying(64)    NOT NULL,
+    "health_type"      character varying(96)    NOT NULL,
+    "started_at"       timestamp with time zone NOT NULL,
+    "ended_at"         timestamp with time zone NOT NULL,
+    "deleted_at"       timestamp with time zone NOT NULL,
+    PRIMARY KEY ("user_id", "health_sample_id")
+);
+CREATE INDEX "health_deleted_sample_user_deleted" ON "health_deleted_sample" ("user_id", "deleted_at");
+
 -- One kind of reading on one day. The phone works these out because only it
 -- can merge an iPhone and a Watch counting the same walk the way the Health
 -- app does, so the server keeps what the phone sent and never adds samples up

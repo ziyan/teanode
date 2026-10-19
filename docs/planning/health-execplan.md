@@ -20,9 +20,11 @@ To see it working at the end: on a development server, a phone (or the demo data
 - [x] (2026-10-18) Research: Apple's rules for HealthKit apps, the HealthKit APIs, what exists in the repository, reference apps. Summarized in Surprises and the Decision Log.
 - [x] (2026-10-18) The maintainer answered the open questions (see the Decision Log): routes in the first version, clinical records later; the agent switch off until turned on; sharing some health data with circles; the privacy policy drafted here; shipped only after the first App Store version is approved.
 - [x] (2026-10-18) This plan written.
-- [ ] Milestone 1: storage, reporting, reading, erasing and sharing on the server, with the command line and the agent's tool.
-- [ ] Milestone 2: the iPhone reads HealthKit, reports it, and shows it.
-- [ ] Milestone 3: the dashboard's Health page.
+- [x] (2026-10-18) Milestone 1: storage, reporting, reading, erasing and sharing on the server, with the command line and the agent's tool (built by subagents from this plan, read and tested here).
+- [x] (2026-10-18) Milestone 2: the iPhone reads HealthKit, reports it, and shows it (TeaNodeKit tested on Linux; the app is not compiled until the macOS run).
+- [x] (2026-10-18) Milestone 3: the dashboard's Health page.
+- [x] (2026-10-18) First use on a development server: four months of invented data sent as a phone sends it, sent again (nothing new), read with `teanode health`; the dashboard walked in Chrome at 1400 and 390, light and dark.
+- [x] (2026-10-18) Review round 1 (server, dashboard, iPhone, words and parity, the walk-through): about 80 findings.
 - [ ] Milestone 4: getting started, documentation, privacy policy.
 - [ ] Review rounds until a round finds nothing; walk the dashboard in Chrome at 1400 and 390, light and dark; the iPhone screenshots from CI with the ux-review skill.
 - [ ] Held: the pull request stays a draft with no macOS run until the first App Store version (build 518) is approved; then CI, TestFlight, the maintainer's phone.
@@ -80,6 +82,18 @@ To see it working at the end: on a development server, a phone (or the demo data
 - Decision: shipped only after the first App Store version (build 518) is approved; the pull request stays a draft without a macOS run until then. If that version is rejected, it is resubmitted from a build without HealthKit.
   Rationale: the maintainer's answer, and the iPhone plan's rule that the first release must not claim HealthKit: App Review checks what an app with the HealthKit entitlement does with it.
   Date/Author: 2026-10-18, maintainer and coordinator.
+
+- Decision: the agent reads only the person's own Health data, never what somebody shares with them; the dashboard, the iPhone and the command line show the person what is shared with them.
+  Rationale: a person who shares Health shares it with people, not with their agents' model providers, and only the sharer can agree to their data going to one. It also keeps text another person controls (type names, units) out of the agent's context. Found in review round 1.
+  Date/Author: 2026-10-18, design.
+
+- Decision: a phone says when Health was turned on with each report (`healthTurnedOnAt`), and the server stores nothing from a phone that turned it on before the person last erased everything; it answers with the erase time and the phone turns Health off.
+  Rationale: review round 1 found that a batch in flight, or the next one, filled the server again after Erase. Erasing one kind erases what is kept of it; new readings of that kind still arrive while Health is on, and the confirmation says so.
+  Date/Author: 2026-10-18, design.
+
+- Decision: percentages are kept as HealthKit keeps them, a fraction (0.97), and every surface shows them as a percentage. Units are written the same way everywhere: steps and other counts as plain numbers, heart rate in bpm, distance in km from 1000 m, temperature in °C.
+  Rationale: the walk-through found "0.97%" on the dashboard, "count/min" in the command line and "74.3/min" on the dashboard for the same heart rate.
+  Date/Author: 2026-10-18, design.
 
 ## Outcomes & Retrospective
 

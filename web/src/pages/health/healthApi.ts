@@ -60,6 +60,9 @@ export type HealthPeriod = {
   minimumValue: number | null
   maximumValue: number | null
   sampleCount: number
+  // How many days of the period have a day summary: what a week's or month's
+  // amount is divided by to be read per day.
+  dayCount?: number
   durationSeconds: number | null
   categorySeconds: string | Record<string, number> | null
 }
@@ -88,12 +91,17 @@ export type HealthSamplePage = { samples: HealthSample[]; totalCount: number; ne
 
 export type HealthRoute = { healthSampleId: string; routePoints: number[][] }
 
-export type HealthSettings = {
+// A fact about the person that is set in the Health app, such as the date of
+// birth, as the iPhone sent it.
+export type HealthCharacteristic = { healthType: string; characteristicValue: string }
+
+export type HealthSettingsResult = {
   canAgentReadHealth: boolean
   healthErasedAt: string | null
   sampleCount: number
   lastReceivedAt: string | null
   modelProviderName: string
+  characteristics: HealthCharacteristic[] | null
 }
 
 export type HealthShare = {
@@ -124,7 +132,7 @@ export const READ_HEALTH_SUMMARY = `query ($healthType: String!, $fromDay: Strin
   ReadHealthSummary(healthType: $healthType, fromDay: $fromDay, toDay: $toDay, period: $period,
     ownerUserId: $ownerUserId) {
     healthType quantityUnit summaryKind
-    periods { startDay endDay ${DAY_FIELDS} categorySeconds }
+    periods { startDay endDay dayCount ${DAY_FIELDS} categorySeconds }
   }
 }`
 
@@ -141,7 +149,8 @@ export const READ_HEALTH_ROUTE = `query ($healthSampleId: String!) {
   ReadHealthRoute(healthSampleId: $healthSampleId) { healthSampleId routePoints }
 }`
 
-const SETTINGS_FIELDS = 'canAgentReadHealth healthErasedAt sampleCount lastReceivedAt modelProviderName'
+const SETTINGS_FIELDS = `canAgentReadHealth healthErasedAt sampleCount lastReceivedAt modelProviderName
+  characteristics { healthType characteristicValue }`
 
 export const READ_HEALTH_SETTINGS = `query { ReadHealthSettings { ${SETTINGS_FIELDS} } }`
 
@@ -182,7 +191,7 @@ export const PERIODS = [
 
 export type PeriodID = (typeof PERIODS)[number]['id']
 
-export const DEFAULT_RANGE: RangeID = '90'
+export const DEFAULT_RANGE: RangeID = '30'
 
 // The period a range is drawn by when the address names none: a bar a day
 // would be thinner than a pixel over a year.
@@ -193,6 +202,9 @@ export function defaultPeriodFor(range: RangeID): PeriodID {
 
 // The server answers at most this many periods.
 const MOST_PERIODS = 400
+// A week the range starts inside still counts as one of them, so a chart by
+// week reaches back one fewer.
+const MOST_WEEKS = MOST_PERIODS - 1
 
 export function readRange(value: string | null): RangeID {
   return RANGES.find((each) => each.id === value)?.id ?? DEFAULT_RANGE
@@ -226,28 +238,39 @@ export function daysBetweenCount(first: string, last: string): number {
 }
 
 // chartDays are the days a chart reaches over: from the range's start (or the
-// first day there is data, for all of it) to today. A day period never asks
-// for more days than the server answers.
+// first day there is data, for all of it) to today. A chart by day or by week
+// never asks for more periods than the server answers; isCut says the range
+// was shortened for that, and mostPeriods is how many periods are drawn then.
 export function chartDays(range: RangeID, period: PeriodID, today: string, firstDay: string | null) {
   const days = RANGES.find((each) => each.id === range)?.days ?? 0
   let fromDay = days > 0 ? addDays(today, 1 - days) : (firstDay ?? addDays(today, 1 - 365)).slice(0, 10)
-  if (period === 'day') {
-    const earliest = addDays(today, 1 - MOST_PERIODS)
-    if (fromDay < earliest) fromDay = earliest
+  let isCut = false
+  const mostDays = period === 'day' ? MOST_PERIODS : period === 'week' ? MOST_WEEKS * 7 : 0
+  if (mostDays > 0) {
+    const earliest = addDays(today, 1 - mostDays)
+    if (fromDay < earliest) {
+      fromDay = earliest
+      isCut = true
+    }
   }
-  return { fromDay, toDay: today }
+  return { fromDay, toDay: today, isCut, mostPeriods: period === 'week' ? MOST_WEEKS : MOST_PERIODS }
 }
 
 // numbers and units
 
-// How a unit HealthKit sends is written beside a number. A unit not here is
-// written as it came.
+// How a unit HealthKit sends is written beside a number, the same words as the
+// command line and the iPhone use. A unit not here is written as it came.
+// Steps are HealthKit's plain count, so the dashboard gives them the unit
+// STEPS_UNIT where a number stands without the type's name beside it.
+export const STEPS_UNIT = 'steps'
+
 const UNIT_LABELS: Record<string, string> = {
   count: '',
-  'count/min': '/min',
+  'count/min': 'bpm',
   'count/s': '/s',
-  count_per_min: '/min',
+  count_per_min: 'bpm',
   kcal: 'kcal',
+  'kcal/(kg*hr)': 'kcal/kg·h',
   m: 'm',
   km: 'km',
   mi: 'mi',
@@ -255,9 +278,11 @@ const UNIT_LABELS: Record<string, string> = {
   kg: 'kg',
   g: 'g',
   mg: 'mg',
+  mcg: 'mcg',
   lb: 'lb',
   L: 'L',
   mL: 'mL',
+  'L/min': 'L/min',
   '%': '%',
   degC: '°C',
   degF: '°F',
@@ -270,18 +295,38 @@ const UNIT_LABELS: Record<string, string> = {
   'm/s': 'm/s',
   'km/h': 'km/h',
   W: 'W',
+  S: 'S',
+  IU: 'IU',
   dBASPL: 'dB',
-  'mL/(kg*min)': 'mL/kg/min',
+  appleEffortScore: '',
+  'ml/(kg*min)': 'mL/kg·min',
+  'mL/(kg*min)': 'mL/kg·min',
 }
+
+// The units whose readings are whole numbers: a heart rate of 74.3 is read
+// as 74.
+const WHOLE_NUMBER_UNITS = ['count', 'count/min', 'count_per_min', STEPS_UNIT]
 
 export function unitLabel(unit: string): string {
   return unit in UNIT_LABELS ? UNIT_LABELS[unit] : unit
 }
 
-export function numberText(value: number, language: string): string {
+// displayUnit is the unit a type's numbers are written with. Steps are read
+// with their word where a number stands alone, as a chart's headline does.
+export function displayUnit(healthType: string, quantityUnit: string): string {
+  return healthType === 'stepCount' && quantityUnit === 'count' ? STEPS_UNIT : quantityUnit
+}
+
+export function numberText(value: number, language: string, mostDigits?: number): string {
   const size = Math.abs(value)
-  const digits = size >= 100 ? 0 : size >= 10 ? 1 : 2
+  const digits = mostDigits ?? (size >= 100 ? 0 : size >= 10 ? 1 : 2)
   return new Intl.NumberFormat(language, { maximumFractionDigits: digits }).format(value)
+}
+
+// wholeNumberText is a count written for the language, such as 2,578 in
+// English.
+export function wholeNumberText(value: number, language: string): string {
+  return new Intl.NumberFormat(language, { maximumFractionDigits: 0 }).format(value)
 }
 
 // shownValue is a value as a person reads it. HealthKit keeps a percentage
@@ -290,9 +335,19 @@ export function shownValue(value: number, unit: string): number {
   return unit === '%' ? value * 100 : value
 }
 
-export function quantityText(value: number, unit: string, language: string): string {
+// A distance from this many meters up is written in kilometers.
+const KILOMETER_FROM_METERS = 1000
+
+export function quantityText(value: number, unit: string, language: string, t: Translate): string {
+  if (unit === 'm' && Math.abs(value) >= KILOMETER_FROM_METERS) {
+    return `${numberText(value / KILOMETER_FROM_METERS, language, 1)} km`
+  }
+  // A distance in kilometers has one decimal at most, as a long one in meters
+  // does.
+  const mostDigits = WHOLE_NUMBER_UNITS.includes(unit) ? 0 : unit === 'km' ? 1 : undefined
+  const number = numberText(shownValue(value, unit), language, mostDigits)
+  if (unit === STEPS_UNIT) return t('health.unitSteps', { number })
   const label = unitLabel(unit)
-  const number = numberText(shownValue(value, unit), language)
   if (label === '') return number
   return label.startsWith('/') || label === '%' || label.startsWith('°') ? number + label : `${number} ${label}`
 }
@@ -340,7 +395,7 @@ export function amountText(
   if (value === null) return t('common.none')
   if (summaryKind === 'duration') return durationText(value, t)
   if (summaryKind === 'count') return numberText(value, language)
-  return quantityText(value, unit, language)
+  return quantityText(value, unit, language, t)
 }
 
 // names
@@ -427,10 +482,18 @@ export type HealthNumbers = {
 
 // periodDayCount is how many days of a period the chart reaches over: the
 // current week or month has not ended, and the range may start inside one.
+// It is only what a period's dayCount is taken to be when the server sent none.
 export function periodDayCount(period: HealthPeriod, fromDay: string, toDay: string): number {
   const first = period.startDay.slice(0, 10) > fromDay ? period.startDay.slice(0, 10) : fromDay
   const last = period.endDay.slice(0, 10) < toDay ? period.endDay.slice(0, 10) : toDay
   return Math.max(1, daysBetweenCount(first, last))
+}
+
+// summarizedDayCount is the days of a period that have a day summary, which a
+// week's or month's amount is divided by to be read per day: a week the watch
+// was worn on three nights is three nights, not seven.
+export function summarizedDayCount(period: HealthPeriod, fromDay: string, toDay: string): number {
+  return period.dayCount !== undefined && period.dayCount > 0 ? period.dayCount : periodDayCount(period, fromDay, toDay)
 }
 
 export function numbersOf(
@@ -454,7 +517,7 @@ export function numbersOf(
   }
   numbers.total = filled.reduce((sum, period) => sum + (summaryValue(period, summaryKind) ?? 0), 0)
   if (summaryKind !== 'count') {
-    const dayCount = filled.reduce((count, period) => count + periodDayCount(period, fromDay, toDay), 0)
+    const dayCount = filled.reduce((count, period) => count + summarizedDayCount(period, fromDay, toDay), 0)
     numbers.averagePerDay = dayCount > 0 ? numbers.total / dayCount : null
   }
   return numbers

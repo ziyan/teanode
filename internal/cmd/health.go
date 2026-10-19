@@ -10,6 +10,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/health"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -20,7 +21,8 @@ const healthDefaultDayCount = 30
 // NewHealthCommand is `teanode health`: the Apple Health data your iPhone
 // copied to this server, by day, week or month, and the readings and routes
 // under it. Only the iPhone app reads HealthKit, so there is no command to
-// report.
+// report, and there is no command to set Health up: that is the app's Settings
+// (see 'teanode health types' with nothing kept).
 func NewHealthCommand() *cli.Command {
 	rangeFlags := func() []cli.Flag {
 		return []cli.Flag{
@@ -29,30 +31,35 @@ func NewHealthCommand() *cli.Command {
 			&cli.StringFlag{Name: "since", Usage: "instead of --from: a span back from today, as 30d, 12w, 6m or 1y"},
 		}
 	}
-	userFlag := &cli.StringFlag{Name: "user", Usage: "the username of somebody who shares Health with you; yours by default"}
+	personFlag := &cli.StringFlag{Name: "person", Usage: "the username of somebody who shares their Health with you; yours by default"}
 	return &cli.Command{
 		Name:  "health",
 		Usage: "your Apple Health data: steps, heart rate, sleep, workouts and the rest",
-		Description: "The TeaNode app on your iPhone copies the Health data you choose to this server.\n" +
+		Description: "The TeaNode app on your iPhone copies the Health data you allow to this server.\n" +
 			"A type is one kind of data, named as HealthKit names it without its prefix\n" +
 			"(stepCount, heartRate, sleepAnalysis, workout); 'teanode health types' lists the\n" +
-			"ones you have. Days are your phone's calendar days. Your agent reads Health only\n" +
-			"after you turn that on with 'teanode health settings --agent-can-read on'.\n\n" +
+			"ones you have. Days are your phone's calendar days; with no range, a summary\n" +
+			"covers the last 30 days. Your agent reads your own Health only, and only after you\n" +
+			"turn that on with 'teanode health settings --agent-can-read on' (also the\n" +
+			"Settings tab of the Health page on the dashboard, or Health in the app's Settings).\n\n" +
 			"  teanode health types\n" +
 			"  teanode health summary stepCount --since 7d\n" +
 			"  teanode health summary sleepAnalysis --since 3m --period week\n" +
 			"  teanode health samples heartRate --since 1d --limit 50\n" +
 			"  teanode health share family activity sleep",
 		Commands: []*cli.Command{
-			{Name: "types", Usage: "the kinds of data you have, with their latest day", Flags: []cli.Flag{JSONFlag(), userFlag}, Action: runHealthTypes},
+			{Name: "types", Usage: "the kinds of data you have, with their latest day, and the facts about you Health keeps", Flags: []cli.Flag{JSONFlag(), personFlag}, Action: runHealthTypes},
 			{
 				Name:      "summary",
 				Usage:     "one type by day, week or month",
 				ArgsUsage: "<type>",
 				Description: "A week starts on Monday. Quantities add up (steps) or average (heart rate), and\n" +
-					"sleep and workouts show the time covered, with sleep split into its stages.\n" +
-					"The days of an iPhone and a Watch counting the same walk are counted once.",
-				Flags: append(append([]cli.Flag{JSONFlag(), userFlag}, rangeFlags()...),
+					"sleep and workouts show the time covered, with sleep split into its stages\n" +
+					"(Deep, Core, REM, Awake). A week or a month also shows the average per day (per\n" +
+					"night for sleep) over the days that have data, next to the total, as the\n" +
+					"dashboard does. The days of an iPhone and a Watch counting the same walk are\n" +
+					"counted once.",
+				Flags: append(append([]cli.Flag{JSONFlag(), personFlag}, rangeFlags()...),
 					&cli.StringFlag{Name: "period", Usage: "day, week or month", Value: "day"}),
 				Action: runHealthSummary,
 			},
@@ -60,8 +67,10 @@ func NewHealthCommand() *cli.Command {
 				Name:      "samples",
 				Usage:     "the individual readings of one of your types, newest first",
 				ArgsUsage: "<type>",
+				Description: "A range is whole days in this machine's time zone. Your own readings only:\n" +
+					"what somebody shares with you is day summaries.",
 				Flags: append(append([]cli.Flag{JSONFlag()}, rangeFlags()...),
-					&cli.IntFlag{Name: "limit", Usage: "how many to show, at most 200", Value: 20},
+					&cli.IntFlag{Name: "limit", Usage: "how many to show, at most 200", Value: 50},
 					&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"}),
 				Action: runHealthSamples,
 			},
@@ -80,7 +89,9 @@ func NewHealthCommand() *cli.Command {
 				Usage: "whether your agent may read Health, and how much is kept",
 				Description: "With --agent-can-read on, your agent can answer from your Health data. What it\n" +
 					"reads goes to your agent's model provider, which this command names. Off by\n" +
-					"default, and independent of whether your phone sends Health to this server.",
+					"default, and independent of whether your phone sends Health to this server.\n" +
+					"The switch is also in the Settings tab of the Health page on the dashboard, and\n" +
+					"in Health in the iPhone app's Settings.",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "agent-can-read", Usage: "on lets your agent read your Health data, off stops it"},
@@ -118,11 +129,11 @@ func NewHealthCommand() *cli.Command {
 	}
 }
 
-// healthPerson is the account of the person named with --user: somebody who
+// healthPerson is the account of the person named with --person: somebody who
 // shares Health with the caller. Empty without the flag. The server answers
 // not found for what they did not share.
 func healthPerson(ctx context.Context, command *cli.Command, connection *client.Client) (string, error) {
-	username := strings.TrimSpace(command.String("user"))
+	username := strings.TrimSpace(command.String("person"))
 	if username == "" {
 		return "", nil
 	}
@@ -144,21 +155,18 @@ func healthDays(command *cli.Command) (fromDay, toDay string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	today := time.Now()
 	if toDay == "" {
-		toDay = today.Format(time.DateOnly)
+		toDay = time.Now().Format(time.DateOnly)
+	}
+	toTime, parseErr := time.Parse(time.DateOnly, toDay)
+	if parseErr != nil {
+		return "", "", usage(fmt.Sprintf("--to %q is not a day; give it as 2026-09-30", toDay))
 	}
 	if fromDay == "" {
-		toTime, parseErr := time.Parse(time.DateOnly, toDay)
-		if parseErr != nil {
-			return "", "", usage(fmt.Sprintf("--to %q is not a day; give it as 2026-09-30", toDay))
-		}
 		fromDay = toTime.AddDate(0, 0, 1-healthDefaultDayCount).Format(time.DateOnly)
 	}
-	for name, day := range map[string]string{"from": fromDay, "to": toDay} {
-		if _, parseErr := time.Parse(time.DateOnly, day); parseErr != nil {
-			return "", "", usage(fmt.Sprintf("--%s %q is not a day; give it as 2026-09-30", name, day))
-		}
+	if _, parseErr := time.Parse(time.DateOnly, fromDay); parseErr != nil {
+		return "", "", usage(fmt.Sprintf("--from %q is not a day; give it as 2026-09-01", fromDay))
 	}
 	if toDay < fromDay {
 		return "", "", usage("--to must not be before --from")
@@ -182,11 +190,11 @@ func healthPeriodLabel(period *client.HealthPeriodView) string {
 }
 
 // healthValueCell is a nullable reading with its unit, empty when missing.
-func healthValueCell(value *float64, quantityUnit string) string {
+func healthValueCell(healthType string, value *float64, quantityUnit string) string {
 	if value == nil {
 		return ""
 	}
-	return client.HealthValueWords(*value, quantityUnit)
+	return client.HealthValueWords(healthType, *value, quantityUnit)
 }
 
 // healthLatestWords is the latest day of a type as one cell: what the day
@@ -199,15 +207,28 @@ func healthLatestWords(healthType *client.HealthTypeView) string {
 	var value string
 	switch {
 	case latest.SumValue != nil:
-		value = healthValueCell(latest.SumValue, healthType.QuantityUnit)
+		value = healthValueCell(healthType.HealthType, latest.SumValue, healthType.QuantityUnit)
 	case latest.AverageValue != nil:
-		value = "avg " + healthValueCell(latest.AverageValue, healthType.QuantityUnit)
+		value = "average " + healthValueCell(healthType.HealthType, latest.AverageValue, healthType.QuantityUnit)
 	case latest.DurationSeconds != nil:
-		value = client.HealthDurationWords(*latest.DurationSeconds)
+		value = healthDurationCell(healthType.HealthType, latest.DurationSeconds, latest.CategorySeconds)
 	default:
 		value = countWords(latest.SampleCount, "reading")
 	}
 	return latest.SummaryDay + ": " + value
+}
+
+// healthDurationCell is a time covered: for sleep the time asleep, the
+// night's total when the phone sent one, otherwise the time.
+func healthDurationCell(healthType string, durationSeconds *float64, categorySeconds client.HealthCategorySeconds) string {
+	if durationSeconds == nil {
+		return ""
+	}
+	seconds := *durationSeconds
+	if asleep, isPresent := categorySeconds.AsleepSeconds(); isPresent && healthType == "sleepAnalysis" {
+		seconds = asleep
+	}
+	return client.HealthDurationWords(seconds)
 }
 
 func runHealthTypes(ctx context.Context, command *cli.Command) error {
@@ -230,7 +251,7 @@ func runHealthTypes(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(found)
 	}
 	if len(found) == 0 {
-		fmt.Println("no Health data yet; turn on Health in the TeaNode app on your iPhone")
+		fmt.Println("no Health data yet; turn on Health in the TeaNode app on your iPhone (Settings, then Health) and allow the data you want on Apple's Health permissions screen")
 		return nil
 	}
 	rows := make([][]string, 0, len(found))
@@ -239,9 +260,35 @@ func runHealthTypes(ctx context.Context, command *cli.Command) error {
 		if each.LastDay != "" && each.LastDay != each.FirstDay {
 			days += " to " + each.LastDay
 		}
-		rows = append(rows, []string{each.HealthType, each.HealthCategory, each.TypeName, each.QuantityUnit, days, fmt.Sprint(each.SampleCount), healthLatestWords(each)})
+		// What somebody shares with you has no count of readings: they are
+		// not shared.
+		readings := fmt.Sprint(each.SampleCount)
+		if ownerUserId != "" {
+			readings = ""
+		}
+		rows = append(rows, []string{each.HealthType, each.HealthCategory, each.TypeName, health.UnitWords(each.HealthType, each.QuantityUnit), days, readings, healthLatestWords(each)})
 	}
-	return printTable([]string{"type", "category", "name", "unit", "days", "readings", "latest"}, rows)
+	if err := printTable([]string{"type", "category", "name", "unit", "days", "readings", "latest"}, rows); err != nil {
+		return err
+	}
+	if ownerUserId != "" {
+		return nil
+	}
+	// The facts about you that Health keeps once help read the rest.
+	settings, err := client.ReadHealthSettings(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if settings == nil || len(settings.Characteristics) == 0 {
+		return nil
+	}
+	fmt.Println()
+	fields := make([][2]string, 0, len(settings.Characteristics))
+	for _, characteristic := range settings.Characteristics {
+		fields = append(fields, [2]string{health.CharacteristicName(characteristic.HealthType),
+			health.CharacteristicWords(characteristic.HealthType, characteristic.CharacteristicValue, time.Now())})
+	}
+	return printFields(fields)
 }
 
 func runHealthSummary(ctx context.Context, command *cli.Command) error {
@@ -282,19 +329,30 @@ func runHealthSummary(ctx context.Context, command *cli.Command) error {
 }
 
 // printHealthSummary prints one row a period and a column for each figure
-// that any period has.
+// that any period has. A week or a month also has the days it holds a summary
+// of and the average per day (per night for sleep), which is what the
+// dashboard shows beside the total.
 func printHealthSummary(summary *client.HealthSummaryView) error {
-	var hasSum, hasAverage, hasRange, hasDuration, hasStages bool
+	var hasSum, hasAverage, hasRange, hasDuration, hasStages, hasSeveralDays bool
 	for _, period := range summary.Periods {
 		hasSum = hasSum || period.SumValue != nil
 		hasAverage = hasAverage || period.AverageValue != nil
 		hasRange = hasRange || period.MinimumValue != nil || period.MaximumValue != nil
 		hasDuration = hasDuration || period.DurationSeconds != nil
 		hasStages = hasStages || len(period.CategorySeconds) > 0
+		hasSeveralDays = hasSeveralDays || period.IsSeveralDays()
 	}
+	noun := client.HealthPerDayNoun(summary.HealthType)
+	isSleep := summary.HealthType == "sleepAnalysis"
 	headers := []string{"period"}
+	if hasSeveralDays {
+		headers = append(headers, noun+"s")
+	}
 	if hasSum {
 		headers = append(headers, "total")
+		if hasSeveralDays {
+			headers = append(headers, "per "+noun)
+		}
 	}
 	if hasAverage {
 		headers = append(headers, "average")
@@ -303,33 +361,73 @@ func printHealthSummary(summary *client.HealthSummaryView) error {
 		headers = append(headers, "lowest", "highest")
 	}
 	if hasDuration {
-		headers = append(headers, "time")
+		durationHeader := "time"
+		if isSleep {
+			durationHeader = "asleep"
+		}
+		headers = append(headers, durationHeader)
+		if hasSeveralDays {
+			headers = append(headers, "per "+noun)
+		}
 	}
 	if hasStages {
-		headers = append(headers, "stages")
+		stagesHeader := "stages"
+		if isSleep && hasSeveralDays {
+			stagesHeader = "stages per " + noun
+		}
+		headers = append(headers, stagesHeader)
 	}
 	headers = append(headers, "readings")
 	rows := make([][]string, 0, len(summary.Periods))
 	for _, period := range summary.Periods {
 		row := []string{healthPeriodLabel(period)}
+		if hasSeveralDays {
+			dayCount := ""
+			if period.IsSeveralDays() {
+				dayCount = fmt.Sprint(period.DayCount)
+			}
+			row = append(row, dayCount)
+		}
 		if hasSum {
-			row = append(row, healthValueCell(period.SumValue, summary.QuantityUnit))
+			row = append(row, healthValueCell(summary.HealthType, period.SumValue, summary.QuantityUnit))
+			if hasSeveralDays {
+				perDay := ""
+				if period.SumValue != nil {
+					if value, isKnown := period.PerDay(*period.SumValue); isKnown {
+						perDay = client.HealthValueWords(summary.HealthType, value, summary.QuantityUnit)
+					}
+				}
+				row = append(row, perDay)
+			}
 		}
 		if hasAverage {
-			row = append(row, healthValueCell(period.AverageValue, summary.QuantityUnit))
+			row = append(row, healthValueCell(summary.HealthType, period.AverageValue, summary.QuantityUnit))
 		}
 		if hasRange {
-			row = append(row, healthValueCell(period.MinimumValue, summary.QuantityUnit), healthValueCell(period.MaximumValue, summary.QuantityUnit))
+			row = append(row, healthValueCell(summary.HealthType, period.MinimumValue, summary.QuantityUnit), healthValueCell(summary.HealthType, period.MaximumValue, summary.QuantityUnit))
 		}
 		if hasDuration {
-			duration := ""
-			if period.DurationSeconds != nil {
-				duration = client.HealthDurationWords(*period.DurationSeconds)
+			row = append(row, healthDurationCell(summary.HealthType, period.DurationSeconds, period.CategorySeconds))
+			if hasSeveralDays {
+				perDay := ""
+				if period.DurationSeconds != nil {
+					seconds := *period.DurationSeconds
+					if asleep, isPresent := period.CategorySeconds.AsleepSeconds(); isPresent && isSleep {
+						seconds = asleep
+					}
+					if value, isKnown := period.PerDay(seconds); isKnown {
+						perDay = client.HealthDurationWords(value)
+					}
+				}
+				row = append(row, perDay)
 			}
-			row = append(row, duration)
 		}
 		if hasStages {
-			row = append(row, period.CategorySeconds.Words())
+			if isSleep && period.IsSeveralDays() {
+				row = append(row, period.CategorySeconds.WordsPerDay(period.DayCount))
+			} else {
+				row = append(row, period.CategorySeconds.Words())
+			}
 		}
 		row = append(row, fmt.Sprint(period.SampleCount))
 		rows = append(rows, row)
@@ -392,20 +490,28 @@ func runHealthSamples(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if page.NextOffset != nil {
-		fmt.Fprintf(os.Stderr, "note: %d readings in all; add --offset %d (and --limit %d) to the same command for the next page\n", page.TotalCount, *page.NextOffset, limit)
+		total := fmt.Sprintf("%d readings in all", page.TotalCount)
+		if page.IsTotalCountCapped {
+			total = fmt.Sprintf("more than %d readings", page.TotalCount)
+		}
+		fmt.Fprintf(os.Stderr, "note: %s; add --offset %d (and --limit %d) to the same command for the next page\n", total, *page.NextOffset, limit)
 	}
 	return nil
 }
 
 // healthSampleValue is what one reading says: its quantity with the unit, a
-// workout's activity, or a category sample's raw value.
+// workout's activity, or a category sample's stage (the stage of a night's
+// sleep) or raw value.
 func healthSampleValue(sample *client.HealthSampleView) string {
 	switch {
 	case sample.QuantityValue != nil:
-		return client.HealthValueWords(*sample.QuantityValue, sample.QuantityUnit)
+		return client.HealthValueWords(sample.HealthType, *sample.QuantityValue, sample.QuantityUnit)
 	case sample.WorkoutActivityType != "":
 		return sample.WorkoutActivityType
 	case sample.CategoryValue != nil:
+		if key, isKnown := health.SleepStageKeys[*sample.CategoryValue]; isKnown && sample.HealthType == "sleepAnalysis" {
+			return health.StageName(key)
+		}
 		return fmt.Sprintf("category %d", *sample.CategoryValue)
 	}
 	return ""
@@ -499,7 +605,7 @@ func runHealthErase(ctx context.Context, command *cli.Command) error {
 	healthType := strings.TrimSpace(command.Args().First())
 	what := "all of your Health data, and tells your phone to stop sending it until you turn Health on again"
 	if healthType != "" {
-		what = "your " + healthType + " readings, day summaries and routes"
+		what = "your " + healthType + " readings, day summaries and routes. Your phone keeps sending new readings of it"
 	}
 	if err := confirm(command, "This erases "+what+". Anything your agent already learned stays in its memory until you remove it. This cannot be undone."); err != nil {
 		return err

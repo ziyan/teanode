@@ -58,7 +58,7 @@ export function HealthPage() {
   return <HealthContent key={session.userId ?? ''} userId={session.userId ?? ''} />
 }
 
-type Answered = { requestKey: string; types: HealthType[] }
+type AnsweredTypes = { requestKey: string; healthTypes: HealthType[] }
 
 function HealthContent({ userId }: { userId: string }) {
   const { t } = useTranslation()
@@ -100,10 +100,13 @@ function HealthContent({ userId }: { userId: string }) {
   const requestedPerson = parameters.get('person')
   const viewedPerson = sharers.find((each) => each.userId === requestedPerson) ?? null
   const ownerUserId = viewedPerson?.userId ?? null
-  const isPersonPending = requestedPerson !== null && shares.data === null
+  // A failed read of the shares does not leave the page waiting for them: the
+  // link is taken out of the address as a stale one is.
+  const isSharesFailed = shares.error !== null && shares.data === null
+  const isPersonPending = requestedPerson !== null && shares.data === null && !isSharesFailed
   // A link to somebody who is not sharing (or stopped) is taken out of the
   // address once the shares are read, and the person is told.
-  const isPersonGone = requestedPerson !== null && shares.data !== null && viewedPerson === null
+  const isPersonGone = requestedPerson !== null && (shares.data !== null || isSharesFailed) && viewedPerson === null
   useEffect(() => {
     if (!isPersonGone) return
     toast.failed(t('health.personNotSharing'))
@@ -118,13 +121,13 @@ function HealthContent({ userId }: { userId: string }) {
   const today = dayText(new Date())
 
   const typesRequestKey = JSON.stringify([ownerUserId])
-  const types = useQuery(
-    async (): Promise<Answered | null> =>
+  const typesQuery = useQuery(
+    async (): Promise<AnsweredTypes | null> =>
       isPersonPending
         ? null
         : {
             requestKey: typesRequestKey,
-            types:
+            healthTypes:
               (
                 await graphql<{ ListHealthTypes: HealthType[] | null }>(LIST_HEALTH_TYPES, {
                   ownerUserId,
@@ -134,15 +137,15 @@ function HealthContent({ userId }: { userId: string }) {
     [typesRequestKey, isPersonPending, userId],
   )
   const typeList = useMemo(
-    () => (types.data && types.data.requestKey === typesRequestKey ? types.data.types : null),
-    [types.data, typesRequestKey],
+    () => (typesQuery.data && typesQuery.data.requestKey === typesRequestKey ? typesQuery.data.healthTypes : null),
+    [typesQuery.data, typesRequestKey],
   )
 
   const requestedType = parameters.get('type')
   const chosenFromAddress = typeList?.find((each) => each.healthType === requestedType) ?? null
   // With no type named, the first one in the list is shown (on a phone, the
   // list is shown instead until one is chosen).
-  const chosenType = chosenFromAddress ?? (typeList ? (groupByCategory(typeList)[0]?.types[0] ?? null) : null)
+  const chosenType = chosenFromAddress ?? (typeList ? (groupByCategory(typeList)[0]?.healthTypes[0] ?? null) : null)
 
   const sampleRouteId = ownerUserId === null ? parameters.get('route') : null
 
@@ -170,7 +173,7 @@ function HealthContent({ userId }: { userId: string }) {
   return (
     <>
       <ErrorMessage error={shares.error} />
-      {sharers.length > 0 && (
+      {sharers.length > 0 && tab !== 'settings' && (
         <div className="health-toolbar">
           <label>
             <span>{t('health.person')}</span>
@@ -195,13 +198,13 @@ function HealthContent({ userId }: { userId: string }) {
           onSharesChanged={shares.reload}
           onErased={() => {
             changeParameters({ type: null, route: null, page: null })
-            void types.reload()
+            void typesQuery.reload()
           }}
         />
       ) : (
         <>
-          <ErrorMessage error={types.error} />
-          {(isPersonPending || (types.loading && !typeList)) && <Loading />}
+          <ErrorMessage error={typesQuery.error} />
+          {(isPersonPending || (typesQuery.loading && !typeList)) && <Loading />}
           {isEmpty && viewedPerson && (
             <SettingsSection card title={t('health.title')}>
               <SettingsEmpty>{t('health.personEmpty', { name: viewedPerson.name })}</SettingsEmpty>
@@ -220,7 +223,7 @@ function HealthContent({ userId }: { userId: string }) {
             <div className={chosenFromAddress ? 'health-layout has-type' : 'health-layout'}>
               <div className="health-types-pane">
                 <HealthTypeList
-                  types={typeList}
+                  healthTypes={typeList}
                   chosenType={chosenType?.healthType ?? null}
                   onChoose={(healthType) => chooseType(healthType)}
                 />
@@ -232,7 +235,7 @@ function HealthContent({ userId }: { userId: string }) {
                   </button>
                   <HealthTypePanel
                     key={`${ownerUserId ?? ''}:${chosenType.healthType}`}
-                    type={chosenType}
+                    chosenType={chosenType}
                     ownerUserId={ownerUserId}
                     range={range}
                     period={period}
@@ -241,13 +244,13 @@ function HealthContent({ userId }: { userId: string }) {
                     onPeriod={(next) => changeParameters({ period: next })}
                     onErased={() => {
                       chooseType(null)
-                      void types.reload()
+                      void typesQuery.reload()
                     }}
                   />
                   {ownerUserId === null && (
                     <HealthSamples
                       key={chosenType.healthType}
-                      type={chosenType}
+                      chosenType={chosenType}
                       routeId={sampleRouteId}
                       onRoute={(healthSampleId) => changeParameters({ route: healthSampleId })}
                     />
