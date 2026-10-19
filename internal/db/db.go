@@ -192,6 +192,9 @@ type Transaction interface {
 	LocationLockOperation
 	LocationKnowledgeOperation
 	LocationShareOperation
+	HealthOperation
+	HealthLockOperation
+	HealthShareOperation
 	PageShareOperation
 	SkillShareOperation
 	ChatOperation

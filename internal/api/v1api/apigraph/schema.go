@@ -31,6 +31,7 @@ type Query interface {
 	CalendarQuery
 	CircleQuery
 	LocationQuery
+	HealthQuery
 	ReminderQuery
 	NoteQuery
 	CalendarInvitationQuery
@@ -112,6 +113,7 @@ type Mutation interface {
 	CalendarMutation
 	CircleMutation
 	LocationMutation
+	HealthMutation
 	ChatMutation
 	ReminderMutation
 	NoteMutation

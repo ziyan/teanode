@@ -14494,6 +14494,68 @@ button.idea-history-title {
   stroke-width: 2;
 }
 
+/* The stages of a night's sleep, from the deepest up, as the Health app draws
+   them: deep a dark indigo, core a mid blue, REM a light cyan blue and awake
+   orange. Each is at least 3:1 against the card in its theme, and the neighbors
+   differ in lightness or hue. And the band behind a line of averages that
+   reaches from the period's lowest reading to its highest. */
+:root {
+  --sleep-deep: #2a1f77;
+  --sleep-core: #3a5ccf;
+  --sleep-rem: #0e9fc6;
+  --sleep-awake: #e0760b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --sleep-deep: #6558ec;
+    --sleep-core: #6aaeff;
+    --sleep-rem: #6fe3f5;
+    --sleep-awake: #fb923c;
+  }
+}
+
+:root[data-theme='dark'] {
+  --sleep-deep: #6558ec;
+  --sleep-core: #6aaeff;
+  --sleep-rem: #6fe3f5;
+  --sleep-awake: #fb923c;
+}
+
+.usage-chart-column.deep,
+.usage-chart-swatch.deep {
+  fill: var(--sleep-deep);
+  background: var(--sleep-deep);
+}
+
+.usage-chart-column.core,
+.usage-chart-swatch.core {
+  fill: var(--sleep-core);
+  background: var(--sleep-core);
+}
+
+.usage-chart-column.rem,
+.usage-chart-swatch.rem {
+  fill: var(--sleep-rem);
+  background: var(--sleep-rem);
+}
+
+.usage-chart-column.awake,
+.usage-chart-swatch.awake {
+  fill: var(--sleep-awake);
+  background: var(--sleep-awake);
+}
+
+.series-chart-band {
+  stroke: none;
+}
+
+.series-chart-band.band,
+.usage-chart-swatch.band {
+  fill: color-mix(in srgb, var(--leaf) 22%, transparent);
+  background: color-mix(in srgb, var(--leaf) 22%, transparent);
+}
+
 /* A chart whose keys can be chosen: each slot is a clear button over the
    columns, the chosen slot sits on a band, and its label is the one in
    the text's own colour. */
@@ -20158,5 +20220,199 @@ label.checkbox.is-plain > span > .muted {
 
   .photos-page:has(.photo-scale-switch) {
     padding-bottom: 72px;
+  }
+}
+
+/* The Health page: the kinds of data in a column beside the chosen one's
+   chart, readings and route, or above it on a narrower window. On a phone the
+   list is the page until a type is chosen (it is in the address), and then
+   the type is, with a way back to the list. */
+.health-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.health-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.health-types-pane,
+.health-detail {
+  min-width: 0;
+}
+
+.health-types h4 {
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.health-types section:first-child h4 {
+  margin-top: 0;
+}
+
+.health-type-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 48px;
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  color: var(--text);
+}
+
+.health-type-row.is-selected {
+  border-color: var(--leaf);
+  background: color-mix(in srgb, var(--leaf) 10%, var(--surface));
+}
+
+.health-type-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.health-type-name > .muted {
+  font-size: var(--text-label);
+}
+
+.health-type-value {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.health-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  margin-bottom: var(--space-3);
+}
+
+/* The chart under the buttons while the next one is read: the same chart,
+   dimmed, so the card does not jump and the button just pressed stays. */
+.health-chart {
+  transition: opacity 0.15s ease;
+}
+
+.health-chart.is-stale {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.health-status {
+  margin: 0 0 var(--space-3);
+}
+
+.health-route-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.health-route-head h3 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.health-numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: var(--space-3) 0 0;
+}
+
+.health-numbers dt {
+  font-size: var(--text-label);
+}
+
+.health-numbers dd {
+  margin: 0;
+  font-size: var(--text-title);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-back {
+  display: none;
+  margin-bottom: var(--space-3);
+}
+
+.health-route-map {
+  margin-top: var(--space-3);
+  border-radius: var(--radius-2);
+  overflow: hidden;
+}
+
+.health-share {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+
+.health-share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.health-share-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-2);
+}
+
+/* A tablet keeps the list beside the chart, narrower, so the chart is not
+   below a hundred rows. */
+@media (max-width: 900px) {
+  .health-layout {
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .health-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .health-layout .health-detail {
+    display: none;
+  }
+
+  .health-layout.has-type .health-detail {
+    display: block;
+  }
+
+  .health-layout.has-type .health-types-pane {
+    display: none;
+  }
+
+  .health-layout.has-type .health-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+}
+
+/* On a phone the page ends clear of the floating assistant button, which
+   would otherwise sit over the last row of the list, as on the Photos page. */
+@media (max-width: 600px) {
+  .health-layout {
+    padding-bottom: 88px;
   }
 }

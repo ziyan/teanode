@@ -33,6 +33,7 @@ targets:
       - target: TeaNodeNotification
       - target: TeaNodeShare
       - target: TeaNodeWidgets
+      - sdk: HealthKit.framework
     # teanode.com/app/connect links open the app (the site serves the
     # association file), so scanning a connect code with the Camera does.
     # Notifications, and a keychain group the notification extension
@@ -40,7 +41,8 @@ targets:
     # A call goes on with the screen locked: audio, and CallKit's voip.
     # The photo backup catches up overnight on power (a processing task), and
     # goes on when the person taps Back up now (a continued processing task);
-    # the system only starts a task whose identifier is listed here.
+    # the system only starts a task whose identifier is listed here. The Health
+    # history goes on the same way, on power, when the phone is unlocked.
     info:
       path: TeaNode/Info.plist
       properties:
@@ -48,6 +50,7 @@ targets:
         BGTaskSchedulerPermittedIdentifiers:
           - $(TEANODE_BUNDLE_IDENTIFIER).photo-backup
           - $(TEANODE_BUNDLE_IDENTIFIER).photo-backup-now
+          - $(TEANODE_BUNDLE_IDENTIFIER).health-history
         NSSupportsLiveActivities: true
         TeaNodeAppGroup: $(TEANODE_APP_GROUP)
     entitlements:
@@ -60,6 +63,12 @@ targets:
         aps-environment: development
         keychain-access-groups:
           - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+        # Apple Health, read only: the app never writes to it. The access list
+        # stays empty (it is for clinical records, which are not read), and
+        # background delivery lets iOS wake the app about new data.
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        com.apple.developer.healthkit.background-delivery: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER)
@@ -91,6 +100,8 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "TeaNode backs up your photos and videos to your server when you turn on backup."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent or explicitly record a meeting."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "TeaNode shows where you are on the map and follows you while the app is open, and your agent asks where you are when something you asked depends on it."
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "TeaNode copies the Health data you allow to your own TeaNode server. Your agent reads it only if you turn that on in Health settings."
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "TeaNode only reads Apple Health and never writes to it."
         INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription: "TeaNode records the places you go, so you can look back on them, share where you are with your family, and so your agent knows your routine."
         # The app encrypts nothing beyond the https the system provides, which
         # export rules exempt; saying so here spares every upload the question.
