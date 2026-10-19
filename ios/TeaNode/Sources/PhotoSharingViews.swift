@@ -180,6 +180,40 @@ struct PhotoPersonChip: View {
     }
 }
 
+/// PhotoWindowChip says the library is narrowed to the photos taken between
+/// two moments, such as a visit's, naming the times, and takes that off when
+/// pressed.
+struct PhotoWindowChip: View {
+    let takenAfter: Date?
+    let takenBefore: Date?
+    let onRemove: () -> Void
+
+    private var title: String {
+        if let takenAfter, let takenBefore, takenAfter < takenBefore {
+            return Date.IntervalFormatStyle(date: .abbreviated, time: .shortened).format(takenAfter..<takenBefore)
+        }
+        return (takenAfter ?? takenBefore ?? Date()).formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var body: some View {
+        Button(action: onRemove) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                Text(verbatim: title)
+                    .lineLimit(2)
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(title)
+        .accessibilityHint(String(localized: "Removes this filter"))
+    }
+}
+
 /// PhotoDateFilterSheet chooses the first and last day the library is narrowed
 /// to. Each end is optional.
 struct PhotoDateFilterSheet: View {

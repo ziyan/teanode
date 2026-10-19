@@ -92,3 +92,48 @@ export function parseNear(text: string | null): { latitude: number; longitude: n
 export function nearText(latitude: number, longitude: number): string {
   return `${latitude.toFixed(5)},${longitude.toFixed(5)}`
 }
+
+// Whether a day of the calendar exists, whatever clock reads it.
+function isCalendarDay(day: string): boolean {
+  const [year, month, date] = day.split('-').map(Number)
+  const parsed = new Date(Date.UTC(year, month - 1, date))
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === date
+}
+
+// A moment in the address, 2030-03-05T09:50:00.000Z, or nothing when it is not
+// one. Unlike a day it is exact: a visit's window starts and ends at the
+// minute the person arrived and left.
+export function parseInstant(text: string | null): string | undefined {
+  if (!text || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text) || !isCalendarDay(text.slice(0, 10))) {
+    return undefined
+  }
+  const moment = new Date(text)
+  return Number.isNaN(moment.getTime()) ? undefined : moment.toISOString()
+}
+
+// The two ends of the window the address names, as words: "Mar 5, 9:50 AM"
+// and "10:59 AM" when both are on one day, a date on each when not. An end the
+// address does not name is empty.
+export function windowEnds(
+  after: string | undefined,
+  before: string | undefined,
+  language: string,
+  timeZone?: string,
+): { start: string; end: string } {
+  const dayAndTime = new Intl.DateTimeFormat(language, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone,
+  })
+  const timeOnly = new Intl.DateTimeFormat(language, { hour: 'numeric', minute: '2-digit', timeZone })
+  const dayOnly = new Intl.DateTimeFormat(language, { year: 'numeric', month: 'numeric', day: 'numeric', timeZone })
+  const start = after ? new Date(after) : null
+  const end = before ? new Date(before) : null
+  const isSameDay = start && end && dayOnly.format(start) === dayOnly.format(end)
+  return {
+    start: start ? dayAndTime.format(start) : '',
+    end: end ? (isSameDay ? timeOnly : dayAndTime).format(end) : '',
+  }
+}

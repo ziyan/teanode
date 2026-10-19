@@ -38,7 +38,7 @@ func init() {
 				"`library` says how many photos there are (photo_count, all items, videos among them, as an album counts them, of which video_count are videos), the space used and the largest file. A photo is any item in the library: a picture, a Live Photo or a video. " +
 				"`list` finds photos, newest first, by date (taken_after, taken_before), place (search_text, or near_latitude, near_longitude and near_distance_kilometers), camera and file name (search_text), kind, Favorites or the Trash; it answers a row for each. Every operation that lists (`list`, `album-list`, `album-read`, `people`, `person-photos`, `album-shares`) gives a page at a time: page_size says how many, and when there is more the answer has next_offset, which you pass as offset, with the same other arguments, to read the next page. " +
 				"A search (search_text) matches the words against the place, the file name, the camera, the titles of the albums a photo is in and, for a photo that has been described, its description and the text in the picture, and lists the best matches first. A photo nobody has described is found only by the rest, so when you search for what is in a picture, narrow by date or place too and `look` at the candidates; the answer says how many photos in the range are not described yet. " +
-				"`read` gives one photo's details, its description and the text in the picture. `look` shows you up to 6 photos (photo_ids) as pictures so you can say what is in them; a video shows its first frame; each photo you look at that has no description is also queued to be described, so the next search finds it by what is in it. " +
+				"`read` gives one photo's details, its description and the text in the picture, and where it was taken: place_name is the nearest city, location_place (id, place_name, place_label) is one of the person's own Location places the photo was taken inside (such as home), and address_text is the street address when the server looks addresses up and no place of the person's holds the position; say the place of the person's, else the street, else the city. `look` shows you up to 6 photos (photo_ids) as pictures so you can say what is in them; a video shows its first frame; each photo you look at that has no description is also queued to be described, so the next search finds it by what is in it. " +
 				"`describe` asks for a description of one photo or several (photo_id or photo_ids, up to 6), and is_redescribed asks for a new one when it has one; it answers at once and the description arrives in a few seconds. " +
 				"`show` puts up to 12 photos (photo_ids) in the conversation for the person to see. " +
 				"`favorite` marks one a favorite (is_favorite false takes it back). `trash` and `restore` move photos (photo_ids) to the Trash and back. `delete` (photo_ids, up to 100) deletes forever photos that are in the Trash, and `empty-trash` deletes forever everything in the Trash; neither can be undone, so both always ask the person first. " +
@@ -792,6 +792,18 @@ func read(ctx context.Context, current tools.Run, asked *arguments) (*tools.Resu
 	}
 	if photo.Latitude != nil && photo.Longitude != nil {
 		details["latitude"], details["longitude"] = *photo.Latitude, *photo.Longitude
+		// The finer place is a courtesy: a photo is read without it when it
+		// cannot be had.
+		if photoPlace, err := client.ReadPhotoPlace(ctx, current.Operations(), photo.ID); err == nil && photoPlace != nil {
+			if photoPlace.LocationPlace != nil {
+				details["location_place"] = map[string]any{
+					"id": photoPlace.LocationPlace.ID, "place_name": photoPlace.LocationPlace.PlaceName, "place_label": photoPlace.LocationPlace.PlaceLabel,
+				}
+			}
+			if photoPlace.AddressText != "" {
+				details["address_text"] = photoPlace.AddressText
+			}
+		}
 	}
 	if photo.ProcessingErrorMessage != "" {
 		details["processing_error_message"] = photo.ProcessingErrorMessage

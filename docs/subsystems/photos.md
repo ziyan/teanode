@@ -275,6 +275,20 @@ the person set is kept by the same rule that keeps any column the photo already 
 Setting a location clears the flag. Neither operation changes the file: a
 download of the original still has what the camera wrote.
 
+The cities come with the server, so searching, naming and changing a
+location need no map service. A photo's details look further when they are
+opened: `ReadPhotoPlace(photoId)` answers the person's own Location place the
+position is inside (`locationPlace`, from `FindPlaceAt`, only for a caller with
+Location) and otherwise, behind the place provider setting, the street address
+the provider gives for the position (`addressText`). It is null for a photo
+with no position, a removed location, or a position the caller may not see (the
+rule that clears a shared photo's coordinates), and then the provider is not
+asked. A provider that is off, or fails, gives an empty `addressText`, never an
+error. The address is remembered in memory (`place.RememberedAddresses`) by
+the position rounded to 4 decimals, about ten meters, for a day, so a moved
+photo never shows the old street and opening a photo again does not ask the
+provider again.
+
 ## Finding photos
 
 `ListPhotos` filters by date, kind, favorites, the trash, an album, a person
@@ -468,7 +482,12 @@ set-date` and the viewer's change of date do. `search-places` (`query`, and
 taken, as `teanode photo search-places`, `set-location` and `remove-location`
 do, for up to 100 photos at a time. `set-location` is a write like `set-date`;
 `remove-location` cannot be undone, so it is destructive and asks the person
-every time. `delete` (photos that are in the
+every time. `read` also says where a photo was taken: `location_place` (`id`,
+`place_name`, `place_label`) when it was inside one of the person's own
+Location places, else `address_text` from the place provider, beside the city
+in `place_name`; the command line's `teanode photo read` says the same in its
+place line (your own place, else the street, else the city) and adds
+`locationPlace` and `addressText` to `--json`. `delete` (photos that are in the
 Trash) and `empty-trash` delete forever, as `teanode photo delete` and
 `empty-trash` do, and are destructive: they ask the person every time. `delete`
 says how many went and, when some did not, that the others were not in the Trash

@@ -227,6 +227,8 @@ export const PHOTO_DOCUMENTS = {
   ReadPhoto: `query ($photoId: String!) { ReadPhoto(photoId: $photoId) { photo { ${PHOTO_DETAIL_FIELDS} } photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl } albums { id albumTitle } faces { ${PHOTO_FACE_FIELDS} } } }`,
   ReadPhotoLibrary:
     'query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isDescriptionAvailable descriptionUnavailableMessage isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled } }',
+  ReadPhotoPlace:
+    'query ($photoId: String!) { ReadPhotoPlace(photoId: $photoId) { locationPlace { id placeName placeLabel } addressText } }',
   FindPhotos:
     'query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) { id clientPhotoId trashedAt } }',
   UpdatePhoto: `mutation ($photoId: String!, $isFavorite: Boolean) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite) { ${PHOTO_FIELDS} } }`,
@@ -341,6 +343,24 @@ export async function describePhoto(photoId: string, isRedescribed: boolean): Pr
     isRedescribed,
   })
   return answer.DescribePhoto
+}
+
+// Where a photo was taken, named as closely as the server can: the person's
+// own place the position is inside, else the street address there. Both are
+// empty when neither is known; the answer is null when the photo has no
+// position the caller may see.
+export interface PhotoPositionPlace {
+  locationPlace: { id: string; placeName: string; placeLabel: string } | null
+  addressText: string
+}
+
+export async function readPhotoPlace(photoId: string, signal?: AbortSignal): Promise<PhotoPositionPlace | null> {
+  const answer = await graphql<{ ReadPhotoPlace: PhotoPositionPlace | null }>(
+    PHOTO_DOCUMENTS.ReadPhotoPlace,
+    { photoId },
+    signal,
+  )
+  return answer.ReadPhotoPlace
 }
 
 export async function readPhotoLibrary(signal?: AbortSignal): Promise<PhotoLibrary> {

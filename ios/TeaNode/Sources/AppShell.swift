@@ -283,6 +283,14 @@ struct MainView: View {
             section = opened
             isMenuOpen = false
         }
+        .onChange(of: app.openedPhotoFilter) { _, photoFilter in
+            guard let photoFilter else { return }
+            app.openedPhotoFilter = nil
+            photos.section = .library
+            photos.photoFilter = photoFilter
+            section = .photos
+            isMenuOpen = false
+        }
         .onChange(of: app.openedFinancePart) { _, part in
             guard let part else { return }
             app.openedFinancePart = nil

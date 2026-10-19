@@ -68,6 +68,8 @@ struct CalendarScreen: View {
                 }
                 // The calendars of other people as a list, which names whose each event is, and the list of calendars or the share screen open over the month.
                 if DemoServer.screen == "calendar-shared" { model.viewMode = .agenda }
+                // The editor of a weekday event, open on its Custom repeat.
+                if DemoServer.screen == "calendar-repeat-custom", draft == nil { draft = EventDraft.demoWeekdayStandup }
                 if DemoServer.screen == "calendar-sheet" || DemoServer.screen == "calendar-share-sheet" || DemoServer.screen == "calendar-find-time" {
                     isShowingCalendars = true
                 }
@@ -1270,6 +1272,13 @@ struct EventEditor: View {
     @State private var isSaving = false
     @State private var isConfirmingDelete = false
     @State private var memory = InMemoryModel()
+    /// The screens pushed over the editor, which is only the Custom repeat.
+    @State private var path: [EventEditorScreen] = []
+
+    /// EventEditorScreen is a screen the editor pushes.
+    private enum EventEditorScreen: Hashable {
+        case customRepeat
+    }
 
     /// The calendar the event is in or goes in: the person's own unless they
     /// chose another.
@@ -1278,7 +1287,7 @@ struct EventEditor: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Form {
                 // Which calendar a new event goes in, when there is a choice:
                 // their own, a circle's, or one shared with them at edit. An
@@ -1300,16 +1309,7 @@ struct EventEditor: View {
                     Toggle("All day", isOn: $draft.isAllDay)
                     DatePicker("Starts", selection: $draft.startsAt, displayedComponents: draft.isAllDay ? [.date] : [.date, .hourAndMinute])
                     DatePicker("Ends", selection: $draft.endsAt, in: draft.startsAt..., displayedComponents: draft.isAllDay ? [.date] : [.date, .hourAndMinute])
-                    Picker("Repeat", selection: $draft.recurrence) {
-                        Text("Never").tag("")
-                        Text("Every day").tag("FREQ=DAILY")
-                        Text("Every week").tag("FREQ=WEEKLY")
-                        Text("Every month").tag("FREQ=MONTHLY")
-                        Text("Every year").tag("FREQ=YEARLY")
-                        if !EventDraft.repeats.contains(draft.recurrence) {
-                            Text("As it was set").tag(draft.recurrence)
-                        }
-                    }
+                    repeatRows
                 }
                 // Guests only in the person's own calendar: the invitations go
                 // out from, and the answers come back to, the owner.
@@ -1357,6 +1357,9 @@ struct EventEditor: View {
             }
             .navigationTitle(draft.eventId == nil ? String(localized: "New event") : String(localized: "Edit event"))
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: EventEditorScreen.self) { _ in
+                CustomRepeatScreen(rule: $draft.recurrence, context: draft.repeatContext(in: target))
+            }
             .inMemory(memory, recordKind: "calendar_event", recordId: draft.eventId ?? "")
             .onChange(of: draft.startsAt) { previous, startsAt in
                 // The end moves with the start, keeping how long it lasts.
@@ -1378,8 +1381,63 @@ struct EventEditor: View {
                 // A new event goes in the person's own calendar unless they
                 // choose another, so the choice starts there.
                 if draft.calendarId == nil { draft.calendarId = model.calendar?.id }
+                #if DEBUG
+                    // The screenshot of the Custom repeat opens straight on it.
+                    if DemoServer.screen == "calendar-repeat-custom", path.isEmpty { path = [.customRepeat] }
+                #endif
             }
         }
+    }
+
+    // MARK: Repeat
+
+    /// The Repeat choice, and for a custom repeat the sentence it makes as a
+    /// row that opens the screen to change it.
+    @ViewBuilder
+    private var repeatRows: some View {
+        Picker("Repeat", selection: repeatPresetBinding) {
+            Text("Never").tag(CalendarRepeat.Preset.never)
+            Text("Every day").tag(CalendarRepeat.Preset.daily)
+            Text("Every weekday").tag(CalendarRepeat.Preset.weekdays)
+            Text("Every week").tag(CalendarRepeat.Preset.weekly)
+            Text("Every month").tag(CalendarRepeat.Preset.monthly)
+            Text("Every year").tag(CalendarRepeat.Preset.yearly)
+            Text(verbatim: customRepeatTitle).tag(CalendarRepeat.Preset.custom)
+        }
+        if CalendarRepeat.Preset(rule: draft.recurrence) == .custom {
+            NavigationLink(value: EventEditorScreen.customRepeat) {
+                Text(verbatim: customRepeatSentence)
+            }
+        }
+    }
+
+    /// The named repeat the rule is. Choosing Custom pushes its screen and
+    /// leaves the rule as it was, since the rule is only changed there.
+    private var repeatPresetBinding: Binding<CalendarRepeat.Preset> {
+        Binding(
+            get: { CalendarRepeat.Preset(rule: draft.recurrence) },
+            set: { preset in
+                if let rule = preset.rule {
+                    draft.recurrence = rule
+                } else {
+                    path.append(.customRepeat)
+                }
+            })
+    }
+
+    private var customRepeatParts: CalendarRepeat.Parts? {
+        CalendarRepeat.parse(draft.recurrence, context: draft.repeatContext(in: target))
+    }
+
+    /// What the Custom choice is called: how often when the rule can be
+    /// read, as "Every 2 weeks", and "Custom" when it cannot.
+    private var customRepeatTitle: String {
+        customRepeatParts.map(CalendarRepeatWords.shortText) ?? String(localized: "Custom")
+    }
+
+    private var customRepeatSentence: String {
+        guard let parts = customRepeatParts else { return String(localized: "Set in another program") }
+        return CalendarRepeatWords.sentenceText(CalendarRepeat.sentence(for: parts))
     }
 
     private func save() {

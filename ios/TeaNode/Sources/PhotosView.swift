@@ -1009,25 +1009,36 @@ struct PhotosScreen: View {
                 .navigationSubtitle(subtitleText)
                 .navigationBarTitleDisplayMode(.large)
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    // A search lists by its words alone, so the filters' chips are put away while it does.
-                    if model.section.collection != nil, searchWords == nil,
-                        model.photoFilter.photoNearFilter != nil || !(model.photoFilter.accountUserId ?? "").isEmpty
-                    {
-                        VStack(spacing: 8) {
-                            if let photoNearFilter = model.photoFilter.photoNearFilter {
-                                PhotoNearChip(photoNearFilter: photoNearFilter) {
-                                    model.photoFilter.photoNearFilter = nil
+                    // One column, so the visit window's chip sits under the others rather than over them.
+                    VStack(spacing: 0) {
+                        // A search lists by its words alone, so the filters' chips are put away while it does.
+                        if model.section.collection != nil, searchWords == nil,
+                            model.photoFilter.photoNearFilter != nil || !(model.photoFilter.accountUserId ?? "").isEmpty
+                        {
+                            VStack(spacing: 8) {
+                                if let photoNearFilter = model.photoFilter.photoNearFilter {
+                                    PhotoNearChip(photoNearFilter: photoNearFilter) {
+                                        model.photoFilter.photoNearFilter = nil
+                                    }
+                                }
+                                if !(model.photoFilter.accountUserId ?? "").isEmpty {
+                                    PhotoPersonChip(personName: model.photoFilter.accountName) {
+                                        model.photoFilter.accountUserId = nil
+                                        model.photoFilter.accountName = ""
+                                    }
                                 }
                             }
-                            if !(model.photoFilter.accountUserId ?? "").isEmpty {
-                                PhotoPersonChip(personName: model.photoFilter.accountName) {
-                                    model.photoFilter.accountUserId = nil
-                                    model.photoFilter.accountName = ""
-                                }
-                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
+                        if model.photoFilter.takenAfter != nil || model.photoFilter.takenBefore != nil, model.section.collection != nil {
+                            PhotoWindowChip(takenAfter: model.photoFilter.takenAfter, takenBefore: model.photoFilter.takenBefore) {
+                                model.photoFilter.takenAfter = nil
+                                model.photoFilter.takenBefore = nil
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
+                        }
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1093,6 +1104,13 @@ struct PhotosScreen: View {
                 // Photos of a person show the library, so words typed in its search are put away.
                 .onChange(of: model.photoFilter.accountUserId) { _, accountUserId in
                     if accountUserId != nil { searchText = "" }
+                }
+                // Photos opened from a visit show the visit's photos, so old search words are put away.
+                .onChange(of: model.photoFilter.takenAfter) { _, takenAfter in
+                    if takenAfter != nil { searchText = "" }
+                }
+                .onAppear {
+                    if model.photoFilter.takenAfter != nil { searchText = "" }
                 }
                 .sheet(isPresented: $isChoosingDates) { PhotoDateFilterSheet(model: model) }
                 .albumTitleAlert(model: model, scope: .library, isActive: opened == nil)

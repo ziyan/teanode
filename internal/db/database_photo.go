@@ -35,6 +35,13 @@ type PhotoOperation interface {
 	// or best match first when the filter has search words.
 	ListPhotos(userId string, filter *PhotoFilter) ([]*models.Photo, error)
 
+	// ListVisitPhotos answers, per window, how many of the person's own
+	// library photos sit in it (from its start, up to but not including its
+	// end) and the first previewCount of them, earliest first. The key is the
+	// window's VisitID; a window with no photos has an entry with a count of
+	// zero. It reads what the library lists with no filter, in one query.
+	ListVisitPhotos(userId string, windows []VisitPhotoWindow, previewCount int) (map[string]*VisitPhotos, error)
+
 	// CountPhotos is how many photos the filter keeps, whatever page it
 	// asks for. With search words it is at most the most a search ranks.
 	CountPhotos(userId string, filter *PhotoFilter) (int, error)
@@ -816,6 +823,78 @@ func (self *transaction) CountPhotos(userId string, filter *PhotoFilter) (int, e
 		return 0, err
 	}
 	return int(count), nil
+}
+
+// VisitPhotoWindow is the span of one visit, to ask for its photos.
+type VisitPhotoWindow struct {
+	VisitID string
+	// StartedAt is the arrival, EndedAt the departure (now, for a visit that
+	// is still going). A photo taken at StartedAt is in the window, one taken
+	// at EndedAt is not.
+	StartedAt time.Time
+	EndedAt   time.Time
+}
+
+// VisitPhotos is the photos of one window: how many there are and the first
+// few, earliest first.
+type VisitPhotos struct {
+	PhotoCount int
+	Photos     []*models.Photo
+}
+
+func (self *transaction) ListVisitPhotos(userId string, windows []VisitPhotoWindow, previewCount int) (map[string]*VisitPhotos, error) {
+	if userId == "" {
+		return nil, ErrNotFound
+	}
+	if previewCount < 0 {
+		return nil, ErrInvalidArguments
+	}
+	found := make(map[string]*VisitPhotos, len(windows))
+	if len(windows) == 0 {
+		return found, nil
+	}
+	values := make([]string, 0, len(windows))
+	arguments := make([]any, 0, len(windows)*3+3)
+	for _, window := range windows {
+		found[window.VisitID] = &VisitPhotos{Photos: []*models.Photo{}}
+		values = append(values, "(?::text, ?::timestamptz, ?::timestamptz)")
+		arguments = append(arguments, window.VisitID, window.StartedAt, window.EndedAt)
+	}
+	// Each window reads the library the way an unfiltered listing does (the
+	// person's own photos, none in the trash), through the same date
+	// expression and index as the timeline.
+	const inWindow = `photo.user_id = ? AND photo.trashed_at IS NULL
+		AND ` + photoTimelineExpression + ` >= visit_window.started_at
+		AND ` + photoTimelineExpression + ` < visit_window.ended_at`
+	query := `SELECT visit_window.visit_id AS visit_id, visit_count.visit_photo_count AS visit_photo_count, visit_photo.*
+		FROM (VALUES ` + strings.Join(values, ", ") + `) AS visit_window(visit_id, started_at, ended_at)
+		CROSS JOIN LATERAL (SELECT count(*) AS visit_photo_count FROM photo WHERE ` + inWindow + `) AS visit_count
+		LEFT JOIN LATERAL (
+			SELECT photo.* FROM photo WHERE ` + inWindow + `
+			ORDER BY ` + photoTimelineExpression + ` ASC, photo.id ASC
+			LIMIT ?
+		) AS visit_photo ON true
+		ORDER BY visit_window.visit_id, COALESCE(visit_photo.taken_at, visit_photo.created_at) ASC, visit_photo.id ASC`
+	arguments = append(arguments, userId, userId, previewCount)
+	var rows []struct {
+		Photo           photoModel `gorm:"embedded"`
+		VisitID         string
+		VisitPhotoCount int
+	}
+	if err := self.tx.Raw(query, arguments...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		visit := found[rows[index].VisitID]
+		if visit == nil {
+			continue
+		}
+		visit.PhotoCount = rows[index].VisitPhotoCount
+		if rows[index].Photo.ID != "" {
+			visit.Photos = append(visit.Photos, photoFromModel(&rows[index].Photo))
+		}
+	}
+	return found, nil
 }
 
 func photosFromModels(rows []photoModel) []*models.Photo {

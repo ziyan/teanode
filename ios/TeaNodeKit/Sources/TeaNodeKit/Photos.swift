@@ -375,6 +375,20 @@ public struct NamedPhotoFaceGroup: Decodable, Hashable, Sendable {
     public var isMerged: Bool { !mergedPhotoFaceGroupId.isEmpty }
 }
 
+/// PhotoPositionPlace is what the server knows of where a photo was taken: the
+/// person's own place the position is inside, or else the street address.
+public struct PhotoPositionPlace: Codable, Hashable, Sendable {
+    /// The person's own place the position is inside; nil when none.
+    public let locationPlace: LocationPlace?
+    /// The street address; empty when a place matched or none could be found.
+    public let addressText: String
+
+    public init(locationPlace: LocationPlace? = nil, addressText: String = "") {
+        self.locationPlace = locationPlace
+        self.addressText = addressText
+    }
+}
+
 /// PhotoDetail is one photo with its files, previews, the albums it is in, its
 /// description and the faces found in it.
 public struct PhotoDetail: Codable, Hashable, Sendable {
@@ -799,6 +813,14 @@ extension Documents {
           }
         }
         """
+    public static let readPhotoPlace = """
+        query ($photoId: String!) {
+          ReadPhotoPlace(photoId: $photoId) {
+            locationPlace { \(locationPlaceFields) }
+            addressText
+          }
+        }
+        """
     public static let describePhoto = """
         mutation ($photoId: String!, $isRedescribed: Boolean) {
           DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) { \(photoDescriptionFields) }
@@ -974,6 +996,14 @@ extension Connection {
     public func photoDetail(_ photoId: String) async throws -> PhotoDetail {
         struct Answer: Decodable, Sendable { let ReadPhoto: PhotoDetail }
         return try await execute(Documents.readPhoto, variables: ["photoId": .string(photoId)], as: Answer.self).ReadPhoto
+    }
+
+    /// Where the photo was taken, by the person's own places and the street.
+    /// Nil when the photo has no position or its position is not shown to
+    /// the person.
+    public func readPhotoPlace(_ photoId: String) async throws -> PhotoPositionPlace? {
+        struct Answer: Decodable, Sendable { let ReadPhotoPlace: PhotoPositionPlace? }
+        return try await execute(Documents.readPhotoPlace, variables: ["photoId": .string(photoId)], as: Answer.self).ReadPhotoPlace
     }
 
     /// How much the library holds, and how long the trash keeps a photo.

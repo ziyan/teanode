@@ -115,6 +115,9 @@ final class AppModel {
     /// The day the Location screen opens on the map of, from a link such as
     /// `/location?day=2030-01-15`. The screen takes it and clears it.
     var openedLocationDay: Date?
+    /// A narrowing of the photo library that Photos opens with, such as the
+    /// moments of a visit: the section shows the library under it and clears it.
+    var openedPhotoFilter: PhotoFilter?
     /// The section to open again after the app is drawn anew, as it is when
     /// the display language changes.
     var keptSection: AppSection?

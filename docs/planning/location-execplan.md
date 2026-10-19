@@ -37,6 +37,11 @@ To see it working at the end: two accounts in one family circle, each with the a
 - [x] (2026-10-17) Deployed to production on top of what it ran (deploy/combined-20261017i: the newest combined branch plus location), after a backup; migration 0240 applied, v0.170.0-167-gbcb85558. Used there: the command line, the settings, a search (which found nothing for "coffee": fixed by asking again in OpenStreetMap's word), the map proxy behind the real host, and the agent answering where the person went and finding playgrounds. A TestFlight build of the same branch was dispatched.
 - [ ] The maintainer's phone: a day of real visits, and the timings of visit arrivals and departures (Milestone 0's third question).
 - [ ] Milestone 6: documentation, the security review section, review rounds, use it for real, deploy.
+- [x] (2026-10-18) The dashboard's day headings gain a Map button that draws the day's path, as the iPhone's day heading does (the maintainer could not find the path).
+- [x] (2026-10-18) Milestone 7: the photos a person took during each of their visits, on every surface (GraphQL `photoCount`, `photos`, `photosTakenBefore`; the agent's `photo_count` and window; `teanode location visits`; the dashboard's strip and Photos' `after`/`before`; the iPhone's strip and `PhotoFilter`). The agent also gained `location_path`, and `ReadPlace` reads one place by id.
+- [x] (2026-10-18) Milestone 8: a photo's details show where it was taken on a map, named by the person's own place or the street (`ReadPhotoPlace` on every surface).
+- [x] (2026-10-18) Review rounds 1 to 6 (server, dashboard, iPhone, parity and words); the last found only this list out of date. Walked in headless Chrome at 1400 and 390 px, light and dark: the strip kept to one line on a phone, and a narrow map's credit now starts folded.
+- [ ] Deploy, and the iPhone screenshots of the visit strip and the photo map from CI.
 
 ## Surprises & Discoveries
 
@@ -124,6 +129,18 @@ To see it working at the end: two accounts in one family circle, each with the a
 - Decision: a new place is named right after the report that made it is committed, outside the agent; the agent's periodic job only retries places whose first try failed. Notifications go out only for an arrival or departure in the last fifteen minutes and after the share was made.
   Rationale: naming must work with the agent off (see Surprises); a phone that was offline for a day must not ring the family for every place it passed.
   Date/Author: 2026-10-17, design.
+
+- Decision: a visit shows the photos taken during it from the person's own library only, and only on their own visits. A photo is in a visit when the time the Photos library places it at (when it was taken, or when it was uploaded if the file says nothing) is at or after the arrival and before the departure, or before now for a visit still open. A visit whose arrival was not seen has no photos.
+  Rationale: the maintainer asked for "photos I took during the visit". The library's own timeline is the one Photos files a photo under, so a visit and the library agree on which photos belong to an hour. Where a photo was taken is not used: a person can take a photo's location away, and a photo taken during a visit belongs to it either way. Another person's visits never show photos, even when the viewer can read both: their library is theirs.
+  Date/Author: 2026-10-18, design.
+
+- Decision: Photos learns an exact window in its address (dashboard `after` and `before`, instants) and in the iPhone's `PhotoFilter` (`takenAfter`, `takenBefore`), beside the days it already takes. A visit's photos open there.
+  Rationale: a day filter shows a whole day; a visit is an hour. One library grid and one viewer serve both, rather than a second grid inside Location. Agreed with the Photos session.
+  Date/Author: 2026-10-18, design.
+
+- Decision: a photo's place in its details is the person's own Location place when the photo was taken inside one (`FindPlaceAt`), else the street address from the place provider, looked up when the details are opened, else the city it is filed under today. The details show a map with the photo's position.
+  Rationale: the maintainer found the city too coarse, and chose "your places, then street" knowing that the street lookup sends that photo's position to OpenStreetMap, as Location already does for a new place. The lookup happens only when somebody opens the details, never for every photo processed, and is remembered by the server for the same rounded position, so opening a photo twice asks once.
+  Date/Author: 2026-10-18, design.
 
 ## Outcomes & Retrospective
 
@@ -255,6 +272,34 @@ The location tool's description says, for a person with no point yet, to offer t
 ### Milestone 6: finish
 
 Documentation: `docs/subsystems/location.md` (what is recorded, how a visit is made, naming, sharing, notifications, what the agent sees), the `location` commands in `docs/reference/command-line.md`, the `places` settings in `docs/reference/deployment.md`. Two decision records under `docs/decisions/`, dated 2026-10-17: `a-location-is-shared-at-a-level` and `places-are-named-from-openstreetmap`. A section of `docs/security/security-review.md` for this feature: who may read whose location, the refusals on every operation and the subscription, what a notification reveals, the map proxy (it must fetch only from the configured style's hosts, never an address a request names), and the provider requests (what coordinates leave the server, and to whom). Review the whole diff, fix, review again until a round finds nothing; check parity explicitly; run the `ux-review` skill on every screen; deploy and use it for real for a day with the maintainer's phone.
+
+### Milestone 7: the photos taken during a visit
+
+The maintainer asked that their visits show the photos they took during them. After this milestone, a visit in the person's own list (Visits on the dashboard and the iPhone, a day's screen on the iPhone) shows up to four small pictures under its place and times, and how many photos there are when there are more. Choosing a picture opens it in the Photos viewer; choosing the count opens the Photos library at exactly that visit. The agent's `location_visits` rows and `teanode location visits` say how many photos each of the person's own visits has.
+
+Server. `PlaceVisitView` in `internal/api/v1api/apigraph/location_history.go` gains `photoCount` (an integer, null unless the visits are the caller's own and the caller may use Photos) and `photos` (the first four of them, earliest first, as the same `Photo` objects `ListPhotos` returns, with their preview addresses filled by `withFilesAndPreviews`; empty when there are none, null when `photoCount` is). `ListLocationVisits` fills them only when `reach.ShareLevel` is the owner's, after `attachVisitSummaries`, with one database call for the whole page: `transaction.ListVisitPhotos` in `internal/db/database_photo.go` takes the user id, the windows (each a visit id with its start and end) and how many photos to keep per window, and answers, per visit id, the count and the first photos. It uses the library's own conditions (the owner's photos, not in the trash, the same `photoTimelineExpression`, read from the top of `photosMatching`), so a photo counted on a visit is one the library shows at that time. A caller without the Photos service enabled or without `photos:use` gets nulls, never an error: Location works without Photos.
+
+Agent and command line. The `location_visits` rows of the person's own visits gain `photo_count` when it is above zero, and the tool's description says the photo tool's `list` with `taken_after` and `taken_before` set to the visit's `arrived` and `left` lists them. `teanode location visits` gains a `PHOTOS` column for the person's own visits, and `--json` carries both fields. `internal/client` asks for them.
+
+Dashboard. `web/src/pages/location.tsx` asks for `photoCount` and `photos { id smallPreviewUrl }` with the visits. Under a visit's row (a sibling of the row's button, not inside it) a strip of up to four square pictures, each a link to `/photos/<photo id>?after=<arrival>&before=<departure or now>`, and, when there are more, a fifth tile with the number of the rest, linking to `/photos?after=...&before=...`. The Photos library (`web/src/pages/photos/library.tsx`, `web/src/photos/filters.ts`) reads `after` and `before` as instants beside `from` and `to`, sends them as `takenAfter` and `takenBefore`, and shows the window in its filter row with a way to clear it.
+
+iPhone. TeaNodeKit's `PlaceVisit` (`ios/TeaNodeKit/Sources/TeaNodeKit/Location.swift`) decodes the two fields and its documents ask for them; `PhotoFilter` (`PhotoSharing.swift`) gains `takenAfter` and `takenBefore`, sent when set and taking the place of the days. `LocationVisitRow` shows the strip when the visit has photos, as a borderless button inside the row so the row still opens the place; tapping it switches to Photos with the filter set to the visit (the side menu's section change, as other screens open a section). The demo server gives two of the demo visits photos, so the location and location-day screenshots show the strip.
+
+Acceptance: a person with photos taken during a visit sees them on the visit on both surfaces, opens one, and opens all of that visit's photos and only those; a person viewing a family member's visits sees no photos; a server without Photos shows visits as before. Tests: an apigraph test that counts photos into the right visits (one before arrival, two during, one after departure, one in the trash, one of another person) and gives a family member nulls; a CLI test of the column; web tests of the strip and of the library's window; TeaNodeKit decoding and filter tests.
+
+### Milestone 8: where a photo was taken, on a map
+
+The maintainer asked that a photo's place show a map, and found the place named there too coarse (a city). After this milestone, the details of a photo with a position the viewer may see show a small map with a pin at that position, and its Place reads the person's own place ("Home", a shop they visited) when the photo was taken inside one, the street address otherwise, and the city only when neither is known.
+
+Server. A query `ReadPhotoPlace(photoId: String!)` in `internal/api/v1api/apigraph/` answers a `PhotoPlaceView`: `locationPlace` (the caller's own `PlaceView` the position is inside, from `FindPlaceAt`, null when none or when the caller cannot use Location) and `addressText` (the street address from the configured `place.Provider`'s `Name`, empty when an own place matched, when no provider is configured or when the lookup fails). It is null when the photo has no position, or when the caller may not see it (the same rule that hides a shared photo's coordinates, `isPlaceShownOfOthers`). The address is remembered in memory for the position rounded to about ten meters, for a day, so opening the same photo again does not ask the provider again; the provider's own rate limit applies.
+
+Agent and command line. The photo tool's read of one photo gains `location_place` and `address` from the same lookup; `teanode photo show` prints them on its Place line. `internal/client` gains `ReadPhotoPlace`.
+
+Dashboard. `web/src/pages/photos/viewer.tsx`'s details read `ReadPhotoPlace` when they open; the Place row shows the own place's name (a link to that place on Location), else the address, else the city; under the details, the `LocationMap` component draws the photo's position as one marker, about 180 pixels tall, using the same map style and credits as Location.
+
+iPhone. The photo details in `ios/TeaNode/Sources/PhotoViewer.swift` read the same query through TeaNodeKit and show the same Place text, and a MapKit `Map` with one `Marker` at the photo's position, about 180 points tall, that does not take the scroll; tapping it opens the position in Apple Maps.
+
+Acceptance: a photo taken at the person's home reads "Home" with a map pinned there; one taken at a shop with no place of theirs reads its street; a shared photo whose owner hid its position shows neither. Tests: apigraph (own place, address from a fake provider, remembered, hidden position, no provider), CLI, web viewer, TeaNodeKit decoding.
 
 ## Concrete Steps
 

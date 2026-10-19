@@ -150,7 +150,7 @@ enum UpkeepWords {
             let dayName = ScheduleWeekday.name(dayNumber)
             return String(localized: "\(dayName)s at \(timeText)", comment: "A weekly schedule on one day, as \"Fridays at 5:00 PM\": the day's name, then the time.")
         case .someDays(let dayNumbers):
-            let dayNames = dayNumbers.map { ScheduleWeekday.shortName($0) }.formatted(.list(type: .and))
+            let dayNames = ScheduleWeekday.shortNamesText(dayNumbers)
             return String(localized: "Every \(dayNames) at \(timeText)", comment: "A weekly schedule on a few days, as \"Every Mon, Wed, and Fri at 9:00 AM\".")
         }
     }
@@ -2047,7 +2047,11 @@ struct SchedulesView: View {
             DatePicker(
                 "At", selection: Binding(get: { UpkeepWords.clockDate(briefTime) }, set: { briefTime = UpkeepWords.clockText($0) }),
                 displayedComponents: .hourAndMinute)
-            WeekdayToggles(dayNumbers: $briefDayNumbers)
+            NavigationLink {
+                BriefDaysScreen(dayNumbers: $briefDayNumbers)
+            } label: {
+                LabeledContent("On days", value: briefDaysText)
+            }
             if brief?.enabled == true {
                 if hasBriefChanged {
                     Button("Save the new time and days", systemImage: "checkmark.circle") { Task { await saveBrief(isEnabled: true) } }
@@ -2069,11 +2073,26 @@ struct SchedulesView: View {
         } header: {
             Text("A brief each morning")
         } footer: {
-            Text(
-                brief == nil
-                    ? LocalizedStringKey("What the day holds and what is waiting for you, sent to you as mail. Turning it on adds an ordinary schedule called “Daily brief” below, where you can change what it asks for.")
-                    : "What the day holds and what is waiting for you, sent to you as mail. It is the schedule called “Daily brief” below, where you can change what it asks for."
-            )
+            if briefDayNumbers.isEmpty {
+                Text("Choose at least one day.")
+            } else {
+                Text(
+                    brief == nil
+                        ? LocalizedStringKey("What the day holds and what is waiting for you, sent to you as mail. Turning it on adds an ordinary schedule called “Daily brief” below, where you can change what it asks for.")
+                        : "What the day holds and what is waiting for you, sent to you as mail. It is the schedule called “Daily brief” below, where you can change what it asks for."
+                )
+            }
+        }
+    }
+
+    /// The chosen days in a few words: "Weekdays", or "Mon, Wed, and Fri".
+    private var briefDaysText: String {
+        switch ScheduleTiming.dayPattern(for: briefDayNumbers.sorted()) {
+        case .everyDay: String(localized: "Every day")
+        case .weekdays: String(localized: "Weekdays")
+        case .weekends: String(localized: "Weekends")
+        case .oneDay(let dayNumber): ScheduleWeekday.name(dayNumber)
+        case .someDays(let dayNumbers): dayNumbers.isEmpty ? String(localized: "No days") : ScheduleWeekday.shortNamesText(dayNumbers)
         }
     }
 
@@ -2139,52 +2158,42 @@ struct AgentScheduleRow: View {
     }
 }
 
-/// WeekdayToggles is the days of the week something comes on, a toggle
-/// each, in the order the person's calendar starts its week and named as
-/// their locale names them. Short names in one row when they fit; at large
-/// text sizes, a switch a day with the whole name.
-struct WeekdayToggles: View {
+/// BriefDaysScreen is the days the morning brief comes on: the seven days as
+/// rows with a checkmark, in the order the person's calendar starts its week,
+/// the same rows a weekly custom repeat in the calendar uses.
+struct BriefDaysScreen: View {
     @Binding var dayNumbers: Set<Int>
 
-    private var orderedDayNumbers: [Int] { ScheduleWeekday.weekOrder(firstWeekday: Calendar.current.firstWeekday) }
-
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
-                ForEach(orderedDayNumbers, id: \.self) { dayNumber in
-                    Toggle(isOn: isChosen(dayNumber)) {
-                        Text(verbatim: ScheduleWeekday.shortName(dayNumber))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .accessibilityLabel(Text(verbatim: ScheduleWeekday.name(dayNumber)))
-                }
-            }
-            .toggleStyle(.button)
-            // Its own button each, so a tap in the row turns one day, not
-            // every day of the row.
-            .buttonStyle(.bordered)
-            VStack(spacing: 12) {
-                ForEach(orderedDayNumbers, id: \.self) { dayNumber in
-                    Toggle(isOn: isChosen(dayNumber)) {
-                        Text(verbatim: ScheduleWeekday.name(dayNumber))
-                    }
+        List {
+            Section {
+                WeekdayChecklist(dayNumbers: $dayNumbers)
+            } footer: {
+                if dayNumbers.isEmpty {
+                    Text("Choose at least one day.")
                 }
             }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("On days"))
-        .sensoryFeedback(.selection, trigger: dayNumbers)
-    }
-
-    private func isChosen(_ dayNumber: Int) -> Binding<Bool> {
-        Binding(
-            get: { dayNumbers.contains(dayNumber) },
-            set: { isOn in
-                if isOn { dayNumbers.insert(dayNumber) } else { dayNumbers.remove(dayNumber) }
-            })
+        .navigationTitle("On days")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+#if DEBUG
+    /// The screen `-TeaNodeScreen schedules-brief-days` photographs, with
+    /// Monday to Friday chosen, and `schedules-brief-days-none` with no day.
+    struct BriefDaysDemoScreen: View {
+        @State private var dayNumbers: Set<Int>
+
+        init(isEmpty: Bool) {
+            _dayNumbers = State(initialValue: isEmpty ? [] : Set(1...5))
+        }
+
+        var body: some View {
+            BriefDaysScreen(dayNumbers: $dayNumbers)
+        }
+    }
+#endif
 
 /// AgentScheduleEditor adds a schedule or changes one: its name, its cron
 /// line, where the answer goes, and what to do. A new one starts on.

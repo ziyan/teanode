@@ -126,6 +126,9 @@
             let placeId: String
             let arrivedAt: Date?
             let departedAt: Date?
+            /// The demo photos taken during the visit, and how many there are in all (more than are shown).
+            var photoIds: [String] = []
+            var photoCount = 0
 
             var json: String {
                 let place = LocationDemo.place(placeId)
@@ -134,7 +137,7 @@
                 var duration = "null"
                 if let arrivedAt, let departedAt { duration = String(Int(departedAt.timeIntervalSince(arrivedAt))) }
                 return #"""
-                    {"id":"\#(id)","arrivedAt":\#(arrived),"departedAt":\#(departed),"durationSeconds":\#(duration),"latitudeDegrees":\#(place.latitudeDegrees),"longitudeDegrees":\#(place.longitudeDegrees),"accuracyMeters":30,"visitSource":"visit","place":\#(place.json)}
+                    {"id":"\#(id)","arrivedAt":\#(arrived),"departedAt":\#(departed),"durationSeconds":\#(duration),"latitudeDegrees":\#(place.latitudeDegrees),"longitudeDegrees":\#(place.longitudeDegrees),"accuracyMeters":30,"visitSource":"visit","photoCount":\#(photoIds.isEmpty ? "null" : String(photoCount)),"photos":\#(photoIds.isEmpty ? "null" : DemoServer.demoVisitPhotosJSON(photoIds)),"photosTakenBefore":\#(photoIds.isEmpty ? "null" : departed),"place":\#(place.json)}
                     """#
             }
         }
@@ -148,8 +151,12 @@
             }
             return [
                 Visit(id: "visit-1", placeId: parkPlaceId, arrivedAt: now.addingTimeInterval(-35 * 60), departedAt: nil),
-                Visit(id: "visit-2", placeId: officePlaceId, arrivedAt: at(0, 9, 5), departedAt: at(0, 12, 30)),
-                Visit(id: "visit-3", placeId: cafePlaceId, arrivedAt: at(0, 8, 5), departedAt: at(0, 8, 40)),
+                Visit(
+                    id: "visit-2", placeId: officePlaceId, arrivedAt: at(0, 9, 5), departedAt: at(0, 12, 30),
+                    photoIds: ["demo-v1", "demo-v2", "demo-v3", "demo-v4"], photoCount: 7),
+                Visit(
+                    id: "visit-3", placeId: cafePlaceId, arrivedAt: at(0, 8, 5), departedAt: at(0, 8, 40), photoIds: ["demo-v8", "demo-v9"],
+                    photoCount: 2),
                 Visit(id: "visit-4", placeId: homePlaceId, arrivedAt: at(1, 19, 10), departedAt: at(0, 7, 50)),
                 Visit(id: "visit-5", placeId: schoolPlaceId, arrivedAt: at(1, 15, 0), departedAt: at(1, 15, 20)),
                 Visit(id: "visit-6", placeId: officePlaceId, arrivedAt: at(1, 9, 0), departedAt: at(1, 17, 45)),

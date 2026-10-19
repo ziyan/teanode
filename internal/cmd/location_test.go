@@ -38,6 +38,7 @@ func TestLocationParity(test *testing.T) {
 		"GetLocation":          {"now", "now"},
 		"ListLocationVisits":   {"visits", "visits"},
 		"ListPlaces":           {"places", "places"},
+		"ReadPlace":            {"place", "places"},
 		"ListNearbyPlaces":     {"nearby", "nearby"},
 		"SearchPlaces":         {"search", "search"},
 		"SearchAddresses":      {"addresses", "find_address"},
@@ -118,6 +119,7 @@ func TestLocationParity(test *testing.T) {
 		"SearchAddresses.query.command":    "the words are the arguments of the subcommand",
 		"SearchPlaces.placeId.command":     "the flag is --near-place, since --place would read as a filter",
 		"SearchAddresses.placeId.command":  "the flag is --near-place, as it is for search",
+		"ReadPlace.placeId.command":        "the place id is the argument of the subcommand",
 		"ListLocationPoints.from.command":  "a day is given with --day",
 		"ListLocationPoints.until.command": "a day is given with --day",
 	}
@@ -172,7 +174,7 @@ func locationServerAnswering(test *testing.T, replacements map[string]string) (*
 		"GetLocation": `{"userId":"u-ada","username":"ada","name":"Ada","shareLevel":"owner",
 			"latestPoint":{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"},
 			"openVisit":{"id":"v1","arrivedAt":"2026-10-17T09:30:00Z","place":` + place + `}}`,
-		"ListLocationVisits": `{"nextOffset":50,"placeVisits":[{"id":"v1","arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T09:50:00Z","durationSeconds":1200,"place":` + place + `},
+		"ListLocationVisits": `{"nextOffset":50,"placeVisits":[{"id":"v1","arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T09:50:00Z","durationSeconds":1200,"photoCount":3,"photos":[{"id":"ph1","smallPreviewUrl":"/api/v1/photo/ph1/small","takenAt":"2026-10-17T09:40:00Z"}],"place":` + place + `},
 			{"id":"v2","arrivedAt":"2026-10-17T11:00:00Z","place":` + place + `}]}`,
 		"ListPlaces": `{"places":[` + place + `]}`,
 		"ListNearbyPlaces": `[{"placeName":"Corner Cafe","osmType":"node","osmId":42,"osmCategory":"amenity=cafe","addressText":"1 Elm Street","latitudeDegrees":40.0006,"longitudeDegrees":-75.0004,"distanceMeters":15},
@@ -254,6 +256,9 @@ func TestLocationVisitsListsVisitsAndFilters(test *testing.T) {
 	}
 	if !strings.Contains(output, "Maple Park") || !strings.Contains(output, "still there") || !strings.Contains(output, "20 minutes") {
 		test.Errorf("the visits: %q", output)
+	}
+	if !strings.Contains(output, "photo count") || !regexp.MustCompile(`20 minutes\s+3\s`).MatchString(output) {
+		test.Errorf("the photo count of the first visit and none for the second: %q", output)
 	}
 	variables := called("ListLocationVisits")
 	if variables["placeLabel"] != "home" || variables["placeId"] != "p1" || variables["limitCount"] != float64(2) || variables["from"] == nil || variables["until"] != nil {

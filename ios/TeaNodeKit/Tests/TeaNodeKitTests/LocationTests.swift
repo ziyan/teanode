@@ -96,6 +96,25 @@ final class LocationTests: XCTestCase {
             ])
     }
 
+    func testAVisitCarriesTheCountAndFirstPhotosOnlyWhenTheServerSendsThem() throws {
+        let photo = #"""
+            {"id":"photo-1","createdAt":"2024-01-02T09:05:00Z","photoKind":"picture","takenAt":"2024-01-02T09:10:00Z","takenAtOffsetMinutes":null,
+             "widthPixels":10,"heightPixels":10,"durationMS":0,"latitude":null,"longitude":null,"placeName":"","cameraMake":"","cameraModel":"",
+             "originalFilename":"fixture.jpg","isFavorite":false,"isScreenshot":false,"photoProcessingState":"ready","trashedAt":null,
+             "smallPreviewUrl":"/api/v1/photos/photo-1/previews/small?v=1","largePreviewUrl":"","videoPreviewUrl":""}
+            """#
+        let plain = try JSONDecoder().decode(PlaceVisit.self, from: Data(visitAnswer.utf8))
+        XCTAssertNil(plain.photoCount)
+        XCTAssertNil(plain.photos)
+        let withPhotos = visitAnswer.replacingOccurrences(of: #""visitSource":"visit","#, with: #""visitSource":"visit","photoCount":6,"photos":[\#(photo)],"#)
+        let visit = try JSONDecoder().decode(PlaceVisit.self, from: Data(withPhotos.utf8))
+        XCTAssertEqual(visit.photoCount, 6)
+        XCTAssertEqual(visit.photos?.map(\.id), ["photo-1"])
+        XCTAssertEqual(visit.photos?.first?.gridPreviewPath, "/api/v1/photos/photo-1/previews/small?v=1")
+        XCTAssertTrue(Documents.locationVisits.contains("photoCount"))
+        XCTAssertTrue(Documents.locationVisits.contains("photos {"))
+    }
+
     func testAPlaceKnowsWhetherItsAddressWasTyped() throws {
         let mapAddressed = try JSONDecoder().decode(LocationPlace.self, from: Data(placeAnswer.utf8))
         XCTAssertFalse(mapAddressed.isAddressTyped)

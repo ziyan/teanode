@@ -10,6 +10,18 @@ import XCTest
 /// The pieces of the iPhone's photo screens that live in the Kit: searching,
 /// retrying a failed photo, the files a photo is made of, the limits, typed
 /// errors, who is offered Photos, and forgetting an account's previews.
+/// Counter hands out 0, 1, 2 ... for a fake server that answers differently each time.
+private final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        defer { value += 1 }
+        return value
+    }
+}
+
 final class PhotoClientTests: XCTestCase {
     private func photoJSON(extraFields: String = "") -> String {
         #"{"id":"p1","createdAt":"2026-03-01T00:00:00Z","photoKind":"livePhoto","takenAt":null,"takenAtOffsetMinutes":null,"widthPixels":10,"heightPixels":10,"durationMS":0,"latitude":null,"longitude":null,"placeName":"","cameraMake":"","cameraModel":"","originalFilename":"IMG_0001.HEIC","isFavorite":false,"isScreenshot":false,"photoProcessingState":"failed","trashedAt":null,"smallPreviewUrl":"","largePreviewUrl":"","videoPreviewUrl":""\#(extraFields)}"#
@@ -29,6 +41,28 @@ final class PhotoClientTests: XCTestCase {
     }
 
     // MARK: Photos as the list says them
+
+    func testThePlaceOfAPhotoIsAskedForAndReadsAsAPlaceOrAStreetOrNothing() async throws {
+        let place = #"{"id":"place-1","userId":"user-1","placeName":"Fixture Park","isNamedByPerson":true,"placeLabel":"home","latitudeDegrees":10.5,"longitudeDegrees":20.5,"radiusMeters":75,"osmType":"","osmId":null,"osmName":"","osmCategory":"","addressText":"","isAddressTyped":false,"visitCount":3,"lastVisitAt":null,"namingErrorMessage":"","createdAt":"2024-01-01T00:00:00Z","updatedAt":"2024-01-02T10:00:00Z"}"#
+        let answers = [
+            #"{"data":{"ReadPhotoPlace":{"locationPlace":\#(place),"addressText":""}}}"#,
+            #"{"data":{"ReadPhotoPlace":{"locationPlace":null,"addressText":"3 Fixture Row"}}}"#,
+            #"{"data":{"ReadPhotoPlace":null}}"#,
+        ]
+        let counter = Counter()
+        let (connection, fake) = try connection { _ in (200, answers[counter.next()]) }
+        let own = try await connection.readPhotoPlace("p1")
+        XCTAssertEqual(own?.locationPlace?.placeName, "Fixture Park")
+        XCTAssertEqual(own?.locationPlace?.label, .home)
+        XCTAssertEqual(own?.addressText, "")
+        let street = try await connection.readPhotoPlace("p1")
+        XCTAssertNil(street?.locationPlace)
+        XCTAssertEqual(street?.addressText, "3 Fixture Row")
+        let none = try await connection.readPhotoPlace("p1")
+        XCTAssertNil(none)
+        XCTAssertEqual(try sentVariables(of: try XCTUnwrap(fake.sent.last))["photoId"] as? String, "p1")
+        XCTAssertTrue(Documents.readPhotoPlace.contains("ReadPhotoPlace(photoId: $photoId)"))
+    }
 
     func testAFailedPhotoSaysWhyAndWhichFilesItHas() throws {
         let photo = try JSONDecoder().decode(

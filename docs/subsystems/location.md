@@ -269,6 +269,41 @@ answers carry the untrusted mark.
 - **Only where a turn can ask a browser or phone** does `now` ask for a fresh
   position, once; elsewhere it answers the last one kept, with its age.
 
+`ReadPlace(placeId, userId)` answers one place as a row of `ListPlaces` does, by the
+same access rules (the caller's own, or another person's at `history` level;
+not found otherwise). The dashboard uses it for the link from a photo to a place
+that is not on the loaded page; `teanode location place` and the agent's
+`places` action with `place_id` read the same.
+
+## A day's path
+
+A day's path is `ListLocationPoints` (at most two days at a time, at `history`
+level for another person). The dashboard and the iPhone draw it with the Map
+button on each day heading, `teanode location path` prints it on the command
+line, and the agent's `location_path` answers the number of positions, the first
+and last time, the distance travelled in kilometers and up to 60 positions
+evenly spread, with `is_truncated` saying some were left out.
+
+## Photos taken during a visit
+
+`ListLocationVisits` adds `photoCount` and `photos` to each of the caller's
+own visits: how many of their library photos (not in the trash) were taken from
+the arrival up to, not including, the departure (for a visit nobody ended: up to
+the person's latest position when they are no longer at the place, by the rule
+`GetLocation` uses for the open visit, else up to now), and the first four, earliest first. One database call (`ListVisitPhotos`) covers
+the whole page. They are null for a family member reading the visits, for a
+caller without Photos (the service off, or no `photos:use`), and for a visit
+with no arrival. Location works without Photos. Other operations that return a
+visit (the open visit in `GetLocation`, `CheckIn`) leave them null.
+`photosTakenBefore` is where that window ended, and Photos opened over the
+visit ends there too: the dashboard's `after` and `before` carry it to the
+millisecond, the iPhone's `PhotoFilter` to the second (so a photo taken in the
+same second as the arrival or the end may be shown or left out). The agent's
+`location_visits` rows give `photo_count`, `photos_taken_after` and
+`photos_taken_before` (RFC 3339 in the person's zone, with any fraction of a
+second) to pass to the photo tool's `taken_after` and `taken_before`, which
+then lists exactly the photos counted.
+
 ## Where it lives
 
 - `internal/db/database_location*.go`: the queries; `internal/place`: visits and

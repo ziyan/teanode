@@ -70,10 +70,12 @@ import {
   isFoundByMeaningOnly,
   nearText,
   parseDay,
+  parseInstant,
   parseNear,
   parsePhotoKind,
   startOfDay,
   startOfNextDay,
+  windowEnds,
 } from '../../photos/filters'
 import { formatByteSize, indexRange, personTimeZone, photoReferenceTitle } from '../../photos/days'
 import {
@@ -134,7 +136,7 @@ export function PhotosPage() {
 }
 
 function AccountPhotosPage() {
-  const { t, plural } = useTranslation()
+  const { t, plural, language } = useTranslation()
   const session = useSession()
   const toast = useToast()
   const navigate = useNavigate()
@@ -176,8 +178,7 @@ function AccountPhotosPage() {
     session.services?.isContactsEnabled === true && hasPermission(session.permissions, 'contacts:use')
   // Asking about a photo needs an assistant on the server and one this person
   // may use, as the sidebar's assistant links do.
-  const isAssistantOn =
-    session.services?.isAssistantEnabled === true && hasPermission(session.permissions, 'agent:use')
+  const isAssistantOn = session.services?.isAssistantEnabled === true && hasPermission(session.permissions, 'agent:use')
   const circleChoices = useCircleChoices()
 
   const listKind: PhotoListKind = isInsideCollection
@@ -211,10 +212,27 @@ function AccountPhotosPage() {
   const circlePerson = circlePeople.data?.find((person) => person.userId === circlePersonUserId) ?? null
   const isCirclePersonPending = circlePersonUserId !== '' && circlePeople.data === null && !circlePeople.error
   const isCirclePersonUnresolved = circlePersonUserId !== '' && circlePerson === null
-  const hasFilters = photoKind !== '' || fromDay !== '' || toDay !== '' || near !== null || circlePersonUserId !== ''
+  // A window of exact moments in the address (a visit's) takes the place of
+  // the days.
+  const windowAfter = parseInstant(parameters.get('after'))
+  const windowBefore = parseInstant(parameters.get('before'))
+  const hasWindow = windowAfter !== undefined || windowBefore !== undefined
+  const hasFilters =
+    photoKind !== '' || fromDay !== '' || toDay !== '' || near !== null || circlePersonUserId !== '' || hasWindow
+  const windowEndWords = windowEnds(windowAfter, windowBefore, language, personTimeZone())
+  const windowLabel =
+    windowEndWords.start && windowEndWords.end
+      ? t('photos.windowRange', windowEndWords)
+      : t(windowAfter ? 'photos.windowSince' : 'photos.windowUntil', {
+          moment: windowEndWords.start || windowEndWords.end,
+        })
   const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PHOTOS_PER_PAGE })
-  const takenAfter = fromDay ? startOfDay(fromDay) : undefined
-  const takenBefore = toDay ? startOfNextDay(toDay) : undefined
+  // A window in the address takes the place of the days: the day fields show
+  // empty while it is there, and the request never reads from and to.
+  const shownFromDay = hasWindow ? '' : fromDay
+  const shownToDay = hasWindow ? '' : toDay
+  const takenAfter = hasWindow ? windowAfter : fromDay ? startOfDay(fromDay) : undefined
+  const takenBefore = hasWindow ? windowBefore : toDay ? startOfNextDay(toDay) : undefined
   const filter = useMemo(
     () => ({
       listKind,
@@ -317,6 +335,11 @@ function AccountPhotosPage() {
       const written = new URLSearchParams(previous)
       if (value) written.set(name, value)
       else written.delete(name)
+      // Choosing a day ends the window the address named.
+      if (name !== 'kind') {
+        written.delete('after')
+        written.delete('before')
+      }
       written.delete('page')
       return written
     })
@@ -343,10 +366,18 @@ function AccountPhotosPage() {
       written.delete('page')
       return written
     })
+  const clearWindow = () =>
+    setParameters((previous) => {
+      const written = new URLSearchParams(previous)
+      written.delete('after')
+      written.delete('before')
+      written.delete('page')
+      return written
+    })
   const clearFilters = () =>
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
-      for (const name of ['kind', 'from', 'to', 'near', 'nearPlace', 'person']) written.delete(name)
+      for (const name of ['kind', 'from', 'to', 'after', 'before', 'near', 'nearPlace', 'person']) written.delete(name)
       written.delete('page')
       return written
     })
@@ -467,6 +498,8 @@ function AccountPhotosPage() {
     photoKind,
     fromDay,
     toDay,
+    takenAfter,
+    takenBefore,
     near?.latitude,
     near?.longitude,
     offset,
@@ -1406,8 +1439,8 @@ function AccountPhotosPage() {
                 />
                 <PhotoFilterMenu
                   photoKind={photoKind}
-                  fromDay={fromDay}
-                  toDay={toDay}
+                  fromDay={shownFromDay}
+                  toDay={shownToDay}
                   onChange={setFilterParameter}
                   onClear={clearFilters}
                 />
@@ -1423,6 +1456,19 @@ function AccountPhotosPage() {
                         filter: t('photos.accountPhotosOf', { name: personName(circlePerson) }),
                       })}
                       onClick={clearCirclePerson}
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </span>
+                )}
+                {hasWindow && (
+                  <span className="table-pinned photo-near-filter">
+                    <span className="photo-near-label">{windowLabel}</span>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={t('photos.removeFilter', { filter: windowLabel })}
+                      onClick={clearWindow}
                     >
                       <CloseIcon size={12} />
                     </button>

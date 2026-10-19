@@ -6,6 +6,30 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.182.0] - 2026-10-19
+
+### Added
+
+- Location's visits show the photos you took during them, on the dashboard and the iPhone, and open Photos at exactly that visit. (#589)
+- A photo's details show where it was taken on a map, named by your own place or the street. (#589)
+- Each day on the dashboard's Location has a Map button that draws the day's path, and the assistant can read a day's path. (#589)
+
+## [0.181.0] - 2026-10-19
+
+### Added
+
+- Calendar events can repeat on a custom schedule, such as every weekday or every two weeks on Monday and Thursday, on the dashboard and the iPhone. (#588)
+
+### Changed
+
+- The morning brief's days are chosen from a list of days instead of a switch each, and on the dashboard from day buttons instead of typed numbers. (#588)
+
+## [0.180.4] - 2026-10-19
+
+### Changed
+
+- Photos: your albums come first on the Albums page, and suggested albums after them, on the dashboard and the iPhone. (#590)
+
 ## [0.180.3] - 2026-10-19
 
 ### Fixed

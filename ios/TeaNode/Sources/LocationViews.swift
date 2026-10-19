@@ -378,6 +378,7 @@ struct LocationMapHeader: View {
 struct LocationVisitsList: View {
     let model: LocationModel
     let recorder: LocationRecorder
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         List {
@@ -403,8 +404,16 @@ struct LocationVisitsList: View {
                                 .font(.headline)
                                 .foregroundStyle(.primary)
                             Spacer()
-                            Label("Map", systemImage: "map")
-                                .font(.subheadline)
+                            // At the largest text sizes the word broke across two lines; the
+                            // symbol alone says it, and the hint below reads it out.
+                            if dynamicTypeSize.isAccessibilitySize {
+                                Image(systemName: "map")
+                                    .font(.subheadline)
+                                    .accessibilityLabel("Map")
+                            } else {
+                                Label("Map", systemImage: "map")
+                                    .font(.subheadline)
+                            }
                         }
                         .frame(minHeight: 44)
                     }
@@ -442,20 +451,102 @@ struct LocationVisitRow: View {
     let visit: PlaceVisit
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: visit.place.symbolName)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(width: 28)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: visit.place.shownName)
-                Text(verbatim: LocationText.summary(of: visit))
-                    .font(.subheadline)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: visit.place.symbolName)
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: visit.place.shownName)
+                    Text(verbatim: LocationText.summary(of: visit))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            if let photos = visit.photos, !photos.isEmpty {
+                VisitPhotoStrip(visit: visit, photos: photos)
+                    .padding(.leading, 40)
             }
         }
-        .accessibilityElement(children: .combine)
+        // The whole width, so the times are not wrapped to the strip's width under them.
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// VisitPhotoStrip shows the first few photos taken during a visit, and how
+/// many more there are. It is one borderless button, so that the row it sits
+/// in still opens the place, and it opens Photos at exactly this visit.
+struct VisitPhotoStrip: View {
+    let visit: PlaceVisit
+    let photos: [Photo]
+    @Environment(AppModel.self) private var app
+    /// A picture, not text, so it keeps its size at the largest text size, and
+    /// five of them still fit beside the place's symbol.
+    private let tileSide: CGFloat = 44
+
+    private var totalCount: Int { max(visit.photoCount ?? photos.count, photos.count) }
+    private var remainingCount: Int { totalCount - photos.count }
+
+    var body: some View {
+        Button {
+            // A visit still going on has no end yet, so its photos run to now.
+            guard let arrival = visit.arrivedDate else { return }
+            app.openedPhotoFilter = PhotoFilter(takenAfter: arrival, takenBefore: visit.photosTakenBeforeDate ?? visit.departedDate ?? Date())
+        } label: {
+            HStack(spacing: 4) {
+                ForEach(photos) { photo in
+                    VisitPhotoTile(photo: photo, connection: app.connection)
+                        .frame(width: tileSide, height: tileSide)
+                        .clipShape(.rect(cornerRadius: 3))
+                }
+                if remainingCount > 0 {
+                    Text(verbatim: "+\(remainingCount)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(width: tileSide, height: tileSide)
+                        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 3))
+                }
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(String(localized: "\(totalCount) photos taken during this visit"))
+        .accessibilityHint(String(localized: "Opens them in Photos"))
+    }
+}
+
+/// VisitPhotoTile is one small picture of a photo, filling the space it is
+/// given.
+struct VisitPhotoTile: View {
+    let photo: Photo
+    let connection: Connection?
+    @State private var picture: UIImage?
+
+    init(photo: Photo, connection: Connection?) {
+        self.photo = photo
+        self.connection = connection
+        if let connection, let path = photo.gridPreviewPath {
+            _picture = State(initialValue: PhotoImages.cachedPicture(path: path, accountKey: connection.accountKey))
+        }
+    }
+
+    var body: some View {
+        Color(.tertiarySystemFill)
+            .overlay {
+                if let picture {
+                    Image(uiImage: picture)
+                        .resizable()
+                        .scaledToFill()
+                }
+            }
+            .clipped()
+            .task(id: photo.gridPreviewPath) {
+                guard let connection, let path = photo.gridPreviewPath else { return }
+                picture = await PhotoImages.picture(path: path, connection: connection)
+            }
     }
 }
 
