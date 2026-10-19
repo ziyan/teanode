@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.182.0] - 2026-10-19
+
+### Added
+
+- Location's visits show the photos you took during them, on the dashboard and the iPhone, and open Photos at exactly that visit. (#589)
+- A photo's details show where it was taken on a map, named by your own place or the street. (#589)
+- Each day on the dashboard's Location has a Map button that draws the day's path, and the assistant can read a day's path. (#589)
+
 ## [0.181.0] - 2026-10-19
 
 ### Added
