@@ -138,6 +138,11 @@ func parseUploadHeaders(request *http.Request) (*models.PhotoUploadHeaders, *hea
 			offsetMinutes := offsetSeconds / 60
 			headers.TakenAtOffsetMinutes = &offsetMinutes
 		}
+		// A phone whose library has no creation date for a picture sends the
+		// epoch. It is no date, and the file's metadata or name may have one.
+		if isUnixEpoch(utc) {
+			headers.TakenAt, headers.TakenAtOffsetMinutes = nil, nil
+		}
 	}
 	latitude, err := parseCoordinate(request, headerLatitude, 90)
 	if err != nil {
