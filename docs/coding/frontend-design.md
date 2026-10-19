@@ -25,6 +25,7 @@ one of them gets the fix.
 | A row of a key/value table | `Field` in `components/common.tsx` |
 | Waiting, and failing | `Loading`, `ErrorMessage` in `components/common.tsx` |
 | A word about state | `Tag` in `components/common.tsx` |
+| The days of the week as toggle buttons | `WeekdayButtons` in `components/weekdayButtons.tsx` |
 | Row action icons | `components/icons.tsx` |
 | Tabs within a page | `Tabs` in `components/tabs.tsx` |
 

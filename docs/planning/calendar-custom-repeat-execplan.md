@@ -10,15 +10,21 @@ To see it working: open an event on the dashboard or the iPhone, choose Repeat, 
 
 ## Progress
 
-- [ ] Milestone 1: the rule, read and written, on both clients, with tests.
-- [ ] Milestone 2: the dashboard editor.
-- [ ] Milestone 3: the iPhone editor, its demo and screenshots.
-- [ ] Milestone 4: the morning brief's days use the same day picker, on the iPhone and the dashboard.
-- [ ] Docs and the agent tool's description; review until a round finds nothing.
+- [x] (2026-10-18) Milestone 1: the rule, read and written, on both clients, with tests. `web/src/pages/calendarRepeat.ts` with `calendarRepeat.test.ts`, `TeaNodeKit.CalendarRepeat` with `CalendarRepeatTests`, one shared table of rules.
+- [x] (2026-10-18) Milestone 2: the dashboard editor. `calendarRepeatDialog.tsx`, the Repeat select in `calendar.tsx`, `calendarRepeatEditor.test.tsx`.
+- [x] (2026-10-18) Milestone 3: the iPhone editor (`CalendarRepeatViews.swift`, the Repeat rows in `EventEditor`), its demo (`EventDraft.demoWeekdayStandup`) and the `calendar-repeat-custom` shoot lines. Written without a compiler: CI's first run is the compile, and the screenshots are still to be looked at.
+- [x] (2026-10-18) Milestone 4: the morning brief's days use the same day picker, on the iPhone (`BriefDaysScreen`, `WeekdayChecklist`) and the dashboard (`WeekdayButtons`).
+- [x] (2026-10-18) Docs and the agent tool's description.
+- [ ] Review until a round finds nothing, after CI has compiled the app and its screenshots have been opened.
 
 ## Surprises & Discoveries
 
-None yet.
+- The platform's list formatter writes English lists with the serial comma ("Monday, Wednesday, and Friday"), in the browser and in Foundation alike. The sentence in the Purpose section was written without it. The sentences are built from the formatters' output, as the plan asks, so they carry the comma; the tests assert it.
+- `Intl.ListFormat` is in the ES2021 typings, which `web/tsconfig.json` did not include, so `es2021.intl` was added to its `lib`.
+- TeaNodeKit has no localized strings (they live in the app's String Catalog), so `CalendarRepeat.sentence` returns the sentence in pieces, with the locale's day names, their list and the date already inside them, and `CalendarRepeatWords` in the app puts them into `String(localized:)` sentences. The dashboard translates inside `describeRepeat` with its own catalogs.
+- Several English words in the String Catalog already carried a different meaning in the other two languages ("After" is "after the change", "Daily" and "Weekly" are the window labels of a usage chart, "Days" is a date range). The new screens use new English wording where reusing the key would have shown those translations, and reuse keys whose meaning fits ("Day", "Last day", "%lld times", "%lld days", "On days").
+- A `select` does not fire a change when the chosen option is chosen again, so a rule that is already Custom cannot be reopened by picking Custom. The dashboard shows a Change button beside the sentence, and the iPhone shows the sentence as a row that opens the screen.
+- Both editors write the plainest rule: `INTERVAL=1` is dropped, a weekly repeat on only the weekday the event starts on is `FREQ=WEEKLY`, and a monthly one on the start day is `FREQ=MONTHLY`. So a weekly repeat made in Custom on that one day reads back as the "Every week" choice, and Monday to Friday as "Every weekday".
 
 ## Decision Log
 
@@ -27,9 +33,14 @@ None yet.
 - Decision: the parts a rule may have in the editor are FREQ, INTERVAL, BYDAY (weekly: plain days; monthly: one day with an ordinal such as 2TU or -1FR), BYMONTHDAY (monthly, one day), COUNT and UNTIL. A rule with anything else (BYSETPOS, BYMONTH, several month days, BYHOUR, WKST) still shows its sentence when it can, but is kept unchanged unless the person changes it, and the editor says it was set elsewhere. Rationale: never lose a rule the person meant.
 - Decision: UNTIL is written as a date-time in UTC (`YYYYMMDDTHHMMSSZ`, the end of the chosen day in the event's time zone) for a timed event and as a date (`YYYYMMDD`) for an all-day event, as RFC 5545 requires.
 
+- Decision: the iPhone's Custom screen writes the rule into the event as each part changes, and going back keeps it (as the iPhone Calendar's does), instead of having a Done button. Opening it and changing nothing leaves the rule untouched, whatever it was. Date: 2026-10-18.
+- Decision: the weekly days of the Custom screen cannot be cleared to none (the last checked day ignores a tap), because a repeat on no day is not a repeat. The brief's days can be cleared, and then the brief cannot be started or saved, with a line saying to choose a day. Date: 2026-10-18.
+- Decision: the `calendar-repeat-custom` demo opens the editor on a local `EventDraft` (a standup on Monday to Friday) instead of adding an event to `DemoServer`'s calendar, which every other calendar screenshot shares. Date: 2026-10-18.
+- Decision: the brief's dashboard card keeps sending the list of day numbers (`days: [Int!]`) that its text box was parsed into, so the server and the agent see no change. Date: 2026-10-18.
+
 ## Outcomes & Retrospective
 
-To be written when the work is done.
+The dashboard and the iPhone editors offer Every weekday and Custom, read a rule set elsewhere into the same editor, and keep what they cannot show. The morning brief's days are the same picker on both. No server change was needed. The rule logic is tested twice from one table (vitest, and TeaNodeKit in Docker). What is still open: the app target was written without a Swift compiler, so CI's App build is the first compile, and the new screenshots (`calendar-repeat-custom`, `schedules-brief-days`, `schedules-brief-days-none`, `schedules-largest-text`) are to be opened before the pull request merges. The changelog entry goes in the pull request description.
 
 ## Context and Orientation
 
