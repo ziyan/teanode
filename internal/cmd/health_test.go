@@ -94,7 +94,7 @@ func TestHealthTypesPrintsATable(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{"stepCount", "activity", "Steps", "steps", "2026-01-02 to 2026-10-17", "4000", "2026-10-17: 9,120 steps", "2026-10-17: 7h 15m", "Blood Type", "A+"} {
+	for _, want := range []string{"stepCount", "activity", "Steps", "steps", "2026-01-02 to 2026-10-17", "4000", "2026-10-17: 9,120 steps", "2026-10-17: 7 h 15 min", "Blood type", "A+"} {
 		if !strings.Contains(output, want) {
 			test.Errorf("the table should hold %q: %q", want, output)
 		}
@@ -162,7 +162,7 @@ func TestHealthSummaryOfSomebodyWhoShares(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	if strings.Contains(output, "4000") || strings.Contains(output, "Blood Type") {
+	if strings.Contains(output, "4000") || strings.Contains(output, "Blood type") {
 		test.Errorf("somebody else's types show neither a count of readings nor the facts about the caller: %q", output)
 	}
 	if called("ListHealthTypes")["ownerUserId"] != "u-cleo" {
@@ -189,7 +189,7 @@ func TestHealthSamplesPage(test *testing.T) {
 	if to.Sub(from) < 23*time.Hour || to.Sub(from) > 25*time.Hour {
 		test.Errorf("a whole day: %v to %v", from, to)
 	}
-	for _, want := range []string{"72 bpm", "Watch", "running", "35m", "h2"} {
+	for _, want := range []string{"72 bpm", "Watch", "Running", "35 min", "h2"} {
 		if !strings.Contains(output, want) {
 			test.Errorf("the table should hold %q: %q", want, output)
 		}
@@ -205,7 +205,7 @@ func TestHealthRouteSaysWhereItWent(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	if called("ReadHealthRoute")["healthSampleId"] != "h2" || !strings.Contains(output, "30m") || !strings.Contains(output, "40.01000, -75.02000") {
+	if called("ReadHealthRoute")["healthSampleId"] != "h2" || !strings.Contains(output, "30 min") || !strings.Contains(output, "40.01000, -75.02000") {
 		test.Errorf("the route: %q", output)
 	}
 	if _, err := runHealthCommand(test, server, "route"); err == nil {
@@ -220,7 +220,7 @@ func TestHealthSettingsReadAndSwitch(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	if !strings.Contains(output, "off: your agent cannot read") || !strings.Contains(output, "4900") || !strings.Contains(output, "aPositive") {
+	if !strings.Contains(output, "off: your agent cannot read") || !strings.Contains(output, "4900") || !strings.Contains(output, "Blood type") || !strings.Contains(output, "A+") {
 		test.Errorf("the settings: %q", output)
 	}
 	if called("UpdateHealthSettings") != nil {

@@ -106,7 +106,7 @@ func TestHealthParity(test *testing.T) {
 		"ownerUserId": "person", "fromDay": "from", "toDay": "to", "period": "period", "from": "from", "to": "to", "limitCount": "limit", "offset": "offset",
 	}
 	propertyNames := map[string]string{
-		"healthType": "health_type", "ownerUserId": "username", "fromDay": "from", "toDay": "to", "period": "period", "from": "from", "to": "to", "limitCount": "limit", "offset": "offset",
+		"healthType": "health_type", "ownerUserId": "person", "fromDay": "from", "toDay": "to", "period": "period", "from": "from", "to": "to", "limitCount": "limit_count", "offset": "offset",
 	}
 	// "<Operation>.<argument>.<surface>" is exempt for the reason given.
 	exempt := map[string]string{

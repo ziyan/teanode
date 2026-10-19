@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { graphql } from '../../api'
 import { ErrorMessage, Loading } from '../../components/common'
@@ -19,7 +19,6 @@ import {
   READ_HEALTH_ROUTE,
   SLEEP_VALUE_NAMES,
   addDays,
-  displayUnit,
   durationText,
   quantityText,
   stageName,
@@ -47,14 +46,14 @@ export function HealthSamples({
 }) {
   const { t, plural, language } = useTranslation()
   const [range, setRange] = useState<Range | null>(null)
-  const onRange = useCallback((next: Range) => setRange(next), [])
+  const onRange = useCallback((nextRange: Range) => setRange(nextRange), [])
 
   // From a day before the first reading to a day after today, so a reading
   // near midnight in any zone is inside.
-  const from = chosenType.firstDay
+  const fromMoment = chosenType.firstDay
     ? `${addDays(chosenType.firstDay.slice(0, 10), -1)}T00:00:00Z`
     : '2000-01-01T00:00:00Z'
-  const until = `${addDays(new Date().toISOString().slice(0, 10), 1)}T00:00:00Z`
+  const untilMoment = `${addDays(new Date().toISOString().slice(0, 10), 1)}T00:00:00Z`
   const samplePage = useQuery(
     async () =>
       range
@@ -63,15 +62,15 @@ export function HealthSamples({
             answer: (
               await graphql<{ ListHealthSamples: HealthSamplePage }>(LIST_HEALTH_SAMPLES, {
                 healthType: chosenType.healthType,
-                from,
-                to: until,
+                from: fromMoment,
+                to: untilMoment,
                 limitCount: range.limit,
                 offset: range.offset,
               })
             ).ListHealthSamples,
           }
         : null,
-    [chosenType.healthType, from, until, range?.offset, range?.limit],
+    [chosenType.healthType, fromMoment, untilMoment, range?.offset, range?.limit],
     { refresh: false },
   )
   const shown =
@@ -85,7 +84,7 @@ export function HealthSamples({
     () => new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }),
     [language],
   )
-  const name = typeName(t, chosenType.healthType, chosenType.typeName)
+  const typeLabel = typeName(t, chosenType.healthType, chosenType.typeName)
 
   const secondsOf = (sample: HealthSample) =>
     Math.max(0, (new Date(sample.endedAt).getTime() - new Date(sample.startedAt).getTime()) / 1000)
@@ -93,7 +92,8 @@ export function HealthSamples({
     if (sample.quantityValue !== null) {
       return quantityText(
         sample.quantityValue,
-        displayUnit(chosenType.healthType, sample.quantityUnit || chosenType.quantityUnit),
+        sample.quantityUnit || chosenType.quantityUnit,
+        chosenType.healthType,
         language,
         t,
       )
@@ -109,7 +109,7 @@ export function HealthSamples({
     }
     // A reading of a kind whose value is a time (a stand hour, a recording)
     // that covers no time says nothing in seconds: show what kind it is.
-    return secondsOf(sample) >= 1 ? durationText(secondsOf(sample), t) : name
+    return secondsOf(sample) >= 1 ? durationText(secondsOf(sample), t) : typeLabel
   }
 
   const columns: Column<HealthSample>[] = [
@@ -155,7 +155,9 @@ export function HealthSamples({
       : []),
   ]
 
-  const routedSample = routeId ? (shown?.samples.find((each) => each.healthSampleId === routeId) ?? null) : null
+  const routedSample = routeId
+    ? (shown?.samples.find((listedSample) => listedSample.healthSampleId === routeId) ?? null)
+    : null
   const dayFormat = useMemo(() => new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric' }), [language])
   // The workout as the readings list it, with the day: "Running, Oct 17, 36 min".
   const routeLine = routedSample
@@ -168,7 +170,9 @@ export function HealthSamples({
 
   return (
     <>
-      {routeId && <WorkoutRoute healthSampleId={routeId} line={routeLine} onClose={() => onRoute(null)} />}
+      {routeId && (
+        <WorkoutRoute key={routeId} healthSampleId={routeId} line={routeLine} onClose={() => onRoute(null)} />
+      )}
       <SettingsSection card title={t('health.samplesTitle')}>
         <ErrorMessage error={samplePage.error} />
         <DataTable
@@ -225,6 +229,13 @@ function WorkoutRoute({
 }) {
   const { t, language } = useTranslation()
   const toast = useToast()
+  const closeButton = useRef<HTMLButtonElement>(null)
+  // The card opens above the row whose pin was pressed, which on a phone is
+  // out of sight: it is scrolled into view, and its close button is focused.
+  useEffect(() => {
+    closeButton.current?.closest('section')?.scrollIntoView?.({ block: 'nearest' })
+    closeButton.current?.focus({ preventScroll: true })
+  }, [])
   const route = useQuery(
     async () =>
       (await graphql<{ ReadHealthRoute: HealthRoute | null }>(READ_HEALTH_ROUTE, { healthSampleId })).ReadHealthRoute,
@@ -245,13 +256,19 @@ function WorkoutRoute({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMissing])
   const lengthMeters = routeLengthMeters(path)
-  const title = lengthMeters > 0 ? `${line}, ${quantityText(lengthMeters, 'm', language, t)}` : line
+  const title = lengthMeters > 0 ? `${line}, ${quantityText(lengthMeters, 'm', '', language, t)}` : line
   return (
     <SettingsSection card>
       <div className="health-route-head">
         <h3>{title}</h3>
         <Tooltip label={t('common.close')}>
-          <button type="button" className="icon-action" aria-label={t('common.close')} onClick={onClose}>
+          <button
+            ref={closeButton}
+            type="button"
+            className="icon-action"
+            aria-label={t('common.close')}
+            onClick={onClose}
+          >
             <CloseIcon size={16} />
           </button>
         </Tooltip>

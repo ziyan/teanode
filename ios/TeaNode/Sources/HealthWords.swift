@@ -23,6 +23,14 @@ enum HealthWords {
     /// The total of a chart. Its own key, as the dashboard writes it.
     static var totalTitle: String { String(localized: "health-total", defaultValue: "Total") }
 
+    /// What the settings and the empty screen say when the server told of an
+    /// erase the phone had not heard of, so Health is off.
+    static var erasedOnServerText: String {
+        String(
+            localized:
+                "Health data was erased on your server, so TeaNode stopped copying it. Turn Health on again to copy it again.")
+    }
+
     /// A Health category as the Health app names it.
     static func categoryName(_ healthCategory: HealthCategory) -> String {
         switch healthCategory {
@@ -54,7 +62,7 @@ enum HealthWords {
     private static func translatedTypeName(_ healthType: String) -> String? {
         switch healthType {
         case "stepCount": return String(localized: "health-type-stepCount", defaultValue: "Steps")
-        case "distanceWalkingRunning": return String(localized: "health-type-distanceWalkingRunning", defaultValue: "Walking and running distance")
+        case "distanceWalkingRunning": return String(localized: "health-type-distanceWalkingRunning", defaultValue: "Walking + running distance")
         case "distanceCycling": return String(localized: "health-type-distanceCycling", defaultValue: "Cycling distance")
         case "distanceSwimming": return String(localized: "health-type-distanceSwimming", defaultValue: "Swimming distance")
         case "basalEnergyBurned": return String(localized: "health-type-basalEnergyBurned", defaultValue: "Resting energy")
@@ -69,7 +77,7 @@ enum HealthWords {
         case "restingHeartRate": return String(localized: "health-type-restingHeartRate", defaultValue: "Resting heart rate")
         case "walkingHeartRateAverage": return String(localized: "health-type-walkingHeartRateAverage", defaultValue: "Walking heart rate average")
         case "heartRateVariabilitySDNN": return String(localized: "health-type-heartRateVariabilitySDNN", defaultValue: "Heart rate variability")
-        case "heartRateRecoveryOneMinute": return String(localized: "health-type-heartRateRecoveryOneMinute", defaultValue: "Heart rate recovery")
+        case "heartRateRecoveryOneMinute": return String(localized: "health-type-heartRateRecoveryOneMinute", defaultValue: "Cardio recovery")
         case "vo2Max": return String(localized: "health-type-vo2Max", defaultValue: "Cardio fitness")
         case "electrocardiogram": return String(localized: "health-type-electrocardiogram", defaultValue: "Electrocardiograms")
         case "bodyMass": return String(localized: "health-type-bodyMass", defaultValue: "Weight")
@@ -87,11 +95,11 @@ enum HealthWords {
         case "bloodPressureSystolic": return String(localized: "health-type-bloodPressureSystolic", defaultValue: "Systolic blood pressure")
         case "bloodPressureDiastolic": return String(localized: "health-type-bloodPressureDiastolic", defaultValue: "Diastolic blood pressure")
         case "bloodGlucose": return String(localized: "health-type-bloodGlucose", defaultValue: "Blood glucose")
-        case "appleSleepingWristTemperature": return String(localized: "health-type-appleSleepingWristTemperature", defaultValue: "Wrist temperature")
+        case "appleSleepingWristTemperature": return String(localized: "health-type-appleSleepingWristTemperature", defaultValue: "Sleeping wrist temperature")
         case "walkingSpeed": return String(localized: "health-type-walkingSpeed", defaultValue: "Walking speed")
         case "walkingStepLength": return String(localized: "health-type-walkingStepLength", defaultValue: "Walking step length")
         case "walkingAsymmetryPercentage": return String(localized: "health-type-walkingAsymmetryPercentage", defaultValue: "Walking asymmetry")
-        case "walkingDoubleSupportPercentage": return String(localized: "health-type-walkingDoubleSupportPercentage", defaultValue: "Double support time")
+        case "walkingDoubleSupportPercentage": return String(localized: "health-type-walkingDoubleSupportPercentage", defaultValue: "Walking double support")
         case "appleWalkingSteadiness": return String(localized: "health-type-appleWalkingSteadiness", defaultValue: "Walking steadiness")
         case "stairAscentSpeed": return String(localized: "health-type-stairAscentSpeed", defaultValue: "Stair ascent speed")
         case "stairDescentSpeed": return String(localized: "health-type-stairDescentSpeed", defaultValue: "Stair descent speed")
@@ -122,17 +130,17 @@ enum HealthWords {
         case "cyclingCadence": return String(localized: "health-type-cyclingCadence", defaultValue: "Cycling cadence")
         case "runningPower": return String(localized: "health-type-runningPower", defaultValue: "Running power")
         case "runningStrideLength": return String(localized: "health-type-runningStrideLength", defaultValue: "Running stride length")
-        case "runningGroundContactTime": return String(localized: "health-type-runningGroundContactTime", defaultValue: "Ground contact time")
-        case "runningVerticalOscillation": return String(localized: "health-type-runningVerticalOscillation", defaultValue: "Vertical oscillation")
-        case "atrialFibrillationBurden": return String(localized: "health-type-atrialFibrillationBurden", defaultValue: "AFib burden")
-        case "highHeartRateEvent": return String(localized: "health-type-highHeartRateEvent", defaultValue: "High heart rate events")
-        case "lowHeartRateEvent": return String(localized: "health-type-lowHeartRateEvent", defaultValue: "Low heart rate events")
-        case "irregularHeartRhythmEvent": return String(localized: "health-type-irregularHeartRhythmEvent", defaultValue: "Irregular rhythm events")
+        case "runningGroundContactTime": return String(localized: "health-type-runningGroundContactTime", defaultValue: "Running ground contact time")
+        case "runningVerticalOscillation": return String(localized: "health-type-runningVerticalOscillation", defaultValue: "Running vertical oscillation")
+        case "atrialFibrillationBurden": return String(localized: "health-type-atrialFibrillationBurden", defaultValue: "Atrial fibrillation burden")
+        case "highHeartRateEvent": return String(localized: "health-type-highHeartRateEvent", defaultValue: "High heart rate notifications")
+        case "lowHeartRateEvent": return String(localized: "health-type-lowHeartRateEvent", defaultValue: "Low heart rate notifications")
+        case "irregularHeartRhythmEvent": return String(localized: "health-type-irregularHeartRhythmEvent", defaultValue: "Irregular rhythm notifications")
         case "basalBodyTemperature": return String(localized: "health-type-basalBodyTemperature", defaultValue: "Basal body temperature")
         case "bloodAlcoholContent": return String(localized: "health-type-bloodAlcoholContent", defaultValue: "Blood alcohol content")
         case "forcedVitalCapacity": return String(localized: "health-type-forcedVitalCapacity", defaultValue: "Forced vital capacity")
         case "forcedExpiratoryVolume1": return String(localized: "health-type-forcedExpiratoryVolume1", defaultValue: "Forced expiratory volume")
-        case "peakExpiratoryFlowRate": return String(localized: "health-type-peakExpiratoryFlowRate", defaultValue: "Peak expiratory flow")
+        case "peakExpiratoryFlowRate": return String(localized: "health-type-peakExpiratoryFlowRate", defaultValue: "Peak expiratory flow rate")
         case "inhalerUsage": return String(localized: "health-type-inhalerUsage", defaultValue: "Inhaler usage")
         case "environmentalSoundReduction": return String(localized: "health-type-environmentalSoundReduction", defaultValue: "Environmental sound reduction")
         case "audiogram": return String(localized: "health-type-audiogram", defaultValue: "Audiograms")
@@ -144,8 +152,55 @@ enum HealthWords {
         case "cervicalMucusQuality": return String(localized: "health-type-cervicalMucusQuality", defaultValue: "Cervical mucus quality")
         case "contraceptive": return String(localized: "health-type-contraceptive", defaultValue: "Contraceptive")
         case "insulinDelivery": return String(localized: "health-type-insulinDelivery", defaultValue: "Insulin delivery")
+        case "dateOfBirth": return String(localized: "health-type-dateOfBirth", defaultValue: "Date of birth")
+        case "biologicalSex": return String(localized: "health-type-biologicalSex", defaultValue: "Biological sex")
+        case "bloodType": return String(localized: "health-type-bloodType", defaultValue: "Blood type")
+        case "fitzpatrickSkinType": return String(localized: "health-type-fitzpatrickSkinType", defaultValue: "Skin type")
+        case "wheelchairUse": return String(localized: "health-type-wheelchairUse", defaultValue: "Wheelchair use")
+        case "activityMoveMode": return String(localized: "health-type-activityMoveMode", defaultValue: "Activity move mode")
         default:
             return nil
+        }
+    }
+
+    /// A fact about the person as the table writes it: a date of birth as
+    /// "1990-04-12 (36 years)", a sex, a blood type, wheelchair
+    /// use or how Activity is measured in words, a skin type as the numeral
+    /// HealthKit sends, and "Not set" for a fact that was never set. Anything
+    /// else is written as it was sent.
+    static func characteristicText(healthType: String, characteristicValue: String, today: Date = Date()) -> String {
+        if characteristicValue == HealthValueWords.notSetValue { return String(localized: "Not set") }
+        switch healthType {
+        case "dateOfBirth":
+            guard let age = HealthValueWords.ageInYears(dateOfBirth: characteristicValue, today: today, calendar: Calendar.current) else {
+                return characteristicValue
+            }
+            let ageText = age == 1 ? String(localized: "health-age-single", defaultValue: "1 year") : String(localized: "health-age-plural", defaultValue: "\(age) years")
+            // The date as the table writes it, the same on every surface.
+            return characteristicValue + " (" + ageText + ")"
+        case "biologicalSex":
+            switch characteristicValue {
+            case "female": return String(localized: "Female")
+            case "male": return String(localized: "Male")
+            case "other": return String(localized: "Other")
+            default: return characteristicValue
+            }
+        case "bloodType":
+            return HealthValueWords.bloodTypeText(characteristicValue)
+        case "wheelchairUse":
+            switch characteristicValue {
+            case "yes": return String(localized: "Yes")
+            case "no": return String(localized: "No")
+            default: return characteristicValue
+            }
+        case "activityMoveMode":
+            switch characteristicValue {
+            case "activeEnergy": return typeName(healthType: "activeEnergyBurned", serverName: "Active energy")
+            case "appleMoveTime": return typeName(healthType: "appleMoveTime", serverName: "Move minutes")
+            default: return characteristicValue
+            }
+        default:
+            return characteristicValue
         }
     }
 

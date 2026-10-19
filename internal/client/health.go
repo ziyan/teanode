@@ -41,8 +41,8 @@ func (self *HealthCategorySeconds) UnmarshalJSON(encoded []byte) error {
 }
 
 // Words lists what a day or a period spent in each value, as the dashboard
-// words it: the stages of a night from the deepest up (Deep 1h 5m, Core 3h,
-// REM 1h 30m, Awake 20m), then anything else a type keeps (a workout's energy
+// words it: the stages of a night from the deepest up (Deep 1 h 5 min, Core 3 h,
+// REM 1 h 30 min, Awake 20 min), then anything else a type keeps (a workout's energy
 // and distance). The night's total (the key "asleep") is not a stage and is
 // left out; AsleepSeconds is that.
 func (self HealthCategorySeconds) Words() string {
@@ -148,7 +148,7 @@ func (self *HealthPeriodView) IsSeveralDays() bool {
 // HealthPerDayNoun is the word for one of the days a sum or a time is averaged
 // over: a night for sleep, a day for anything else.
 func HealthPerDayNoun(healthType string) string {
-	if healthType == "sleepAnalysis" {
+	if healthType == health.SleepAnalysisType {
 		return "night"
 	}
 	return "day"
@@ -454,44 +454,44 @@ func SetHealthShare(ctx context.Context, connection *Client, granteeUserId, gran
 // HealthNumberWords writes a reading the way a person says it: thousands
 // separated, and only as many decimals as the size of the number is worth
 // (8,412, 72.4, 0.35).
-func HealthNumberWords(value float64) string {
-	return health.NumberWords(value)
+func HealthNumberWords(quantityValue float64) string {
+	return health.NumberWords(quantityValue)
 }
 
-// HealthDurationWords writes a time covered in hours and minutes, as the
-// Health app does: 7h 12m, 35m, 45s.
+// HealthDurationWords writes a time covered in hours and minutes: 7 h 12 min,
+// 35 min, 45 s.
 func HealthDurationWords(seconds float64) string {
 	return health.DurationWords(seconds)
 }
 
 // HealthValueWords is a reading of this type with its unit, in the words the
 // table in internal/health gives: 8,412 steps, 74 bpm, 97%, 36.6°C, 5.2 km.
-func HealthValueWords(healthType string, value float64, quantityUnit string) string {
-	return health.ValueWords(healthType, value, quantityUnit)
+func HealthValueWords(healthType string, quantityValue float64, quantityUnit string) string {
+	return health.ValueWords(healthType, quantityValue, quantityUnit)
 }
 
 // HealthShownValue is a value as a person reads it. HealthKit keeps a
 // percentage as a fraction (0.97 for 97%), and so does the server.
-func HealthShownValue(value float64, quantityUnit string) float64 {
-	return health.ShownValue(value, quantityUnit)
+func HealthShownValue(quantityValue float64, quantityUnit string) float64 {
+	return health.ShownValue(quantityValue, quantityUnit)
 }
 
 // PerDay is a figure of a period divided by the days that have a summary, and
 // whether that could be worked out: a day, or a period from a server that does
 // not say how many days it holds, has no average per day.
-func (self *HealthPeriodView) PerDay(value float64) (float64, bool) {
+func (self *HealthPeriodView) PerDay(quantityValue float64) (float64, bool) {
 	if !self.IsSeveralDays() {
 		return 0, false
 	}
-	return value / float64(self.DayCount), true
+	return quantityValue / float64(self.DayCount), true
 }
 
 // healthCountWords is a count with its noun: 1 night, 7 nights.
-func healthCountWords(count int, noun string) string {
-	if count == 1 {
+func healthCountWords(itemCount int, noun string) string {
+	if itemCount == 1 {
 		return "1 " + noun
 	}
-	return health.NumberWords(float64(count)) + " " + noun + "s"
+	return health.NumberWords(float64(itemCount)) + " " + noun + "s"
 }
 
 // HealthPeriodWords tells one period of one type in a line of figures, the
@@ -545,7 +545,7 @@ func HealthPeriodWords(period *HealthPeriodView, healthType, quantityUnit string
 func healthDurationPeriodWords(period *HealthPeriodView, healthType, noun, over string) string {
 	seconds := *period.DurationSeconds
 	name := "time"
-	if healthType == "sleepAnalysis" {
+	if healthType == health.SleepAnalysisType {
 		name = "asleep"
 		if asleep, isPresent := period.CategorySeconds.AsleepSeconds(); isPresent {
 			seconds = asleep
@@ -555,7 +555,7 @@ func healthDurationPeriodWords(period *HealthPeriodView, healthType, noun, over 
 	stages := period.CategorySeconds.Words()
 	if perDay, isKnown := period.PerDay(seconds); isKnown {
 		text = name + " average " + HealthDurationWords(perDay) + " a " + noun + over + ", total " + HealthDurationWords(seconds)
-		if healthType == "sleepAnalysis" {
+		if healthType == health.SleepAnalysisType {
 			if stages = period.CategorySeconds.WordsPerDay(period.DayCount); stages != "" {
 				stages = "a " + noun + ": " + stages
 			}

@@ -52,6 +52,7 @@ struct HealthSettingsScreen: View {
             if snapshot.isOn {
                 statusSection(snapshot)
             }
+            serverSection
             agentSection
             aboutSection
             HealthSharingSections(model: model, isSharing: $isSharing)
@@ -104,9 +105,17 @@ struct HealthSettingsScreen: View {
             .disabled(!snapshot.isAvailable)
         } footer: {
             if snapshot.isAvailable {
-                Text("Copies the Health data you allow to your own TeaNode server. Turned off, it sends nothing new. What is already on your server stays until you erase it.")
+                VStack(alignment: .leading, spacing: 8) {
+                    // Why the switch is off, even though the person did not
+                    // turn it off: the server was erased from somewhere else.
+                    if !snapshot.isOn, snapshot.isStoppedByErase {
+                        Text(verbatim: HealthWords.erasedOnServerText)
+                            .foregroundStyle(.primary)
+                    }
+                    Text("Copies the Health data you allow to your own TeaNode server. Turned off, it sends nothing new. What is already on your server stays until you erase it.")
+                }
             } else {
-                Text("Health is not available on this iPhone.")
+                Text("Health is not available on this device.")
             }
         }
     }
@@ -123,7 +132,9 @@ struct HealthSettingsScreen: View {
             LabeledContent("Readings sent") {
                 Text(snapshot.sentSampleCount, format: .number).monospacedDigit()
             }
-            if !snapshot.isHistoryDone {
+            if let passProgress = snapshot.passProgress {
+                readingProgressRow(passProgress)
+            } else if !snapshot.isHistoryDone {
                 LabeledContent("Older readings") {
                     Text("Still being read")
                 }
@@ -131,6 +142,11 @@ struct HealthSettingsScreen: View {
             if snapshot.pendingDayCount > 0 {
                 LabeledContent("Days to be recalculated") {
                     Text(snapshot.pendingDayCount, format: .number).monospacedDigit()
+                }
+            }
+            if snapshot.droppedEntryCount > 0 {
+                LabeledContent("Left out") {
+                    Text(snapshot.droppedEntryCount, format: .number).monospacedDigit()
                 }
             }
             if let problemText = snapshot.problemText {
@@ -149,10 +165,55 @@ struct HealthSettingsScreen: View {
         } header: {
             Text("Status")
         } footer: {
-            if snapshot.isHistoryDone, snapshot.sentSampleCount == 0 {
-                Text("If readings you expect are missing, open Settings, then Health, then Data Access & Devices, then TeaNode, and allow them.")
+            if snapshot.droppedEntryCount > 0 || (snapshot.isHistoryDone && snapshot.sentSampleCount == 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if snapshot.droppedEntryCount > 0 {
+                        Text("Readings your server would not take are left out.")
+                    }
+                    if snapshot.isHistoryDone, snapshot.sentSampleCount == 0 {
+                        Text("If readings you expect are missing, open Settings, then Health, then Data Access & Devices, then TeaNode, and allow them.")
+                    }
+                }
             }
         }
+    }
+
+    /// How far the first pass over every kind of data has got.
+    private func readingProgressRow(_ passProgress: HealthPassProgress) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Reading your Health data")
+            ProgressView(value: Double(passProgress.typesDone), total: Double(max(1, passProgress.typesTotal)))
+            Text("\(passProgress.typesDone) of \(passProgress.typesTotal) kinds")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: On the server
+
+    /// What the server keeps and when it last heard from the phone, as the
+    /// dashboard says it.
+    @ViewBuilder
+    private var serverSection: some View {
+        if let serverSettings = model.settings {
+            Section {
+                Text(verbatim: readingsKeptText(serverSettings.sampleCount))
+                if let lastReceivedDate = serverSettings.lastReceivedDate {
+                    LabeledContent("Last received") {
+                        Text(verbatim: lastReceivedDate.formatted(.relative(presentation: .named)))
+                    }
+                }
+            }
+        }
+    }
+
+    private func readingsKeptText(_ sampleCount: Int) -> String {
+        let countText = sampleCount.formatted()
+        if sampleCount == 0 { return String(localized: "health-readings-kept-none", defaultValue: "No readings kept") }
+        if sampleCount == 1 { return String(localized: "health-readings-kept-single", defaultValue: "1 reading kept") }
+        return String(localized: "health-readings-kept-plural", defaultValue: "\(countText) readings kept")
     }
 
     private func syncButtonTitle(_ snapshot: HealthSyncSnapshot) -> String {

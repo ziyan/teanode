@@ -9,11 +9,13 @@ import { HEALTH_CATEGORIES, HealthType, amountText, categoryName, parseDay, summ
 
 export function groupByCategory(healthTypes: HealthType[]): { healthCategory: string; healthTypes: HealthType[] }[] {
   const known = HEALTH_CATEGORIES as readonly string[]
-  const unknown = [...new Set(healthTypes.map((each) => each.healthCategory))].filter((each) => !known.includes(each))
+  const unknown = [...new Set(healthTypes.map((listedType) => listedType.healthCategory))].filter(
+    (healthCategory) => !known.includes(healthCategory),
+  )
   return [...known, ...unknown.sort()]
     .map((healthCategory) => ({
       healthCategory,
-      healthTypes: healthTypes.filter((each) => each.healthCategory === healthCategory),
+      healthTypes: healthTypes.filter((listedType) => listedType.healthCategory === healthCategory),
     }))
     .filter((group) => group.healthTypes.length > 0)
 }
@@ -36,23 +38,33 @@ export function HealthTypeList({
         {groups.map((group) => (
           <section key={group.healthCategory}>
             <h4>{categoryName(t, group.healthCategory)}</h4>
-            {group.healthTypes.map((each) => {
-              const latest = each.latestDaySummary
-              const latestAmount = latest ? summaryValue(latest, each.summaryKind) : null
+            {group.healthTypes.map((listedType) => {
+              const latest = listedType.latestDaySummary
+              const latestAmount = latest ? summaryValue(latest, listedType.summaryKind) : null
               return (
                 <button
-                  key={each.healthType}
+                  key={listedType.healthType}
                   type="button"
-                  className={each.healthType === chosenType ? 'health-type-row is-selected' : 'health-type-row'}
-                  aria-current={each.healthType === chosenType ? 'true' : undefined}
-                  onClick={() => onChoose(each.healthType)}
+                  data-health-type={listedType.healthType}
+                  className={listedType.healthType === chosenType ? 'health-type-row is-selected' : 'health-type-row'}
+                  aria-current={listedType.healthType === chosenType ? 'true' : undefined}
+                  onClick={() => onChoose(listedType.healthType)}
                 >
                   <span className="health-type-name">
-                    <strong>{typeName(t, each.healthType, each.typeName)}</strong>
+                    <strong>{typeName(t, listedType.healthType, listedType.typeName)}</strong>
                     {latest && <span className="muted">{dayFormat.format(parseDay(latest.summaryDay))}</span>}
                   </span>
                   <span className="health-type-value">
-                    {latest ? amountText(latestAmount, each.summaryKind, each.quantityUnit, language, t) : ''}
+                    {latest
+                      ? amountText(
+                          latestAmount,
+                          listedType.summaryKind,
+                          listedType.quantityUnit,
+                          listedType.healthType,
+                          language,
+                          t,
+                        )
+                      : ''}
                   </span>
                 </button>
               )

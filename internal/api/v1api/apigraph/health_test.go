@@ -84,8 +84,8 @@ func (self *healthWorld) refusal(t *testing.T, user *models.User, query string, 
 }
 
 const (
-	reportHealthQuery = `mutation ($agentPhoneId: String, $healthTurnedOnAt: DateTime, $samples: [HealthSampleInput!], $deletedHealthSampleIds: [String!], $daySummaries: [HealthDaySummaryInput!], $routes: [HealthRouteInput!], $characteristics: [HealthCharacteristicInput!]) {
-  ReportHealth(agentPhoneId: $agentPhoneId, healthTurnedOnAt: $healthTurnedOnAt, samples: $samples, deletedHealthSampleIds: $deletedHealthSampleIds, daySummaries: $daySummaries, routes: $routes, characteristics: $characteristics) {
+	reportHealthQuery = `mutation ($agentPhoneId: String, $healthErasedAt: DateTime, $samples: [HealthSampleInput!], $deletedHealthSampleIds: [String!], $daySummaries: [HealthDaySummaryInput!], $routes: [HealthRouteInput!], $characteristics: [HealthCharacteristicInput!]) {
+  ReportHealth(agentPhoneId: $agentPhoneId, healthErasedAt: $healthErasedAt, samples: $samples, deletedHealthSampleIds: $deletedHealthSampleIds, daySummaries: $daySummaries, routes: $routes, characteristics: $characteristics) {
     newSampleCount deletedSampleCount updatedDayCount healthErasedAt unmatchedRouteHealthSampleIds deletedSamples { healthType startedAt endedAt }
   }
 }`
@@ -418,8 +418,11 @@ func TestAPersonCannotReadAnotherPersonsHealth(t *testing.T) {
 	// A person who does not exist is the same answer.
 	world.refusal(t, world.ben, healthTypesQuery, map[string]any{"ownerUserId": "nobody"})
 
-	// A report for a phone that is not the caller's own is refused.
-	world.refusal(t, world.ada, reportHealthQuery, map[string]any{"agentPhoneId": "somebody-elses-phone"})
+	// A phone identifier is accepted and ignored: readings do not record which
+	// phone sent them.
+	if answer := world.report(t, world.ada, map[string]any{"agentPhoneId": "somebody-elses-phone"}); answer["newSampleCount"] != float64(0) {
+		t.Errorf("a report that names a phone: %v", answer)
+	}
 }
 
 // A share reaches only its categories and only their day summaries, never the

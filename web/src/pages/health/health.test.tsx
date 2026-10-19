@@ -368,6 +368,9 @@ it('draws sleep as stacked stages', async () => {
   expect(chart.getAttribute('aria-label')).toContain('Core 3 h 30 min')
   expect(chart.getAttribute('aria-label')).toContain('REM 1 h 30 min')
   expect(screen.getByText('Awake')).toBeTruthy()
+  // The nights are not added together: only the average night is told.
+  expect(screen.getByText('Average per day')).toBeTruthy()
+  expect(screen.queryByText('Total')).toBeNull()
 })
 
 it('draws a line with the lowest and highest reading of each day', async () => {
@@ -605,25 +608,67 @@ it('hides the person picker on the Settings tab, where it means nothing', async 
   expect(await screen.findByRole('combobox', { name: 'Showing' })).toBeTruthy()
 })
 
-it('shows the facts Health holds about the person, read only', async () => {
+it('shows the facts Health holds about the person in words, read only', async () => {
   answerWith({
     types: [healthType()],
     characteristics: [
       { healthType: 'dateOfBirth', characteristicValue: '1990-05-12' },
       { healthType: 'biologicalSex', characteristicValue: 'female' },
       { healthType: 'bloodType', characteristicValue: 'abNegative' },
+      { healthType: 'fitzpatrickSkinType', characteristicValue: 'III' },
+      { healthType: 'wheelchairUse', characteristicValue: 'no' },
+      { healthType: 'activityMoveMode', characteristicValue: 'appleMoveTime' },
     ],
   })
   renderAt('/health?tab=settings')
 
   const about = (await screen.findByRole('heading', { name: 'About you' })).closest('section') as HTMLElement
-  expect(within(about).getByText('Date of birth')).toBeTruthy()
-  expect(within(about).getByText(/May 12, 1990/)).toBeTruthy()
-  expect(within(about).getByText('Female')).toBeTruthy()
-  expect(within(about).getByText('AB-')).toBeTruthy()
+  const facts = [...about.querySelectorAll('dl > div')].map((fact) => [
+    fact.querySelector('dt')?.textContent,
+    fact.querySelector('dd')?.textContent,
+  ])
+  expect(facts).toEqual([
+    ['Date of birth', expect.stringMatching(/^May 12, 1990 \(\d+ years\)$/)],
+    ['Biological sex', 'Female'],
+    ['Blood type', 'AB-'],
+    ['Skin type', 'III'],
+    ['Wheelchair use', 'No'],
+    ['Activity move mode', 'Move minutes'],
+  ])
   // Read only: nothing in it can be edited.
   expect(within(about).queryAllByRole('textbox')).toHaveLength(0)
   expect(within(about).queryAllByRole('button')).toHaveLength(0)
+})
+
+it('says "Not set" for a fact Health was never given, never the raw word', async () => {
+  answerWith({
+    types: [healthType()],
+    characteristics: [
+      { healthType: 'biologicalSex', characteristicValue: 'notSet' },
+      { healthType: 'bloodType', characteristicValue: 'notSet' },
+      { healthType: 'wheelchairUse', characteristicValue: 'notSet' },
+    ],
+  })
+  renderAt('/health?tab=settings')
+
+  const about = (await screen.findByRole('heading', { name: 'About you' })).closest('section') as HTMLElement
+  expect(within(about).getAllByText('Not set')).toHaveLength(3)
+  expect(within(about).queryByText('notSet')).toBeNull()
+})
+
+it('shows a date of birth that is not a date as it was sent, and does not fall over', async () => {
+  answerWith({
+    types: [healthType()],
+    characteristics: [
+      { healthType: 'dateOfBirth', characteristicValue: 'not a date' },
+      { healthType: 'bloodType', characteristicValue: 'oPositive' },
+    ],
+  })
+  renderAt('/health?tab=settings')
+
+  const about = (await screen.findByRole('heading', { name: 'About you' })).closest('section') as HTMLElement
+  expect(within(about).getByText('not a date')).toBeTruthy()
+  expect(within(about).getByText('O+')).toBeTruthy()
 })
 
 it('leaves the facts out when Health holds none', async () => {
@@ -726,7 +771,8 @@ it('reads a week of steps per day over the days that have a summary', async () =
   })
   renderAt('/health?period=week')
 
-  await screen.findByRole('img', { name: /Steps by week/ })
+  // The bar of a week is a day of it, and the tooltip title says so.
+  expect((await screen.findByRole('img', { name: /Steps by week/ })).getAttribute('aria-label')).toContain(', per day:')
   // Three days with steps: 7,000 a day, not 3,000 over the seven calendar days.
   expect(screen.getByText('7,000 steps')).toBeTruthy()
   expect(screen.getByText('21,000 steps')).toBeTruthy()
@@ -803,14 +849,17 @@ it('keeps the buttons and offers another try when the chart cannot be read', asy
   })
   renderAt('/health')
 
-  expect(await screen.findByText(/The chart could not be read/)).toBeTruthy()
+  // The card says nothing in text: the failure is a toast, and the way on is
+  // the button.
+  const retry = await screen.findByRole('button', { name: 'Try again' })
+  expect(screen.queryByText(/The chart could not be read/)).toBeNull()
   expect(screen.getByRole('button', { name: '90 days' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Month' })).toBeTruthy()
 
   isBroken = false
-  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  fireEvent.click(retry)
   await screen.findByRole('img', { name: /Steps by day/ })
-  expect(screen.queryByText(/The chart could not be read/)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
 })
 
 it('draws a workout chart in minutes', async () => {
@@ -840,7 +889,7 @@ it('draws a workout chart in minutes', async () => {
 it('writes a long distance in kilometers on the axis and in the figures', async () => {
   const distance = healthType({
     healthType: 'distanceWalkingRunning',
-    typeName: 'Walking and running distance',
+    typeName: 'Walking + running distance',
     quantityUnit: 'm',
     summaryKind: 'sum',
   })
@@ -850,7 +899,278 @@ it('writes a long distance in kilometers on the axis and in the figures', async 
   })
   const { container } = renderAt('/health')
 
-  await screen.findByRole('img', { name: /Walking and running distance by day/ })
+  await screen.findByRole('img', { name: /Walking \+ running distance by day/ })
   expect(screen.getByText('7 km')).toBeTruthy()
   expect(axisLabels(container).every((label) => Number(label) <= 8)).toBe(true)
+})
+
+it('writes the year in month labels when the chart reaches over years', async () => {
+  answerWith({
+    types: [healthType()],
+    periods: () => [
+      period('2025-10-01', { endDay: '2025-10-31', sumValue: 100000, dayCount: 10 }),
+      period('2026-01-01', { endDay: '2026-01-31', sumValue: 200000, dayCount: 10 }),
+    ],
+  })
+  const { container } = renderAt('/health?range=all&period=month')
+
+  await screen.findByRole('img', { name: /Steps by month/ })
+  const labels = [...container.querySelectorAll('text.usage-chart-axis')].map((each) => each.textContent)
+  expect(labels).toContain('Oct 2025')
+  expect(labels).toContain('Jan 2026')
+})
+
+it('writes month labels without the year within one year', async () => {
+  answerWith({
+    types: [healthType()],
+    periods: () => [
+      period('2026-01-01', { endDay: '2026-01-31', sumValue: 100000, dayCount: 10 }),
+      period('2026-02-01', { endDay: '2026-02-28', sumValue: 200000, dayCount: 10 }),
+    ],
+  })
+  const { container } = renderAt('/health?range=365&period=month')
+
+  await screen.findByRole('img', { name: /Steps by month/ })
+  const labels = [...container.querySelectorAll('text.usage-chart-axis')].map((each) => each.textContent)
+  expect(labels).toContain('Jan')
+  expect(labels).toContain('Feb')
+})
+
+it('draws a flat percentage line on an axis around its value, not from -50% to 200%', async () => {
+  answerWith({
+    types: [OXYGEN],
+    periods: () => [period(DAYS_AGO(1), { averageValue: 0.98, minimumValue: 0.98, maximumValue: 0.98 })],
+  })
+  const { container } = renderAt('/health')
+
+  await screen.findByRole('img', { name: /Blood oxygen by day/ })
+  const labels = axisLabels(container).map(Number)
+  expect(labels.length).toBeGreaterThan(1)
+  expect(Math.min(...labels)).toBeGreaterThanOrEqual(95)
+  expect(Math.max(...labels)).toBeLessThanOrEqual(100)
+})
+
+it('draws any short time in minutes, not only a workout', async () => {
+  const mindful = healthType({
+    healthType: 'mindfulSession',
+    healthCategory: 'mentalWellbeing',
+    typeName: 'Mindful minutes',
+    valueKind: 'category',
+    quantityUnit: '',
+    summaryKind: 'duration',
+  })
+  answerWith({
+    types: [mindful],
+    periods: () => [
+      period(DAYS_AGO(2), { durationSeconds: 10 * 60 }),
+      period(DAYS_AGO(1), { durationSeconds: 20 * 60 }),
+    ],
+  })
+  const { container } = renderAt('/health')
+
+  await screen.findByRole('img', { name: /Mindful minutes by day/ })
+  const labels = axisLabels(container)
+  expect(labels.length).toBeGreaterThan(1)
+  expect(labels.every((label) => /^\d+ min$/.test(label))).toBe(true)
+})
+
+it('keeps a body mass index and a respiratory rate in their own words', async () => {
+  const bodyMassIndex = healthType({
+    healthType: 'bodyMassIndex',
+    healthCategory: 'bodyMeasurements',
+    typeName: 'Body mass index',
+    quantityUnit: 'count',
+    summaryKind: 'average',
+    latestDaySummary: {
+      summaryDay: TODAY,
+      sumValue: null,
+      averageValue: 22.4,
+      minimumValue: 22.1,
+      maximumValue: 22.7,
+      sampleCount: 2,
+      durationSeconds: null,
+    },
+  })
+  const respiratoryRate = healthType({
+    healthType: 'respiratoryRate',
+    healthCategory: 'respiratory',
+    typeName: 'Respiratory rate',
+    quantityUnit: 'count/min',
+    summaryKind: 'average',
+    latestDaySummary: {
+      summaryDay: TODAY,
+      sumValue: null,
+      averageValue: 15.6,
+      minimumValue: 14,
+      maximumValue: 18,
+      sampleCount: 20,
+      durationSeconds: null,
+    },
+  })
+  answerWith({ types: [bodyMassIndex, respiratoryRate] })
+  renderAt('/health')
+
+  const list = await screen.findByRole('group', { name: 'Kinds of Health data' })
+  // Not rounded to 22, and not beats.
+  expect(within(list).getByRole('button', { name: /Body mass index/ }).textContent).toContain('22.4')
+  expect(within(list).getByRole('button', { name: /Respiratory rate/ }).textContent).toContain('16 breaths/min')
+})
+
+it('keeps a chart that cannot be read hidden while another range fails', async () => {
+  answerWith({ types: [healthType()] })
+  renderAt('/health')
+  await screen.findByRole('img', { name: /Steps by day/ })
+
+  const answerBefore = vi.mocked(graphql).getMockImplementation() as (
+    document: string,
+    variables?: never,
+  ) => Promise<never>
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ReadHealthSummary')) throw new Error('the server is down')
+    return answerBefore(document, variables as never)
+  })
+  fireEvent.click(screen.getByRole('button', { name: '90 days' }))
+
+  // The chart of the other range is not left standing as if it were this one.
+  expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy()
+  expect(screen.queryByRole('img', { name: /Steps by day/ })).toBeNull()
+  expect(screen.getByRole('button', { name: '90 days' }).getAttribute('aria-pressed')).toBe('true')
+})
+
+function workoutSample(overrides: Record<string, unknown>) {
+  return {
+    healthSampleId: 'workout-one',
+    healthType: 'workout',
+    startedAt: new Date(Date.now() - 1_800_000).toISOString(),
+    endedAt: new Date().toISOString(),
+    quantityValue: null,
+    quantityUnit: '',
+    categoryValue: null,
+    workoutActivityType: 'running',
+    sourceName: 'Fixture watch',
+    hasRoute: true,
+    ...overrides,
+  }
+}
+
+it('does not show the first workout route under the second workout title while it is read', async () => {
+  answerWith({
+    types: [WORKOUT],
+    samples: [workoutSample({}), workoutSample({ healthSampleId: 'workout-two', workoutActivityType: 'cycling' })],
+  })
+  renderAt('/health')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Running, 30 min: Show the route/ }))
+  expect(await screen.findByTestId('map')).toBeTruthy()
+
+  // The next route is not read until it is told to.
+  let answerRoute: (value: unknown) => void = () => {}
+  const waiting = new Promise((resolve) => {
+    answerRoute = resolve
+  })
+  const previous = vi.mocked(graphql).getMockImplementation() as (document: string, variables?: never) => Promise<never>
+  vi.mocked(graphql).mockImplementation(async (document, variables) =>
+    document.includes('ReadHealthRoute') ? ((await waiting) as never) : previous(document, variables as never),
+  )
+  fireEvent.click(screen.getByRole('button', { name: /Cycling, 30 min: Show the route/ }))
+
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toContain('route=workout-two'))
+  expect(await screen.findByRole('heading', { name: /^Cycling, / })).toBeTruthy()
+  // Running's path is gone; nothing is drawn until Cycling's arrives.
+  expect(screen.queryByTestId('map')).toBeNull()
+
+  answerRoute({
+    ReadHealthRoute: {
+      healthSampleId: 'workout-two',
+      routePoints: [
+        [0, 1, 2, 0],
+        [60, 1.1, 2.1, 0],
+      ],
+    },
+  })
+  expect((await screen.findByTestId('map')).textContent).toBe('2 points')
+})
+
+it('moves the focus to the route card when it opens', async () => {
+  answerWith({ types: [WORKOUT], samples: [workoutSample({})] })
+  renderAt('/health')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Running, 30 min: Show the route/ }))
+
+  const close = await screen.findByRole('button', { name: 'Close' })
+  await waitFor(() => expect(document.activeElement).toBe(close))
+})
+
+it('returns the focus to the row of the type when Back is pressed', async () => {
+  answerWith({ types: [healthType(), HEART_RATE] })
+  renderAt('/health?type=heartRate')
+
+  await screen.findByRole('img', { name: /Heart rate by day/ })
+  fireEvent.click(screen.getByRole('button', { name: 'All Health data' }))
+
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe(''))
+  const list = screen.getByRole('group', { name: 'Kinds of Health data' })
+  await waitFor(() => expect(document.activeElement).toBe(within(list).getByRole('button', { name: /Heart rate/ })))
+})
+
+it('shows a ticked category at once, and saves two quick ticks one after the other', async () => {
+  answerWith({ types: [healthType()] })
+  const answerBefore = vi.mocked(graphql).getMockImplementation() as (
+    document: string,
+    variables?: never,
+  ) => Promise<never>
+  const finishes: (() => void)[] = []
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SetHealthShare')) {
+      await new Promise<void>((resolve) => finishes.push(resolve))
+      return { SetHealthShare: { id: 'share-one' } } as never
+    }
+    return answerBefore(document, variables as never)
+  })
+  renderAt('/health?tab=settings')
+
+  fireEvent.click(await screen.findByRole('combobox', { name: 'Share with' }))
+  fireEvent.click(await screen.findByRole('option', { name: 'Fixture Family' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+  const group = await screen.findByRole('group', { name: 'Categories shared with Everyone in Fixture Family' })
+
+  fireEvent.click(within(group).getByRole('checkbox', { name: 'Sleep' }))
+  // Ticked before the server has answered.
+  expect((within(group).getByRole('checkbox', { name: 'Sleep' }) as HTMLInputElement).checked).toBe(true)
+  await waitFor(() => expect(calls('SetHealthShare')).toHaveLength(1))
+
+  // A second tick while the first is being saved is not lost, nor dropped.
+  fireEvent.click(within(group).getByRole('checkbox', { name: 'Heart' }))
+  expect((within(group).getByRole('checkbox', { name: 'Heart' }) as HTMLInputElement).checked).toBe(true)
+  expect((within(group).getByRole('checkbox', { name: 'Sleep' }) as HTMLInputElement).checked).toBe(true)
+  expect(calls('SetHealthShare')).toHaveLength(1)
+
+  finishes[0]()
+  await waitFor(() => expect(calls('SetHealthShare')).toHaveLength(2))
+  expect(calls('SetHealthShare')[0][1]).toMatchObject({ healthCategories: ['sleep'] })
+  expect(calls('SetHealthShare')[1][1]).toMatchObject({ healthCategories: ['heart', 'sleep'] })
+  finishes[1]()
+})
+
+it('takes a ticked category back when it could not be saved', async () => {
+  answerWith({ types: [healthType()] })
+  const answerBefore = vi.mocked(graphql).getMockImplementation() as (
+    document: string,
+    variables?: never,
+  ) => Promise<never>
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SetHealthShare')) throw new Error('the server is down')
+    return answerBefore(document, variables as never)
+  })
+  renderAt('/health?tab=settings')
+
+  fireEvent.click(await screen.findByRole('combobox', { name: 'Share with' }))
+  fireEvent.click(await screen.findByRole('option', { name: 'Fixture Family' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+  const group = await screen.findByRole('group', { name: 'Categories shared with Everyone in Fixture Family' })
+  fireEvent.click(within(group).getByRole('checkbox', { name: 'Sleep' }))
+
+  await waitFor(() =>
+    expect((within(group).getByRole('checkbox', { name: 'Sleep' }) as HTMLInputElement).checked).toBe(false),
+  )
 })

@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { en } from '../../i18n/en'
-import {
-  HealthPeriod,
-  STEPS_UNIT,
-  addDays,
-  chartDays,
-  displayUnit,
-  numbersOf,
-  quantityText,
-  shownValue,
-  summarizedDayCount,
-} from './healthApi'
+import { HealthPeriod, addDays, chartDays, numbersOf, quantityText, shownValue, summarizedDayCount } from './healthApi'
 
 const t = (key: keyof typeof en, values?: Record<string, string | number>) =>
   en[key].replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name]))
@@ -32,40 +22,27 @@ function week(overrides: Partial<HealthPeriod> = {}): HealthPeriod {
   }
 }
 
-describe('quantityText unit words', () => {
-  const cases: [number, string, string][] = [
+describe('quantityText', () => {
+  // The cases of words_test.go are in healthWords.test.ts; these are the ones
+  // the dashboard's charts depend on.
+  const cases: [number, string, string, string][] = [
     // A heart rate is whole beats per minute.
-    [74.3, 'count/min', '74 bpm'],
-    // A count has no unit word; steps get theirs through the steps unit.
-    [8402.4, 'count', '8,402'],
-    [8402.4, STEPS_UNIT, '8,402 steps'],
+    [74.3, 'count/min', 'heartRate', '74 bpm'],
+    // A body mass index keeps its decimal; it is a count of nothing.
+    [22.4, 'count', 'bodyMassIndex', '22.4'],
+    [7.4, 'count', 'uvExposure', '7.4'],
     // A distance is kilometers with one decimal from 1000 meters.
-    [8432, 'm', '8.4 km'],
-    [12000, 'm', '12 km'],
-    [950, 'm', '950 m'],
-    [5.93, 'km', '5.9 km'],
-    [36.6, 'degC', '36.6°C'],
-    [42.4, 'ml/(kg*min)', '42.4 mL/kg·min'],
-    [42.4, 'mL/(kg*min)', '42.4 mL/kg·min'],
-    [512.4, 'kcal', '512 kcal'],
+    [8432, 'm', 'distanceWalkingRunning', '8.4 km'],
+    [12000, 'm', 'distanceWalkingRunning', '12 km'],
+    [950, 'm', 'distanceWalkingRunning', '950 m'],
     // A percentage is the fraction times a hundred.
-    [0.97, '%', '97%'],
-    [0.035, '%', '3.5%'],
+    [0.97, '%', 'oxygenSaturation', '97%'],
+    [0.035, '%', 'atrialFibrillationBurden', '3.5%'],
     // A unit the table does not know is written as it came.
-    [3, 'made_up', '3 made_up'],
+    [3, 'made_up', 'x', '3 made_up'],
   ]
-  it.each(cases)('%s %s is %s', (value, unit, expected) => {
-    expect(quantityText(value, unit, 'en', t)).toBe(expected)
-  })
-
-  it('gives only steps the steps word', () => {
-    expect(displayUnit('stepCount', 'count')).toBe(STEPS_UNIT)
-    expect(displayUnit('flightsClimbed', 'count')).toBe('count')
-    expect(displayUnit('heartRate', 'count/min')).toBe('count/min')
-  })
-
-  it('writes numbers in the language', () => {
-    expect(quantityText(8402, STEPS_UNIT, 'de', t)).toBe('8.402 steps')
+  it.each(cases)('%s %s of %s is %s', (measuredValue, quantityUnit, healthType, expected) => {
+    expect(quantityText(measuredValue, quantityUnit, healthType, 'en', t)).toBe(expected)
   })
 
   it('shows a percentage as the person reads it', () => {

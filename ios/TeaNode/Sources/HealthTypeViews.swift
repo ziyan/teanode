@@ -146,7 +146,10 @@ struct HealthTypeScreen: View {
         } label: {
             Label("More", systemImage: "ellipsis.circle")
         }
-        .confirmationDialog("Erase \(name)?", isPresented: $isConfirmingErase, titleVisibility: .visible) {
+        .confirmationDialog(
+            Text(verbatim: String(localized: "health-erase-type-title", defaultValue: "Erase \(name)?")), isPresented: $isConfirmingErase,
+            titleVisibility: .visible
+        ) {
             Button("Erase \(name)", role: .destructive) {
                 Task {
                     if await model.erase(healthType: type.healthType) { dismiss() }

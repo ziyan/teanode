@@ -303,10 +303,12 @@ box, then **Message someone**. Every circle has a chat of its own.
   restart and has a **Restart now** button.
 - **Health.** On from the first start: each person has a Health page in the
   rail, and nothing is kept until they turn on **Health** in the
-  iPhone app's settings and choose what to share in Apple's sheet. The app
+  iPhone app's settings and allow what to copy on Apple's Health permissions
+  screen. The app
   then copies it in the background, history first, and the page shows a chart
   for each kind of data. The agent reads it only once the person turns on
-  **Let the agent read Health data** on that page or in the app, and a person
+  **Let the agent read Health data** on the Settings tab of that page or in
+  Health in the app's settings, and a person
   can share some categories (Activity, Sleep) with a circle. There is nothing
   to set up on the server; to keep it from a role, take `health:use` away from
   it on **Manage → People and access**.

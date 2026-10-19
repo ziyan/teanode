@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -144,14 +145,35 @@ func TestADeletedReadingIsRememberedFor30Days(t *testing.T) {
 			t.Fatalf("the first delete: %v %v", deleted, err)
 		}
 	})
-	dbtest.Exec(t, database, `UPDATE "health_deleted_sample" SET "deleted_at" = now() - interval '31 days' WHERE "health_sample_id" = 'old'`)
+	dbtest.Exec(t, database, `UPDATE "health_deleted_sample" SET "deleted_at" = now() - interval '45 days' WHERE "health_sample_id" = 'old'`)
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		// Deleting something else forgets what is older than 30 days.
+		// A deletion older than 30 days is not answered with, although it is
+		// still there: deleting does not forget.
 		deleted, err := tx.DeleteHealthSamples(userId, []string{"other", "old", "recent"})
 		if err != nil || len(deleted) != 2 || !deleted[0].StartedAt.Equal(morning.Add(time.Hour)) || !deleted[1].StartedAt.Equal(morning.Add(2*time.Hour)) {
-			t.Errorf("the 31 days old reading is forgotten, the recent one is not: %+v %v", deleted, err)
+			t.Errorf("the 45 days old reading is not told, the recent one is: %+v %v", deleted, err)
 		}
 	})
+	if got := dbtest.QueryString(t, database, `SELECT count(*) FROM "health_deleted_sample" WHERE "health_sample_id" = 'old'`); got != "1" {
+		t.Errorf("deleting does not forget: %s", got)
+	}
+
+	// Forgetting is for every person, 2000 rows at a time, the oldest first,
+	// and leaves what is younger than 30 days.
+	bystanderId := dbtest.CreateUser(t, database, "bystander")
+	dbtest.Exec(t, database, `INSERT INTO "health_deleted_sample" ("user_id", "health_sample_id", "health_type", "started_at", "ended_at", "deleted_at")
+		SELECT '`+bystanderId+`', 'gone-' || n, 'stepCount', now(), now(), now() - interval '40 days' + n * interval '1 second'
+		FROM generate_series(1, 2500) AS n`)
+	for _, want := range []int{models.HealthDeletedSampleForgetMost, 501, 0} {
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			if forgotten, err := tx.ForgetDeletedHealthSamples(); err != nil || forgotten != want {
+				t.Errorf("forgotten %d, want %d: %v", forgotten, want, err)
+			}
+		})
+	}
+	if got := dbtest.QueryString(t, database, `SELECT string_agg("health_sample_id", ',' ORDER BY "health_sample_id") FROM "health_deleted_sample"`); got != "other,recent" {
+		t.Errorf("what is left after forgetting: %q", got)
+	}
 	// Erasing a kind forgets what was deleted of it.
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if _, err := tx.EraseHealthData(userId, "stepCount"); err != nil {
@@ -195,6 +217,36 @@ func TestACountOfARangeOfHealthSamplesStopsAtALimit(t *testing.T) {
 		status, err := tx.GetHealthStatus(userId)
 		if err != nil || status.SampleCount != models.HealthSampleCountMost+extra {
 			t.Errorf("the readings kept: %+v %v", status, err)
+		}
+	})
+}
+
+// The kinds a person has are those with readings and those with only day
+// summaries, each named once.
+func TestHealthTypeNamesIncludeKindsWithOnlyDaySummaries(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	userId := dbtest.CreateUser(t, database, "kindsofdays")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if names, err := tx.ListHealthTypeNames(userId); err != nil || len(names) != 0 {
+			t.Fatalf("a person with nothing has no kinds: %v %v", names, err)
+		}
+		if _, err := tx.InsertHealthSamples(userId, []*models.HealthSample{
+			stepSample("a", time.Date(2026, 3, 2, 8, 0, 0, 0, time.UTC), 1),
+			{HealthSampleID: "w", HealthType: "bodyMass", StartedAt: time.Now(), EndedAt: time.Now(), QuantityValue: number(70), QuantityUnit: "kg"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.UpsertHealthDaySummaries(userId, []*models.HealthDaySummary{
+			{HealthType: "appleExerciseTime", SummaryDay: "2026-03-02"}, {HealthType: "stepCount", SummaryDay: "2026-03-02"},
+			{HealthType: "appleExerciseTime", SummaryDay: "2026-03-03"}, {HealthType: "zzzLast", SummaryDay: "2026-03-03"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		names, err := tx.ListHealthTypeNames(userId)
+		if err != nil || !slices.Equal(names, []string{"appleExerciseTime", "bodyMass", "stepCount", "zzzLast"}) {
+			t.Errorf("the kinds with readings or days: %v %v", names, err)
 		}
 	})
 }

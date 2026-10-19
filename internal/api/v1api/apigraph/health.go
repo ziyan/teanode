@@ -80,17 +80,25 @@ type HealthMutation interface {
 	// A phone's batch of up to 1000 readings, 2000 deleted readings, 1000 day
 	// summaries, 5 routes and 20 characteristics. Sending the same batch again
 	// adds nothing, which is how a phone can send until it knows the server
-	// has them. A day summary replaces the day it names. The answer says what
-	// was new, which kinds and times the deleted readings were (so the phone can
-	// work out those days again; the same when it sends the identifiers
-	// again within 30 days), which routes had no workout yet, and when the
-	// person last erased all of their Health.
+	// has them. A day summary replaces the day it names, unless the stored
+	// one was worked out later (workedOutAt, when the phone worked the day
+	// out; a late resend of an older batch does not undo a newer day). The
+	// answer says what was new, which kinds and times the deleted readings
+	// were (so the phone can work out those days again; the same when it
+	// sends the identifiers again within 30 days), which routes had no
+	// workout yet, and when the person last erased all of their Health.
 	//
-	// A person who erased all of their Health after the phone turned it on
-	// is not undone by a batch still on its way: with healthTurnedOnAt the
-	// time the phone turned Health on, a batch from a phone that turned it on
-	// before the erase (or that does not say) stores nothing and is answered
-	// with healthErasedAt, which tells the phone to stop. Needs health:use.
+	// A person who erased all of their Health is not undone by a batch still
+	// on its way. With healthErasedAt the last erase time the phone knows of
+	// (the healthErasedAt of ReadHealthSettings when it turned Health on, null
+	// if there was none), a batch is stored only when the person has never
+	// erased, or when healthErasedAt is the time of the last erase or later
+	// (compared to the second, as the phone writes it). A batch that does not
+	// send healthErasedAt, or sends an earlier one, after an erase stores
+	// nothing and is answered with the erase time, which tells the phone to
+	// stop and forget where it was. Server time is only compared with server
+	// time. Every answer carries healthErasedAt for the phone to send back.
+	// Needs health:use.
 	ReportHealth(ctx context.Context, arguments ReportHealthArguments) (*ReportHealthView, error)
 
 	// Let the agent read the caller's Health, or stop it. Off until turned on,
@@ -273,8 +281,9 @@ type HealthSettingsView struct {
 	CanAgentReadHealth bool `json:"canAgentReadHealth"`
 
 	// HealthErasedAt is when the person last erased all of their Health, null
-	// if they never did. A phone that turned Health on before this time stops
-	// sending and forgets where it was.
+	// if they never did. A phone reads it when Health is turned on and sends it
+	// back with every report (ReportHealth), and stops sending and forgets
+	// where it was when an answer carries a later time than it sent.
 	HealthErasedAt *time.Time `json:"healthErasedAt"`
 
 	SampleCount int `json:"sampleCount"`
@@ -313,14 +322,14 @@ type ReportHealthView struct {
 	// phone sends the identifiers again.
 	DeletedSamples []*DeletedHealthSampleView `json:"deletedSamples"`
 
-	// UnmatchedRouteHealthSampleIds are the workouts of routes that were left
+	// UnmatchedRouteHealthSampleIDs are the workouts of routes that were left
 	// out because the server has no such workout yet; the phone sends those
 	// routes again after the workout.
-	UnmatchedRouteHealthSampleIds []string `json:"unmatchedRouteHealthSampleIds"`
+	UnmatchedRouteHealthSampleIDs []string `json:"unmatchedRouteHealthSampleIds"`
 
 	// HealthErasedAt is when the person last erased all of their Health, null
-	// if they never did. A batch that was not stored because of it says so
-	// by newSampleCount 0 and this time.
+	// if they never did. A batch that was not stored because it did not
+	// carry this time says so by newSampleCount 0 and this time.
 	HealthErasedAt *time.Time `json:"healthErasedAt"`
 }
 
@@ -412,13 +421,15 @@ type SetHealthShareArguments struct {
 }
 
 type ReportHealthArguments struct {
-	// AgentPhoneID is the install that reports, one of the caller's own.
+	// AgentPhoneID is accepted and ignored: a reading does not record which
+	// install sent it. The iPhone app still sends it, so the argument stays.
 	AgentPhoneID string `json:"agentPhoneId" graphapi:"nullable"`
 
-	// HealthTurnedOnAt is when the phone turned Health on. When the person
-	// erased all of their Health at or after it, or the phone does not say, the
-	// batch is not stored (see ReportHealth).
-	HealthTurnedOnAt *time.Time `json:"healthTurnedOnAt" graphapi:"nullable"`
+	// HealthErasedAt is the last time the person erased all of their Health
+	// that the phone knows of, null if it knows of none. When the person has
+	// erased and this is missing or earlier than the last erase, the batch is
+	// not stored (see ReportHealth).
+	HealthErasedAt *time.Time `json:"healthErasedAt" graphapi:"nullable"`
 
 	Samples                []HealthSample         `json:"samples" graphapi:"nullable"`
 	DeletedHealthSampleIDs []string               `json:"deletedHealthSampleIds" graphapi:"nullable"`
@@ -469,6 +480,11 @@ type HealthDaySummary struct {
 
 	// CategorySecondsJSON is a JSON object of seconds by the category's words.
 	CategorySecondsJSON string `json:"categorySecondsJson" graphapi:"nullable"`
+
+	// WorkedOutAt is when the phone worked the day out. A day sent again with
+	// an earlier time than the stored day's is left out; the time the server
+	// received the day when it is missing.
+	WorkedOutAt *time.Time `json:"workedOutAt" graphapi:"nullable"`
 }
 
 // HealthRoute is the path of a workout (HealthRouteInput in the schema).
@@ -508,6 +524,11 @@ const (
 	// readings.
 	healthSamplePageDefault = 50
 	healthSamplePageMost    = 200
+
+	// healthSampleOffsetMost bounds how deep a page of readings may start: the
+	// database reads and discards every reading before the offset, so a page
+	// that deep is asked for by narrowing from and to instead.
+	healthSampleOffsetMost = 100_000
 
 	// healthMetadataMostBytes and healthCategorySecondsMostBytes bound the JSON
 	// a reading or a day carries: an audiogram or an electrocardiogram's
@@ -901,6 +922,9 @@ func (self *graph) ListHealthSamples(ctx context.Context, arguments ListHealthSa
 	if err != nil {
 		return nil, err
 	}
+	if offset > healthSampleOffsetMost {
+		return nil, fmt.Errorf("%w: the offset is at most %d; narrow from and to to read readings that far back", api.ErrInvalidArguments, healthSampleOffsetMost)
+	}
 	// Counting is the slow part of a page of millions of readings, so it is
 	// done only for a query that asks for the count.
 	shouldCountTotal := true
@@ -1014,6 +1038,9 @@ func (self *graph) EraseHealthData(ctx context.Context, arguments EraseHealthDat
 	// leave the rows the report was about to write.
 	if err := tx.LockHealth(principal.User.ID); err != nil {
 		return nil, err
+	}
+	if _, err := tx.ForgetDeletedHealthSamples(); err != nil {
+		return nil, healthFailure(err)
 	}
 	erasedSampleCount, err := tx.EraseHealthData(principal.User.ID, healthType)
 	if err != nil {
@@ -1199,108 +1226,103 @@ func validateHealthReport(arguments ReportHealthArguments, now time.Time) error 
 	case len(arguments.Characteristics) > healthCharacteristicsMost:
 		return invalid("send at most %d characteristics at a time", healthCharacteristicsMost)
 	}
-	if arguments.HealthTurnedOnAt != nil && arguments.HealthTurnedOnAt.After(now.Add(reportFutureMost)) {
-		return invalid("healthTurnedOnAt is more than a day in the future")
-	}
 	latest := now.Add(reportFutureMost)
 	for index, sample := range arguments.Samples {
-		position := index + 1
 		switch {
 		case !isHealthIdentifierText(sample.HealthSampleID, healthSampleIDLongest):
-			return invalid("sample %d needs a healthSampleId of 1 to %d characters with no spaces", position, healthSampleIDLongest)
+			return invalid("samples[%d] needs a healthSampleId of 1 to %d characters with no spaces", index, healthSampleIDLongest)
 		case !health.IsValidIdentifier(sample.HealthType):
-			return invalid("sample %d needs a healthType of 1 to %d letters and digits, such as stepCount", position, health.IdentifierLongest)
+			return invalid("samples[%d] needs a healthType of 1 to %d letters and digits, such as stepCount", index, health.IdentifierLongest)
 		case healthInstantProblem(sample.StartedAt, latest) != "":
-			return invalid("sample %d startedAt %s", position, healthInstantProblem(sample.StartedAt, latest))
+			return invalid("samples[%d] startedAt %s", index, healthInstantProblem(sample.StartedAt, latest))
 		case healthInstantProblem(sample.EndedAt, latest) != "":
-			return invalid("sample %d endedAt %s", position, healthInstantProblem(sample.EndedAt, latest))
+			return invalid("samples[%d] endedAt %s", index, healthInstantProblem(sample.EndedAt, latest))
 		case sample.EndedAt.Before(sample.StartedAt):
-			return invalid("sample %d ends before it starts", position)
+			return invalid("samples[%d] ends before it starts", index)
 		case !isReasonableOrNil(sample.QuantityValue):
-			return invalid("sample %d has a quantityValue that is not a number between -1e15 and 1e15", position)
+			return invalid("samples[%d] has a quantityValue that is not a number between -1e15 and 1e15", index)
 		case sample.QuantityValue != nil && strings.TrimSpace(sample.QuantityUnit) == "":
-			return invalid("sample %d has a quantityValue and no quantityUnit", position)
+			return invalid("samples[%d] has a quantityValue and no quantityUnit", index)
 		case !isHealthUnitText(sample.QuantityUnit):
-			return invalid("sample %d has a quantityUnit that is not a unit such as count/min or ml/(kg*min)", position)
+			return invalid("samples[%d] has a quantityUnit that is not a unit such as count/min or ml/(kg*min)", index)
 		case strings.ContainsRune(sample.QuantityUnit+sample.WorkoutActivityType+sample.SourceName+sample.SourceBundleID+sample.DeviceName, 0):
-			return invalid("sample %d holds a null character", position)
+			return invalid("samples[%d] holds a null character", index)
 		case healthJSONObjectProblem(sample.SampleMetadataJSON, healthMetadataMostBytes) != "":
-			return invalid("sample %d sampleMetadataJson %s", position, healthJSONObjectProblem(sample.SampleMetadataJSON, healthMetadataMostBytes))
+			return invalid("samples[%d] sampleMetadataJson %s", index, healthJSONObjectProblem(sample.SampleMetadataJSON, healthMetadataMostBytes))
 		}
 	}
 	for index, healthSampleId := range arguments.DeletedHealthSampleIDs {
 		if !isHealthIdentifierText(healthSampleId, healthSampleIDLongest) {
-			return invalid("deleted sample %d needs a healthSampleId of 1 to %d characters with no spaces", index+1, healthSampleIDLongest)
+			return invalid("deletedHealthSampleIds[%d] needs a healthSampleId of 1 to %d characters with no spaces", index, healthSampleIDLongest)
 		}
 	}
 	latestDay := now.Add(healthSummaryDayFutureMost)
 	for index, summary := range arguments.DaySummaries {
-		position := index + 1
-		day, dayErr := health.ParseDay(summary.SummaryDay)
+		day, err := health.ParseDay(summary.SummaryDay)
 		switch {
 		case !health.IsValidIdentifier(summary.HealthType):
-			return invalid("day summary %d needs a healthType of 1 to %d letters and digits, such as stepCount", position, health.IdentifierLongest)
-		case dayErr != nil:
-			return invalid("day summary %d summaryDay: %s", position, dayErr)
+			return invalid("daySummaries[%d] needs a healthType of 1 to %d letters and digits, such as stepCount", index, health.IdentifierLongest)
+		case err != nil:
+			return invalid("daySummaries[%d] summaryDay: %s", index, err)
 		case day.Year() < healthEarliestYear:
-			return invalid("day summary %d is before the year %d", position, healthEarliestYear)
+			return invalid("daySummaries[%d] is before the year %d", index, healthEarliestYear)
 		case day.After(latestDay):
-			return invalid("day summary %d is more than a day in the future", position)
+			return invalid("daySummaries[%d] is more than a day in the future", index)
 		case summary.SampleCount < 0 || summary.SampleCount > healthSampleCountMostPerDay:
-			return invalid("day summary %d has a sampleCount that is not a count of readings", position)
+			return invalid("daySummaries[%d] has a sampleCount that is not a count of readings", index)
 		case !isReasonableOrNil(summary.SumValue) || !isReasonableOrNil(summary.AverageValue) || !isReasonableOrNil(summary.MinimumValue) ||
 			!isReasonableOrNil(summary.MaximumValue):
-			return invalid("day summary %d has a value that is not a number between -1e15 and 1e15", position)
+			return invalid("daySummaries[%d] has a value that is not a number between -1e15 and 1e15", index)
 		case summary.DurationSeconds != nil && (!isFiniteNumber(*summary.DurationSeconds) || *summary.DurationSeconds < 0 || *summary.DurationSeconds > healthDurationSecondsMost):
-			return invalid("day summary %d has a durationSeconds that is not between 0 and a year", position)
+			return invalid("daySummaries[%d] has a durationSeconds that is not between 0 and a year", index)
 		case !isHealthUnitText(summary.QuantityUnit):
-			return invalid("day summary %d has a quantityUnit that is not a unit such as count/min or ml/(kg*min)", position)
+			return invalid("daySummaries[%d] has a quantityUnit that is not a unit such as count/min or ml/(kg*min)", index)
+		case summary.WorkedOutAt != nil && healthInstantProblem(*summary.WorkedOutAt, latest) != "":
+			return invalid("daySummaries[%d] workedOutAt %s", index, healthInstantProblem(*summary.WorkedOutAt, latest))
 		}
 		if problem := healthJSONObjectProblem(summary.CategorySecondsJSON, healthCategorySecondsMostBytes); problem != "" {
-			return invalid("day summary %d categorySecondsJson %s", position, problem)
+			return invalid("daySummaries[%d] categorySecondsJson %s", index, problem)
 		}
 		if strings.TrimSpace(summary.CategorySecondsJSON) != "" {
 			var categorySeconds map[string]float64
 			if err := json.Unmarshal([]byte(summary.CategorySecondsJSON), &categorySeconds); err != nil {
-				return invalid("day summary %d categorySecondsJson is not an object of numbers", position)
+				return invalid("daySummaries[%d] categorySecondsJson is not an object of numbers", index)
 			}
 			for category, seconds := range categorySeconds {
 				if !isHealthCategoryName(category) || !isReasonableNumber(seconds) || seconds < 0 {
-					return invalid("day summary %d categorySecondsJson needs names of 1 to %d letters and digits, such as asleepCore, and numbers of zero or more", position, healthCategoryNameLongest)
+					return invalid("daySummaries[%d] categorySecondsJson needs names of 1 to %d letters and digits, such as asleepCore, and numbers of zero or more", index, healthCategoryNameLongest)
 				}
 			}
 		}
 	}
 	for index, route := range arguments.Routes {
-		position := index + 1
 		if !isHealthIdentifierText(route.HealthSampleID, healthSampleIDLongest) {
-			return invalid("route %d needs the healthSampleId of its workout", position)
+			return invalid("routes[%d] needs the healthSampleId of its workout", index)
 		}
 		if len(route.RoutePoints) > healthRoutePointsMost {
-			return invalid("route %d has more than %d points", position, healthRoutePointsMost)
+			return invalid("routes[%d] has more than %d points", index, healthRoutePointsMost)
 		}
 		for pointIndex, point := range route.RoutePoints {
 			if len(point) != 4 {
-				return invalid("point %d of route %d needs secondsFromStart, latitudeDegrees, longitudeDegrees and altitudeMeters", pointIndex+1, position)
+				return invalid("routes[%d].routePoints[%d] needs secondsFromStart, latitudeDegrees, longitudeDegrees and altitudeMeters", index, pointIndex)
 			}
 			for _, number := range point {
 				if !isFiniteNumber(number) {
-					return invalid("point %d of route %d has a number that is not finite", pointIndex+1, position)
+					return invalid("routes[%d].routePoints[%d] has a number that is not finite", index, pointIndex)
 				}
 			}
 			if point[0] < 0 || point[1] < -90 || point[1] > 90 || point[2] < -180 || point[2] > 180 {
-				return invalid("point %d of route %d is not on the earth", pointIndex+1, position)
+				return invalid("routes[%d].routePoints[%d] is not on the earth", index, pointIndex)
 			}
 		}
 	}
 	for index, characteristic := range arguments.Characteristics {
-		position := index + 1
 		switch {
 		case health.TypeOf(characteristic.HealthType).ValueKind != health.ValueKindCharacteristic:
-			return invalid("characteristic %d needs a healthType that is a characteristic: dateOfBirth, biologicalSex, bloodType, fitzpatrickSkinType, wheelchairUse or activityMoveMode", position)
+			return invalid("characteristics[%d] needs a healthType that is a characteristic: dateOfBirth, biologicalSex, bloodType, fitzpatrickSkinType, wheelchairUse or activityMoveMode", index)
 		case characteristic.CharacteristicValue == "" || len([]rune(characteristic.CharacteristicValue)) > healthCharacteristicValueLongest ||
 			strings.ContainsRune(characteristic.CharacteristicValue, 0):
-			return invalid("characteristic %d needs a characteristicValue of 1 to %d characters", position, healthCharacteristicValueLongest)
+			return invalid("characteristics[%d] needs a characteristicValue of 1 to %d characters", index, healthCharacteristicValueLongest)
 		}
 	}
 	return nil
@@ -1341,35 +1363,27 @@ func (self *graph) ReportHealth(ctx context.Context, arguments ReportHealthArgum
 		return nil, err
 	}
 
-	// A person who erased all of their Health after the phone turned it on is
-	// not undone by what the phone had already read or queued: store nothing,
-	// and say when they erased, which tells the phone to stop.
+	// Readings that were deleted more than 30 days ago are forgotten here, a
+	// bounded number at a time, whoever they were deleted by.
+	if _, err := tx.ForgetDeletedHealthSamples(); err != nil {
+		return nil, healthFailure(err)
+	}
+
+	// A person who erased all of their Health is not undone by what the phone
+	// had already read or queued: unless the phone knows of the last erase (it
+	// sends back the erase time it read when it turned Health on), store
+	// nothing, and say when they erased, which tells the phone to stop. Only
+	// server time is compared with server time, to the second because the phone
+	// writes whole seconds.
 	choices, err := tx.GetHealthChoices(user.ID)
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if choices.HealthErasedAt != nil && (arguments.HealthTurnedOnAt == nil || arguments.HealthTurnedOnAt.Before(*choices.HealthErasedAt)) {
+	if choices.HealthErasedAt != nil &&
+		(arguments.HealthErasedAt == nil || arguments.HealthErasedAt.Before(choices.HealthErasedAt.Truncate(time.Second))) {
 		return &ReportHealthView{
-			DeletedSamples: []*DeletedHealthSampleView{}, UnmatchedRouteHealthSampleIds: []string{}, HealthErasedAt: choices.HealthErasedAt,
+			DeletedSamples: []*DeletedHealthSampleView{}, UnmatchedRouteHealthSampleIDs: []string{}, HealthErasedAt: choices.HealthErasedAt,
 		}, nil
-	}
-
-	// The install that reports must be one of the caller's own.
-	phoneId := strings.TrimSpace(arguments.AgentPhoneID)
-	if phoneId != "" {
-		owner, err := tx.GetAgentByUser(user.ID)
-		if err != nil {
-			return nil, err
-		}
-		var phone *models.AgentPhone
-		if owner != nil {
-			if phone, err = tx.GetAgentPhone(owner.ID, phoneId); err != nil {
-				return nil, translateError(err)
-			}
-		}
-		if phone == nil {
-			return nil, fmt.Errorf("%w: no phone of yours has that id", api.ErrNotFound)
-		}
 	}
 
 	// A person has a bounded number of kinds: a made-up name each batch would
@@ -1393,7 +1407,7 @@ func (self *graph) ReportHealth(ctx context.Context, arguments ReportHealthArgum
 			HealthSampleID: sample.HealthSampleID, HealthType: sample.HealthType, StartedAt: sample.StartedAt, EndedAt: sample.EndedAt,
 			QuantityValue: sample.QuantityValue, QuantityUnit: sample.QuantityUnit, CategoryValue: sample.CategoryValue,
 			WorkoutActivityType: sample.WorkoutActivityType, SourceName: sample.SourceName, SourceBundleID: sample.SourceBundleID,
-			DeviceName: sample.DeviceName, SampleMetadataJSON: sample.SampleMetadataJSON, AgentPhoneID: phoneId, ReceivedAt: now,
+			DeviceName: sample.DeviceName, SampleMetadataJSON: sample.SampleMetadataJSON, ReceivedAt: now,
 		})
 	}
 	newSampleCount, err := tx.InsertHealthSamples(user.ID, samples)
@@ -1408,7 +1422,7 @@ func (self *graph) ReportHealth(ctx context.Context, arguments ReportHealthArgum
 	for _, route := range arguments.Routes {
 		routes = append(routes, &models.HealthRoute{HealthSampleID: route.HealthSampleID, RoutePoints: route.RoutePoints})
 	}
-	_, unmatchedRouteIds, err := tx.UpsertHealthRoutes(user.ID, routes)
+	_, unmatchedRouteIDs, err := tx.UpsertHealthRoutes(user.ID, routes)
 	if err != nil {
 		return nil, healthFailure(err)
 	}
@@ -1420,10 +1434,15 @@ func (self *graph) ReportHealth(ctx context.Context, arguments ReportHealthArgum
 
 	summaries := make([]*models.HealthDaySummary, 0, len(arguments.DaySummaries))
 	for _, summary := range arguments.DaySummaries {
+		workedOutAt := time.Time{}
+		if summary.WorkedOutAt != nil {
+			workedOutAt = *summary.WorkedOutAt
+		}
 		summaries = append(summaries, &models.HealthDaySummary{
 			HealthType: summary.HealthType, SummaryDay: summary.SummaryDay, QuantityUnit: summary.QuantityUnit,
 			SumValue: summary.SumValue, AverageValue: summary.AverageValue, MinimumValue: summary.MinimumValue, MaximumValue: summary.MaximumValue,
 			SampleCount: summary.SampleCount, DurationSeconds: summary.DurationSeconds, CategorySecondsJSON: summary.CategorySecondsJSON,
+			WorkedOutAt: workedOutAt,
 		})
 	}
 	updatedDayCount, err := tx.UpsertHealthDaySummaries(user.ID, summaries)
@@ -1443,7 +1462,7 @@ func (self *graph) ReportHealth(ctx context.Context, arguments ReportHealthArgum
 
 	view := &ReportHealthView{
 		NewSampleCount: newSampleCount, DeletedSampleCount: len(deleted), UpdatedDayCount: updatedDayCount,
-		DeletedSamples: make([]*DeletedHealthSampleView, 0, len(deleted)), UnmatchedRouteHealthSampleIds: unmatchedRouteIds,
+		DeletedSamples: make([]*DeletedHealthSampleView, 0, len(deleted)), UnmatchedRouteHealthSampleIDs: unmatchedRouteIDs,
 		HealthErasedAt: choices.HealthErasedAt,
 	}
 	for _, each := range deleted {

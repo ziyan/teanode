@@ -2,11 +2,12 @@ import Foundation
 
 // What the phone remembers between runs about copying Health to the server:
 // where it got to in each type (HealthKit's anchor, an opaque blob), which
-// days of which types are waiting to be worked out again, when Health was
-// turned on, and what has been sent. The phone keeps no copy of the health
-// data itself. The file is readable after the first unlock, so a background
-// wake just after a restart can go on, and is left out of backups: Apple
-// forbids health data in iCloud, and the anchors say what was read.
+// days of which types are waiting to be worked out again, whether Health is
+// turned on and the last erase of the server's copy the phone knows of, and
+// what has been sent. The phone keeps no copy of the health data itself. The
+// file is readable after the first unlock, so a background wake just after a
+// restart can go on, and is left out of backups: Apple forbids health data in
+// iCloud, and the anchors say what was read.
 
 /// HealthPendingDay is one type on one day whose summary must be worked out
 /// again: a new sample landed on it, or the server deleted one from it.
@@ -33,8 +34,22 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
     public private(set) var anchors: [String: Data] = [:]
     /// The days waiting to be worked out again.
     public private(set) var pendingDays: Set<HealthPendingDay> = []
-    /// When the person turned Health on in the app; nil while it is off.
-    public private(set) var healthTurnedOnAt: Date?
+    /// Whether the person has Health turned on in the app.
+    public private(set) var isTurnedOn = false
+    /// The time the person last erased all of their Health on the server, as
+    /// far as this phone knows, written exactly as the server wrote it (RFC
+    /// 3339, with its fractions of a second: the server compares what it is
+    /// told with its own to the fraction). Read from the server when Health
+    /// is turned on, and told to it with every report; nil if the person never
+    /// erased, or while Health is off.
+    public private(set) var healthErasedAt: String?
+    /// Whether Health was turned off because the server told of an erase newer
+    /// than `healthErasedAt`. Kept so that the settings can say why the switch
+    /// is off, even after the app was closed; the next turn-on clears it.
+    public private(set) var isStoppedByErase = false
+    /// How many readings and summaries the server refused one by one, so were
+    /// left out for good since Health was turned on.
+    public private(set) var droppedEntryCount = 0
     /// When a batch was last taken by the server.
     public private(set) var lastSentAt: Date?
     public private(set) var sentSampleCount = 0
@@ -53,45 +68,61 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
 
     public init(accountKey: String? = nil) { self.accountKey = accountKey }
 
-    public var isTurnedOn: Bool { healthTurnedOnAt != nil }
-
     // MARK: Turning on and off
 
-    /// Notes that the person turned Health on. Anchors already kept stay, so
-    /// turning it off and on does not read everything twice; but see
-    /// `turnOff`.
-    public mutating func turnOn(at date: Date) {
-        // Whole seconds, as the file keeps it and the server is told it.
-        if healthTurnedOnAt == nil { healthTurnedOnAt = Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)) }
+    /// Notes that the person turned Health on, and the last erase of the
+    /// server's copy the server told of (nil if never). Anchors already kept
+    /// stay, so turning it off and on does not read everything twice; but see
+    /// `turnOff`. Does nothing when Health is already on.
+    public mutating func turnOn(healthErasedAt: String?) {
+        guard !isTurnedOn else { return }
+        isTurnedOn = true
+        isStoppedByErase = false
+        self.healthErasedAt = healthErasedAt
     }
 
-    /// Forgets everything: anchors, waiting days, counts and when it was
-    /// turned on. Turning Health on again reads from the beginning, which
-    /// the server takes as the same samples.
-    public mutating func turnOff() { reset() }
-
-    /// The rule for an erase on the server: if its time is later than when
-    /// Health was turned on here, what the phone remembers is of data that
-    /// is gone, so the state resets and Health is off until the person turns
-    /// it on again. Returns whether it reset. An erase from before Health was
-    /// turned on (or at the same moment) changes nothing, and neither does
-    /// one when Health is already off.
-    @discardableResult
-    public mutating func applyServerErase(healthErasedAt: Date?) -> Bool {
-        guard let healthErasedAt, let healthTurnedOnAt, healthErasedAt > healthTurnedOnAt else { return false }
+    /// Forgets everything: anchors, waiting days, counts and the erase time.
+    /// Turning Health on again reads from the beginning, which the server
+    /// takes as the same samples.
+    public mutating func turnOff() {
         reset()
+        isStoppedByErase = false
+    }
+
+    /// Whether an answer names an erase on the server that is later than the
+    /// one this phone knows of (any erase, if it knows of none). The server
+    /// stored nothing of the batch that was answered with one.
+    public func isErasedLater(than answer: String?) -> Bool {
+        ServerTime.isLater(answer, than: healthErasedAt)
+    }
+
+    /// The rule for an erase on the server. The phone tells the server the
+    /// erase time it knows with every report. If the answer names a later
+    /// one, the person erased everything after the phone last heard of it:
+    /// what the phone remembers is of data that is gone, so the state resets
+    /// (no anchor, no count) and Health is off until the person turns it on
+    /// again, with `isStoppedByErase` set for the notice. Returns whether it
+    /// reset. An answer that names the erase the phone knows of (or none)
+    /// changes nothing, and neither does one when Health is already off.
+    @discardableResult
+    public mutating func applyServerErase(healthErasedAt answer: String?) -> Bool {
+        guard isTurnedOn, isErasedLater(than: answer) else { return false }
+        reset()
+        isStoppedByErase = true
         return true
     }
 
     private mutating func reset() {
         anchors = [:]
         pendingDays = []
-        healthTurnedOnAt = nil
+        isTurnedOn = false
+        healthErasedAt = nil
         lastSentAt = nil
         sentSampleCount = 0
         sentDeletedSampleCount = 0
         sentDaySummaryCount = 0
         sentRouteCount = 0
+        droppedEntryCount = 0
         isHistoryDone = false
         sentRouteHealthSampleIds = []
     }
@@ -138,6 +169,10 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
 
     // MARK: Sending
 
+    /// Notes entries of batches that the server refused one by one, which
+    /// were left out.
+    public mutating func recordDropped(entryCount: Int) { droppedEntryCount += max(0, entryCount) }
+
     /// Notes that the server took a batch. The readings counted are the ones
     /// that were new to it, so a page read again after a later failure is not
     /// counted twice.
@@ -149,15 +184,15 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
         sentRouteCount += batch.routes.count
     }
 
-    /// Takes the server's answer to a batch. If the answer says the person
-    /// erased all of their Health after it was turned on here, the server
-    /// stored nothing: the state is reset (Health is off, no anchor is kept,
-    /// and nothing of the batch is counted) and this answers false. Else the
-    /// batch is noted as sent and this answers true, and the caller may move
-    /// the anchors of what the batch carried.
+    /// Takes the server's answer to a batch. If the answer names an erase of
+    /// all of the person's Health later than the one this phone knows of, the
+    /// server stored nothing: the state is reset (Health is off, no anchor is
+    /// kept, and nothing of the batch is counted) and this answers false. Else
+    /// the batch is noted as sent and this answers true, and the caller may
+    /// move the anchors of what the batch carried.
     @discardableResult
     public mutating func accept(_ result: ReportHealthResult, for batch: HealthBatch, at date: Date) -> Bool {
-        if applyServerErase(healthErasedAt: result.healthErasedDate) { return false }
+        if applyServerErase(healthErasedAt: result.healthErasedAt) { return false }
         recordSent(batch, result: result, at: date)
         return true
     }
@@ -179,8 +214,8 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
     // MARK: The file
 
     private enum CodingKeys: String, CodingKey {
-        case accountKey, anchors, pendingDays, healthTurnedOnAt, lastSentAt, sentSampleCount, sentDeletedSampleCount, sentDaySummaryCount
-        case sentRouteCount, isHistoryDone, sentRouteHealthSampleIds
+        case accountKey, anchors, pendingDays, isTurnedOn, healthErasedAt, isStoppedByErase, lastSentAt, sentSampleCount
+        case sentDeletedSampleCount, sentDaySummaryCount, sentRouteCount, droppedEntryCount, isHistoryDone, sentRouteHealthSampleIds
     }
 
     public init(from decoder: Decoder) throws {
@@ -188,12 +223,15 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
         accountKey = try container.decodeIfPresent(String.self, forKey: .accountKey)
         anchors = try container.decodeIfPresent([String: Data].self, forKey: .anchors) ?? [:]
         pendingDays = Set(try container.decodeIfPresent([HealthPendingDay].self, forKey: .pendingDays) ?? [])
-        healthTurnedOnAt = try container.decodeIfPresent(Date.self, forKey: .healthTurnedOnAt)
+        isTurnedOn = try container.decodeIfPresent(Bool.self, forKey: .isTurnedOn) ?? false
+        healthErasedAt = try container.decodeIfPresent(String.self, forKey: .healthErasedAt)
+        isStoppedByErase = try container.decodeIfPresent(Bool.self, forKey: .isStoppedByErase) ?? false
         lastSentAt = try container.decodeIfPresent(Date.self, forKey: .lastSentAt)
         sentSampleCount = try container.decodeIfPresent(Int.self, forKey: .sentSampleCount) ?? 0
         sentDeletedSampleCount = try container.decodeIfPresent(Int.self, forKey: .sentDeletedSampleCount) ?? 0
         sentDaySummaryCount = try container.decodeIfPresent(Int.self, forKey: .sentDaySummaryCount) ?? 0
         sentRouteCount = try container.decodeIfPresent(Int.self, forKey: .sentRouteCount) ?? 0
+        droppedEntryCount = try container.decodeIfPresent(Int.self, forKey: .droppedEntryCount) ?? 0
         isHistoryDone = try container.decodeIfPresent(Bool.self, forKey: .isHistoryDone) ?? false
         sentRouteHealthSampleIds = try container.decodeIfPresent([String].self, forKey: .sentRouteHealthSampleIds) ?? []
     }
@@ -203,12 +241,15 @@ public struct HealthSyncState: Codable, Sendable, Equatable {
         try container.encodeIfPresent(accountKey, forKey: .accountKey)
         try container.encode(anchors, forKey: .anchors)
         try container.encode(pendingDays.sorted(), forKey: .pendingDays)
-        try container.encodeIfPresent(healthTurnedOnAt, forKey: .healthTurnedOnAt)
+        try container.encode(isTurnedOn, forKey: .isTurnedOn)
+        try container.encodeIfPresent(healthErasedAt, forKey: .healthErasedAt)
+        try container.encode(isStoppedByErase, forKey: .isStoppedByErase)
         try container.encodeIfPresent(lastSentAt, forKey: .lastSentAt)
         try container.encode(sentSampleCount, forKey: .sentSampleCount)
         try container.encode(sentDeletedSampleCount, forKey: .sentDeletedSampleCount)
         try container.encode(sentDaySummaryCount, forKey: .sentDaySummaryCount)
         try container.encode(sentRouteCount, forKey: .sentRouteCount)
+        try container.encode(droppedEntryCount, forKey: .droppedEntryCount)
         try container.encode(isHistoryDone, forKey: .isHistoryDone)
         try container.encode(sentRouteHealthSampleIds, forKey: .sentRouteHealthSampleIds)
     }

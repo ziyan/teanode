@@ -26,7 +26,7 @@ func TestTheHealthMigrationKeepsItsConstraintsAndReverses(t *testing.T) {
 	for _, statement := range []string{
 		`INSERT INTO "circle" ("id", "created_at", "modified_at", "name", "circle_kind") VALUES ('reverse-health-circle', now(), now(), 'Home', 'family')`,
 		`INSERT INTO "health_sample" ("id", "user_id", "health_sample_id", "health_type", "started_at", "ended_at", "received_at") VALUES ('reverse-health-sample', '` + userId + `', 'sample-one', 'stepCount', '2026-01-01T10:00:00Z', '2026-01-01T10:05:00Z', now())`,
-		`INSERT INTO "health_day_summary" ("user_id", "health_type", "summary_day", "updated_at") VALUES ('` + userId + `', 'stepCount', '2026-01-01', now())`,
+		`INSERT INTO "health_day_summary" ("user_id", "health_type", "summary_day", "worked_out_at", "updated_at") VALUES ('` + userId + `', 'stepCount', '2026-01-01', now(), now())`,
 		`INSERT INTO "health_workout_route" ("user_id", "health_sample_id", "route_points", "received_at") VALUES ('` + userId + `', 'sample-one', '[[0, 10.5, 20.5, 3]]', now())`,
 		`INSERT INTO "health_characteristic" ("user_id", "health_type", "characteristic_value", "updated_at") VALUES ('` + userId + `', 'bloodType', 'aPositive', now())`,
 		`INSERT INTO "health_share" ("id", "user_id", "grantee_user_id", "health_categories", "created_at") VALUES ('reverse-health-share', '` + userId + `', '` + otherId + `', '{activity}', now())`,
@@ -48,7 +48,7 @@ func TestTheHealthMigrationKeepsItsConstraintsAndReverses(t *testing.T) {
 	for name, statement := range map[string]string{
 		"samereading":        `INSERT INTO "health_sample" ("id", "user_id", "health_sample_id", "health_type", "started_at", "ended_at", "received_at") VALUES ('reverse-health-again', '` + userId + `', 'sample-one', 'stepCount', '2026-01-01T11:00:00Z', '2026-01-01T11:05:00Z', now())`,
 		"endsbeforestart":    `INSERT INTO "health_sample" ("id", "user_id", "health_sample_id", "health_type", "started_at", "ended_at", "received_at") VALUES ('reverse-health-backwards', '` + userId + `', 'sample-two', 'stepCount', '2026-01-01T11:05:00Z', '2026-01-01T11:00:00Z', now())`,
-		"sameday":            `INSERT INTO "health_day_summary" ("user_id", "health_type", "summary_day", "updated_at") VALUES ('` + userId + `', 'stepCount', '2026-01-01', now())`,
+		"sameday":            `INSERT INTO "health_day_summary" ("user_id", "health_type", "summary_day", "worked_out_at", "updated_at") VALUES ('` + userId + `', 'stepCount', '2026-01-01', now(), now())`,
 		"sameroute":          `INSERT INTO "health_workout_route" ("user_id", "health_sample_id", "route_points", "received_at") VALUES ('` + userId + `', 'sample-one', '[]', now())`,
 		"samecharacteristic": `INSERT INTO "health_characteristic" ("user_id", "health_type", "characteristic_value", "updated_at") VALUES ('` + userId + `', 'bloodType', 'bPositive', now())`,
 		"nograntee":          `INSERT INTO "health_share" ("id", "user_id", "health_categories", "created_at") VALUES ('reverse-share-nobody', '` + userId + `', '{sleep}', now())`,
@@ -59,6 +59,16 @@ func TestTheHealthMigrationKeepsItsConstraintsAndReverses(t *testing.T) {
 		if err := execute(database, statement); err == nil {
 			t.Errorf("%s: the database accepted a row it should refuse", name)
 		}
+	}
+
+	// A reading does not record which phone sent it (removing a phone would
+	// rewrite every reading it sent), and deleted readings are forgotten by
+	// time across all people, which needs an index on time alone.
+	if got := dbtest.QueryString(t, database, `SELECT count(*) FROM information_schema.columns WHERE table_name = 'health_sample' AND column_name = 'agent_phone_id'`); got != "0" {
+		t.Errorf("a reading still has a phone column")
+	}
+	if got := dbtest.QueryString(t, database, `SELECT count(*) FROM pg_indexes WHERE indexname = 'health_deleted_sample_deleted'`); got != "1" {
+		t.Errorf("deleted readings are found by time: %s indexes", got)
 	}
 
 	// The count of readings is kept by the database: one reading sent, one

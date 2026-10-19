@@ -60,7 +60,7 @@ func init() {
 					"health_type": healthTypeProperty,
 					"from":        fromProperty,
 					"to":          toProperty,
-					"limit":       limitProperty,
+					"limit_count": limitCountProperty,
 					"offset":      offsetProperty,
 				}, "health_type"),
 				Run: runSamples,
@@ -84,6 +84,8 @@ func init() {
 					"Find the health_type with types: workouts are the type workout, sleep is sleepAnalysis with the time asleep and in each stage (Deep, Core, REM, Awake), steps are stepCount and heart rate is heartRate. " +
 					"Always show the unit with a number (steps, bpm, kg, hours and minutes for a time). " +
 					"It reads the person's own Health only, never what other people share with them: a person who shares Health shares it with people, not with their agents' model providers. " +
+					"What others share with the person is on the Health page under Showing, on the dashboard and in the iPhone app; you cannot read it, so point the person there. " +
+					"It reads only in a conversation with the person, never in a dream, a background task or any other run nobody is watching. " +
 					"The person must first let you read their Health data (the switch \"Let the agent read Health data\" is in the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings); until then every action but set_up says so, and you tell them where to turn it on instead of trying again, offering set_up to take them to it. " +
 					"This is not medical advice, and you do not diagnose from it.",
 				Guidance: "Health is among the most private data the person has. Use it only when asked or when it plainly answers what they asked, and do not copy it into other tools, notes or messages unless they ask. " +
@@ -106,6 +108,6 @@ var (
 	fromProperty       = tools.StringProperty("the first day, as YYYY-MM-DD in the person's own time zone; 29 days before 'to' by default")
 	toProperty         = tools.StringProperty("the last day, included, as YYYY-MM-DD in the person's own time zone; today by default")
 	periodProperty     = tools.EnumProperty("for summary: how to group the days; a week starts on Monday; day by default", "day", "week", "month")
-	limitProperty      = tools.IntegerProperty("for samples: how many readings, 20 by default and 200 at most")
+	limitCountProperty = tools.IntegerProperty("for samples: how many readings, 20 by default and 200 at most")
 	offsetProperty     = tools.IntegerProperty("for samples: skip this many readings, for the next page: the next_offset of the page before")
 )

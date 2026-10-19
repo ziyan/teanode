@@ -206,12 +206,12 @@ const MOST_PERIODS = 400
 // week reaches back one fewer.
 const MOST_WEEKS = MOST_PERIODS - 1
 
-export function readRange(value: string | null): RangeID {
-  return RANGES.find((each) => each.id === value)?.id ?? DEFAULT_RANGE
+export function readRange(addressValue: string | null): RangeID {
+  return RANGES.find((rangeChoice) => rangeChoice.id === addressValue)?.id ?? DEFAULT_RANGE
 }
 
-export function readPeriod(value: string | null, range: RangeID): PeriodID {
-  return PERIODS.find((each) => each.id === value)?.id ?? defaultPeriodFor(range)
+export function readPeriod(addressValue: string | null, range: RangeID): PeriodID {
+  return PERIODS.find((periodChoice) => periodChoice.id === addressValue)?.id ?? defaultPeriodFor(range)
 }
 
 // dayText is a day written 2006-01-02, for a person's own calendar.
@@ -226,9 +226,9 @@ export function parseDay(day: string): Date {
   return new Date(year, month - 1, date)
 }
 
-export function addDays(day: string, count: number): string {
+export function addDays(day: string, dayCount: number): string {
   const moved = parseDay(day)
-  moved.setDate(moved.getDate() + count)
+  moved.setDate(moved.getDate() + dayCount)
   return dayText(moved)
 }
 
@@ -242,7 +242,7 @@ export function daysBetweenCount(first: string, last: string): number {
 // never asks for more periods than the server answers; isCut says the range
 // was shortened for that, and mostPeriods is how many periods are drawn then.
 export function chartDays(range: RangeID, period: PeriodID, today: string, firstDay: string | null) {
-  const days = RANGES.find((each) => each.id === range)?.days ?? 0
+  const days = RANGES.find((rangeChoice) => rangeChoice.id === range)?.days ?? 0
   let fromDay = days > 0 ? addDays(today, 1 - days) : (firstDay ?? addDays(today, 1 - 365)).slice(0, 10)
   let isCut = false
   const mostDays = period === 'day' ? MOST_PERIODS : period === 'week' ? MOST_WEEKS * 7 : 0
@@ -258,106 +258,133 @@ export function chartDays(range: RangeID, period: PeriodID, today: string, first
 
 // numbers and units
 
-// How a unit HealthKit sends is written beside a number, the same words as the
-// command line and the iPhone use. A unit not here is written as it came.
-// Steps are HealthKit's plain count, so the dashboard gives them the unit
-// STEPS_UNIT where a number stands without the type's name beside it.
-export const STEPS_UNIT = 'steps'
+// How a reading is written is the table at the top of internal/health/words.go:
+// the command line and the agent's tool follow it in Go, and the dashboard and
+// the iPhone app follow it here and in Swift. healthWords.test.ts feeds the
+// same cases as words_test.go to these functions, so the two cannot drift
+// apart without a test saying so.
 
-const UNIT_LABELS: Record<string, string> = {
-  count: '',
-  'count/min': 'bpm',
-  'count/s': '/s',
-  count_per_min: 'bpm',
-  kcal: 'kcal',
-  'kcal/(kg*hr)': 'kcal/kg·h',
-  m: 'm',
-  km: 'km',
-  mi: 'mi',
-  cm: 'cm',
-  kg: 'kg',
-  g: 'g',
-  mg: 'mg',
-  mcg: 'mcg',
-  lb: 'lb',
-  L: 'L',
-  mL: 'mL',
-  'L/min': 'L/min',
-  '%': '%',
+// What a count of each kind counts. Its words are health.count.<noun>.one and
+// health.count.<noun>.other.
+const COUNT_NOUNS: Record<string, string> = {
+  stepCount: 'step',
+  flightsClimbed: 'flight',
+  pushCount: 'push',
+  swimmingStrokeCount: 'stroke',
+  numberOfTimesFallen: 'fall',
+  inhalerUsage: 'puff',
+  numberOfAlcoholicBeverages: 'drink',
+}
+
+// The kinds measured in count/min that are not beats.
+const RATE_UNIT_WORDS: Record<string, string> = {
+  cyclingCadence: 'rpm',
+  respiratoryRate: 'breaths/min',
+}
+
+// HealthKit's unit strings as a person writes them. A unit not here is
+// written as it came.
+const UNIT_WORDS: Record<string, string> = {
   degC: '°C',
   degF: '°F',
-  mmHg: 'mmHg',
-  'mg/dL': 'mg/dL',
-  s: 's',
-  min: 'min',
-  hr: 'h',
-  ms: 'ms',
-  'm/s': 'm/s',
-  'km/h': 'km/h',
-  W: 'W',
-  S: 'S',
-  IU: 'IU',
+  'ml/(kg*min)': 'mL/kg·min',
+  'kcal/(kg*hr)': 'kcal/kg·hr',
   dBASPL: 'dB',
   appleEffortScore: '',
-  'ml/(kg*min)': 'mL/kg·min',
-  'mL/(kg*min)': 'mL/kg·min',
-}
-
-// The units whose readings are whole numbers: a heart rate of 74.3 is read
-// as 74.
-const WHOLE_NUMBER_UNITS = ['count', 'count/min', 'count_per_min', STEPS_UNIT]
-
-export function unitLabel(unit: string): string {
-  return unit in UNIT_LABELS ? UNIT_LABELS[unit] : unit
-}
-
-// displayUnit is the unit a type's numbers are written with. Steps are read
-// with their word where a number stands alone, as a chart's headline does.
-export function displayUnit(healthType: string, quantityUnit: string): string {
-  return healthType === 'stepCount' && quantityUnit === 'count' ? STEPS_UNIT : quantityUnit
-}
-
-export function numberText(value: number, language: string, mostDigits?: number): string {
-  const size = Math.abs(value)
-  const digits = mostDigits ?? (size >= 100 ? 0 : size >= 10 ? 1 : 2)
-  return new Intl.NumberFormat(language, { maximumFractionDigits: digits }).format(value)
-}
-
-// wholeNumberText is a count written for the language, such as 2,578 in
-// English.
-export function wholeNumberText(value: number, language: string): string {
-  return new Intl.NumberFormat(language, { maximumFractionDigits: 0 }).format(value)
-}
-
-// shownValue is a value as a person reads it. HealthKit keeps a percentage
-// as a fraction (0.97 for 97%), and so does the server.
-export function shownValue(value: number, unit: string): number {
-  return unit === '%' ? value * 100 : value
 }
 
 // A distance from this many meters up is written in kilometers.
 const KILOMETER_FROM_METERS = 1000
 
-export function quantityText(value: number, unit: string, language: string, t: Translate): string {
-  if (unit === 'm' && Math.abs(value) >= KILOMETER_FROM_METERS) {
-    return `${numberText(value / KILOMETER_FROM_METERS, language, 1)} km`
-  }
-  // A distance in kilometers has one decimal at most, as a long one in meters
-  // does.
-  const mostDigits = WHOLE_NUMBER_UNITS.includes(unit) ? 0 : unit === 'km' ? 1 : undefined
-  const number = numberText(shownValue(value, unit), language, mostDigits)
-  if (unit === STEPS_UNIT) return t('health.unitSteps', { number })
-  const label = unitLabel(unit)
-  if (label === '') return number
-  return label.startsWith('/') || label === '%' || label.startsWith('°') ? number + label : `${number} ${label}`
+// unitWords is the word that follows a number of this kind, without a space
+// when it is a symbol: "bpm", "kg", "°C", "%". A count has no word here: its
+// noun is the language's, and quantityText writes it.
+export function unitWords(healthType: string, quantityUnit: string): string {
+  if (quantityUnit === 'count/min') return RATE_UNIT_WORDS[healthType] ?? 'bpm'
+  if (quantityUnit === '' || quantityUnit === 'count') return ''
+  if (quantityUnit === '%') return '%'
+  return quantityUnit in UNIT_WORDS ? UNIT_WORDS[quantityUnit] : quantityUnit
 }
 
+// decimalsText is a number with up to this many decimals, trailing zeros
+// dropped and thousands separated for the language.
+export function decimalsText(measuredValue: number, language: string, mostDecimals: number): string {
+  const text = new Intl.NumberFormat(language, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: mostDecimals,
+  }).format(measuredValue)
+  // A tiny negative number is zero, not "-0".
+  return text === '-0' ? '0' : text
+}
+
+// numberText writes a reading with only as many decimals as the size of the
+// number is worth: none from 1,000, one from 100, else two (8,412, 150.3,
+// 72.4, 0.35).
+export function numberText(measuredValue: number, language: string): string {
+  const magnitude = Math.abs(measuredValue)
+  return decimalsText(measuredValue, language, magnitude >= 1000 ? 0 : magnitude >= 100 ? 1 : 2)
+}
+
+// wholeNumberText is a count written for the language, such as 2,578 in
+// English.
+export function wholeNumberText(measuredValue: number, language: string): string {
+  return decimalsText(measuredValue, language, 0)
+}
+
+// shownValue is a value as a person reads it. HealthKit keeps a percentage
+// as a fraction (0.97 for 97%), and so does the server.
+export function shownValue(measuredValue: number, quantityUnit: string): number {
+  return quantityUnit === '%' ? measuredValue * 100 : measuredValue
+}
+
+// withUnit joins a number and its unit: a degree sign touches the number, any
+// other word does not.
+function withUnit(numberWords: string, unitWord: string): string {
+  if (unitWord === '') return numberWords
+  return unitWord.startsWith('°') ? numberWords + unitWord : `${numberWords} ${unitWord}`
+}
+
+// quantityText is a reading with its unit, as a person says it: 8,412 steps,
+// 72.4 kg, 74 bpm, 97%, 36.6°C, 5.2 km.
+export function quantityText(
+  measuredValue: number,
+  quantityUnit: string,
+  healthType: string,
+  language: string,
+  t: Translate,
+): string {
+  if (quantityUnit === 'm' && Math.abs(measuredValue) >= KILOMETER_FROM_METERS) {
+    return `${decimalsText(measuredValue / KILOMETER_FROM_METERS, language, 1)} km`
+  }
+  if (quantityUnit === '%') return numberText(shownValue(measuredValue, quantityUnit), language) + '%'
+  const countNoun = quantityUnit === 'count' ? COUNT_NOUNS[healthType] : undefined
+  if (quantityUnit === 'count/min' || countNoun !== undefined) {
+    // What is counted, and every rate, is a whole number.
+    const rounded = Math.round(measuredValue)
+    const wholeWords = wholeNumberText(rounded, language)
+    if (countNoun !== undefined) {
+      const form = Math.abs(rounded) === 1 ? 'one' : 'other'
+      return t(`health.count.${countNoun}.${form}` as Key, { number: wholeWords })
+    }
+    return withUnit(wholeWords, unitWords(healthType, quantityUnit))
+  }
+  // A count that counts nothing in particular (body mass index, UV index)
+  // keeps one decimal.
+  if (quantityUnit === 'count') return decimalsText(measuredValue, language, 1)
+  return withUnit(numberText(measuredValue, language), unitWords(healthType, quantityUnit))
+}
+
+// durationText writes a time covered in hours and minutes: 7 h 12 min,
+// 35 min, 45 s. Seconds are rounded to the nearest second below a minute and
+// to the nearest minute from a minute on.
 export function durationText(seconds: number, t: Translate): string {
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 1) return t('health.seconds', { seconds: Math.round(seconds) })
-  if (minutes < 60) return t('health.minutes', { minutes })
-  const hours = Math.floor(minutes / 60)
-  return minutes % 60 === 0 ? t('health.hours', { hours }) : t('health.hoursMinutes', { hours, minutes: minutes % 60 })
+  const wholeSeconds = Math.round(seconds)
+  if (wholeSeconds < 60) return t('health.seconds', { seconds: wholeSeconds })
+  const totalMinutes = Math.round(seconds / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours === 0) return t('health.minutes', { minutes })
+  return minutes === 0 ? t('health.hours', { hours }) : t('health.hoursMinutes', { hours, minutes })
 }
 
 // The value a period or day stands for, by how the type's days add up: a sum
@@ -384,18 +411,20 @@ export function summaryValue(
 }
 
 // amountText writes a day's or period's value the way it is read: a time as
-// hours and minutes, a count as a whole number, a quantity with its unit.
+// hours and minutes, a count of events as a whole number, a quantity with its
+// unit.
 export function amountText(
-  value: number | null,
+  amountValue: number | null,
   summaryKind: SummaryKind,
-  unit: string,
+  quantityUnit: string,
+  healthType: string,
   language: string,
   t: Translate,
 ): string {
-  if (value === null) return t('common.none')
-  if (summaryKind === 'duration') return durationText(value, t)
-  if (summaryKind === 'count') return numberText(value, language)
-  return quantityText(value, unit, language, t)
+  if (amountValue === null) return t('common.none')
+  if (summaryKind === 'duration') return durationText(amountValue, t)
+  if (summaryKind === 'count') return wholeNumberText(amountValue, language)
+  return quantityText(amountValue, quantityUnit, healthType, language, t)
 }
 
 // names
@@ -412,16 +441,44 @@ export function categoryName(t: Translate, healthCategory: string): string {
   return key in en ? t(key as Key) : humanize(healthCategory)
 }
 
+// workoutName is a workout's activity type in the person's language. No
+// activity type is the same as "other".
 export function workoutName(t: Translate, activityType: string): string {
-  const key = `health.workout.${activityType}`
-  return key in en ? t(key as Key) : humanize(activityType || 'other')
+  const identifier = activityType || 'other'
+  const key = `health.workout.${identifier}`
+  return key in en ? t(key as Key) : humanize(identifier)
 }
 
 // humanize turns an identifier such as "traditionalStrengthTraining" into
-// words.
+// words in sentence case, keeping an acronym as it is ("someREMReading" is
+// "Some REM reading"). It is nameFromIdentifier in internal/health/types.go.
 export function humanize(identifier: string): string {
-  const words = identifier.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
-  return words.charAt(0).toUpperCase() + words.slice(1)
+  const letters = [...identifier]
+  const isUpper = (letter: string) => letter !== letter.toLowerCase()
+  const isLower = (letter: string) => letter !== letter.toUpperCase()
+  const isDigit = (letter: string) => letter >= '0' && letter <= '9'
+  const words: string[] = []
+  let word = ''
+  letters.forEach((letter, index) => {
+    const before = letters[index - 1]
+    const after = letters[index + 1]
+    const isWordStart =
+      index > 0 &&
+      isUpper(letter) &&
+      (isLower(before) || isDigit(before) || (isUpper(before) && after !== undefined && isLower(after)))
+    if (isWordStart) {
+      words.push(word)
+      word = ''
+    }
+    word += letter
+  })
+  if (word !== '') words.push(word)
+  return words
+    .map((word, index) => {
+      if ([...word].length > 1 && word === word.toUpperCase()) return word
+      return index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word.toLowerCase()
+    })
+    .join(' ')
 }
 
 // The stages of a night, from the deepest up, with the colors the chart gives
@@ -445,9 +502,11 @@ export const SLEEP_VALUE_NAMES: Record<number, string> = {
   5: 'asleepREM',
 }
 
+// stageName is a stage of sleep in the person's language; a key that is not a
+// stage is written as it came.
 export function stageName(t: Translate, stage: string): string {
   const key = `health.stage.${stage}`
-  return key in en ? t(key as Key) : humanize(stage)
+  return key in en ? t(key as Key) : stage
 }
 
 // categorySecondsOf reads a period's seconds in each category value.
@@ -464,6 +523,79 @@ export function categorySecondsOf(period: HealthPeriod): Record<string, number> 
     )
   } catch {
     return {}
+  }
+}
+
+// The facts about the person that Health keeps, in the order they are shown.
+export const CHARACTERISTIC_TYPES = [
+  'dateOfBirth',
+  'biologicalSex',
+  'bloodType',
+  'fitzpatrickSkinType',
+  'wheelchairUse',
+  'activityMoveMode',
+] as const
+
+// The words of a fact about the person whose value is one of a fixed list,
+// by the value the phone sends.
+const SEX_KEYS: Record<string, Key> = {
+  female: 'health.sex.female',
+  male: 'health.sex.male',
+  other: 'health.sex.other',
+}
+const WHEELCHAIR_KEYS: Record<string, Key> = {
+  yes: 'health.wheelchair.yes',
+  no: 'health.wheelchair.no',
+}
+const BLOOD_TYPE = /^(a|b|ab|o)(Positive|Negative)$/
+
+// ageInYears is the age in whole years on a day of someone born on a day
+// written YYYY-MM-DD; null for text that is not a day, or a day after it.
+export function ageInYears(dateOfBirth: string, today: Date): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) return null
+  const born = parseDay(dateOfBirth)
+  if (dayText(born) !== dateOfBirth || dateOfBirth > dayText(today)) return null
+  const hasHadBirthday =
+    today.getMonth() > born.getMonth() || (today.getMonth() === born.getMonth() && today.getDate() >= born.getDate())
+  return today.getFullYear() - born.getFullYear() - (hasHadBirthday ? 0 : 1)
+}
+
+// characteristicText is a fact about the person as it is told to somebody: a
+// date of birth as the date with the age in years after it (1990-04-12 (36
+// years)), a sex, blood type, wheelchair use or move mode in its words
+// (Female, O+, Yes), a skin type as the Roman numeral the phone sends, and
+// "Not set" for what Health has not been given. Anything else, and a date of
+// birth that is not a date or is in the future, is written as it was sent.
+// dayWords writes the date in the language of the reader.
+export function characteristicText(
+  t: Translate,
+  healthType: string,
+  characteristicValue: string,
+  today: Date,
+  dayWords: (day: Date) => string = dayText,
+): string {
+  if (characteristicValue === 'notSet') return t('health.notSet')
+  switch (healthType) {
+    case 'dateOfBirth': {
+      const age = ageInYears(characteristicValue, today)
+      if (age === null) return characteristicValue
+      const ageWords = age === 1 ? t('health.ageOne') : t('health.age', { count: age })
+      return `${dayWords(parseDay(characteristicValue))} (${ageWords})`
+    }
+    case 'biologicalSex':
+      return characteristicValue in SEX_KEYS ? t(SEX_KEYS[characteristicValue]) : characteristicValue
+    case 'bloodType': {
+      const match = BLOOD_TYPE.exec(characteristicValue)
+      return match ? `${match[1].toUpperCase()}${match[2] === 'Positive' ? '+' : '-'}` : characteristicValue
+    }
+    case 'wheelchairUse':
+      return characteristicValue in WHEELCHAIR_KEYS ? t(WHEELCHAIR_KEYS[characteristicValue]) : characteristicValue
+    case 'activityMoveMode':
+      if (characteristicValue === 'activeEnergy') return typeName(t, 'activeEnergyBurned', '')
+      if (characteristicValue === 'appleMoveTime') return typeName(t, 'appleMoveTime', '')
+      return characteristicValue
+    default:
+      return characteristicValue
   }
 }
 
@@ -506,7 +638,7 @@ export function numbersOf(
   const numbers: HealthNumbers = { average: null, averagePerDay: null, total: null, lowest: null, highest: null }
   if (filled.length === 0) return numbers
   if (summaryKind === 'average') {
-    const readings = filled.reduce((count, period) => count + period.sampleCount, 0)
+    const readings = filled.reduce((readingCount, period) => readingCount + period.sampleCount, 0)
     const weighted = filled.reduce((sum, period) => sum + (period.averageValue ?? 0) * period.sampleCount, 0)
     numbers.average = readings > 0 ? weighted / readings : null
     const lows = filled.flatMap((period) => (period.minimumValue === null ? [] : [period.minimumValue]))
@@ -517,7 +649,10 @@ export function numbersOf(
   }
   numbers.total = filled.reduce((sum, period) => sum + (summaryValue(period, summaryKind) ?? 0), 0)
   if (summaryKind !== 'count') {
-    const dayCount = filled.reduce((count, period) => count + summarizedDayCount(period, fromDay, toDay), 0)
+    const dayCount = filled.reduce(
+      (summarizedDays, period) => summarizedDays + summarizedDayCount(period, fromDay, toDay),
+      0,
+    )
     numbers.averagePerDay = dayCount > 0 ? numbers.total / dayCount : null
   }
   return numbers

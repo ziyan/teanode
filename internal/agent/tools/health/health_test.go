@@ -59,7 +59,15 @@ type fakeRun struct {
 	operations tools.Operations
 	shownPath  string
 	canShow    bool
+
+	// isUnattended makes it a run nobody is watching, and isHeadless a
+	// headless one (a dream, a schedule, a goal).
+	isUnattended bool
+	isHeadless   bool
 }
+
+func (self *fakeRun) Headless() bool { return self.isHeadless }
+func (self *fakeRun) CanAsk() bool   { return !self.isUnattended && !self.isHeadless }
 
 func (self *fakeRun) CanShowPages() bool   { return self.canShow }
 func (self *fakeRun) ShowPage(path string) { self.shownPath = path }
@@ -214,7 +222,7 @@ func TestTypesListsWhatThePersonHas(t *testing.T) {
 	if steps["health_type"] != "stepCount" || steps["unit_text"] != "steps" || steps["sample_count"] != float64(4000) || steps["latest_day"] != "2026-10-17: total 9,120 steps; 40 readings" {
 		t.Errorf("steps: %v", steps)
 	}
-	if sleep["latest_day"] != "2026-10-17: asleep 7h 15m; 12 readings" {
+	if sleep["latest_day"] != "2026-10-17: asleep 7 h 15 min; 12 readings" {
 		t.Errorf("sleep: %v", sleep)
 	}
 	// What the Health app keeps once is here too, a date of birth as an age.
@@ -224,7 +232,7 @@ func TestTypesListsWhatThePersonHas(t *testing.T) {
 	}
 	age, bloodType := characteristics[0].(map[string]any), characteristics[1].(map[string]any)
 	if age["characteristic_name"] != "Age" || age["characteristic_text"] != "40 years" || bloodType["characteristic_text"] != "O-" ||
-		characteristics[2].(map[string]any)["characteristic_text"] != "female" {
+		characteristics[2].(map[string]any)["characteristic_text"] != "Female" {
 		t.Errorf("the characteristics: %v", characteristics)
 	}
 	if strings.Contains(string(mustMarshal(t, answer)), born) {
@@ -300,7 +308,7 @@ func TestSummaryLinesForAveragesAndSleep(t *testing.T) {
 		{"startDay":"2026-10-17","endDay":"2026-10-17","durationSeconds":26100,"sampleCount":14,
 		 "categorySeconds":{"asleepCore":12600,"asleepDeep":3000,"asleepREM":5400,"awake":600,"inBed":27000}}]}`
 	answer, _ = actJSON(t, runOf(operations), "summary", `{"health_type":"sleepAnalysis"}`)
-	want := "2026-10-17: asleep 7h 15m (Deep 50m, Core 3h 30m, REM 1h 30m, Awake 10m, In bed 7h 30m); 14 readings"
+	want := "2026-10-17: asleep 7 h 15 min (Deep 50 min, Core 3 h 30 min, REM 1 h 30 min, Awake 10 min, In bed 7 h 30 min); 14 readings"
 	if line := answer["periods"].([]any)[0]; line != want {
 		t.Errorf("sleep: %v", line)
 	}
@@ -309,7 +317,7 @@ func TestSummaryLinesForAveragesAndSleep(t *testing.T) {
 	operations.answers["ReadHealthSummary"] = `{"healthType":"sleepAnalysis","summaryKind":"duration","periods":[
 		{"startDay":"2026-10-17","endDay":"2026-10-17","durationSeconds":3600,"sampleCount":1,"categorySeconds":"{\"asleepCore\":3600}"}]}`
 	answer, _ = actJSON(t, runOf(operations), "summary", `{"health_type":"sleepAnalysis"}`)
-	if line := answer["periods"].([]any)[0]; line != "2026-10-17: asleep 1h (Core 1h); 1 reading" {
+	if line := answer["periods"].([]any)[0]; line != "2026-10-17: asleep 1 h (Core 1 h); 1 reading" {
 		t.Errorf("stages as a string: %v", line)
 	}
 
@@ -319,7 +327,7 @@ func TestSummaryLinesForAveragesAndSleep(t *testing.T) {
 		{"startDay":"2026-10-12","endDay":"2026-10-18","durationSeconds":151200,"sampleCount":80,"dayCount":6,
 		 "categorySeconds":{"asleep":151200,"asleepCore":75600,"asleepDeep":21600,"asleepREM":32400,"awake":7200}}]}`
 	answer, _ = actJSON(t, runOf(operations), "summary", `{"health_type":"sleepAnalysis","period":"week"}`)
-	want = "2026-10-12 to 2026-10-18: asleep average 7h a night over 6 nights, total 42h (a night: Deep 1h, Core 3h 30m, REM 1h 30m, Awake 20m); 80 readings"
+	want = "2026-10-12 to 2026-10-18: asleep average 7 h a night over 6 nights, total 42 h (a night: Deep 1 h, Core 3 h 30 min, REM 1 h 30 min, Awake 20 min); 80 readings"
 	if line := answer["periods"].([]any)[0]; line != want {
 		t.Errorf("a week of sleep:\n got %v\nwant %v", line, want)
 	}
@@ -419,7 +427,7 @@ func TestSamplesPageAndSayWhenThereIsMore(t *testing.T) {
 	if first["reading_text"] != "72 bpm" || first["started_local"] != "2026-10-17 07:12" || first["source_name"] != "Watch" {
 		t.Errorf("a reading: %v", first)
 	}
-	if second["workout_activity_type"] != "running" || second["duration_text"] != "35m" || second["has_route"] != true ||
+	if second["workout_activity_type"] != "running" || second["duration_text"] != "35 min" || second["has_route"] != true ||
 		second["sample_metadata"].(map[string]any)["totalDistanceMeters"] != float64(5200) {
 		t.Errorf("a workout: %v", second)
 	}
@@ -432,7 +440,7 @@ func TestSamplesPageAndSayWhenThereIsMore(t *testing.T) {
 	}
 
 	operations.answers["ListHealthSamples"] = heartRateSamples("null")
-	answer, _ = actJSON(t, runOf(operations), "samples", `{"health_type":"heartRate","limit":50,"offset":20}`)
+	answer, _ = actJSON(t, runOf(operations), "samples", `{"health_type":"heartRate","limit_count":50,"offset":20}`)
 	if answer["has_more"] != false || answer["next_offset"] != nil {
 		t.Errorf("the last page: %v", answer)
 	}
@@ -453,13 +461,73 @@ func TestSamplesNameSleepStagesAndHoldTheLimits(t *testing.T) {
 	}}
 	answer, _ := actJSON(t, runOf(operations), "samples", `{"health_type":"sleepAnalysis"}`)
 	rows := answer["samples"].([]any)
-	if rows[0].(map[string]any)["reading_text"] != "Core" || rows[0].(map[string]any)["duration_text"] != "3h 30m" || rows[1].(map[string]any)["reading_text"] != "Deep" {
+	if rows[0].(map[string]any)["reading_text"] != "Core" || rows[0].(map[string]any)["duration_text"] != "3 h 30 min" || rows[1].(map[string]any)["reading_text"] != "Deep" {
 		t.Errorf("the stages: %v", rows)
 	}
-	for _, arguments := range []string{`{"health_type":"heartRate","limit":0}`, `{"health_type":"heartRate","limit":500}`, `{}`} {
+	for _, arguments := range []string{`{"health_type":"heartRate","limit_count":0}`, `{"health_type":"heartRate","limit_count":500}`, `{}`} {
 		if _, _, err := act(t, runOf(operations), "samples", arguments); err == nil {
 			t.Errorf("%s should be refused", arguments)
 		}
+	}
+}
+
+// A run nobody is watching never reads Health: a dream, a background subagent
+// and a headless run (a schedule, a goal, a research run) get one plain
+// sentence, ask nothing of the server, and the person's own conversation still
+// reads. The docs say Health never goes into memory and the dreams do not read
+// it; this is what makes that true.
+func TestARunNobodyIsWatchingNeverReadsHealth(t *testing.T) {
+	for name, run := range map[string]*fakeRun{
+		"a background run": {isUnattended: true},
+		"a headless run":   {isHeadless: true},
+		"both":             {isUnattended: true, isHeadless: true},
+	} {
+		operations := &routing{answers: map[string]string{
+			"ReadHealthSettings": switchOn,
+			"ListHealthTypes":    `[{"healthType":"stepCount"}]`,
+			"ReadHealthSummary":  stepsSummary(),
+			"ListHealthSamples":  `{"samples":[],"totalCount":0}`,
+		}}
+		run.operations = operations
+		for action, arguments := range map[string]string{"types": `{}`, "summary": `{"health_type":"stepCount"}`, "samples": `{"health_type":"stepCount"}`} {
+			content, result, err := act(t, run, action, arguments)
+			if err != nil {
+				t.Fatalf("%s %s should answer, not fail: %s", name, action, err)
+			}
+			if !strings.Contains(content, "not in a dream, a background task or any other run nobody is watching") || strings.Contains(content, "\n") ||
+				strings.HasPrefix(strings.TrimSpace(content), "{") || result.Untrusted {
+				t.Errorf("%s %s: %q", name, action, content)
+			}
+		}
+		for _, operation := range []string{"ReadHealthSettings", "ListHealthTypes", "ReadHealthSummary", "ListHealthSamples"} {
+			if _, isCalled := operations.called(operation); isCalled {
+				t.Errorf("%s: %s was sent in a run nobody is watching", name, operation)
+			}
+		}
+	}
+
+	operations := &routing{answers: map[string]string{"ReadHealthSettings": switchOn, "ReadHealthSummary": stepsSummary()}}
+	content, _, err := act(t, runOf(operations), "summary", `{"health_type":"stepCount"}`)
+	if err != nil || strings.Contains(content, "nobody is watching") || !strings.Contains(content, "8,412 steps") {
+		t.Errorf("the person's own conversation reads: %q %v", content, err)
+	}
+}
+
+// A range over the clock change in spring is counted in calendar days.
+func TestPeriodCountCountsCalendarDays(t *testing.T) {
+	zone, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("no time zone database")
+	}
+	first := time.Date(2026, 3, 1, 0, 0, 0, 0, zone)
+	last := time.Date(2026, 3, 31, 0, 0, 0, 0, zone)
+	if got := periodCount(first, last, "day"); got != 31 {
+		t.Errorf("March has 31 days, counted %d", got)
+	}
+	first = time.Date(2025, 3, 1, 0, 0, 0, 0, zone)
+	last = time.Date(2026, 4, 5, 0, 0, 0, 0, zone)
+	if got := periodCount(first, last, "day"); got != 401 {
+		t.Errorf("401 calendar days over a clock change, counted %d", got)
 	}
 }
 
@@ -481,13 +549,15 @@ func TestTheToolIsReadOnlyAndSaysWhatToPrefer(t *testing.T) {
 	}
 	for _, words := range []string{"Prefer summary", "samples only for particular readings", "workout", "sleepAnalysis", "Deep, Core, REM, Awake", "unit",
 		"never what other people share with them", "not with their agents' model providers",
+		"What others share with the person is on the Health page under Showing, on the dashboard and in the iPhone app; you cannot read it",
+		"never in a dream, a background task or any other run nobody is watching",
 		"the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings"} {
 		if !strings.Contains(tool.Description, words) {
 			t.Errorf("the description should say %q", words)
 		}
 	}
 	properties, _ := tool.Parameters["properties"].(map[string]any)
-	for _, name := range []string{"action", "health_type", "from", "to", "period", "limit", "offset"} {
+	for _, name := range []string{"action", "health_type", "from", "to", "period", "limit_count", "offset"} {
 		if properties[name] == nil {
 			t.Errorf("no parameter %s", name)
 		}

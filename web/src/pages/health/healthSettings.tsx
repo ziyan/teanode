@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { graphql } from '../../api'
@@ -12,9 +12,9 @@ import { SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
-import { en } from '../../i18n/en'
-import { Key, useTranslation } from '../../i18n/i18n'
+import { useTranslation } from '../../i18n/i18n'
 import {
+  CHARACTERISTIC_TYPES,
   ERASE_HEALTH_DATA,
   HEALTH_CATEGORIES,
   HealthCharacteristic,
@@ -24,7 +24,8 @@ import {
   SET_HEALTH_SHARE,
   UPDATE_HEALTH_SETTINGS,
   categoryName,
-  parseDay,
+  characteristicText,
+  typeName,
   wholeNumberText,
 } from './healthApi'
 
@@ -124,15 +125,12 @@ function AgentSwitch({
   }
 
   return (
-    <SettingsSection
-      card
-      title={t('health.settingsAgentTitle')}
-      description={`${t('health.agentOwnOnly')} ${
-        settings?.modelProviderName
+    <SettingsSection card title={t('health.settingsAgentTitle')} description={t('health.agentOwnOnly')}>
+      <p className="muted">
+        {settings?.modelProviderName
           ? t('health.agentProvider', { provider: settings.modelProviderName })
-          : t('health.agentProviderUnknown')
-      }`}
-    >
+          : t('health.agentProviderUnknown')}
+      </p>
       <label className="checkbox is-plain">
         <input
           type="checkbox"
@@ -147,45 +145,30 @@ function AgentSwitch({
   )
 }
 
-// The facts about the person that the Health app holds and the iPhone copies,
-// in the order they are listed. The others it sends (skin type, wheelchair
-// use, how Activity is measured) are kept and not shown.
-const SHOWN_CHARACTERISTICS = ['dateOfBirth', 'biologicalSex', 'bloodType'] as const
-
-// bloodTypeText writes a blood type as it is on a card: "aPositive" is "A+".
-function bloodTypeText(characteristicValue: string): string {
-  const match = /^(a|b|ab|o)(Positive|Negative)$/.exec(characteristicValue)
-  return match ? `${match[1].toUpperCase()}${match[2] === 'Positive' ? '+' : '-'}` : characteristicValue
-}
-
 // AboutYou shows the facts Health holds about the person, read only: they are
-// set in the Health app, and changed there.
+// set in the Health app, and changed there. The words are the table at the top
+// of internal/health/words.go.
 function AboutYou({ characteristics }: { characteristics: HealthCharacteristic[] }) {
   const { t, language } = useTranslation()
   const dayFormat = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: 'long' }), [language])
-  const shown = SHOWN_CHARACTERISTICS.flatMap((healthType) => {
-    const found = characteristics.find((each) => each.healthType === healthType)
+  const shown = CHARACTERISTIC_TYPES.flatMap((healthType) => {
+    const found = characteristics.find((characteristic) => characteristic.healthType === healthType)
     if (!found) return []
-    const characteristicValue = found.characteristicValue
-    const sexKey = `health.sex.${characteristicValue}`
-    const text =
-      healthType === 'dateOfBirth'
-        ? dayFormat.format(parseDay(characteristicValue))
-        : healthType === 'biologicalSex'
-          ? sexKey in en
-            ? t(sexKey as Key)
-            : characteristicValue
-          : bloodTypeText(characteristicValue)
-    return [{ healthType, text }]
+    return [
+      {
+        healthType,
+        text: characteristicText(t, healthType, found.characteristicValue, new Date(), (day) => dayFormat.format(day)),
+      },
+    ]
   })
   if (shown.length === 0) return null
   return (
     <SettingsSection card title={t('health.aboutTitle')} description={t('health.aboutIntro')}>
       <dl className="health-numbers">
-        {shown.map((each) => (
-          <div key={each.healthType}>
-            <dt className="muted">{t(`health.characteristic.${each.healthType}` as Key)}</dt>
-            <dd>{each.text}</dd>
+        {shown.map((fact) => (
+          <div key={fact.healthType}>
+            <dt className="muted">{typeName(t, fact.healthType, '')}</dt>
+            <dd>{fact.text}</dd>
           </div>
         ))}
       </dl>
@@ -225,7 +208,14 @@ function HealthSharing({
   // share on the server until one is ticked, and the row stays while the last
   // one is unticked, so it can be ticked again.
   const [addedGrantees, setAddedGrantees] = useState<Grantee[]>([])
-  const [isBusy, setIsBusy] = useState(false)
+  // What was ticked and is not saved yet, by grantee: the boxes show it at
+  // once, and go back to what the server has if the save fails. Changes are
+  // saved one after the other, in the order they were made.
+  const [pendingCategories, setPendingCategories] = useState<Record<string, string[]>>({})
+  const [savingCount, setSavingCount] = useState(0)
+  const saveQueue = useRef<Promise<void>>(Promise.resolve())
+  const latestChangeNumbers = useRef<Record<string, number>>({})
+  const isBusy = savingCount > 0
 
   const people = choices.data?.people ?? []
   const circles = choices.data?.circles ?? []
@@ -237,11 +227,13 @@ function HealthSharing({
   )
   const granteeRows = [
     ...sharedGrantees,
-    ...addedGrantees.filter((grantee) => !sharedGrantees.some((each) => granteeKey(each) === granteeKey(grantee))),
+    ...addedGrantees.filter((grantee) => !sharedGrantees.some((shared) => granteeKey(shared) === granteeKey(grantee))),
   ]
   const categoriesOf = (grantee: Grantee): string[] =>
+    pendingCategories[granteeKey(grantee)] ??
     ownShares.find((share) => (grantee.kind === 'circle' ? share.granteeCircleId : share.granteeUserId) === grantee.id)
-      ?.healthCategories ?? []
+      ?.healthCategories ??
+    []
   const nameOf = (grantee: Grantee): string => {
     if (grantee.kind === 'circle') {
       const circleName =
@@ -250,14 +242,14 @@ function HealthSharing({
         ''
       return t('health.shareEveryoneIn', { name: circleName })
     }
-    const person = people.find((each) => each.userId === grantee.id)
+    const person = people.find((candidate) => candidate.userId === grantee.id)
     return person
       ? personName(person)
       : (ownShares.find((share) => share.granteeUserId === grantee.id)?.granteeUsername ?? '')
   }
 
-  async function save(grantee: Grantee, healthCategories: string[]) {
-    setIsBusy(true)
+  async function save(grantee: Grantee, healthCategories: string[], changeNumber: number) {
+    setSavingCount((previous) => previous + 1)
     try {
       await graphql(SET_HEALTH_SHARE, {
         granteeUserId: grantee.kind === 'user' ? grantee.id : null,
@@ -273,19 +265,40 @@ function HealthSharing({
     } catch (failure) {
       toast.failure(failure, t('health.shareFailed'))
     } finally {
-      setIsBusy(false)
+      setSavingCount((previous) => previous - 1)
+      // The last change made is the one the boxes were showing; once it is
+      // saved (or has failed) they show what the server has.
+      if (latestChangeNumbers.current[granteeKey(grantee)] === changeNumber) {
+        setPendingCategories((previous) => {
+          const remaining = { ...previous }
+          delete remaining[granteeKey(grantee)]
+          return remaining
+        })
+      }
     }
+  }
+
+  // change shows the new categories at once and saves them after the changes
+  // made before it.
+  function change(grantee: Grantee, healthCategories: string[]) {
+    const key = granteeKey(grantee)
+    const changeNumber = (latestChangeNumbers.current[key] ?? 0) + 1
+    latestChangeNumbers.current[key] = changeNumber
+    setPendingCategories((previous) => ({ ...previous, [key]: healthCategories }))
+    saveQueue.current = saveQueue.current.then(() => save(grantee, healthCategories, changeNumber))
   }
 
   function toggle(grantee: Grantee, healthCategory: string, isChecked: boolean) {
     const current = categoriesOf(grantee)
     setAddedGrantees((previous) =>
-      previous.some((each) => granteeKey(each) === granteeKey(grantee)) ? previous : [...previous, grantee],
+      previous.some((added) => granteeKey(added) === granteeKey(grantee)) ? previous : [...previous, grantee],
     )
-    const next = isChecked
-      ? HEALTH_CATEGORIES.filter((each) => each === healthCategory || current.includes(each))
-      : current.filter((each) => each !== healthCategory)
-    void save(grantee, next)
+    change(
+      grantee,
+      isChecked
+        ? HEALTH_CATEGORIES.filter((category) => category === healthCategory || current.includes(category))
+        : current.filter((category) => category !== healthCategory),
+    )
   }
 
   function add() {
@@ -317,26 +330,27 @@ function HealthSharing({
       <ErrorMessage error={choices.error} />
       {granteeRows.length === 0 && <p className="muted">{t('health.shareNobody')}</p>}
       {granteeRows.map((grantee) => {
-        const name = nameOf(grantee)
+        const granteeName = nameOf(grantee)
         const categories = categoriesOf(grantee)
         return (
           <fieldset key={granteeKey(grantee)} className="health-share">
             <legend className="health-share-name">
-              <strong>{name}</strong>
+              <strong>{granteeName}</strong>
             </legend>
             <div className="health-share-head">
               <span className="muted" id={`health-share-${granteeKey(grantee)}`}>
-                {t('health.shareCategories', { name })}
+                {t('health.shareCategories', { name: granteeName })}
               </span>
-              <Tooltip label={t('health.shareStop', { name })}>
+              <Tooltip label={t('health.shareStop', { name: granteeName })}>
                 <button
                   type="button"
                   className="icon-action danger"
-                  aria-label={t('health.shareStop', { name })}
-                  disabled={isBusy}
+                  aria-label={t('health.shareStop', { name: granteeName })}
                   onClick={() => {
-                    setAddedGrantees((previous) => previous.filter((each) => granteeKey(each) !== granteeKey(grantee)))
-                    if (categories.length > 0) void save(grantee, [])
+                    setAddedGrantees((previous) =>
+                      previous.filter((added) => granteeKey(added) !== granteeKey(grantee)),
+                    )
+                    if (categories.length > 0) change(grantee, [])
                   }}
                 >
                   <CloseIcon size={16} />
@@ -353,12 +367,7 @@ function HealthSharing({
                   <input
                     type="checkbox"
                     checked={categories.includes(healthCategory)}
-                    aria-disabled={isBusy}
-                    onChange={(event) => {
-                      // Not disabled while a save runs: a disabled box loses
-                      // keyboard focus, and the next one is a Tab away.
-                      if (!isBusy) toggle(grantee, healthCategory, event.target.checked)
-                    }}
+                    onChange={(event) => toggle(grantee, healthCategory, event.target.checked)}
                   />
                   <span>{categoryName(t, healthCategory)}</span>
                 </label>

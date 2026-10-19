@@ -17,7 +17,7 @@ func TestHealthWords(t *testing.T) {
 			t.Errorf("HealthNumberWords(%v) = %q, want %q", value, got, want)
 		}
 	}
-	for seconds, want := range map[float64]string{0: "0s", 45: "45s", 59.6: "1m", 60: "1m", 2100: "35m", 3600: "1h", 25920: "7h 12m", 26100: "7h 15m", 89: "1m"} {
+	for seconds, want := range map[float64]string{0: "0 s", 45: "45 s", 59.6: "1 min", 60: "1 min", 2100: "35 min", 3600: "1 h", 25920: "7 h 12 min", 26100: "7 h 15 min", 89: "1 min"} {
 		if got := HealthDurationWords(seconds); got != want {
 			t.Errorf("HealthDurationWords(%v) = %q, want %q", seconds, got, want)
 		}
@@ -38,7 +38,7 @@ func TestHealthCategorySecondsAcceptsAnObjectOrAString(t *testing.T) {
 		if err := json.Unmarshal([]byte(encoded), &period); err != nil {
 			t.Fatalf("%s: %s", encoded, err)
 		}
-		if got := period.CategorySeconds.Words(); got != "Core 3h 30m, Awake 10m" {
+		if got := period.CategorySeconds.Words(); got != "Core 3 h 30 min, Awake 10 min" {
 			t.Errorf("%s: %q", encoded, got)
 		}
 	}
@@ -104,7 +104,7 @@ func TestHealthPeriodWordsTellAWeekAsTheAverageDay(t *testing.T) {
 		StartDay: "2026-03-02", EndDay: "2026-03-08", DurationSeconds: number(5 * 7 * 3600), SampleCount: 40, DayCount: 5,
 		CategorySeconds: HealthCategorySeconds{"asleep": 5 * 7 * 3600, "asleepDeep": 5 * 3600, "asleepCore": 15 * 3600, "asleepREM": 7.5 * 3600, "awake": 5 * 1200},
 	}
-	want := "2026-03-02 to 2026-03-08: asleep average 7h a night over 5 nights, total 35h (a night: Deep 1h, Core 3h, REM 1h 30m, Awake 20m); 40 readings"
+	want := "2026-03-02 to 2026-03-08: asleep average 7 h a night over 5 nights, total 35 h (a night: Deep 1 h, Core 3 h, REM 1 h 30 min, Awake 20 min); 40 readings"
 	if got := HealthPeriodWords(sleep, "sleepAnalysis", ""); got != want {
 		t.Errorf("a week of sleep:\n got %q\nwant %q", got, want)
 	}
@@ -112,7 +112,7 @@ func TestHealthPeriodWordsTellAWeekAsTheAverageDay(t *testing.T) {
 		StartDay: "2026-03-02", EndDay: "2026-03-02", DurationSeconds: number(27000), SampleCount: 6, DayCount: 1,
 		CategorySeconds: HealthCategorySeconds{"asleep": 25200, "asleepCore": 12600, "awake": 600},
 	}
-	want = "2026-03-02: asleep 7h (Core 3h 30m, Awake 10m); 6 readings"
+	want = "2026-03-02: asleep 7 h (Core 3 h 30 min, Awake 10 min); 6 readings"
 	if got := HealthPeriodWords(night, "sleepAnalysis", ""); got != want {
 		t.Errorf("a night of sleep:\n got %q\nwant %q", got, want)
 	}

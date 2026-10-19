@@ -25,6 +25,13 @@ struct HealthKitPage: Sendable {
     var itemCount = 0
 }
 
+/// HealthObserverStart is the sample types the observers just made watch. It
+/// is `@unchecked Sendable` because the types are only handed back to the
+/// reader, which uses them to ask for background deliveries.
+struct HealthObserverStart: @unchecked Sendable {
+    let sampleTypes: [HKSampleType]
+}
+
 /// HealthKitObserverHandler is told that HealthKit has something new of a
 /// type, and must call the second argument once it has dealt with it: iOS
 /// keeps the app running until then.
@@ -525,18 +532,31 @@ final class HealthKitReader: @unchecked Sendable {
     ) async throws -> [HealthDaySummaryInput] {
         guard let quantityType = Self.sampleType(for: typeInfo) as? HKQuantityType, let readUnit = Self.healthKitUnit(for: typeInfo.quantityUnit)
         else { return [] }
+        // What HealthKit allows depends on how the type adds up, and an option
+        // it rejects stops the app with an exception that cannot be caught: a
+        // sum for what accumulates, an average with the least and the most
+        // for what is read as a level. A type read as an equivalent continuous
+        // level (the sound levels) has no average of its own to ask for, so
+        // its day is worked out from its readings, and no statistics query is
+        // made for it at all.
+        let options: HKStatisticsOptions
+        switch quantityType.aggregationStyle {
+        case .cumulative:
+            options = [.cumulativeSum]
+        case .discreteEquivalentContinuousLevel:
+            return try await readingSummaries(
+                typeInfo: typeInfo, quantityType: quantityType, readUnit: readUnit, days: days, interval: interval, calendar: calendar)
+        default:
+            options = [.discreteAverage, .discreteMin, .discreteMax]
+        }
         // No option: a reading that begins before midnight and ends after it
         // is split between the days, as the Health app counts it.
         let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: [])
-        // What HealthKit allows depends on how the type adds up: asking for
-        // an average of steps stops the app with an exception.
-        let isCumulative = quantityType.aggregationStyle == .cumulative
-        let options: HKStatisticsOptions = isCumulative ? [.cumulativeSum] : [.discreteAverage, .discreteMin, .discreteMax]
         let statisticsDescriptor = HKStatisticsCollectionQueryDescriptor(
             predicate: HKSamplePredicate<HKQuantitySample>.quantitySample(type: quantityType, predicate: predicate), options: options,
             anchorDate: interval.start, intervalComponents: DateComponents(day: 1))
         let collection = try await statisticsDescriptor.result(for: store)
-        let sampleCounts = try await sampleCountsByDay(quantityType: quantityType, interval: interval, calendar: calendar)
+        let sampleCounts = try await sampleCountsByDay(quantityType: quantityType, days: days, calendar: calendar)
 
         var summaries: [HealthDaySummaryInput] = []
         for statistics in collection.statistics() {
@@ -553,18 +573,49 @@ final class HealthKitReader: @unchecked Sendable {
         return summaries
     }
 
-    /// How many readings begin on each day of the interval. HealthKit does
-    /// not count the readings behind a statistic, and the server weights a
-    /// month's average by them. They are counted and let go, a few days at a
-    /// time.
-    private func sampleCountsByDay(quantityType: HKQuantityType, interval: DateInterval, calendar: Calendar) async throws -> [String: Int] {
+    /// The days of a quantity worked out from its readings, one day at a time
+    /// so that no more than a day of them is held.
+    private func readingSummaries(
+        typeInfo: HealthTypeInfo, quantityType: HKQuantityType, readUnit: HKUnit, days: [String], interval: DateInterval, calendar: Calendar
+    ) async throws -> [HealthDaySummaryInput] {
+        var summaries: [HealthDaySummaryInput] = []
+        for day in days {
+            guard let dayInterval = HealthDays.interval(ofDay: day, calendar: calendar), interval.intersection(with: dayInterval) != nil else {
+                continue
+            }
+            let samples = try await quantitySamples(quantityType: quantityType, interval: dayInterval)
+            let readings = samples.compactMap { sample -> HealthReading? in
+                guard let value = Self.number(sample.quantity, unit: readUnit) else { return nil }
+                return HealthReading(startedAt: sample.startDate, value: value)
+            }
+            let statisticsByDay = HealthDaySummaries.readingStatistics(readings, calendar: calendar, days: [day])
+            guard let statistics = statisticsByDay[day] else { continue }
+            summaries.append(
+                HealthDaySummaries.quantitySummary(
+                    healthType: typeInfo.healthType, summaryDay: day, statistics: statistics, quantityUnit: typeInfo.quantityUnit))
+        }
+        return summaries
+    }
+
+    /// The readings of a quantity that begin in the interval.
+    private func quantitySamples(quantityType: HKQuantityType, interval: DateInterval) async throws -> [HKQuantitySample] {
         let predicate = HKQuery.predicateForSamples(withStart: interval.start, end: interval.end, options: .strictStartDate)
         let sampleDescriptor = HKSampleQueryDescriptor<HKQuantitySample>(
             predicates: [HKSamplePredicate<HKQuantitySample>.quantitySample(type: quantityType, predicate: predicate)], sortDescriptors: [],
             limit: nil)
-        let samples = try await sampleDescriptor.result(for: store)
+        return try await sampleDescriptor.result(for: store)
+    }
+
+    /// How many readings begin on each of the days. HealthKit does not count
+    /// the readings behind a statistic, and the server weights a month's
+    /// average by them. They are counted one day at a time and let go, so no
+    /// more than a day of them is held.
+    private func sampleCountsByDay(quantityType: HKQuantityType, days: [String], calendar: Calendar) async throws -> [String: Int] {
         var sampleCounts: [String: Int] = [:]
-        for sample in samples { sampleCounts[HealthDays.text(of: sample.startDate, calendar: calendar), default: 0] += 1 }
+        for day in days {
+            guard let dayInterval = HealthDays.interval(ofDay: day, calendar: calendar) else { continue }
+            sampleCounts[day] = try await quantitySamples(quantityType: quantityType, interval: dayInterval).count
+        }
         return sampleCounts
     }
 
@@ -637,7 +688,7 @@ final class HealthKitReader: @unchecked Sendable {
             characteristics.append(HealthCharacteristicInput(healthType: healthType, characteristicValue: value))
         }
         if let components = try? store.dateOfBirthComponents(), let year = components.year, let month = components.month, let day = components.day {
-            add("dateOfBirth", String(format: "%04d-%02d-%02d", year, month, day))
+            add("dateOfBirth", String(format: "%04ld-%02ld-%02ld", year, month, day))
         }
         if let sex = try? store.biologicalSex().biologicalSex {
             switch sex {
@@ -684,20 +735,18 @@ final class HealthKitReader: @unchecked Sendable {
 
     // MARK: Waking the app
 
-    /// Starts one observer for each readable type, and asks iOS to wake the
-    /// app about each at most hourly. Called as the app launches, whether the
-    /// person opened it or iOS relaunched it for new data: iOS delivers the
-    /// event to an observer that exists then, so every observer is made and
-    /// started before anything is awaited, and the background deliveries are
-    /// asked for afterwards, all at once.
-    func startObserving(handler: @escaping HealthKitObserverHandler) async {
+    /// Starts one observer for each readable type. Called as the app launches,
+    /// whether the person opened it or iOS relaunched it for new data: iOS
+    /// delivers the event to an observer that exists then, so every observer is
+    /// made and started in this step, before anything is awaited. Returns the
+    /// sample types it made an observer for, for `enableBackgroundDelivery`.
+    func startObservers(handler: @escaping HealthKitObserverHandler) -> HealthObserverStart {
         var targets: [(healthType: String, sampleType: HKSampleType)] = []
         for typeInfo in HealthTypes.all where typeInfo.valueKind != .characteristic {
             if let sampleType = Self.sampleType(for: typeInfo) { targets.append((typeInfo.healthType, sampleType)) }
         }
         targets.append((Self.workoutRouteHealthType, HKSeriesType.workoutRoute()))
-        let started = startObservers(for: targets, handler: handler)
-        await enableBackgroundDelivery(for: started)
+        return HealthObserverStart(sampleTypes: startObservers(for: targets, handler: handler))
     }
 
     /// Makes and executes an observer for each target that has none. The
@@ -732,8 +781,8 @@ final class HealthKitReader: @unchecked Sendable {
     /// Asks iOS to wake the app about each type at most hourly. The person
     /// may not have allowed a type, which fails for that type and is no
     /// reason to stop the others.
-    private func enableBackgroundDelivery(for sampleTypes: [HKSampleType]) async {
-        nonisolated(unsafe) let types = sampleTypes
+    func enableBackgroundDelivery(_ started: HealthObserverStart) async {
+        nonisolated(unsafe) let types = started.sampleTypes
         await withTaskGroup(of: Void.self) { group in
             for index in types.indices {
                 group.addTask {

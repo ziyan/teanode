@@ -164,11 +164,16 @@ public struct HealthDaySummaryInput: Codable, Hashable, Sendable {
     /// Seconds by sleep stage (and "asleep" for all the asleep stages
     /// together); for workouts, "energyKilocalories" and "distanceMeters".
     public let categorySeconds: [String: Double]
+    /// The phone's time when it worked the day out. The server keeps the
+    /// latest, and leaves out a summary worked out earlier than the one it
+    /// holds, so a late resend cannot overwrite a newer summary. Nil until
+    /// HealthSync stamps it (`workedOut(at:)`); every summary sent has one.
+    public let workedOutAt: Date?
 
     public init(
         healthType: String, summaryDay: String, quantityUnit: String = "", sumValue: Double? = nil, averageValue: Double? = nil,
         minimumValue: Double? = nil, maximumValue: Double? = nil, sampleCount: Int, durationSeconds: Double? = nil,
-        categorySeconds: [String: Double] = [:]
+        categorySeconds: [String: Double] = [:], workedOutAt: Date? = nil
     ) {
         self.healthType = healthType
         self.summaryDay = summaryDay
@@ -180,11 +185,20 @@ public struct HealthDaySummaryInput: Codable, Hashable, Sendable {
         self.sampleCount = sampleCount
         self.durationSeconds = durationSeconds
         self.categorySeconds = categorySeconds
+        self.workedOutAt = workedOutAt
+    }
+
+    /// The same summary, worked out at this time.
+    public func workedOut(at date: Date) -> HealthDaySummaryInput {
+        HealthDaySummaryInput(
+            healthType: healthType, summaryDay: summaryDay, quantityUnit: quantityUnit, sumValue: sumValue, averageValue: averageValue,
+            minimumValue: minimumValue, maximumValue: maximumValue, sampleCount: sampleCount, durationSeconds: durationSeconds,
+            categorySeconds: categorySeconds, workedOutAt: date)
     }
 
     private enum CodingKeys: String, CodingKey {
         case healthType, summaryDay, quantityUnit, sumValue, averageValue, minimumValue, maximumValue, sampleCount, durationSeconds
-        case categorySecondsJson
+        case categorySecondsJson, workedOutAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -199,6 +213,7 @@ public struct HealthDaySummaryInput: Codable, Hashable, Sendable {
         sampleCount = try container.decode(Int.self, forKey: .sampleCount)
         durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
         categorySeconds = HealthJSON.object(try container.decodeIfPresent(String.self, forKey: .categorySecondsJson), as: [String: Double].self) ?? [:]
+        workedOutAt = ServerTime.date(try container.decodeIfPresent(String.self, forKey: .workedOutAt))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -213,6 +228,7 @@ public struct HealthDaySummaryInput: Codable, Hashable, Sendable {
         try container.encode(sampleCount, forKey: .sampleCount)
         try container.encodeIfPresent(durationSeconds, forKey: .durationSeconds)
         try container.encode(HealthJSON.text(categorySeconds), forKey: .categorySecondsJson)
+        if let workedOutAt { try container.encode(CalendarDates.text(workedOutAt), forKey: .workedOutAt) }
     }
 
     /// Whether the server would take the summary: a day written as
@@ -463,6 +479,52 @@ public struct HealthBatch: Sendable, Equatable {
         }
     }
 
+    /// The batch without the one entry the server's reason names
+    /// ("samples[2] ...", "daySummaries[0] ..."), or nil if the reason names
+    /// none that this batch has. The server counts entries in the call it was
+    /// sent, which is this batch.
+    public func removingEntry(named reason: String) -> HealthBatch? {
+        func index(of listName: String, count: Int) -> Int? {
+            guard let opening = reason.range(of: listName + "[") else { return nil }
+            let digits = reason[opening.upperBound...].prefix(while: { $0.isNumber })
+            guard !digits.isEmpty, reason[opening.upperBound...].dropFirst(digits.count).first == "]", let position = Int(digits), position < count else {
+                return nil
+            }
+            return position
+        }
+        func without<Element>(_ elements: [Element], _ position: Int) -> [Element] {
+            var kept = elements
+            kept.remove(at: position)
+            return kept
+        }
+        if let position = index(of: "samples", count: samples.count) {
+            return HealthBatch(
+                samples: without(samples, position), deletedHealthSampleIds: deletedHealthSampleIds, daySummaries: daySummaries, routes: routes,
+                characteristics: characteristics)
+        }
+        if let position = index(of: "deletedHealthSampleIds", count: deletedHealthSampleIds.count) {
+            return HealthBatch(
+                samples: samples, deletedHealthSampleIds: without(deletedHealthSampleIds, position), daySummaries: daySummaries, routes: routes,
+                characteristics: characteristics)
+        }
+        if let position = index(of: "daySummaries", count: daySummaries.count) {
+            return HealthBatch(
+                samples: samples, deletedHealthSampleIds: deletedHealthSampleIds, daySummaries: without(daySummaries, position), routes: routes,
+                characteristics: characteristics)
+        }
+        if let position = index(of: "routes", count: routes.count) {
+            return HealthBatch(
+                samples: samples, deletedHealthSampleIds: deletedHealthSampleIds, daySummaries: daySummaries, routes: without(routes, position),
+                characteristics: characteristics)
+        }
+        if let position = index(of: "characteristics", count: characteristics.count) {
+            return HealthBatch(
+                samples: samples, deletedHealthSampleIds: deletedHealthSampleIds, daySummaries: daySummaries, routes: routes,
+                characteristics: without(characteristics, position))
+        }
+        return nil
+    }
+
     /// The GraphQL variables of the call (the phone's identifier is added by
     /// Connection.reportHealth).
     public var variables: [String: JSONValue] {
@@ -503,8 +565,9 @@ public struct ReportHealthResult: Codable, Hashable, Sendable {
     /// workout yet; they are sent again after the workout.
     public let unmatchedRouteHealthSampleIds: [String]
     /// When the person last erased their Health data on the server, RFC 3339;
-    /// nil if never. When this is later than when Health was turned on in the
-    /// app, the app stops (HealthSyncState.applyServerErase).
+    /// nil if never. When this is later than the erase time the phone sent
+    /// with the call, the server stored nothing and the app stops
+    /// (HealthSyncState.applyServerErase).
     public let healthErasedAt: String?
 
     public var healthErasedDate: Date? { ServerTime.date(healthErasedAt) }
@@ -534,12 +597,7 @@ public struct ReportHealthResult: Codable, Hashable, Sendable {
     /// The answers of two calls as one: the counts added, the deleted samples
     /// joined, and the later erase time.
     public func merged(with other: ReportHealthResult) -> ReportHealthResult {
-        let later: String?
-        switch (healthErasedDate, other.healthErasedDate) {
-        case (let mine?, let theirs?): later = theirs > mine ? other.healthErasedAt : healthErasedAt
-        case (nil, _?): later = other.healthErasedAt
-        default: later = healthErasedAt
-        }
+        let later = ServerTime.isLater(other.healthErasedAt, than: healthErasedAt) ? other.healthErasedAt : healthErasedAt
         return ReportHealthResult(
             newSampleCount: newSampleCount + other.newSampleCount, deletedSampleCount: deletedSampleCount + other.deletedSampleCount,
             updatedDayCount: updatedDayCount + other.updatedDayCount, deletedSamples: deletedSamples + other.deletedSamples,
@@ -562,8 +620,9 @@ public struct HealthSendOutcome: Equatable, Sendable {
 
 /// HealthBatchSender sends a batch the way the location recorder does.
 public enum HealthBatchSender {
-    /// Sends a batch. If the server calls it invalid without saying which
-    /// entry is wrong, it is sent again in two smaller batches, down to the
+    /// Sends a batch. If the server calls it invalid and names the entry
+    /// ("samples[2] ..."), that entry is dropped and the rest sent again. If
+    /// it names none, the batch is sent again in two smaller batches, down to the
     /// single entry the server refuses on its own, which is dropped: one bad
     /// entry must not take the rest sent beside it. Any other failure is
     /// thrown at once, and the caller keeps the whole batch, since the server
@@ -575,6 +634,18 @@ public enum HealthBatchSender {
             return HealthSendOutcome(result: try await send(batch), droppedEntryCount: 0, droppedReasons: [])
         } catch {
             guard case .batchInvalid(let reason) = HealthReportFailure.classify(error) else { throw error }
+            // A fault of the call and not of an entry (the erase time it
+            // carries): halving the batch cannot mend it, and would only drop
+            // every entry one by one. The caller keeps the batch.
+            if reason.contains("healthErasedAt") { throw error }
+            // The server names the entry it refuses: drop exactly that one
+            // and send the rest, rather than halving down to it.
+            if let rest = batch.removingEntry(named: reason) {
+                guard !rest.isEmpty else { return HealthSendOutcome(result: .nothing, droppedEntryCount: 1, droppedReasons: [reason]) }
+                let remainder = try await sendSplittingInvalid(rest, using: send)
+                return HealthSendOutcome(
+                    result: remainder.result, droppedEntryCount: remainder.droppedEntryCount + 1, droppedReasons: [reason] + remainder.droppedReasons)
+            }
             guard let halves = batch.split() else {
                 return HealthSendOutcome(result: .nothing, droppedEntryCount: batch.entryCount, droppedReasons: [reason])
             }
@@ -938,8 +1009,8 @@ extension Documents {
         """
 
     public static let reportHealth = """
-        mutation ($agentPhoneId: String, $healthTurnedOnAt: DateTime, $samples: [HealthSampleInput!]!, $deletedHealthSampleIds: [String!]!, $daySummaries: [HealthDaySummaryInput!]!, $routes: [HealthRouteInput!]!, $characteristics: [HealthCharacteristicInput!]!) {
-          ReportHealth(agentPhoneId: $agentPhoneId, healthTurnedOnAt: $healthTurnedOnAt, samples: $samples, deletedHealthSampleIds: $deletedHealthSampleIds, daySummaries: $daySummaries, routes: $routes, characteristics: $characteristics) {
+        mutation ($agentPhoneId: String, $healthErasedAt: DateTime, $samples: [HealthSampleInput!]!, $deletedHealthSampleIds: [String!]!, $daySummaries: [HealthDaySummaryInput!]!, $routes: [HealthRouteInput!]!, $characteristics: [HealthCharacteristicInput!]!) {
+          ReportHealth(agentPhoneId: $agentPhoneId, healthErasedAt: $healthErasedAt, samples: $samples, deletedHealthSampleIds: $deletedHealthSampleIds, daySummaries: $daySummaries, routes: $routes, characteristics: $characteristics) {
             newSampleCount deletedSampleCount updatedDayCount deletedSamples { healthType startedAt endedAt } unmatchedRouteHealthSampleIds healthErasedAt
           }
         }
@@ -996,18 +1067,19 @@ extension Documents {
 extension Connection {
     /// Hands the server a batch. Safe to send twice: the server knows a sample
     /// by HealthKit's identifier and replaces a day's summary. With every call
-    /// goes when Health was turned on in the app: a person who erased all of
-    /// their Health after that is not undone by a batch still on its way, so
-    /// the server stores nothing from a phone that turned Health on before the
-    /// erase (or that does not say), and answers with the time of the erase.
-    public func reportHealth(_ batch: HealthBatch, agentPhoneId: String? = nil, healthTurnedOnAt: Date?) async throws -> ReportHealthResult {
+    /// goes the last erase of all the person's Health that the phone knows of
+    /// (`healthErasedAt`, as the server wrote it, nil if it knows of none): a
+    /// person who erased everything after that is not undone by a batch still
+    /// on its way, so the server stores nothing from a phone that has not
+    /// heard of its latest erase, and answers with the time of that erase.
+    public func reportHealth(_ batch: HealthBatch, agentPhoneId: String? = nil, healthErasedAt: String?) async throws -> ReportHealthResult {
         struct Answer: Decodable, Sendable { let ReportHealth: ReportHealthResult }
         var variables = batch.variables
         if let agentPhoneId { variables["agentPhoneId"] = .string(agentPhoneId) }
-        if let healthTurnedOnAt {
-            variables["healthTurnedOnAt"] = .string(CalendarDates.text(healthTurnedOnAt))
+        if let healthErasedAt {
+            variables["healthErasedAt"] = .string(healthErasedAt)
         } else {
-            variables["healthTurnedOnAt"] = .null
+            variables["healthErasedAt"] = .null
         }
         return try await execute(Documents.reportHealth, variables: variables, as: Answer.self).ReportHealth
     }

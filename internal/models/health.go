@@ -43,10 +43,6 @@ type HealthSample struct {
 	// a State of Mind entry, and the metadata keys HealthKit gave the reading.
 	SampleMetadataJSON string `json:"sampleMetadataJson"`
 
-	// AgentPhoneID is the install that reported it, empty once that phone was
-	// removed.
-	AgentPhoneID string `json:"agentPhoneId,omitempty"`
-
 	ReceivedAt time.Time `json:"receivedAt"`
 
 	// HasRoute is filled in by the listing of readings: whether a route was
@@ -89,13 +85,19 @@ type HealthDaySummary struct {
 	// words, such as the stages of a night's sleep.
 	CategorySecondsJSON string `json:"categorySecondsJson"`
 
+	// WorkedOutAt is when the phone worked the day out, zero when it did not
+	// say. A day sent again with an earlier time than the stored one is left
+	// out.
+	WorkedOutAt time.Time `json:"workedOutAt"`
+
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // HealthPeriodSummary is the days of one period added up. A sum is the days'
 // sums added, an average the days' averages weighted by how many readings each
-// had (a day with none counts as one), a minimum the lowest of the days' minimums, a maximum the highest of the
-// maximums, and the durations and the seconds of each category added.
+// had (a day with none counts as one), a minimum the lowest of the days'
+// minimums, a maximum the highest of the maximums, and the durations and the
+// seconds of each category added.
 type HealthPeriodSummary struct {
 	// StartDay and EndDay are the first and last day of the period, written
 	// YYYY-MM-DD, whether or not the days asked for cover all of it.
@@ -235,3 +237,8 @@ type HealthShare struct {
 // is kept, which is how long a phone may take to learn that its deletion went
 // through.
 const HealthDeletedSampleDays = 30
+
+// HealthDeletedSampleForgetMost is how many rows of deleted readings older
+// than that one call to forget them deletes: every report and every erase
+// makes the call, so a table that grows slower than that is emptied.
+const HealthDeletedSampleForgetMost = 2000

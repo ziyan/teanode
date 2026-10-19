@@ -39,7 +39,7 @@ public enum HealthCategory: String, CaseIterable, Codable, Hashable, Sendable {
         case .sleep: "Sleep"
         case .symptoms: "Symptoms"
         case .vitals: "Vitals"
-        case .other: "Other Data"
+        case .other: "Other"
         }
     }
 }
@@ -141,27 +141,41 @@ public enum HealthTypes {
     public static func info(for healthType: String) -> HealthTypeInfo? { byHealthType[healthType] }
 
     /// A type's name in English: the table's, or for one it does not have,
-    /// the identifier read as words ("someNewType" is "Some New Type").
+    /// the identifier read as words ("someNewType" is "Some new type").
     public static func typeName(for healthType: String) -> String { byHealthType[healthType]?.typeName ?? words(from: healthType) }
 
     public static func types(in healthCategory: HealthCategory) -> [HealthTypeInfo] { all.filter { $0.healthCategory == healthCategory } }
 
     public static func types(of valueKind: HealthValueKind) -> [HealthTypeInfo] { all.filter { $0.valueKind == valueKind } }
 
-    /// The identifier read as English words: a space before each capital that
-    /// begins a word, runs of capitals kept together ("SDNN").
+    /// The identifier read as English words in sentence case, as the server
+    /// writes it (internal/health/words.go): a capital letter begins a word
+    /// unless it continues a run of capitals, and a word is lowercase unless it
+    /// is the first or a run of capitals ("heartRateVariabilitySDNN" is "Heart
+    /// rate variability SDNN").
     static func words(from identifier: String) -> String {
         let characters = Array(identifier)
-        var result = ""
+        var wordList: [String] = []
+        var word = ""
         for (index, character) in characters.enumerated() {
             if index > 0, character.isUppercase {
                 let previous = characters[index - 1]
                 let next = index + 1 < characters.count ? characters[index + 1] : nil
-                if previous.isLowercase || previous.isNumber || (previous.isUppercase && (next?.isLowercase ?? false)) { result.append(" ") }
+                if previous.isLowercase || previous.isNumber || (previous.isUppercase && (next?.isLowercase ?? false)) {
+                    wordList.append(word)
+                    word = ""
+                }
             }
-            result.append(index == 0 ? Character(character.uppercased()) : character)
+            word.append(character)
         }
-        return result
+        wordList.append(word)
+        let sentence = wordList.enumerated().map { (index, each) -> String in
+            let isAcronym = each.count > 1 && each == each.uppercased()
+            if isAcronym { return each }
+            if index == 0 { return each.prefix(1).uppercased() + String(each.dropFirst()) }
+            return each.lowercased()
+        }
+        return sentence.joined(separator: " ")
     }
 
     // MARK: The table
@@ -197,131 +211,131 @@ public enum HealthTypes {
 
     private static let activityTypes: [HealthTypeInfo] = [
         quantity("stepCount", .activity, "count", .sum, "Steps"),
-        quantity("distanceWalkingRunning", .activity, "m", .sum, "Walking + Running Distance"),
-        quantity("distanceCycling", .activity, "m", .sum, "Cycling Distance"),
-        quantity("distanceWheelchair", .activity, "m", .sum, "Wheelchair Distance"),
-        quantity("distanceSwimming", .activity, "m", .sum, "Swimming Distance"),
-        quantity("distanceDownhillSnowSports", .activity, "m", .sum, "Downhill Snow Sports Distance"),
-        quantity("distanceCrossCountrySkiing", .activity, "m", .sum, "Cross-Country Skiing Distance"),
-        quantity("distancePaddleSports", .activity, "m", .sum, "Paddle Sports Distance"),
-        quantity("distanceRowing", .activity, "m", .sum, "Rowing Distance"),
-        quantity("distanceSkatingSports", .activity, "m", .sum, "Skating Sports Distance"),
-        quantity("basalEnergyBurned", .activity, "kcal", .sum, "Resting Energy"),
-        quantity("activeEnergyBurned", .activity, "kcal", .sum, "Active Energy"),
-        quantity("flightsClimbed", .activity, "count", .sum, "Flights Climbed"),
+        quantity("distanceWalkingRunning", .activity, "m", .sum, "Walking + running distance"),
+        quantity("distanceCycling", .activity, "m", .sum, "Cycling distance"),
+        quantity("distanceWheelchair", .activity, "m", .sum, "Wheelchair distance"),
+        quantity("distanceSwimming", .activity, "m", .sum, "Swimming distance"),
+        quantity("distanceDownhillSnowSports", .activity, "m", .sum, "Downhill snow sports distance"),
+        quantity("distanceCrossCountrySkiing", .activity, "m", .sum, "Cross-country skiing distance"),
+        quantity("distancePaddleSports", .activity, "m", .sum, "Paddle sports distance"),
+        quantity("distanceRowing", .activity, "m", .sum, "Rowing distance"),
+        quantity("distanceSkatingSports", .activity, "m", .sum, "Skating sports distance"),
+        quantity("basalEnergyBurned", .activity, "kcal", .sum, "Resting energy"),
+        quantity("activeEnergyBurned", .activity, "kcal", .sum, "Active energy"),
+        quantity("flightsClimbed", .activity, "count", .sum, "Flights climbed"),
         quantity("nikeFuel", .activity, "count", .sum, "NikeFuel"),
-        quantity("appleExerciseTime", .activity, "min", .sum, "Exercise Minutes"),
-        quantity("appleMoveTime", .activity, "min", .sum, "Move Minutes"),
-        quantity("appleStandTime", .activity, "min", .sum, "Stand Minutes"),
-        quantity("pushCount", .activity, "count", .sum, "Wheelchair Pushes"),
-        quantity("swimmingStrokeCount", .activity, "count", .sum, "Swimming Strokes"),
-        quantity("cyclingSpeed", .activity, "m/s", .average, "Cycling Speed"),
-        quantity("cyclingPower", .activity, "W", .average, "Cycling Power"),
-        quantity("cyclingCadence", .activity, "count/min", .average, "Cycling Cadence"),
-        quantity("cyclingFunctionalThresholdPower", .activity, "W", .average, "Cycling Functional Threshold Power"),
-        quantity("runningSpeed", .activity, "m/s", .average, "Running Speed"),
-        quantity("runningPower", .activity, "W", .average, "Running Power"),
-        quantity("runningStrideLength", .activity, "m", .average, "Running Stride Length"),
-        quantity("runningVerticalOscillation", .activity, "cm", .average, "Running Vertical Oscillation"),
-        quantity("runningGroundContactTime", .activity, "ms", .average, "Running Ground Contact Time"),
-        quantity("crossCountrySkiingSpeed", .activity, "m/s", .average, "Cross-Country Skiing Speed"),
-        quantity("paddleSportsSpeed", .activity, "m/s", .average, "Paddle Sports Speed"),
-        quantity("rowingSpeed", .activity, "m/s", .average, "Rowing Speed"),
-        quantity("physicalEffort", .activity, "kcal/(kg*hr)", .average, "Physical Effort"),
-        quantity("underwaterDepth", .activity, "m", .average, "Underwater Depth"),
-        quantity("waterTemperature", .activity, "degC", .average, "Water Temperature"),
-        category("appleStandHour", .activity, .count, "Stand Hours"),
+        quantity("appleExerciseTime", .activity, "min", .sum, "Exercise minutes"),
+        quantity("appleMoveTime", .activity, "min", .sum, "Move minutes"),
+        quantity("appleStandTime", .activity, "min", .sum, "Stand minutes"),
+        quantity("pushCount", .activity, "count", .sum, "Wheelchair pushes"),
+        quantity("swimmingStrokeCount", .activity, "count", .sum, "Swimming strokes"),
+        quantity("cyclingSpeed", .activity, "m/s", .average, "Cycling speed"),
+        quantity("cyclingPower", .activity, "W", .average, "Cycling power"),
+        quantity("cyclingCadence", .activity, "count/min", .average, "Cycling cadence"),
+        quantity("cyclingFunctionalThresholdPower", .activity, "W", .average, "Cycling functional threshold power"),
+        quantity("runningSpeed", .activity, "m/s", .average, "Running speed"),
+        quantity("runningPower", .activity, "W", .average, "Running power"),
+        quantity("runningStrideLength", .activity, "m", .average, "Running stride length"),
+        quantity("runningVerticalOscillation", .activity, "cm", .average, "Running vertical oscillation"),
+        quantity("runningGroundContactTime", .activity, "ms", .average, "Running ground contact time"),
+        quantity("crossCountrySkiingSpeed", .activity, "m/s", .average, "Cross-country skiing speed"),
+        quantity("paddleSportsSpeed", .activity, "m/s", .average, "Paddle sports speed"),
+        quantity("rowingSpeed", .activity, "m/s", .average, "Rowing speed"),
+        quantity("physicalEffort", .activity, "kcal/(kg*hr)", .average, "Physical effort"),
+        quantity("underwaterDepth", .activity, "m", .average, "Underwater depth"),
+        quantity("waterTemperature", .activity, "degC", .average, "Water temperature"),
+        category("appleStandHour", .activity, .count, "Stand hours"),
         other("workout", .activity, .workout, .duration, "Workouts"),
     ]
 
     private static let bodyMeasurementTypes: [HealthTypeInfo] = [
         quantity("bodyMass", .bodyMeasurements, "kg", .average, "Weight"),
-        quantity("bodyMassIndex", .bodyMeasurements, "count", .average, "Body Mass Index"),
-        quantity("bodyFatPercentage", .bodyMeasurements, "%", .average, "Body Fat Percentage"),
-        quantity("leanBodyMass", .bodyMeasurements, "kg", .average, "Lean Body Mass"),
+        quantity("bodyMassIndex", .bodyMeasurements, "count", .average, "Body mass index"),
+        quantity("bodyFatPercentage", .bodyMeasurements, "%", .average, "Body fat percentage"),
+        quantity("leanBodyMass", .bodyMeasurements, "kg", .average, "Lean body mass"),
         quantity("height", .bodyMeasurements, "m", .average, "Height"),
-        quantity("waistCircumference", .bodyMeasurements, "m", .average, "Waist Circumference"),
+        quantity("waistCircumference", .bodyMeasurements, "m", .average, "Waist circumference"),
     ]
 
     private static let cycleTrackingTypes: [HealthTypeInfo] = [
-        quantity("basalBodyTemperature", .cycleTracking, "degC", .average, "Basal Body Temperature"),
-        category("menstrualFlow", .cycleTracking, .count, "Menstrual Flow"),
+        quantity("basalBodyTemperature", .cycleTracking, "degC", .average, "Basal body temperature"),
+        category("menstrualFlow", .cycleTracking, .count, "Menstrual flow"),
         category("intermenstrualBleeding", .cycleTracking, .count, "Spotting"),
-        category("infrequentMenstrualCycles", .cycleTracking, .count, "Infrequent Periods"),
-        category("irregularMenstrualCycles", .cycleTracking, .count, "Irregular Periods"),
-        category("persistentIntermenstrualBleeding", .cycleTracking, .count, "Persistent Spotting"),
-        category("prolongedMenstrualPeriods", .cycleTracking, .count, "Prolonged Periods"),
-        category("cervicalMucusQuality", .cycleTracking, .count, "Cervical Mucus Quality"),
-        category("ovulationTestResult", .cycleTracking, .count, "Ovulation Test Result"),
-        category("pregnancyTestResult", .cycleTracking, .count, "Pregnancy Test Result"),
-        category("progesteroneTestResult", .cycleTracking, .count, "Progesterone Test Result"),
+        category("infrequentMenstrualCycles", .cycleTracking, .count, "Infrequent periods"),
+        category("irregularMenstrualCycles", .cycleTracking, .count, "Irregular periods"),
+        category("persistentIntermenstrualBleeding", .cycleTracking, .count, "Persistent spotting"),
+        category("prolongedMenstrualPeriods", .cycleTracking, .count, "Prolonged periods"),
+        category("cervicalMucusQuality", .cycleTracking, .count, "Cervical mucus quality"),
+        category("ovulationTestResult", .cycleTracking, .count, "Ovulation test result"),
+        category("pregnancyTestResult", .cycleTracking, .count, "Pregnancy test result"),
+        category("progesteroneTestResult", .cycleTracking, .count, "Progesterone test result"),
         category("pregnancy", .cycleTracking, .duration, "Pregnancy"),
         category("lactation", .cycleTracking, .duration, "Lactation"),
         category("contraceptive", .cycleTracking, .duration, "Contraceptive"),
-        category("sexualActivity", .cycleTracking, .count, "Sexual Activity"),
-        category("bleedingDuringPregnancy", .cycleTracking, .count, "Bleeding During Pregnancy"),
-        category("bleedingAfterPregnancy", .cycleTracking, .count, "Bleeding After Pregnancy"),
+        category("sexualActivity", .cycleTracking, .count, "Sexual activity"),
+        category("bleedingDuringPregnancy", .cycleTracking, .count, "Bleeding during pregnancy"),
+        category("bleedingAfterPregnancy", .cycleTracking, .count, "Bleeding after pregnancy"),
     ]
 
     private static let hearingTypes: [HealthTypeInfo] = [
-        quantity("environmentalAudioExposure", .hearing, "dBASPL", .average, "Environmental Sound Levels"),
-        quantity("headphoneAudioExposure", .hearing, "dBASPL", .average, "Headphone Audio Levels"),
-        quantity("environmentalSoundReduction", .hearing, "dBASPL", .average, "Environmental Sound Reduction"),
-        category("environmentalAudioExposureEvent", .hearing, .count, "Environmental Sound Level Notifications"),
-        category("headphoneAudioExposureEvent", .hearing, .count, "Headphone Audio Level Notifications"),
+        quantity("environmentalAudioExposure", .hearing, "dBASPL", .average, "Environmental sound levels"),
+        quantity("headphoneAudioExposure", .hearing, "dBASPL", .average, "Headphone audio levels"),
+        quantity("environmentalSoundReduction", .hearing, "dBASPL", .average, "Environmental sound reduction"),
+        category("environmentalAudioExposureEvent", .hearing, .count, "Environmental sound level notifications"),
+        category("headphoneAudioExposureEvent", .hearing, .count, "Headphone audio level notifications"),
         other("audiogram", .hearing, .audiogram, .count, "Audiograms"),
     ]
 
     private static let heartTypes: [HealthTypeInfo] = [
-        quantity("heartRate", .heart, "count/min", .average, "Heart Rate"),
-        quantity("restingHeartRate", .heart, "count/min", .average, "Resting Heart Rate"),
-        quantity("walkingHeartRateAverage", .heart, "count/min", .average, "Walking Heart Rate Average"),
-        quantity("heartRateVariabilitySDNN", .heart, "ms", .average, "Heart Rate Variability"),
-        quantity("heartRateRecoveryOneMinute", .heart, "count/min", .average, "Cardio Recovery"),
-        quantity("vo2Max", .heart, "ml/(kg*min)", .average, "Cardio Fitness"),
-        quantity("atrialFibrillationBurden", .heart, "%", .average, "Atrial Fibrillation Burden"),
-        quantity("peripheralPerfusionIndex", .heart, "%", .average, "Peripheral Perfusion Index"),
-        category("highHeartRateEvent", .heart, .count, "High Heart Rate Notifications"),
-        category("lowHeartRateEvent", .heart, .count, "Low Heart Rate Notifications"),
-        category("irregularHeartRhythmEvent", .heart, .count, "Irregular Rhythm Notifications"),
-        category("lowCardioFitnessEvent", .heart, .count, "Low Cardio Fitness Notifications"),
+        quantity("heartRate", .heart, "count/min", .average, "Heart rate"),
+        quantity("restingHeartRate", .heart, "count/min", .average, "Resting heart rate"),
+        quantity("walkingHeartRateAverage", .heart, "count/min", .average, "Walking heart rate average"),
+        quantity("heartRateVariabilitySDNN", .heart, "ms", .average, "Heart rate variability"),
+        quantity("heartRateRecoveryOneMinute", .heart, "count/min", .average, "Cardio recovery"),
+        quantity("vo2Max", .heart, "ml/(kg*min)", .average, "Cardio fitness"),
+        quantity("atrialFibrillationBurden", .heart, "%", .average, "Atrial fibrillation burden"),
+        quantity("peripheralPerfusionIndex", .heart, "%", .average, "Peripheral perfusion index"),
+        category("highHeartRateEvent", .heart, .count, "High heart rate notifications"),
+        category("lowHeartRateEvent", .heart, .count, "Low heart rate notifications"),
+        category("irregularHeartRhythmEvent", .heart, .count, "Irregular rhythm notifications"),
+        category("lowCardioFitnessEvent", .heart, .count, "Low cardio fitness notifications"),
         other("electrocardiogram", .heart, .electrocardiogram, .count, "Electrocardiograms"),
     ]
 
     private static let mentalWellbeingTypes: [HealthTypeInfo] = [
-        category("mindfulSession", .mentalWellbeing, .duration, "Mindful Minutes"),
-        other("stateOfMind", .mentalWellbeing, .stateOfMind, .count, "State of Mind"),
+        category("mindfulSession", .mentalWellbeing, .duration, "Mindful minutes"),
+        other("stateOfMind", .mentalWellbeing, .stateOfMind, .count, "State of mind"),
     ]
 
     private static let mobilityTypes: [HealthTypeInfo] = [
-        quantity("walkingSpeed", .mobility, "m/s", .average, "Walking Speed"),
-        quantity("walkingStepLength", .mobility, "m", .average, "Walking Step Length"),
-        quantity("walkingAsymmetryPercentage", .mobility, "%", .average, "Walking Asymmetry"),
-        quantity("walkingDoubleSupportPercentage", .mobility, "%", .average, "Walking Double Support"),
-        quantity("appleWalkingSteadiness", .mobility, "%", .average, "Walking Steadiness"),
-        quantity("sixMinuteWalkTestDistance", .mobility, "m", .average, "Six-Minute Walk Distance"),
-        quantity("stairAscentSpeed", .mobility, "m/s", .average, "Stair Ascent Speed"),
-        quantity("stairDescentSpeed", .mobility, "m/s", .average, "Stair Descent Speed"),
+        quantity("walkingSpeed", .mobility, "m/s", .average, "Walking speed"),
+        quantity("walkingStepLength", .mobility, "m", .average, "Walking step length"),
+        quantity("walkingAsymmetryPercentage", .mobility, "%", .average, "Walking asymmetry"),
+        quantity("walkingDoubleSupportPercentage", .mobility, "%", .average, "Walking double support"),
+        quantity("appleWalkingSteadiness", .mobility, "%", .average, "Walking steadiness"),
+        quantity("sixMinuteWalkTestDistance", .mobility, "m", .average, "Six-minute walk distance"),
+        quantity("stairAscentSpeed", .mobility, "m/s", .average, "Stair ascent speed"),
+        quantity("stairDescentSpeed", .mobility, "m/s", .average, "Stair descent speed"),
         quantity("numberOfTimesFallen", .mobility, "count", .sum, "Falls"),
-        category("appleWalkingSteadinessEvent", .mobility, .count, "Walking Steadiness Notifications"),
+        category("appleWalkingSteadinessEvent", .mobility, .count, "Walking steadiness notifications"),
     ]
 
     private static let nutritionTypes: [HealthTypeInfo] = [
-        quantity("dietaryEnergyConsumed", .nutrition, "kcal", .sum, "Dietary Energy"),
+        quantity("dietaryEnergyConsumed", .nutrition, "kcal", .sum, "Dietary energy"),
         quantity("dietaryCarbohydrates", .nutrition, "g", .sum, "Carbohydrates"),
         quantity("dietaryFiber", .nutrition, "g", .sum, "Fiber"),
         quantity("dietarySugar", .nutrition, "g", .sum, "Sugar"),
-        quantity("dietaryFatTotal", .nutrition, "g", .sum, "Total Fat"),
-        quantity("dietaryFatMonounsaturated", .nutrition, "g", .sum, "Monounsaturated Fat"),
-        quantity("dietaryFatPolyunsaturated", .nutrition, "g", .sum, "Polyunsaturated Fat"),
-        quantity("dietaryFatSaturated", .nutrition, "g", .sum, "Saturated Fat"),
+        quantity("dietaryFatTotal", .nutrition, "g", .sum, "Total fat"),
+        quantity("dietaryFatMonounsaturated", .nutrition, "g", .sum, "Monounsaturated fat"),
+        quantity("dietaryFatPolyunsaturated", .nutrition, "g", .sum, "Polyunsaturated fat"),
+        quantity("dietaryFatSaturated", .nutrition, "g", .sum, "Saturated fat"),
         quantity("dietaryCholesterol", .nutrition, "mg", .sum, "Cholesterol"),
         quantity("dietaryProtein", .nutrition, "g", .sum, "Protein"),
         quantity("dietaryVitaminA", .nutrition, "mcg", .sum, "Vitamin A"),
         quantity("dietaryThiamin", .nutrition, "mg", .sum, "Thiamin (B1)"),
         quantity("dietaryRiboflavin", .nutrition, "mg", .sum, "Riboflavin (B2)"),
         quantity("dietaryNiacin", .nutrition, "mg", .sum, "Niacin (B3)"),
-        quantity("dietaryPantothenicAcid", .nutrition, "mg", .sum, "Pantothenic Acid (B5)"),
+        quantity("dietaryPantothenicAcid", .nutrition, "mg", .sum, "Pantothenic acid (B5)"),
         quantity("dietaryVitaminB6", .nutrition, "mg", .sum, "Vitamin B6"),
         quantity("dietaryBiotin", .nutrition, "mcg", .sum, "Biotin (B7)"),
         quantity("dietaryVitaminB12", .nutrition, "mcg", .sum, "Vitamin B12"),
@@ -349,85 +363,85 @@ public enum HealthTypes {
     ]
 
     private static let respiratoryTypes: [HealthTypeInfo] = [
-        quantity("respiratoryRate", .respiratory, "count/min", .average, "Respiratory Rate"),
-        quantity("oxygenSaturation", .respiratory, "%", .average, "Blood Oxygen"),
-        quantity("forcedVitalCapacity", .respiratory, "L", .average, "Forced Vital Capacity"),
-        quantity("forcedExpiratoryVolume1", .respiratory, "L", .average, "Forced Expiratory Volume"),
-        quantity("peakExpiratoryFlowRate", .respiratory, "L/min", .average, "Peak Expiratory Flow Rate"),
-        quantity("inhalerUsage", .respiratory, "count", .sum, "Inhaler Usage"),
+        quantity("respiratoryRate", .respiratory, "count/min", .average, "Respiratory rate"),
+        quantity("oxygenSaturation", .respiratory, "%", .average, "Blood oxygen"),
+        quantity("forcedVitalCapacity", .respiratory, "L", .average, "Forced vital capacity"),
+        quantity("forcedExpiratoryVolume1", .respiratory, "L", .average, "Forced expiratory volume"),
+        quantity("peakExpiratoryFlowRate", .respiratory, "L/min", .average, "Peak expiratory flow rate"),
+        quantity("inhalerUsage", .respiratory, "count", .sum, "Inhaler usage"),
     ]
 
     private static let sleepTypes: [HealthTypeInfo] = [
         category("sleepAnalysis", .sleep, .duration, "Sleep"),
-        category("sleepApneaEvent", .sleep, .count, "Sleep Apnea Notifications"),
-        quantity("appleSleepingBreathingDisturbances", .sleep, "count", .average, "Breathing Disturbances"),
+        category("sleepApneaEvent", .sleep, .count, "Sleep apnea notifications"),
+        quantity("appleSleepingBreathingDisturbances", .sleep, "count", .average, "Breathing disturbances"),
     ]
 
     private static let symptomTypes: [HealthTypeInfo] = [
-        category("abdominalCramps", .symptoms, .count, "Abdominal Cramps"),
+        category("abdominalCramps", .symptoms, .count, "Abdominal cramps"),
         category("acne", .symptoms, .count, "Acne"),
-        category("appetiteChanges", .symptoms, .count, "Appetite Changes"),
-        category("bladderIncontinence", .symptoms, .count, "Bladder Incontinence"),
+        category("appetiteChanges", .symptoms, .count, "Appetite changes"),
+        category("bladderIncontinence", .symptoms, .count, "Bladder incontinence"),
         category("bloating", .symptoms, .count, "Bloating"),
-        category("breastPain", .symptoms, .count, "Breast Pain"),
-        category("chestTightnessOrPain", .symptoms, .count, "Chest Tightness or Pain"),
+        category("breastPain", .symptoms, .count, "Breast pain"),
+        category("chestTightnessOrPain", .symptoms, .count, "Chest tightness or pain"),
         category("chills", .symptoms, .count, "Chills"),
         category("constipation", .symptoms, .count, "Constipation"),
         category("coughing", .symptoms, .count, "Coughing"),
         category("diarrhea", .symptoms, .count, "Diarrhea"),
         category("dizziness", .symptoms, .count, "Dizziness"),
-        category("drySkin", .symptoms, .count, "Dry Skin"),
+        category("drySkin", .symptoms, .count, "Dry skin"),
         category("fainting", .symptoms, .count, "Fainting"),
         category("fatigue", .symptoms, .count, "Fatigue"),
         category("fever", .symptoms, .count, "Fever"),
-        category("generalizedBodyAche", .symptoms, .count, "Body and Muscle Ache"),
-        category("hairLoss", .symptoms, .count, "Hair Loss"),
+        category("generalizedBodyAche", .symptoms, .count, "Body and muscle ache"),
+        category("hairLoss", .symptoms, .count, "Hair loss"),
         category("headache", .symptoms, .count, "Headache"),
         category("heartburn", .symptoms, .count, "Heartburn"),
-        category("hotFlashes", .symptoms, .count, "Hot Flashes"),
-        category("lossOfSmell", .symptoms, .count, "Loss of Smell"),
-        category("lossOfTaste", .symptoms, .count, "Loss of Taste"),
-        category("lowerBackPain", .symptoms, .count, "Lower Back Pain"),
-        category("memoryLapse", .symptoms, .count, "Memory Lapse"),
-        category("moodChanges", .symptoms, .count, "Mood Changes"),
+        category("hotFlashes", .symptoms, .count, "Hot flashes"),
+        category("lossOfSmell", .symptoms, .count, "Loss of smell"),
+        category("lossOfTaste", .symptoms, .count, "Loss of taste"),
+        category("lowerBackPain", .symptoms, .count, "Lower back pain"),
+        category("memoryLapse", .symptoms, .count, "Memory lapse"),
+        category("moodChanges", .symptoms, .count, "Mood changes"),
         category("nausea", .symptoms, .count, "Nausea"),
-        category("nightSweats", .symptoms, .count, "Night Sweats"),
-        category("pelvicPain", .symptoms, .count, "Pelvic Pain"),
-        category("rapidPoundingOrFlutteringHeartbeat", .symptoms, .count, "Rapid, Pounding, or Fluttering Heartbeat"),
-        category("runnyNose", .symptoms, .count, "Runny Nose"),
-        category("shortnessOfBreath", .symptoms, .count, "Shortness of Breath"),
-        category("sinusCongestion", .symptoms, .count, "Sinus Congestion"),
-        category("skippedHeartbeat", .symptoms, .count, "Skipped Heartbeat"),
-        category("sleepChanges", .symptoms, .count, "Sleep Changes"),
-        category("soreThroat", .symptoms, .count, "Sore Throat"),
-        category("vaginalDryness", .symptoms, .count, "Vaginal Dryness"),
+        category("nightSweats", .symptoms, .count, "Night sweats"),
+        category("pelvicPain", .symptoms, .count, "Pelvic pain"),
+        category("rapidPoundingOrFlutteringHeartbeat", .symptoms, .count, "Rapid, pounding, or fluttering heartbeat"),
+        category("runnyNose", .symptoms, .count, "Runny nose"),
+        category("shortnessOfBreath", .symptoms, .count, "Shortness of breath"),
+        category("sinusCongestion", .symptoms, .count, "Sinus congestion"),
+        category("skippedHeartbeat", .symptoms, .count, "Skipped heartbeat"),
+        category("sleepChanges", .symptoms, .count, "Sleep changes"),
+        category("soreThroat", .symptoms, .count, "Sore throat"),
+        category("vaginalDryness", .symptoms, .count, "Vaginal dryness"),
         category("vomiting", .symptoms, .count, "Vomiting"),
         category("wheezing", .symptoms, .count, "Wheezing"),
     ]
 
     private static let vitalsTypes: [HealthTypeInfo] = [
-        quantity("bloodPressureSystolic", .vitals, "mmHg", .average, "Systolic Blood Pressure"),
-        quantity("bloodPressureDiastolic", .vitals, "mmHg", .average, "Diastolic Blood Pressure"),
-        quantity("bloodGlucose", .vitals, "mg/dL", .average, "Blood Glucose"),
-        quantity("bodyTemperature", .vitals, "degC", .average, "Body Temperature"),
-        quantity("appleSleepingWristTemperature", .vitals, "degC", .average, "Sleeping Wrist Temperature"),
-        quantity("insulinDelivery", .vitals, "IU", .sum, "Insulin Delivery"),
+        quantity("bloodPressureSystolic", .vitals, "mmHg", .average, "Systolic blood pressure"),
+        quantity("bloodPressureDiastolic", .vitals, "mmHg", .average, "Diastolic blood pressure"),
+        quantity("bloodGlucose", .vitals, "mg/dL", .average, "Blood glucose"),
+        quantity("bodyTemperature", .vitals, "degC", .average, "Body temperature"),
+        quantity("appleSleepingWristTemperature", .vitals, "degC", .average, "Sleeping wrist temperature"),
+        quantity("insulinDelivery", .vitals, "IU", .sum, "Insulin delivery"),
     ]
 
     private static let otherTypes: [HealthTypeInfo] = [
-        quantity("uvExposure", .other, "count", .average, "UV Index"),
-        quantity("timeInDaylight", .other, "min", .sum, "Time in Daylight"),
-        quantity("electrodermalActivity", .other, "S", .average, "Electrodermal Activity"),
-        quantity("bloodAlcoholContent", .other, "%", .average, "Blood Alcohol Content"),
-        quantity("numberOfAlcoholicBeverages", .other, "count", .sum, "Alcoholic Beverages"),
+        quantity("uvExposure", .other, "count", .average, "UV index"),
+        quantity("timeInDaylight", .other, "min", .sum, "Time in daylight"),
+        quantity("electrodermalActivity", .other, "S", .average, "Electrodermal activity"),
+        quantity("bloodAlcoholContent", .other, "%", .average, "Blood alcohol content"),
+        quantity("numberOfAlcoholicBeverages", .other, "count", .sum, "Alcoholic beverages"),
         category("handwashingEvent", .other, .count, "Handwashing"),
         category("toothbrushingEvent", .other, .count, "Toothbrushing"),
-        other("dateOfBirth", .other, .characteristic, nil, "Date of Birth"),
-        other("biologicalSex", .other, .characteristic, nil, "Biological Sex"),
-        other("bloodType", .other, .characteristic, nil, "Blood Type"),
-        other("fitzpatrickSkinType", .other, .characteristic, nil, "Skin Type"),
-        other("wheelchairUse", .other, .characteristic, nil, "Wheelchair Use"),
-        other("activityMoveMode", .other, .characteristic, nil, "Activity Move Mode"),
+        other("dateOfBirth", .other, .characteristic, nil, "Date of birth"),
+        other("biologicalSex", .other, .characteristic, nil, "Biological sex"),
+        other("bloodType", .other, .characteristic, nil, "Blood type"),
+        other("fitzpatrickSkinType", .other, .characteristic, nil, "Skin type"),
+        other("wheelchairUse", .other, .characteristic, nil, "Wheelchair use"),
+        other("activityMoveMode", .other, .characteristic, nil, "Activity move mode"),
     ]
 }
 

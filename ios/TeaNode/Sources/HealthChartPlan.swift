@@ -86,6 +86,7 @@ struct HealthChartPlan {
 
     let shape: Shape
     let summaryKind: HealthSummaryKind
+    let healthType: String
     let quantityUnit: String
     let period: HealthPeriod
     /// Every place along the axis, in order: all the days of a day chart (a
@@ -118,13 +119,13 @@ struct HealthChartPlan {
         return (0...4).map { periodKeys[Int((Double($0) * step).rounded())] }
     }
 
-    private var includesMultipleYears: Bool {
+    private var doesSpanYears: Bool {
         guard let first = periodKeys.first, let last = periodKeys.last else { return false }
         return first.prefix(4) != last.prefix(4)
     }
 
     func axisLabel(forKey periodKey: String) -> String {
-        if period == .month { return HealthText.monthText(periodKey, includesYear: includesMultipleYears) }
+        if period == .month { return HealthText.monthText(periodKey, isYearIncluded: doesSpanYears) }
         return HealthText.shortDayText(periodKey)
     }
 
@@ -168,7 +169,7 @@ struct HealthChartPlan {
     /// The first figure is the headline; the rest are rows under the chart.
     var figureRows: [HealthFigureRow] {
         func text(_ value: Double?) -> String {
-            HealthText.amountText(value, summaryKind: summaryKind, quantityUnit: quantityUnit)
+            HealthText.amountText(value, summaryKind: summaryKind, healthType: healthType, quantityUnit: quantityUnit)
         }
         switch summaryKind {
         case .average:
@@ -180,6 +181,11 @@ struct HealthChartPlan {
         case .count:
             return [HealthFigureRow(label: HealthWords.totalTitle, valueText: text(numbers.totalValue))]
         case .sum, .duration:
+            // The nights of a chart of sleep are not added together: a total
+            // of 177 hours says nothing about any night.
+            if shape == .stages {
+                return [HealthFigureRow(label: String(localized: "Average per day"), valueText: text(numbers.averagePerDayValue))]
+            }
             return [
                 HealthFigureRow(label: String(localized: "Average per day"), valueText: text(numbers.averagePerDayValue)),
                 HealthFigureRow(label: HealthWords.totalTitle, valueText: text(numbers.totalValue)),
@@ -194,7 +200,7 @@ struct HealthChartPlan {
     static func make(summary: HealthSummaryView, type: HealthTypeView, period: HealthPeriod, fromDay: String, toDay: String) -> HealthChartPlan {
         let summaryKind = summary.summaryKindValue ?? type.summaryKindValue ?? .sum
         let sentUnit = summary.quantityUnit.isEmpty ? type.quantityUnit : summary.quantityUnit
-        let quantityUnit = HealthText.displayUnit(healthType: type.healthType, quantityUnit: sentUnit)
+        let quantityUnit = sentUnit
         let chartUnitSeconds = type.valueKindValue == .workout ? minuteSeconds : hourSeconds
         let filledPeriods = summary.periods.filter { $0.sampleCount > 0 }
         let rowsByKey = Dictionary(filledPeriods.map { (String($0.startDay.prefix(10)), $0) }, uniquingKeysWith: { first, _ in first })
@@ -207,8 +213,8 @@ struct HealthChartPlan {
         let isStaged = summaryKind == .duration && filledPeriods.contains { row in !Self.stageSeconds(of: row).isEmpty }
         let shape: Shape = isStaged ? .stages : (summaryKind == .average ? .level : .bars)
         let builder = HealthPlotBuilder(
-            summaryKind: summaryKind, quantityUnit: quantityUnit, period: period, fromDay: fromDay, toDay: toDay, shape: shape,
-            chartUnitSeconds: chartUnitSeconds)
+            summaryKind: summaryKind, healthType: type.healthType, quantityUnit: quantityUnit, period: period, fromDay: fromDay, toDay: toDay,
+            shape: shape, chartUnitSeconds: chartUnitSeconds)
         var plots: [HealthPlot] = []
         var stageSegments: [HealthStageSegment] = []
         for periodKey in periodKeys {
@@ -219,7 +225,8 @@ struct HealthChartPlan {
         let segmentStages = Set(stageSegments.map(\.stage))
         let drawnStages = (shownStages + [HealthSleepStage.inBed]).filter { segmentStages.contains($0) }
         return HealthChartPlan(
-            shape: shape, summaryKind: summaryKind, quantityUnit: quantityUnit, period: period, periodKeys: periodKeys, plots: plots,
+            shape: shape, summaryKind: summaryKind, healthType: type.healthType, quantityUnit: quantityUnit, period: period, periodKeys: periodKeys,
+            plots: plots,
             stageSegments: stageSegments,
             numbers: numbers(of: filledPeriods, summaryKind: summaryKind, fromDay: fromDay, toDay: toDay), drawnStages: drawnStages,
             chartUnitSeconds: chartUnitSeconds)
@@ -274,6 +281,7 @@ struct HealthChartPlan {
 /// HealthPlotBuilder makes the plot of one period.
 struct HealthPlotBuilder {
     let summaryKind: HealthSummaryKind
+    let healthType: String
     let quantityUnit: String
     let period: HealthPeriod
     let fromDay: String
@@ -324,7 +332,7 @@ struct HealthPlotBuilder {
             sumValue: row.sumValue, averageValue: row.averageValue, durationSeconds: row.durationSeconds, sampleCount: row.sampleCount,
             summaryKind: summaryKind)
         let value = rawValue.map { perDay(row, $0) }
-        let valueText = HealthText.amountText(value, summaryKind: summaryKind, quantityUnit: quantityUnit)
+        let valueText = HealthText.amountText(value, summaryKind: summaryKind, healthType: healthType, quantityUnit: quantityUnit)
         let figureLabel: String? = isPerDay ? String(localized: "Per day") : nil
         return HealthPlot(
             periodKey: periodKey, titleText: titleText, amountValue: chartAmount(value),
@@ -332,15 +340,15 @@ struct HealthPlotBuilder {
     }
 
     private func levelPlot(for row: HealthPeriodView, periodKey: String, titleText: String) -> HealthPlot {
-        let averageText = HealthText.amountText(row.averageValue, summaryKind: summaryKind, quantityUnit: quantityUnit)
+        let averageText = HealthText.amountText(row.averageValue, summaryKind: summaryKind, healthType: healthType, quantityUnit: quantityUnit)
         var figures = [ChartFigure(label: String(localized: "Average"), valueText: averageText)]
         if let lowest = row.minimumValue, let highest = row.maximumValue {
             figures.append(
                 ChartFigure(
-                    label: String(localized: "Lowest"), valueText: HealthText.quantityText(lowest, quantityUnit: quantityUnit)))
+                    label: String(localized: "Lowest"), valueText: HealthText.quantityText(lowest, healthType: healthType, quantityUnit: quantityUnit)))
             figures.append(
                 ChartFigure(
-                    label: String(localized: "Highest"), valueText: HealthText.quantityText(highest, quantityUnit: quantityUnit)))
+                    label: String(localized: "Highest"), valueText: HealthText.quantityText(highest, healthType: healthType, quantityUnit: quantityUnit)))
         }
         return HealthPlot(
             periodKey: periodKey, titleText: titleText, amountValue: row.averageValue, lowestValue: row.minimumValue,

@@ -73,12 +73,12 @@ struct HealthRouteScreen: View {
         }
         if let distanceMeters = request.distanceMeters {
             LabeledContent("Distance") {
-                Text(verbatim: HealthText.quantityText(distanceMeters, quantityUnit: "m")).monospacedDigit()
+                Text(verbatim: HealthText.quantityText(distanceMeters, healthType: "workout", quantityUnit: "m")).monospacedDigit()
             }
         }
         if let energyKilocalories = request.energyKilocalories {
             LabeledContent("Energy") {
-                Text(verbatim: HealthText.quantityText(energyKilocalories, quantityUnit: "kcal")).monospacedDigit()
+                Text(verbatim: HealthText.quantityText(energyKilocalories, healthType: "workout", quantityUnit: "kcal")).monospacedDigit()
             }
         }
         if !isLoading, points.count < 2 {

@@ -44,10 +44,13 @@ type HealthOperation interface {
 	DeleteHealthSamples(userId string, healthSampleIds []string) ([]*models.DeletedHealthSample, error)
 
 	// UpsertHealthDaySummaries stores the days the phone worked out, replacing
-	// a day it already had, and says how many days that was. Given a day twice
-	// the later one is kept. ErrInvalidArguments for a day that is not a date,
-	// a kind with no identifier, a negative count or metadata that is not a
-	// JSON object.
+	// a day it already had unless that one was worked out later, and says how
+	// many days it stored. A summary says when it was worked out
+	// (WorkedOutAt), the time of the call when it does not; given a day twice
+	// the one worked out later is kept, and the later in the list when they
+	// are the same. ErrInvalidArguments for a day that is not a date, a kind
+	// with no identifier, a negative count or metadata that is not a JSON
+	// object.
 	UpsertHealthDaySummaries(userId string, summaries []*models.HealthDaySummary) (int, error)
 
 	// UpsertHealthRoutes stores the paths of workouts, replacing one it
@@ -68,8 +71,18 @@ type HealthOperation interface {
 	// readings, is listed. Characteristics are not readings and are not here.
 	ListHealthTypes(userId string) ([]*models.HealthTypeSummary, error)
 
-	// ListHealthTypeNames lists the kinds the person has readings of, from the
-	// totals the database keeps.
+	// ForgetDeletedHealthSamples deletes what is kept of deleted readings
+	// (the kind and times of each) once it is older than
+	// models.HealthDeletedSampleDays, for every person, at most
+	// models.HealthDeletedSampleForgetMost rows at a time, the oldest first.
+	// Every report and every erase calls it, so that the table does not grow
+	// with the deletions of a person who never deletes again. It answers how
+	// many rows it deleted.
+	ForgetDeletedHealthSamples() (int, error)
+
+	// ListHealthTypeNames lists the kinds the person has readings or day
+	// summaries of: from the totals the database keeps, and the kinds of the
+	// day summaries, found one kind at a time in the index.
 	ListHealthTypeNames(userId string) ([]string, error)
 
 	// ListHealthPeriods adds up a kind's days from fromDay to toDay, both
@@ -130,7 +143,6 @@ type healthSampleModel struct {
 	SourceBundleID      string    `gorm:"column:source_bundle_id"`
 	DeviceName          string    `gorm:"column:device_name"`
 	SampleMetadata      []byte    `gorm:"column:sample_metadata;type:jsonb"`
-	AgentPhoneID        *string   `gorm:"column:agent_phone_id"`
 	ReceivedAt          time.Time `gorm:"column:received_at"`
 
 	// HasRoute is read by the listing, which asks for it; it is not a column.
@@ -158,9 +170,6 @@ func (self *healthSampleModel) toModel() *models.HealthSample {
 		ReceivedAt:          self.ReceivedAt.In(time.Local),
 		HasRoute:            self.HasRoute,
 	}
-	if self.AgentPhoneID != nil {
-		sample.AgentPhoneID = *self.AgentPhoneID
-	}
 	return sample
 }
 
@@ -176,6 +185,7 @@ type healthDaySummaryModel struct {
 	SampleCount     int       `gorm:"column:sample_count"`
 	DurationSeconds *float64  `gorm:"column:duration_seconds"`
 	CategorySeconds []byte    `gorm:"column:category_seconds;type:jsonb"`
+	WorkedOutAt     time.Time `gorm:"column:worked_out_at"`
 	UpdatedAt       time.Time `gorm:"column:updated_at"`
 
 	// FirstDay is read by the listing of kinds, which asks for it; it is not a
@@ -242,8 +252,8 @@ func hasNullCharacter(texts ...string) bool {
 	return false
 }
 
-func isFiniteValue(value *float64) bool {
-	return value == nil || (!math.IsNaN(*value) && !math.IsInf(*value, 0))
+func isFiniteValue(quantityValue *float64) bool {
+	return quantityValue == nil || (!math.IsNaN(*quantityValue) && !math.IsInf(*quantityValue, 0))
 }
 
 func (self *transaction) InsertHealthSamples(userId string, samples []*models.HealthSample) (int, error) {
@@ -278,7 +288,6 @@ func (self *transaction) InsertHealthSamples(userId string, samples []*models.He
 			SourceBundleID:      truncateRunes(sample.SourceBundleID, 256),
 			DeviceName:          truncateRunes(sample.DeviceName, 256),
 			SampleMetadata:      metadata,
-			AgentPhoneID:        nullableText(sample.AgentPhoneID),
 			ReceivedAt:          now,
 		}
 		if !sample.ReceivedAt.IsZero() {
@@ -289,14 +298,14 @@ func (self *transaction) InsertHealthSamples(userId string, samples []*models.He
 	if len(rows) == 0 {
 		return 0, nil
 	}
-	result := self.tx.Clauses(clause.OnConflict{
+	insertResult := self.tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "health_sample_id"}},
 		DoNothing: true,
 	}).CreateInBatches(&rows, healthBatchSize)
-	if result.Error != nil {
-		return 0, result.Error
+	if insertResult.Error != nil {
+		return 0, insertResult.Error
 	}
-	return int(result.RowsAffected), nil
+	return int(insertResult.RowsAffected), nil
 }
 
 func (self *transaction) DeleteHealthSamples(userId string, healthSampleIds []string) ([]*models.DeletedHealthSample, error) {
@@ -323,18 +332,14 @@ func (self *transaction) DeleteHealthSamples(userId string, healthSampleIds []st
 	if err := self.tx.Exec(`DELETE FROM "health_workout_route" WHERE "user_id" = ? AND "health_sample_id" IN ?`, userId, healthSampleIds).Error; err != nil {
 		return nil, err
 	}
-	// Forgotten after 30 days, by whoever deletes next.
-	if err := self.tx.Exec(`DELETE FROM "health_deleted_sample" WHERE "user_id" = ? AND "deleted_at" < ?`,
-		userId, now.AddDate(0, 0, -models.HealthDeletedSampleDays)).Error; err != nil {
-		return nil, err
-	}
 	var rows []struct {
 		HealthType string    `gorm:"column:health_type"`
 		StartedAt  time.Time `gorm:"column:started_at"`
 		EndedAt    time.Time `gorm:"column:ended_at"`
 	}
 	if err := self.tx.Raw(`SELECT "health_type", "started_at", "ended_at" FROM "health_deleted_sample"
-		WHERE "user_id" = ? AND "health_sample_id" IN ?`, userId, healthSampleIds).Scan(&rows).Error; err != nil {
+		WHERE "user_id" = ? AND "health_sample_id" IN ? AND "deleted_at" >= ?`,
+		userId, healthSampleIds, now.AddDate(0, 0, -models.HealthDeletedSampleDays)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	sort.Slice(rows, func(first, second int) bool {
@@ -351,13 +356,25 @@ func (self *transaction) DeleteHealthSamples(userId string, healthSampleIds []st
 	return deleted, nil
 }
 
+func (self *transaction) ForgetDeletedHealthSamples() (int, error) {
+	forgotten := self.tx.Exec(`DELETE FROM "health_deleted_sample" WHERE ("user_id", "health_sample_id") IN (
+			SELECT "user_id", "health_sample_id" FROM "health_deleted_sample" WHERE "deleted_at" < ?
+			ORDER BY "deleted_at" LIMIT ? FOR UPDATE SKIP LOCKED)`,
+		time.Now().AddDate(0, 0, -models.HealthDeletedSampleDays), models.HealthDeletedSampleForgetMost)
+	if forgotten.Error != nil {
+		return 0, forgotten.Error
+	}
+	return int(forgotten.RowsAffected), nil
+}
+
 func (self *transaction) UpsertHealthDaySummaries(userId string, summaries []*models.HealthDaySummary) (int, error) {
 	if userId == "" {
 		return 0, ErrInvalidArguments
 	}
 	now := time.Now()
-	// A day given twice is the later one: an upsert that meets the same row
-	// twice in one statement is refused by PostgreSQL.
+	// A day given twice is the one worked out later, or the later in the list
+	// when they were worked out at the same time: an upsert that meets the
+	// same row twice in one statement is refused by PostgreSQL.
 	rowsByKey := map[string]healthDaySummaryModel{}
 	keys := []string{}
 	for _, summary := range summaries {
@@ -382,15 +399,23 @@ func (self *transaction) UpsertHealthDaySummaries(userId string, summaries []*mo
 				return 0, fmt.Errorf("%w: the seconds of a category must be finite", ErrInvalidArguments)
 			}
 		}
+		workedOutAt := summary.WorkedOutAt
+		if workedOutAt.IsZero() {
+			workedOutAt = now
+		}
 		key := summary.HealthType + "\x00" + summary.SummaryDay
-		if _, isSeen := rowsByKey[key]; !isSeen {
+		earlier, isSeen := rowsByKey[key]
+		if !isSeen {
 			keys = append(keys, key)
+		} else if workedOutAt.Before(earlier.WorkedOutAt) {
+			continue
 		}
 		rowsByKey[key] = healthDaySummaryModel{
 			UserID: userId, HealthType: summary.HealthType, SummaryDay: summary.SummaryDay,
 			QuantityUnit: truncateRunes(summary.QuantityUnit, 32),
 			SumValue:     summary.SumValue, AverageValue: summary.AverageValue, MinimumValue: summary.MinimumValue, MaximumValue: summary.MaximumValue,
-			SampleCount: summary.SampleCount, DurationSeconds: summary.DurationSeconds, CategorySeconds: categorySeconds, UpdatedAt: now,
+			SampleCount: summary.SampleCount, DurationSeconds: summary.DurationSeconds, CategorySeconds: categorySeconds,
+			WorkedOutAt: workedOutAt, UpdatedAt: now,
 		}
 	}
 	if len(keys) == 0 {
@@ -400,14 +425,18 @@ func (self *transaction) UpsertHealthDaySummaries(userId string, summaries []*mo
 	for _, key := range keys {
 		rows = append(rows, rowsByKey[key])
 	}
-	if err := self.tx.Clauses(clause.OnConflict{
+	// A day the server already has, worked out later than this one, is left as
+	// it is: this is a batch sent late, and the older figures must not win.
+	stored := self.tx.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}, {Name: "health_type"}, {Name: "summary_day"}},
 		DoUpdates: clause.AssignmentColumns([]string{"quantity_unit", "sum_value", "average_value", "minimum_value", "maximum_value",
-			"sample_count", "duration_seconds", "category_seconds", "updated_at"}),
-	}).CreateInBatches(&rows, healthBatchSize).Error; err != nil {
-		return 0, err
+			"sample_count", "duration_seconds", "category_seconds", "worked_out_at", "updated_at"}),
+		Where: clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: `"health_day_summary"."worked_out_at" <= "excluded"."worked_out_at"`}}},
+	}).CreateInBatches(&rows, healthBatchSize)
+	if stored.Error != nil {
+		return 0, stored.Error
 	}
-	return len(rows), nil
+	return int(stored.RowsAffected), nil
 }
 
 func (self *transaction) UpsertHealthRoutes(userId string, routes []*models.HealthRoute) (int, []string, error) {
@@ -445,15 +474,15 @@ func (self *transaction) UpsertHealthRoutes(userId string, routes []*models.Heal
 	keptCount := 0
 	unmatchedHealthSampleIds := []string{}
 	for _, route := range encodedRoutes {
-		result := self.tx.Exec(`INSERT INTO "health_workout_route" ("user_id", "health_sample_id", "route_points", "received_at")
+		insertResult := self.tx.Exec(`INSERT INTO "health_workout_route" ("user_id", "health_sample_id", "route_points", "received_at")
 			SELECT ?, ?, ?::jsonb, ?
 			WHERE EXISTS (SELECT 1 FROM "health_sample" WHERE "user_id" = ? AND "health_sample_id" = ? AND "health_type" = 'workout')
 			ON CONFLICT ("user_id", "health_sample_id") DO UPDATE SET "route_points" = EXCLUDED."route_points", "received_at" = EXCLUDED."received_at"`,
 			userId, route.healthSampleId, route.points, now, userId, route.healthSampleId)
-		if result.Error != nil {
-			return 0, nil, result.Error
+		if insertResult.Error != nil {
+			return 0, nil, insertResult.Error
 		}
-		if result.RowsAffected == 0 {
+		if insertResult.RowsAffected == 0 {
 			unmatchedHealthSampleIds = append(unmatchedHealthSampleIds, route.healthSampleId)
 			continue
 		}
@@ -490,11 +519,11 @@ func (self *transaction) ListHealthTypes(userId string) ([]*models.HealthTypeSum
 	if userId == "" {
 		return []*models.HealthTypeSummary{}, nil
 	}
-	var counts []struct {
+	var totals []struct {
 		HealthType  string `gorm:"column:health_type"`
 		SampleCount int    `gorm:"column:sample_count"`
 	}
-	if err := self.tx.Raw(`SELECT "health_type", "sample_count" FROM "health_type_total" WHERE "user_id" = ?`, userId).Scan(&counts).Error; err != nil {
+	if err := self.tx.Raw(`SELECT "health_type", "sample_count" FROM "health_type_total" WHERE "user_id" = ?`, userId).Scan(&totals).Error; err != nil {
 		return nil, err
 	}
 	// Each kind's first day and latest day are looked up in the index one kind
@@ -525,8 +554,8 @@ func (self *transaction) ListHealthTypes(userId string) ([]*models.HealthTypeSum
 		byType[healthType] = made
 		return made
 	}
-	for _, count := range counts {
-		entry(count.HealthType).SampleCount = count.SampleCount
+	for _, total := range totals {
+		entry(total.HealthType).SampleCount = total.SampleCount
 	}
 	for index := range latestRows {
 		period, err := latestRows[index].toPeriod()
@@ -550,7 +579,16 @@ func (self *transaction) ListHealthTypeNames(userId string) ([]string, error) {
 		return []string{}, nil
 	}
 	names := []string{}
-	if err := self.tx.Raw(`SELECT "health_type" FROM "health_type_total" WHERE "user_id" = ? ORDER BY "health_type"`, userId).Scan(&names).Error; err != nil {
+	if err := self.tx.Raw(`WITH RECURSIVE summary_kinds("health_type") AS (
+			(SELECT "health_type" FROM "health_day_summary" WHERE "user_id" = @user ORDER BY "health_type" LIMIT 1)
+			UNION ALL
+			SELECT (SELECT "health_type" FROM "health_day_summary" WHERE "user_id" = @user AND "health_type" > summary_kinds."health_type" ORDER BY "health_type" LIMIT 1)
+			FROM summary_kinds WHERE summary_kinds."health_type" IS NOT NULL
+		)
+		SELECT "health_type" FROM summary_kinds WHERE "health_type" IS NOT NULL
+		UNION
+		SELECT "health_type" FROM "health_type_total" WHERE "user_id" = @user
+		ORDER BY "health_type"`, map[string]any{"user": userId}).Scan(&names).Error; err != nil {
 		return nil, err
 	}
 	return names, nil
@@ -568,15 +606,15 @@ type periodTotals struct {
 
 func (self *periodTotals) add(day *models.HealthPeriodSummary) {
 	summary := self.summary
-	addTo := func(total **float64, value *float64) {
-		if value == nil {
+	addTo := func(total **float64, quantityValue *float64) {
+		if quantityValue == nil {
 			return
 		}
 		if *total == nil {
 			zero := 0.0
 			*total = &zero
 		}
-		**total += *value
+		**total += *quantityValue
 	}
 	addTo(&summary.SumValue, day.SumValue)
 	addTo(&summary.DurationSeconds, day.DurationSeconds)
@@ -763,7 +801,7 @@ func (self *transaction) GetHealthStatus(userId string) (*models.HealthStatus, e
 	if err != nil {
 		return nil, err
 	}
-	status := &models.HealthStatus{HealthChoices: *choices, Characteristics: []*models.HealthCharacteristic{}}
+	healthStatus := &models.HealthStatus{HealthChoices: *choices, Characteristics: []*models.HealthCharacteristic{}}
 	var totals struct {
 		SampleCount    int        `gorm:"column:sample_count"`
 		LastReceivedAt *time.Time `gorm:"column:last_received_at"`
@@ -772,10 +810,10 @@ func (self *transaction) GetHealthStatus(userId string) (*models.HealthStatus, e
 		FROM "health_type_total" WHERE "user_id" = ?`, userId).Scan(&totals).Error; err != nil {
 		return nil, err
 	}
-	status.SampleCount = totals.SampleCount
+	healthStatus.SampleCount = totals.SampleCount
 	if totals.LastReceivedAt != nil {
 		receivedAt := totals.LastReceivedAt.In(time.Local)
-		status.LastReceivedAt = &receivedAt
+		healthStatus.LastReceivedAt = &receivedAt
 	}
 	var characteristics []struct {
 		HealthType          string    `gorm:"column:health_type"`
@@ -786,22 +824,22 @@ func (self *transaction) GetHealthStatus(userId string) (*models.HealthStatus, e
 		return nil, err
 	}
 	for _, characteristic := range characteristics {
-		status.Characteristics = append(status.Characteristics, &models.HealthCharacteristic{
+		healthStatus.Characteristics = append(healthStatus.Characteristics, &models.HealthCharacteristic{
 			HealthType: characteristic.HealthType, CharacteristicValue: characteristic.CharacteristicValue, UpdatedAt: characteristic.UpdatedAt.In(time.Local),
 		})
 	}
-	return status, nil
+	return healthStatus, nil
 }
 
 func (self *transaction) SetCanAgentReadHealth(userId string, canAgentReadHealth bool) error {
 	if userId == "" {
 		return ErrNotFound
 	}
-	result := self.tx.Exec(`UPDATE "user" SET "can_agent_read_health" = ? WHERE "id" = ?`, canAgentReadHealth, userId)
-	if result.Error != nil {
-		return result.Error
+	updateResult := self.tx.Exec(`UPDATE "user" SET "can_agent_read_health" = ? WHERE "id" = ?`, canAgentReadHealth, userId)
+	if updateResult.Error != nil {
+		return updateResult.Error
 	}
-	if result.RowsAffected == 0 {
+	if updateResult.RowsAffected == 0 {
 		return ErrNotFound
 	}
 	return nil

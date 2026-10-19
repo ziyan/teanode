@@ -35,6 +35,12 @@ all gone with the account:
 - **Routes** (`health_workout_route`): a workout's path, at most 20,000 points.
 - **Characteristics** (`health_characteristic`): date of birth, sex, blood
   type, skin type, wheelchair use, as the person set them in the Health app.
+- **Counts** (`health_type_total`): readings kept and last received per type,
+  kept by a trigger so no screen counts every sample.
+- **Recently deleted** (`health_deleted_sample`): the type and times of samples
+  the phone deleted in the last 30 days, so a delete sent again is answered the
+  same way and the phone can work those days out again. Older rows are removed
+  as reports and erases come in.
 - **Shares** (`health_share`) and two columns on the user:
   `can_agent_read_health` (false until the person turns it on) and
   `health_erased_at`.
@@ -49,8 +55,8 @@ iOS type needs no server change.
 
 Only the iPhone app sends Health data; nothing else can read it, because Apple
 keeps it on the phone. The person turns on Health in the app's Settings, reads
-one screen saying what is copied and where, and chooses in Apple's sheet what to
-allow. The app is never told which kinds were refused: a refused kind looks like
+one screen saying what is copied and where, and allows what to copy on Apple's
+Health permissions screen. The app is never told which kinds were refused: a refused kind looks like
 a kind with no data.
 
 For each type the app asks HealthKit what is new or deleted since its saved
@@ -67,13 +73,21 @@ The phone works out each day's summary, because only Apple's statistics merge
 sources the way the Health app does: an iPhone and a Watch counting the same
 walk are counted once. Sleep and other times are the union of their readings,
 so two apps recording one night count it once. The day is the phone's calendar
-day. When the server deletes samples it answers with their types and times, and
-the phone works those days out again.
+day. Each summary carries when the phone worked it out (`workedOutAt`), and the
+server keeps the latest, so a late resend cannot replace a newer day. When the
+server deletes samples it answers with their types and times, and the phone
+works those days out again.
 
-Each report says when Health was turned on (`healthTurnedOnAt`). After the
-person erases everything, the server stores nothing from a phone that turned
-Health on before the erase, and answers with the erase time; the phone then
-turns Health off and forgets its anchors. Erasing one type erases what is kept
+A batch is all or nothing: an entry the server refuses is named in the error
+(`samples[2]`), and the phone leaves that entry out and sends the rest.
+
+Each report says the last erase time the phone knows of (`healthErasedAt`,
+read when Health is turned on and carried back by every answer). After the
+person erases everything, the server stores nothing from a phone that does not
+know of that erase, and answers with its time; the phone then turns Health off
+and forgets its anchors. The phone's clock plays no part, so a phone whose
+clock is off cannot slip past it (times are compared to the second, as the
+phone writes them). Erasing one type erases what is kept
 of it; new readings of that type still arrive while Health is on.
 
 ## Who sees what
@@ -89,9 +103,14 @@ of it; new readings of that type still arrive while Health is on.
   `health` tool (types, summary, samples, set_up) only after the person turns on
   **Let the agent read Health data**, on the Settings tab of the Health page or
   in Health in the app's Settings. Until then every action but set_up says so.
-  It never reads what somebody shares with the person: a person shares Health
-  with people, not with their agents' model providers. The tool cannot erase,
-  share or turn its own switch on; those are the person's.
+  It runs only in a conversation with the person: a dream or any other run
+  nobody is watching is refused. It never reads what somebody shares with the
+  person (the person sees that on the Health page, under Showing): a person
+  shares Health with people, not with their agents' model providers, and only
+  the sharer can agree to their data going to one. The tool only reads, and
+  reads no routes: erasing cannot be undone, sharing and the switch are the
+  person's own consent to give, and a route says where somebody runs, which
+  the person shows on the map themselves.
 - **Memory.** Health data never goes into memory; dreams do not read it. What
   the agent said in a conversation stays in that conversation.
 

@@ -47,11 +47,11 @@ func TestTheCommonTypesAreDescribed(t *testing.T) {
 
 	for _, want := range []Type{
 		{Identifier: "stepCount", Category: CategoryActivity, Name: "Steps", ValueKind: ValueKindQuantity, QuantityUnit: "count", SummaryKind: SummaryKindSum, IsKnown: true},
-		{Identifier: "heartRate", Category: CategoryHeart, Name: "Heart Rate", ValueKind: ValueKindQuantity, QuantityUnit: "count/min", SummaryKind: SummaryKindAverage, IsKnown: true},
+		{Identifier: "heartRate", Category: CategoryHeart, Name: "Heart rate", ValueKind: ValueKindQuantity, QuantityUnit: "count/min", SummaryKind: SummaryKindAverage, IsKnown: true},
 		{Identifier: "bodyMass", Category: CategoryBodyMeasurements, Name: "Weight", ValueKind: ValueKindQuantity, QuantityUnit: "kg", SummaryKind: SummaryKindAverage, IsKnown: true},
 		{Identifier: "sleepAnalysis", Category: CategorySleep, Name: "Sleep", ValueKind: ValueKindCategory, SummaryKind: SummaryKindDuration, IsKnown: true},
 		{Identifier: "workout", Category: CategoryActivity, Name: "Workouts", ValueKind: ValueKindWorkout, SummaryKind: SummaryKindDuration, IsKnown: true},
-		{Identifier: "bloodType", Category: CategoryOther, Name: "Blood Type", ValueKind: ValueKindCharacteristic, IsKnown: true},
+		{Identifier: "bloodType", Category: CategoryOther, Name: "Blood type", ValueKind: ValueKindCharacteristic, IsKnown: true},
 	} {
 		if got := TypeOf(want.Identifier); got != want {
 			t.Errorf("TypeOf(%q) = %+v, want %+v", want.Identifier, got, want)
@@ -73,11 +73,12 @@ func TestAnUnknownTypeIsKeptUnderOther(t *testing.T) {
 	t.Parallel()
 
 	for identifier, name := range map[string]string{
-		"someNewReading":     "Some New Reading",
-		"heartRateSDNNScore": "Heart Rate SDNN Score",
-		"stepCount2":         "Step Count2",
+		"someNewReading":     "Some new reading",
+		"heartRateSDNNScore": "Heart rate SDNN score",
+		"stepCount2":         "Step count2",
 		"x":                  "X",
-		"AlreadyCapitalized": "Already Capitalized",
+		"":                   "",
+		"AlreadyCapitalized": "Already capitalized",
 	} {
 		got := TypeOf(identifier)
 		if got.IsKnown || got.Category != CategoryOther || got.Name != name || got.Identifier != identifier {

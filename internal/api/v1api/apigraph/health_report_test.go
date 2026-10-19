@@ -9,35 +9,49 @@ import (
 )
 
 // A batch the phone read or queued before the person erased everything is not
-// stored: it would undo the erase. The phone says when it turned Health on, and
-// only a phone that turned it on after the erase is stored.
-func TestAReportAfterEraseIsNotStoredUnlessHealthWasTurnedOnLater(t *testing.T) {
+// stored: it would undo the erase. The phone sends the erase time it knew when
+// it turned Health on (null if there was none), and a report is stored only
+// when the person has never erased or that time is the last erase or later.
+// Server time is compared with server time, to the second as the phone writes
+// it, so a clock that is wrong on the phone changes nothing.
+func TestAReportAfterEraseIsNotStoredUnlessThePhoneKnowsOfTheErase(t *testing.T) {
 	world := newHealthWorld(t)
 	world.fill(t, world.ada)
 	world.run(t, world.ada, healthEraseQuery, nil)
 
 	monday := time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC)
-	batch := func(turnedOnAt any) map[string]any {
+	batch := func(erasedAt any) map[string]any {
 		variables := map[string]any{
 			"samples":         []any{stepSampleInput("old-batch", monday, 100), workoutSampleInput("old-run", monday)},
 			"daySummaries":    []any{daySummaryInput("stepCount", "2026-03-02", map[string]any{"quantityUnit": "count", "sumValue": 100})},
 			"characteristics": []any{map[string]any{"healthType": "bloodType", "characteristicValue": "aPositive"}},
 			"routes":          []any{map[string]any{"healthSampleId": "old-run", "routePoints": []any{[]any{0, 10.5, 20.5, 3}}}},
 		}
-		if turnedOnAt != nil {
-			variables["healthTurnedOnAt"] = turnedOnAt
+		if erasedAt != nil {
+			variables["healthErasedAt"] = erasedAt
 		}
 		return variables
 	}
 	settings := func() map[string]any {
 		return world.run(t, world.ada, healthSettingsQuery, nil)["ReadHealthSettings"].(map[string]any)
 	}
+	erasedText, isText := settings()["healthErasedAt"].(string)
+	if !isText {
+		t.Fatalf("the erase has a time: %v", settings())
+	}
+	erasedAt, err := time.Parse(time.RFC3339Nano, erasedText)
+	if err != nil {
+		t.Fatalf("the erase time %q: %s", erasedText, err)
+	}
 
-	for name, turnedOnAt := range map[string]any{
-		"does not say":        nil,
-		"turned on a day ago": time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339),
+	for name, healthErasedAt := range map[string]any{
+		"does not say":                    nil,
+		"knew only of an older erase":     erasedAt.Add(-24 * time.Hour).UTC().Format(time.RFC3339),
+		"knew of an erase a minute ago":   erasedAt.Add(-time.Minute).UTC().Format(time.RFC3339),
+		"turned on a day ago, as before":  time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339),
+		"knew of an erase a second prior": erasedAt.Add(-time.Second).UTC().Format(time.RFC3339),
 	} {
-		answer := world.report(t, world.ada, batch(turnedOnAt))
+		answer := world.report(t, world.ada, batch(healthErasedAt))
 		if answer["newSampleCount"] != float64(0) || answer["updatedDayCount"] != float64(0) || answer["healthErasedAt"] == nil ||
 			len(answer["deletedSamples"].([]any)) != 0 || len(answer["unmatchedRouteHealthSampleIds"].([]any)) != 0 {
 			t.Errorf("a phone that %s is told when everything was erased and stores nothing: %v", name, answer)
@@ -50,20 +64,153 @@ func TestAReportAfterEraseIsNotStoredUnlessHealthWasTurnedOnLater(t *testing.T) 
 		t.Fatalf("days came back after the erase: %v", types)
 	}
 
-	// Turned on after the erase, the phone reports as usual, and is still told
-	// when the erase was.
-	answer := world.report(t, world.ada, batch(time.Now().Add(time.Second).UTC().Format(time.RFC3339)))
-	if answer["newSampleCount"] != float64(2) || answer["updatedDayCount"] != float64(1) || answer["healthErasedAt"] == nil {
-		t.Errorf("a phone that turned Health on after the erase: %v", answer)
+	// A phone that knows of the erase reports as usual, and is still told when
+	// it was. It sends what it read, which is the time as the server wrote it,
+	// or the same time in whole seconds rounded down, as the phone writes
+	// every time.
+	answer := world.report(t, world.ada, batch(erasedText))
+	if answer["newSampleCount"] != float64(2) || answer["updatedDayCount"] != float64(1) || answer["healthErasedAt"] != erasedText {
+		t.Errorf("a phone that knows the erase time: %v", answer)
 	}
 	if now := settings(); now["sampleCount"] != float64(2) {
-		t.Errorf("the batch after turning on: %v", now)
+		t.Errorf("the batch from a phone that knows the erase: %v", now)
 	}
+	world.run(t, world.ada, healthEraseQuery, nil)
+	secondText := settings()["healthErasedAt"].(string)
+	second, _ := time.Parse(time.RFC3339Nano, secondText)
+	if !second.After(erasedAt) {
+		t.Fatalf("a second erase is later: %s %s", erasedText, secondText)
+	}
+	if answer := world.report(t, world.ada, batch(second.Truncate(time.Second).UTC().Format(time.RFC3339))); answer["newSampleCount"] != float64(2) {
+		t.Errorf("a phone that knows the erase to the second: %v", answer)
+	}
+	// Erases are told apart to the second, so the third is a second later.
+	time.Sleep(1100 * time.Millisecond)
+	world.run(t, world.ada, healthEraseQuery, nil)
+	if answer := world.report(t, world.ada, batch(secondText)); answer["newSampleCount"] != float64(0) || answer["healthErasedAt"] == secondText {
+		t.Errorf("a phone that knew the earlier erase but not a later one stores nothing: %v", answer)
+	}
+	// A time later than the last erase is no reason to refuse either.
+	if answer := world.report(t, world.ada, batch(time.Now().Add(time.Hour).UTC().Format(time.RFC3339))); answer["newSampleCount"] != float64(2) {
+		t.Errorf("a time after the erase: %v", answer)
+	}
+
 	// Somebody who never erased is stored, with or without the time.
 	if answer := world.report(t, world.ben, batch(nil)); answer["newSampleCount"] != float64(2) || answer["healthErasedAt"] != nil {
 		t.Errorf("ben never erased: %v", answer)
 	}
-	world.refusal(t, world.ada, reportHealthQuery, map[string]any{"healthTurnedOnAt": time.Now().Add(72 * time.Hour).UTC().Format(time.RFC3339)})
+}
+
+// A day sent again with an earlier worked-out time than the one stored is left
+// out, so that a late resend of an older batch does not undo a newer day; a
+// day without the time is stored as received, and the phone's later time wins
+// inside one batch too.
+func TestALateResendOfADayDoesNotOverwriteANewerOne(t *testing.T) {
+	world := newHealthWorld(t)
+	stepsOn := func(sum float64, workedOutAt any) map[string]any {
+		fields := map[string]any{"quantityUnit": "count", "sumValue": sum}
+		if workedOutAt != nil {
+			fields["workedOutAt"] = workedOutAt
+		}
+		return daySummaryInput("stepCount", "2026-03-02", fields)
+	}
+	stored := func() float64 {
+		listed := world.run(t, world.ada, healthSummaryQuery, map[string]any{"healthType": "stepCount", "fromDay": "2026-03-02", "toDay": "2026-03-02"})
+		periods := listed["ReadHealthSummary"].(map[string]any)["periods"].([]any)
+		return periods[0].(map[string]any)["sumValue"].(float64)
+	}
+	morning := time.Date(2026, 3, 3, 8, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	evening := time.Date(2026, 3, 3, 20, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	if answer := world.report(t, world.ada, map[string]any{"daySummaries": []any{stepsOn(3000, evening)}}); answer["updatedDayCount"] != float64(1) || stored() != 3000 {
+		t.Fatalf("the first day: %v %v", answer, stored())
+	}
+	if answer := world.report(t, world.ada, map[string]any{"daySummaries": []any{stepsOn(1000, morning)}}); answer["updatedDayCount"] != float64(0) || stored() != 3000 {
+		t.Errorf("the older day sent late is left out: %v %v", answer, stored())
+	}
+	if answer := world.report(t, world.ada, map[string]any{"daySummaries": []any{stepsOn(3000, evening)}}); answer["updatedDayCount"] != float64(1) {
+		t.Errorf("the same day sent again is stored again: %v", answer)
+	}
+	if answer := world.report(t, world.ada, map[string]any{"daySummaries": []any{stepsOn(4000, nil)}}); answer["updatedDayCount"] != float64(1) || stored() != 4000 {
+		t.Errorf("a day with no time is worked out when received: %v %v", answer, stored())
+	}
+	// In one batch the one worked out later is kept, wherever it is.
+	world.report(t, world.ada, map[string]any{"daySummaries": []any{stepsOn(6000, time.Now().Add(time.Hour).UTC().Format(time.RFC3339)), stepsOn(5000, evening)}})
+	if stored() != 6000 {
+		t.Errorf("the later one in a batch: %v", stored())
+	}
+	world.refusal(t, world.ada, reportHealthQuery, map[string]any{"daySummaries": []any{stepsOn(1, time.Now().Add(72*time.Hour).UTC().Format(time.RFC3339))}})
+}
+
+// A refused batch names the first entry that is wrong as the list of the
+// arguments and its place in it counted from zero, after "invalid arguments",
+// which are the words the phone reads to split the batch.
+func TestARefusedReportNamesTheEntry(t *testing.T) {
+	world := newHealthWorld(t)
+	monday := time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC)
+	bad := stepSampleInput("bad", monday, 10)
+	bad["quantityUnit"] = "not a unit at all"
+	day := daySummaryInput("stepCount", "tomorrow", nil)
+	for name, test := range map[string]struct {
+		variables map[string]any
+		want      string
+	}{
+		"third sample": {map[string]any{"samples": []any{stepSampleInput("a", monday, 1), stepSampleInput("b", monday, 1), bad}}, "samples[2] has a quantityUnit"},
+		"first sample": {map[string]any{"samples": []any{bad}}, "samples[0] has a quantityUnit"},
+		"second day":   {map[string]any{"daySummaries": []any{daySummaryInput("stepCount", "2026-03-02", nil), day}}, "daySummaries[1] summaryDay"},
+		"deleted":      {map[string]any{"deletedHealthSampleIds": []any{"fine", "has a space"}}, "deletedHealthSampleIds[1] needs"},
+		"route point": {map[string]any{"routes": []any{map[string]any{"healthSampleId": "run-1", "routePoints": []any{
+			[]any{0, 10.5, 20.5, 3}, []any{1, 95, 20.5, 3}}}}}, "routes[0].routePoints[1] is not on the earth"},
+		"characteristic": {map[string]any{"characteristics": []any{map[string]any{"healthType": "heartRate", "characteristicValue": "x"}}}, "characteristics[0] needs"},
+	} {
+		message := world.refusal(t, world.ada, reportHealthQuery, test.variables)
+		if !strings.Contains(message, "invalid arguments: "+test.want) || strings.Contains(message, "permission denied") || strings.Contains(message, "not found") {
+			t.Errorf("%s: %q should say %q after \"invalid arguments\"", name, message, test.want)
+		}
+	}
+}
+
+// A page of readings does not start more than 100000 readings in: the database
+// would read and drop every one before it.
+func TestAReadingsPageCannotStartTooDeep(t *testing.T) {
+	world := newHealthWorld(t)
+	world.fill(t, world.ada)
+	deep := map[string]any{"healthType": "stepCount", "limitCount": 1, "offset": 100000}
+	if page := world.run(t, world.ada, healthSamplesQuery, deep)["ListHealthSamples"].(map[string]any); len(page["samples"].([]any)) != 0 {
+		t.Errorf("the deepest page: %v", page)
+	}
+	deep["offset"] = 100001
+	if message := world.refusal(t, world.ada, healthSamplesQuery, deep); !strings.Contains(message, "invalid arguments") || !strings.Contains(message, "narrow from and to") {
+		t.Errorf("a page too deep: %q", message)
+	}
+}
+
+// Kinds that only have day summaries count towards the 400 a person may have,
+// across reports.
+func TestKindsWithOnlyDaySummariesCountTowardsTheMost(t *testing.T) {
+	world := newHealthWorld(t)
+	days := func(from, to int) []any {
+		listed := make([]any, 0, to-from)
+		for index := from; index < to; index++ {
+			listed = append(listed, daySummaryInput(fmt.Sprintf("madeUpKind%d", index), "2026-03-02", map[string]any{"sumValue": 1}))
+		}
+		return listed
+	}
+	for _, span := range [][2]int{{0, 200}, {200, 399}} {
+		if stored := world.report(t, world.ben, map[string]any{"daySummaries": days(span[0], span[1])}); stored["updatedDayCount"] != float64(span[1]-span[0]) {
+			t.Fatalf("kinds %v: %v", span, stored)
+		}
+	}
+	world.report(t, world.ben, map[string]any{"daySummaries": days(399, 400)})
+	message := world.refusal(t, world.ben, reportHealthQuery, map[string]any{"daySummaries": days(400, 401)})
+	if !strings.Contains(message, "at most 400 kinds") {
+		t.Errorf("the 401st kind as a day summary: %q", message)
+	}
+	// A kind the person has days of is not new, and a reading of it is not
+	// another kind.
+	reading := stepSampleInput("a-reading-of-a-kind-with-days", time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC), 5)
+	reading["healthType"] = "madeUpKind0"
+	world.report(t, world.ben, map[string]any{"samples": []any{reading}, "daySummaries": days(0, 1)})
 }
 
 // A phone that never got the answer to a delete sends the same identifiers

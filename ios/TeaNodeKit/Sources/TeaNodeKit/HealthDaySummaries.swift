@@ -15,7 +15,7 @@ public enum HealthDays {
     /// The calendar day a time is in.
     public static func text(of date: Date, calendar: Calendar) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
+        return String(format: "%04ld-%02ld-%02ld", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1)
     }
 
     /// Whether the text is a day written as the server takes it.
@@ -162,9 +162,44 @@ public struct HealthQuantityStatistics: Hashable, Sendable {
     }
 }
 
+/// HealthReading is one reading of a quantity: when it began and its value in
+/// the unit the type is sent in.
+public struct HealthReading: Hashable, Sendable {
+    public let startedAt: Date
+    public let value: Double
+
+    public init(startedAt: Date, value: Double) {
+        self.startedAt = startedAt
+        self.value = value
+    }
+}
+
 /// HealthDaySummaries works out the summaries of days.
 public enum HealthDaySummaries {
     // MARK: Quantities
+
+    /// The statistics of each day from the readings themselves, by the day each
+    /// began: how many there were, their average, the least and the most. For
+    /// the quantities HealthKit will not average itself (the sound levels,
+    /// which it adds up as an equivalent continuous level), so that no option
+    /// it rejects is ever asked for. `days` limits the answer to those days
+    /// ("YYYY-MM-DD"); nil is every day the readings touch. A value that is not
+    /// a number is left out.
+    public static func readingStatistics(_ readings: [HealthReading], calendar: Calendar, days: Set<String>? = nil) -> [String: HealthQuantityStatistics] {
+        var valuesByDay: [String: [Double]] = [:]
+        for reading in readings where reading.value.isFinite {
+            let day = HealthDays.text(of: reading.startedAt, calendar: calendar)
+            if let days, !days.contains(day) { continue }
+            valuesByDay[day, default: []].append(reading.value)
+        }
+        var statistics: [String: HealthQuantityStatistics] = [:]
+        for (day, values) in valuesByDay {
+            guard let least = values.min(), let most = values.max() else { continue }
+            statistics[day] = HealthQuantityStatistics(
+                averageValue: values.reduce(0, +) / Double(values.count), minimumValue: least, maximumValue: most, sampleCount: values.count)
+        }
+        return statistics
+    }
 
     /// The summary of a quantity on a day from HealthKit's statistics, with
     /// only the numbers that mean something for the type: the sum for a type

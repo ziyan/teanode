@@ -31,8 +31,6 @@ CREATE TABLE "health_sample" (
     "source_bundle_id"      character varying(256)   NOT NULL DEFAULT '',
     "device_name"           character varying(256)   NOT NULL DEFAULT '',
     "sample_metadata"       jsonb                    NOT NULL DEFAULT '{}',
-    -- Which install reported it. The reading stays when the phone is removed.
-    "agent_phone_id"        character varying(32)    REFERENCES "agent_phone" ("id") ON DELETE SET NULL,
     "received_at"           timestamp with time zone NOT NULL,
     CHECK ("ended_at" >= "started_at"),
     UNIQUE ("user_id", "health_sample_id")
@@ -42,10 +40,9 @@ CREATE TABLE "health_sample" (
 -- newest first.
 CREATE INDEX "health_sample_user_type_started" ON "health_sample" ("user_id", "health_type", "started_at" DESC);
 
--- Removing a phone sets agent_phone_id to null on every reading it sent, and
--- without this index PostgreSQL would read the whole table, every person's,
--- to find them.
-CREATE INDEX "health_sample_agent_phone" ON "health_sample" ("agent_phone_id") WHERE "agent_phone_id" IS NOT NULL;
+-- A reading does not record which install sent it: nothing reads that, and a
+-- column that points at agent_phone would rewrite every reading the phone sent
+-- when the phone is removed.
 
 -- How many readings of each kind a person has, and when the latest arrived.
 -- A person has millions of readings, so counting them each time a page, a
@@ -93,8 +90,11 @@ CREATE TRIGGER "health_sample_deleted" AFTER DELETE ON "health_sample"
 -- deleted a reading sends its identifier and learns from the answer which
 -- days to work out again; if the answer is lost, the phone sends the
 -- identifier again and must get the same answer, although the reading is
--- already gone. The code that deletes readings writes this, answers from it,
--- and forgets what is older than 30 days.
+-- already gone. The code that deletes readings writes this and answers from
+-- it. Rows older than 30 days are deleted by every report and every erase of
+-- any person, at most 2000 rows each time (the oldest first, found by the
+-- index on deleted_at), so that the table does not grow with deletions
+-- whether or not the person who made them ever deletes again.
 CREATE TABLE "health_deleted_sample" (
     "user_id"          character varying(32)    NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
     "health_sample_id" character varying(64)    NOT NULL,
@@ -104,12 +104,16 @@ CREATE TABLE "health_deleted_sample" (
     "deleted_at"       timestamp with time zone NOT NULL,
     PRIMARY KEY ("user_id", "health_sample_id")
 );
-CREATE INDEX "health_deleted_sample_user_deleted" ON "health_deleted_sample" ("user_id", "deleted_at");
+CREATE INDEX "health_deleted_sample_deleted" ON "health_deleted_sample" ("deleted_at");
 
 -- One kind of reading on one day. The phone works these out because only it
 -- can merge an iPhone and a Watch counting the same walk the way the Health
 -- app does, so the server keeps what the phone sent and never adds samples up
--- itself. The phone sends a day again when it changes, which replaces the row.
+-- itself. The phone sends a day again when it changes, which replaces the row,
+-- unless the row was worked out later: worked_out_at is when the phone worked
+-- the day out, and a day sent again with an earlier worked_out_at than the
+-- row has (a late resend of an older batch) is left out. A phone that does not
+-- say gets the time the server received the day.
 --
 -- sum_value suits what adds up (steps, energy), average_value with the minimum
 -- and maximum what does not (heart rate, weight), duration_seconds what is
@@ -128,6 +132,7 @@ CREATE TABLE "health_day_summary" (
     "sample_count"     integer                  NOT NULL DEFAULT 0,
     "duration_seconds" double precision,
     "category_seconds" jsonb                    NOT NULL DEFAULT '{}',
+    "worked_out_at"    timestamp with time zone NOT NULL,
     "updated_at"       timestamp with time zone NOT NULL,
     PRIMARY KEY ("user_id", "health_type", "summary_day")
 );
@@ -183,8 +188,10 @@ CREATE INDEX "health_share_grantee_circle" ON "health_share" ("grantee_circle_id
 -- can_agent_read_health is the person's switch for the agent's health tool. It
 -- is off until they turn it on, because what the agent reads goes to the
 -- model's provider. health_erased_at is when the person last erased all of
--- their Health data: the phone stops sending and forgets where it was when it
--- sees a time newer than the one it turned Health on at.
+-- their Health data. A phone reports with the erase time it knew when it
+-- turned Health on, and a report that does not carry this time or an earlier
+-- one is not stored; the answer carries the time, which tells the phone to stop
+-- and forget where it was.
 ALTER TABLE "user" ADD COLUMN "can_agent_read_health" boolean NOT NULL DEFAULT false;
 ALTER TABLE "user" ADD COLUMN "health_erased_at" timestamp with time zone;
 

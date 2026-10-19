@@ -14,6 +14,9 @@ struct HealthSyncSnapshot {
     var pendingDayCount: Int
     var isHistoryDone: Bool
     var problemText: String?
+    var passProgress: HealthPassProgress?
+    var isStoppedByErase: Bool
+    var droppedEntryCount: Int
 
     @MainActor
     static func current() -> HealthSyncSnapshot {
@@ -21,7 +24,8 @@ struct HealthSyncSnapshot {
         return HealthSyncSnapshot(
             isOn: sync.isOn, isAvailable: sync.isAvailable, isSyncing: sync.isSyncing, lastSentAt: sync.lastSentAt,
             sentSampleCount: sync.sentSampleCount, pendingDayCount: sync.pendingDayCount, isHistoryDone: sync.isHistoryDone,
-            problemText: sync.problemText)
+            problemText: sync.problemText, passProgress: sync.passProgress, isStoppedByErase: sync.isStoppedByErase,
+            droppedEntryCount: sync.droppedEntryCount)
     }
 }
 
@@ -69,57 +73,25 @@ final class HealthSettingsModel {
 
     // MARK: About the person
 
-    /// The facts the Health app holds about the person, read only: the
-    /// date of birth, sex and blood type, as the dashboard shows them. The
-    /// others it keeps (skin type, wheelchair use, how Activity is measured)
-    /// are not shown.
+    /// The facts the Health app holds about the person, read only, in the
+    /// words of the table the dashboard follows too. Only the ones that were
+    /// copied are listed.
     var aboutRows: [HealthAboutRow] {
         let characteristics = settings?.characteristics ?? []
         var rows: [HealthAboutRow] = []
-        for healthType in ["dateOfBirth", "biologicalSex", "bloodType"] {
+        for healthType in Self.aboutHealthTypes {
             guard let found = characteristics.first(where: { $0.healthType == healthType }) else { continue }
             rows.append(
                 HealthAboutRow(
-                    healthType: healthType, labelText: Self.aboutLabel(healthType),
-                    valueText: Self.aboutValue(healthType: healthType, characteristicValue: found.characteristicValue)))
+                    healthType: healthType, labelText: HealthWords.typeName(healthType: healthType, serverName: HealthTypes.typeName(for: healthType)),
+                    valueText: HealthWords.characteristicText(healthType: healthType, characteristicValue: found.characteristicValue)))
         }
         return rows
     }
 
-    private static func aboutLabel(_ healthType: String) -> String {
-        switch healthType {
-        case "dateOfBirth": return String(localized: "Date of birth")
-        case "biologicalSex": return String(localized: "Sex")
-        default: return String(localized: "Blood type")
-        }
-    }
-
-    private static func aboutValue(healthType: String, characteristicValue: String) -> String {
-        switch healthType {
-        case "dateOfBirth":
-            guard let date = HealthText.date(ofDay: characteristicValue) else { return characteristicValue }
-            return date.formatted(date: .long, time: .omitted)
-        case "biologicalSex":
-            switch characteristicValue {
-            case "female": return String(localized: "Female")
-            case "male": return String(localized: "Male")
-            case "other": return String(localized: "Other")
-            default: return characteristicValue
-            }
-        default:
-            return bloodTypeText(characteristicValue)
-        }
-    }
-
-    /// A blood type as it is on a card: "aPositive" is "A+".
-    static func bloodTypeText(_ characteristicValue: String) -> String {
-        let bloodGroups = [("a", "A"), ("b", "B"), ("ab", "AB"), ("o", "O")]
-        for (prefix, letters) in bloodGroups {
-            if characteristicValue == prefix + "Positive" { return letters + "+" }
-            if characteristicValue == prefix + "Negative" { return letters + "-" }
-        }
-        return characteristicValue
-    }
+    private static let aboutHealthTypes = [
+        "dateOfBirth", "biologicalSex", "bloodType", "fitzpatrickSkinType", "wheelchairUse", "activityMoveMode",
+    ]
 
     // MARK: Reading
 

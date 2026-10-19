@@ -6,7 +6,7 @@ This ExecPlan is a living document. The sections Progress, Surprises & Discoveri
 
 Apple keeps a person's health data on their iPhone (and Watch): steps, heart rate, sleep, workouts, weight and a hundred other kinds. There is no web or server API for it; only an app on the phone, with the person's permission for each kind, can read it. After this plan:
 
-- In the TeaNode iPhone app, the person turns on **Health** and chooses what to share in Apple's permission sheet ("Turn On All" shares everything). The app copies it to the person's own TeaNode server, history first and then kept up to date in the background.
+- In the TeaNode iPhone app, the person turns on **Health** and allows what to copy on Apple's Health permissions screen ("Turn On All" allows everything). The app copies it to the person's own TeaNode server, history first and then kept up to date in the background.
 - The dashboard has a **Health** page, and the iPhone app a Health screen, laid out like Finance: the kinds of data the person has, grouped as the Health app groups them (Activity, Heart, Sleep, Body Measurements and so on), a chart for each by day, week or month, the recent readings, and workouts with their route on a map.
 - `teanode health` prints the same from the command line.
 - The agent can answer "how did I sleep this week?" or "how many steps did I average this month?" through a read-only `health` tool, but only after the person turns on **Let the agent read Health data**, which says in words that what it reads goes to the model's provider.
@@ -87,7 +87,7 @@ To see it working at the end: on a development server, a phone (or the demo data
   Rationale: a person who shares Health shares it with people, not with their agents' model providers, and only the sharer can agree to their data going to one. It also keeps text another person controls (type names, units) out of the agent's context. Found in review round 1.
   Date/Author: 2026-10-18, design.
 
-- Decision: a phone says when Health was turned on with each report (`healthTurnedOnAt`), and the server stores nothing from a phone that turned it on before the person last erased everything; it answers with the erase time and the phone turns Health off.
+- Decision: a phone says with each report the last erase time it knows of (`healthErasedAt`, read when Health is turned on), and the server stores nothing from a phone that does not know of the person's latest erase; it answers with the erase time and the phone turns Health off. (Round one compared the time Health was turned on with the erase time; round two dropped that, because it compared the phone's clock with the server's.)
   Rationale: review round 1 found that a batch in flight, or the next one, filled the server again after Erase. Erasing one kind erases what is kept of it; new readings of that kind still arrive while Health is on, and the confirmation says so.
   Date/Author: 2026-10-18, design.
 
@@ -115,6 +115,8 @@ Finance is the model for the charts and the reading tool: `web/src/components/se
 
 ## The contract every surface shares
 
+As first planned, and corrected where review changed it (see the Decision Log); where they differ, `internal/api/v1api/apigraph/health.go` and `docs/subsystems/health.md` are the reference. Two tables were added in review: `health_type_total` (counts per type, kept by a trigger) and `health_deleted_sample` (deletes of the last 30 days).
+
 ### Storage (migration `0245_health`, with `.reverse.sql` and a reverse test like its neighbours)
 
     health_sample
@@ -132,7 +134,6 @@ Finance is the model for the charts and the reading tool: `web/src/components/se
       source_bundle_id    varchar(256) not null default ''
       device_name         varchar(256) not null default ''
       sample_metadata     jsonb not null default '{}'  -- workout totals, ECG classification, audiogram points, State of Mind labels, HealthKit metadata keys
-      agent_phone_id      varchar(32) references agent_phone on delete set null
       received_at         timestamptz not null
       unique (user_id, health_sample_id)
       index (user_id, health_type, started_at desc)
@@ -171,7 +172,7 @@ One table in Go: each health type's identifier, its Health category, its English
 
 ### GraphQL (`internal/api/v1api/apigraph/health.go`)
 
-    ReportHealth(agentPhoneId, samples: [HealthSampleInput], deletedHealthSampleIds: [String], daySummaries: [HealthDaySummaryInput], routes: [HealthRouteInput], characteristics: [HealthCharacteristicInput]): ReportHealthView
+    ReportHealth(healthErasedAt, samples: [HealthSampleInput], deletedHealthSampleIds: [String], daySummaries: [HealthDaySummaryInput], routes: [HealthRouteInput], characteristics: [HealthCharacteristicInput]): ReportHealthView
       at most 1000 samples, 2000 deleted ids, 1000 day summaries, 5 routes, 20 characteristics a call
       ReportHealthView { newSampleCount, deletedSampleCount, updatedDayCount, deletedSamples: [{ healthType, startedAt, endedAt }], healthErasedAt }
     ListHealthTypes(ownerUserId?): [HealthTypeView]          -- the types the person (or a sharer) has: healthType, healthCategory, typeName, valueKind, quantityUnit, summaryKind, firstDay, lastDay, sampleCount, latestDaySummary
@@ -191,8 +192,9 @@ The shapes, named the same in Go (`json` tags), GraphQL, TeaNodeKit and the dash
     HealthSampleInput / HealthSampleView: healthSampleId, healthType, startedAt, endedAt, quantityValue?, quantityUnit,
       categoryValue?, workoutActivityType, sourceName, sourceBundleId, deviceName, sampleMetadataJson (a JSON object as a string)
       (the view adds receivedAt and hasRoute)
-    HealthDaySummaryInput / period rows: healthType, summaryDay ("YYYY-MM-DD"), quantityUnit, sumValue?, averageValue?,
-      minimumValue?, maximumValue?, sampleCount, durationSeconds?, categorySecondsJson (a JSON object as a string)
+    HealthDaySummaryInput: healthType, summaryDay ("YYYY-MM-DD"), quantityUnit, sumValue?, averageValue?,
+      minimumValue?, maximumValue?, sampleCount, durationSeconds?, categorySecondsJson (a JSON object as a string), workedOutAt
+    period rows: startDay, endDay, the values, sampleCount, dayCount (days with a summary), durationSeconds?, categorySeconds (a JSON object)
     HealthRouteInput / HealthRouteView: healthSampleId, routePoints: [[Float]] ([secondsFromStart, latitudeDegrees, longitudeDegrees, altitudeMeters])
     HealthCharacteristicInput: healthType, characteristicValue
     HealthShareView: id, ownerUserId, ownerUsername, ownerName, granteeUserId?, granteeUsername?, granteeCircleId?, granteeCircleName?, healthCategories, createdAt
@@ -201,11 +203,11 @@ Every operation needs `health:use`. `ownerUserId` reads a sharer's data: allowed
 
 ### The agent (`internal/agent/tools/health/health.go`)
 
-One read-only tool, `health`, needing `health:use`, with actions `types`, `summary` (health_type, from, to, period, optional username for a sharer) and `samples` (health_type, from, to, limit, offset; own data only). While `can_agent_read_health` is false every action answers that the person has not let the agent read Health data, and where they turn it on (Settings > Health on the dashboard or the iPhone). Summaries are preferred: the description says to use `summary` and to read samples only for a question about particular readings; samples page like every other read and say when there is more.
+One read-only tool, `health`, needing `health:use`, with actions `types`, `summary` (health_type, from, to, period) and `samples` (health_type, from, to, limit, offset), and `set_up`; the person's own data only (see the Decision Log). While `can_agent_read_health` is false every action but set_up answers that the person has not let the agent read Health data, and where they turn it on (the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings). Summaries are preferred: the description says to use `summary` and to read samples only for a question about particular readings; samples page like every other read and say when there is more.
 
 ### The command line (`internal/client/health.go`, `internal/cmd/health.go`)
 
-`teanode health types`, `teanode health summary <type> [--from --to --since --period day|week|month] [--user <username>]`, `teanode health samples <type> [--from --to --since --limit --offset]`, `teanode health route <sample-id>`, `teanode health settings [--agent-can-read on|off]`, `teanode health erase [<type>] --force`, `teanode health shares`, `teanode health share <circle-or-username> <category>...` (none removes), each with `--json`. The parity tests check the names against the operations.
+`teanode health types`, `teanode health summary <type> [--from --to --since --period day|week|month] [--person <username>]`, `teanode health samples <type> [--from --to --since --limit --offset]`, `teanode health route <sample-id>`, `teanode health settings [--agent-can-read on|off]`, `teanode health erase [<type>] --force`, `teanode health shares`, `teanode health share <circle-or-username> <category>...` (none removes), each with `--json`. The parity tests check the names against the operations.
 
 ### The dashboard (`web/src/pages/health/`)
 
@@ -216,7 +218,7 @@ A Health page in the side menu (after Location, shown with `health:use`): the pe
 - `ios/project.yml`: the HealthKit capability (`com.apple.developer.healthkit`, `com.apple.developer.healthkit.access` empty, `com.apple.developer.healthkit.background-delivery`), `NSHealthShareUsageDescription` ("TeaNode copies the Health data you choose to your own TeaNode server, and nowhere else."), a BGTask identifier for the history.
 - TeaNodeKit (Linux tested): `HealthTypes.swift` (the identifiers and their categories, as the server's table), `HealthReport.swift` (the upload shapes and the GraphQL calls), `HealthDaySummaries.swift` (the union of category samples' times per day, the workout totals; tested), `HealthSyncState.swift` (per type anchors as opaque data, the days waiting to be worked out again, when Health was turned on; stored in the app group with complete file protection and excluded from backup).
 - App: `HealthSync.swift` (HealthKit: the permission request for every readable type; per type an `HKAnchoredObjectQuery` from the saved anchor, a page of up to 1000 at a time; `HKStatisticsCollectionQuery` for the day summaries of the days touched, in the phone's calendar; routes through `HKWorkoutRouteQuery`; characteristics; an `HKObserverQuery` per type with `enableBackgroundDelivery(.hourly)` set up at launch; the history in a `BGProcessingTask`; nothing read while the phone is locked), `HealthViews.swift` (the Health screen: categories, a chart per type with Swift Charts through `ChartParts`, recent samples, a workout route on a MapKit map, the person picker), `HealthSettingsViews.swift` (Health on or off, sync now, last sent and how much, the agent switch, sharing, Erase). The side menu gets Health after Location. The demo server answers every health operation with invented data, and the screenshot workflow photographs the Health screen, a type's chart and the settings.
-- Health is a choice in settings, never a step of connecting; turning it on shows one screen saying what is copied and where, then Apple's sheet.
+- Health is a choice in settings, never a step of connecting; turning it on shows one screen saying what is copied and where, then Apple's Health permissions screen.
 
 ### Tests
 
@@ -241,4 +243,4 @@ Reports are idempotent (unique sample identifiers, day summaries replaced). Eras
 
 ## Interfaces and Dependencies
 
-No new Go or npm dependency. HealthKit, Swift Charts and MapKit on the iPhone. The maintainer adds Health to the App Store privacy answers (Health & Fitness, linked to the person, not used for tracking) before a build with Health goes to review.
+No new Go or npm dependency. HealthKit, Swift Charts and MapKit on the iPhone. The maintainer adds Health to the App Store privacy answers (Health & Fitness, linked to the person, not used for tracking) before a build with Health goes to review. Before the first signed build with Health, the App ID `com.teanode.app` gets the HealthKit capability with background delivery in the developer portal (CI signs automatically and may add it itself; check the first TestFlight run), and the App Store version's description says what Health does, as Apple asks of a HealthKit app.

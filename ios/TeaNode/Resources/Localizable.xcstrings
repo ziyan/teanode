@@ -71369,7 +71369,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Walking and running distance"
+            "value": "Walking + running distance"
           }
         },
         "ja": {
@@ -71699,7 +71699,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Heart rate recovery"
+            "value": "Cardio recovery"
           }
         },
         "ja": {
@@ -72095,7 +72095,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wrist temperature"
+            "value": "Sleeping wrist temperature"
           }
         },
         "ja": {
@@ -72183,7 +72183,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Double support time"
+            "value": "Walking double support"
           }
         },
         "ja": {
@@ -73982,22 +73982,6 @@
         }
       }
     },
-    "Health is not available on this iPhone.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone ではヘルスケアを利用できません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这台 iPhone 上无法使用健康功能。"
-          }
-        }
-      }
-    },
     "Health is not available to you": {
       "localizations": {
         "ja": {
@@ -74334,22 +74318,6 @@
         }
       }
     },
-    "Your agent reads it only if you turn on Let the agent read Health data. Nobody else sees it unless you share some of it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントが読み取るのは、「エージェントにヘルスケアのデータの読み取りを許可する」をオンにした場合だけです。一部を共有しない限り、ほかの人には表示されません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只有在你开启“允许助手读取健康数据”后，助手才会读取。除非你共享其中一部分，否则其他人都看不到。"
-          }
-        }
-      }
-    },
     "%lld readings erased.": {
       "localizations": {
         "en": {
@@ -74436,22 +74404,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法连接到你的服务器。TeaNode 会在可以时发送健康数据。"
-          }
-        }
-      }
-    },
-    "Health data is not available on this iPhone.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone ではヘルスケアのデータを利用できません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这台 iPhone 上无法使用健康数据。"
           }
         }
       }
@@ -74772,22 +74724,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 分钟"
-          }
-        }
-      }
-    },
-    "%@ steps": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@歩"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 步"
           }
         }
       }
@@ -75285,7 +75221,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ground contact time"
+            "value": "Running ground contact time"
           }
         },
         "ja": {
@@ -75307,7 +75243,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vertical oscillation"
+            "value": "Running vertical oscillation"
           }
         },
         "ja": {
@@ -75329,7 +75265,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "AFib burden"
+            "value": "Atrial fibrillation burden"
           }
         },
         "ja": {
@@ -75351,7 +75287,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "High heart rate events"
+            "value": "High heart rate notifications"
           }
         },
         "ja": {
@@ -75373,7 +75309,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Low heart rate events"
+            "value": "Low heart rate notifications"
           }
         },
         "ja": {
@@ -75395,7 +75331,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Irregular rhythm events"
+            "value": "Irregular rhythm notifications"
           }
         },
         "ja": {
@@ -75505,7 +75441,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Peak expiratory flow"
+            "value": "Peak expiratory flow rate"
           }
         },
         "ja": {
@@ -75776,6 +75712,770 @@
           "stringUnit": {
             "state": "translated",
             "value": "你还没有和任何人在同一个圈子里。"
+          }
+        }
+      }
+    },
+    "health-count-step-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ step"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@歩"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 步"
+          }
+        }
+      }
+    },
+    "health-count-step-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ steps"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@歩"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 步"
+          }
+        }
+      }
+    },
+    "health-count-flight-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ flight"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@階"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 层"
+          }
+        }
+      }
+    },
+    "health-count-flight-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ flights"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@階"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 层"
+          }
+        }
+      }
+    },
+    "health-count-push-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ push"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 次"
+          }
+        }
+      }
+    },
+    "health-count-push-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pushes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 次"
+          }
+        }
+      }
+    },
+    "health-count-stroke-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ stroke"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 次"
+          }
+        }
+      }
+    },
+    "health-count-stroke-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ strokes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 次"
+          }
+        }
+      }
+    },
+    "health-count-fall-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ fall"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 次"
+          }
+        }
+      }
+    },
+    "health-count-fall-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ falls"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 次"
+          }
+        }
+      }
+    },
+    "health-count-puff-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ puff"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 次"
+          }
+        }
+      }
+    },
+    "health-count-puff-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ puffs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 次"
+          }
+        }
+      }
+    },
+    "health-count-drink-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ drink"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@杯"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 杯"
+          }
+        }
+      }
+    },
+    "health-count-drink-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ drinks"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@杯"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 杯"
+          }
+        }
+      }
+    },
+    "%@ s": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@秒"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 秒"
+          }
+        }
+      }
+    },
+    "%@ h %@ min": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@時間%2$@分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 小时 %2$@ 分钟"
+          }
+        }
+      }
+    },
+    "health-age-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 year"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1歳"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 岁"
+          }
+        }
+      }
+    },
+    "health-age-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld years"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld歳"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 岁"
+          }
+        }
+      }
+    },
+    "health-type-dateOfBirth": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Date of birth"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生年月日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出生日期"
+          }
+        }
+      }
+    },
+    "health-type-biologicalSex": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Biological sex"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生物学的性別"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生理性别"
+          }
+        }
+      }
+    },
+    "health-type-bloodType": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blood type"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "血液型"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "血型"
+          }
+        }
+      }
+    },
+    "health-type-fitzpatrickSkinType": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skin type"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "肌のタイプ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "皮肤类型"
+          }
+        }
+      }
+    },
+    "health-type-wheelchairUse": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wheelchair use"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "車椅子の使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用轮椅"
+          }
+        }
+      }
+    },
+    "health-type-activityMoveMode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activity move mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ムーブモード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活动记录模式"
+          }
+        }
+      }
+    },
+    "Reading your Health data": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘルスケアのデータを読み取っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取你的健康数据"
+          }
+        }
+      }
+    },
+    "%lld of %lld kinds": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld 種類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld 种"
+          }
+        }
+      }
+    },
+    "Left out": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "除外"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已略过"
+          }
+        }
+      }
+    },
+    "Readings your server would not take are left out.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーが受け付けなかった記録は除外されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的服务器不接受的读数会被略过。"
+          }
+        }
+      }
+    },
+    "Last received": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最後に受信"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近收到"
+          }
+        }
+      }
+    },
+    "health-readings-kept-none": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No readings kept"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済みの記録はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有已保存的读数"
+          }
+        }
+      }
+    },
+    "health-readings-kept-single": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 reading kept"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1件の記録を保存済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存 1 条读数"
+          }
+        }
+      }
+    },
+    "health-readings-kept-plural": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ readings kept"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@件の記録を保存済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存 %@ 条读数"
+          }
+        }
+      }
+    },
+    "Health is not available on this device.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスではヘルスケアを利用できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备上无法使用健康功能。"
+          }
+        }
+      }
+    },
+    "Health data is not available on this device.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスではヘルスケアのデータを利用できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备上无法使用健康数据。"
+          }
+        }
+      }
+    },
+    "Your agent reads it only if you turn on Let the agent read Health data, and what it reads goes to the provider of its model. Nobody else sees it unless you share some of it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが読み取るのは、「エージェントにヘルスケアのデータの読み取りを許可する」をオンにした場合だけで、読み取った内容はそのモデルの提供元に送られます。一部を共有しない限り、ほかの人には表示されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有在你开启“允许助手读取健康数据”后，助手才会读取，读取的内容会发送给其模型的提供方。除非你共享其中一部分，否则其他人都看不到。"
+          }
+        }
+      }
+    },
+    "Could not reach your server. Try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接到你的服务器。请再试一次。"
+          }
+        }
+      }
+    },
+    "Apple Health would not let TeaNode read: %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「ヘルスケア」App が TeaNode による次の読み取りを許可しませんでした：%@。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“健康”App 不允许 TeaNode 读取：%@。"
+          }
+        }
+      }
+    },
+    "health-erase-type-title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erase %@?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を消去しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除%@？"
           }
         }
       }

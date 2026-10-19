@@ -71,7 +71,10 @@ function fittedScale(values: number[]): ChartScale {
   let lowest = Math.min(...values)
   let highest = Math.max(...values)
   if (highest === lowest) {
-    const margin = Math.max(1, Math.abs(highest) * 0.01)
+    // A margin of the value's own size: a flat 0.98 (a blood oxygen fraction)
+    // is drawn between 0.97 and 0.99, not from -0.02 to 1.98. A line at zero
+    // has no size to go by and gets a margin of 1.
+    const margin = highest === 0 ? 1 : Math.abs(highest) * 0.01
     lowest -= margin
     highest += margin
   }

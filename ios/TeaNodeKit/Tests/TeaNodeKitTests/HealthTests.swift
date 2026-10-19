@@ -151,7 +151,7 @@ final class HealthTests: XCTestCase {
         let batch = HealthBatch(
             samples: [sample(1)], deletedHealthSampleIds: ["gone-1"], daySummaries: [summary(1)], routes: [route("workout-1")],
             characteristics: [HealthCharacteristicInput(healthType: "biologicalSex", characteristicValue: "female")])
-        let result = try await connection.reportHealth(batch, agentPhoneId: "phone-1", healthTurnedOnAt: date("2024-03-01T00:00:00Z"))
+        let result = try await connection.reportHealth(batch, agentPhoneId: "phone-1", healthErasedAt: "2024-03-01T00:00:00.123456789Z")
         XCTAssertEqual(result.newSampleCount, 1)
         XCTAssertEqual(result.deletedSampleCount, 2)
         XCTAssertEqual(result.updatedDayCount, 3)
@@ -162,22 +162,23 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(variables["agentPhoneId"], .string("phone-1"))
         XCTAssertEqual(
             Set(variables.keys),
-            ["agentPhoneId", "healthTurnedOnAt", "samples", "deletedHealthSampleIds", "daySummaries", "routes", "characteristics"])
-        XCTAssertEqual(variables["healthTurnedOnAt"], .string("2024-03-01T00:00:00Z"))
+            ["agentPhoneId", "healthErasedAt", "samples", "deletedHealthSampleIds", "daySummaries", "routes", "characteristics"])
+        XCTAssertEqual(variables["healthErasedAt"], .string("2024-03-01T00:00:00.123456789Z"))
         XCTAssertEqual(variables["deletedHealthSampleIds"], .array([.string("gone-1")]))
         XCTAssertEqual(variables["samples"], .array([sample(1).variables]))
         XCTAssertEqual(variables["routes"], .array([route("workout-1").variables]))
     }
 
 
-    func testEveryReportSaysWhenHealthWasTurnedOnOrNullWhenItIsNotKnown() async throws {
+    func testEveryReportSaysTheLastEraseThePhoneKnowsOfExactlyAsTheServerWroteItOrNullWhenItKnowsOfNone() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"ReportHealth":{"newSampleCount":0,"deletedSampleCount":0,"updatedDayCount":0}}}"#)
-        _ = try await connection.reportHealth(HealthBatch(samples: [sample(1)]), healthTurnedOnAt: date("2024-03-01T08:30:15Z"))
-        _ = try await connection.reportHealth(HealthBatch(samples: [sample(1)]), healthTurnedOnAt: nil)
-        XCTAssertEqual(try sentVariables(fake.sent[0])["healthTurnedOnAt"], .string("2024-03-01T08:30:15Z"))
-        XCTAssertEqual(try sentVariables(fake.sent[1])["healthTurnedOnAt"], JSONValue.null)
+        _ = try await connection.reportHealth(HealthBatch(samples: [sample(1)]), healthErasedAt: "2024-03-01T08:30:15.987654321+09:00")
+        _ = try await connection.reportHealth(HealthBatch(samples: [sample(1)]), healthErasedAt: nil)
+        XCTAssertEqual(try sentVariables(fake.sent[0])["healthErasedAt"], .string("2024-03-01T08:30:15.987654321+09:00"))
+        XCTAssertEqual(try sentVariables(fake.sent[1])["healthErasedAt"], JSONValue.null)
         let query = try XCTUnwrap(String(data: try XCTUnwrap(fake.sent[0].httpBody), encoding: .utf8))
-        XCTAssertTrue(query.contains("healthTurnedOnAt: $healthTurnedOnAt"))
+        XCTAssertTrue(query.contains("healthErasedAt: $healthErasedAt"))
+        XCTAssertFalse(query.contains("healthTurnedOnAt"))
     }
 
     func testAnAnswerReadsTheRoutesLeftOutForWantOfTheirWorkout() throws {
@@ -536,6 +537,75 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(recorder.calls.count, 1)
     }
 
+    func testEveryDaySummaryCarriesWhenThePhoneWorkedItOut() throws {
+        let plain = summary(1)
+        XCTAssertNil(plain.workedOutAt)
+        let stamped = plain.workedOut(at: date("2024-03-01T08:30:15Z"))
+        XCTAssertEqual(stamped.workedOutAt, date("2024-03-01T08:30:15Z"))
+        XCTAssertEqual(stamped.sumValue, plain.sumValue)
+        XCTAssertEqual(stamped.summaryDay, plain.summaryDay)
+        guard case .array(let rows)? = HealthBatch(daySummaries: [stamped]).variables["daySummaries"], case .object(let fields)? = rows.first else {
+            return XCTFail("no summary")
+        }
+        XCTAssertEqual(fields["workedOutAt"], .string("2024-03-01T08:30:15Z"))
+        let decoded = try JSONDecoder().decode(HealthDaySummaryInput.self, from: JSONEncoder().encode(stamped))
+        XCTAssertEqual(decoded.workedOutAt, stamped.workedOutAt)
+    }
+
+    func testTheEntryTheServerNamesIsDroppedAndTheRestIsSentWithoutHalving() async throws {
+        let recorder = Recorder()
+        let batch = HealthBatch(
+            samples: (0..<5).map { sample($0) }, deletedHealthSampleIds: ["gone-1"], daySummaries: [summary(1), summary(2)])
+        let outcome = try await HealthBatchSender.sendSplittingInvalid(batch) { attempt in
+            recorder.calls.append(attempt)
+            if let position = attempt.samples.firstIndex(where: { $0.healthSampleId == "sample-2" }) {
+                throw TeaNodeError.refused("api: invalid arguments: samples[\(position)] ends before it starts")
+            }
+            if attempt.daySummaries.count == 2 {
+                throw TeaNodeError.refused("api: invalid arguments: daySummaries[1] is more than a day in the future")
+            }
+            return ReportHealthResult(newSampleCount: attempt.samples.count, deletedSampleCount: 0, updatedDayCount: attempt.daySummaries.count)
+        }
+        XCTAssertEqual(outcome.droppedEntryCount, 2)
+        XCTAssertEqual(outcome.droppedReasons.count, 2)
+        XCTAssertEqual(outcome.result.newSampleCount, 4)
+        XCTAssertEqual(outcome.result.updatedDayCount, 1)
+        // The whole, then without the sample, then without the summary: no halving.
+        XCTAssertEqual(recorder.calls.count, 3)
+        XCTAssertEqual(recorder.calls.last?.samples.count, 4)
+        XCTAssertEqual(recorder.calls.last?.deletedHealthSampleIds, ["gone-1"])
+    }
+
+    func testAReasonThatNamesNoEntryTheBatchHasFallsBackToHalving() {
+        let batch = HealthBatch(samples: [sample(1), sample(2)], routes: [route("workout-1")])
+        XCTAssertNil(batch.removingEntry(named: "api: invalid arguments: send at most 1000 samples at a time"))
+        XCTAssertNil(batch.removingEntry(named: "api: invalid arguments: samples[7] ends before it starts"))
+        XCTAssertNil(batch.removingEntry(named: "api: invalid arguments: samples[x] is wrong"))
+        XCTAssertEqual(batch.removingEntry(named: "invalid arguments: samples[0] is wrong")?.samples.map(\.healthSampleId), ["sample-2"])
+        XCTAssertEqual(batch.removingEntry(named: "invalid arguments: routes[0] is wrong")?.routes.count, 0)
+        XCTAssertEqual(
+            HealthBatch(characteristics: [HealthCharacteristicInput(healthType: "bloodType", characteristicValue: "x")])
+                .removingEntry(named: "invalid arguments: characteristics[0] is wrong")?.isEmpty,
+            true)
+    }
+
+    func testAFaultOfTheCallItselfIsNotMendedByHalvingTheBatch() async {
+        let recorder = Recorder()
+        let batch = HealthBatch(samples: (0..<4).map { sample($0) })
+        do {
+            _ = try await HealthBatchSender.sendSplittingInvalid(batch) { attempt in
+                recorder.calls.append(attempt)
+                throw TeaNodeError.refused("api: invalid arguments: healthErasedAt is not a time")
+            }
+            XCTFail("should have thrown")
+        } catch {
+            XCTAssertEqual(HealthReportFailure.classify(error), .batchInvalid("api: invalid arguments: healthErasedAt is not a time"))
+        }
+        // Sent once, whole: nothing was dropped.
+        XCTAssertEqual(recorder.calls.count, 1)
+        XCTAssertEqual(recorder.calls.first?.samples.count, 4)
+    }
+
     func testAFailedBatchIsRetriedOnlyForACallThatDidNotGetThrough() {
         XCTAssertEqual(HealthReportFailure.classify(TeaNodeError.refused("api: permission denied")), .refused("api: permission denied"))
         XCTAssertEqual(
@@ -610,9 +680,11 @@ final class HealthTests: XCTestCase {
     }
 
     func testATypeNotInTheTableIsNamedFromItsIdentifier() {
-        XCTAssertEqual(HealthTypes.typeName(for: "someNewMeasure"), "Some New Measure")
-        XCTAssertEqual(HealthTypes.typeName(for: "heartRateVariabilitySDNN"), "Heart Rate Variability")
-        XCTAssertEqual(HealthTypes.words(from: "someSDNNValue"), "Some SDNN Value")
+        XCTAssertEqual(HealthTypes.typeName(for: "someNewMeasure"), "Some new measure")
+        XCTAssertEqual(HealthTypes.typeName(for: "heartRateVariabilitySDNN"), "Heart rate variability")
+        XCTAssertEqual(HealthTypes.words(from: "heartRateVariabilitySDNN"), "Heart rate variability SDNN")
+        XCTAssertEqual(HealthTypes.words(from: "someSDNNValue"), "Some SDNN value")
+        XCTAssertEqual(HealthTypes.words(from: "stepCount"), "Step count")
         XCTAssertEqual(HealthTypes.typeName(for: "stepCount"), "Steps")
     }
 
@@ -845,7 +917,7 @@ final class HealthTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let tokyo = try calendar("Asia/Tokyo")
         var state = HealthSyncState(accountKey: "https://mail.example.com|robin")
-        state.turnOn(at: date("2024-03-01T00:00:00Z"))
+        state.turnOn(healthErasedAt: "2024-02-01T00:00:00.5Z")
         state.setAnchor(Data([1, 2, 3, 250]), for: "stepCount")
         state.setAnchor(Data([9]), for: "heartRate")
         state.markPending(healthType: "sleepAnalysis", from: try moment(tokyo, 2024, 3, 1, 23), to: try moment(tokyo, 2024, 3, 2, 7), calendar: tokyo)
@@ -870,6 +942,7 @@ final class HealthTests: XCTestCase {
         XCTAssertEqual(loaded.sentRouteCount, 1)
         XCTAssertEqual(loaded.lastSentAt, date("2024-03-01T01:00:00Z"))
         XCTAssertTrue(loaded.isTurnedOn)
+        XCTAssertEqual(loaded.healthErasedAt, "2024-02-01T00:00:00.5Z")
 
         // The same bytes every time, so the file does not churn.
         XCTAssertEqual(try loaded.encoded(), try state.encoded())
@@ -880,7 +953,7 @@ final class HealthTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         XCTAssertEqual(HealthSyncState.load(accountKey: "account-a", inDirectory: directory), HealthSyncState(accountKey: "account-a"))
         var state = HealthSyncState(accountKey: "account-a")
-        state.turnOn(at: date("2024-03-01T00:00:00Z"))
+        state.turnOn(healthErasedAt: "2024-02-01T00:00:00.5Z")
         try state.save(inDirectory: directory)
         XCTAssertNotEqual(HealthSyncState.load(accountKey: "account-a", inDirectory: directory), HealthSyncState(accountKey: "account-a"))
         XCTAssertEqual(HealthSyncState.load(accountKey: "account-b", inDirectory: directory), HealthSyncState(accountKey: "account-b"))
@@ -891,42 +964,67 @@ final class HealthTests: XCTestCase {
 
     func testTheAnswerToABatchIsTakenOnlyWhenTheServerStoredIt() {
         var state = HealthSyncState(accountKey: "account-a")
-        state.turnOn(at: date("2024-03-01T00:00:00Z"))
+        state.turnOn(healthErasedAt: "2024-03-01T00:00:00Z")
         state.setAnchor(Data([1]), for: "stepCount")
         let batch = HealthBatch(samples: [sample(1), sample(2)])
 
         // Taken: counted by what was new to the server, and the caller may move anchors.
-        XCTAssertTrue(state.accept(ReportHealthResult(newSampleCount: 1, deletedSampleCount: 0, updatedDayCount: 0), for: batch, at: date("2024-03-01T01:00:00Z")))
+        XCTAssertTrue(
+            state.accept(
+                ReportHealthResult(newSampleCount: 1, deletedSampleCount: 0, updatedDayCount: 0, healthErasedAt: "2024-03-01T00:00:00Z"), for: batch,
+                at: date("2024-03-01T01:00:00Z")))
         XCTAssertEqual(state.sentSampleCount, 1)
         XCTAssertEqual(state.lastSentAt, date("2024-03-01T01:00:00Z"))
 
         // The server stored nothing because the person erased everything after
-        // Health was turned on: nothing is counted, the anchors are forgotten
-        // and Health is off.
+        // the erase the phone knew of: nothing is counted, the anchors are
+        // forgotten and Health is off, with the reason kept for the settings.
         let erased = ReportHealthResult(newSampleCount: 0, deletedSampleCount: 0, updatedDayCount: 0, healthErasedAt: "2024-03-02T00:00:00Z")
         XCTAssertFalse(state.accept(erased, for: batch, at: date("2024-03-02T01:00:00Z")))
         XCTAssertFalse(state.isTurnedOn)
+        XCTAssertTrue(state.isStoppedByErase)
         XCTAssertTrue(state.anchors.isEmpty)
         XCTAssertEqual(state.sentSampleCount, 0)
         XCTAssertNil(state.lastSentAt)
+        XCTAssertNil(state.healthErasedAt)
 
-        // An erase from before Health was turned on again is not news.
-        state.turnOn(at: date("2024-03-03T00:00:00Z"))
+        // Turned on again, having read that erase from the server: it is not news.
+        state.turnOn(healthErasedAt: "2024-03-02T00:00:00Z")
+        XCTAssertFalse(state.isStoppedByErase)
         XCTAssertTrue(state.accept(erased, for: batch, at: date("2024-03-03T01:00:00Z")))
         XCTAssertTrue(state.isTurnedOn)
     }
 
-    func testTurningOnKeepsWholeSecondsSoTheFileAndTheServerAgree() throws {
+    func testTurningOnKeepsTheEraseTimeExactlyAsTheServerWroteItAndTheFileAgrees() throws {
         var state = HealthSyncState(accountKey: "account-a")
-        state.turnOn(at: Date(timeIntervalSince1970: 1_709_251_200.9))
-        XCTAssertEqual(state.healthTurnedOnAt, Date(timeIntervalSince1970: 1_709_251_200))
+        state.turnOn(healthErasedAt: "2024-03-01T08:30:15.123456789+09:00")
+        XCTAssertEqual(state.healthErasedAt, "2024-03-01T08:30:15.123456789+09:00")
         let loaded = try HealthSyncState.decoded(from: try state.encoded())
-        XCTAssertEqual(loaded.healthTurnedOnAt, state.healthTurnedOnAt)
+        XCTAssertEqual(loaded.healthErasedAt, state.healthErasedAt)
+        XCTAssertTrue(loaded.isTurnedOn)
+        // Turning on again changes nothing.
+        state.turnOn(healthErasedAt: nil)
+        XCTAssertEqual(state.healthErasedAt, "2024-03-01T08:30:15.123456789+09:00")
+        // A person who never erased: nothing is known, and nothing is sent.
+        var never = HealthSyncState(accountKey: "account-a")
+        never.turnOn(healthErasedAt: nil)
+        XCTAssertNil(never.healthErasedAt)
+        XCTAssertTrue(never.isTurnedOn)
+    }
+
+    func testTheStoppedByEraseNoticeSurvivesTheFileAndIsClearedByTurningOffOrOn() throws {
+        var state = HealthSyncState(accountKey: "account-a")
+        state.turnOn(healthErasedAt: nil)
+        XCTAssertTrue(state.applyServerErase(healthErasedAt: "2024-03-02T00:00:00Z"))
+        XCTAssertTrue(try HealthSyncState.decoded(from: try state.encoded()).isStoppedByErase)
+        state.turnOff()
+        XCTAssertFalse(state.isStoppedByErase)
+        XCTAssertTrue(state.applyServerErase(healthErasedAt: "2024-03-02T00:00:00Z") == false, "off: nothing to stop")
     }
 
     func testTheRoutesSentAndTheHistoryAreKeptInTheFileAndForgottenOnReset() throws {
         var state = HealthSyncState(accountKey: "account-a")
-        state.turnOn(at: date("2024-03-01T00:00:00Z"))
+        state.turnOn(healthErasedAt: nil)
         XCTAssertFalse(state.hasSentRoute(healthSampleId: "workout-1"))
         state.recordRouteSent(healthSampleId: "workout-1")
         state.recordRouteSent(healthSampleId: "workout-1")
@@ -949,7 +1047,7 @@ final class HealthTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         XCTAssertTrue(HealthSyncState.accountKeysTurnedOn(inDirectory: directory).isEmpty)
         var on = HealthSyncState(accountKey: "https://mail.example.com|robin")
-        on.turnOn(at: date("2024-03-01T00:00:00Z"))
+        on.turnOn(healthErasedAt: nil)
         try on.save(inDirectory: directory)
         try HealthSyncState(accountKey: "account-off").save(inDirectory: directory)
         try Data("not json".utf8).write(to: directory.appendingPathComponent("health-broken.json"))
@@ -958,37 +1056,75 @@ final class HealthTests: XCTestCase {
         XCTAssertTrue(HealthSyncState.accountKeysTurnedOn(inDirectory: directory).isEmpty)
     }
 
-    func testAnEraseAfterHealthWasTurnedOnResetsTheStateAndTurnsHealthOff() {
+    func testAnEraseLaterThanTheOneThePhoneKnowsOfResetsTheStateAndTurnsHealthOff() {
         var state = HealthSyncState(accountKey: "account-a")
-        state.turnOn(at: date("2024-03-01T00:00:00Z"))
+        state.turnOn(healthErasedAt: "2024-02-01T00:00:00Z")
         state.setAnchor(Data([1]), for: "stepCount")
         state.markPending(HealthPendingDay(healthType: "stepCount", day: "2024-03-01"))
         state.recordSent(HealthBatch(samples: [sample(1)]), result: .nothing, at: date("2024-03-01T01:00:00Z"))
 
-        // An erase from before it was turned on, or at the same moment, and no
-        // erase at all, change nothing.
+        // No erase at all, the one the phone knows of, and an older one change nothing.
         XCTAssertFalse(state.applyServerErase(healthErasedAt: nil))
-        XCTAssertFalse(state.applyServerErase(healthErasedAt: date("2024-02-01T00:00:00Z")))
-        XCTAssertFalse(state.applyServerErase(healthErasedAt: date("2024-03-01T00:00:00Z")))
+        XCTAssertFalse(state.applyServerErase(healthErasedAt: "2024-02-01T00:00:00Z"))
+        XCTAssertFalse(state.applyServerErase(healthErasedAt: "2024-01-01T00:00:00Z"))
         XCTAssertTrue(state.isTurnedOn)
+        XCTAssertFalse(state.isStoppedByErase)
         XCTAssertNotNil(state.anchor(for: "stepCount"))
 
-        XCTAssertTrue(state.applyServerErase(healthErasedAt: date("2024-03-02T00:00:00Z")))
+        XCTAssertTrue(state.applyServerErase(healthErasedAt: "2024-03-02T00:00:00Z"))
         XCTAssertFalse(state.isTurnedOn)
-        XCTAssertNil(state.healthTurnedOnAt)
+        XCTAssertTrue(state.isStoppedByErase)
         XCTAssertTrue(state.anchors.isEmpty)
         XCTAssertTrue(state.pendingDays.isEmpty)
         XCTAssertEqual(state.sentSampleCount, 0)
         XCTAssertNil(state.lastSentAt)
         XCTAssertEqual(state.accountKey, "account-a")
 
-        // Turned on again after the erase: that erase is no longer later.
-        state.turnOn(at: date("2024-03-03T00:00:00Z"))
-        XCTAssertFalse(state.applyServerErase(healthErasedAt: date("2024-03-02T00:00:00Z")))
-        XCTAssertTrue(state.isTurnedOn)
         // Already off: nothing to reset.
-        var off = HealthSyncState(accountKey: "account-a")
-        XCTAssertFalse(off.applyServerErase(healthErasedAt: date("2024-03-02T00:00:00Z")))
+        XCTAssertFalse(state.applyServerErase(healthErasedAt: "2024-03-09T00:00:00Z"))
+    }
+
+    func testAnyEraseIsNewsToAPhoneThatKnowsOfNoneAndTheFractionOfASecondDecides() {
+        var state = HealthSyncState(accountKey: "account-a")
+        state.turnOn(healthErasedAt: nil)
+        XCTAssertTrue(state.isErasedLater(than: "2024-03-02T00:00:00Z"))
+        XCTAssertFalse(state.isErasedLater(than: nil))
+
+        // The server compares to the fraction, so the phone must too: the
+        // erase it was told of is not later than itself, a later fraction is.
+        var knowing = HealthSyncState(accountKey: "account-a")
+        knowing.turnOn(healthErasedAt: "2024-03-02T00:00:00.250000000Z")
+        XCTAssertFalse(knowing.isErasedLater(than: "2024-03-02T00:00:00.25Z"))
+        XCTAssertFalse(knowing.isErasedLater(than: "2024-03-02T00:00:00.2Z"))
+        XCTAssertTrue(knowing.isErasedLater(than: "2024-03-02T00:00:00.250000001Z"))
+        XCTAssertTrue(knowing.isErasedLater(than: "2024-03-02T00:00:01Z"))
+        // Another offset for the same moment is the same moment.
+        XCTAssertFalse(knowing.isErasedLater(than: "2024-03-02T09:00:00.25+09:00"))
+        XCTAssertTrue(ServerTime.isLater("2024-03-02T09:00:00.5+09:00", than: "2024-03-02T00:00:00.25Z"))
+        XCTAssertFalse(ServerTime.isLater("not a time", than: "2024-03-02T00:00:00Z"))
+        XCTAssertTrue(ServerTime.isLater("2024-03-02T00:00:00Z", than: "not a time"))
+    }
+
+    func testEntriesTheServerRefusedOneByOneAreCountedUntilHealthIsTurnedOff() throws {
+        var state = HealthSyncState(accountKey: "account-a")
+        state.turnOn(healthErasedAt: nil)
+        state.recordDropped(entryCount: 2)
+        state.recordDropped(entryCount: 0)
+        state.recordDropped(entryCount: -4)
+        XCTAssertEqual(state.droppedEntryCount, 2)
+        XCTAssertEqual(try HealthSyncState.decoded(from: try state.encoded()).droppedEntryCount, 2)
+        state.turnOff()
+        XCTAssertEqual(state.droppedEntryCount, 0)
+    }
+
+    func testTheLaterEraseOfTwoAnswersIsKeptToTheFraction() {
+        let early = ReportHealthResult(newSampleCount: 1, deletedSampleCount: 0, updatedDayCount: 0, healthErasedAt: "2024-03-02T00:00:00.1Z")
+        let late = ReportHealthResult(newSampleCount: 1, deletedSampleCount: 0, updatedDayCount: 0, healthErasedAt: "2024-03-02T00:00:00.9Z")
+        XCTAssertEqual(early.merged(with: late).healthErasedAt, "2024-03-02T00:00:00.9Z")
+        XCTAssertEqual(late.merged(with: early).healthErasedAt, "2024-03-02T00:00:00.9Z")
+        XCTAssertEqual(ReportHealthResult.nothing.merged(with: early).healthErasedAt, "2024-03-02T00:00:00.1Z")
+        XCTAssertEqual(early.merged(with: .nothing).healthErasedAt, "2024-03-02T00:00:00.1Z")
+        XCTAssertEqual(early.merged(with: late).newSampleCount, 2)
     }
 
     func testTheDaysOfDeletedSamplesWaitToBeWorkedOutAgain() throws {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../../api'
@@ -69,9 +69,9 @@ function HealthContent({ userId }: { userId: string }) {
     setParameters(
       (previous) => {
         const written = new URLSearchParams(previous)
-        for (const [name, value] of Object.entries(changes)) {
-          if (value === null) written.delete(name)
-          else written.set(name, value)
+        for (const [parameterName, parameterValue] of Object.entries(changes)) {
+          if (parameterValue === null) written.delete(parameterName)
+          else written.set(parameterName, parameterValue)
         }
         return written
       },
@@ -98,7 +98,7 @@ function HealthContent({ userId }: { userId: string }) {
   }, [shares.data, userId])
 
   const requestedPerson = parameters.get('person')
-  const viewedPerson = sharers.find((each) => each.userId === requestedPerson) ?? null
+  const viewedPerson = sharers.find((sharer) => sharer.userId === requestedPerson) ?? null
   const ownerUserId = viewedPerson?.userId ?? null
   // A failed read of the shares does not leave the page waiting for them: the
   // link is taken out of the address as a stale one is.
@@ -142,16 +142,28 @@ function HealthContent({ userId }: { userId: string }) {
   )
 
   const requestedType = parameters.get('type')
-  const chosenFromAddress = typeList?.find((each) => each.healthType === requestedType) ?? null
+  const chosenFromAddress = typeList?.find((listedType) => listedType.healthType === requestedType) ?? null
   // With no type named, the first one in the list is shown (on a phone, the
   // list is shown instead until one is chosen).
   const chosenType = chosenFromAddress ?? (typeList ? (groupByCategory(typeList)[0]?.healthTypes[0] ?? null) : null)
 
   const sampleRouteId = ownerUserId === null ? parameters.get('route') : null
 
-  function choosePerson(value: string) {
+  // On a phone the list is hidden while a type is open; Back shows it again,
+  // and focus goes to the row that was open instead of being lost.
+  const typeToFocus = useRef<string | null>(null)
+  useEffect(() => {
+    if (chosenFromAddress || typeToFocus.current === null) return
+    const row = [...document.querySelectorAll<HTMLElement>('[data-health-type]')].find(
+      (candidate) => candidate.dataset.healthType === typeToFocus.current,
+    )
+    typeToFocus.current = null
+    row?.focus()
+  }, [chosenFromAddress])
+
+  function choosePerson(chosenUserId: string) {
     changeParameters({
-      person: value || null,
+      person: chosenUserId || null,
       tab: null,
       type: null,
       route: null,
@@ -165,7 +177,7 @@ function HealthContent({ userId }: { userId: string }) {
 
   const personOptions = [
     { value: '', label: t('health.you') },
-    ...sharers.map((each) => ({ value: each.userId, label: each.name })),
+    ...sharers.map((sharer) => ({ value: sharer.userId, label: sharer.name })),
   ]
 
   const isEmpty = typeList !== null && typeList.length === 0
@@ -230,7 +242,14 @@ function HealthContent({ userId }: { userId: string }) {
               </div>
               {chosenType && (
                 <div className="health-detail">
-                  <button type="button" className="button-quiet health-back" onClick={() => chooseType(null)}>
+                  <button
+                    type="button"
+                    className="button-quiet health-back"
+                    onClick={() => {
+                      typeToFocus.current = chosenType.healthType
+                      chooseType(null)
+                    }}
+                  >
                     <ArrowLeftIcon size={16} /> {t('health.back')}
                   </button>
                   <HealthTypePanel
@@ -240,8 +259,8 @@ function HealthContent({ userId }: { userId: string }) {
                     range={range}
                     period={period}
                     today={today}
-                    onRange={(next) => changeParameters({ range: next === DEFAULT_RANGE ? null : next })}
-                    onPeriod={(next) => changeParameters({ period: next })}
+                    onRange={(nextRange) => changeParameters({ range: nextRange === DEFAULT_RANGE ? null : nextRange })}
+                    onPeriod={(nextPeriod) => changeParameters({ period: nextPeriod })}
                     onErased={() => {
                       chooseType(null)
                       void typesQuery.reload()

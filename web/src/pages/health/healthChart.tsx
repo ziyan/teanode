@@ -24,9 +24,7 @@ import {
   amountText,
   categorySecondsOf,
   chartDays,
-  displayUnit,
   durationText,
-  numberText,
   numbersOf,
   parseDay,
   quantityText,
@@ -61,10 +59,12 @@ type AnsweredSummary = {
 // one scale.
 const PER_DAY_KINDS = ['sum', 'duration']
 
-// The unit a chart of time is drawn in, in seconds: a night in hours, a
-// workout in minutes.
-const SLEEP_CHART_SECONDS = 3600
-const WORKOUT_CHART_SECONDS = 60
+// The unit a chart of time is drawn in, in seconds: minutes when its tallest
+// column is under two hours (a workout, ten minutes of mindfulness), else
+// hours (a night).
+const MINUTE_CHART_SECONDS = 60
+const HOUR_CHART_SECONDS = 3600
+const MOST_MINUTE_CHART_SECONDS = 2 * HOUR_CHART_SECONDS
 
 // A distance chart is drawn in kilometers once its tallest column is this
 // many meters, as the headline is.
@@ -86,8 +86,8 @@ export function HealthTypePanel({
   range: RangeID
   period: PeriodID
   today: string
-  onRange: (range: RangeID) => void
-  onPeriod: (period: PeriodID) => void
+  onRange: (nextRange: RangeID) => void
+  onPeriod: (nextPeriod: PeriodID) => void
   onErased: () => void
 }) {
   const { t, plural, language } = useTranslation()
@@ -130,17 +130,21 @@ export function HealthTypePanel({
 
   const typeLabel = typeName(t, chosenType.healthType, chosenType.typeName)
   const summaryKind = chosenType.summaryKind
-  const unit = displayUnit(chosenType.healthType, chosenType.quantityUnit)
+  const quantityUnit = chosenType.quantityUnit
+  const healthType = chosenType.healthType
   const periods = useMemo(() => answered?.summary.periods ?? [], [answered])
   const numbers = numbersOf(periods, summaryKind, fromDay, toDay)
-  const durationSeconds = chosenType.valueKind === 'workout' ? WORKOUT_CHART_SECONDS : SLEEP_CHART_SECONDS
 
   const mediumDay = useMemo(() => new Intl.DateTimeFormat(language, { dateStyle: 'medium' }), [language])
   const monthFormat = useMemo(() => new Intl.DateTimeFormat(language, { year: 'numeric', month: 'long' }), [language])
   const shortMonth = useMemo(() => new Intl.DateTimeFormat(language, { month: 'short' }), [language])
+  const shortMonthWithYear = useMemo(
+    () => new Intl.DateTimeFormat(language, { month: 'short', year: 'numeric' }),
+    [language],
+  )
 
   const chart = useMemo(() => {
-    const byStart = new Map(periods.map((each) => [each.startDay.slice(0, 10), each]))
+    const byStart = new Map(periods.map((summaryPeriod) => [summaryPeriod.startDay.slice(0, 10), summaryPeriod]))
     // A day period is drawn over every day of the range, so a day nothing was
     // recorded on is a gap; weeks and months are the ones the server sent.
     const keys = drawnPeriod === 'day' ? daysBetween(fromDay, toDay) : [...byStart.keys()]
@@ -158,14 +162,16 @@ export function HealthTypePanel({
     }
 
     const stageIds = SLEEP_STAGES.filter((stage) =>
-      periods.some((each) => (categorySecondsOf(each)[stage.id] ?? 0) > 0),
+      periods.some((summaryPeriod) => (categorySecondsOf(summaryPeriod)[stage.id] ?? 0) > 0),
     )
     const isStaged = summaryKind === 'duration' && stageIds.length > 0
-    const series: ChartSeries[] = []
+    // The values of a time are in seconds here, and divided into the chart's
+    // unit once its tallest column is known.
+    const secondsSeries: ChartSeries[] = []
     const bands: ChartBand[] = []
     if (isStaged) {
       for (const stage of stageIds) {
-        series.push({
+        secondsSeries.push({
           id: stage.id,
           label: stageName(t, stage.id),
           tone: stage.tone,
@@ -173,13 +179,13 @@ export function HealthTypePanel({
           values: rows.map((row) => {
             if (!row) return null
             const seconds = categorySecondsOf(row)[stage.id]
-            return seconds === undefined ? null : perDay(row, seconds) / durationSeconds
+            return seconds === undefined ? null : perDay(row, seconds)
           }),
         })
       }
     } else if (summaryKind === 'average') {
-      series.push({
-        id: chosenType.healthType,
+      secondsSeries.push({
+        id: healthType,
         label: typeLabel,
         tone: 'output',
         shape: 'line',
@@ -192,57 +198,83 @@ export function HealthTypePanel({
         highs: rows.map((row) => (row && row.sampleCount > 0 ? row.maximumValue : null)),
       })
     } else {
-      series.push({
-        id: chosenType.healthType,
+      secondsSeries.push({
+        id: healthType,
         label: typeLabel,
         tone: 'output',
         shape: 'column',
-        values: rows.map((row) => {
-          const rowAmount = valueOf(row)
-          return rowAmount === null ? null : summaryKind === 'duration' ? rowAmount / durationSeconds : rowAmount
-        }),
+        values: rows.map(valueOf),
       })
     }
-    const peak = Math.max(0, ...series.flatMap((one) => one.values.filter((each): each is number => each !== null)))
-    return { keys, rows, series, bands, isStaged, peak }
-  }, [periods, drawnPeriod, fromDay, toDay, summaryKind, chosenType.healthType, typeLabel, durationSeconds, t])
+    const columnTotals = keys.map((_, index) =>
+      isStaged ? secondsSeries.reduce((total, stage) => total + (stage.values[index] ?? 0), 0) : 0,
+    )
+    const tallest = Math.max(
+      0,
+      ...columnTotals,
+      ...secondsSeries.flatMap((drawn) =>
+        drawn.values.filter((drawnValue): drawnValue is number => drawnValue !== null),
+      ),
+    )
+    const unitSeconds =
+      summaryKind !== 'duration' ? 1 : tallest < MOST_MINUTE_CHART_SECONDS ? MINUTE_CHART_SECONDS : HOUR_CHART_SECONDS
+    const series = secondsSeries.map((drawn) => ({
+      ...drawn,
+      values: drawn.values.map((drawnValue) => (drawnValue === null ? null : drawnValue / unitSeconds)),
+    }))
+    return { keys, rows, series, bands, isStaged, unitSeconds, peak: tallest / unitSeconds }
+  }, [periods, drawnPeriod, fromDay, toDay, summaryKind, healthType, typeLabel, t])
 
   const formatChartValue = (chartValue: number): string =>
     summaryKind === 'duration'
-      ? durationText(chartValue * durationSeconds, t)
+      ? durationText(chartValue * chart.unitSeconds, t)
       : summaryKind === 'count'
-        ? numberText(chartValue, language)
-        : quantityText(chartValue, unit, language, t)
+        ? wholeNumberText(chartValue, language)
+        : quantityText(chartValue, quantityUnit, healthType, language, t)
   // The axis is written as the figures are: a percentage is the fraction
   // times a hundred, and meters are kilometers once the headline's are.
-  const axisDivisor = unit === 'm' && chart.peak >= KILOMETER_AXIS_FROM_METERS ? KILOMETER_AXIS_FROM_METERS : 1
+  const axisDivisor = quantityUnit === 'm' && chart.peak >= KILOMETER_AXIS_FROM_METERS ? KILOMETER_AXIS_FROM_METERS : 1
   const axisFormat = (axisValue: number, precision: number): string => {
     if (summaryKind === 'duration') {
-      return durationSeconds === WORKOUT_CHART_SECONDS
+      return chart.unitSeconds === MINUTE_CHART_SECONDS
         ? t('health.minutes', { minutes: compact(axisValue, precision) })
         : t('health.hours', { hours: compact(axisValue, precision) })
     }
-    return compact(shownValue(axisValue, unit) / axisDivisor, precision)
+    return compact(shownValue(axisValue, quantityUnit) / axisDivisor, precision)
   }
 
-  const keyLabel = (key: string): string => (drawnPeriod === 'month' ? shortMonth.format(parseDay(key)) : dayLabel(key))
+  // A chart that reaches over more than one year names the year in its month
+  // labels, or January of one year reads as January of the next.
+  const doesSpanYears =
+    chart.keys.length > 1 && chart.keys[0].slice(0, 4) !== chart.keys[chart.keys.length - 1].slice(0, 4)
+  const keyLabel = (key: string): string => {
+    if (drawnPeriod !== 'month') return dayLabel(key)
+    return (doesSpanYears ? shortMonthWithYear : shortMonth).format(parseDay(key))
+  }
+  // A week's or month's bar is one day of it, on average, which the tooltip's
+  // title says (the amounts of a sum or a time).
+  const isPerDay = drawnPeriod !== 'day' && PER_DAY_KINDS.includes(summaryKind)
   const keyTitle = (key: string): string => {
-    if (drawnPeriod === 'month') return monthFormat.format(parseDay(key))
+    let title = mediumDay.format(parseDay(key))
+    if (drawnPeriod === 'month') title = monthFormat.format(parseDay(key))
     if (drawnPeriod === 'week') {
       const row = chart.rows[chart.keys.indexOf(key)]
-      return row
-        ? t('health.periodRange', {
-            from: mediumDay.format(parseDay(row.startDay)),
-            until: mediumDay.format(parseDay(row.endDay)),
-          })
-        : mediumDay.format(parseDay(key))
+      if (row) {
+        title = t('health.periodRange', {
+          from: mediumDay.format(parseDay(row.startDay)),
+          until: mediumDay.format(parseDay(row.endDay)),
+        })
+      }
     }
-    return mediumDay.format(parseDay(key))
+    return isPerDay ? t('health.titlePerDay', { title }) : title
   }
 
   const hasData = chart.rows.some((row) => row !== undefined && row.sampleCount > 0)
-  const amount = (amountValue: number | null) => amountText(amountValue, summaryKind, unit, language, t)
-  // The first figure is the headline; the rest stand under the chart.
+  const amount = (amountValue: number | null) =>
+    amountText(amountValue, summaryKind, quantityUnit, healthType, language, t)
+  // The first figure is the headline; the rest stand under the chart. The
+  // nights of a chart of sleep are not added together: a total over a month
+  // says nothing about any night.
   const figures: { label: Key; text: string }[] =
     summaryKind === 'average'
       ? [
@@ -252,10 +284,12 @@ export function HealthTypePanel({
         ]
       : summaryKind === 'count'
         ? [{ label: 'health.total', text: amount(numbers.total) }]
-        : [
-            { label: 'health.averagePerDay', text: amount(numbers.averagePerDay) },
-            { label: 'health.total', text: amount(numbers.total) },
-          ]
+        : chart.isStaged
+          ? [{ label: 'health.averagePerDay', text: amount(numbers.averagePerDay) }]
+          : [
+              { label: 'health.averagePerDay', text: amount(numbers.averagePerDay) },
+              { label: 'health.total', text: amount(numbers.total) },
+            ]
 
   async function erase() {
     setIsBusy(true)
@@ -291,28 +325,28 @@ export function HealthTypePanel({
   const controls = (
     <div className="health-controls">
       <div className="segmented" role="group" aria-label={t('health.range')}>
-        {RANGES.map((each) => (
+        {RANGES.map((rangeChoice) => (
           <button
-            key={each.id}
+            key={rangeChoice.id}
             type="button"
-            className={range === each.id ? 'active' : ''}
-            aria-pressed={range === each.id}
-            onClick={() => onRange(each.id)}
+            className={range === rangeChoice.id ? 'active' : ''}
+            aria-pressed={range === rangeChoice.id}
+            onClick={() => onRange(rangeChoice.id)}
           >
-            {t(each.label)}
+            {t(rangeChoice.label)}
           </button>
         ))}
       </div>
       <div className="segmented" role="group" aria-label={t('health.period')}>
-        {PERIODS.map((each) => (
+        {PERIODS.map((periodChoice) => (
           <button
-            key={each.id}
+            key={periodChoice.id}
             type="button"
-            className={period === each.id ? 'active' : ''}
-            aria-pressed={period === each.id}
-            onClick={() => onPeriod(each.id)}
+            className={period === periodChoice.id ? 'active' : ''}
+            aria-pressed={period === periodChoice.id}
+            onClick={() => onPeriod(periodChoice.id)}
           >
-            {t(each.label)}
+            {t(periodChoice.label)}
           </button>
         ))}
       </div>
@@ -350,13 +384,10 @@ export function HealthTypePanel({
       {controls}
       {answered === null && !isFailed ? <Loading /> : null}
       {isFailed ? (
-        <div className="health-failed">
-          <SettingsEmpty>{t('health.summaryFailed')}</SettingsEmpty>
-          <div className="page-actions">
-            <button type="button" onClick={() => void summaryQuery.reload()}>
-              {t('common.tryAgain')}
-            </button>
-          </div>
+        <div className="page-actions">
+          <button type="button" onClick={() => void summaryQuery.reload()}>
+            {t('common.tryAgain')}
+          </button>
         </div>
       ) : null}
       {answered !== null && !isFailed && !hasData ? <SettingsEmpty>{t('health.noData')}</SettingsEmpty> : null}
@@ -382,8 +413,8 @@ export function HealthTypePanel({
                 return {
                   label: t('health.rangeTooltip'),
                   text: t('health.valueRange', {
-                    from: quantityText(row.minimumValue, unit, language, t),
-                    until: quantityText(row.maximumValue, unit, language, t),
+                    from: quantityText(row.minimumValue, quantityUnit, healthType, language, t),
+                    until: quantityText(row.maximumValue, quantityUnit, healthType, language, t),
                   }),
                 }
               }
@@ -391,10 +422,10 @@ export function HealthTypePanel({
                 // The night's total is the time asleep, as the headline is:
                 // the time awake is a stage of its own, not part of it.
                 const asleepChartValue = chart.series.reduce(
-                  (sum, one) => sum + (one.id === 'awake' ? 0 : (one.values[index] ?? 0)),
+                  (sum, stage) => sum + (stage.id === 'awake' ? 0 : (stage.values[index] ?? 0)),
                   0,
                 )
-                return { label: t('health.total'), text: durationText(asleepChartValue * durationSeconds, t) }
+                return { label: t('health.total'), text: durationText(asleepChartValue * chart.unitSeconds, t) }
               }
               return null
             }}

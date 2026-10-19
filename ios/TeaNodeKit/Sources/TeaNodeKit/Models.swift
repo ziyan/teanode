@@ -386,4 +386,27 @@ public enum ServerTime {
         }
         return try? Date(text, strategy: .iso8601)
     }
+
+    /// Whether the first RFC 3339 time is later than the second, down to the
+    /// fractions of a second Go writes (`date` drops them). A time that is not
+    /// one is no time at all: it is never later, and anything is later than
+    /// it. Two times in the same second tell apart by their fractions, so a
+    /// time the phone sends back exactly as it got it is never earlier than
+    /// itself.
+    public static func isLater(_ text: String?, than otherText: String?) -> Bool {
+        guard let moment = preciseMoment(text) else { return false }
+        guard let otherMoment = preciseMoment(otherText) else { return true }
+        return (moment.wholeSeconds, moment.fraction) > (otherMoment.wholeSeconds, otherMoment.fraction)
+    }
+
+    /// The whole seconds of a time, and the fraction of a second after them.
+    private static func preciseMoment(_ text: String?) -> (wholeSeconds: Date, fraction: Double)? {
+        guard let text, let wholeSeconds = date(text) else { return nil }
+        var fraction = 0.0
+        if let dot = text.firstIndex(of: ".") {
+            let digits = text[text.index(after: dot)...].prefix(while: { $0.isNumber })
+            fraction = Double("0." + String(digits)) ?? 0
+        }
+        return (wholeSeconds, fraction)
+    }
 }

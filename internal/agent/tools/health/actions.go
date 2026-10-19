@@ -26,7 +26,7 @@ const (
 	// defaultSampleLimit is 20 readings where the dashboard and the command
 	// line show 50: every reading goes into the model's context, with its
 	// metadata, and a page of fifty workouts would fill it. The model asks for
-	// more with limit and next_offset.
+	// more with limit_count and next_offset.
 	defaultSampleLimit = 20
 	largestSampleLimit = 200
 )
@@ -37,6 +37,13 @@ const (
 const notAllowedWords = "The person has not let you read their Health data. " +
 	"They can turn on \"Let the agent read Health data\" in the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings, and then ask again. " +
 	"You can offer to open it with set_up."
+
+// unattendedWords is the whole answer of every action that reads Health in a
+// run nobody is watching: a dream, a subagent in the background, a scheduled
+// run, a goal, a turn of somebody else in the person's chat. What a run like
+// that reads would be filed away without the person having asked, and Health
+// never goes into memory.
+const unattendedWords = "Health data is read only in a conversation with the person, not in a dream, a background task or any other run nobody is watching, so ask them in a conversation instead."
 
 // scope is what every action needs: the run, the person's zone and now.
 type scope struct {
@@ -98,9 +105,13 @@ func (self *scope) days(from, to string) (time.Time, time.Time, error) {
 	return firstDay, lastDay, nil
 }
 
-// periodCount is how many periods a range makes, at most.
+// periodCount is how many periods a range makes, at most. The days are
+// counted on the calendar, so that a range over a clock change is not a day
+// short.
 func periodCount(firstDay, lastDay time.Time, period string) int {
-	dayCount := int(lastDay.Sub(firstDay).Hours()/24) + 1
+	first := time.Date(firstDay.Year(), firstDay.Month(), firstDay.Day(), 0, 0, 0, 0, time.UTC)
+	last := time.Date(lastDay.Year(), lastDay.Month(), lastDay.Day(), 0, 0, 0, 0, time.UTC)
+	dayCount := int(last.Sub(first).Hours()/24) + 1
 	switch period {
 	case "week":
 		return dayCount/7 + 2
@@ -110,13 +121,17 @@ func periodCount(firstDay, lastDay time.Time, period string) int {
 	return dayCount
 }
 
-// withGate runs an action only when the person has let the agent read their
-// Health data, and otherwise answers in one sentence that they have not.
+// withGate runs an action only in a run the person is there for, and only
+// when they have let the agent read their Health data, and otherwise answers
+// in one sentence why not.
 func withGate(run func(ctx context.Context, call *tools.Call, here *scope) (*tools.Result, error)) func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		here, err := scopeOf(ctx)
 		if err != nil {
 			return nil, err
+		}
+		if here.run.Headless() || !here.run.CanAsk() {
+			return tools.TextResult("%s", unattendedWords), nil
 		}
 		isAllowed, err := here.isAllowed(ctx)
 		if err != nil {
@@ -175,8 +190,8 @@ var runTypes = withGate(func(ctx context.Context, call *tools.Call, here *scope)
 		characteristics := make([]map[string]any, 0, len(settings.ReadHealthSettings.Characteristics))
 		for _, characteristic := range settings.ReadHealthSettings.Characteristics {
 			characteristics = append(characteristics, map[string]any{
-				"health_type": characteristic.HealthType, "characteristic_name": health.CharacteristicName(characteristic.HealthType),
-				"characteristic_text": health.CharacteristicWords(characteristic.HealthType, characteristic.CharacteristicValue, here.now.In(here.timeZone)),
+				"health_type": characteristic.HealthType, "characteristic_name": health.AgentCharacteristicName(characteristic.HealthType),
+				"characteristic_text": health.AgentCharacteristicWords(characteristic.HealthType, characteristic.CharacteristicValue, here.now.In(here.timeZone)),
 			})
 		}
 		answer["characteristics"] = characteristics
@@ -249,7 +264,7 @@ type samplesArguments struct {
 	HealthType string `json:"health_type"`
 	From       string `json:"from"`
 	To         string `json:"to"`
-	Limit      *int   `json:"limit"`
+	LimitCount *int   `json:"limit_count"`
 	Offset     *int   `json:"offset"`
 }
 
@@ -262,12 +277,12 @@ var runSamples = withGate(func(ctx context.Context, call *tools.Call, here *scop
 	if healthType == "" {
 		return nil, errors.New("health_type is required: types lists the ones the person has")
 	}
-	limit := defaultSampleLimit
-	if arguments.Limit != nil {
-		limit = *arguments.Limit
+	limitCount := defaultSampleLimit
+	if arguments.LimitCount != nil {
+		limitCount = *arguments.LimitCount
 	}
-	if limit < 1 || limit > largestSampleLimit {
-		return nil, fmt.Errorf("limit is between 1 and %d", largestSampleLimit)
+	if limitCount < 1 || limitCount > largestSampleLimit {
+		return nil, fmt.Errorf("limit_count is between 1 and %d", largestSampleLimit)
 	}
 	firstDay, lastDay, err := here.days(arguments.From, arguments.To)
 	if err != nil {
@@ -277,7 +292,7 @@ var runSamples = withGate(func(ctx context.Context, call *tools.Call, here *scop
 		"healthType": healthType, "from": firstDay.UTC().Format(time.RFC3339),
 		// Whole days: up to the start of the day after the last.
 		"to":         lastDay.AddDate(0, 0, 1).UTC().Format(time.RFC3339),
-		"limitCount": limit,
+		"limitCount": limitCount,
 	}
 	if arguments.Offset != nil && *arguments.Offset > 0 {
 		variables["offset"] = *arguments.Offset
@@ -320,15 +335,15 @@ var runSamples = withGate(func(ctx context.Context, call *tools.Call, here *scop
 // said with its unit, and where it came from.
 func (self *scope) sampleRow(sample *client.HealthSampleView) map[string]any {
 	row := map[string]any{
-		"sample_id":     sample.HealthSampleID,
-		"started_local": sample.StartedAt.In(self.timeZone).Format("2006-01-02 15:04"),
-		"duration_text": client.HealthDurationWords(sample.EndedAt.Sub(sample.StartedAt).Seconds()),
+		"health_sample_id": sample.HealthSampleID,
+		"started_local":    sample.StartedAt.In(self.timeZone).Format("2006-01-02 15:04"),
+		"duration_text":    client.HealthDurationWords(sample.EndedAt.Sub(sample.StartedAt).Seconds()),
 	}
 	switch {
 	case sample.QuantityValue != nil:
 		row["reading_text"] = client.HealthValueWords(sample.HealthType, *sample.QuantityValue, sample.QuantityUnit)
 	case sample.CategoryValue != nil:
-		if key, isKnown := health.SleepStageKeys[*sample.CategoryValue]; isKnown && sample.HealthType == "sleepAnalysis" {
+		if key, isKnown := health.SleepStageKeys[*sample.CategoryValue]; isKnown && sample.HealthType == health.SleepAnalysisType {
 			row["reading_text"] = health.StageName(key)
 		} else {
 			row["category_value"] = *sample.CategoryValue

@@ -54,7 +54,7 @@ var categories = []struct {
 	{CategorySleep, "Sleep"},
 	{CategorySymptoms, "Symptoms"},
 	{CategoryVitals, "Vitals"},
-	{CategoryOther, "Other Data"},
+	{CategoryOther, "Other"},
 }
 
 // Categories lists every category in the order the Health app shows them.
@@ -142,7 +142,8 @@ type Type struct {
 	// Category is the group of the Health app it is shown in.
 	Category Category
 
-	// Name is the English name, as the Health app writes it.
+	// Name is the English name in sentence case (the table at the top of
+	// words.go lists the rules), the same on every surface.
 	Name string
 
 	ValueKind ValueKind
@@ -190,126 +191,126 @@ func dietary(identifier, name, quantityUnit string) Type {
 var knownTypes = []Type{
 	// Activity.
 	quantity("stepCount", CategoryActivity, "Steps", "count", SummaryKindSum),
-	quantity("distanceWalkingRunning", CategoryActivity, "Walking + Running Distance", "m", SummaryKindSum),
-	quantity("distanceCycling", CategoryActivity, "Cycling Distance", "m", SummaryKindSum),
-	quantity("distanceWheelchair", CategoryActivity, "Wheelchair Distance", "m", SummaryKindSum),
-	quantity("distanceSwimming", CategoryActivity, "Swimming Distance", "m", SummaryKindSum),
-	quantity("distanceDownhillSnowSports", CategoryActivity, "Downhill Snow Sports Distance", "m", SummaryKindSum),
-	quantity("distanceCrossCountrySkiing", CategoryActivity, "Cross-Country Skiing Distance", "m", SummaryKindSum),
-	quantity("distancePaddleSports", CategoryActivity, "Paddle Sports Distance", "m", SummaryKindSum),
-	quantity("distanceRowing", CategoryActivity, "Rowing Distance", "m", SummaryKindSum),
-	quantity("distanceSkatingSports", CategoryActivity, "Skating Sports Distance", "m", SummaryKindSum),
-	quantity("basalEnergyBurned", CategoryActivity, "Resting Energy", "kcal", SummaryKindSum),
-	quantity("activeEnergyBurned", CategoryActivity, "Active Energy", "kcal", SummaryKindSum),
-	quantity("flightsClimbed", CategoryActivity, "Flights Climbed", "count", SummaryKindSum),
+	quantity("distanceWalkingRunning", CategoryActivity, "Walking + running distance", "m", SummaryKindSum),
+	quantity("distanceCycling", CategoryActivity, "Cycling distance", "m", SummaryKindSum),
+	quantity("distanceWheelchair", CategoryActivity, "Wheelchair distance", "m", SummaryKindSum),
+	quantity("distanceSwimming", CategoryActivity, "Swimming distance", "m", SummaryKindSum),
+	quantity("distanceDownhillSnowSports", CategoryActivity, "Downhill snow sports distance", "m", SummaryKindSum),
+	quantity("distanceCrossCountrySkiing", CategoryActivity, "Cross-country skiing distance", "m", SummaryKindSum),
+	quantity("distancePaddleSports", CategoryActivity, "Paddle sports distance", "m", SummaryKindSum),
+	quantity("distanceRowing", CategoryActivity, "Rowing distance", "m", SummaryKindSum),
+	quantity("distanceSkatingSports", CategoryActivity, "Skating sports distance", "m", SummaryKindSum),
+	quantity("basalEnergyBurned", CategoryActivity, "Resting energy", "kcal", SummaryKindSum),
+	quantity("activeEnergyBurned", CategoryActivity, "Active energy", "kcal", SummaryKindSum),
+	quantity("flightsClimbed", CategoryActivity, "Flights climbed", "count", SummaryKindSum),
 	quantity("nikeFuel", CategoryActivity, "NikeFuel", "count", SummaryKindSum),
-	quantity("appleExerciseTime", CategoryActivity, "Exercise Minutes", "min", SummaryKindSum),
-	quantity("appleMoveTime", CategoryActivity, "Move Minutes", "min", SummaryKindSum),
-	quantity("appleStandTime", CategoryActivity, "Stand Minutes", "min", SummaryKindSum),
-	quantity("pushCount", CategoryActivity, "Wheelchair Pushes", "count", SummaryKindSum),
-	quantity("swimmingStrokeCount", CategoryActivity, "Swimming Strokes", "count", SummaryKindSum),
-	quantity("cyclingSpeed", CategoryActivity, "Cycling Speed", "m/s", SummaryKindAverage),
-	quantity("cyclingPower", CategoryActivity, "Cycling Power", "W", SummaryKindAverage),
-	quantity("cyclingCadence", CategoryActivity, "Cycling Cadence", "count/min", SummaryKindAverage),
-	quantity("cyclingFunctionalThresholdPower", CategoryActivity, "Cycling Functional Threshold Power", "W", SummaryKindAverage),
-	quantity("runningSpeed", CategoryActivity, "Running Speed", "m/s", SummaryKindAverage),
-	quantity("runningPower", CategoryActivity, "Running Power", "W", SummaryKindAverage),
-	quantity("runningStrideLength", CategoryActivity, "Running Stride Length", "m", SummaryKindAverage),
-	quantity("runningVerticalOscillation", CategoryActivity, "Running Vertical Oscillation", "cm", SummaryKindAverage),
-	quantity("runningGroundContactTime", CategoryActivity, "Running Ground Contact Time", "ms", SummaryKindAverage),
-	quantity("crossCountrySkiingSpeed", CategoryActivity, "Cross-Country Skiing Speed", "m/s", SummaryKindAverage),
-	quantity("paddleSportsSpeed", CategoryActivity, "Paddle Sports Speed", "m/s", SummaryKindAverage),
-	quantity("rowingSpeed", CategoryActivity, "Rowing Speed", "m/s", SummaryKindAverage),
-	quantity("physicalEffort", CategoryActivity, "Physical Effort", "kcal/(kg*hr)", SummaryKindAverage),
-	quantity("workoutEffortScore", CategoryActivity, "Workout Effort Score", "appleEffortScore", SummaryKindAverage),
-	quantity("estimatedWorkoutEffortScore", CategoryActivity, "Estimated Workout Effort Score", "appleEffortScore", SummaryKindAverage),
-	quantity("underwaterDepth", CategoryActivity, "Underwater Depth", "m", SummaryKindAverage),
-	quantity("waterTemperature", CategoryActivity, "Water Temperature", "degC", SummaryKindAverage),
-	categorical("appleStandHour", CategoryActivity, "Stand Hours", SummaryKindCount),
+	quantity("appleExerciseTime", CategoryActivity, "Exercise minutes", "min", SummaryKindSum),
+	quantity("appleMoveTime", CategoryActivity, "Move minutes", "min", SummaryKindSum),
+	quantity("appleStandTime", CategoryActivity, "Stand minutes", "min", SummaryKindSum),
+	quantity("pushCount", CategoryActivity, "Wheelchair pushes", "count", SummaryKindSum),
+	quantity("swimmingStrokeCount", CategoryActivity, "Swimming strokes", "count", SummaryKindSum),
+	quantity("cyclingSpeed", CategoryActivity, "Cycling speed", "m/s", SummaryKindAverage),
+	quantity("cyclingPower", CategoryActivity, "Cycling power", "W", SummaryKindAverage),
+	quantity("cyclingCadence", CategoryActivity, "Cycling cadence", "count/min", SummaryKindAverage),
+	quantity("cyclingFunctionalThresholdPower", CategoryActivity, "Cycling functional threshold power", "W", SummaryKindAverage),
+	quantity("runningSpeed", CategoryActivity, "Running speed", "m/s", SummaryKindAverage),
+	quantity("runningPower", CategoryActivity, "Running power", "W", SummaryKindAverage),
+	quantity("runningStrideLength", CategoryActivity, "Running stride length", "m", SummaryKindAverage),
+	quantity("runningVerticalOscillation", CategoryActivity, "Running vertical oscillation", "cm", SummaryKindAverage),
+	quantity("runningGroundContactTime", CategoryActivity, "Running ground contact time", "ms", SummaryKindAverage),
+	quantity("crossCountrySkiingSpeed", CategoryActivity, "Cross-country skiing speed", "m/s", SummaryKindAverage),
+	quantity("paddleSportsSpeed", CategoryActivity, "Paddle sports speed", "m/s", SummaryKindAverage),
+	quantity("rowingSpeed", CategoryActivity, "Rowing speed", "m/s", SummaryKindAverage),
+	quantity("physicalEffort", CategoryActivity, "Physical effort", "kcal/(kg*hr)", SummaryKindAverage),
+	quantity("workoutEffortScore", CategoryActivity, "Workout effort score", "appleEffortScore", SummaryKindAverage),
+	quantity("estimatedWorkoutEffortScore", CategoryActivity, "Estimated workout effort score", "appleEffortScore", SummaryKindAverage),
+	quantity("underwaterDepth", CategoryActivity, "Underwater depth", "m", SummaryKindAverage),
+	quantity("waterTemperature", CategoryActivity, "Water temperature", "degC", SummaryKindAverage),
+	categorical("appleStandHour", CategoryActivity, "Stand hours", SummaryKindCount),
 	{Identifier: "workout", Category: CategoryActivity, Name: "Workouts", ValueKind: ValueKindWorkout, SummaryKind: SummaryKindDuration, IsKnown: true},
 
 	// Body measurements.
 	quantity("bodyMass", CategoryBodyMeasurements, "Weight", "kg", SummaryKindAverage),
-	quantity("bodyMassIndex", CategoryBodyMeasurements, "Body Mass Index", "count", SummaryKindAverage),
-	quantity("bodyFatPercentage", CategoryBodyMeasurements, "Body Fat Percentage", "%", SummaryKindAverage),
-	quantity("leanBodyMass", CategoryBodyMeasurements, "Lean Body Mass", "kg", SummaryKindAverage),
+	quantity("bodyMassIndex", CategoryBodyMeasurements, "Body mass index", "count", SummaryKindAverage),
+	quantity("bodyFatPercentage", CategoryBodyMeasurements, "Body fat percentage", "%", SummaryKindAverage),
+	quantity("leanBodyMass", CategoryBodyMeasurements, "Lean body mass", "kg", SummaryKindAverage),
 	quantity("height", CategoryBodyMeasurements, "Height", "m", SummaryKindAverage),
-	quantity("waistCircumference", CategoryBodyMeasurements, "Waist Circumference", "m", SummaryKindAverage),
+	quantity("waistCircumference", CategoryBodyMeasurements, "Waist circumference", "m", SummaryKindAverage),
 
 	// Cycle tracking.
-	quantity("basalBodyTemperature", CategoryCycleTracking, "Basal Body Temperature", "degC", SummaryKindAverage),
-	categorical("menstrualFlow", CategoryCycleTracking, "Menstrual Flow", SummaryKindCount),
+	quantity("basalBodyTemperature", CategoryCycleTracking, "Basal body temperature", "degC", SummaryKindAverage),
+	categorical("menstrualFlow", CategoryCycleTracking, "Menstrual flow", SummaryKindCount),
 	categorical("intermenstrualBleeding", CategoryCycleTracking, "Spotting", SummaryKindCount),
-	categorical("infrequentMenstrualCycles", CategoryCycleTracking, "Infrequent Periods", SummaryKindCount),
-	categorical("irregularMenstrualCycles", CategoryCycleTracking, "Irregular Periods", SummaryKindCount),
-	categorical("persistentIntermenstrualBleeding", CategoryCycleTracking, "Persistent Spotting", SummaryKindCount),
-	categorical("prolongedMenstrualPeriods", CategoryCycleTracking, "Prolonged Periods", SummaryKindCount),
-	categorical("cervicalMucusQuality", CategoryCycleTracking, "Cervical Mucus Quality", SummaryKindCount),
-	categorical("ovulationTestResult", CategoryCycleTracking, "Ovulation Test Result", SummaryKindCount),
-	categorical("pregnancyTestResult", CategoryCycleTracking, "Pregnancy Test Result", SummaryKindCount),
-	categorical("progesteroneTestResult", CategoryCycleTracking, "Progesterone Test Result", SummaryKindCount),
+	categorical("infrequentMenstrualCycles", CategoryCycleTracking, "Infrequent periods", SummaryKindCount),
+	categorical("irregularMenstrualCycles", CategoryCycleTracking, "Irregular periods", SummaryKindCount),
+	categorical("persistentIntermenstrualBleeding", CategoryCycleTracking, "Persistent spotting", SummaryKindCount),
+	categorical("prolongedMenstrualPeriods", CategoryCycleTracking, "Prolonged periods", SummaryKindCount),
+	categorical("cervicalMucusQuality", CategoryCycleTracking, "Cervical mucus quality", SummaryKindCount),
+	categorical("ovulationTestResult", CategoryCycleTracking, "Ovulation test result", SummaryKindCount),
+	categorical("pregnancyTestResult", CategoryCycleTracking, "Pregnancy test result", SummaryKindCount),
+	categorical("progesteroneTestResult", CategoryCycleTracking, "Progesterone test result", SummaryKindCount),
 	categorical("pregnancy", CategoryCycleTracking, "Pregnancy", SummaryKindDuration),
 	categorical("lactation", CategoryCycleTracking, "Lactation", SummaryKindDuration),
 	categorical("contraceptive", CategoryCycleTracking, "Contraceptive", SummaryKindDuration),
-	categorical("sexualActivity", CategoryCycleTracking, "Sexual Activity", SummaryKindCount),
-	categorical("bleedingDuringPregnancy", CategoryCycleTracking, "Bleeding During Pregnancy", SummaryKindCount),
-	categorical("bleedingAfterPregnancy", CategoryCycleTracking, "Bleeding After Pregnancy", SummaryKindCount),
+	categorical("sexualActivity", CategoryCycleTracking, "Sexual activity", SummaryKindCount),
+	categorical("bleedingDuringPregnancy", CategoryCycleTracking, "Bleeding during pregnancy", SummaryKindCount),
+	categorical("bleedingAfterPregnancy", CategoryCycleTracking, "Bleeding after pregnancy", SummaryKindCount),
 
 	// Hearing.
-	quantity("environmentalAudioExposure", CategoryHearing, "Environmental Sound Levels", "dBASPL", SummaryKindAverage),
-	quantity("headphoneAudioExposure", CategoryHearing, "Headphone Audio Levels", "dBASPL", SummaryKindAverage),
-	quantity("environmentalSoundReduction", CategoryHearing, "Environmental Sound Reduction", "dBASPL", SummaryKindAverage),
-	categorical("environmentalAudioExposureEvent", CategoryHearing, "Environmental Sound Level Notifications", SummaryKindCount),
-	categorical("headphoneAudioExposureEvent", CategoryHearing, "Headphone Audio Level Notifications", SummaryKindCount),
+	quantity("environmentalAudioExposure", CategoryHearing, "Environmental sound levels", "dBASPL", SummaryKindAverage),
+	quantity("headphoneAudioExposure", CategoryHearing, "Headphone audio levels", "dBASPL", SummaryKindAverage),
+	quantity("environmentalSoundReduction", CategoryHearing, "Environmental sound reduction", "dBASPL", SummaryKindAverage),
+	categorical("environmentalAudioExposureEvent", CategoryHearing, "Environmental sound level notifications", SummaryKindCount),
+	categorical("headphoneAudioExposureEvent", CategoryHearing, "Headphone audio level notifications", SummaryKindCount),
 	{Identifier: "audiogram", Category: CategoryHearing, Name: "Audiograms", ValueKind: ValueKindAudiogram, SummaryKind: SummaryKindCount, IsKnown: true},
 
 	// Heart.
-	quantity("heartRate", CategoryHeart, "Heart Rate", "count/min", SummaryKindAverage),
-	quantity("restingHeartRate", CategoryHeart, "Resting Heart Rate", "count/min", SummaryKindAverage),
-	quantity("walkingHeartRateAverage", CategoryHeart, "Walking Heart Rate Average", "count/min", SummaryKindAverage),
-	quantity("heartRateVariabilitySDNN", CategoryHeart, "Heart Rate Variability", "ms", SummaryKindAverage),
-	quantity("heartRateRecoveryOneMinute", CategoryHeart, "Cardio Recovery", "count/min", SummaryKindAverage),
-	quantity("vo2Max", CategoryHeart, "Cardio Fitness", "ml/(kg*min)", SummaryKindAverage),
-	quantity("atrialFibrillationBurden", CategoryHeart, "Atrial Fibrillation Burden", "%", SummaryKindAverage),
-	quantity("peripheralPerfusionIndex", CategoryHeart, "Peripheral Perfusion Index", "%", SummaryKindAverage),
-	categorical("highHeartRateEvent", CategoryHeart, "High Heart Rate Notifications", SummaryKindCount),
-	categorical("lowHeartRateEvent", CategoryHeart, "Low Heart Rate Notifications", SummaryKindCount),
-	categorical("irregularHeartRhythmEvent", CategoryHeart, "Irregular Rhythm Notifications", SummaryKindCount),
-	categorical("lowCardioFitnessEvent", CategoryHeart, "Low Cardio Fitness Notifications", SummaryKindCount),
+	quantity("heartRate", CategoryHeart, "Heart rate", "count/min", SummaryKindAverage),
+	quantity("restingHeartRate", CategoryHeart, "Resting heart rate", "count/min", SummaryKindAverage),
+	quantity("walkingHeartRateAverage", CategoryHeart, "Walking heart rate average", "count/min", SummaryKindAverage),
+	quantity("heartRateVariabilitySDNN", CategoryHeart, "Heart rate variability", "ms", SummaryKindAverage),
+	quantity("heartRateRecoveryOneMinute", CategoryHeart, "Cardio recovery", "count/min", SummaryKindAverage),
+	quantity("vo2Max", CategoryHeart, "Cardio fitness", "ml/(kg*min)", SummaryKindAverage),
+	quantity("atrialFibrillationBurden", CategoryHeart, "Atrial fibrillation burden", "%", SummaryKindAverage),
+	quantity("peripheralPerfusionIndex", CategoryHeart, "Peripheral perfusion index", "%", SummaryKindAverage),
+	categorical("highHeartRateEvent", CategoryHeart, "High heart rate notifications", SummaryKindCount),
+	categorical("lowHeartRateEvent", CategoryHeart, "Low heart rate notifications", SummaryKindCount),
+	categorical("irregularHeartRhythmEvent", CategoryHeart, "Irregular rhythm notifications", SummaryKindCount),
+	categorical("lowCardioFitnessEvent", CategoryHeart, "Low cardio fitness notifications", SummaryKindCount),
 	{Identifier: "electrocardiogram", Category: CategoryHeart, Name: "Electrocardiograms", ValueKind: ValueKindElectrocardiogram, SummaryKind: SummaryKindCount, IsKnown: true},
 
 	// Mental wellbeing.
-	categorical("mindfulSession", CategoryMentalWellbeing, "Mindful Minutes", SummaryKindDuration),
-	{Identifier: "stateOfMind", Category: CategoryMentalWellbeing, Name: "State of Mind", ValueKind: ValueKindStateOfMind, SummaryKind: SummaryKindCount, IsKnown: true},
+	categorical("mindfulSession", CategoryMentalWellbeing, "Mindful minutes", SummaryKindDuration),
+	{Identifier: "stateOfMind", Category: CategoryMentalWellbeing, Name: "State of mind", ValueKind: ValueKindStateOfMind, SummaryKind: SummaryKindCount, IsKnown: true},
 
 	// Mobility.
-	quantity("walkingSpeed", CategoryMobility, "Walking Speed", "m/s", SummaryKindAverage),
-	quantity("walkingStepLength", CategoryMobility, "Walking Step Length", "m", SummaryKindAverage),
-	quantity("walkingAsymmetryPercentage", CategoryMobility, "Walking Asymmetry", "%", SummaryKindAverage),
-	quantity("walkingDoubleSupportPercentage", CategoryMobility, "Walking Double Support", "%", SummaryKindAverage),
-	quantity("appleWalkingSteadiness", CategoryMobility, "Walking Steadiness", "%", SummaryKindAverage),
-	quantity("sixMinuteWalkTestDistance", CategoryMobility, "Six-Minute Walk Distance", "m", SummaryKindAverage),
-	quantity("stairAscentSpeed", CategoryMobility, "Stair Ascent Speed", "m/s", SummaryKindAverage),
-	quantity("stairDescentSpeed", CategoryMobility, "Stair Descent Speed", "m/s", SummaryKindAverage),
+	quantity("walkingSpeed", CategoryMobility, "Walking speed", "m/s", SummaryKindAverage),
+	quantity("walkingStepLength", CategoryMobility, "Walking step length", "m", SummaryKindAverage),
+	quantity("walkingAsymmetryPercentage", CategoryMobility, "Walking asymmetry", "%", SummaryKindAverage),
+	quantity("walkingDoubleSupportPercentage", CategoryMobility, "Walking double support", "%", SummaryKindAverage),
+	quantity("appleWalkingSteadiness", CategoryMobility, "Walking steadiness", "%", SummaryKindAverage),
+	quantity("sixMinuteWalkTestDistance", CategoryMobility, "Six-minute walk distance", "m", SummaryKindAverage),
+	quantity("stairAscentSpeed", CategoryMobility, "Stair ascent speed", "m/s", SummaryKindAverage),
+	quantity("stairDescentSpeed", CategoryMobility, "Stair descent speed", "m/s", SummaryKindAverage),
 	quantity("numberOfTimesFallen", CategoryMobility, "Falls", "count", SummaryKindSum),
-	categorical("appleWalkingSteadinessEvent", CategoryMobility, "Walking Steadiness Notifications", SummaryKindCount),
+	categorical("appleWalkingSteadinessEvent", CategoryMobility, "Walking steadiness notifications", SummaryKindCount),
 
 	// Nutrition.
-	dietary("dietaryEnergyConsumed", "Dietary Energy", "kcal"),
+	dietary("dietaryEnergyConsumed", "Dietary energy", "kcal"),
 	dietary("dietaryCarbohydrates", "Carbohydrates", "g"),
 	dietary("dietaryFiber", "Fiber", "g"),
 	dietary("dietarySugar", "Sugar", "g"),
-	dietary("dietaryFatTotal", "Total Fat", "g"),
-	dietary("dietaryFatMonounsaturated", "Monounsaturated Fat", "g"),
-	dietary("dietaryFatPolyunsaturated", "Polyunsaturated Fat", "g"),
-	dietary("dietaryFatSaturated", "Saturated Fat", "g"),
+	dietary("dietaryFatTotal", "Total fat", "g"),
+	dietary("dietaryFatMonounsaturated", "Monounsaturated fat", "g"),
+	dietary("dietaryFatPolyunsaturated", "Polyunsaturated fat", "g"),
+	dietary("dietaryFatSaturated", "Saturated fat", "g"),
 	dietary("dietaryCholesterol", "Cholesterol", "mg"),
 	dietary("dietaryProtein", "Protein", "g"),
 	dietary("dietaryVitaminA", "Vitamin A", "mcg"),
 	dietary("dietaryThiamin", "Thiamin (B1)", "mg"),
 	dietary("dietaryRiboflavin", "Riboflavin (B2)", "mg"),
 	dietary("dietaryNiacin", "Niacin (B3)", "mg"),
-	dietary("dietaryPantothenicAcid", "Pantothenic Acid (B5)", "mg"),
+	dietary("dietaryPantothenicAcid", "Pantothenic acid (B5)", "mg"),
 	dietary("dietaryVitaminB6", "Vitamin B6", "mg"),
 	dietary("dietaryBiotin", "Biotin (B7)", "mcg"),
 	dietary("dietaryVitaminB12", "Vitamin B12", "mcg"),
@@ -336,83 +337,83 @@ var knownTypes = []Type{
 	dietary("dietaryCaffeine", "Caffeine", "mg"),
 
 	// Respiratory.
-	quantity("respiratoryRate", CategoryRespiratory, "Respiratory Rate", "count/min", SummaryKindAverage),
-	quantity("oxygenSaturation", CategoryRespiratory, "Blood Oxygen", "%", SummaryKindAverage),
-	quantity("forcedVitalCapacity", CategoryRespiratory, "Forced Vital Capacity", "L", SummaryKindAverage),
-	quantity("forcedExpiratoryVolume1", CategoryRespiratory, "Forced Expiratory Volume", "L", SummaryKindAverage),
-	quantity("peakExpiratoryFlowRate", CategoryRespiratory, "Peak Expiratory Flow Rate", "L/min", SummaryKindAverage),
-	quantity("inhalerUsage", CategoryRespiratory, "Inhaler Usage", "count", SummaryKindSum),
+	quantity("respiratoryRate", CategoryRespiratory, "Respiratory rate", "count/min", SummaryKindAverage),
+	quantity("oxygenSaturation", CategoryRespiratory, "Blood oxygen", "%", SummaryKindAverage),
+	quantity("forcedVitalCapacity", CategoryRespiratory, "Forced vital capacity", "L", SummaryKindAverage),
+	quantity("forcedExpiratoryVolume1", CategoryRespiratory, "Forced expiratory volume", "L", SummaryKindAverage),
+	quantity("peakExpiratoryFlowRate", CategoryRespiratory, "Peak expiratory flow rate", "L/min", SummaryKindAverage),
+	quantity("inhalerUsage", CategoryRespiratory, "Inhaler usage", "count", SummaryKindSum),
 
 	// Sleep.
 	categorical("sleepAnalysis", CategorySleep, "Sleep", SummaryKindDuration),
-	categorical("sleepApneaEvent", CategorySleep, "Sleep Apnea Notifications", SummaryKindCount),
-	quantity("appleSleepingBreathingDisturbances", CategorySleep, "Breathing Disturbances", "count", SummaryKindAverage),
+	categorical("sleepApneaEvent", CategorySleep, "Sleep apnea notifications", SummaryKindCount),
+	quantity("appleSleepingBreathingDisturbances", CategorySleep, "Breathing disturbances", "count", SummaryKindAverage),
 
 	// Symptoms.
-	symptom("abdominalCramps", "Abdominal Cramps"),
+	symptom("abdominalCramps", "Abdominal cramps"),
 	symptom("acne", "Acne"),
-	symptom("appetiteChanges", "Appetite Changes"),
-	symptom("bladderIncontinence", "Bladder Incontinence"),
+	symptom("appetiteChanges", "Appetite changes"),
+	symptom("bladderIncontinence", "Bladder incontinence"),
 	symptom("bloating", "Bloating"),
-	symptom("breastPain", "Breast Pain"),
-	symptom("chestTightnessOrPain", "Chest Tightness or Pain"),
+	symptom("breastPain", "Breast pain"),
+	symptom("chestTightnessOrPain", "Chest tightness or pain"),
 	symptom("chills", "Chills"),
 	symptom("constipation", "Constipation"),
 	symptom("coughing", "Coughing"),
 	symptom("diarrhea", "Diarrhea"),
 	symptom("dizziness", "Dizziness"),
-	symptom("drySkin", "Dry Skin"),
+	symptom("drySkin", "Dry skin"),
 	symptom("fainting", "Fainting"),
 	symptom("fatigue", "Fatigue"),
 	symptom("fever", "Fever"),
-	symptom("generalizedBodyAche", "Body and Muscle Ache"),
-	symptom("hairLoss", "Hair Loss"),
+	symptom("generalizedBodyAche", "Body and muscle ache"),
+	symptom("hairLoss", "Hair loss"),
 	symptom("headache", "Headache"),
 	symptom("heartburn", "Heartburn"),
-	symptom("hotFlashes", "Hot Flashes"),
-	symptom("lossOfSmell", "Loss of Smell"),
-	symptom("lossOfTaste", "Loss of Taste"),
-	symptom("lowerBackPain", "Lower Back Pain"),
-	symptom("memoryLapse", "Memory Lapse"),
-	symptom("moodChanges", "Mood Changes"),
+	symptom("hotFlashes", "Hot flashes"),
+	symptom("lossOfSmell", "Loss of smell"),
+	symptom("lossOfTaste", "Loss of taste"),
+	symptom("lowerBackPain", "Lower back pain"),
+	symptom("memoryLapse", "Memory lapse"),
+	symptom("moodChanges", "Mood changes"),
 	symptom("nausea", "Nausea"),
-	symptom("nightSweats", "Night Sweats"),
-	symptom("pelvicPain", "Pelvic Pain"),
-	symptom("rapidPoundingOrFlutteringHeartbeat", "Rapid, Pounding, or Fluttering Heartbeat"),
-	symptom("runnyNose", "Runny Nose"),
-	symptom("shortnessOfBreath", "Shortness of Breath"),
-	symptom("sinusCongestion", "Sinus Congestion"),
-	symptom("skippedHeartbeat", "Skipped Heartbeat"),
-	symptom("sleepChanges", "Sleep Changes"),
-	symptom("soreThroat", "Sore Throat"),
-	symptom("vaginalDryness", "Vaginal Dryness"),
+	symptom("nightSweats", "Night sweats"),
+	symptom("pelvicPain", "Pelvic pain"),
+	symptom("rapidPoundingOrFlutteringHeartbeat", "Rapid, pounding, or fluttering heartbeat"),
+	symptom("runnyNose", "Runny nose"),
+	symptom("shortnessOfBreath", "Shortness of breath"),
+	symptom("sinusCongestion", "Sinus congestion"),
+	symptom("skippedHeartbeat", "Skipped heartbeat"),
+	symptom("sleepChanges", "Sleep changes"),
+	symptom("soreThroat", "Sore throat"),
+	symptom("vaginalDryness", "Vaginal dryness"),
 	symptom("vomiting", "Vomiting"),
 	symptom("wheezing", "Wheezing"),
 
 	// Vitals.
-	quantity("bloodPressureSystolic", CategoryVitals, "Systolic Blood Pressure", "mmHg", SummaryKindAverage),
-	quantity("bloodPressureDiastolic", CategoryVitals, "Diastolic Blood Pressure", "mmHg", SummaryKindAverage),
-	quantity("bloodGlucose", CategoryVitals, "Blood Glucose", "mg/dL", SummaryKindAverage),
-	quantity("bodyTemperature", CategoryVitals, "Body Temperature", "degC", SummaryKindAverage),
-	quantity("appleSleepingWristTemperature", CategoryVitals, "Sleeping Wrist Temperature", "degC", SummaryKindAverage),
-	quantity("insulinDelivery", CategoryVitals, "Insulin Delivery", "IU", SummaryKindSum),
+	quantity("bloodPressureSystolic", CategoryVitals, "Systolic blood pressure", "mmHg", SummaryKindAverage),
+	quantity("bloodPressureDiastolic", CategoryVitals, "Diastolic blood pressure", "mmHg", SummaryKindAverage),
+	quantity("bloodGlucose", CategoryVitals, "Blood glucose", "mg/dL", SummaryKindAverage),
+	quantity("bodyTemperature", CategoryVitals, "Body temperature", "degC", SummaryKindAverage),
+	quantity("appleSleepingWristTemperature", CategoryVitals, "Sleeping wrist temperature", "degC", SummaryKindAverage),
+	quantity("insulinDelivery", CategoryVitals, "Insulin delivery", "IU", SummaryKindSum),
 
-	// Other data.
-	quantity("uvExposure", CategoryOther, "UV Index", "count", SummaryKindAverage),
-	quantity("timeInDaylight", CategoryOther, "Time in Daylight", "min", SummaryKindSum),
-	quantity("electrodermalActivity", CategoryOther, "Electrodermal Activity", "S", SummaryKindAverage),
-	quantity("bloodAlcoholContent", CategoryOther, "Blood Alcohol Content", "%", SummaryKindAverage),
-	quantity("numberOfAlcoholicBeverages", CategoryOther, "Alcoholic Beverages", "count", SummaryKindSum),
+	// The Other category.
+	quantity("uvExposure", CategoryOther, "UV index", "count", SummaryKindAverage),
+	quantity("timeInDaylight", CategoryOther, "Time in daylight", "min", SummaryKindSum),
+	quantity("electrodermalActivity", CategoryOther, "Electrodermal activity", "S", SummaryKindAverage),
+	quantity("bloodAlcoholContent", CategoryOther, "Blood alcohol content", "%", SummaryKindAverage),
+	quantity("numberOfAlcoholicBeverages", CategoryOther, "Alcoholic beverages", "count", SummaryKindSum),
 	categorical("handwashingEvent", CategoryOther, "Handwashing", SummaryKindCount),
 	categorical("toothbrushingEvent", CategoryOther, "Toothbrushing", SummaryKindCount),
 
 	// What HealthKit calls characteristics: the person, not a reading.
-	characteristic("dateOfBirth", "Date of Birth"),
-	characteristic("biologicalSex", "Biological Sex"),
-	characteristic("bloodType", "Blood Type"),
-	characteristic("fitzpatrickSkinType", "Skin Type"),
-	characteristic("wheelchairUse", "Wheelchair Use"),
-	characteristic("activityMoveMode", "Activity Move Mode"),
+	characteristic("dateOfBirth", "Date of birth"),
+	characteristic("biologicalSex", "Biological sex"),
+	characteristic("bloodType", "Blood type"),
+	characteristic("fitzpatrickSkinType", "Skin type"),
+	characteristic("wheelchairUse", "Wheelchair use"),
+	characteristic("activityMoveMode", "Activity move mode"),
 }
 
 var typesByIdentifier = func() map[string]Type {
@@ -443,7 +444,7 @@ func Types() []Type {
 // TypeOf describes the kind with this identifier. A kind the table does not
 // know is described anyway, so that a new release of iOS needs no change here:
 // it is in the other category and named from its identifier ("someNewReading"
-// is "Some New Reading").
+// is "Some new reading").
 func TypeOf(identifier string) Type {
 	if known, isKnown := typesByIdentifier[identifier]; isKnown {
 		return known
@@ -478,23 +479,36 @@ func IsValidIdentifier(identifier string) bool {
 	return true
 }
 
-// nameFromIdentifier writes an identifier as words: a capital letter starts a
-// word unless it continues a run of capitals, so "heartRateVariabilitySDNN"
-// is "Heart Rate Variability SDNN".
+// nameFromIdentifier writes an identifier as words in sentence case: a capital
+// letter starts a word unless it continues a run of capitals, and a word is
+// lowercase unless it is a run of capitals or the first, so
+// "heartRateVariabilitySDNN" is "Heart rate variability SDNN".
 func nameFromIdentifier(identifier string) string {
 	letters := []rune(identifier)
-	var name strings.Builder
+	if len(letters) == 0 {
+		return ""
+	}
+	words := []string{}
+	var word strings.Builder
 	for index, letter := range letters {
-		if index == 0 {
-			name.WriteRune(unicode.ToUpper(letter))
-			continue
-		}
-		isWordStart := unicode.IsUpper(letter) && (unicode.IsLower(letters[index-1]) || unicode.IsDigit(letters[index-1]) ||
+		isWordStart := index > 0 && unicode.IsUpper(letter) && (unicode.IsLower(letters[index-1]) || unicode.IsDigit(letters[index-1]) ||
 			(unicode.IsUpper(letters[index-1]) && index+1 < len(letters) && unicode.IsLower(letters[index+1])))
 		if isWordStart {
-			name.WriteRune(' ')
+			words = append(words, word.String())
+			word.Reset()
 		}
-		name.WriteRune(letter)
+		word.WriteRune(letter)
 	}
-	return name.String()
+	words = append(words, word.String())
+	for index, each := range words {
+		isAcronym := len([]rune(each)) > 1 && each == strings.ToUpper(each)
+		switch {
+		case isAcronym:
+		case index == 0:
+			words[index] = string(unicode.ToUpper([]rune(each)[0])) + string([]rune(each)[1:])
+		default:
+			words[index] = strings.ToLower(each)
+		}
+	}
+	return strings.Join(words, " ")
 }

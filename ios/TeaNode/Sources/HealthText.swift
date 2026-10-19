@@ -1,93 +1,66 @@
 import Foundation
 import TeaNodeKit
 
-// How the Health screens write numbers, units, times and days. The same
-// rules as the dashboard's (web/src/pages/health/healthApi.ts), so that a
-// number reads the same on every surface: a heart rate is whole beats per
-// minute ("74 bpm"), steps are whole and say "steps", a percentage is shown as
-// the person reads it (HealthKit and the server hold 0.97, the screen says
-// 97%), and a distance of a kilometer or more is in kilometers with one
-// decimal.
+// How the Health screens write numbers, units, times and days: the table at
+// the top of internal/health/words.go, which the dashboard and the command line
+// follow too, so that a number reads the same on every surface. The rules that
+// need no language (decimals, whole numbers, kilometers, hours and minutes)
+// are TeaNodeKit's HealthValueWords, which is tested; what this file adds is
+// the words that are a language's: what is counted, and the hours and minutes.
 
 enum HealthText {
     // MARK: Numbers and units
 
-    /// The unit steps are written with where a number stands alone: HealthKit
-    /// counts them as a plain count.
-    static let stepsUnit = "steps"
-
-    /// A distance from this many meters up is written in kilometers.
-    private static let kilometerFromMeters = 1000.0
-
-    /// How a unit HealthKit sends is written beside a number. A unit not
-    /// listed is written as it came. An empty label is a plain number.
-    private static let unitLabels: [String: String] = [
-        "count": "", "count/min": "bpm", "count/s": "/s", "kcal": "kcal", "kcal/(kg*hr)": "kcal/kg·h", "m": "m", "km": "km", "mi": "mi",
-        "cm": "cm", "kg": "kg", "g": "g", "mg": "mg", "mcg": "mcg", "lb": "lb", "L": "L", "mL": "mL", "L/min": "L/min", "degC": "°C",
-        "degF": "°F", "mmHg": "mmHg", "mg/dL": "mg/dL", "s": "s", "min": "min", "hr": "h", "ms": "ms", "m/s": "m/s", "km/h": "km/h",
-        "W": "W", "dBASPL": "dB", "ml/(kg*min)": "mL/kg·min", "mL/(kg*min)": "mL/kg·min", "S": "S", "IU": "IU",
-    ]
-
-    /// The units whose readings are whole numbers: a heart rate of 74.3 is
-    /// read as 74.
-    private static let wholeNumberUnits: Set<String> = ["count", "count/min", stepsUnit]
-
-    /// The text that follows a number of this unit; empty for none.
-    static func unitLabel(_ quantityUnit: String) -> String {
-        unitLabels[quantityUnit] ?? quantityUnit
+    /// A reading with its unit: "74 bpm", "72.4 kg", "97.5%", "8,412 steps".
+    static func quantityText(_ value: Double, healthType: String, quantityUnit: String) -> String {
+        text(of: HealthValueWords.parts(healthType: healthType, value: value, quantityUnit: quantityUnit))
     }
 
-    /// The unit a kind's numbers are written with: steps are read with their
-    /// word, the rest as HealthKit sends them.
-    static func displayUnit(healthType: String, quantityUnit: String) -> String {
-        healthType == "stepCount" && quantityUnit == "count" ? stepsUnit : quantityUnit
-    }
-
-    /// A number with as many decimals as it needs to be read at a glance:
-    /// none from a hundred up, one from ten, two below; or at most as many as
-    /// the unit takes.
-    static func numberText(_ value: Double, fractionDigitsMost: Int? = nil) -> String {
-        let size = abs(value)
-        let digitsMost = fractionDigitsMost ?? (size >= 100 ? 0 : (size >= 10 ? 1 : 2))
-        return value.formatted(.number.precision(.fractionLength(0...digitsMost)))
-    }
-
-    /// A reading with its unit: "72 bpm", "71.4 kg", "97%", "8,412 steps".
-    static func quantityText(_ value: Double, quantityUnit: String) -> String {
-        if quantityUnit == "m", abs(value) >= kilometerFromMeters {
-            return textWithLabel(numberText(value / kilometerFromMeters, fractionDigitsMost: 1), label: "km")
+    /// A number and the word that follows it, joined the way the table says:
+    /// a symbol touches the number, a word follows after a space.
+    private static func text(of valueParts: HealthValueParts) -> String {
+        switch valueParts.unit {
+        case .none: return valueParts.numberText
+        case .touching(let symbol): return valueParts.numberText + symbol
+        case .spaced(let word): return valueParts.numberText + " " + word
+        case .noun(let noun, let isSingular): return countText(valueParts.numberText, noun: noun, isSingular: isSingular)
         }
-        var fractionDigitsMost: Int?
-        if wholeNumberUnits.contains(quantityUnit) {
-            fractionDigitsMost = 0
-        } else if quantityUnit == "km" {
-            fractionDigitsMost = 1
+    }
+
+    /// A count with what it counts: "8,412 steps", "1 flight".
+    private static func countText(_ number: String, noun: HealthCountNoun, isSingular: Bool) -> String {
+        switch (noun, isSingular) {
+        case (.step, true): return String(localized: "health-count-step-single", defaultValue: "\(number) step")
+        case (.step, false): return String(localized: "health-count-step-plural", defaultValue: "\(number) steps")
+        case (.flight, true): return String(localized: "health-count-flight-single", defaultValue: "\(number) flight")
+        case (.flight, false): return String(localized: "health-count-flight-plural", defaultValue: "\(number) flights")
+        case (.push, true): return String(localized: "health-count-push-single", defaultValue: "\(number) push")
+        case (.push, false): return String(localized: "health-count-push-plural", defaultValue: "\(number) pushes")
+        case (.stroke, true): return String(localized: "health-count-stroke-single", defaultValue: "\(number) stroke")
+        case (.stroke, false): return String(localized: "health-count-stroke-plural", defaultValue: "\(number) strokes")
+        case (.fall, true): return String(localized: "health-count-fall-single", defaultValue: "\(number) fall")
+        case (.fall, false): return String(localized: "health-count-fall-plural", defaultValue: "\(number) falls")
+        case (.puff, true): return String(localized: "health-count-puff-single", defaultValue: "\(number) puff")
+        case (.puff, false): return String(localized: "health-count-puff-plural", defaultValue: "\(number) puffs")
+        case (.drink, true): return String(localized: "health-count-drink-single", defaultValue: "\(number) drink")
+        case (.drink, false): return String(localized: "health-count-drink-plural", defaultValue: "\(number) drinks")
         }
-        let shownValue = quantityUnit == "%" ? value * 100 : value
-        let number = numberText(shownValue, fractionDigitsMost: fractionDigitsMost)
-        if quantityUnit == stepsUnit { return String(localized: "\(number) steps") }
-        return textWithLabel(number, label: unitLabel(quantityUnit))
     }
 
-    /// A number followed by its unit's label: close to it for a percent sign,
-    /// a degree and a rate per second, else after a space.
-    private static func textWithLabel(_ number: String, label: String) -> String {
-        if label.isEmpty { return number }
-        if label.hasPrefix("/") || label.hasPrefix("°") || label == "%" { return number + label }
-        return number + " " + label
+    /// A plain number with as many decimals as its size is worth.
+    static func numberText(_ value: Double) -> String {
+        HealthValueWords.numberText(value)
     }
 
-    /// A length of time: "7h 30m", "45m", "30s".
+    /// A length of time: "7 h 12 min", "35 min", "45 s".
     static func durationText(_ seconds: Double) -> String {
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .abbreviated
-        formatter.zeroFormattingBehavior = .dropAll
-        if seconds < 60 {
-            formatter.allowedUnits = [.second]
-            return formatter.string(from: seconds.rounded()) ?? ""
+        switch HealthValueWords.durationParts(seconds: seconds) {
+        case .seconds(let secondCount): return String(localized: "\(secondCount.formatted()) s")
+        case .minutes(let minuteCount): return String(localized: "\(minuteCount.formatted()) min")
+        case .hours(let hourCount): return String(localized: "\(hourCount.formatted()) h")
+        case .hoursMinutes(let hourCount, let minuteCount):
+            return String(localized: "\(hourCount.formatted()) h \(minuteCount.formatted()) min")
         }
-        formatter.allowedUnits = [.hour, .minute]
-        return formatter.string(from: (seconds / 60).rounded() * 60) ?? ""
     }
 
     /// The value a day or period stands for, by how the kind adds up: the
@@ -106,12 +79,12 @@ enum HealthText {
 
     /// A day's or period's value as it is read: a time as hours and
     /// minutes, a count as a whole number, a quantity with its unit.
-    static func amountText(_ value: Double?, summaryKind: HealthSummaryKind, quantityUnit: String) -> String {
+    static func amountText(_ value: Double?, summaryKind: HealthSummaryKind, healthType: String, quantityUnit: String) -> String {
         guard let value else { return String(localized: "None") }
         switch summaryKind {
         case .duration: return durationText(value)
         case .count: return numberText(value)
-        case .sum, .average: return quantityText(value, quantityUnit: quantityUnit)
+        case .sum, .average: return quantityText(value, healthType: healthType, quantityUnit: quantityUnit)
         }
     }
 
@@ -122,8 +95,7 @@ enum HealthText {
         let value = summaryValue(
             sumValue: latest.sumValue, averageValue: latest.averageValue, durationSeconds: latest.durationSeconds,
             sampleCount: latest.sampleCount, summaryKind: summaryKind)
-        return amountText(
-            value, summaryKind: summaryKind, quantityUnit: displayUnit(healthType: type.healthType, quantityUnit: type.quantityUnit))
+        return amountText(value, summaryKind: summaryKind, healthType: type.healthType, quantityUnit: type.quantityUnit)
     }
 
     /// A number on a chart's axis: short, with no unit (the headline has it).
@@ -155,9 +127,9 @@ enum HealthText {
     }
 
     /// A month as "Oct", or "Oct 2026" when the chart reaches over years.
-    static func monthText(_ dayText: String, includesYear: Bool) -> String {
+    static func monthText(_ dayText: String, isYearIncluded: Bool) -> String {
         guard let date = date(ofDay: dayText) else { return dayText }
-        if includesYear { return date.formatted(.dateTime.month(.abbreviated).year()) }
+        if isYearIncluded { return date.formatted(.dateTime.month(.abbreviated).year()) }
         return date.formatted(.dateTime.month(.abbreviated))
     }
 
@@ -204,12 +176,14 @@ enum HealthText {
         return nil
     }
 
-    /// What one reading says: "72 bpm", "Running, 42m", "Deep, 1h 20m".
+    /// What one reading says: "72 bpm", "Running, 42 min", "Deep, 1 h 20 min".
+    /// A reading that covers no time (a headache, a notification, an entry of
+    /// State of Mind) says the kind's name, as the dashboard does.
     static func readingText(of sample: HealthSampleView, type: HealthTypeView) -> String {
         let durationSeconds = max(0, (sample.endedDate ?? sample.startedDate ?? Date()).timeIntervalSince(sample.startedDate ?? Date()))
         if let quantityValue = sample.quantityValue {
             let sentUnit = sample.quantityUnit.isEmpty ? type.quantityUnit : sample.quantityUnit
-            return quantityText(quantityValue, quantityUnit: displayUnit(healthType: type.healthType, quantityUnit: sentUnit))
+            return quantityText(quantityValue, healthType: type.healthType, quantityUnit: sentUnit)
         }
         if type.valueKindValue == .workout {
             return HealthWords.workoutName(sample.workoutActivityType) + ", " + durationText(durationSeconds)
@@ -217,6 +191,7 @@ enum HealthText {
         if type.healthType == "sleepAnalysis", let stage = HealthWords.stage(ofCategoryValue: sample.categoryValue) {
             return HealthWords.stageName(stage) + ", " + durationText(durationSeconds)
         }
+        if durationSeconds < 1 { return HealthWords.typeName(healthType: type.healthType, serverName: type.typeName) }
         return durationText(durationSeconds)
     }
 }

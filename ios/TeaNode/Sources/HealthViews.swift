@@ -245,13 +245,17 @@ struct HealthEmptyView: View {
     }
 
     private var descriptionText: LocalizedStringKey {
-        if !sync.isAvailable { return "Health is not available on this iPhone." }
+        if !sync.isAvailable { return "Health is not available on this device." }
         if sync.isOn { return "Your Apple Health data is being copied to your server. It shows here as it arrives." }
         return "Health copies your Apple Health data to your own TeaNode server, and nowhere else."
     }
 
-    /// Why nothing is arriving, when the copying met a problem.
-    private var problemText: String? { sync.isOn ? sync.problemText : nil }
+    /// Why nothing is arriving: the copying met a problem, or it stopped
+    /// because the server was erased from somewhere else.
+    private var problemText: String? {
+        if sync.isOn { return sync.problemText }
+        return sync.isStoppedByErase ? HealthWords.erasedOnServerText : nil
+    }
 }
 
 /// HealthNotAllowedView is what Health says to an account that may not use
