@@ -101,7 +101,7 @@ func TestContactLinkAndUnlink(test *testing.T) {
 
 	linked = nil
 	output, err = runContactCommand(test, server, "unlink", "contact-sam")
-	if err != nil || !strings.Contains(output, "no longer noted") || linked[len(linked)-1]["accountUserId"] != nil {
+	if err != nil || !strings.Contains(output, "no longer linked") || linked[len(linked)-1]["accountUserId"] != nil {
 		test.Fatalf("%v: %s %v", err, output, linked)
 	}
 

@@ -505,7 +505,22 @@ function LocationContent({ userId }: { userId: string }) {
     () => new Intl.DateTimeFormat(language, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
     [language],
   )
+  const dayTimeFormat = useMemo(
+    () =>
+      new Intl.DateTimeFormat(language, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+    [language],
+  )
   const timeOf = (moment: string) => timeFormat.format(new Date(moment))
+  // A person's arrival with its day when it was not today, so a visit begun
+  // days ago does not read as this evening's.
+  const arrivalOf = (moment: string) =>
+    dayKeyOf(moment) === dayKeyOf(new Date()) ? timeOf(moment) : dayTimeFormat.format(new Date(moment))
 
   // Choosing a person centers the map on them. Somebody else is put in the
   // address, with their visits and places; the person themselves is not.
@@ -802,7 +817,7 @@ function LocationContent({ userId }: { userId: string }) {
                     {view.openVisit ? (
                       t('location.atSince', {
                         place: placeTitle(view.openVisit.place, t),
-                        time: view.openVisit.arrivedAt ? timeOf(view.openVisit.arrivedAt) : '',
+                        time: view.openVisit.arrivedAt ? arrivalOf(view.openVisit.arrivedAt) : '',
                       })
                     ) : view.latestPoint ? (
                       <>
