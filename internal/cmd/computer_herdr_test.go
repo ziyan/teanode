@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -169,6 +170,43 @@ func TestListGroupsSessionsByWorkspaceAndMarksTheTabOnScreen(t *testing.T) {
 	}
 	if strings.Count(text, "on screen") != 1 {
 		t.Errorf("only the focused tab is marked: %s", text)
+	}
+}
+
+func TestSubagentsArePrintedUnderTheAgentThatStartedThem(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2030, 1, 2, 12, 0, 0, 0, time.UTC)
+	at := func(secondsBefore int) *time.Time {
+		moment := now.Add(-time.Duration(secondsBefore) * time.Second)
+		return &moment
+	}
+	var output bytes.Buffer
+	command := &cli.Command{Writer: &output}
+	printHerdrSubagents(command, &client.AgentHerdrSubagents{
+		HerdrSession:     &client.AgentHerdrSession{Computer: "laptop", PaneID: "w1:p1", PaneName: "website ui", HerdrSessionState: "working"},
+		SessionModelName: "example-model-main",
+		Subagents: []*client.AgentHerdrSubagent{
+			{SubagentID: "a1", SubagentType: "Explore", TaskText: "Look at the first file", ModelName: "example-model-small", SubagentState: "done", StartedAt: at(190), EndedAt: at(60)},
+			{SubagentID: "a2", SubagentType: "general-purpose", TaskText: "Check the second file", SubagentState: "running", StartedAt: at(45)},
+			{SubagentID: "a3", ParentSubagentID: "a2", SubagentType: "Explore", TaskText: "Look under the second file", ModelName: "example-model-small", SubagentState: "stopped", StartedAt: at(30), EndedAt: at(10)},
+			// Its parent was cut from the list, so it is shown with the first.
+			{SubagentID: "a4", ParentSubagentID: "a0", SubagentType: "Explore", TaskText: "Orphan", SubagentState: "done"},
+		},
+	}, now)
+	want := "website ui on laptop: working, example-model-main\n" +
+		"  4 agents, 1 running\n" +
+		"  done  Explore  Look at the first file  example-model-small  2m 10s\n" +
+		"  running  general-purpose  Check the second file  45s\n" +
+		"    stopped  Explore  Look under the second file  example-model-small  20s\n" +
+		"  done  Explore  Orphan\n"
+	if output.String() != want {
+		t.Errorf("printed:\n%s\nwant:\n%s", output.String(), want)
+	}
+
+	output.Reset()
+	printHerdrSubagents(command, &client.AgentHerdrSubagents{HerdrSession: &client.AgentHerdrSession{Computer: "laptop", PaneID: "w1:p1", HerdrSessionState: "idle"}}, now)
+	if !strings.Contains(output.String(), "has not started any agents") {
+		t.Errorf("printed %q", output.String())
 	}
 }
 

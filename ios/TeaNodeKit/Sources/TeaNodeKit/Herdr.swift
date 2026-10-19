@@ -165,6 +165,115 @@ public struct HerdrRead: Decodable, Hashable, Sendable {
     public let isTruncated: Bool
 }
 
+/// HerdrSubagent is one agent a session started, or one an agent started.
+public struct HerdrSubagent: Decodable, Hashable, Sendable, Identifiable {
+    public let subagentId: String
+    /// The agent that started this one; empty or nil when the session did.
+    public let parentSubagentId: String?
+    /// The kind of agent, such as "general-purpose" or "Explore".
+    public let subagentType: String
+    public let subagentName: String?
+    /// The one-line task its parent gave it.
+    public let taskText: String
+    public let modelName: String
+    /// "running", "done" or "stopped".
+    public let subagentState: String
+    /// 1 under the session, 2 under an agent, and so on.
+    public let spawnDepth: Int
+    public let startedAt: String?
+    /// Nil while it runs.
+    public let endedAt: String?
+    /// The tools it used most, at most five.
+    public let toolNames: [String]
+    public let toolCallCount: Int
+
+    public var id: String { subagentId }
+
+    public var isRunning: Bool { subagentState == "running" }
+    public var isStopped: Bool { subagentState == "stopped" }
+
+    /// The agent that started this one, nil when the session did.
+    public var parentId: String? {
+        guard let parentSubagentId, !parentSubagentId.isEmpty else { return nil }
+        return parentSubagentId
+    }
+
+    /// How long it ran, or has run so far, as of now; nil when it has no
+    /// start time.
+    public func duration(now: Date) -> TimeInterval? {
+        guard let started = ServerTime.date(startedAt) else { return nil }
+        let ended = ServerTime.date(endedAt) ?? now
+        return max(0, ended.timeIntervalSince(started))
+    }
+}
+
+/// HerdrSubagents is the agents a session started for its current request.
+public struct HerdrSubagents: Decodable, Hashable, Sendable {
+    public let herdrSession: HerdrSession
+    public let sessionModelName: String
+    public let requestStartedAt: String?
+    public let isTruncated: Bool
+    public let subagents: [HerdrSubagent]
+
+    /// How many of the agents still run.
+    public var runningCount: Int { subagents.filter(\.isRunning).count }
+
+    /// The agents as a tree under the session.
+    public var tree: [HerdrSubagentNode] { HerdrSubagentNode.tree(of: subagents) }
+}
+
+/// HerdrSubagentNode is one agent with the agents it started under it.
+public struct HerdrSubagentNode: Hashable, Sendable, Identifiable {
+    public let subagent: HerdrSubagent
+    public let children: [HerdrSubagentNode]
+
+    public var id: String { subagent.subagentId }
+
+    /// Every agent in this node and under it.
+    public var descendantCount: Int { children.reduce(children.count) { $0 + $1.descendantCount } }
+
+    /// Turns the flat list into a tree, each level ordered by when its
+    /// agents started (those without a start time last, in the order given).
+    /// An agent whose parent is not in the list, or that names itself or
+    /// one of its own descendants as parent, goes under the session, which
+    /// is the top level of the result.
+    public static func tree(of subagents: [HerdrSubagent]) -> [HerdrSubagentNode] {
+        let ordered = subagents.enumerated().sorted { first, second in
+            let firstDate = ServerTime.date(first.element.startedAt)
+            let secondDate = ServerTime.date(second.element.startedAt)
+            switch (firstDate, secondDate) {
+            case let (firstDate?, secondDate?) where firstDate != secondDate: return firstDate < secondDate
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return first.offset < second.offset
+            }
+        }.map(\.element)
+        let knownIds = Set(ordered.map(\.subagentId))
+        var childrenByParent: [String: [HerdrSubagent]] = [:]
+        var topLevel: [HerdrSubagent] = []
+        for subagent in ordered {
+            if let parentId = subagent.parentId, parentId != subagent.subagentId, knownIds.contains(parentId) {
+                childrenByParent[parentId, default: []].append(subagent)
+            } else {
+                topLevel.append(subagent)
+            }
+        }
+        var placedIds: Set<String> = []
+        func node(_ subagent: HerdrSubagent) -> HerdrSubagentNode {
+            placedIds.insert(subagent.subagentId)
+            let children = (childrenByParent[subagent.subagentId] ?? []).filter { !placedIds.contains($0.subagentId) }.map(node)
+            return HerdrSubagentNode(subagent: subagent, children: children)
+        }
+        var roots = topLevel.map(node)
+        // Agents that name each other as parents are reached from no top
+        // level agent: show them under the session rather than lose them.
+        for subagent in ordered where !placedIds.contains(subagent.subagentId) {
+            roots.append(node(subagent))
+        }
+        return roots
+    }
+}
+
 /// HerdrScreen is a session's screen as it stands.
 public struct HerdrScreen: Decodable, Hashable, Sendable {
     public let herdrSession: HerdrSession
@@ -193,6 +302,14 @@ extension Documents {
         query ($computer: String, $paneId: String!, $shouldKeepColor: Boolean) {
           ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, shouldKeepColor: $shouldKeepColor) {
             herdrSession { \(herdrSessionFields) } screenText
+          }
+        }
+        """
+    public static let readHerdrSubagents = """
+        query ($computer: String!, $paneId: String!) {
+          ReadAgentHerdrSubagents(computer: $computer, paneId: $paneId) {
+            herdrSession { \(herdrSessionFields) } sessionModelName requestStartedAt isTruncated
+            subagents { subagentId parentSubagentId subagentType subagentName taskText modelName subagentState spawnDepth startedAt endedAt toolNames toolCallCount }
           }
         }
         """
@@ -253,6 +370,16 @@ extension Connection {
             Documents.readHerdrScreen, variables: ["computer": .string(computer), "paneId": .string(paneId), "shouldKeepColor": .bool(true)],
             as: Answer.self
         ).ReadAgentHerdrScreen
+    }
+
+    /// The agents a session started for its current request, as a flat
+    /// list; HerdrSubagents.tree puts them under the agents that started
+    /// them.
+    public func readHerdrSubagents(computer: String, paneId: String) async throws -> HerdrSubagents {
+        struct Answer: Decodable, Sendable { let ReadAgentHerdrSubagents: HerdrSubagents }
+        return try await execute(
+            Documents.readHerdrSubagents, variables: ["computer": .string(computer), "paneId": .string(paneId)], as: Answer.self
+        ).ReadAgentHerdrSubagents
     }
 
     /// Types text into a session and presses enter, with files the person

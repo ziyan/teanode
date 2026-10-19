@@ -5,6 +5,7 @@ import { graphql } from '../api'
 import { PageHeadingActions, useHeadingActionSlot } from '../components/breadcrumb'
 import { Loading } from '../components/common'
 import { announceHerdrAsking } from '../components/herdrPresence'
+import { HerdrSubagentsView } from '../components/herdrSubagents'
 import { ConfirmDialog } from '../components/dialog'
 import {
   HERDR_DOCUMENTS,
@@ -20,6 +21,7 @@ import {
   paneNameOf,
   type HerdrList,
   type HerdrSession,
+  type HerdrSubagentsRead,
   type HerdrTurn,
 } from '../components/herdrSessions'
 import {
@@ -28,6 +30,7 @@ import {
   ChevronRightIcon,
   ComputerIcon,
   FolderIcon,
+  GraphIcon,
   ListIcon,
   MoreIcon,
   PlusIcon,
@@ -74,12 +77,20 @@ const MOST_TURN_COUNT = 100
 const AT_END_PX = 48
 
 // SessionRead is what one look at a session brings back: its turns when the
-// transcript is shown, its screen when the screen is.
+// transcript is shown, its screen when the screen is, its agents when they are.
 interface SessionRead {
   herdrSession: HerdrSession
   turns: HerdrTurn[]
   isTruncated: boolean
   screenText: string
+  subagentsRead: HerdrSubagentsRead | null
+}
+
+type CodingView = 'turns' | 'agents' | 'screen'
+
+// codingViewOf is the view the address asks for; anything else is the turns.
+function codingViewOf(word: string | null): CodingView {
+  return word === 'screen' || word === 'agents' ? word : 'turns'
 }
 
 // useVisiblePolling runs load now and then every everyMS, only while the page
@@ -301,7 +312,8 @@ export function CodingPage() {
     if (session) {
       changed.computer = session.computer
       changed.pane = session.paneId
-      if (parameters.get('view') === 'screen') changed.view = 'screen'
+      const view = codingViewOf(parameters.get('view'))
+      if (view !== 'turns') changed.view = view
     }
     if (closedComputers.length > 0) changed.closed = closedComputers.join(',')
     setParameters(changed)
@@ -573,11 +585,11 @@ function CodingSession({
   const toast = useToast()
   const [latest, setLatest] = useState(session)
   const [parameters, setParameters] = useSearchParams()
-  const view = parameters.get('view') === 'screen' ? 'screen' : 'turns'
-  const setView = (next: 'turns' | 'screen') => {
+  const view = codingViewOf(parameters.get('view'))
+  const setView = (next: CodingView) => {
     const changed = new URLSearchParams(parameters)
-    if (next === 'screen') changed.set('view', 'screen')
-    else changed.delete('view')
+    if (next === 'turns') changed.delete('view')
+    else changed.set('view', next)
     setParameters(changed)
   }
   const [turnCount, setTurnCount] = useState(FIRST_TURN_COUNT)
@@ -604,14 +616,31 @@ function CodingSession({
     else if (chosenBox.right > stripBox.right) strip.scrollLeft += chosenBox.right - stripBox.right + margin
   }, [latest.computer, latest.paneId, siblings.length])
 
+  // The agents change under an idle session too, as they finish.
   const everyMS =
-    latest.herdrSessionState === 'working' || latest.herdrSessionState === 'asking' ? BUSY_EVERY_MS : IDLE_EVERY_MS
+    view === 'agents' || latest.herdrSessionState === 'working' || latest.herdrSessionState === 'asking'
+      ? BUSY_EVERY_MS
+      : IDLE_EVERY_MS
   const read = useVisiblePolling<SessionRead>(
     async () => {
       // A session that has not said anything yet has no history to read:
       // its transcript is empty, which is not a failure.
       if (view === 'turns' && !latestRef.current.transcriptPath) {
-        return { herdrSession: latestRef.current, turns: [], isTruncated: false, screenText: '' }
+        return { herdrSession: latestRef.current, turns: [], isTruncated: false, screenText: '', subagentsRead: null }
+      }
+      if (view === 'agents') {
+        const response = await graphql<{ ReadAgentHerdrSubagents: HerdrSubagentsRead }>(
+          HERDR_DOCUMENTS.ReadAgentHerdrSubagents,
+          { computer: session.computer, paneId: session.paneId },
+        )
+        const subagentsRead = response.ReadAgentHerdrSubagents
+        return {
+          herdrSession: subagentsRead.herdrSession,
+          turns: [],
+          isTruncated: false,
+          screenText: '',
+          subagentsRead,
+        }
       }
       if (view === 'turns') {
         const response = await graphql<{
@@ -622,13 +651,13 @@ function CodingSession({
           turnCount,
           shouldIncludeToolDetail: isToolDetailWanted,
         })
-        return { ...response.ReadAgentHerdrSession, screenText: '' }
+        return { ...response.ReadAgentHerdrSession, screenText: '', subagentsRead: null }
       }
       const response = await graphql<{ ReadAgentHerdrScreen: { herdrSession: HerdrSession; screenText: string } }>(
         HERDR_DOCUMENTS.ReadAgentHerdrScreen,
         { computer: session.computer, paneId: session.paneId, shouldKeepColor: true },
       )
-      return { ...response.ReadAgentHerdrScreen, turns: [], isTruncated: false }
+      return { ...response.ReadAgentHerdrScreen, turns: [], isTruncated: false, subagentsRead: null }
     },
     everyMS,
     view,
@@ -663,8 +692,8 @@ function CodingSession({
     if (placeToKeep.current) {
       element.scrollTop = element.scrollHeight - placeToKeep.current.height + placeToKeep.current.top
       placeToKeep.current = null
-    } else if (isAtEnd.current) element.scrollTop = element.scrollHeight
-  }, [shown, latest.herdrSessionState])
+    } else if (isAtEnd.current && view !== 'agents') element.scrollTop = element.scrollHeight
+  }, [shown, latest.herdrSessionState, view])
 
   const showEarlier = () => {
     const element = scroller.current
@@ -738,6 +767,11 @@ function CodingSession({
   const agentKinds: ('claude' | 'codex')[] =
     latest.codingAgentKind === 'codex' ? ['codex', 'claude'] : ['claude', 'codex']
   const isWorking = latest.herdrSessionState === 'working'
+  const viewChoices: { view: CodingView; label: string; icon: React.ReactNode }[] = [
+    { view: 'turns', label: t('herdr.showTurns'), icon: <ListIcon size={16} /> },
+    { view: 'agents', label: t('herdr.showAgents'), icon: <GraphIcon size={16} /> },
+    { view: 'screen', label: t('herdr.showScreen'), icon: <TerminalIcon size={16} /> },
+  ]
 
   return (
     <div className="coding-session">
@@ -848,19 +882,24 @@ function CodingSession({
           />
         </Tooltip>
       </div>
-      {/* Turns or the screen, by one round button floating over the top
-          right of what is shown, rather than a row of its own. */}
+      {/* Turns, agents or the screen, by one small switch floating over the
+          top right of what is shown, rather than a row of its own. */}
       <div className="coding-body">
-        <Tooltip label={view === 'turns' ? t('herdr.showScreen') : t('herdr.showTurns')}>
-          <button
-            type="button"
-            className="icon-button coding-view-toggle"
-            aria-label={view === 'turns' ? t('herdr.showScreen') : t('herdr.showTurns')}
-            onClick={() => setView(view === 'turns' ? 'screen' : 'turns')}
-          >
-            {view === 'turns' ? <TerminalIcon size={18} /> : <ListIcon size={18} />}
-          </button>
-        </Tooltip>
+        <div className="segmented coding-view-switch" role="group" aria-label={t('herdr.viewGroup')}>
+          {viewChoices.map((choice) => (
+            <Tooltip key={choice.view} label={choice.label}>
+              <button
+                type="button"
+                className={choice.view === view ? 'active' : ''}
+                aria-label={choice.label}
+                aria-pressed={choice.view === view}
+                onClick={() => setView(choice.view)}
+              >
+                {choice.icon}
+              </button>
+            </Tooltip>
+          ))}
+        </div>
         <div
           ref={scroller}
           className={view === 'screen' ? 'coding-scroll showing-screen' : 'coding-scroll'}
@@ -875,6 +914,10 @@ function CodingSession({
             )
           ) : view === 'screen' ? (
             <TerminalText className="herdr-screen" text={shown.screenText} />
+          ) : view === 'agents' ? (
+            shown.subagentsRead ? (
+              <HerdrSubagentsView read={shown.subagentsRead} />
+            ) : null
           ) : (
             <>
               {shown.isTruncated && turnCount < MOST_TURN_COUNT ? (

@@ -200,6 +200,53 @@
             ]
         }
 
+        /// One invented agent a coding session started, started and ended
+        /// the given number of seconds before now.
+        private static func herdrSubagent(
+            id: String, parent: String? = nil, type: String, task: String, model: String, state: String, depth: Int, startedSecondsAgo: Int,
+            endedSecondsAgo: Int? = nil, tools: [String], toolCallCount: Int
+        ) -> String {
+            let formatter = ISO8601DateFormatter()
+            let startedAt = formatter.string(from: Date().addingTimeInterval(-Double(startedSecondsAgo)))
+            let endedAt = endedSecondsAgo.map { "\"" + formatter.string(from: Date().addingTimeInterval(-Double($0))) + "\"" } ?? "null"
+            let parentText = parent.map { "\"\($0)\"" } ?? "null"
+            let toolText = tools.map { "\"\($0)\"" }.joined(separator: ",")
+            return #"{"subagentId":"\#(id)","parentSubagentId":\#(parentText),"subagentType":"\#(type)","subagentName":null,"taskText":"\#(task)","modelName":"\#(model)","subagentState":"\#(state)","spawnDepth":\#(depth),"startedAt":"\#(startedAt)","endedAt":\#(endedAt),"toolNames":[\#(toolText)],"toolCallCount":\#(toolCallCount)}"#
+        }
+
+        /// Seven invented agents of a session building a pricing page: a
+        /// researcher with two agents under it (one done, one running), a
+        /// writer (done) and a coder with a tester (stopped) and a reviewer
+        /// (running) under it.
+        private static var herdrSubagentList: [String] {
+            [
+                herdrSubagent(
+                    id: "researcher", type: "general-purpose", task: "Compare how three similar sites lay out their pricing tiers",
+                    model: "claude-sonnet-5-5", state: "running", depth: 1, startedSecondsAgo: 300, tools: ["WebFetch", "Read"], toolCallCount: 14),
+                herdrSubagent(
+                    id: "finder", parent: "researcher", type: "Explore", task: "Find the pricing table component in the repository",
+                    model: "claude-haiku-5-0", state: "done", depth: 2, startedSecondsAgo: 290, endedSecondsAgo: 200, tools: ["Grep", "Read", "Glob"],
+                    toolCallCount: 9),
+                herdrSubagent(
+                    id: "lister", parent: "researcher", type: "Explore", task: "List the plan names and monthly prices the page must show",
+                    model: "claude-haiku-5-0", state: "running", depth: 2, startedSecondsAgo: 150, tools: ["Read"], toolCallCount: 3),
+                herdrSubagent(
+                    id: "writer", type: "technical-writer", task: "Draft the headline and a one-line description for each plan",
+                    model: "claude-sonnet-5-5", state: "done", depth: 1, startedSecondsAgo: 280, endedSecondsAgo: 120, tools: ["Read", "Write"],
+                    toolCallCount: 6),
+                herdrSubagent(
+                    id: "coder", type: "general-purpose", task: "Build the pricing page component with three plan cards",
+                    model: "claude-sonnet-5-5", state: "running", depth: 1, startedSecondsAgo: 100, tools: ["Edit", "Write", "Bash"], toolCallCount: 21),
+                herdrSubagent(
+                    id: "tester", parent: "coder", type: "test-runner", task: "Run the pricing page tests and report what fails",
+                    model: "claude-haiku-5-0", state: "stopped", depth: 2, startedSecondsAgo: 70, endedSecondsAgo: 40, tools: ["Bash", "Read"],
+                    toolCallCount: 5),
+                herdrSubagent(
+                    id: "reviewer", parent: "coder", type: "code-reviewer", task: "Review the new component for accessibility problems",
+                    model: "claude-sonnet-5-5", state: "running", depth: 2, startedSecondsAgo: 30, tools: ["Read", "Grep"], toolCallCount: 4),
+            ]
+        }
+
         /// The coding sessions, their transcripts and the actions on them;
         /// nil for any other query.
         static func herdrAnswer(query: String, body: Data?) -> String? {
@@ -211,7 +258,13 @@
             let sessions = herdrSessionList
             let paneId = variables["paneId"] as? String ?? "p2"
             let named = sessions.first { $0.contains(#""paneId":"\#(paneId)""#) } ?? sessions[1]
-            if query.contains("ListAgentHerdrSessions") {
+            if query.contains("ReadAgentHerdrSubagents") {
+                let requestStartedAt = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-320))
+                let subagentsText = herdrSubagentList.joined(separator: ",")
+                let head = #"{"data":{"ReadAgentHerdrSubagents":{"herdrSession":"# + named
+                let middle = #","sessionModelName":"claude-opus-5-0","requestStartedAt":"\#(requestStartedAt)","isTruncated":false,"subagents":["#
+                return head + middle + subagentsText + "]}}}"
+            } else if query.contains("ListAgentHerdrSessions") {
                 return #"{"data":{"ListAgentHerdrSessions":{"computerNames":["laptop","desk"],"failedComputerNames":[],"sessions":["# + sessions.joined(separator: ",") + "]}}}"
             } else if query.contains("ReadAgentHerdrSession") {
                 return #"{"data":{"ReadAgentHerdrSession":{"herdrSession":"# + named + #","turns":[{"herdrTurnRole":"person","turnText":"Add a Contact link to the footer, after About.","turnAt":null},{"herdrTurnRole":"agent","turnText":"I will look at the footer component first.","turnAt":null},{"herdrTurnRole":"tool","turnText":"Read src/Footer.tsx","turnAt":null,"toolInputText":"{\n  \"file_path\": \"src/Footer.tsx\"\n}","toolResultText":"export const footerLinks = [\"About\", \"Privacy\"]"},{"herdrTurnRole":"agent","turnText":"The footer lists its links from one array, so the new link is one more entry. I have added it and updated the snapshot test.","turnAt":null}],"isTruncated":false}}}"#

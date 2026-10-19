@@ -334,6 +334,9 @@ jobs:
           shoot coding-session-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
           shoot coding-session-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
           shoot coding-session-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
+          shoot coding-session-agents-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session-agents
+          shoot coding-session-agents-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session-agents
+          shoot coding-session-agents-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session-agents
           shoot coding-session-working-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session-working
           shoot coding-session-working-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session-working
           shoot coding-hooks-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-hooks

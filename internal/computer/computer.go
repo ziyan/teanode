@@ -230,7 +230,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 	}
 	hello.Features = append(hello.Features, FeatureAuthorizationForward)
 	if options.Herdr != nil {
-		hello.Features = append(hello.Features, FeatureHerdr, FeatureHerdrFiles, FeatureHerdrOpenBeside)
+		hello.Features = append(hello.Features, FeatureHerdr, FeatureHerdrFiles, FeatureHerdrOpenBeside, FeatureHerdrSubagents)
 	}
 	// Closed when the shell the person attached ends. Leaving the shell is
 	// how they detach, so this program ends with it rather than sitting on
@@ -370,7 +370,7 @@ func Serve(ctx context.Context, connection Connection, options *Options) error {
 
 // isQuietHerdrAction says a herdr action only looks.
 var isQuietHerdrAction = map[string]bool{
-	"herdr_list": true, "herdr_read": true, "herdr_screen": true, "herdr_wait": true, "herdr_acknowledge": true,
+	"herdr_list": true, "herdr_read": true, "herdr_subagents": true, "herdr_screen": true, "herdr_wait": true, "herdr_acknowledge": true,
 }
 
 // ErrTerminalEnded is how Serve ends when the shell the person attached
