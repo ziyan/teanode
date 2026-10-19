@@ -95,7 +95,16 @@ of it; new readings of that type still arrive while Health is on.
 ## Who sees what
 
 - **The person** sees everything they have, on the dashboard's Health page, in
-  the app's Health screen, and with `teanode health`.
+  the app's Health screen, and with `teanode health`. Two things take the
+  person's own tap, on the dashboard or in the iPhone app: turning on the
+  agent's switch, and a share that adds categories the grantee does not
+  already have (`UpdateHealthSettings` with the switch on, `SetHealthShare`
+  widening). The server refuses them to a command line token. It cannot tell
+  the person's command line from their agent's: with a computer attached, the
+  agent can run commands that act with the person's own login, and so can read
+  what that login can read on that computer, Health included. That is why the
+  two consents are not given to a login. Turning the switch off, narrowing or
+  ending a share, and every read and erase, work from anywhere.
 - **People they share with.** A person shares chosen Health categories with a
   circle, or with one person in a circle they share. Those people see the day
   summaries of the types in those categories, as charts, and nothing else: no
@@ -107,7 +116,10 @@ of it; new readings of that type still arrive while Health is on.
   the dashboard, or in Health in the iPhone app's Settings. Until then every action but set_up says so.
   It runs only in a conversation the person, or somebody acting as them, is in: a dream, a subagent, a
   turn woken by a background command or survey, a speak-first run or any other
-  run nobody is watching is refused. An operator with `agent:act` speaking as
+  run nobody is watching is refused. So is a turn whose answer others could
+  read: over Telegram or Discord, or in a chat room with other members. There
+  every action but set_up answers in one sentence, that Health is read only in
+  the TeaNode app and on the dashboard. An operator with `agent:act` speaking as
   the person, and a client of the MCP surfaces, reach the tool only through the
   person's own switch: they act as the person, so with the switch on they read
   what the person's agent reads. It never reads what somebody shares with the
@@ -126,15 +138,21 @@ of it; new readings of that type still arrive while Health is on.
   about numbers already shown, say), and what the agent writes to memory
   because the person asked it to, are kept like anything else said there. The
   tool's guidance tells the agent not to copy Health into notes or memory
-  unless the person asks. What the agent said about Health stays in its
+  unless the person asks. A conversation's title and summary are not
+  refreshed from a turn that read Health: the conversation keeps the ones it
+  had. What the agent said about Health stays in its
   conversation, and erasing does not remove it.
 
 ## What leaves the server
 
 What the agent reads goes to the model's provider, like every tool result, and
-the switch names that provider. Nothing else leaves: Health data never goes to
-the push relay or into a notification's text, and is never used for anything
-but showing it to the person and the people they share with.
+the switch names that provider. The agent reads Health only in the person's own
+conversations in the app and on the dashboard, never over Telegram or Discord
+and never in a chat with other people. Conversation titles and summaries are
+not refreshed from a turn that read Health. Nothing else leaves: Health data
+never goes to the push relay or into a notification's text, the server log
+never prints values, and it is never used for anything but showing it to the
+person and the people they share with.
 
 ## Erasing
 

@@ -20,8 +20,12 @@
 // existence of through has_route. Those are the person's to do, on the
 // dashboard, in the app or with the command line.
 //
+// It answers only where the person alone reads the answer: not over Telegram
+// or Discord, and not in a chat room with other members.
+//
 // Memory: dreams never read Health, and when conversations are filed into
-// memory, what a turn that read Health said is left out. The tool cannot stop
+// memory, what a turn that read Health said is left out, and the conversation's
+// title and summary are not refreshed from it. The tool cannot stop
 // Health figures that the person or the agent repeats later in a conversation,
 // or that the agent writes to memory because the person asked, from being kept
 // like anything else said there, so its guidance tells the agent not to copy
@@ -92,7 +96,7 @@ func init() {
 					"Always show the unit with a number (steps, bpm, kg, hours and minutes for a time). " +
 					"It reads the person's own Health only, never what other people share with them: a person who shares Health shares it with people, not with their agents' model providers. " +
 					"What others share with the person is on the Health page under Showing, on the dashboard and in the iPhone app; you cannot read it, so point the person there. " +
-					"It reads only in a conversation with the person, never in a dream, a subagent, a background task or any other run nobody is watching. " +
+					"It reads only in a conversation with the person in the TeaNode app or on the dashboard, never over Telegram or Discord nor in a chat with other people, and never in a dream, a subagent, a background task or any other run nobody is watching. " +
 					"The person must first let you read their Health data (the switch \"Let the agent read Health data\" is in the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings); until then every action but set_up says so, and you tell them where to turn it on instead of trying again, offering set_up to take them to it. " +
 					"This is not medical advice, and you do not diagnose from it.",
 				Guidance: "Health is among the most private data the person has. Use it only when asked or when it plainly answers what they asked, and do not copy it into other tools, notes, memory or messages unless they ask. " +

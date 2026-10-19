@@ -142,15 +142,18 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 		return "", err
 	}
 	history := make([]llm.ChatMessage, 0, len(messages))
-	for _, message := range messages {
+	historyStarts := make([]int, 0, len(messages))
+	for index, message := range messages {
 		switch message.Role {
 		case string(llm.RoleUser):
 			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: message.Content})
+			historyStarts = append(historyStarts, index)
 		case string(llm.RoleAssistant):
 			// Without the hidden lines the dashboard reads, so that the
 			// model has nothing of them to copy into a title.
 			if content := models.StripHiddenMarkers(message.Content); strings.TrimSpace(content) != "" {
 				history = append(history, llm.ChatMessage{Role: llm.RoleAssistant, Content: content})
+				historyStarts = append(historyStarts, index)
 			}
 		}
 	}
@@ -159,6 +162,14 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 	}
 	if len(history) > describeMessages {
 		history = history[len(history)-describeMessages:]
+		historyStarts = historyStarts[len(historyStarts)-describeMessages:]
+	}
+	// What a turn that read the person's Health said is not put into a title
+	// or a summary, which the list and the picker show to anybody looking
+	// over the person's shoulder and which are not kept as Health is. The
+	// conversation keeps the title and the summary it has.
+	if isHealthRead(messages, historyStarts[0]) {
+		return mark("", "")
 	}
 	transcript := renderHistory(history)
 	if len(transcript) > describeCharacters {
@@ -207,4 +218,21 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 	}
 	title, summary := describedAs(answer)
 	return mark(title, summary)
+}
+
+// isHealthRead says whether the messages from the turn that the message at
+// index belongs to, to the end, include a call of the Health tool (see
+// isHealthToolName and withoutHealthTurns).
+func isHealthRead(messages []*models.AgentMessage, index int) bool {
+	for index > 0 && !isTurnStart(messages, index) {
+		index--
+	}
+	for _, message := range messages[index:] {
+		for _, call := range message.ToolCalls {
+			if isHealthToolName(call.Name) {
+				return true
+			}
+		}
+	}
+	return false
 }

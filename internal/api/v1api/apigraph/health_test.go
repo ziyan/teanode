@@ -39,6 +39,13 @@ func newHealthWorld(t *testing.T) *healthWorld {
 // back, or what was refused.
 func (self *healthWorld) callWith(t *testing.T, user *models.User, query string, variables map[string]any) (map[string]any, []string) {
 	t.Helper()
+	return self.callWithCredential(t, user, models.CredentialSession, query, variables)
+}
+
+// callWithCredential is callWith for a request that signed in with the
+// credential given.
+func (self *healthWorld) callWithCredential(t *testing.T, user *models.User, credentialKind models.CredentialKind, query string, variables map[string]any) (map[string]any, []string) {
+	t.Helper()
 	body, err := json.Marshal(graphRequest{Query: query, Variables: variables})
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +53,7 @@ func (self *healthWorld) callWith(t *testing.T, user *models.User, query string,
 	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(api.AuthenticatedUsernameHeader, user.Username)
-	request.Header.Set(api.CredentialKindHeader, string(models.CredentialSession))
+	request.Header.Set(api.CredentialKindHeader, string(credentialKind))
 	response := httptest.NewRecorder()
 	self.graph.graphView(response, request)
 	var outcome struct {
@@ -731,5 +738,170 @@ func TestHealthNeedsThePermission(t *testing.T) {
 		if !strings.Contains(strings.ToLower(message), "not found") {
 			t.Errorf("%s: a person without health:use is told %q", name, message)
 		}
+	}
+}
+
+const healthSwitchOnQuery = `mutation { UpdateHealthSettings(canAgentReadHealth: true) { canAgentReadHealth } }`
+const healthSwitchOffQuery = `mutation { UpdateHealthSettings(canAgentReadHealth: false) { canAgentReadHealth } }`
+
+func (self *healthWorld) shareVariables(categories ...string) map[string]any {
+	healthCategories := []any{}
+	for _, category := range categories {
+		healthCategories = append(healthCategories, category)
+	}
+	return map[string]any{"granteeUserId": self.ben.ID, "healthCategories": healthCategories}
+}
+
+func (self *healthWorld) sharedCategories(t *testing.T) []string {
+	t.Helper()
+	var shared []string
+	for _, share := range self.run(t, self.ada, healthSharesQuery, nil)["ListHealthShares"].([]any) {
+		share := share.(map[string]any)
+		if share["ownerUserId"] == self.ada.ID {
+			for _, category := range share["healthCategories"].([]any) {
+				shared = append(shared, category.(string))
+			}
+		}
+	}
+	slices.Sort(shared)
+	return shared
+}
+
+// Commands run on the person's computer, by them or by an agent there, act
+// with the person's own login, so a command line token is told apart from a tap
+// only for the two consents: turning the agent's switch on, and a share that
+// adds categories. Turning the switch off, narrowing a share and everything
+// else work with a token.
+func TestTheAgentSwitchAndWiderSharesNeedATap(t *testing.T) {
+	world := newHealthWorld(t)
+	isTapRequired := func(failures []string) bool {
+		return strings.Contains(strings.Join(failures, "; "), api.TapRequiredPhrase)
+	}
+	token := func(query string, variables map[string]any) (map[string]any, []string) {
+		return world.callWithCredential(t, world.ada, models.CredentialToken, query, variables)
+	}
+	agentSwitch := func() any {
+		return world.run(t, world.ada, healthSettingsQuery, nil)["ReadHealthSettings"].(map[string]any)["canAgentReadHealth"]
+	}
+
+	// A token, or no credential, cannot turn the switch on or start a share.
+	for _, credentialKind := range []models.CredentialKind{models.CredentialToken, ""} {
+		if data, failures := world.callWithCredential(t, world.ada, credentialKind, healthSwitchOnQuery, nil); !isTapRequired(failures) {
+			t.Errorf("the switch on with credential %q: %v %v", credentialKind, data, failures)
+		}
+		if data, failures := world.callWithCredential(t, world.ada, credentialKind, healthShareQuery, world.shareVariables("sleep")); !isTapRequired(failures) {
+			t.Errorf("a new share with credential %q: %v %v", credentialKind, data, failures)
+		}
+		// An empty list takes a share back that is not there: it discloses
+		// nothing.
+		if data, failures := world.callWithCredential(t, world.ada, credentialKind, healthShareQuery, world.shareVariables()); isTapRequired(failures) {
+			t.Errorf("taking back nothing with credential %q: %v %v", credentialKind, data, failures)
+		}
+	}
+	if agentSwitch() != false || len(world.sharedCategories(t)) != 0 {
+		t.Fatalf("a refused request changed something: switch %v, shared %v", agentSwitch(), world.sharedCategories(t))
+	}
+
+	// A tap may.
+	for _, credentialKind := range []models.CredentialKind{models.CredentialSession, models.CredentialApp} {
+		world.callWithCredential(t, world.ada, models.CredentialSession, healthSwitchOffQuery, nil)
+		if data, failures := world.callWithCredential(t, world.ada, credentialKind, healthSwitchOnQuery, nil); len(failures) > 0 {
+			t.Fatalf("the switch on with credential %q: %v %v", credentialKind, data, failures)
+		}
+		if agentSwitch() != true {
+			t.Fatalf("a tap with credential %q did not turn the switch on", credentialKind)
+		}
+	}
+
+	// A token turns it off.
+	if data, failures := token(healthSwitchOffQuery, nil); len(failures) > 0 || agentSwitch() != false {
+		t.Fatalf("the switch off with a token: %v %v", data, failures)
+	}
+
+	// Shares: a tap starts one, a token may keep or narrow it, never widen it.
+	if data, failures := world.callWithCredential(t, world.ada, models.CredentialApp, healthShareQuery, world.shareVariables("sleep", "heart")); len(failures) > 0 {
+		t.Fatalf("a share made by the app: %v %v", data, failures)
+	}
+	for name, categories := range map[string][]string{"adding a category": {"sleep", "heart", "activity"}, "swapping one": {"sleep", "activity"}} {
+		if data, failures := token(healthShareQuery, world.shareVariables(categories...)); !isTapRequired(failures) {
+			t.Errorf("%s with a token: %v %v", name, data, failures)
+		}
+	}
+	if shared := world.sharedCategories(t); !slices.Equal(shared, []string{"heart", "sleep"}) {
+		t.Fatalf("a refused request changed the share: %v", shared)
+	}
+	if data, failures := token(healthShareQuery, world.shareVariables("sleep", "heart")); len(failures) > 0 {
+		t.Errorf("sharing the same again with a token: %v %v", data, failures)
+	}
+	if data, failures := token(healthShareQuery, world.shareVariables("sleep")); len(failures) > 0 {
+		t.Fatalf("narrowing with a token: %v %v", data, failures)
+	}
+	if shared := world.sharedCategories(t); !slices.Equal(shared, []string{"sleep"}) {
+		t.Fatalf("narrowed to %v", shared)
+	}
+	if data, failures := token(healthShareQuery, world.shareVariables()); len(failures) > 0 {
+		t.Fatalf("taking a share back with a token: %v %v", data, failures)
+	}
+	if shared := world.sharedCategories(t); len(shared) != 0 {
+		t.Fatalf("still shared: %v", shared)
+	}
+
+	// Everything else is health:use as before, with a token too.
+	monday := time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC)
+	world.run(t, world.ada, reportHealthQuery, map[string]any{"samples": []any{stepSampleInput("a", monday, 100)}})
+	for name, call := range map[string]struct {
+		query     string
+		variables map[string]any
+	}{
+		"types":    {healthTypesQuery, nil},
+		"summary":  {healthSummaryQuery, map[string]any{"healthType": "stepCount", "fromDay": "2026-03-01", "toDay": "2026-03-02"}},
+		"samples":  {healthSamplesQuery, map[string]any{"healthType": "stepCount"}},
+		"route":    {healthRouteQuery, map[string]any{"healthSampleId": "a"}},
+		"settings": {healthSettingsQuery, nil},
+		"shares":   {healthSharesQuery, nil},
+		"erase":    {healthEraseQuery, nil},
+	} {
+		if _, failures := token(call.query, call.variables); isTapRequired(failures) {
+			t.Errorf("%s was refused to a token as not a tap: %v", name, failures)
+		} else if name != "route" && len(failures) > 0 {
+			t.Errorf("%s with a token: %v", name, failures)
+		}
+	}
+}
+
+// The agent's health tool calls the API in-process as the person, with no
+// credential. It reads what the tool reads, and cannot turn its own switch on or
+// widen a share.
+func TestTheAgentReadsHealthInProcessButCannotConsent(t *testing.T) {
+	world := newHealthWorld(t)
+	operations := &agentOperations{graph: world.graph, user: world.ada, permissions: &models.EffectivePermissions{Everywhere: []models.Permission{models.PermissionHealthUse}}}
+	for name, call := range map[string]struct {
+		query     string
+		variables map[string]any
+	}{
+		"types":    {healthTypesQuery, nil},
+		"summary":  {healthSummaryQuery, map[string]any{"healthType": "stepCount", "fromDay": "2026-03-01", "toDay": "2026-03-02"}},
+		"samples":  {healthSamplesQuery, map[string]any{"healthType": "stepCount"}},
+		"settings": {healthSettingsQuery, nil},
+	} {
+		var result map[string]any
+		if err := operations.Execute(t.Context(), call.query, call.variables, &result); err != nil {
+			t.Errorf("the agent's %s: %s", name, err)
+		}
+	}
+	for name, call := range map[string]struct {
+		query     string
+		variables map[string]any
+	}{
+		"switch": {healthSwitchOnQuery, nil},
+		"share":  {healthShareQuery, world.shareVariables("sleep")},
+	} {
+		err := operations.Execute(t.Context(), call.query, call.variables, nil)
+		if err == nil || !strings.Contains(err.Error(), api.TapRequiredPhrase) {
+			t.Errorf("the agent's %s was not refused: %v", name, err)
+		}
+	}
+	if settings := world.run(t, world.ada, healthSettingsQuery, nil)["ReadHealthSettings"].(map[string]any); settings["canAgentReadHealth"] != false {
+		t.Fatalf("the agent turned its own switch on: %v", settings)
 	}
 }

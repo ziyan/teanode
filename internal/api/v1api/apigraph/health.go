@@ -572,6 +572,10 @@ func (self *graph) requireHealthPerson(ctx context.Context) (*api.Principal, err
 	return principal, nil
 }
 
+// healthOnATap is what a call is told when only a person's own tap may make
+// it. It begins with api.TapRequiredPhrase, which the command line recognizes.
+const healthOnATap = api.TapRequiredPhrase + ": turning on the agent's access to Health, and sharing more Health with anybody, are done on the Settings tab of the Health page on the dashboard or in Health in the iPhone app's Settings, not from a command line or an API token"
+
 // healthReach is whose Health a call is about, and which of it the caller may
 // read.
 type healthReach struct {
@@ -1015,6 +1019,13 @@ func (self *graph) UpdateHealthSettings(ctx context.Context, arguments UpdateHea
 	if err != nil {
 		return nil, err
 	}
+	// Turning the agent's access on is the person's consent to send Health to
+	// the model's provider, and a person's tap. Commands run on the person's
+	// computer, by them or by an agent there, act with the person's own login
+	// and cannot be told apart, so a command line token may only turn it off.
+	if arguments.CanAgentReadHealth && !principal.IsPersonsTap() {
+		return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, healthOnATap)
+	}
 	if err := self.transaction(ctx).SetCanAgentReadHealth(principal.User.ID, arguments.CanAgentReadHealth); err != nil {
 		return nil, translateError(err)
 	}
@@ -1092,6 +1103,26 @@ func (self *graph) SetHealthShare(ctx context.Context, arguments SetHealthShareA
 		return nil, fmt.Errorf("%w: share with one person or one circle", api.ErrInvalidArguments)
 	}
 	tx := self.transaction(ctx)
+	// Sharing a category that the grantee does not already read is disclosing
+	// Health to somebody, a person's tap. Narrowing a share or taking it back
+	// discloses nothing and is open to every sign-in.
+	if !principal.IsPersonsTap() {
+		made, err := tx.ListHealthShares(principal.User.ID)
+		if err != nil {
+			return nil, err
+		}
+		var alreadyShared []string
+		for _, share := range made {
+			if share.GranteeUserID == granteeUserId && share.GranteeCircleID == granteeCircleId {
+				alreadyShared = share.HealthCategories
+			}
+		}
+		for _, category := range categories {
+			if !slices.Contains(alreadyShared, category) {
+				return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, healthOnATap)
+			}
+		}
+	}
 	saved, err := tx.SetHealthShare(principal.User.ID, &models.HealthShare{
 		GranteeUserID: granteeUserId, GranteeCircleID: granteeCircleId, HealthCategories: categories,
 		CreatedByUserID: principal.User.ID,

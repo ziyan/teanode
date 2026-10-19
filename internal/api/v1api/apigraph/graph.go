@@ -137,7 +137,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 
 	operation, err := selectGraphOperation(prepared.AST, prepared.OperationName)
 	if err == nil && (operation.Operation == "query" || hasOnlyTransactionFreeMutations(operation)) {
-		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user, Impersonator: impersonator})
+		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{Username: username, User: user, Impersonator: impersonator, CredentialKind: api.CredentialKindFromRequest(request)})
 		writeGraphResult(response, graphql.Execute(prepared))
 		return
 	}

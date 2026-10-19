@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -40,8 +41,9 @@ func NewHealthCommand() *cli.Command {
 			"(stepCount, heartRate, sleepAnalysis, workout); 'teanode health types' lists the\n" +
 			"ones you have. Days are your phone's calendar days; with no range, a summary\n" +
 			"covers the last 30 days. Your agent reads your own Health only, and only after you\n" +
-			"turn that on with 'teanode health settings --agent-can-read on' (also the\n" +
-			"Settings tab of the Health page on the dashboard, or Health in the app's Settings).\n\n" +
+			"turn that on, on the Settings tab of the Health page on the dashboard or in Health\n" +
+			"in the app's Settings (not from a command line; 'teanode health settings\n" +
+			"--agent-can-read off' turns it off).\n\n" +
 			"  teanode health types\n" +
 			"  teanode health summary stepCount --since 7d\n" +
 			"  teanode health summary sleepAnalysis --since 3m --period week\n" +
@@ -87,14 +89,15 @@ func NewHealthCommand() *cli.Command {
 			{
 				Name:  "settings",
 				Usage: "whether your agent may read Health, and how much is kept",
-				Description: "With --agent-can-read on, your agent can answer from your Health data. What it\n" +
+				Description: "Your agent can answer from your Health data only while the switch is on. What it\n" +
 					"reads goes to your agent's model provider, which this command names. Off by\n" +
 					"default, and independent of whether your phone sends Health to this server.\n" +
-					"The switch is also in the Settings tab of the Health page on the dashboard, and\n" +
-					"in Health in the iPhone app's Settings.",
+					"Turning it on is done on the Settings tab of the Health page on the dashboard or\n" +
+					"in Health in the iPhone app's Settings, because commands run on your computer, by\n" +
+					"you or by an agent there, act with your own login. --agent-can-read off works here.",
 				Flags: []cli.Flag{
 					JSONFlag(),
-					&cli.StringFlag{Name: "agent-can-read", Usage: "on lets your agent read your Health data, off stops it"},
+					&cli.StringFlag{Name: "agent-can-read", Usage: "off stops your agent reading your Health data; on is refused here and done on the dashboard or in the app"},
 				},
 				Action: runHealthSettings,
 			},
@@ -119,7 +122,9 @@ func NewHealthCommand() *cli.Command {
 					"cycleTracking, hearing, heart, mentalWellbeing, mobility, nutrition, respiratory,\n" +
 					"sleep, symptoms, vitals, other). They see your day summaries of those categories,\n" +
 					"never your individual readings or routes. Sharing again replaces the categories,\n" +
-					"and giving none stops sharing:\n\n" +
+					"and giving none stops sharing. Sharing a category the person or circle does not\n" +
+					"already have is done on the Settings tab of the Health page on the dashboard or in\n" +
+					"the iPhone app, not from a command line; fewer categories, or none, works here:\n\n" +
 					"  teanode health share family activity sleep\n" +
 					"  teanode health share family",
 				Flags:  []cli.Flag{JSONFlag()},
@@ -569,6 +574,9 @@ func runHealthSettings(ctx context.Context, command *cli.Command) error {
 	var settings *client.HealthSettingsView
 	if canAgentReadHealth != nil {
 		settings, err = client.UpdateHealthSettings(ctx, connection, *canAgentReadHealth)
+		if client.IsTapRequired(err) {
+			return &describedError{errors.New("the agent's access to Health is turned on on the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings, not from a command line; turning it off works here")}
+		}
 	} else {
 		settings, err = client.ReadHealthSettings(ctx, connection)
 	}
@@ -671,6 +679,9 @@ func runHealthShare(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	share, err := client.SetHealthShare(ctx, connection, granteeUserId, granteeCircleId, healthCategories)
+	if client.IsTapRequired(err) {
+		return &describedError{errors.New("sharing more Health is done on the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings, not from a command line; sharing fewer categories, or none, works here")}
+	}
 	if err != nil {
 		return describeNotFound(command, err, typed)
 	}

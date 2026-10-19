@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/health"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 const (
@@ -46,6 +47,11 @@ const notAllowedWords = "The person has not let you read their Health data. " +
 // out of memory.
 const unattendedWords = "Health data is read only in a conversation with the person, not in a dream, a subagent, a background task or any other run nobody is watching, so ask them in a conversation instead."
 
+// elsewhereWords is the whole answer of every action that reads Health in a
+// run whose answer would leave the person's own conversation: over Telegram
+// or Discord, or into a chat room with other members.
+const elsewhereWords = "Health is read only in the TeaNode app and on the dashboard."
+
 // Surfaces that are never the person asking: a turn woken by a finished
 // background command or survey, whose text is not the person's, and a
 // subagent, whose answer comes back as a tool result that the filing of
@@ -54,6 +60,21 @@ const (
 	backgroundSurface = "background"
 	subagentSurface   = "subagent"
 )
+
+// isOutsideOwnConversation says the run's answer would be sent where somebody
+// else can read it: out through a chat app's bot (Telegram, Discord), or into
+// a chat room with other members.
+func isOutsideOwnConversation(run tools.Run) bool {
+	if tools.IsAnsweringInChat(run) {
+		return true
+	}
+	for _, kind := range models.AgentChannelKinds {
+		if run.Surface() == string(kind) {
+			return true
+		}
+	}
+	return false
+}
 
 // scope is what every action needs: the run, the person's zone and now.
 type scope struct {
@@ -142,6 +163,9 @@ func withGate(run func(ctx context.Context, call *tools.Call, here *scope) (*too
 		}
 		if here.run.Headless() || !here.run.CanAsk() || here.run.Surface() == backgroundSurface || here.run.Surface() == subagentSurface {
 			return tools.TextResult("%s", unattendedWords), nil
+		}
+		if isOutsideOwnConversation(here.run) {
+			return tools.TextResult("%s", elsewhereWords), nil
 		}
 		isAllowed, err := here.isAllowed(ctx)
 		if err != nil {

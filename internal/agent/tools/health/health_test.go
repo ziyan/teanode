@@ -383,7 +383,7 @@ func TestTheToolReadsOnlyThePersonsOwnHealth(t *testing.T) {
 		"ListHealthTypes":    `[]`,
 		"ListHealthShares":   `[{"id":"s2","ownerUserId":"u-cleo","ownerUsername":"cleo","granteeCircleId":"c1","healthCategories":["activity"]}]`,
 	}}
-	for _, run := range []tools.Run{runOf(operations), chattingRun{runOf(operations)}} {
+	for _, run := range []tools.Run{runOf(operations)} {
 		if _, _, err := act(t, run, "summary", `{"health_type":"stepCount"}`); err != nil {
 			t.Fatal(err)
 		}
@@ -405,6 +405,50 @@ func TestTheToolReadsOnlyThePersonsOwnHealth(t *testing.T) {
 	}
 	if variables, _ := operations.called("ReadHealthSummary"); variables["ownerUserId"] != nil {
 		t.Errorf("a username must not reach somebody else's data: %v", variables)
+	}
+}
+
+// Health is read only in the person's own conversations in the app and on the
+// dashboard: over Telegram or Discord, and in a chat room with other members,
+// every action but set_up answers in one sentence and reads nothing, however
+// the switch is set.
+func TestHealthIsNotReadWhereOthersCouldReadTheAnswer(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ReadHealthSettings": switchOn,
+		"ReadHealthSummary":  stepsSummary(),
+		"ListHealthTypes":    `[]`,
+		"ListHealthSamples":  heartRateSamples("null"),
+	}}
+	runs := map[string]tools.Run{"Telegram": &fakeRun{operations: operations, surface: "telegram"}, "Discord": &fakeRun{operations: operations, surface: "discord"}, "a chat room": chattingRun{&fakeRun{operations: operations, surface: "chat"}}}
+	for name, run := range runs {
+		for action, arguments := range map[string]string{"types": `{}`, "summary": `{"health_type":"stepCount"}`, "samples": `{"health_type":"heartRate"}`} {
+			content, _, err := act(t, run, action, arguments)
+			if err != nil {
+				t.Fatalf("%s %s: %s", name, action, err)
+			}
+			if content != elsewhereWords {
+				t.Errorf("%s %s answered %q", name, action, content)
+			}
+		}
+	}
+	for _, operation := range []string{"ReadHealthSummary", "ListHealthTypes", "ListHealthSamples"} {
+		if _, isCalled := operations.called(operation); isCalled {
+			t.Errorf("%s was sent for a run whose answer others could read", operation)
+		}
+	}
+	// Setting up is not reading, so it still answers where to go.
+	for name, run := range runs {
+		content, _, err := act(t, run, "set_up", `{}`)
+		if err != nil || content == elsewhereWords {
+			t.Errorf("%s set_up: %q, %v", name, content, err)
+		}
+	}
+	// The app and the dashboard still read.
+	for _, surface := range []string{"", "drawer", "ios"} {
+		answer, _ := actJSON(t, &fakeRun{operations: operations, surface: surface}, "summary", `{"health_type":"stepCount"}`)
+		if answer["periods"] == nil {
+			t.Errorf("surface %q should read: %v", surface, answer)
+		}
 	}
 }
 
