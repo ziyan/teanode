@@ -686,14 +686,10 @@ function LocationContent({ userId }: { userId: string }) {
   }
 
   // The first time, with no position recorded yet, a short setup stands under
-  // the map, until it is dismissed. It stands only while nobody shares with
-  // the person either: a family that already shares is what the map is for.
-  const isSetupShown =
-    me.data !== null &&
-    !me.data.GetLocation?.latestPoint &&
-    !isSetupDismissed &&
-    shared.data !== null &&
-    shared.data.length === 0
+  // the map, until it is dismissed, as on the iPhone. Someone who joins a
+  // family that already shares needs it most: the family stays on the map
+  // above it.
+  const isSetupShown = me.data !== null && !me.data.GetLocation?.latestPoint && !isSetupDismissed
 
   async function showBrowserPosition(isAsked: boolean) {
     setIsReadingBrowser(true)
