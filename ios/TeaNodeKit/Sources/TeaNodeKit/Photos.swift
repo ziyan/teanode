@@ -299,10 +299,16 @@ public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
     public let facePictureUrl: String
     public let coverPhotoFaceId: String
     public let isHidden: Bool
+    /// The account on this server that the group's contact is, when the
+    /// person linked them; empty otherwise. Private to the person.
+    public let accountUserId: String
+    /// That account's name and picture, for the badge on the person.
+    public let account: ChatPerson?
 
     public init(
         id: String, createdAt: String = "", updatedAt: String = "", contactId: String = "", contactAddressBookId: String = "", contactName: String = "",
-        isOwnContact: Bool = false, faceCount: Int = 0, photoCount: Int = 0, facePictureUrl: String = "", coverPhotoFaceId: String = "", isHidden: Bool = false
+        isOwnContact: Bool = false, faceCount: Int = 0, photoCount: Int = 0, facePictureUrl: String = "", coverPhotoFaceId: String = "", isHidden: Bool = false,
+        accountUserId: String = "", account: ChatPerson? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -316,6 +322,8 @@ public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
         self.facePictureUrl = facePictureUrl
         self.coverPhotoFaceId = coverPhotoFaceId
         self.isHidden = isHidden
+        self.accountUserId = accountUserId
+        self.account = account
     }
 
     public init(from decoder: Decoder) throws {
@@ -332,7 +340,12 @@ public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
         facePictureUrl = try container.decode(String.self, forKey: .facePictureUrl)
         coverPhotoFaceId = try container.decode(String.self, forKey: .coverPhotoFaceId)
         isHidden = try container.decode(Bool.self, forKey: .isHidden)
+        accountUserId = try container.decodeIfPresent(String.self, forKey: .accountUserId) ?? ""
+        account = try container.decodeIfPresent(ChatPerson.self, forKey: .account)
     }
+
+    /// Whether the person said this one is somebody in their circles.
+    public var isInCircles: Bool { !accountUserId.isEmpty && account != nil }
 
     /// The name of the contact, without the spaces round it.
     public var trimmedContactName: String { contactName.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -779,8 +792,8 @@ extension Documents {
         photoFileRoles processingErrorMessage isOwnedByCaller ownerName
         """
     public static let listPhotos = """
-        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) {
-          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { \(photoFields) }
+        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $accountUserId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) {
+          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, accountUserId: $accountUserId, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { \(photoFields) }
         }
         """
     static let photoDescriptionFields = """
@@ -895,6 +908,7 @@ extension Documents {
         """
     static let photoFaceGroupFields = """
         id createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl coverPhotoFaceId isHidden
+        accountUserId account { userId username name avatarUrl avatarColorIndex }
         """
     public static let listPhotoFaceGroups = """
         query ($isHiddenIncluded: Boolean) { ListPhotoFaceGroups(isHiddenIncluded: $isHiddenIncluded) { \(photoFaceGroupFields) } }

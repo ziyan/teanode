@@ -216,14 +216,14 @@ const PHOTO_ALBUM_SHARE_FIELDS =
   'id photoAlbumId granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName shareLevel isLocationIncluded createdAt'
 
 function listPhotosDocument(fields: string): string {
-  return `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { ${fields} } }`
+  return `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $accountUserId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, accountUserId: $accountUserId, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { ${fields} } }`
 }
 
 export const PHOTO_DOCUMENTS = {
   ListPhotos: listPhotosDocument(PHOTO_FIELDS),
   ListPhotosOfSearch: listPhotosDocument(`${PHOTO_FIELDS} photoDescription descriptionVisibleText`),
   CountPhotos:
-    'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) }',
+    'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $accountUserId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, accountUserId: $accountUserId, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) }',
   ReadPhoto: `query ($photoId: String!) { ReadPhoto(photoId: $photoId) { photo { ${PHOTO_DETAIL_FIELDS} } photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl } albums { id albumTitle } faces { ${PHOTO_FACE_FIELDS} } } }`,
   ReadPhotoLibrary:
     'query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isDescriptionAvailable descriptionUnavailableMessage isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled } }',
@@ -275,6 +275,9 @@ export interface PhotoFilter {
   photoAlbumId?: string
   // Keeps the photos with a face in one group of faces, one person.
   photoFaceGroupId?: string
+  // Keeps the photos of the contact the person linked to this account in
+  // their circles. The server resolves it through the person's own contacts.
+  accountUserId?: string
   // Keeps one kind: only pictures, only Live Photos or only videos.
   photoKind?: PhotoKind
   // Keeps the photos taken in a range: from the first moment to just before
@@ -296,6 +299,7 @@ function filterVariables(filter: PhotoFilter) {
     searchText: filter.searchText || null,
     albumId: filter.photoAlbumId || null,
     faceGroupId: filter.photoFaceGroupId || null,
+    accountUserId: filter.accountUserId || null,
     photoKind: filter.photoKind || null,
     takenAfter: filter.takenAfter || null,
     takenBefore: filter.takenBefore || null,

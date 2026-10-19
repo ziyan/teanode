@@ -151,6 +151,35 @@ struct PhotoNearChip: View {
     }
 }
 
+/// PhotoPersonChip says the library is narrowed to the photos of a person in
+/// the circles, and takes that off when pressed.
+struct PhotoPersonChip: View {
+    let personName: String
+    let onRemove: () -> Void
+
+    private var title: String {
+        personName.isEmpty ? String(localized: "Photos of a person") : String(localized: "Photos of \(personName)")
+    }
+
+    var body: some View {
+        Button(action: onRemove) {
+            HStack(spacing: 6) {
+                Image(systemName: "person.crop.circle")
+                Text(title)
+                    .lineLimit(1)
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(title)
+        .accessibilityHint(String(localized: "Removes this filter"))
+    }
+}
+
 /// PhotoWindowChip says the library is narrowed to the photos taken between
 /// two moments, such as a visit's, naming the times, and takes that off when
 /// pressed.

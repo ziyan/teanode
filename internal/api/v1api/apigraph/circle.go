@@ -162,6 +162,12 @@ type CircleMember struct {
 	// That word in English, such as father or wife; empty when there is no
 	// relationship
 	RelationshipWord string `json:"relationshipWord"`
+
+	// The caller's own contact that they linked to this person, or empty.
+	// Private to the caller: the person it names is never told, and sees no
+	// such field about the caller. Present only while they share a circle,
+	// which every member of this type does.
+	LinkedContactID string `json:"linkedContactId"`
 }
 
 // CircleInvitation asks one person to join one circle.
@@ -191,12 +197,13 @@ type CircleInvitation struct {
 // describeCircleMember is one person as the caller sees them, with what they
 // are to the caller when relationships has it: the caller's relationships by
 // the other person's account id.
-func describeCircleMember(member *models.CircleMember, callerUserId string, relationships map[string]*models.PersonRelationship) *CircleMember {
+func describeCircleMember(member *models.CircleMember, callerUserId string, relationships map[string]*models.PersonRelationship, linkedContactIds map[string]string) *CircleMember {
 	described := &CircleMember{
 		UserID:           member.UserID,
 		MemberRole:       string(member.MemberRole),
 		JoinedAt:         member.JoinedAt,
 		AvatarColorIndex: avatar.InitialColorIndex(member.UserID),
+		LinkedContactID:  linkedContactIds[member.UserID],
 	}
 	var pronoun models.Pronoun
 	if member.User != nil {
@@ -229,6 +236,22 @@ func (self *graph) relationshipsOf(ctx context.Context, userId string) (map[stri
 	return byUserId, nil
 }
 
+// linkedContactIdsOf is the contact id of the caller's own contact linked to
+// each account, by the account's id: the first address book that has one.
+func (self *graph) linkedContactIdsOf(ctx context.Context, userId string) (map[string]string, error) {
+	links, err := self.transaction(ctx).ListContactAccountLinks(userId)
+	if err != nil {
+		return nil, err
+	}
+	byUserId := make(map[string]string, len(links))
+	for _, link := range links {
+		if _, found := byUserId[link.AccountUserID]; !found {
+			byUserId[link.AccountUserID] = link.ID
+		}
+	}
+	return byUserId, nil
+}
+
 func describeCircleInvitation(invitation *models.CircleInvitation) *CircleInvitation {
 	invitedByName := invitation.InvitedByName
 	if invitedByName == "" {
@@ -250,7 +273,7 @@ func describeCircleInvitation(invitation *models.CircleInvitation) *CircleInvita
 // describeCircle is a circle as the caller sees it. The waiting invitations
 // are the circle's own and are shown only to its admins, so they are passed
 // in by the caller who has already decided that.
-func describeCircle(circle *models.Circle, callerUserId string, pending []*models.CircleInvitation, relationships map[string]*models.PersonRelationship) *Circle {
+func describeCircle(circle *models.Circle, callerUserId string, pending []*models.CircleInvitation, relationships map[string]*models.PersonRelationship, linkedContactIds map[string]string) *Circle {
 	described := &Circle{
 		ID:                 circle.ID,
 		Name:               circle.Name,
@@ -263,7 +286,7 @@ func describeCircle(circle *models.Circle, callerUserId string, pending []*model
 		described.MemberRole = string(member.MemberRole)
 	}
 	for _, member := range circle.Members {
-		described.Members = append(described.Members, describeCircleMember(member, callerUserId, relationships))
+		described.Members = append(described.Members, describeCircleMember(member, callerUserId, relationships, linkedContactIds))
 	}
 	if described.MemberRole == string(models.MemberRoleAdmin) {
 		for _, invitation := range pending {
@@ -287,7 +310,11 @@ func (self *graph) circleFor(ctx context.Context, circle *models.Circle, callerU
 	if err != nil {
 		return nil, err
 	}
-	return describeCircle(circle, callerUserId, pending, relationships), nil
+	linkedContactIds, err := self.linkedContactIdsOf(ctx, callerUserId)
+	if err != nil {
+		return nil, err
+	}
+	return describeCircle(circle, callerUserId, pending, relationships, linkedContactIds), nil
 }
 
 // translateCircleError turns what a membership change says into what the API
@@ -361,9 +388,13 @@ func (self *graph) ListCirclePeople(ctx context.Context) ([]*CircleMember, error
 	if err != nil {
 		return nil, err
 	}
+	linkedContactIds, err := self.linkedContactIdsOf(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
 	described := make([]*CircleMember, 0, len(people))
 	for _, person := range people {
-		described = append(described, describeCircleMember(person, user.ID, relationships))
+		described = append(described, describeCircleMember(person, user.ID, relationships, linkedContactIds))
 	}
 	return described, nil
 }
@@ -391,7 +422,7 @@ func (self *graph) CreateCircle(ctx context.Context, arguments CreateCircleArgum
 	log.Noticef("%s made the circle %q", user.Username, created.Name)
 	// A new circle has only its maker in it, who has no relationship with
 	// themselves.
-	return describeCircle(created, user.ID, nil, nil), nil
+	return describeCircle(created, user.ID, nil, nil, nil), nil
 }
 
 type RenameCircleArguments struct {

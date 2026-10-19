@@ -123,6 +123,8 @@ function answerWith(shown: {
   // Answers the visits asked for, when what is asked changes the answer.
   visitsFor?: (variables: Record<string, unknown>) => PlaceVisit[] | Promise<PlaceVisit[]>
   people?: { userId: string; username: string; name: string }[]
+  // The circles, for the members the person has a contact for.
+  circles?: { members: { userId: string; linkedContactId: string }[] }[]
   // The places ReadPlace knows by id; any other id is not found.
   readablePlaces?: Place[]
 }) {
@@ -153,7 +155,7 @@ function answerWith(shown: {
       return { ListPlaces: { places: shown.places ?? [], nextOffset: null } } as never
     if (document.includes('ListLocationShares')) return { ListLocationShares: [] } as never
     if (document.includes('ListCirclePeople')) return { ListCirclePeople: shown.people ?? [] } as never
-    if (document.includes('ListCircles')) return { ListCircles: [] } as never
+    if (document.includes('ListCircles')) return { ListCircles: shown.circles ?? [] } as never
     if (document.includes('SearchAddresses')) {
       return {
         SearchAddresses: [
@@ -194,7 +196,8 @@ function AddressProbe() {
   )
 }
 
-function renderAt(entry: string, earlierEntries: string[] = []) {
+function renderAt(entry: string, options: { canUsePhotos?: boolean; earlierEntries?: string[] } = {}) {
+  const earlierEntries = options.earlierEntries ?? []
   return render(
     <TranslationProvider>
       <ToastProvider>
@@ -205,12 +208,17 @@ function renderAt(entry: string, earlierEntries: string[] = []) {
             authenticationRequired: true,
             username: 'person-a-login',
             passkeysEnabled: false,
-            permissions: { everywhere: ['location:use', 'circle:use'], byDomain: [] },
+            permissions: {
+              everywhere: ['location:use', 'circle:use', ...(options.canUsePhotos ? ['photos:use'] : [])],
+              byDomain: [],
+            },
+            services: options.canUsePhotos ? ({ isPhotosEnabled: true } as never) : undefined,
           }}
         >
           <MemoryRouter initialEntries={[...earlierEntries, entry]} initialIndex={earlierEntries.length}>
             <Routes>
               <Route path="/location" element={<LocationPage />} />
+              <Route path="/photos" element={<p>The photos page</p>} />
               <Route path="/before" element={null} />
             </Routes>
             <AddressProbe />
@@ -1033,6 +1041,40 @@ it('keeps the address buttons off while the editor has unsaved changes', async (
   expect(calls('SavePlace')).toHaveLength(0)
 })
 
+it('offers Photos for a shared person the caller has a contact for, opening the library on them', async () => {
+  answerWith({
+    sharedViews: [PERSON_B_VIEW],
+    circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
+  })
+  renderAt('/location?person=person-b', { canUsePhotos: true })
+  const photos = await screen.findByRole('link', { name: /^Photos of / })
+  expect(photos.getAttribute('href')).toBe(`/photos?person=${encodeURIComponent(PERSON_B_VIEW.userId)}`)
+  fireEvent.click(photos)
+  expect(await screen.findByText('The photos page')).toBeTruthy()
+})
+
+it('offers no Photos for the person themselves, a person with no linked contact, or when Photos is not usable', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW], circles: [{ members: [{ userId: 'person-b', linkedContactId: '' }] }] })
+  renderAt('/location?person=person-b', { canUsePhotos: true })
+  await screen.findByText('Visits of Person B')
+  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
+  cleanup()
+
+  answerWith({
+    sharedViews: [PERSON_B_VIEW],
+    circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
+  })
+  renderAt('/location?person=person-b')
+  await screen.findByText('Visits of Person B')
+  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
+  cleanup()
+
+  answerWith({ circles: [{ members: [{ userId: 'person-a', linkedContactId: 'contact-1' }] }] })
+  renderAt('/location', { canUsePhotos: true })
+  await screen.findByRole('heading', { name: 'Visits' })
+  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
+})
+
 const photoOf = (id: string) => ({ id, smallPreviewUrl: `/photos/${id}/small` })
 
 it('shows up to four pictures taken during a visit, and the number of the rest', async () => {
@@ -1096,7 +1138,7 @@ it('writes the place chosen to the address by replacing the entry, so Back leave
       place({ id: 'place-two', placeName: 'Fixture Cafe' }),
     ],
   })
-  renderAt('/location?tab=places', ['/before'])
+  renderAt('/location?tab=places', { earlierEntries: ['/before'] })
   fireEvent.click((await screen.findByText('Fixture Cafe')).closest('button')!)
   await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/location?tab=places&place=place-two'))
   fireEvent.click(screen.getByText('Fixture Park').closest('button')!)

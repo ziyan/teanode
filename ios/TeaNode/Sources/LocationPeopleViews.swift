@@ -287,6 +287,17 @@ struct LocationPersonPanel: View {
 
     var body: some View {
         List {
+            // Only the person knows which of their contacts this is; nothing shows when none.
+            if model.linkedContactId(of: person.userId) != nil, AppModel.shared.isSectionAvailable(.photos) {
+                Section {
+                    Button {
+                        AppModel.shared.openedPhotoPerson = OpenedPhotoPerson(userId: person.userId, name: person.displayName)
+                    } label: {
+                        Label("Photos", systemImage: "photo.on.rectangle")
+                            .actionColor()
+                    }
+                }
+            }
             if person.level == .history {
                 Section {
                     Button("Previous day", systemImage: "chevron.left") { model.movePersonDay(by: -1) }

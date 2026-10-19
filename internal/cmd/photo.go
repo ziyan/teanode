@@ -53,6 +53,7 @@ func NewPhotoCommand() *cli.Command {
 					&cli.StringFlag{Name: "near", Usage: "only photos taken near a point: <latitude>,<longitude>,<kilometers>, such as 10.5,20.25,2"},
 					&cli.StringFlag{Name: "album", Usage: "only the photos of this album (its id is in teanode photo album list)"},
 					&cli.StringFlag{Name: "face-group", Usage: "only the photos with a face in this group of faces (its id is in teanode photo people list)"},
+					&cli.StringFlag{Name: "person", Usage: "only the photos of the contact you linked to this person in your circles (their username; see teanode contact link)"},
 					&cli.StringFlag{Name: "contact", Usage: "only the photos with a face in a group this contact names (its id is in teanode contact list)"},
 					&cli.IntFlag{Name: "limit", Value: defaultPhotoListSize, Usage: "photos to list, 1 to 500"},
 					&cli.StringFlag{Name: "continue-after", Usage: "continue after this photo, the last one of the previous page"},
@@ -277,6 +278,12 @@ func runPhotoList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	person := strings.TrimPrefix(strings.TrimSpace(command.String("person")), "@")
+	if person != "" {
+		if filter.AccountUserID, _, err = photoPersonNamed(ctx, connection, person); err != nil {
+			return describeError(command, err)
+		}
+	}
 	photos, err := client.ListPhotos(ctx, connection, filter)
 	if err != nil {
 		return describeError(command, err)
@@ -285,6 +292,10 @@ func runPhotoList(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(photos)
 	}
 	if len(photos) == 0 {
+		if person != "" {
+			_, _ = fmt.Fprintf(command.Writer, "no photos here; 'teanode contact link <contact id> %s' links your contact for them, and the contact must name a group in 'teanode photo people list'\n", person)
+			return nil
+		}
 		_, _ = fmt.Fprintln(command.Writer, "no photos here")
 		return nil
 	}

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { askAgentAbout } from '../../api'
 import { useBreadcrumbDetail, useBreadcrumbNote } from '../../components/breadcrumb'
+import { personName } from '../../components/personLabel'
+import { listCirclePeople } from '../../lib/circlePeople'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import {
@@ -195,12 +197,28 @@ function AccountPhotosPage() {
   // say it by.
   const near = parseNear(parameters.get('near'))
   const nearPlace = parameters.get('nearPlace') ?? ''
+  // "The photos of this person in my circles": the person's user ID in the
+  // address, read as the contact the viewer linked to them. A person's own
+  // page or an album is already one list, so the address means nothing there
+  // and another person picked from People leaves it behind.
+  const circlePersonUserId = photoFaceGroupId || photoAlbumId ? '' : (parameters.get('person') ?? '')
+  const circlePeople = useQuery(
+    async () => (circlePersonUserId ? await listCirclePeople() : null),
+    [circlePersonUserId],
+    {
+      refresh: false,
+    },
+  )
+  const circlePerson = circlePeople.data?.find((person) => person.userId === circlePersonUserId) ?? null
+  const isCirclePersonPending = circlePersonUserId !== '' && circlePeople.data === null && !circlePeople.error
+  const isCirclePersonUnresolved = circlePersonUserId !== '' && circlePerson === null
   // A window of exact moments in the address (a visit's) takes the place of
   // the days.
   const windowAfter = parseInstant(parameters.get('after'))
   const windowBefore = parseInstant(parameters.get('before'))
   const hasWindow = windowAfter !== undefined || windowBefore !== undefined
-  const hasFilters = photoKind !== '' || fromDay !== '' || toDay !== '' || near !== null || hasWindow
+  const hasFilters =
+    photoKind !== '' || fromDay !== '' || toDay !== '' || near !== null || circlePersonUserId !== '' || hasWindow
   const windowEndWords = windowEnds(windowAfter, windowBefore, language, personTimeZone())
   const windowLabel =
     windowEndWords.start && windowEndWords.end
@@ -221,6 +239,7 @@ function AccountPhotosPage() {
       searchText,
       photoAlbumId,
       photoFaceGroupId,
+      accountUserId: circlePerson?.userId,
       photoKind: photoKind || undefined,
       takenAfter,
       takenBefore,
@@ -234,6 +253,7 @@ function AccountPhotosPage() {
       searchText,
       photoAlbumId,
       photoFaceGroupId,
+      circlePerson?.userId,
       photoKind,
       takenAfter,
       takenBefore,
@@ -331,6 +351,13 @@ function AccountPhotosPage() {
       written.delete('page')
       return written
     })
+  const clearCirclePerson = () =>
+    setParameters((previous) => {
+      const written = new URLSearchParams(previous)
+      written.delete('person')
+      written.delete('page')
+      return written
+    })
   const clearNear = () =>
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
@@ -350,7 +377,7 @@ function AccountPhotosPage() {
   const clearFilters = () =>
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
-      for (const name of ['kind', 'from', 'to', 'after', 'before', 'near', 'nearPlace']) written.delete(name)
+      for (const name of ['kind', 'from', 'to', 'after', 'before', 'near', 'nearPlace', 'person']) written.delete(name)
       written.delete('page')
       return written
     })
@@ -361,17 +388,43 @@ function AccountPhotosPage() {
   // person has left are not drawn under the new list's buttons.
   const listKey = JSON.stringify([filter, offset, pageSize, userId])
   const library = useQuery(
-    async () => ({ listKey, photos: await listPhotos(filter, offset, pageSize) }),
-    [filter, offset, pageSize, userId],
+    // A person in the circles is looked up first: asking before that would
+    // list the whole library under the chip.
+    async () => ({ listKey, photos: isCirclePersonUnresolved ? [] : await listPhotos(filter, offset, pageSize) }),
+    [filter, offset, pageSize, userId, isCirclePersonUnresolved],
     { refresh: !isSearching },
   )
-  const count = useQuery(() => countPhotos(filter), [filter, userId], { refresh: !isSearching })
+  const count = useQuery(
+    () => (isCirclePersonUnresolved ? Promise.resolve(0) : countPhotos(filter)),
+    [filter, userId, isCirclePersonUnresolved],
+    {
+      refresh: !isSearching,
+    },
+  )
   const info = useQuery(() => readPhotoLibrary(), [userId])
   const album = useQuery(async () => (photoAlbumId ? await readPhotoAlbum(photoAlbumId) : null), [photoAlbumId, userId])
   const person = useQuery(
     async () => (photoFaceGroupId ? await readPhotoFaceGroup(photoFaceGroupId) : null),
     [photoFaceGroupId, userId],
   )
+  // A person who is not among the people in the circles (a stale link, or
+  // they left) is taken out of the address, and the viewer is told.
+  const isCirclePersonUnknown = circlePersonUserId !== '' && circlePeople.data !== null && circlePerson === null
+  useEffect(() => {
+    if (!isCirclePersonUnknown) return
+    toast.failed(t('photos.accountNotFound'))
+    setParameters(
+      (previous) => {
+        const written = new URLSearchParams(previous)
+        written.delete('person')
+        written.delete('page')
+        return written
+      },
+      { replace: true },
+    )
+    // Once for each person found stale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCirclePersonUnknown, circlePersonUserId])
   const people = useQuery(async () => (isMergingPerson ? await listPhotoFaceGroups(true) : []), [isMergingPerson])
   // The names a search may have found photos by without a word being in the
   // photo itself: the people in it and the albums it is in. Nothing (null)
@@ -1181,6 +1234,7 @@ function AccountPhotosPage() {
       }}
     >
       <ErrorMessage error={library.error} />
+      <ErrorMessage error={circlePeople.error} />
       <input
         ref={fileInput}
         type="file"
@@ -1390,6 +1444,23 @@ function AccountPhotosPage() {
                   onChange={setFilterParameter}
                   onClear={clearFilters}
                 />
+                {circlePerson && (
+                  <span className="table-pinned photo-near-filter">
+                    <span className="photo-near-label">
+                      {t('photos.accountPhotosOf', { name: personName(circlePerson) })}
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={t('photos.removeFilter', {
+                        filter: t('photos.accountPhotosOf', { name: personName(circlePerson) }),
+                      })}
+                      onClick={clearCirclePerson}
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </span>
+                )}
                 {hasWindow && (
                   <span className="table-pinned photo-near-filter">
                     <span className="photo-near-label">{windowLabel}</span>
@@ -1505,7 +1576,7 @@ function AccountPhotosPage() {
         </div>
       )}
 
-      {(library.loading && !library.data) || isWaitingForTrashRetention ? (
+      {(library.loading && !library.data) || isWaitingForTrashRetention || isCirclePersonPending ? (
         <Loading />
       ) : photos.length === 0 && !isListStale ? (
         <>

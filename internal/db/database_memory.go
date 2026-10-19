@@ -101,6 +101,29 @@ type MemoryOperation interface {
 	// somebody they keep, rather than anybody who has ever written.
 	FindContactByAddress(userId, address string) (*models.Contact, error)
 
+	// SetContactAccount links a contact to the account on this server it is,
+	// or clears the link when accountUserId is empty. The only writer of the
+	// link; refuses the owner's own account and one they share no circle with
+	// (ErrInvalidArguments), and an account another contact in the book is
+	// already linked to (ErrAlreadyExists).
+	SetContactAccount(addressBookId, contactId, accountUserId string) error
+
+	// FindContactByAccount is the owner's contact linked to an account, in
+	// the first address book that has one, while they share a circle.
+	FindContactByAccount(ownerUserId, accountUserId string) (*models.Contact, error)
+
+	// ListContactAccountLinks are all of the owner's linked contacts, books
+	// in the order they were made, while they share a circle with each.
+	ListContactAccountLinks(ownerUserId string) ([]*models.Contact, error)
+
+	// ListPhotoPeopleAccountUserIDs are the linked accounts a face group of
+	// the owner is named by.
+	ListPhotoPeopleAccountUserIDs(ownerUserId string) ([]string, error)
+
+	// ListContactAccountSuggestions are the owner's unlinked contacts that
+	// carry a mailbox address of an account in their circles.
+	ListContactAccountSuggestions(ownerUserId string) ([]*models.ContactAccountSuggestion, error)
+
 	// The calendar: a person's own events, kept as iCalendar text. The
 	// occurrences beside them are derived from that text and rewritten
 	// whenever it is, so that "what is on this week" and "when is this

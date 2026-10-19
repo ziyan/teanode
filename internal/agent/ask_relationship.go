@@ -55,7 +55,7 @@ func relatedName(name string) string {
 // each, in the words the owner sees them in: the kind as the owner would say
 // it, in the gender of the other person's pronoun when they have said one.
 // Nothing at all when there are none.
-func relationshipLines(ownerId string, relationships []*models.PersonRelationship, others map[string]*models.User) []string {
+func relationshipLines(ownerId string, relationships []*models.PersonRelationship, others map[string]*models.User, photoAccountUserIds map[string]bool) []string {
 	var lines []string
 	for _, relationship := range relationships {
 		otherId := relationship.Other(ownerId)
@@ -74,6 +74,12 @@ func relationshipLines(ownerId string, relationships []*models.PersonRelationshi
 		line := fmt.Sprintf("- %q (username %s) is their %s.", relatedName(other.DisplayName()), relatedName(other.Username), word)
 		if relationship.UserID != ownerId {
 			line = fmt.Sprintf("- %q (username %s) is their %s, as %q said.", relatedName(other.DisplayName()), relatedName(other.Username), word, relatedName(other.DisplayName()))
+		}
+		// Said only when the person linked a contact to this account and a
+		// group of faces is named by it, so the model does not look for photos
+		// that cannot be found this way.
+		if photoAccountUserIds[otherId] {
+			line += " Their photos are found with the photo tool, list with person set to this username."
 		}
 		lines = append(lines, line)
 	}
@@ -96,6 +102,10 @@ func (self *AskRun) relationshipLines(ctx context.Context) []string {
 	}
 	var relationships []*models.PersonRelationship
 	others := map[string]*models.User{}
+	photoAccountUserIds := map[string]bool{}
+	// Only somebody who may use photos is told their photos can be found.
+	isPhotosUsable := self.Configuration().Services.IsEnabled(models.ServicePhotos) &&
+		self.settings.Operations.Permissions().Has(models.PermissionPhotosUse)
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if relationships, err = tx.ListPersonRelationships(owner.ID); err != nil {
 			return err
@@ -109,10 +119,20 @@ func (self *AskRun) relationshipLines(ctx context.Context) []string {
 				return err
 			}
 		}
+		// One query for all of them, never one for each person.
+		if isPhotosUsable && len(relationships) > 0 {
+			accountUserIds, err := tx.ListPhotoPeopleAccountUserIDs(owner.ID)
+			if err != nil {
+				return err
+			}
+			for _, accountUserId := range accountUserIds {
+				photoAccountUserIds[accountUserId] = true
+			}
+		}
 		return nil
 	}); err != nil {
 		log.Debugf("cannot read the relationships of %q for the prompt: %s", owner.Username, err)
 		return nil
 	}
-	return relationshipLines(owner.ID, relationships, others)
+	return relationshipLines(owner.ID, relationships, others, photoAccountUserIds)
 }

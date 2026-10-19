@@ -400,3 +400,59 @@ func TestTheToolDeclaresEveryParameterItsOperationsTakeAndTellsTheAgentNotToGues
 		}
 	}
 }
+
+// A person in the circles is asked for by username: the tool finds the account
+// among the people the person shares a circle with, and the listing asks for
+// that account's photos; a username that is nobody in the circles is refused.
+func TestAPersonsPhotosAreAskedForByPerson(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"ListPhotos":       `[` + pictureRow + `]`,
+		"ListCirclePeople": `[{"userId":"user-sam","username":"sam-example","name":"Sam Example","memberRole":"","relationshipKind":"","relationshipTermGender":"","relationshipWord":""}]`,
+	})
+	if _, err := current.call(map[string]any{"operation": "person-photos", "person": "@Sam-Example", "page_size": 5}); err != nil {
+		test.Fatal(err)
+	}
+	asked := current.operations.asked("ListPhotos")
+	if len(asked) != 1 || asked[0]["accountUserId"] != "user-sam" || asked[0]["contactId"] != nil {
+		test.Fatalf("the listing asked %v", asked)
+	}
+	if _, err := current.call(map[string]any{"operation": "list", "person": "nobody-here"}); err == nil || !strings.Contains(err.Error(), "does not share a circle") {
+		test.Fatalf("an unknown username is refused: %v", err)
+	}
+
+	// No photos for a person says what to check.
+	empty := newRun(test, map[string]string{
+		"ListPhotos":       `[]`,
+		"ListCirclePeople": `[{"userId":"user-sam","username":"sam-example","name":"Sam Example"}]`,
+	})
+	result, err := empty.call(map[string]any{"operation": "list", "person": "sam-example"})
+	if err != nil || !strings.Contains(result.Content, "link-account") {
+		test.Fatalf("%v %v", result, err)
+	}
+	// Nothing to go by is still refused.
+	if _, err := current.call(map[string]any{"operation": "person-photos"}); err == nil {
+		test.Fatal("person-photos needs a person")
+	}
+}
+
+// A group whose contact is linked to a person in the circles says who.
+func TestAGroupSaysTheUsernameItsContactIsLinkedTo(test *testing.T) {
+	linked := `{"id":"group-one","contactId":"contact-one","contactName":"Example Aunt","faceCount":12,"photoCount":9,"accountUserId":"user-sam","account":{"userId":"user-sam","username":"sam-example","name":"Sam Example","avatarUrl":null,"avatarColorIndex":3}}`
+	current := newRun(test, map[string]string{"ListPhotoFaceGroups": `[` + linked + `,` + namedGroupJson + `]`})
+	result, err := current.call(map[string]any{"operation": "people"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	var answer struct {
+		People []map[string]any `json:"people"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+		test.Fatal(err)
+	}
+	if answer.People[0]["person"] != "sam-example" {
+		test.Fatalf("%s", result.Content)
+	}
+	if _, isThere := answer.People[1]["person"]; isThere {
+		test.Fatalf("an unlinked group names nobody: %s", result.Content)
+	}
+}

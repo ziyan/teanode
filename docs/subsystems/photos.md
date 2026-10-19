@@ -371,6 +371,18 @@ that does not ask first, since the person can undo it. Faces are on for
 everybody by default; switching them off deletes every face and group the
 person has.
 
+A contact that is a person in the owner's circles (`contact.account_user_id`, see
+`docs/subsystems/contacts.md`) makes the group say who: `PhotoFaceGroup.accountUserId`
+and `account` are set from the owner's own contacts, only while they still share a
+circle, and are null otherwise; the agent's `people` rows carry `person` (the username).
+`ListPhotos`, `CountPhotos` and `CountUndescribedPhotos` take `accountUserId`, which
+is resolved through the caller's contacts only (`FindContactByAccount`, then the
+contact in its own address book) and never reaches a group the caller did not name:
+an account with no link, or one the caller no longer shares a circle with, lists
+nothing rather than failing. The photo tool's `list` and `person-photos` take
+`person` (a username), and `teanode photo list --person` the same. Nothing is shared with
+the linked person.
+
 ## Sharing
 
 An album belongs to a person (`photo_album.user_id`) or to a circle
