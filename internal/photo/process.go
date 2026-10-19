@@ -719,6 +719,7 @@ func settlePhotoKind(storedKind models.PhotoKind, sourceContentType string, hasL
 // saveMetadata records what has been read. It is called before previews are
 // made and again when the picture's size is known for certain.
 func (self *Store) saveMetadata(ctx context.Context, processed *processedPhoto) error {
+	processed.settleTakenAt(self.now())
 	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		return transaction.UpdatePhotoMetadata(processed.photo.ID, &processed.metadata)
 	}); err != nil {
