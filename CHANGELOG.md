@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.185.0] - 2026-10-19
+
+### Added
+
+- A coding session that is working shows animated dots under its last turn, as the agent chat does while it answers, on the iPhone and the dashboard's Coding page. (#599)
+
 ## [0.184.2] - 2026-10-19
 
 ### Fixed
