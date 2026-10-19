@@ -372,6 +372,7 @@ struct LocationMapHeader: View {
 struct LocationVisitsList: View {
     let model: LocationModel
     let recorder: LocationRecorder
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         List {
@@ -397,8 +398,16 @@ struct LocationVisitsList: View {
                                 .font(.headline)
                                 .foregroundStyle(.primary)
                             Spacer()
-                            Label("Map", systemImage: "map")
-                                .font(.subheadline)
+                            // At the largest text sizes the word broke across two lines; the
+                            // symbol alone says it, and the hint below reads it out.
+                            if dynamicTypeSize.isAccessibilitySize {
+                                Image(systemName: "map")
+                                    .font(.subheadline)
+                                    .accessibilityLabel("Map")
+                            } else {
+                                Label("Map", systemImage: "map")
+                                    .font(.subheadline)
+                            }
                         }
                         .frame(minHeight: 44)
                     }
@@ -456,6 +465,8 @@ struct LocationVisitRow: View {
                     .padding(.leading, 40)
             }
         }
+        // The whole width, so the times are not wrapped to the strip's width under them.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
