@@ -25,7 +25,9 @@ struct RemotePicture: View {
     /// name, in place of the re-encoded copy of the picture. Nil leaves the
     /// full-screen view sharing the picture it shows.
     var originalFilePath: String?
-    @Environment(AppModel.self) private var app
+    /// Optional, so a picture drawn where the app's environment does not
+    /// reach shows as missing instead of stopping the app.
+    @Environment(AppModel.self) private var app: AppModel?
     @State private var picture: UIImage?
     @State private var isMissing = false
 
@@ -33,8 +35,7 @@ struct RemotePicture: View {
     /// presented from UIKit, outside this view's environment, so the model is
     /// captured here.
     private var originalFileAction: (@MainActor () async -> URL?)? {
-        guard let originalFilePath else { return nil }
-        let app = app
+        guard let originalFilePath, let app else { return nil }
         let name = name
         return { await app.downloadedFile(originalFilePath, name: name) }
     }
@@ -70,7 +71,7 @@ struct RemotePicture: View {
             }
         }
         .task(id: path) {
-            picture = await app.picture(path)
+            picture = await app?.picture(path)
             isMissing = picture == nil
         }
     }

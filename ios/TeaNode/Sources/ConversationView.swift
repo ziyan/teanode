@@ -641,6 +641,7 @@ struct ConversationItemView: View {
     let model: ConversationModel
     let isShowingUsage: Bool
     let isShowingToolCalls: Bool
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         switch item {
@@ -660,13 +661,13 @@ struct ConversationItemView: View {
                     ) {
                         PersonBubble(line: line) { model.readingText = line.text }
                             .onLongPressGesture(minimumDuration: 0.35) {
-                                if line.messageId != nil { MessageActionsPresenter.present(line: line, model: model) }
+                                if line.messageId != nil { MessageActionsPresenter.present(line: line, model: model, app: app) }
                             }
                     }
                 } else {
                     PersonBubble(line: line) { model.readingText = line.text }
                         .onLongPressGesture(minimumDuration: 0.35) {
-                            MessageActionsPresenter.present(line: line, model: model)
+                            MessageActionsPresenter.present(line: line, model: model, app: app)
                         }
                 }
             case .answer where line.author != nil:
@@ -684,7 +685,7 @@ struct ConversationItemView: View {
                                 MarkdownView(text: line.text, isSelectable: false)
                             }
                             .onLongPressGesture(minimumDuration: 0.35) {
-                                MessageActionsPresenter.present(line: line, model: model)
+                                MessageActionsPresenter.present(line: line, model: model, app: app)
                             }
                         }
                     }
@@ -695,7 +696,7 @@ struct ConversationItemView: View {
                         MarkdownView(text: SharedCitations.linking(line.text, usernames: model.sharedOwnerUsernames), isSelectable: false)
                     }
                     .onLongPressGesture(minimumDuration: 0.35) {
-                        MessageActionsPresenter.present(line: line, model: model)
+                        MessageActionsPresenter.present(line: line, model: model, app: app)
                     }
                     if isShowingUsage, let usage = line.usage {
                         Text(UsageWords.turn(usage))
@@ -746,14 +747,17 @@ struct ConversationItemView: View {
 /// shown from the top of the window so it covers the bars and the composer.
 @MainActor
 enum MessageActionsPresenter {
-    static func present(line: TranscriptLine, model: ConversationModel) {
+    /// The app model is passed on: a view hosted from UIKit does not carry
+    /// the screen's environment, and a message's picture reads it.
+    static func present(line: TranscriptLine, model: ConversationModel, app: AppModel) {
         guard let top = TopViewController.find() else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         weak var shown: UIViewController?
         let controller = UIHostingController(
             rootView: MessageActionsView(line: line, model: model) { then in
                 shown?.dismiss(animated: true) { then?() }
-            })
+            }
+            .environment(app))
         controller.modalPresentationStyle = .overFullScreen
         controller.modalTransitionStyle = .crossDissolve
         controller.view.backgroundColor = .clear
