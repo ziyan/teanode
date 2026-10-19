@@ -148,6 +148,12 @@ public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
     public let accuracyMeters: Double
     /// "visit", "region", "check_in" or "browser".
     public let visitSource: String
+    /// How many of the person's own photos were taken during the visit; nil
+    /// for another person's visit, without the Photos service, or when the
+    /// arrival was not seen.
+    public let photoCount: Int?
+    /// The first few of them, earliest first; nil when `photoCount` is.
+    public let photos: [Photo]?
 
     public var arrivedDate: Date? { ServerTime.date(arrivedAt) }
     public var departedDate: Date? { ServerTime.date(departedAt) }
@@ -168,7 +174,7 @@ public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         id: String, place: LocationPlace, arrivedAt: String?, departedAt: String?, durationSeconds: Double? = nil, latitudeDegrees: Double,
-        longitudeDegrees: Double, accuracyMeters: Double = 0, visitSource: String = "visit"
+        longitudeDegrees: Double, accuracyMeters: Double = 0, visitSource: String = "visit", photoCount: Int? = nil, photos: [Photo]? = nil
     ) {
         self.id = id
         self.place = place
@@ -179,6 +185,8 @@ public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
         self.longitudeDegrees = longitudeDegrees
         self.accuracyMeters = accuracyMeters
         self.visitSource = visitSource
+        self.photoCount = photoCount
+        self.photos = photos
     }
 }
 
@@ -467,6 +475,12 @@ extension Documents {
         """
     static let placeVisitFields = """
         id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
+        photoCount
+        photos {
+          id createdAt photoKind takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel
+          originalFilename isFavorite isScreenshot photoProcessingState trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl
+          photoFileRoles processingErrorMessage isOwnedByCaller ownerName
+        }
         place {
           id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText isAddressTyped
           visitCount lastVisitAt namingErrorMessage createdAt updatedAt

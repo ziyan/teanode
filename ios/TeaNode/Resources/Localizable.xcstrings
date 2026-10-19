@@ -70657,6 +70657,70 @@
           }
         }
       }
+    },
+    "%lld photos taken during this visit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この滞在中に撮影した写真 %lld 枚"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次停留期间拍摄了 %lld 张照片"
+          }
+        }
+      }
+    },
+    "Opens them in Photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真アプリで開きます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“照片”中打开"
+          }
+        }
+      }
+    },
+    "Map of where the photo was taken": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を撮影した場所の地図"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片拍摄地点的地图"
+          }
+        }
+      }
+    },
+    "Opens in Maps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マップで開きます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“地图”中打开"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

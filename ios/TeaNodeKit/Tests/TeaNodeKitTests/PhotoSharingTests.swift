@@ -212,6 +212,23 @@ final class PhotoSharingTests: XCTestCase {
         XCTAssertTrue(PhotoFilter(firstDay: last, lastDay: first).isRangeBackwards)
     }
 
+    func testAFilterWithMomentsSendsThemInPlaceOfTheDays() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        let day = calendar.date(from: DateComponents(year: 2026, month: 3, day: 10, hour: 15))!
+        let arrival = calendar.date(from: DateComponents(year: 2026, month: 3, day: 11, hour: 9, minute: 50))!
+        let departure = calendar.date(from: DateComponents(year: 2026, month: 3, day: 11, hour: 10, minute: 30))!
+        let filter = PhotoFilter(firstDay: day, lastDay: day, takenAfter: arrival, takenBefore: departure)
+        XCTAssertTrue(PhotoFilter(takenAfter: arrival).isActive)
+        let sent = filter.variables(calendar: calendar)
+        XCTAssertEqual(sent["takenAfter"], .string("2026-03-11T09:50:00Z"))
+        XCTAssertEqual(sent["takenBefore"], .string("2026-03-11T10:30:00Z"))
+        // One end given leaves the other to the days.
+        let onlyAfter = PhotoFilter(firstDay: day, lastDay: day, takenAfter: arrival).variables(calendar: calendar)
+        XCTAssertEqual(onlyAfter["takenAfter"], .string("2026-03-11T09:50:00Z"))
+        XCTAssertEqual(onlyAfter["takenBefore"], .string("2026-03-11T00:00:00Z"))
+    }
+
     func testTheLibraryIsListedWithTheFilter() async throws {
         let (connection, fake) = try connection { _ in (200, #"{"data":{"ListPhotos":[]}}"#) }
         _ = try await connection.photos(in: .library, filter: PhotoFilter(photoKindFilter: .livePhoto))

@@ -231,6 +231,22 @@
             return #"{"id":"\#(photo.id)","createdAt":"\#(photo.takenAt)","photoKind":"\#(photo.kind)","takenAt":"\#(photo.takenAt)","takenAtOffsetMinutes":\#(photo.offsetMinutes),"widthPixels":\#(photo.isPortrait ? 3024 : 4032),"heightPixels":\#(photo.isPortrait ? 4032 : 3024),"durationMS":\#(photo.durationMS),"latitude":\#(latitude),"longitude":\#(longitude),"placeName":"\#(photo.placeName)","cameraMake":"Example","cameraModel":"Phone 1","originalFilename":"\#(originalFilename)","isFavorite":\#(photo.isFavorite),"isScreenshot":false,"photoProcessingState":"\#(photo.processingState)","trashedAt":\#(trashedAt),"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":"\#(videoPreviewUrl)","photoFileRoles":[\#(fileRoles)],"processingErrorMessage":"\#(photo.failureMessage)","isOwnedByCaller":\#(!photo.isForeign),"ownerName":"\#(photo.ownerName)"\#(extraFields)}"#
         }
 
+        /// The photos of a visit in the Location demo, as the list of them the server sends with the visit.
+        static func demoVisitPhotosJSON(_ photoIds: [String]) -> String {
+            let photos = photoIds.compactMap { photoId in demoPhotos.first { $0.id == photoId } }
+            return "[" + photos.map { photoJSON($0) }.joined(separator: ",") + "]"
+        }
+
+        /// What ReadPhotoPlace answers: the first photo was taken inside the person's Home place, any other
+        /// photo with a position at a street, and a photo with none at nothing.
+        private static func photoPositionPlaceJSON(photoId: String) -> String {
+            guard let photo = demoPhotos.first(where: { $0.id == photoId }), photo.latitude != nil, !photo.isForeign else { return "null" }
+            if photo.id == "demo-01" {
+                return #"{"locationPlace":\#(LocationDemo.place(LocationDemo.homePlaceId).json),"addressText":""}"#
+            }
+            return #"{"locationPlace":null,"addressText":"3 Fixture Row, Exampleton"}"#
+        }
+
         /// The answer to a request about photos: a GraphQL document, or a
         /// preview fetched by its address. Nil for any other request.
         static func photoAnswer(_ request: URLRequest) -> Data? {
@@ -349,6 +365,8 @@
                 // Everything fits in one page, so a page after it is empty.
                 if isEmpty || variables["beforePhotoId"] is String { chosen = [] }
                 json = #"{"data":{"ListPhotos":["# + chosen.map { photoJSON($0) }.joined(separator: ",") + "]}}"
+            } else if body.contains("ReadPhotoPlace") {
+                json = #"{"data":{"ReadPhotoPlace":\#(photoPositionPlaceJSON(photoId: variables["photoId"] as? String ?? ""))}}"#
             } else if body.contains("ReadPhoto") {
                 let photoId = variables["photoId"] as? String ?? demoPhotos[0].id
                 let photo = demoPhotos.first { $0.id == photoId } ?? demoPhotos[0]

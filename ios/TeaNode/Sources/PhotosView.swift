@@ -1007,6 +1007,14 @@ struct PhotosScreen: View {
                         .padding(.horizontal)
                         .padding(.bottom, 8)
                     }
+                    if model.photoFilter.takenAfter != nil || model.photoFilter.takenBefore != nil, model.section.collection != nil {
+                        PhotoWindowChip(takenAfter: model.photoFilter.takenAfter, takenBefore: model.photoFilter.takenBefore) {
+                            model.photoFilter.takenAfter = nil
+                            model.photoFilter.takenBefore = nil
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                    }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if isBottomBarShown {
