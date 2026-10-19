@@ -264,10 +264,10 @@ function useCenteredScroll<Element extends HTMLElement>(columnCount: number) {
   useLayoutEffect(() => {
     const element = ref.current
     if (!element) return
-    const scroller =
-      element.scrollWidth > element.clientWidth
-        ? element
-        : element.closest<HTMLElement>('.coding-scroll.showing-agents')
+    // Whether the tree is its own scroller is its style's to say: its
+    // content is wider than it either way.
+    const isOwnScroller = getComputedStyle(element).overflowX !== 'visible'
+    const scroller = isOwnScroller ? element : element.closest<HTMLElement>('.coding-scroll.showing-agents')
     if (!scroller) return
     scroller.scrollLeft = Math.max(0, (scroller.scrollWidth - scroller.clientWidth) / 2)
   }, [columnCount])
