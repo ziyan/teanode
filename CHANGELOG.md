@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.180.4] - 2026-10-19
+
+### Changed
+
+- Photos: your albums come first on the Albums page, and suggested albums after them, on the dashboard and the iPhone. (#590)
+
 ## [0.180.3] - 2026-10-19
 
 ### Fixed
