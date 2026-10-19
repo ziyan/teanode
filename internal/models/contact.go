@@ -52,7 +52,7 @@ type Contact struct {
 	Phones       []string `json:"phones,omitempty"`
 
 	// AccountUserID is the account on this server that the owner says this
-	// contact is, or empty. It is the owner's own note: read only while the
+	// contact is, or empty. Only the owner sees the link: read only while the
 	// owner still shares a circle with that account, never carried in the
 	// card, and never seen by the account. It is written only by
 	// SetContactAccount, so saving a card does not touch it.
