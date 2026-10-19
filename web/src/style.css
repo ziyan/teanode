@@ -17352,51 +17352,51 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   width: 100%;
 }
 
-@container coding (max-width: 860px) {
-  .agents-tree {
-    align-items: stretch;
-    overflow-x: visible;
-  }
+/* The agents as an indented list: on a phone, and wherever the session's
+   agents do not fit side by side (herdrSubagents.tsx decides). */
+.agents-view.is-listed .agents-tree {
+  align-items: stretch;
+  overflow-x: visible;
+}
 
-  .agents-root,
-  .agents-top {
-    width: auto;
-    min-width: 0;
-  }
+.agents-view.is-listed .agents-root,
+.agents-view.is-listed .agents-top {
+  width: auto;
+  min-width: 0;
+}
 
-  .agents-root {
-    display: block;
-  }
+.agents-view.is-listed .agents-root {
+  display: block;
+}
 
-  .agents-view .agent-card {
-    width: 100%;
-  }
+.agents-view.is-listed .agent-card {
+  width: 100%;
+}
 
-  .agents-top {
-    display: block;
-    margin: var(--space-2) 0 0 12px;
-    padding: 0 0 0 16px;
-    border-left: 1px solid var(--agents-line);
-  }
+.agents-view.is-listed .agents-top {
+  display: block;
+  margin: var(--space-2) 0 0 12px;
+  padding: 0 0 0 16px;
+  border-left: 1px solid var(--agents-line);
+}
 
-  .agents-top::before,
-  .agents-top > li::before,
-  .agents-top > li::after {
-    display: none;
-  }
+.agents-view.is-listed .agents-top::before,
+.agents-view.is-listed .agents-top > li::before,
+.agents-view.is-listed .agents-top > li::after {
+  display: none;
+}
 
-  .agents-top > li {
-    padding: 0;
-  }
+.agents-view.is-listed .agents-top > li {
+  padding: 0;
+}
 
-  .agents-top > li + li {
-    margin-top: var(--space-2);
-  }
+.agents-view.is-listed .agents-top > li + li {
+  margin-top: var(--space-2);
+}
 
-  .agents-nested {
-    margin-left: 0;
-    padding-left: 16px;
-  }
+.agents-view.is-listed .agents-nested {
+  margin-left: 0;
+  padding-left: 16px;
 }
 
 /* --- photos ---------------------------------------------------------------

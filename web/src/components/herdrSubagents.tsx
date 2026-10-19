@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useTranslation, type Translation } from '../i18n/i18n'
 import { Tag } from './common'
@@ -251,10 +251,36 @@ function AgentBranch({
 
 // HerdrSubagentsView is the Agents view of one session: a heading with how
 // many agents there are and how many run, the session's card, and the tree.
+// A column of the tree: a card and the room beside it (style.css's
+// .agent-card and .agents-top > li).
+const TREE_COLUMN_PX = 272
+// Narrower than this, the agents are always the indented list.
+const TREE_LEAST_PX = 600
+
+// useWidth is the width of the element ref points at, kept as it changes;
+// null until it has been measured (and where nothing can measure it).
+function useWidth<Element extends HTMLElement>() {
+  const ref = useRef<Element>(null)
+  const [width, setWidth] = useState<number | null>(null)
+  useEffect(() => {
+    const element = ref.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  return { ref, width }
+}
+
 export function HerdrSubagentsView({ read }: { read: HerdrSubagentsRead }) {
   const { t, plural } = useTranslation()
   const [foldedIds, setFoldedIds] = useState<ReadonlySet<string>>(new Set())
   const nodes = buildSubagentTree(read.subagents)
+  // The tree only while the session's agents fit side by side: a row that
+  // runs off the pane puts the session's card over the wrong agents and
+  // scrolls sideways, so the indented list is drawn instead.
+  const { ref: viewRef, width: viewWidth } = useWidth<HTMLDivElement>()
+  const isListed = viewWidth !== null && (viewWidth < TREE_LEAST_PX || nodes.length * TREE_COLUMN_PX > viewWidth)
   const runningCount = read.subagents.filter((subagent) => subagent.subagentState === 'running').length
   const isBusy = read.herdrSession.herdrSessionState === 'working' || read.herdrSession.herdrSessionState === 'asking'
   const now = useNow(runningCount > 0 || isBusy)
@@ -265,7 +291,7 @@ export function HerdrSubagentsView({ read }: { read: HerdrSubagentsRead }) {
       return next
     })
   return (
-    <div className="agents-view">
+    <div ref={viewRef} className={isListed ? 'agents-view is-listed' : 'agents-view'}>
       {read.subagents.length > 0 ? (
         <h3 className="agents-heading">
           <span>

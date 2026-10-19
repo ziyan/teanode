@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
 import { TranslationProvider } from '../i18n/i18n'
 import type { HerdrSession, HerdrSubagent, HerdrSubagentsRead } from './herdrSessions'
@@ -246,4 +246,40 @@ it('writes a time as a person says one', () => {
   expect(text(80_000)).toBe('1m 20s')
   expect(text(3_600_000)).toBe('1h')
   expect(text(7_500_000)).toBe('2h 5m')
+})
+
+// The view measures itself; jsdom has no ResizeObserver, so one that reports
+// a fixed width stands in for it.
+function stubWidth(widthPX: number) {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(private readonly report: ResizeObserverCallback) {}
+      observe() {
+        this.report([{ contentRect: { width: widthPX } } as ResizeObserverEntry], this as unknown as ResizeObserver)
+      }
+      disconnect() {}
+    },
+  )
+}
+
+it('draws the tree while the agents fit side by side, and the indented list when they do not', () => {
+  const view = () => document.querySelector('.agents-view') as HTMLElement
+  stubWidth(900)
+  renderView()
+  expect(view().classList.contains('is-listed')).toBe(false)
+  cleanup()
+
+  // Three agents started by the session need 816 px side by side.
+  const third = subagentOf({ subagentId: 'outer-three', subagentType: 'coder', startedAt: '2026-01-01T10:00:30Z' })
+  stubWidth(700)
+  renderView({ subagents: [...subagents, third] })
+  expect(view().classList.contains('is-listed')).toBe(true)
+  cleanup()
+
+  // On a phone it is the list however few there are.
+  stubWidth(390)
+  renderView()
+  expect(view().classList.contains('is-listed')).toBe(true)
+  vi.unstubAllGlobals()
 })
