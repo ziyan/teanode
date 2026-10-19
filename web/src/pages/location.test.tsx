@@ -793,12 +793,12 @@ it('calls a labeled place by its label word, with the map name under it, and a n
   expect(screen.queryByText('Fixture Hall')).toBeNull()
 })
 
-it('keeps the map and the people when nobody has a position of their own but others share', async () => {
+it('sets Location up for someone who joins a family that already shares, keeping the map and the people', async () => {
   answerWith({ own: { latestPoint: null }, sharedViews: [PERSON_B_VIEW] })
   renderAt('/location')
 
   expect(await screen.findByTestId('map')).toBeTruthy()
-  expect(screen.queryByText('Install the TeaNode app on your iPhone')).toBeNull()
+  expect(await screen.findByText('Install the TeaNode app on your iPhone')).toBeTruthy()
   expect(await screen.findByText('Person B')).toBeTruthy()
 })
 
