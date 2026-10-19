@@ -1003,14 +1003,14 @@ it('keeps the address buttons off while the editor has unsaved changes', async (
   expect(calls('SavePlace')).toHaveLength(0)
 })
 
-it('offers Photos for a shared person the caller has a contact for, opening the library on their account', async () => {
+it('offers Photos for a shared person the caller has a contact for, opening the library on them', async () => {
   answerWith({
     sharedViews: [PERSON_B_VIEW],
     circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
   })
   renderAt('/location?person=person-b', { canUsePhotos: true })
   const photos = await screen.findByRole('link', { name: 'Photos' })
-  expect(photos.getAttribute('href')).toBe(`/photos?account=${encodeURIComponent(PERSON_B_VIEW.username)}`)
+  expect(photos.getAttribute('href')).toBe(`/photos?person=${encodeURIComponent(PERSON_B_VIEW.userId)}`)
   fireEvent.click(photos)
   expect(await screen.findByText('The photos page')).toBeTruthy()
 })

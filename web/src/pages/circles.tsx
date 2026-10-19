@@ -16,7 +16,7 @@ import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
-import { accountPhotosAddress } from '../lib/circlePeople'
+import { personPhotosAddress } from '../lib/circlePeople'
 import {
   PRONOUNS,
   PRONOUN_LABELS,
@@ -870,7 +870,7 @@ function CircleDetail() {
                             role="menuitem"
                             onClick={() => {
                               close()
-                              navigate(accountPhotosAddress(member.username))
+                              navigate(personPhotosAddress(member.userId))
                             }}
                           >
                             {t('circles.photos')}

@@ -119,9 +119,7 @@ it('offers to remove the picture of a contact that has one, and only then', asyn
   const removedPicture = () =>
     vi
       .mocked(graphql)
-      .mock.calls.some(
-        ([document, variables]) => document.includes('RemoveContactPicture') && variables?.id === 'card-2',
-      )
+      .mock.calls.some(([document, variables]) => document.includes('RemoveContactPicture') && variables?.id === 'card-2')
   // It asks first, and a no leaves the picture where it was.
   fireEvent.click(await within(withPicture).findByRole('button', { name: 'Remove picture' }))
   const question = await screen.findByRole('alertdialog')
@@ -209,7 +207,7 @@ it('links a contact to a person in the circles from a picker, leaving out people
   window.localStorage.clear()
   show('/contacts?contact=card-1')
   const dialog = await screen.findByRole('dialog')
-  fireEvent.click(await within(dialog).findByRole('button', { name: 'Is in your circles as...' }))
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'Is in your circles as…' }))
   const picker = (await screen.findAllByRole('dialog'))[1]
   expect(await within(picker).findByText('Robin Example (robin)')).toBeTruthy()
   expect(within(picker).queryByText('Sam Example (sam)')).toBeNull()
@@ -217,7 +215,7 @@ it('links a contact to a person in the circles from a picker, leaving out people
   fireEvent.click(within(picker).getByRole('button', { name: 'Link' }))
   await waitFor(() => expect(setAccountCalls()).toHaveLength(1))
   expect(setAccountCalls()[0][1]).toEqual({ addressBookId: 'book-1', contactId: 'card-1', accountUserId: 'user-robin' })
-  expect(await screen.findByText('Fixture Guest is now linked to Robin Example.')).toBeTruthy()
+  expect(await screen.findByText('Fixture Guest is in your circles as Robin Example')).toBeTruthy()
   // The dialog now says who the contact is.
   expect(await within(dialog).findByText('In your circles as Robin Example')).toBeTruthy()
 })
@@ -227,20 +225,20 @@ it('shows who a contact is in the circles, with Change and Remove, and removing 
   show('/contacts?contact=card-1')
   const dialog = await screen.findByRole('dialog')
   expect(await within(dialog).findByText('In your circles as Sam Example')).toBeTruthy()
-  expect(within(dialog).queryByRole('button', { name: 'Is in your circles as...' })).toBeNull()
+  expect(within(dialog).queryByRole('button', { name: 'Is in your circles as…' })).toBeNull()
   expect(within(dialog).getByRole('button', { name: 'Change' })).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }))
   await waitFor(() => expect(setAccountCalls()).toHaveLength(1))
   expect(setAccountCalls()[0][1]).toEqual({ addressBookId: 'book-1', contactId: 'card-1', accountUserId: null })
   expect(await screen.findByText('Fixture Guest is no longer linked to someone in your circles.')).toBeTruthy()
-  expect(await within(dialog).findByRole('button', { name: 'Is in your circles as...' })).toBeTruthy()
+  expect(await within(dialog).findByRole('button', { name: 'Is in your circles as…' })).toBeTruthy()
 })
 
 it('says a refused link in a toast and keeps the dialog open', async () => {
   answerWithCircles()
   show('/contacts?contact=card-1')
   const dialog = await screen.findByRole('dialog')
-  fireEvent.click(await within(dialog).findByRole('button', { name: 'Is in your circles as...' }))
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'Is in your circles as…' }))
   const picker = (await screen.findAllByRole('dialog'))[1]
   const normal = vi.mocked(graphql).getMockImplementation()!
   vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
@@ -249,8 +247,11 @@ it('says a refused link in a toast and keeps the dialog open', async () => {
   })
   fireEvent.click(await within(picker).findByText('Sam Example (sam)'))
   fireEvent.click(within(picker).getByRole('button', { name: 'Link' }))
-  expect((await screen.findAllByText('Another contact is already linked to that person')).length).toBeGreaterThan(0)
+  expect(await screen.findByText('Another contact is already linked to that person')).toBeTruthy()
   expect(screen.getAllByRole('dialog')).toHaveLength(2)
+  // The refusal is the toast alone: no dialog shows it as inline text as well.
+  expect(within(picker).queryByText('Another contact is already linked to that person')).toBeNull()
+  expect(within(dialog).queryByText('Another contact is already linked to that person')).toBeNull()
 })
 
 it('offers suggestions at the top, links one, and remembers Not now for a contact in this browser only', async () => {
@@ -266,22 +267,22 @@ it('offers suggestions at the top, links one, and remembers Not now for a contac
   answerWithCircles({ suggestions })
   show('/contacts')
   const notice = await screen.findByRole('region', { name: 'Contacts that may be people in your circles' })
-  expect(within(notice).getByText('Fixture Guest may be Sam Example in your circles.')).toBeTruthy()
-  expect(within(notice).getByText('Second Guest may be Robin Example in your circles.')).toBeTruthy()
+  expect(within(notice).getByText('Fixture Guest may be Sam Example in your circles')).toBeTruthy()
+  expect(within(notice).getByText('Second Guest may be Robin Example in your circles')).toBeTruthy()
 
   // Not now hides that contact's offer and writes nothing to the server.
   const callsBefore = vi.mocked(graphql).mock.calls.length
-  fireEvent.click(within(notice).getAllByRole('button', { name: 'Not now' })[1])
+  fireEvent.click(within(notice).getByRole('button', { name: 'Not now for Second Guest' }))
   await waitFor(() => expect(within(notice).queryByText(/Second Guest may be/)).toBeNull())
   expect(vi.mocked(graphql).mock.calls.length).toBe(callsBefore)
   expect(JSON.parse(window.localStorage.getItem('teanode.addressBook.dismissedSuggestions') ?? '[]')).toEqual([
     'card-9',
   ])
 
-  fireEvent.click(within(notice).getByRole('button', { name: 'Link' }))
+  fireEvent.click(within(notice).getByRole('button', { name: 'Link Fixture Guest' }))
   await waitFor(() => expect(setAccountCalls()).toHaveLength(1))
   expect(setAccountCalls()[0][1]).toEqual({ addressBookId: 'book-1', contactId: 'card-1', accountUserId: 'user-sam' })
-  expect(await screen.findByText('Fixture Guest is now linked to Sam Example.')).toBeTruthy()
+  expect(await screen.findByText('Fixture Guest is in your circles as Sam Example')).toBeTruthy()
 })
 
 it('does not offer a suggestion the person already said Not now to, and works without browser storage', async () => {
@@ -305,6 +306,6 @@ it('does not offer a suggestion the person already said Not now to, and works wi
     ],
   })
   show('/contacts')
-  expect(await screen.findByText('Fixture Guest may be Sam Example in your circles.')).toBeTruthy()
+  expect(await screen.findByText('Fixture Guest may be Sam Example in your circles')).toBeTruthy()
   getItem.mockRestore()
 })

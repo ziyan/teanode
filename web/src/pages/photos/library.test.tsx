@@ -1415,7 +1415,7 @@ function answerCirclePeople(people: unknown[] = [circlePerson]) {
 
 it('lists the photos of a person in the circles from the address, as a chip that can be taken off', async () => {
   answerCirclePeople()
-  show('/photos?account=sam')
+  show('/photos?person=user-sam')
   expect(await screen.findByText('Photos of Sam Example')).toBeTruthy()
   await waitFor(() =>
     expect(callsTo('ListPhotos').some((variables) => variables.accountUserId === 'user-sam')).toBe(true),
@@ -1431,7 +1431,7 @@ it('lists the photos of a person in the circles from the address, as a chip that
   await waitFor(() => expect(callsTo('ListPhotos').some((variables) => variables.accountUserId === null)).toBe(true))
 })
 
-it('keeps the account in the address across Back, and leaves it behind when another person is picked', async () => {
+it('leaves the person behind in the address when another person is picked from People', async () => {
   answerCirclePeople()
   extraAnswer = (document) =>
     document.includes('ListCirclePeople')
@@ -1454,7 +1454,7 @@ it('keeps the account in the address across Back, and leaves it behind when anot
             },
           }
         : undefined
-  show('/photos?account=sam', [{ to: '/photos/people/group-1', label: 'to Robin' }])
+  show('/photos?person=user-sam', [{ to: '/photos/people/group-1', label: 'to Robin' }])
   expect(await screen.findByText('Photos of Sam Example')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'to Robin' }))
   await waitFor(() => expect(address()).toBe('/photos/people/group-1'))
@@ -1468,9 +1468,9 @@ it('keeps the account in the address across Back, and leaves it behind when anot
   )
 })
 
-it('takes an account that is not among the people in the circles out of the address, says so, and lists nothing meanwhile', async () => {
+it('takes a person who is not among the people in the circles out of the address, says so, and lists nothing meanwhile', async () => {
   answerCirclePeople([])
-  show('/photos?account=gone')
+  show('/photos?person=user-gone')
   expect(await screen.findByText('That person is not in your circles, so there are no photos to show.')).toBeTruthy()
   await waitFor(() => expect(address()).toBe('/photos'))
   expect(callsTo('ListPhotos').every((variables) => variables.accountUserId === null)).toBe(true)

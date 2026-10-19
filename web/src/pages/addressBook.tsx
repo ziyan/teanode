@@ -498,6 +498,17 @@ export function AddressBookPage() {
     return isDone
   }
 
+  // A refusal is shown as a toast, so the dialog's inline problem is cleared
+  // as the picker opens and closes: it is not shown twice, or left behind.
+  const openAccountPicker = () => {
+    setProblem(null)
+    setIsChoosingAccount(true)
+  }
+  const closeAccountPicker = () => {
+    setProblem(null)
+    setIsChoosingAccount(false)
+  }
+
   const dismissSuggestion = (contactId: string) => {
     const next = [...dismissedContactIds, contactId]
     setDismissedContactIds(next)
@@ -508,8 +519,9 @@ export function AddressBookPage() {
   const offeredSuggestions = (suggestions.data?.ListContactAccountSuggestions ?? []).filter(
     (suggestion) => !dismissedContactIds.includes(suggestion.contact.id),
   )
-  // The accounts that another contact of this book already is: a book keeps
-  // one contact for each person.
+  // The accounts that another loaded contact of this book already is, left out
+  // of the picker. The server is the guard: it refuses a second contact for the
+  // same account in a book, and that refusal is shown as a toast.
   const takenAccountIds = new Set(
     rows
       .filter((contact) => contact.id !== draft?.id && contact.accountUserId)
@@ -553,13 +565,19 @@ export function AddressBookPage() {
                     type="button"
                     className="primary"
                     disabled={busy}
+                    aria-label={t('addressBook.suggestionLinkFor', { name: contactName })}
                     onClick={() =>
                       void setAccount(suggestion.addressBookId, suggestion.contact.id, contactName, suggestion.account)
                     }
                   >
                     {t('addressBook.suggestionLink')}
                   </button>
-                  <button type="button" disabled={busy} onClick={() => dismissSuggestion(suggestion.contact.id)}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={t('addressBook.suggestionLaterFor', { name: contactName })}
+                    onClick={() => dismissSuggestion(suggestion.contact.id)}
+                  >
                     {t('addressBook.suggestionLater')}
                   </button>
                 </div>
@@ -724,7 +742,7 @@ export function AddressBookPage() {
                   <span className="account-link-text">
                     {t('addressBook.accountIs', { name: personName(draft.account) })}
                   </span>
-                  <button type="button" disabled={busy} onClick={() => setIsChoosingAccount(true)}>
+                  <button type="button" disabled={busy} onClick={openAccountPicker}>
                     {t('addressBook.accountChange')}
                   </button>
                   <button
@@ -738,7 +756,7 @@ export function AddressBookPage() {
                   </button>
                 </>
               ) : (
-                <button type="button" disabled={busy} onClick={() => setIsChoosingAccount(true)}>
+                <button type="button" disabled={busy} onClick={openAccountPicker}>
                   {t('addressBook.accountLink')}
                 </button>
               )}
@@ -757,10 +775,10 @@ export function AddressBookPage() {
           error={problem}
           onChoose={(account) =>
             void setAccount(bookId, draft.id, draft.name.trim() || lines(draft.emails)[0] || '', account).then(
-              (isDone) => isDone && setIsChoosingAccount(false),
+              (isDone) => isDone && closeAccountPicker(),
             )
           }
-          onClose={() => setIsChoosingAccount(false)}
+          onClose={closeAccountPicker}
         />
       )}
 

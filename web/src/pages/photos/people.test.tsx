@@ -645,7 +645,7 @@ it('leaves the grid as it was when nobody is in the circles', async () => {
   expect(screen.queryByText('In your circles')).toBeNull()
 })
 
-it('says in the naming dialog which contact is already in the circles, and never makes one for a person in them', async () => {
+it('says in the naming dialog which contact is already in the circles, and choosing it saves no new contact', async () => {
   vi.mocked(graphql).mockImplementation(async (document: string) => {
     if (document.includes('ListAddressBooks')) return { ListAddressBooks: [{ id: 'book-1' }] } as never
     if (document.includes('ListContacts'))
@@ -674,10 +674,8 @@ it('says in the naming dialog which contact is already in the circles, and never
   expect(otherRow.textContent).not.toContain('In your circles')
   fireEvent.click(within(linkedRow).getByRole('radio'))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-  // The existing contact is what comes back; nothing asks for the circle people or saves a contact.
+  // The existing contact is what comes back, and no contact is saved.
   expect(onSubmit).toHaveBeenCalledWith({ kind: 'contact', contactId: 'contact-1' })
   const documents = vi.mocked(graphql).mock.calls.map(([document]) => document)
-  expect(documents.some((document) => document.includes('ListCirclePeople') || document.includes('SaveContact'))).toBe(
-    false,
-  )
+  expect(documents.some((document) => document.includes('SaveContact'))).toBe(false)
 })

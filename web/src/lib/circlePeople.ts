@@ -23,7 +23,8 @@ export async function listCirclePeople(signal?: AbortSignal): Promise<CirclePers
 }
 
 // Where the photos of one person in the circles are: the library, filtered to
-// the contact the caller linked to that account.
-export function accountPhotosAddress(username: string): string {
-  return `/photos?account=${encodeURIComponent(username)}`
+// the contact the caller linked to that person. The parameter is the same
+// user ID that Location's person parameter holds.
+export function personPhotosAddress(userId: string): string {
+  return `/photos?person=${encodeURIComponent(userId)}`
 }

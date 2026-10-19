@@ -39,7 +39,7 @@ import { Tabs, TabItem } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
-import { accountPhotosAddress } from '../lib/circlePeople'
+import { personPhotosAddress } from '../lib/circlePeople'
 import { hasPermission, useSession } from '../session'
 
 // Where the person is and has been, and who shares it with them: a map, the
@@ -661,7 +661,7 @@ function LocationContent({ userId }: { userId: string }) {
     <>
       <PageHeadingActions>
         {viewedPerson && isViewedPersonLinked && (
-          <Link className="button" to={accountPhotosAddress(viewedPerson.username)}>
+          <Link className="button" to={personPhotosAddress(viewedPerson.userId)}>
             {t('location.photos')}
           </Link>
         )}

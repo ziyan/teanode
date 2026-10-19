@@ -176,7 +176,8 @@ function AccountPhotosPage() {
     session.services?.isContactsEnabled === true && hasPermission(session.permissions, 'contacts:use')
   // Asking about a photo needs an assistant on the server and one this person
   // may use, as the sidebar's assistant links do.
-  const isAssistantOn = session.services?.isAssistantEnabled === true && hasPermission(session.permissions, 'agent:use')
+  const isAssistantOn =
+    session.services?.isAssistantEnabled === true && hasPermission(session.permissions, 'agent:use')
   const circleChoices = useCircleChoices()
 
   const listKind: PhotoListKind = isInsideCollection
@@ -195,18 +196,22 @@ function AccountPhotosPage() {
   // say it by.
   const near = parseNear(parameters.get('near'))
   const nearPlace = parameters.get('nearPlace') ?? ''
-  // "The photos of this person in my circles": the username in the address,
-  // read as the contact the person linked to that account. A person's own
+  // "The photos of this person in my circles": the person's user ID in the
+  // address, read as the contact the viewer linked to them. A person's own
   // page or an album is already one list, so the address means nothing there
   // and another person picked from People leaves it behind.
-  const accountUsername = photoFaceGroupId || photoAlbumId ? '' : (parameters.get('account') ?? '')
-  const circlePeople = useQuery(async () => (accountUsername ? await listCirclePeople() : null), [accountUsername], {
-    refresh: false,
-  })
-  const accountPerson = circlePeople.data?.find((person) => person.username === accountUsername) ?? null
-  const isAccountPending = accountUsername !== '' && circlePeople.data === null && !circlePeople.error
-  const isAccountUnresolved = accountUsername !== '' && accountPerson === null
-  const hasFilters = photoKind !== '' || fromDay !== '' || toDay !== '' || near !== null || accountUsername !== ''
+  const circlePersonUserId = photoFaceGroupId || photoAlbumId ? '' : (parameters.get('person') ?? '')
+  const circlePeople = useQuery(
+    async () => (circlePersonUserId ? await listCirclePeople() : null),
+    [circlePersonUserId],
+    {
+      refresh: false,
+    },
+  )
+  const circlePerson = circlePeople.data?.find((person) => person.userId === circlePersonUserId) ?? null
+  const isCirclePersonPending = circlePersonUserId !== '' && circlePeople.data === null && !circlePeople.error
+  const isCirclePersonUnresolved = circlePersonUserId !== '' && circlePerson === null
+  const hasFilters = photoKind !== '' || fromDay !== '' || toDay !== '' || near !== null || circlePersonUserId !== ''
   const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PHOTOS_PER_PAGE })
   const takenAfter = fromDay ? startOfDay(fromDay) : undefined
   const takenBefore = toDay ? startOfNextDay(toDay) : undefined
@@ -216,7 +221,7 @@ function AccountPhotosPage() {
       searchText,
       photoAlbumId,
       photoFaceGroupId,
-      accountUserId: accountPerson?.userId,
+      accountUserId: circlePerson?.userId,
       photoKind: photoKind || undefined,
       takenAfter,
       takenBefore,
@@ -230,7 +235,7 @@ function AccountPhotosPage() {
       searchText,
       photoAlbumId,
       photoFaceGroupId,
-      accountPerson?.userId,
+      circlePerson?.userId,
       photoKind,
       takenAfter,
       takenBefore,
@@ -323,10 +328,10 @@ function AccountPhotosPage() {
       written.delete('page')
       return written
     })
-  const clearAccount = () =>
+  const clearCirclePerson = () =>
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
-      written.delete('account')
+      written.delete('person')
       written.delete('page')
       return written
     })
@@ -341,7 +346,7 @@ function AccountPhotosPage() {
   const clearFilters = () =>
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
-      for (const name of ['kind', 'from', 'to', 'near', 'nearPlace', 'account']) written.delete(name)
+      for (const name of ['kind', 'from', 'to', 'near', 'nearPlace', 'person']) written.delete(name)
       written.delete('page')
       return written
     })
@@ -354,13 +359,13 @@ function AccountPhotosPage() {
   const library = useQuery(
     // A person in the circles is looked up first: asking before that would
     // list the whole library under the chip.
-    async () => ({ listKey, photos: isAccountUnresolved ? [] : await listPhotos(filter, offset, pageSize) }),
-    [filter, offset, pageSize, userId, isAccountUnresolved],
+    async () => ({ listKey, photos: isCirclePersonUnresolved ? [] : await listPhotos(filter, offset, pageSize) }),
+    [filter, offset, pageSize, userId, isCirclePersonUnresolved],
     { refresh: !isSearching },
   )
   const count = useQuery(
-    () => (isAccountUnresolved ? Promise.resolve(0) : countPhotos(filter)),
-    [filter, userId, isAccountUnresolved],
+    () => (isCirclePersonUnresolved ? Promise.resolve(0) : countPhotos(filter)),
+    [filter, userId, isCirclePersonUnresolved],
     {
       refresh: !isSearching,
     },
@@ -371,24 +376,24 @@ function AccountPhotosPage() {
     async () => (photoFaceGroupId ? await readPhotoFaceGroup(photoFaceGroupId) : null),
     [photoFaceGroupId, userId],
   )
-  // An account that is not among the people in the circles (a stale link, or
-  // they left) is taken out of the address, and the person is told.
-  const isAccountUnknown = accountUsername !== '' && circlePeople.data !== null && accountPerson === null
+  // A person who is not among the people in the circles (a stale link, or
+  // they left) is taken out of the address, and the viewer is told.
+  const isCirclePersonUnknown = circlePersonUserId !== '' && circlePeople.data !== null && circlePerson === null
   useEffect(() => {
-    if (!isAccountUnknown) return
+    if (!isCirclePersonUnknown) return
     toast.failed(t('photos.accountNotFound'))
     setParameters(
       (previous) => {
         const written = new URLSearchParams(previous)
-        written.delete('account')
+        written.delete('person')
         written.delete('page')
         return written
       },
       { replace: true },
     )
-    // Once for each name found stale.
+    // Once for each person found stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAccountUnknown, accountUsername])
+  }, [isCirclePersonUnknown, circlePersonUserId])
   const people = useQuery(async () => (isMergingPerson ? await listPhotoFaceGroups(true) : []), [isMergingPerson])
   // The names a search may have found photos by without a word being in the
   // photo itself: the people in it and the albums it is in. Nothing (null)
@@ -1406,22 +1411,18 @@ function AccountPhotosPage() {
                   onChange={setFilterParameter}
                   onClear={clearFilters}
                 />
-                {accountUsername !== '' && (
+                {circlePerson && (
                   <span className="table-pinned photo-near-filter">
                     <span className="photo-near-label">
-                      {accountPerson
-                        ? t('photos.accountPhotosOf', { name: personName(accountPerson) })
-                        : accountUsername}
+                      {t('photos.accountPhotosOf', { name: personName(circlePerson) })}
                     </span>
                     <button
                       type="button"
                       className="icon-button"
                       aria-label={t('photos.removeFilter', {
-                        filter: accountPerson
-                          ? t('photos.accountPhotosOf', { name: personName(accountPerson) })
-                          : accountUsername,
+                        filter: t('photos.accountPhotosOf', { name: personName(circlePerson) }),
                       })}
-                      onClick={clearAccount}
+                      onClick={clearCirclePerson}
                     >
                       <CloseIcon size={12} />
                     </button>
@@ -1529,7 +1530,7 @@ function AccountPhotosPage() {
         </div>
       )}
 
-      {(library.loading && !library.data) || isWaitingForTrashRetention || isAccountPending ? (
+      {(library.loading && !library.data) || isWaitingForTrashRetention || isCirclePersonPending ? (
         <Loading />
       ) : photos.length === 0 && !isListStale ? (
         <>

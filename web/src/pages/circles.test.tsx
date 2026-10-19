@@ -669,14 +669,14 @@ it('offers Photos in the menu of a member the person has a contact for, and open
   await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/photos'))
 })
 
-it('opens the library with the member as the account in the address', async () => {
+it('opens the library with the member as the person in the address', async () => {
   const linked = { ...member('person-b', 'member', 'Person B'), linkedContactId: 'contact-1' }
   answerWith({ read: circle({ members: [member('person-a', 'admin', 'Person A'), linked] }) })
   renderAt('/circles/circle-one', { canUsePhotos: true })
   expect(await screen.findByText('Person B')).toBeTruthy()
   fireEvent.click(await screen.findByRole('button', { name: /Person B: Actions/ }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Photos' }))
-  await waitFor(() => expect(screen.getByTestId('search').textContent).toBe('?account=person-b-login'))
+  await waitFor(() => expect(screen.getByTestId('search').textContent).toBe('?person=person-b'))
 })
 
 it('offers no Photos for a member with no contact of the person, or to a person who cannot use Photos', async () => {
