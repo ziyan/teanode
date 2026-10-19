@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.182.1] - 2026-10-19
+
+### Fixed
+
+- The iPhone app's picture in the app switcher no longer mixes light bubbles into a dark screen. (#595)
+
 ## [0.182.0] - 2026-10-19
 
 ### Added
