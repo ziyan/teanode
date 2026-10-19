@@ -38,8 +38,10 @@ To see it working at the end: two accounts in one family circle, each with the a
 - [ ] The maintainer's phone: a day of real visits, and the timings of visit arrivals and departures (Milestone 0's third question).
 - [ ] Milestone 6: documentation, the security review section, review rounds, use it for real, deploy.
 - [x] (2026-10-18) The dashboard's day headings gain a Map button that draws the day's path, as the iPhone's day heading does (the maintainer could not find the path).
-- [ ] (2026-10-18) Milestone 7: the photos a person took during each of their visits, on every surface.
-- [ ] (2026-10-18) Milestone 8: a photo's details show where it was taken on a map, named by the person's own place or the street.
+- [x] (2026-10-18) Milestone 7: the photos a person took during each of their visits, on every surface (GraphQL `photoCount`, `photos`, `photosTakenBefore`; the agent's `photo_count` and window; `teanode location visits`; the dashboard's strip and Photos' `after`/`before`; the iPhone's strip and `PhotoFilter`). The agent also gained `location_path`, and `ReadPlace` reads one place by id.
+- [x] (2026-10-18) Milestone 8: a photo's details show where it was taken on a map, named by the person's own place or the street (`ReadPhotoPlace` on every surface).
+- [x] (2026-10-18) Review rounds 1 to 6 (server, dashboard, iPhone, parity and words); the last found only this list out of date. Walked in headless Chrome at 1400 and 390 px, light and dark: the strip kept to one line on a phone, and a narrow map's credit now starts folded.
+- [ ] Deploy, and the iPhone screenshots of the visit strip and the photo map from CI.
 
 ## Surprises & Discoveries
 
