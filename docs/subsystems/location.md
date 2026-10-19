@@ -295,11 +295,14 @@ the whole page. They are null for a family member reading the visits, for a
 caller without Photos (the service off, or no `photos:use`), and for a visit
 with no arrival. Location works without Photos. Other operations that return a
 visit (the open visit in `GetLocation`, `CheckIn`) leave them null.
-`photosTakenBefore` is where that window ended, so Photos opened over the visit
-(the dashboard's `after` and `before`, the iPhone's `PhotoFilter`) holds exactly
-the photos counted. The agent's `location_visits` rows give `photo_count`,
-`photos_taken_after` and `photos_taken_before` (RFC 3339 in the person's zone)
-to pass to the photo tool's `taken_after` and `taken_before`.
+`photosTakenBefore` is where that window ended, and Photos opened over the
+visit ends there too: the dashboard's `after` and `before` carry it to the
+millisecond, the iPhone's `PhotoFilter` to the second (so a photo taken in the
+same second as the arrival or the end may be shown or left out). The agent's
+`location_visits` rows give `photo_count`, `photos_taken_after` and
+`photos_taken_before` (RFC 3339 in the person's zone, with any fraction of a
+second) to pass to the photo tool's `taken_after` and `taken_before`, which
+then lists exactly the photos counted.
 
 ## Where it lives
 
