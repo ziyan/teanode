@@ -299,6 +299,31 @@ it('says in a toast that the people sharing cannot be read, and still shows the 
   expect(await screen.findByText(/Cannot query field "ListSharedLocations"/)).toBeTruthy()
 })
 
+it("gives a person's arrival its day when it was not today", async () => {
+  const now = new Date()
+  const daysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000)
+  answerWith({
+    sharedViews: [
+      {
+        ...PERSON_B_VIEW,
+        openVisit: { id: 'visit-old', arrivedAt: daysAgo.toISOString(), place: place({ placeName: 'Fixture Park' }) },
+      },
+      {
+        ...PERSON_B_VIEW,
+        userId: 'person-c',
+        name: 'Person C',
+        openVisit: { id: 'visit-today', arrivedAt: now.toISOString(), place: place({ placeName: 'Fixture Cafe' }) },
+      },
+    ] as never,
+  })
+  renderAt('/location')
+
+  const weekday = new Intl.DateTimeFormat('en', { weekday: 'short' }).format(daysAgo)
+  expect((await screen.findByText(/At Fixture Park since/)).textContent).toContain(weekday)
+  const today = (await screen.findByText(/At Fixture Cafe since/)).textContent ?? ''
+  expect(today).not.toContain(new Intl.DateTimeFormat('en', { weekday: 'short' }).format(now))
+})
+
 it('reads a person again when the live feed says they moved', async () => {
   answerWith({
     sharedViews: [PERSON_B_VIEW],
