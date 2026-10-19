@@ -38,7 +38,7 @@ func init() {
 			{
 				Name: "location_visits", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
 				Description: "Where the person has been: their visits, newest first, each with the place, when they arrived and left and how long the visit lasted. " +
-					"Their own visits say 'photo_count', how many photos they took during the visit; the photo tool's list with taken_after set to the row's arrived and taken_before set to its photos_taken_before shows exactly them. " +
+					"Their own visits say 'photo_count', how many photos they took during the visit; the photo tool's list with taken_after set to the row's photos_taken_after and taken_before set to its photos_taken_before shows exactly them. " +
 					"Give a date range for 'last weekend' or 'this week', 'place_id' for one place, or 'place_label' for the places they call home, work and so on. " +
 					"Use it to answer what they did and how long they were there, and to plan a weekend that is not a repeat of the last one: read their recent visits, then search for places that are not among them. " +
 					"With 'person', the visits of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
