@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.179.1] - 2026-10-19
+
+### Fixed
+
+- The assistant asks before removing where photos were taken, as the dashboard, iPhone and command line do. (#583)
+
 ## [0.179.0] - 2026-10-18
 
 ### Added
