@@ -92,6 +92,11 @@ final class AppModel {
     /// A contact card a link from the agent's memory asks to open.
     var openedContactId: String?
 
+    /// The contact whose photos Photos opens on, from a circle member or a
+    /// person on the Location screen that the person linked to their contact.
+    /// The Photos screen takes it and clears it.
+    var openedPhotoContactId: String?
+
     /// An address to write to, from a contact: compose opens with it.
     var composingTo: String?
 

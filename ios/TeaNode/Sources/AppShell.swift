@@ -267,6 +267,11 @@ struct MainView: View {
         .onChange(of: app.openedContactId) { _, contactId in
             if contactId != nil { section = .contacts }
         }
+        .onChange(of: app.openedPhotoContactId) { _, contactId in
+            guard contactId != nil else { return }
+            section = .photos
+            isMenuOpen = false
+        }
         .onChange(of: app.openedSection) { _, opened in
             guard let opened else { return }
             app.openedSection = nil

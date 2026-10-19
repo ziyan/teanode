@@ -157,6 +157,20 @@
             var isHidden = false
 
             var coverFaceId: String { "face-\(id)" }
+
+            /// The contact that names the group; Sam's is the address book's Sam, the card that is
+            /// linked to Sam's account in the circles. Empty while nobody is named.
+            var contactId: String {
+                if name.isEmpty { return "" }
+                return id == "demo-person-2" ? "sam" : "contact-" + id
+            }
+
+            /// The account in the person's circles that the contact is, as JSON; Sam's only.
+            var accountJSON: String {
+                id == "demo-person-2" && !name.isEmpty
+                    ? #","accountUserId":"user-sam","account":{"userId":"user-sam","username":"sam","name":"Sam Placeholder","avatarUrl":null,"avatarColorIndex":4}"#
+                    : #","accountUserId":null,"account":null"#
+            }
         }
 
         private static let demoFaceGroups: [DemoFaceGroup] = [
@@ -167,9 +181,9 @@
 
         private static func faceGroupJSON(_ person: DemoFaceGroup) -> String {
             let photoCount = person.photoIds.count
-            let contactId = person.name.isEmpty ? "" : "contact-" + person.id
+            let contactId = person.contactId
             let bookId = person.name.isEmpty ? "" : "book-demo"
-            return #"{"id":"\#(person.id)","createdAt":"2026-10-10T10:00:00Z","updatedAt":"2026-10-14T10:00:00Z","contactId":"\#(contactId)","contactAddressBookId":"\#(bookId)","contactName":"\#(person.name)","faceCount":\#(photoCount + 1),"photoCount":\#(photoCount),"facePictureUrl":"/api/v1/photos/faces/\#(person.coverFaceId)/picture","coverPhotoFaceId":"\#(person.coverFaceId)","isHidden":\#(person.isHidden)}"#
+            return #"{"id":"\#(person.id)","createdAt":"2026-10-10T10:00:00Z","updatedAt":"2026-10-14T10:00:00Z","contactId":"\#(contactId)","contactAddressBookId":"\#(bookId)","contactName":"\#(person.name)","faceCount":\#(photoCount + 1),"photoCount":\#(photoCount),"facePictureUrl":"/api/v1/photos/faces/\#(person.coverFaceId)/picture","coverPhotoFaceId":"\#(person.coverFaceId)","isHidden":\#(person.isHidden)\#(person.accountJSON)}"#
         }
 
         /// The faces the demo server found in one photo.
@@ -182,7 +196,7 @@
                 }.joined(separator: ",")
             }
             return demoFaceGroups.filter { $0.photoIds.contains(photoId) }.enumerated().map { index, person in
-                let contactId = person.name.isEmpty ? "" : "contact-" + person.id
+                let contactId = person.contactId
                 return #"{"id":"\#(person.coverFaceId)","photoId":"\#(photoId)","boxLeftFraction":\#(0.2 + 0.3 * Double(index)),"boxTopFraction":0.3,"boxWidthFraction":0.2,"boxHeightFraction":0.2,"photoFaceGroupId":"\#(person.id)","contactId":"\#(contactId)","contactName":"\#(person.name)","facePictureUrl":"/api/v1/photos/faces/\#(person.coverFaceId)/picture"}"#
             }.joined(separator: ",")
         }

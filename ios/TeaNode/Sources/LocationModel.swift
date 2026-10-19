@@ -93,6 +93,16 @@ final class LocationModel {
     /// The selected person, once the server has said they share.
     var selectedPerson: PersonLocation? { people.first { $0.userId == selectedUserId } }
 
+    /// The person's own contact that is this person, when they linked one; nil
+    /// otherwise. Read from the circles, where the server says it for the
+    /// person only.
+    func linkedContactId(of userId: String) -> String? {
+        for circle in circles {
+            if let member = circle.member(userId), member.isLinkedToContact { return member.linkedContactId }
+        }
+        return nil
+    }
+
     /// How far setting Location up has got.
     var setup: LocationSetup {
         LocationSetup(isPermissionDone: LocationRecorder.shared.isAuthorizedAlways, homePlaces: homePlaces, circles: circles, shares: shares)

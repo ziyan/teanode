@@ -70657,6 +70657,230 @@
           }
         }
       }
+    },
+    "Look like people in your circles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルの人に似ています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看起来是你圈子里的人"
+          }
+        }
+      }
+    },
+    "Looks like %@ in your circles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルの %@ さんのようです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看起来是你圈子里的 %@"
+          }
+        }
+      }
+    },
+    "In your circles as %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルでは %@ さん"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你的圈子里是 %@"
+          }
+        }
+      }
+    },
+    "In your circles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルにいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你的圈子里"
+          }
+        }
+      }
+    },
+    "Is in your circles as…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルでは…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在我的圈子里是…"
+          }
+        }
+      }
+    },
+    "Only you see this. They are not told.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなただけに表示されます。相手には通知されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有你能看到。对方不会收到通知。"
+          }
+        }
+      }
+    },
+    "%@ is in your circles as %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ はサークルでは %2$@ さん"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 在你的圈子里是 %2$@"
+          }
+        }
+      }
+    },
+    "Removed the link to your circles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルとのリンクを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除与圈子的关联"
+          }
+        }
+      }
+    },
+    "Current choice": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在の選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前选择"
+          }
+        }
+      }
+    },
+    "You do not share a circle with anybody yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人在同一个圈子里。"
+          }
+        }
+      }
+    },
+    "Choose who %@ is among the people you share a circle with. Only you see this.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを共有している人の中から、%@ さんが誰かを選んでください。あなただけに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从和你同一个圈子的人中选择 %@ 是谁。只有你能看到。"
+          }
+        }
+      }
+    },
+    "Search people": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索人员"
+          }
+        }
+      }
+    },
+    "That could not be linked. Another contact may already be them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクできませんでした。別の連絡先がすでにその人かもしれません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法关联。可能已有另一个联系人是这个人。"
+          }
+        }
+      }
+    },
+    "There are no photos of them yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人の写真はまだありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有他们的照片。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

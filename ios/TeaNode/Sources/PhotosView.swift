@@ -911,6 +911,10 @@ struct PhotosScreen: View {
     /// The photo the grid is to scroll to once it is on screen: the first of the
     /// month or year that was pressed in Months or Years.
     @State private var pendingJumpPhotoId: String?
+    @Environment(AppModel.self) private var app
+    /// The person (group of faces) a circle member or Location asked to show:
+    /// pushed on People, so Back lands there.
+    @State private var openedPersonFaceGroupId: String?
     #if DEBUG
         @State private var isDemoViewerOpened = false
         @State private var isDemoAlbumOpened = false
@@ -979,6 +983,19 @@ struct PhotosScreen: View {
         guard activeScale == .all, !isSelecting, searchWords == nil, model.section != .trash, key != nil else { return "" }
         if !dateRangeText.isEmpty { return dateRangeText }
         return PhotoOverview.dateRangeText(of: Array(photos.prefix(Self.firstScreenPhotoCount))) ?? ""
+    }
+
+    /// Shows the photos of the person the contact names: People, then that
+    /// person. The groups are read again, since a person named a moment ago
+    /// may not be in the ones held.
+    private func openPhotos(ofContactId contactId: String) async {
+        model.section = .people
+        await model.reloadFaceGroups()
+        if let group = model.faceGroups?.first(where: { $0.contactId == contactId }) {
+            openedPersonFaceGroupId = group.id
+        } else {
+            model.problemText = String(localized: "There are no photos of them yet.")
+        }
     }
 
     /// Keeps the range under the title to the photos the grid has on screen.
@@ -1058,6 +1075,9 @@ struct PhotosScreen: View {
                 .onChange(of: key) { _, _ in dateRangeText = "" }
                 .onChange(of: scale) { _, _ in dateRangeText = "" }
                 .navigationDestination(isPresented: $isShowingBackup) { PhotoBackupView(connection: model.connection) }
+                .navigationDestination(item: $openedPersonFaceGroupId) { photoFaceGroupId in
+                    PhotoPersonScreen(model: model, photoFaceGroupId: photoFaceGroupId)
+                }
                 // Typing in the search field changes the list under the chosen photos.
                 .onChange(of: searchWords) { _, _ in endSelection() }
                 .onChange(of: model.photoFilter) { _, _ in endSelection() }
@@ -1088,6 +1108,13 @@ struct PhotosScreen: View {
             // The side menu can be opened by a swipe while Photo backup is shown;
             // choosing a collection there must not leave the backup screen on top of it.
             isShowingBackup = false
+            openedPersonFaceGroupId = nil
+        }
+        // Initially too: the section is drawn after the request was made.
+        .onChange(of: app.openedPhotoContactId, initial: true) { _, contactId in
+            guard let contactId else { return }
+            app.openedPhotoContactId = nil
+            Task { await openPhotos(ofContactId: contactId) }
         }
         // Read once for the whole screen, not again for each collection.
         .task { await model.loadLibrary() }

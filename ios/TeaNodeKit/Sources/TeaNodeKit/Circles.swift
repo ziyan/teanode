@@ -40,6 +40,10 @@ public struct CircleMember: Codable, Hashable, Sendable, Identifiable {
     /// the kind and the gender in its own language and shows this only for a
     /// kind it does not know.
     public let relationshipWord: String
+    /// The caller's own contact that is this person, or empty. Private to the
+    /// caller: the member is never told. The member rows offer Photos when it
+    /// is set.
+    public let linkedContactId: String
 
     public var id: String { userId }
     public var isAdmin: Bool { memberRole == CircleMemberRole.admin.rawValue }
@@ -50,6 +54,9 @@ public struct CircleMember: Codable, Hashable, Sendable, Identifiable {
         guard let name, !name.isEmpty else { return username }
         return name
     }
+
+    /// Whether the caller has a contact that is this person.
+    public var isLinkedToContact: Bool { !linkedContactId.isEmpty }
 
     /// Whether they are somebody to the caller by relationship.
     public var hasRelationship: Bool { !relationshipKind.isEmpty }
@@ -66,7 +73,7 @@ public struct CircleMember: Codable, Hashable, Sendable, Identifiable {
     public init(
         userId: String, username: String, name: String? = nil, avatarUrl: String? = nil, avatarColorIndex: Int? = nil,
         memberRole: String, joinedAt: String, relationshipKind: String = "", relationshipTermGender: String = "",
-        relationshipWord: String = ""
+        relationshipWord: String = "", linkedContactId: String = ""
     ) {
         self.userId = userId
         self.username = username
@@ -78,6 +85,7 @@ public struct CircleMember: Codable, Hashable, Sendable, Identifiable {
         self.relationshipKind = relationshipKind
         self.relationshipTermGender = relationshipTermGender
         self.relationshipWord = relationshipWord
+        self.linkedContactId = linkedContactId
     }
 
     /// The relationship fields are absent from a server that predates them,
@@ -94,6 +102,7 @@ public struct CircleMember: Codable, Hashable, Sendable, Identifiable {
         relationshipKind = try container.decodeIfPresent(String.self, forKey: .relationshipKind) ?? ""
         relationshipTermGender = try container.decodeIfPresent(String.self, forKey: .relationshipTermGender) ?? ""
         relationshipWord = try container.decodeIfPresent(String.self, forKey: .relationshipWord) ?? ""
+        linkedContactId = try container.decodeIfPresent(String.self, forKey: .linkedContactId) ?? ""
     }
 }
 
@@ -482,7 +491,7 @@ extension Documents {
     /// app's documents fills in one level of shared fields.
     static let circleFields = """
         id name circleKind createdAt memberRole
-        members { userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord }
+        members { userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord linkedContactId }
         pendingInvitations { id circleId circleName circleKind invitedByName invitedUsername memberRole createdAt expiresAt }
         """
     public static let circles = """
@@ -540,7 +549,7 @@ extension Documents {
     public static let setPersonRelationship = """
         mutation ($userId: String!, $relationshipTerm: String!) {
           SetPersonRelationship(userId: $userId, relationshipTerm: $relationshipTerm) {
-            userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord
+            userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord linkedContactId
           }
         }
         """
