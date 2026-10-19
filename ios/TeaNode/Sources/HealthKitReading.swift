@@ -299,11 +299,31 @@ final class HealthKitReader: @unchecked Sendable {
         var points: [JSONValue] = []
         for point in audiogram.sensitivityPoints {
             var row: [String: JSONValue] = ["frequencyHertz": .number(point.frequency.doubleValue(for: HKUnit.hertz()))]
-            if let left = point.leftEarSensitivity { row["leftEarDecibels"] = .number(left.doubleValue(for: decibels)) }
-            if let right = point.rightEarSensitivity { row["rightEarDecibels"] = .number(right.doubleValue(for: decibels)) }
+            // From iOS 18.1 each ear's result is a test (a point can hold a
+            // masked and an unmasked test of one ear), and leftEarSensitivity
+            // and rightEarSensitivity are deprecated. They are read only for a
+            // point that has no tests.
+            let tests = point.tests
+            var leftSensitivity = Self.sensitivity(of: tests, side: .left)
+            var rightSensitivity = Self.sensitivity(of: tests, side: .right)
+            if tests.isEmpty {
+                leftSensitivity = point.leftEarSensitivity
+                rightSensitivity = point.rightEarSensitivity
+            }
+            if let left = leftSensitivity, left.is(compatibleWith: decibels) { row["leftEarDecibels"] = .number(left.doubleValue(for: decibels)) }
+            if let right = rightSensitivity, right.is(compatibleWith: decibels) {
+                row["rightEarDecibels"] = .number(right.doubleValue(for: decibels))
+            }
             points.append(.object(row))
         }
         return points
+    }
+
+    /// The sensitivity of one ear from a point's tests: the unmasked test when
+    /// there is one, otherwise the first.
+    private static func sensitivity(of tests: [HKAudiogramSensitivityTest], side: HKAudiogramSensitivityTestSide) -> HKQuantity? {
+        let sideTests = tests.filter { $0.side == side }
+        return (sideTests.first { !$0.masked } ?? sideTests.first)?.sensitivity
     }
 
     private static func classificationName(_ classification: HKElectrocardiogram.Classification) -> String {
@@ -532,13 +552,14 @@ final class HealthKitReader: @unchecked Sendable {
     ) async throws -> [HealthDaySummaryInput] {
         guard let quantityType = Self.sampleType(for: typeInfo) as? HKQuantityType, let readUnit = Self.healthKitUnit(for: typeInfo.quantityUnit)
         else { return [] }
-        // What HealthKit allows depends on how the type adds up, and an option
-        // it rejects stops the app with an exception that cannot be caught: a
-        // sum for what accumulates, an average with the least and the most
-        // for what is read as a level. A type read as an equivalent continuous
-        // level (the sound levels) has no average of its own to ask for, so
-        // its day is worked out from its readings, and no statistics query is
-        // made for it at all.
+        // What HealthKit allows depends on how the type adds up, and asking a
+        // cumulative type for an average (or a discrete one for a sum) stops
+        // the app with an exception that cannot be caught: a sum for what
+        // accumulates, an average with the least and the most for what is
+        // read as a level. A type read as an equivalent continuous level (the
+        // sound levels) is averaged over time by HealthKit, not over its
+        // readings, so its day is worked out from its readings here and no
+        // statistics query is made for it at all.
         let options: HKStatisticsOptions
         switch quantityType.aggregationStyle {
         case .cumulative:
