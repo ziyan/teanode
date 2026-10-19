@@ -1,4 +1,5 @@
 import { graphql } from '../api'
+import { CIRCLE_PERSON_FIELDS, type CirclePerson } from '../lib/circlePeople'
 
 // The people found in a person's photos: groups of faces the server believes
 // are one person, each named, once the person chooses, by a contact from their
@@ -23,10 +24,15 @@ export interface PhotoFaceGroup {
   facePictureUrl: string
   coverPhotoFaceId: string
   isHidden: boolean
+  // The person in the circles that the contact is, when the person said so:
+  // their picture and the words "In your circles" are drawn for the group.
+  accountUserId?: string | null
+  account?: CirclePerson | null
 }
 
 const PHOTO_FACE_GROUP_FIELDS =
-  'id createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl coverPhotoFaceId isHidden'
+  'id createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl coverPhotoFaceId isHidden' +
+  ` accountUserId account { ${CIRCLE_PERSON_FIELDS} }`
 
 export const PEOPLE_DOCUMENTS = {
   ListPhotoFaceGroups: `query ($isHiddenIncluded: Boolean) { ListPhotoFaceGroups(isHiddenIncluded: $isHiddenIncluded) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
@@ -40,7 +46,9 @@ export const PEOPLE_DOCUMENTS = {
   SetPhotoFaceRecognition: 'mutation ($isEnabled: Boolean!) { SetPhotoFaceRecognition(isEnabled: $isEnabled) }',
   ListAddressBooks: 'query { ListAddressBooks { id name } }',
   ListContacts: `query ($addressBookId: String!, $query: String, $first: Int) {
-    ListContacts(addressBookId: $addressBookId, query: $query, first: $first) { id name organization emails }
+    ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
+      id name organization emails account { ${CIRCLE_PERSON_FIELDS} }
+    }
   }`,
   SaveContact:
     'mutation ($addressBookId: String!, $name: String) { SaveContact(addressBookId: $addressBookId, name: $name) { id name } }',
@@ -134,6 +142,10 @@ export interface ContactChoice {
   name: string
   organization: string
   emails: string[]
+  // The person in the circles the contact is, when it is linked to one. The
+  // dialog says so beside the contact; it never makes a contact for a person
+  // in the circles, which only a contact that is already there can be.
+  account?: CirclePerson | null
 }
 
 // How many contacts the dialog lists per address book: more than fits without

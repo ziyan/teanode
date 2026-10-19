@@ -220,6 +220,7 @@ const show = (entry: string, links: { to: string; label: string }[] = []) =>
               <Route path="/photos" element={<PhotosPage />} />
               <Route path="/photos/:photoId" element={<PhotosPage />} />
               <Route path="/photos/albums/:photoAlbumId" element={<PhotosPage />} />
+              <Route path="/photos/people/:photoFaceGroupId" element={<PhotosPage />} />
               <Route path="/photos/albums/:photoAlbumId/:photoId" element={<PhotosPage />} />
             </Routes>
           </PhotoDateRangeLine>
@@ -1402,4 +1403,75 @@ it('offers no asking about a photo to a person who may not use an assistant', as
     isAssistantEnabled = false
     sessionPermissions = ['photos:use', 'agent:use']
   }
+})
+
+// ---- the photos of a person in the circles ----
+
+const circlePerson = { userId: 'user-sam', username: 'sam', name: 'Sam Example', avatarUrl: null, avatarColorIndex: 1 }
+
+function answerCirclePeople(people: unknown[] = [circlePerson]) {
+  extraAnswer = (document) => (document.includes('ListCirclePeople') ? { ListCirclePeople: people } : undefined)
+}
+
+it('lists the photos of a person in the circles from the address, as a chip that can be taken off', async () => {
+  answerCirclePeople()
+  show('/photos?account=sam')
+  expect(await screen.findByText('Photos of Sam Example')).toBeTruthy()
+  await waitFor(() =>
+    expect(callsTo('ListPhotos').some((variables) => variables.accountUserId === 'user-sam')).toBe(true),
+  )
+  await waitFor(() =>
+    expect(callsTo('CountPhotos').some((variables) => variables.accountUserId === 'user-sam')).toBe(true),
+  )
+  // The library is never listed whole while the person is being looked up.
+  expect(callsTo('ListPhotos').every((variables) => variables.accountUserId === 'user-sam')).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Remove the filter “Photos of Sam Example”' }))
+  await waitFor(() => expect(address()).toBe('/photos'))
+  expect(screen.queryByText('Photos of Sam Example')).toBeNull()
+  await waitFor(() => expect(callsTo('ListPhotos').some((variables) => variables.accountUserId === null)).toBe(true))
+})
+
+it('keeps the account in the address across Back, and leaves it behind when another person is picked', async () => {
+  answerCirclePeople()
+  extraAnswer = (document) =>
+    document.includes('ListCirclePeople')
+      ? { ListCirclePeople: [circlePerson] }
+      : document.includes('ReadPhotoFaceGroup')
+        ? {
+            ReadPhotoFaceGroup: {
+              id: 'group-1',
+              createdAt: '',
+              updatedAt: '',
+              contactId: 'contact-1',
+              contactAddressBookId: 'book-1',
+              contactName: 'Robin Example',
+              isOwnContact: false,
+              faceCount: 1,
+              photoCount: 3,
+              facePictureUrl: '',
+              coverPhotoFaceId: '',
+              isHidden: false,
+            },
+          }
+        : undefined
+  show('/photos?account=sam', [{ to: '/photos/people/group-1', label: 'to Robin' }])
+  expect(await screen.findByText('Photos of Sam Example')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'to Robin' }))
+  await waitFor(() => expect(address()).toBe('/photos/people/group-1'))
+  expect(screen.queryByText('Photos of Sam Example')).toBeNull()
+  await waitFor(() =>
+    expect(
+      callsTo('ListPhotos').some(
+        (variables) => variables.faceGroupId === 'group-1' && variables.accountUserId === null,
+      ),
+    ).toBe(true),
+  )
+})
+
+it('takes an account that is not among the people in the circles out of the address, says so, and lists nothing meanwhile', async () => {
+  answerCirclePeople([])
+  show('/photos?account=gone')
+  expect(await screen.findByText('That person is not in your circles, so there are no photos to show.')).toBeTruthy()
+  await waitFor(() => expect(address()).toBe('/photos'))
+  expect(callsTo('ListPhotos').every((variables) => variables.accountUserId === null)).toBe(true)
 })

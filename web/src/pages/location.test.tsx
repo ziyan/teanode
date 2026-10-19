@@ -123,6 +123,8 @@ function answerWith(shown: {
   // Answers the visits asked for, when what is asked changes the answer.
   visitsFor?: (variables: Record<string, unknown>) => PlaceVisit[] | Promise<PlaceVisit[]>
   people?: { userId: string; username: string; name: string }[]
+  // The circles, for the members the person has a contact for.
+  circles?: { members: { userId: string; linkedContactId: string }[] }[]
 }) {
   vi.mocked(graphql).mockImplementation(async (document, variables) => {
     if (document.includes('GetLocation')) {
@@ -145,7 +147,7 @@ function answerWith(shown: {
       return { ListPlaces: { places: shown.places ?? [], nextOffset: null } } as never
     if (document.includes('ListLocationShares')) return { ListLocationShares: [] } as never
     if (document.includes('ListCirclePeople')) return { ListCirclePeople: shown.people ?? [] } as never
-    if (document.includes('ListCircles')) return { ListCircles: [] } as never
+    if (document.includes('ListCircles')) return { ListCircles: shown.circles ?? [] } as never
     if (document.includes('SearchAddresses')) {
       return {
         SearchAddresses: [
@@ -172,7 +174,7 @@ function answerWith(shown: {
   })
 }
 
-function renderAt(entry: string) {
+function renderAt(entry: string, options: { canUsePhotos?: boolean } = {}) {
   return render(
     <TranslationProvider>
       <ToastProvider>
@@ -183,12 +185,17 @@ function renderAt(entry: string) {
             authenticationRequired: true,
             username: 'person-a-login',
             passkeysEnabled: false,
-            permissions: { everywhere: ['location:use', 'circle:use'], byDomain: [] },
+            permissions: {
+              everywhere: ['location:use', 'circle:use', ...(options.canUsePhotos ? ['photos:use'] : [])],
+              byDomain: [],
+            },
+            services: options.canUsePhotos ? ({ isPhotosEnabled: true } as never) : undefined,
           }}
         >
           <MemoryRouter initialEntries={[entry]}>
             <Routes>
               <Route path="/location" element={<LocationPage />} />
+              <Route path="/photos" element={<p>The photos page</p>} />
             </Routes>
           </MemoryRouter>
         </SessionProvider>
@@ -994,4 +1001,38 @@ it('keeps the address buttons off while the editor has unsaved changes', async (
   expect(within(editor).getByText(/Save your changes first/)).toBeTruthy()
   fireEvent.click(mapButton)
   expect(calls('SavePlace')).toHaveLength(0)
+})
+
+it('offers Photos for a shared person the caller has a contact for, opening the library on their account', async () => {
+  answerWith({
+    sharedViews: [PERSON_B_VIEW],
+    circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
+  })
+  renderAt('/location?person=person-b', { canUsePhotos: true })
+  const photos = await screen.findByRole('link', { name: 'Photos' })
+  expect(photos.getAttribute('href')).toBe(`/photos?account=${encodeURIComponent(PERSON_B_VIEW.username)}`)
+  fireEvent.click(photos)
+  expect(await screen.findByText('The photos page')).toBeTruthy()
+})
+
+it('offers no Photos for the person themselves, a person with no linked contact, or when Photos is not usable', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW], circles: [{ members: [{ userId: 'person-b', linkedContactId: '' }] }] })
+  renderAt('/location?person=person-b', { canUsePhotos: true })
+  await screen.findByText('Visits of Person B')
+  expect(screen.queryByRole('link', { name: 'Photos' })).toBeNull()
+  cleanup()
+
+  answerWith({
+    sharedViews: [PERSON_B_VIEW],
+    circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
+  })
+  renderAt('/location?person=person-b')
+  await screen.findByText('Visits of Person B')
+  expect(screen.queryByRole('link', { name: 'Photos' })).toBeNull()
+  cleanup()
+
+  answerWith({ circles: [{ members: [{ userId: 'person-a', linkedContactId: 'contact-1' }] }] })
+  renderAt('/location', { canUsePhotos: true })
+  await screen.findByRole('heading', { name: 'Visits' })
+  expect(screen.queryByRole('link', { name: 'Photos' })).toBeNull()
 })

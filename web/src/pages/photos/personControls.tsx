@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { Avatar } from '../../components/avatar'
 import { FormDialog } from '../../components/dialog'
 import { EyeIcon, EyeOffIcon, MergeIcon, PencilIcon, UnlinkIcon } from '../../components/icons'
+import { personName as circlePersonName } from '../../components/personLabel'
 import { useDebounced } from '../../components/preview'
 import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
+import type { CirclePerson } from '../../lib/circlePeople'
 import {
   NoAddressBookError,
   contactChoiceLabel,
@@ -61,6 +64,35 @@ export function FacePicture({
       ) : (
         <span className="face-picture-initial">{(Array.from(name.trim())[0] ?? '?').toUpperCase()}</span>
       )}
+    </span>
+  )
+}
+
+// A face with, when the person is somebody in the person's circles, that
+// person's own picture as a small badge on its corner. The badge is drawn over
+// the face and takes no room of its own, so the tile is the same height with
+// it and without it. The words "In your circles" are the tile's secondary
+// line, which is where they are said; the badge is only to see.
+export function LinkedFacePicture({
+  facePictureUrl,
+  name,
+  account,
+}: {
+  facePictureUrl: string
+  name: string
+  account: CirclePerson | null | undefined
+}) {
+  if (!account) return <FacePicture facePictureUrl={facePictureUrl} name={name} size="large" />
+  return (
+    <span className="photo-person-picture">
+      <FacePicture facePictureUrl={facePictureUrl} name={name} size="large" />
+      <Avatar
+        className="photo-person-circle-badge"
+        name={circlePersonName(account)}
+        avatarUrl={account.avatarUrl}
+        colorIndex={account.avatarColorIndex}
+        size={28}
+      />
     </span>
   )
 }
@@ -157,6 +189,7 @@ export function NamePersonDialog({
           const label = contactChoiceLabel(contact)
           const secondary = [
             contact.emails[0] && label !== contact.emails[0] ? contact.emails[0] : '',
+            contact.account ? t('addressBook.accountIs', { name: circlePersonName(contact.account) }) : '',
             linkedContactIds.has(contact.id) ? t('photos.contactIsLinked') : '',
           ].filter(Boolean)
           return (

@@ -11,7 +11,14 @@ import { listPhotoFaceGroups, setPhotoFaceRecognition, type PhotoFaceGroup } fro
 import { hasPermission, useSession } from '../../session'
 import { PhotoSections } from './albumControls'
 import { sectionAddress } from './albums'
-import { FacePicture, NamePersonFlow, YouMark, personAddress, useDisplayedPersonName } from './personControls'
+import {
+  FacePicture,
+  LinkedFacePicture,
+  NamePersonFlow,
+  YouMark,
+  personAddress,
+  useDisplayedPersonName,
+} from './personControls'
 import { PhotoToolbar } from './toolbar'
 
 // The People page: a round picture for each person the server found in the
@@ -53,6 +60,9 @@ function AccountPeoplePage() {
   const hiddenCount = everybody.filter((group) => group.isHidden).length
   const list = isHiddenShown ? everybody : everybody.filter((group) => !group.isHidden)
   const hasHiddenOnes = isHiddenShown && hiddenCount > 0
+  // When somebody in the list is in the person's circles every tile keeps
+  // room for the second line that says so, so that the tiles stay one height.
+  const hasCirclePeople = list.some((group) => Boolean(group.account))
   const isWaitingForGroups = groups.loading && !groups.data
   const info = library.data
   const emptyText = !info
@@ -103,7 +113,7 @@ function AccountPeoplePage() {
       ) : (
         <>
           {hasHiddenOnes && <p className="muted photo-section-hint">{t('photos.hiddenHint')}</p>}
-          <ul className="photo-person-grid">
+          <ul className={hasCirclePeople ? 'photo-person-grid has-circle-people' : 'photo-person-grid'}>
             {list.map((group) => (
               <li key={group.id}>
                 <PersonCell
@@ -166,12 +176,15 @@ function PersonCell({
         </>
       ) : (
         <Link className="photo-person-link" to={personAddress(group.id)}>
-          <FacePicture facePictureUrl={group.facePictureUrl} name={name} size="large" />
+          <LinkedFacePicture facePictureUrl={group.facePictureUrl} name={name} account={group.account} />
           <span className="photo-person-title">
             <span className={isNamed ? 'photo-person-name' : 'photo-person-name muted'}>{name}</span>
             {group.isOwnContact && <YouMark />}
           </span>
-          <span className="photo-person-details muted">{photoCountText}</span>
+          <span className="photo-person-details muted">
+            <span>{photoCountText}</span>
+            {group.account && <span>{t('photos.inYourCircles')}</span>}
+          </span>
         </Link>
       )}
       {group.isHidden && <Tag value={t('photos.hiddenTag')} />}

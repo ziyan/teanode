@@ -106,11 +106,16 @@ function answerWith(shown: {
 
 function Where() {
   const location = useLocation()
-  return <p data-testid="where">{location.pathname}</p>
+  return (
+    <>
+      <p data-testid="where">{location.pathname}</p>
+      <p data-testid="search">{location.search}</p>
+    </>
+  )
 }
 
 // The signed-in person holds user:manage when they are an operator.
-function renderAt(entry: string, options: { isOperator?: boolean } = {}) {
+function renderAt(entry: string, options: { isOperator?: boolean; canUsePhotos?: boolean } = {}) {
   return render(
     <TranslationProvider>
       <ToastProvider>
@@ -121,13 +126,21 @@ function renderAt(entry: string, options: { isOperator?: boolean } = {}) {
             authenticationRequired: true,
             username: 'person-a-login',
             passkeysEnabled: false,
-            permissions: { everywhere: options.isOperator ? ['user:manage', 'circle:use'] : ['circle:use'], byDomain: [] },
+            permissions: {
+              everywhere: [
+                ...(options.isOperator ? ['user:manage', 'circle:use'] : ['circle:use']),
+                ...(options.canUsePhotos ? ['photos:use'] : []),
+              ],
+              byDomain: [],
+            },
+            services: options.canUsePhotos ? ({ isPhotosEnabled: true } as never) : undefined,
           }}
         >
           <MemoryRouter initialEntries={[entry]}>
             <Routes>
               <Route path="/circles" element={<CirclesPage />} />
               <Route path="/circles/:circleId" element={<CirclePage />} />
+              <Route path="/photos" element={<p>The photos page</p>} />
             </Routes>
             <Where />
           </MemoryRouter>
@@ -644,4 +657,42 @@ it('says the refusal in a toast and keeps the dialog open when the relationship 
 
   expect(await screen.findByText(/you share no circle with them/)).toBeTruthy()
   expect(screen.getByRole('dialog', { name: 'Relationship with Person B' })).toBeTruthy()
+})
+
+it('offers Photos in the menu of a member the person has a contact for, and opens that person in the library', async () => {
+  const linked = { ...member('person-b', 'member', 'Person B'), linkedContactId: 'contact-1' }
+  answerWith({ read: circle({ members: [member('person-a', 'admin', 'Person A'), linked] }) })
+  renderAt('/circles/circle-one', { canUsePhotos: true })
+
+  fireEvent.click(await screen.findByRole('button', { name: /Person B: Actions/ }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Photos' }))
+  await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/photos'))
+})
+
+it('opens the library with the member as the account in the address', async () => {
+  const linked = { ...member('person-b', 'member', 'Person B'), linkedContactId: 'contact-1' }
+  answerWith({ read: circle({ members: [member('person-a', 'admin', 'Person A'), linked] }) })
+  renderAt('/circles/circle-one', { canUsePhotos: true })
+  expect(await screen.findByText('Person B')).toBeTruthy()
+  fireEvent.click(await screen.findByRole('button', { name: /Person B: Actions/ }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Photos' }))
+  await waitFor(() => expect(screen.getByTestId('search').textContent).toBe('?account=person-b-login'))
+})
+
+it('offers no Photos for a member with no contact of the person, or to a person who cannot use Photos', async () => {
+  const linked = { ...member('person-b', 'member', 'Person B'), linkedContactId: 'contact-1' }
+  answerWith({ read: circle({ members: [member('person-a', 'admin', 'Person A'), linked] }) })
+  renderAt('/circles/circle-one')
+  fireEvent.click(await screen.findByRole('button', { name: /Person B: Actions/ }))
+  await screen.findByRole('menuitem', { name: 'Relationship' })
+  expect(screen.queryByRole('menuitem', { name: 'Photos' })).toBeNull()
+  cleanup()
+
+  answerWith({
+    read: circle({ members: [member('person-a', 'admin', 'Person A'), { ...linked, linkedContactId: '' }] }),
+  })
+  renderAt('/circles/circle-one', { canUsePhotos: true })
+  fireEvent.click(await screen.findByRole('button', { name: /Person B: Actions/ }))
+  await screen.findByRole('menuitem', { name: 'Relationship' })
+  expect(screen.queryByRole('menuitem', { name: 'Photos' })).toBeNull()
 })

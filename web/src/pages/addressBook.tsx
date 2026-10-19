@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
+import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
 import { Column, DataTable } from '../components/dataTable'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
@@ -11,7 +12,9 @@ import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
+import { CIRCLE_PERSON_FIELDS, listCirclePeople, type CirclePerson } from '../lib/circlePeople'
 import { InMemory } from '../memoryLinks'
+import { personLabel, personName } from '../components/personLabel'
 
 // The address book: the people somebody chose to keep.
 //
@@ -30,6 +33,7 @@ const CONTACTS = `
   query ($addressBookId: String!, $query: String, $first: Int) {
     ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
       id uid name organization emails phones hasPhoto addresses { written }
+      accountUserId account { ${CIRCLE_PERSON_FIELDS} }
     }
   }`
 
@@ -44,10 +48,30 @@ const GET = `query ($id: String!) {
   GetContact(id: $id) {
     id name organization emails phones note hasPhoto
     addresses { street locality region postalCode country }
+    accountUserId account { ${CIRCLE_PERSON_FIELDS} }
   }
 }`
 
 const DELETE = `mutation ($id: String!) { DeleteContact(id: $id) }`
+
+// The link to the person in the person's circles that a contact is. It is the
+// owner's own note: nobody is told, and an empty account takes the link off.
+const SET_ACCOUNT = `
+  mutation ($addressBookId: String!, $contactId: String!, $accountUserId: String) {
+    SetContactAccount(addressBookId: $addressBookId, contactId: $contactId, accountUserId: $accountUserId) {
+      id accountUserId account { ${CIRCLE_PERSON_FIELDS} }
+    }
+  }`
+
+// Contacts whose address is the address of a person in the circles, offered
+// for the owner to confirm.
+const SUGGESTIONS = `query {
+  ListContactAccountSuggestions {
+    addressBookId
+    contact { id name emails }
+    account { ${CIRCLE_PERSON_FIELDS} }
+  }
+}`
 
 const REMOVE_PICTURE = `mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }`
 
@@ -71,6 +95,36 @@ type Contact = {
   phones: string[]
   addresses?: Address[]
   hasPhoto?: boolean
+  // The person in the circles this contact is, when the owner said so.
+  accountUserId?: string | null
+  account?: CirclePerson | null
+}
+
+type Suggestion = {
+  addressBookId: string
+  contact: { id: string; name?: string; emails: string[] }
+  account: CirclePerson
+}
+
+// "Not now" on a suggestion is the owner's choice about one contact, and it
+// belongs to this browser: the server never hears of it.
+const DISMISSED_SUGGESTIONS_KEY = 'teanode.addressBook.dismissedSuggestions'
+
+function readDismissedSuggestions(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(DISMISSED_SUGGESTIONS_KEY) ?? '[]')
+    return Array.isArray(parsed) ? parsed.filter((each): each is string => typeof each === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeDismissedSuggestions(contactIds: string[]) {
+  try {
+    window.localStorage.setItem(DISMISSED_SUGGESTIONS_KEY, JSON.stringify(contactIds))
+  } catch {
+    // Dismissed until the page is closed.
+  }
 }
 
 // A form's worth of one contact. Addresses and numbers are edited as one box
@@ -93,6 +147,8 @@ type Draft = {
   addresses: Address[]
   // Whether the card carries a picture, which can be taken off here.
   hasPhoto: boolean
+  // The person in the circles this contact is, if the owner linked one.
+  account: CirclePerson | null
 }
 
 const empty: Draft = {
@@ -109,6 +165,7 @@ const empty: Draft = {
   country: '',
   addresses: [],
   hasPhoto: false,
+  account: null,
 }
 
 // Where a contact's picture is served from. It lives inside the card as
@@ -155,6 +212,14 @@ export function AddressBookPage() {
   })
 
   const myContactId = me.data?.AgentGraphPage?.contact?.id ?? ''
+
+  // The contacts that look like people in the circles. Asked once; a failure
+  // costs only the offer, so nothing is said about it.
+  const suggestions = useQuery(() => graphql<{ ListContactAccountSuggestions: Suggestion[] | null }>(SUGGESTIONS), [], {
+    refresh: false,
+  })
+  const [dismissedContactIds, setDismissedContactIds] = useState<string[]>(readDismissedSuggestions)
+  const [isChoosingAccount, setIsChoosingAccount] = useState(false)
 
   const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<Contact | null>(null)
@@ -221,6 +286,7 @@ export function AddressBookPage() {
           country: first.country ?? '',
           addresses: kept,
           hasPhoto: full.hasPhoto ?? false,
+          account: full.account ?? null,
         })
       } catch (failure) {
         toast.failure(failure, t('addressBook.failed'))
@@ -239,6 +305,7 @@ export function AddressBookPage() {
   const closeDraft = () => {
     setDraft(null)
     setIsRemovingPicture(false)
+    setIsChoosingAccount(false)
     if (linkedContactId)
       setParameters(
         (previous) => {
@@ -408,6 +475,46 @@ export function AddressBookPage() {
   )
 
   const rows = contacts.data?.ListContacts ?? []
+
+  // Links are made one contact at a time, and a link that was just made or
+  // taken off changes both the suggestions and the picker's choices.
+  // account is null to take the link off.
+  const setAccount = async (
+    addressBookId: string,
+    contactId: string,
+    contactName: string,
+    account: CirclePerson | null,
+  ) => {
+    const isDone = await run(
+      () => graphql(SET_ACCOUNT, { addressBookId, contactId, accountUserId: account?.userId ?? null }),
+      account
+        ? t('addressBook.accountLinked', { name: contactName, account: personName(account) })
+        : t('addressBook.accountRemoved', { name: contactName }),
+    )
+    if (isDone) {
+      void suggestions.reload()
+      setDraft((previous) => (previous && previous.id === contactId ? { ...previous, account } : previous))
+    }
+    return isDone
+  }
+
+  const dismissSuggestion = (contactId: string) => {
+    const next = [...dismissedContactIds, contactId]
+    setDismissedContactIds(next)
+    writeDismissedSuggestions(next)
+  }
+  // Suggestions come from every address book, each with the book its contact
+  // is in. One the owner already answered "Not now" is not offered again.
+  const offeredSuggestions = (suggestions.data?.ListContactAccountSuggestions ?? []).filter(
+    (suggestion) => !dismissedContactIds.includes(suggestion.contact.id),
+  )
+  // The accounts that another contact of this book already is: a book keeps
+  // one contact for each person.
+  const takenAccountIds = new Set(
+    rows
+      .filter((contact) => contact.id !== draft?.id && contact.accountUserId)
+      .map((contact) => contact.accountUserId!),
+  )
   const editing = Boolean(draft?.id)
 
   return (
@@ -426,6 +533,42 @@ export function AddressBookPage() {
         </button>
       </PageHeadingActions>
 
+      {offeredSuggestions.length > 0 && (
+        <div className="card account-suggestions" role="region" aria-label={t('addressBook.suggestionsLabel')}>
+          {offeredSuggestions.map((suggestion) => {
+            const contactName = suggestion.contact.name || suggestion.contact.emails[0] || ''
+            return (
+              <div key={suggestion.contact.id} className="account-suggestion">
+                <Avatar
+                  name={personName(suggestion.account)}
+                  avatarUrl={suggestion.account.avatarUrl}
+                  colorIndex={suggestion.account.avatarColorIndex}
+                  size={28}
+                />
+                <span className="account-suggestion-text">
+                  {t('addressBook.suggestionText', { name: contactName, account: personName(suggestion.account) })}
+                </span>
+                <div className="account-suggestion-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void setAccount(suggestion.addressBookId, suggestion.contact.id, contactName, suggestion.account)
+                    }
+                  >
+                    {t('addressBook.suggestionLink')}
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => dismissSuggestion(suggestion.contact.id)}>
+                    {t('addressBook.suggestionLater')}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <DataTable
         columns={columns}
         rows={rows}
@@ -443,7 +586,7 @@ export function AddressBookPage() {
           error={problem}
           canSubmit={draft.name.trim().length > 0 || lines(draft.emails).length > 0}
           // Escape and the scrim belong to the question while it is asked.
-          onClose={() => !isRemovingPicture && closeDraft()}
+          onClose={() => !isRemovingPicture && !isChoosingAccount && closeDraft()}
           onSubmit={() =>
             void run(
               () =>
@@ -568,8 +711,57 @@ export function AddressBookPage() {
               </button>
             </div>
           ) : null}
+          {editing && (
+            <div className="account-link">
+              {draft.account ? (
+                <>
+                  <Avatar
+                    name={personName(draft.account)}
+                    avatarUrl={draft.account.avatarUrl}
+                    colorIndex={draft.account.avatarColorIndex}
+                    size={28}
+                  />
+                  <span className="account-link-text">
+                    {t('addressBook.accountIs', { name: personName(draft.account) })}
+                  </span>
+                  <button type="button" disabled={busy} onClick={() => setIsChoosingAccount(true)}>
+                    {t('addressBook.accountChange')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      void setAccount(bookId, draft.id, draft.name.trim() || lines(draft.emails)[0] || '', null)
+                    }
+                  >
+                    {t('addressBook.accountRemove')}
+                  </button>
+                </>
+              ) : (
+                <button type="button" disabled={busy} onClick={() => setIsChoosingAccount(true)}>
+                  {t('addressBook.accountLink')}
+                </button>
+              )}
+            </div>
+          )}
           {editing ? <InMemory recordKind="contact" recordId={draft.id} /> : null}
         </FormDialog>
+      )}
+
+      {draft && isChoosingAccount && (
+        <AccountPickerDialog
+          contactName={draft.name.trim() || lines(draft.emails)[0] || ''}
+          currentUserId={draft.account?.userId ?? ''}
+          takenUserIds={takenAccountIds}
+          busy={busy}
+          error={problem}
+          onChoose={(account) =>
+            void setAccount(bookId, draft.id, draft.name.trim() || lines(draft.emails)[0] || '', account).then(
+              (isDone) => isDone && setIsChoosingAccount(false),
+            )
+          }
+          onClose={() => setIsChoosingAccount(false)}
+        />
       )}
 
       {draft && isRemovingPicture && (
@@ -615,5 +807,78 @@ export function AddressBookPage() {
         />
       )}
     </>
+  )
+}
+
+// AccountPickerDialog chooses the person in the circles a contact is. People
+// another contact of the book already is are left out, since a book keeps one
+// contact for each person. The failures are toasts, from the page.
+function AccountPickerDialog({
+  contactName,
+  currentUserId,
+  takenUserIds,
+  busy,
+  error,
+  onChoose,
+  onClose,
+}: {
+  contactName: string
+  currentUserId: string
+  takenUserIds: ReadonlySet<string>
+  busy: boolean
+  error: string | null
+  onChoose: (account: CirclePerson) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const people = useQuery(() => listCirclePeople(), [], { refresh: false })
+  const [chosenUserId, setChosenUserId] = useState('')
+  useEffect(() => {
+    if (people.error) toast.failure(people.error, t('addressBook.failed'))
+    // Once for each failure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people.error])
+  const choices = (people.data ?? []).filter((person) => !takenUserIds.has(person.userId))
+  const chosen = choices.find((person) => person.userId === chosenUserId) ?? null
+  return (
+    <FormDialog
+      title={t('addressBook.accountPickerTitle', { name: contactName })}
+      submitLabel={t('addressBook.suggestionLink')}
+      busy={busy}
+      error={error}
+      canSubmit={chosen !== null && chosen.userId !== currentUserId}
+      onSubmit={() => chosen && onChoose(chosen)}
+      onClose={onClose}
+    >
+      <p className="muted">{t('addressBook.accountPickerHint')}</p>
+      <div className="contact-picker" role="radiogroup" aria-label={t('addressBook.accountPickerLabel')}>
+        {people.data && choices.length === 0 ? (
+          <p className="muted contact-picker-empty">{t('addressBook.accountPickerEmpty')}</p>
+        ) : null}
+        {choices.map((person) => (
+          <label
+            key={person.userId}
+            className={chosen?.userId === person.userId ? 'contact-picker-row is-chosen' : 'contact-picker-row'}
+          >
+            <input
+              type="radio"
+              name="circle-person"
+              checked={chosen?.userId === person.userId}
+              onChange={() => setChosenUserId(person.userId)}
+            />
+            <Avatar
+              name={personName(person)}
+              avatarUrl={person.avatarUrl}
+              colorIndex={person.avatarColorIndex}
+              size={28}
+            />
+            <span className="contact-picker-text">
+              <span className="contact-picker-name">{personLabel(person)}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </FormDialog>
   )
 }

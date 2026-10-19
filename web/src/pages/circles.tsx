@@ -16,6 +16,7 @@ import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
+import { accountPhotosAddress } from '../lib/circlePeople'
 import {
   PRONOUNS,
   PRONOUN_LABELS,
@@ -48,6 +49,9 @@ export type CircleMember = {
   relationshipKind: string
   relationshipTermGender: string
   relationshipWord: string
+  // The caller's own contact for this person ("In your circles as..."), empty
+  // when there is none. Only the caller is told; the member never is.
+  linkedContactId?: string | null
 }
 
 // One word a relationship can be said with, as the server lists them.
@@ -96,7 +100,7 @@ const KIND_LABELS: Record<CircleKind, Key> = {
 }
 
 const MEMBER_FIELDS =
-  '{ userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord }'
+  '{ userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord linkedContactId }'
 const INVITATION_FIELDS =
   '{ id circleId circleName circleKind invitedByName invitedUsername memberRole createdAt expiresAt }'
 const CIRCLE_FIELDS = `{ id name circleKind createdAt memberRole members ${MEMBER_FIELDS} pendingInvitations ${INVITATION_FIELDS} }`
@@ -700,6 +704,7 @@ function CircleDetail() {
     [circleId],
   )
   const { act, isBusy, problem, clearProblem } = useAct(reload)
+  const canUsePhotos = session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use')
 
   // The circle's own calendar, if it has one. Asked only of somebody who can
   // use calendars at all.
@@ -859,6 +864,18 @@ function CircleDetail() {
                         >
                           {t('circles.relationship.action')}
                         </button>
+                        {canUsePhotos && member.linkedContactId && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              close()
+                              navigate(accountPhotosAddress(member.username))
+                            }}
+                          >
+                            {t('circles.photos')}
+                          </button>
+                        )}
                         {isAdmin && (
                           <>
                             <button

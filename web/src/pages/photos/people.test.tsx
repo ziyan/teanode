@@ -608,3 +608,76 @@ it('opens the contact from the toast about its picture', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Change' }))
   await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/contacts?contact=contact-1'))
 })
+
+// ---- people who are in the circles ----
+
+const circleAccount = { userId: 'user-sam', username: 'sam', name: 'Sam Example', avatarUrl: null, avatarColorIndex: 2 }
+
+it('draws the circle picture on a linked person and says "In your circles", keeping every tile to the same two lines', async () => {
+  serve([
+    group({ account: circleAccount, accountUserId: 'user-sam' }),
+    group({ id: 'group-2', contactId: 'contact-2', contactName: 'Plain Person', photoCount: 1 }),
+  ])
+  showPeoplePage()
+  const linked = await screen.findByRole('link', { name: /Sample Person/ })
+  expect(within(linked).getByText('In your circles')).toBeTruthy()
+  // The badge is on the face and out of the flow; it is the circle account's own picture.
+  const picture = linked.querySelector('.photo-person-picture')!
+  expect(picture.querySelector('.face-picture')).toBeTruthy()
+  expect(picture.querySelector('.photo-person-circle-badge')).toBeTruthy()
+  // A person who is not linked has neither the words nor the badge, and the
+  // grid reserves the second line for every tile so the rows stay one height.
+  const plain = screen.getByRole('link', { name: /Plain Person/ })
+  expect(within(plain).queryByText('In your circles')).toBeNull()
+  expect(plain.querySelector('.photo-person-circle-badge')).toBeNull()
+  expect(plain.querySelector('.photo-person-picture')).toBeNull()
+  expect(linked.closest('ul')!.classList.contains('has-circle-people')).toBe(true)
+  // The name, the count and the circle words stay on the tile's own lines.
+  expect(linked.querySelector('.photo-person-details')!.children).toHaveLength(2)
+  expect(plain.querySelector('.photo-person-details')!.children).toHaveLength(1)
+})
+
+it('leaves the grid as it was when nobody is in the circles', async () => {
+  serve([group({})])
+  showPeoplePage()
+  await screen.findByRole('link', { name: /Sample Person/ })
+  expect(document.querySelector('.photo-person-grid')!.classList.contains('has-circle-people')).toBe(false)
+  expect(screen.queryByText('In your circles')).toBeNull()
+})
+
+it('says in the naming dialog which contact is already in the circles, and never makes one for a person in them', async () => {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ListAddressBooks')) return { ListAddressBooks: [{ id: 'book-1' }] } as never
+    if (document.includes('ListContacts'))
+      return {
+        ListContacts: [
+          { id: 'contact-1', name: 'Sample Person', organization: '', emails: [], account: circleAccount },
+          { id: 'contact-2', name: 'Other Person', organization: '', emails: [], account: null },
+        ],
+      } as never
+    throw new Error(`unexpected document ${document}`)
+  })
+  const onSubmit = vi.fn()
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <NamePersonDialog currentName="" onSubmit={onSubmit} onClose={vi.fn()} />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  const dialog = screen.getByRole('dialog')
+  const linkedRow = (await within(dialog).findByLabelText(/Sample Person/)).closest('label')!
+  expect(linkedRow.textContent).toContain('In your circles as Sam Example')
+  const otherRow = within(dialog)
+    .getByLabelText(/Other Person/)
+    .closest('label')!
+  expect(otherRow.textContent).not.toContain('In your circles')
+  fireEvent.click(within(linkedRow).getByRole('radio'))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  // The existing contact is what comes back; nothing asks for the circle people or saves a contact.
+  expect(onSubmit).toHaveBeenCalledWith({ kind: 'contact', contactId: 'contact-1' })
+  const documents = vi.mocked(graphql).mock.calls.map(([document]) => document)
+  expect(documents.some((document) => document.includes('ListCirclePeople') || document.includes('SaveContact'))).toBe(
+    false,
+  )
+})

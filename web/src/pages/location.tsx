@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql, subscribe } from '../api'
 import { Avatar } from '../components/avatar'
@@ -39,6 +39,7 @@ import { Tabs, TabItem } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
+import { accountPhotosAddress } from '../lib/circlePeople'
 import { hasPermission, useSession } from '../session'
 
 // Where the person is and has been, and who shares it with them: a map, the
@@ -74,6 +75,9 @@ const MINIMUM_RADIUS_METERS = 25
 const MAXIMUM_RADIUS_METERS = 2000
 
 const GET_LOCATION = `query ($userId: String) { GetLocation(userId: $userId) { ${PERSON_FIELDS} } }`
+// Which circle members the caller has a contact for, to offer their Photos.
+const LIST_LINKED_MEMBERS = `query { ListCircles { members { userId linkedContactId } } }`
+type LinkedCircle = { members: { userId: string; linkedContactId?: string | null }[] }
 const LOCATION_EVENTS = `subscription { LocationEvents { userId } }`
 const LIST_SHARED_LOCATIONS = `query { ListSharedLocations { ${PERSON_FIELDS} } }`
 const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String,
@@ -169,6 +173,7 @@ export function LocationPage() {
 function LocationContent({ userId }: { userId: string }) {
   const { t, plural, language } = useTranslation()
   const toast = useToast()
+  const session = useSession()
   const [parameters, setParameters] = useSearchParams()
   const requestedTab = parameters.get('tab')
   const tab: TabID = TAB_IDS.find((each) => each === requestedTab) ?? 'visits'
@@ -635,11 +640,31 @@ function LocationContent({ userId }: { userId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasNoOwnPosition])
   const viewedName = viewedPerson ? personName(viewedPerson) : ''
+  const viewedUsername = viewedPerson?.username ?? ''
+  // "Photos" for the person being looked at, when the caller has a contact
+  // that is that person and may use Photos. Their circles say so, caller-private.
+  const canUsePhotos = session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use')
+  const linkedPeople = useQuery(
+    async () =>
+      canUsePhotos && viewedUsername
+        ? (await graphql<{ ListCircles: LinkedCircle[] | null }>(LIST_LINKED_MEMBERS)).ListCircles
+        : null,
+    [canUsePhotos, viewedUsername],
+    { refresh: false },
+  )
+  const isViewedPersonLinked = (linkedPeople.data ?? []).some((circle) =>
+    circle.members.some((member) => member.userId === viewedUserId && Boolean(member.linkedContactId)),
+  )
   const notSharedHistoryText = viewedPerson ? t('location.personSharesNowOnly', { name: viewedName }) : ''
 
   return (
     <>
       <PageHeadingActions>
+        {viewedPerson && isViewedPersonLinked && (
+          <Link className="button" to={accountPhotosAddress(viewedPerson.username)}>
+            {t('location.photos')}
+          </Link>
+        )}
         <button type="button" className="primary" onClick={() => setIsCheckingIn(true)}>
           {t('location.checkIn')}
         </button>

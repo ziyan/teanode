@@ -12094,6 +12094,90 @@ main.content:has(> .knowledge-frame) {
   font-size: var(--text-label);
 }
 
+/* A person in the circles has the circle picture on the corner of the face
+   and "In your circles" under the count. The picture is drawn over the face
+   and takes no room, and when anybody in the list is in the circles every tile
+   keeps two lines under its name, so the tiles stay one height. */
+.photo-person-picture {
+  position: relative;
+  display: flex;
+  width: min(100%, 112px);
+  margin-bottom: var(--space-1);
+}
+
+.photo-person-cell .photo-person-picture .face-picture.is-large {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.photo-person-circle-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+.photo-person-details > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-person-grid.has-circle-people .photo-person-details {
+  min-height: calc(2 * 1.4em);
+  line-height: 1.4;
+}
+
+/* The suggestions at the top of Contacts: one line for each contact, the
+   person's picture, what is suggested and the two answers. On a phone the
+   answers drop under the words. */
+.account-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.account-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.account-suggestion-text {
+  flex: 1 1 14rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-suggestion-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+}
+
+/* In a contact's dialog: who the contact is in the circles, with the two ways
+   to change it, or the one way to say it. */
+.account-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.account-link-text {
+  flex: 1 1 10rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.contact-picker-row .avatar {
+  flex: 0 0 auto;
+}
+
 .photo-person-head {
   display: flex;
   align-items: center;
