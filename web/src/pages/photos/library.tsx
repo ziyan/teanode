@@ -209,6 +209,10 @@ function AccountPhotosPage() {
           moment: windowEndWords.start || windowEndWords.end,
         })
   const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PHOTOS_PER_PAGE })
+  // A window in the address takes the place of the days: the day fields show
+  // empty while it is there, and the request never reads from and to.
+  const shownFromDay = hasWindow ? '' : fromDay
+  const shownToDay = hasWindow ? '' : toDay
   const takenAfter = hasWindow ? windowAfter : fromDay ? startOfDay(fromDay) : undefined
   const takenBefore = hasWindow ? windowBefore : toDay ? startOfNextDay(toDay) : undefined
   const filter = useMemo(
@@ -311,6 +315,11 @@ function AccountPhotosPage() {
       const written = new URLSearchParams(previous)
       if (value) written.set(name, value)
       else written.delete(name)
+      // Choosing a day ends the window the address named.
+      if (name !== 'kind') {
+        written.delete('after')
+        written.delete('before')
+      }
       written.delete('page')
       return written
     })
@@ -1376,8 +1385,8 @@ function AccountPhotosPage() {
                 />
                 <PhotoFilterMenu
                   photoKind={photoKind}
-                  fromDay={fromDay}
-                  toDay={toDay}
+                  fromDay={shownFromDay}
+                  toDay={shownToDay}
                   onChange={setFilterParameter}
                   onClear={clearFilters}
                 />

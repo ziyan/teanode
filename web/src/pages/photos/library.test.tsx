@@ -479,6 +479,20 @@ it('asks for an exact window in the address in place of the days, shows it as a 
   expect(String(callsTo('ListPhotos').slice(-1)[0]?.takenAfter)).not.toBe('2030-03-05T09:50:00.000Z')
 })
 
+it('lets each end of the window apply on its own, and shows the day fields empty while it is there', async () => {
+  show('/photos?from=2030-07-12&to=2030-07-14&after=2030-03-05T09:50:00.000Z')
+  await screen.findAllByRole('button', { name: /^Open / })
+  const variables = callsTo('ListPhotos')[0]
+  expect(variables.takenAfter).toBe('2030-03-05T09:50:00.000Z')
+  expect(variables.takenBefore).toBeFalsy()
+  fireEvent.click(screen.getByRole('button', { name: 'Filter' }))
+  expect((screen.getByLabelText('From') as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText('To') as HTMLInputElement).value).toBe('')
+  // Setting a day ends the window.
+  fireEvent.change(screen.getByLabelText('From'), { target: { value: '2030-07-13' } })
+  await waitFor(() => expect(address()).toBe('/photos?from=2030-07-13&to=2030-07-14'))
+})
+
 it('ignores a window that is not a moment, and keeps the window when a photo is opened', async () => {
   show('/photos?after=yesterday&before=2030-02-31T10:00:00Z')
   await screen.findAllByRole('button', { name: /^Open / })

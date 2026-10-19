@@ -459,6 +459,8 @@ export function PhotoViewer({
       // to move its cursor.
       const target = event.target
       if (target instanceof HTMLElement && isTakingKeys(target)) return
+      // The arrows pan the map of the photo's place, and do not turn the photo.
+      if (target instanceof Element && target.closest('.photo-viewer-map')) return
       if (event.key === 'ArrowLeft') {
         event.preventDefault()
         goTo(previousPhoto)

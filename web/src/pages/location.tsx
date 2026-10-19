@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
-import { graphql, subscribe } from '../api'
+import { graphql, isNotFound, subscribe } from '../api'
 import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../components/common'
@@ -82,6 +82,10 @@ const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, 
     offset: $offset, limitCount: $limitCount) {
     placeVisits { ${VISIT_FIELDS} photoCount photos { id smallPreviewUrl } } nextOffset
   }
+}`
+// The place an address names, when it is not on the loaded page.
+const READ_PLACE = `query ($userId: String, $placeId: String!) {
+  ReadPlace(userId: $userId, placeId: $placeId) { ${PLACE_FIELDS} }
 }`
 const LIST_POINTS = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { latitudeDegrees longitudeDegrees accuracyMeters measuredAt }
@@ -166,6 +170,18 @@ export function LocationPage() {
   return <LocationContent key={session.userId ?? ''} userId={session.userId ?? ''} />
 }
 
+// A place nobody has (or the viewer may not read) is null; any other failure
+// is thrown, so a dropped connection does not take the place out of the
+// address.
+async function readLinkedPlace(userId: string | null, placeId: string): Promise<Place | null> {
+  try {
+    return (await graphql<{ ReadPlace: Place }>(READ_PLACE, { userId, placeId })).ReadPlace
+  } catch (caught) {
+    if (isNotFound(caught)) return null
+    throw caught
+  }
+}
+
 function LocationContent({ userId }: { userId: string }) {
   const { t, plural, language } = useTranslation()
   const toast = useToast()
@@ -210,7 +226,7 @@ function LocationContent({ userId }: { userId: string }) {
   // still in it.
   const [dialogProblem, setDialogProblem] = useState<string | null>(null)
 
-  function changeParameters(changes: Record<string, string | null>) {
+  function changeParameters(changes: Record<string, string | null>, options?: { replace: boolean }) {
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
       for (const [name, value] of Object.entries(changes)) {
@@ -218,9 +234,11 @@ function LocationContent({ userId }: { userId: string }) {
         else written.set(name, value)
       }
       return written
-    })
+    }, options)
   }
-  const setSelectedPlaceId = (placeId: string | null) => changeParameters({ place: placeId })
+  // Choosing a place replaces the address entry, so Back leaves the page
+  // instead of stepping through every place that was clicked.
+  const setSelectedPlaceId = (placeId: string | null) => changeParameters({ place: placeId }, { replace: true })
   const selectTab = (id: string) => changeParameters({ tab: id === 'visits' ? null : id })
   // A different day is a different list: back to its first page.
   const selectDay = (nextDayKey: string | null) => changeParameters({ day: nextDayKey, page: null })
@@ -271,6 +289,7 @@ function LocationContent({ userId }: { userId: string }) {
       (previous) => {
         const written = new URLSearchParams(previous)
         written.delete('person')
+        written.delete('place')
         written.delete('page')
         written.delete('placesPage')
         return written
@@ -385,6 +404,10 @@ function LocationContent({ userId }: { userId: string }) {
   }, [placesSearchText, placesQuery])
 
   const visitRows = useMemo(() => visitPage?.placeVisits ?? [], [visitPage])
+  // Where an open visit's window of photos ends: the moment its visits arrived,
+  // not each render, so the links of a row do not change while it is shown.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const openVisitEndedAt = useMemo(() => Date.now(), [visitPage])
   // The places a person named or labeled come first, then the ones the map
   // named; within each the server's order stands. A page is sorted as it
   // comes, so a labeled place on a later page waits for its page.
@@ -392,6 +415,33 @@ function LocationContent({ userId }: { userId: string }) {
     const rank = (place: Place) => (place.placeLabel ? 0 : place.isNamedByPerson ? 1 : 2)
     return [...(placePage?.places ?? [])].sort((first, second) => rank(first) - rank(second))
   }, [placePage])
+
+  // A place named in the address that is not on the loaded page, or is filtered
+  // out of it, is read by its id once the list has answered, so a link lands on
+  // it whatever the page. An id nobody has is taken out of the address.
+  const isSelectedPlaceListed =
+    placeRows.some((each) => each.id === selectedPlaceId) || visitRows.some((each) => each.place.id === selectedPlaceId)
+  const isListAnswered = tab === 'visits' ? visitPage !== null : tab === 'places' ? placePage !== null : true
+  const shouldReadLinkedPlace = selectedPlaceId !== null && canReadHistory && isListAnswered && !isSelectedPlaceListed
+  const linkedPlace = useQuery(
+    async (): Promise<{ placeId: string; place: Place | null } | null> =>
+      shouldReadLinkedPlace && selectedPlaceId !== null
+        ? {
+            placeId: selectedPlaceId,
+            place: await readLinkedPlace(viewedUserId, selectedPlaceId),
+          }
+        : null,
+    [shouldReadLinkedPlace, selectedPlaceId, viewedUserId],
+    { refresh: false },
+  )
+  const linkedPlaceFound = linkedPlace.data?.placeId === selectedPlaceId ? linkedPlace.data.place : null
+  const isLinkedPlaceUnknown = linkedPlace.data?.placeId === selectedPlaceId && linkedPlace.data.place === null
+  useEffect(() => {
+    if (!isLinkedPlaceUnknown) return
+    changeParameters({ place: null }, { replace: true })
+    // changeParameters is new at every render and only writes the address.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLinkedPlaceUnknown, selectedPlaceId])
 
   // A viewer with no recorded position sees where this browser is, once the
   // person has allowed it or asks for it.
@@ -424,7 +474,11 @@ function LocationContent({ userId }: { userId: string }) {
   // moved on every switch.
   const mapPlaces: MapPlace[] = useMemo(() => {
     const shown = [
-      ...new Map([...placeRows, ...visitRows.map((visit) => visit.place)].map((place) => [place.id, place])).values(),
+      ...new Map(
+        [...placeRows, ...visitRows.map((visit) => visit.place), ...(linkedPlaceFound ? [linkedPlaceFound] : [])].map(
+          (place) => [place.id, place],
+        ),
+      ).values(),
     ]
     return shown.map((place) => ({
       id: place.id,
@@ -435,7 +489,7 @@ function LocationContent({ userId }: { userId: string }) {
       radiusMeters: place.radiusMeters,
       isSelected: place.id === selectedPlaceId,
     }))
-  }, [placeRows, visitRows, selectedPlaceId, t])
+  }, [placeRows, visitRows, linkedPlaceFound, selectedPlaceId, t])
   const path = useMemo(
     () => (pointList ?? []).map(({ latitudeDegrees, longitudeDegrees }) => ({ latitudeDegrees, longitudeDegrees })),
     [pointList],
@@ -454,13 +508,14 @@ function LocationContent({ userId }: { userId: string }) {
   // Choosing a person centers the map on them. Somebody else is put in the
   // address, with their visits and places; the person themselves is not.
   function selectPerson(view: LocationView) {
-    setSelectedPlaceId(null)
+    // A place belongs to whoever's list it was chosen from, so it is dropped
+    // in the same address change that names the person.
     if (view.shareLevel === 'owner') {
       setSelectedUserId(view.userId)
-      changeParameters({ person: null, page: null, placesPage: null })
+      changeParameters({ person: null, place: null, page: null, placesPage: null })
     } else {
       setSelectedUserId(null)
-      changeParameters({ person: view.userId, page: null, placesPage: null })
+      changeParameters({ person: view.userId, place: null, page: null, placesPage: null })
     }
   }
 
@@ -594,7 +649,7 @@ function LocationContent({ userId }: { userId: string }) {
     if (!visit.photoCount || photos.length === 0 || !visit.arrivedAt) return null
     const windowQuery = new URLSearchParams({
       after: new Date(visit.arrivedAt).toISOString(),
-      before: new Date(visit.departedAt ?? Date.now()).toISOString(),
+      before: new Date(visit.departedAt ?? openVisitEndedAt).toISOString(),
     }).toString()
     const title = placeTitle(visit.place, t)
     const moreCount = visit.photoCount - photos.length

@@ -1212,6 +1212,19 @@ describe('where the photo was taken', () => {
     expect(map.getAttribute('data-zoom')).toBe('16')
   })
 
+  it('leaves the arrow keys to the map instead of turning to the next photo', async () => {
+    servePlace({ locationPlace: null, addressText: '' })
+    const onNavigate = vi.fn()
+    const next = { ...placedPhoto, id: 'photo-2' } as Photo
+    show(vi.fn(), { photo: placedPhoto, nextPhoto: next, onNavigate })
+    const map = await screen.findByTestId('map')
+    expect(map.closest('.photo-viewer-map')).not.toBeNull()
+    fireEvent.keyDown(map, { key: 'ArrowRight' })
+    expect(onNavigate).not.toHaveBeenCalled()
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+    expect(onNavigate).toHaveBeenCalledWith(next)
+  })
+
   it('shows the street address when no place is the person\u2019s own', async () => {
     servePlace({ locationPlace: null, addressText: '1 Fixture Street, Fixture City' })
     show(vi.fn(), { photo: placedPhoto })

@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { graphql, subscribe } from '../api'
+import { APIError, graphql, subscribe } from '../api'
 import { Place, PlaceVisit } from '../components/locationData'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
@@ -123,6 +123,8 @@ function answerWith(shown: {
   // Answers the visits asked for, when what is asked changes the answer.
   visitsFor?: (variables: Record<string, unknown>) => PlaceVisit[] | Promise<PlaceVisit[]>
   people?: { userId: string; username: string; name: string }[]
+  // The places ReadPlace knows by id; any other id is not found.
+  readablePlaces?: Place[]
 }) {
   vi.mocked(graphql).mockImplementation(async (document, variables) => {
     if (document.includes('GetLocation')) {
@@ -139,6 +141,12 @@ function answerWith(shown: {
         ? await shown.visitsFor((variables ?? {}) as Record<string, unknown>)
         : (shown.visits ?? [])
       return { ListLocationVisits: { placeVisits, nextOffset: null } } as never
+    }
+    if (document.includes('ReadPlace(')) {
+      const askedPlaceId = (variables as { placeId: string }).placeId
+      const found = (shown.readablePlaces ?? []).find((each) => each.id === askedPlaceId)
+      if (!found) throw new APIError('api: not found')
+      return { ReadPlace: found } as never
     }
     if (document.includes('ListLocationPoints')) return { ListLocationPoints: [] } as never
     if (document.includes('ListPlaces'))
@@ -172,7 +180,21 @@ function answerWith(shown: {
   })
 }
 
-function renderAt(entry: string) {
+// The address the page is at, and a way back one entry, outside the page.
+function AddressProbe() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  return (
+    <>
+      <span data-testid="address">{location.pathname + location.search}</span>
+      <button type="button" onClick={() => navigate(-1)}>
+        Step back
+      </button>
+    </>
+  )
+}
+
+function renderAt(entry: string, earlierEntries: string[] = []) {
   return render(
     <TranslationProvider>
       <ToastProvider>
@@ -186,10 +208,12 @@ function renderAt(entry: string) {
             permissions: { everywhere: ['location:use', 'circle:use'], byDomain: [] },
           }}
         >
-          <MemoryRouter initialEntries={[entry]}>
+          <MemoryRouter initialEntries={[...earlierEntries, entry]} initialIndex={earlierEntries.length}>
             <Routes>
               <Route path="/location" element={<LocationPage />} />
+              <Route path="/before" element={null} />
             </Routes>
+            <AddressProbe />
           </MemoryRouter>
         </SessionProvider>
       </ToastProvider>
@@ -1063,4 +1087,69 @@ it('selects the place the address names, on the Places tab', async () => {
   const row = (await screen.findByText('Fixture Cafe')).closest('button')!
   expect(row.className).toContain('is-selected')
   expect(screen.getByText('Fixture Park').closest('button')!.className).not.toContain('is-selected')
+})
+
+it('writes the place chosen to the address by replacing the entry, so Back leaves the page', async () => {
+  answerWith({
+    places: [
+      place({ id: 'place-one', placeName: 'Fixture Park' }),
+      place({ id: 'place-two', placeName: 'Fixture Cafe' }),
+    ],
+  })
+  renderAt('/location?tab=places', ['/before'])
+  fireEvent.click((await screen.findByText('Fixture Cafe')).closest('button')!)
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/location?tab=places&place=place-two'))
+  fireEvent.click(screen.getByText('Fixture Park').closest('button')!)
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/location?tab=places&place=place-one'))
+  fireEvent.click(screen.getByRole('button', { name: 'Step back' }))
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/before'))
+})
+
+it('drops the place from the address when the viewed person changes', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW], places: [place({ id: 'place-one' })] })
+  renderAt('/location?tab=places&place=place-one')
+  await screen.findAllByText('Fixture Park')
+  fireEvent.click(await screen.findByRole('button', { name: /Person B/ }))
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/location?tab=places&person=person-b'))
+})
+
+it('reads a place named in the address that is not on the loaded page, and selects it on the map', async () => {
+  answerWith({
+    places: [place({ id: 'place-one', placeName: 'Fixture Park' })],
+    readablePlaces: [place({ id: 'place-far', placeName: 'Fixture Far' })],
+  })
+  renderAt('/location?tab=places&place=place-far')
+  await screen.findByText('Fixture Park')
+  await waitFor(() => expect(screen.getByTestId('map').textContent).toContain('2 places'))
+  expect(calls('ReadPlace(')).toHaveLength(1)
+  expect(screen.getByTestId('address').textContent).toBe('/location?tab=places&place=place-far')
+})
+
+it('takes a place nobody has out of the address', async () => {
+  answerWith({ places: [place({ id: 'place-one' })] })
+  renderAt('/location?tab=places&place=place-gone&day=2030-03-05')
+  await screen.findByText('Fixture Park')
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/location?tab=places&day=2030-03-05'))
+})
+
+it('ends the photo window of an open visit at one moment per answer, not at every render', async () => {
+  answerWith({
+    visits: [
+      visit({
+        departedAt: null,
+        durationSeconds: 0,
+        photoCount: 1,
+        photos: [photoOf('photo-1')],
+      }),
+    ],
+  })
+  renderAt('/location')
+  const link = await screen.findByRole('link', { name: /^Photo taken during the visit/ })
+  const href = link.getAttribute('href')
+  expect(href).toMatch(/before=/)
+  // Choosing the row renders the page again; the visits are the same answer.
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  fireEvent.click(screen.getByText('Fixture Park').closest('button')!)
+  await waitFor(() => expect(screen.getByTestId('address').textContent).toContain('place=place-one'))
+  expect(screen.getByRole('link', { name: /^Photo taken during the visit/ }).getAttribute('href')).toBe(href)
 })

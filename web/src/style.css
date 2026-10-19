@@ -19198,9 +19198,8 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 }
 
 /* The pictures taken during a visit, under its row, starting under the
-   place's name. */
-/* One line of at most five squares, which grow smaller together on a narrow
-   screen rather than wrap the count onto a line of its own. */
+   place's name: one line of at most five squares, which grow smaller together
+   on a narrow screen rather than wrap the count onto a line of its own. */
 .location-visit-photos {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 56px));
