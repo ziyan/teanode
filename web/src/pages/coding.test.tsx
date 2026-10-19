@@ -281,6 +281,16 @@ it('does not close a session that is working', async () => {
   expect((screen.getByRole('menuitem', { name: 'Close session' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
+it('shows the thinking dots under the turns while the session works, and not while it is idle', async () => {
+  renderAt('/coding?computer=laptop&pane=w1%3Ap1')
+  await screen.findByText('hello w1:p1')
+  expect(screen.getByRole('status', { name: 'Working…' })).toBeTruthy()
+  cleanup()
+  renderAt('/coding?computer=laptop&pane=w1%3Ap2')
+  await screen.findByText('hello w1:p2')
+  expect(screen.queryByRole('status', { name: 'Working…' })).toBeNull()
+})
+
 it('shows a session that has not said anything yet as empty, without asking for its history', async () => {
   const fresh = sessionOf({
     computer: 'laptop',

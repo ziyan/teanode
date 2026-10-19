@@ -1411,6 +1411,7 @@ export const en = {
   'herdr.opened': 'Opened {pane}',
   'herdr.closeSession': 'Close session',
   'herdr.closeWhileWorking': 'It is working; wait for it to finish first',
+  'herdr.workingNow': 'Working…',
   'herdr.closeTitle': 'Close this coding session?',
   'herdr.closeBody':
     'This ends {agent} in {pane} on {computer} and closes its pane. What was said stays in its history.',

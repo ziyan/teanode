@@ -664,7 +664,7 @@ function CodingSession({
       element.scrollTop = element.scrollHeight - placeToKeep.current.height + placeToKeep.current.top
       placeToKeep.current = null
     } else if (isAtEnd.current) element.scrollTop = element.scrollHeight
-  }, [shown])
+  }, [shown, latest.herdrSessionState])
 
   const showEarlier = () => {
     const element = scroller.current
@@ -887,6 +887,19 @@ function CodingSession({
               ) : (
                 <HerdrTurnsList turns={shown.turns} onWantToolDetail={() => setToolDetailWanted(true)} />
               )}
+              {/* As the agent drawer's dots while it answers, for as long
+                as the session works. */}
+              {isWorking ? (
+                <Tooltip label={t('herdr.workingNow')}>
+                  <div className="agent-line thinking coding-working" role="status" aria-label={t('herdr.workingNow')}>
+                    <span className="agent-dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  </div>
+                </Tooltip>
+              ) : null}
             </>
           )}
           {/* The question is the end of the conversation, and scrolls with it,

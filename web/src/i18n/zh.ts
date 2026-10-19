@@ -1361,6 +1361,7 @@ export const zh: Catalog = {
   'herdr.opened': '已打开 {pane}',
   'herdr.closeSession': '关闭会话',
   'herdr.closeWhileWorking': '它正在工作，请等它完成',
+  'herdr.workingNow': '工作中…',
   'herdr.closeTitle': '关闭这个编程会话？',
   'herdr.closeBody': '这会结束 {computer} 上 {pane} 中的 {agent} 并关闭其窗格。对话会保留在历史中。',
   'herdr.closed': '已关闭 {pane}',

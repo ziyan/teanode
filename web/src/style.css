@@ -17124,6 +17124,12 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   text-align: center;
 }
 
+/* The drawer's thinking dots under the last turn, while the session works. */
+.coding-working {
+  width: fit-content;
+  margin-top: var(--space-2);
+}
+
 /* --- photos ---------------------------------------------------------------
    The library's timeline, the viewer over it, and the upload tray. */
 .photos-page {
