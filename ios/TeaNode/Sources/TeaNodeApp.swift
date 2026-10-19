@@ -65,27 +65,16 @@ struct TeaNodeApp: App {
     }
 }
 
-/// ConversationsSheet is the drawer's conversation list: the main one first,
-/// then the others by when they were last used; search across what was
-/// said; the archived ones on request; and renaming, archiving, deleting and
-/// making one the main conversation.
-struct ConversationsSheet: View {
+/// ConversationsList is the Chats tab's first screen: the main conversation
+/// first, then the chats with people and the others by when they were last
+/// used; search across what was said; the archived ones on request; and
+/// renaming, archiving, deleting and making one the main conversation. A
+/// conversation chosen is pushed on top of it by the caller.
+struct ConversationsList: View {
     let connection: Connection
-    /// Shown in the side panel, under the agent's name, rather than as a
-    /// sheet with a Done button.
-    var isPanel = false
-    /// The conversation on screen, marked in the list.
-    var currentId: String?
-    /// Rows shown above the conversations, as the side menu puts its
-    /// sections there.
-    var leading: AnyView?
-    /// How many times the side menu has been opened. The menu is kept while
-    /// it is closed, so the list stays where it was scrolled; it reads its
-    /// conversations again each time this goes up.
-    var openingCount = 0
+    /// Opens a conversation; nil is the main one.
     let onChoose: (AgentConversation?) -> Void
     @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
     @State private var conversations: [AgentConversation] = []
     /// How many questions and approvals wait in each conversation.
     @State private var waitingByConversation: [String: Int] = [:]
@@ -102,104 +91,73 @@ struct ConversationsSheet: View {
     /// The sheets for starting a chat with a person, and a group.
     @State private var isMessagingSomeone = false
     @State private var isStartingGroup = false
-    /// The row a screenshot scrolls to, to bring the chats into view.
-    private static let mainChatRowId = "main-chat"
-    /// The room the last rows are given at the bottom of the side menu: the
-    /// search field floats over the bottom of the list there, and without it
-    /// the last chats cannot be scrolled clear of the field. It grows with the
-    /// text, as the field does.
-    @ScaledMetric(relativeTo: .body) private var searchFieldClearance: CGFloat = 56
 
-    var body: some View {
-        NavigationStack {
-            // A reader around the list, so a screenshot can bring the chat rows into view.
-            ScrollViewReader { scroller in
-                List {
-                    if let leading {
-                        Section { leading }
-                            .listSectionSeparator(.hidden)
+    private var listContent: some View {
+        List {
+            if let found {
+                if found.isEmpty {
+                    Text("Nothing matches.").foregroundStyle(.secondary)
+                }
+                ForEach(found) { conversation in listRow(conversation) }
+            } else {
+                // A person with no agent has no main chat to open. A new
+                // side chat, a chat with someone and a group are started
+                // from the button at the top, so the list is only chats.
+                if app.hasAgent {
+                    Section {
+                        Button {
+                            onChoose(nil)
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Main chat")
+                                    if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
+                                        WaitingMark()
+                                    }
+                                }
+                            } icon: {
+                                Image(systemName: "bubble.left")
+                            }
+                            .foregroundStyle(.primary)
+                        }
                     }
-                    if let found {
-                        if found.isEmpty {
-                            Text("Nothing matches.").foregroundStyle(.secondary)
-                        }
-                        ForEach(found) { conversation in listRow(conversation) }
-                    } else {
-                        // A person with no agent has no main chat to open. A new
-                        // side chat, a chat with someone and a group are started
-                        // from the button at the top, so the list is only chats.
-                        if app.hasAgent {
-                            Section {
-                                Button {
-                                    onChoose(nil)
-                                } label: {
-                                    Label {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Main chat")
-                                            if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
-                                                WaitingMark()
-                                            }
-                                        }
-                                    } icon: {
-                                        Image(systemName: "bubble.left")
-                                    }
-                                    // Marked by its highlight when it is the one on
-                                    // screen; green only marks what can be pressed.
-                                    .foregroundStyle(.primary)
-                                }
-                                .id(Self.mainChatRowId)
-                                .menuRow(isSelected: currentId == nil)
-                            } header: {
-                                // In the side menu, whose own row for this part is Chats, the
-                                // agent's chats are headed by the agent.
-                                if leading != nil { Text(app.agentTitle) }
+                    .listSectionSeparator(.hidden)
+                }
+                // The chats with people, by when they were last spoken in
+                // (the server lists them so), apart from the side chats
+                // with the agent.
+                let chats = conversations.filter(\.isChat)
+                if !chats.isEmpty {
+                    Section("People") {
+                        ForEach(chats) { conversation in chatRow(conversation) }
+                    }
+                    .listSectionSeparator(.hidden)
+                }
+                Section("Side chats") {
+                    ForEach(conversations.filter { !$0.isMain && !$0.isChat }) { conversation in row(conversation) }
+                }
+                .listSectionSeparator(.hidden)
+                Section {
+                    DisclosureGroup("Archived chats", isExpanded: $isShowingArchived) {
+                        if let archived {
+                            if archived.isEmpty {
+                                Text("Nothing has been archived.").foregroundStyle(.secondary)
                             }
-                            .listSectionSeparator(.hidden)
+                            ForEach(archived) { conversation in listRow(conversation) }
+                        } else {
+                            ProgressView()
                         }
-                        // The chats with people, by when they were last spoken in
-                        // (the server lists them so), apart from the side chats
-                        // with the agent.
-                        let chats = conversations.filter(\.isChat)
-                        if !chats.isEmpty {
-                            Section("People") {
-                                ForEach(chats) { conversation in chatRow(conversation) }
-                            }
-                            .listSectionSeparator(.hidden)
-                        }
-                        Section("Side chats") {
-                            ForEach(conversations.filter { !$0.isMain && !$0.isChat }) { conversation in row(conversation) }
-                        }
-                        .listSectionSeparator(.hidden)
-                        Section {
-                            DisclosureGroup("Archived chats", isExpanded: $isShowingArchived) {
-                                if let archived {
-                                    if archived.isEmpty {
-                                        Text("Nothing has been archived.").foregroundStyle(.secondary)
-                                    }
-                                    ForEach(archived) { conversation in listRow(conversation) }
-                                } else {
-                                    ProgressView()
-                                }
-                            }
-                        }
-                        .listSectionSeparator(.hidden)
                     }
                 }
-                #if DEBUG
-                    .task(id: app.canChat) {
-                        // `-TeaNodeScreen conversations`: the side menu scrolled to its chats,
-                        // once the session says chats are on.
-                        // `conversations-restored` too, which then closes and opens the menu.
-                        guard DemoServer.isRequested, DemoServer.screen == "conversations" || DemoServer.screen == "conversations-restored",
-                            leading != nil, app.canChat
-                        else { return }
-                        try? await Task.sleep(for: .seconds(2))
-                        withAnimation { scroller.scrollTo(Self.mainChatRowId, anchor: .top) }
-                    }
-                #endif
+                .listSectionSeparator(.hidden)
             }
-            .menuListStyle(isPanel)
-            .contentMargins(.bottom, isPanel ? searchFieldClearance : 0, for: .scrollContent)
+        }
+    }
+
+    private var framed: some View {
+        listContent
+            .listStyle(.plain)
+            .navigationTitle("Chats")
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
                 // A quarter of a second after the last key, as the drawer
@@ -222,31 +180,33 @@ struct ConversationsSheet: View {
             .overlay {
                 if let problemText {
                     ContentUnavailableView("Cannot load conversations", systemImage: "wifi.exclamationmark", description: Text(problemText))
-                } else if !isLoaded, !isPanel {
-                    // In the side menu nothing turns while the chats are read:
-                    // the parts above them are there at once, and a spinner in
-                    // the middle of the menu only drew the eye.
+                } else if !isLoaded {
                     ProgressView()
                 }
             }
             .refreshable { await load() }
-            .task(id: openingCount) { await load() }
-            .navigationTitle(isPanel ? "" : String(localized: "Conversations"))
-            .navigationBarTitleDisplayMode(.inline)
+            // Read when the list comes into view, which includes coming back from
+            // a conversation, and every half minute while it stays.
+            .task {
+                repeat {
+                    await load()
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                } while !Task.isCancelled
+            }
             .toolbar {
-                if isPanel {
-                    MenuBrand()
-                    ToolbarItem(placement: .topBarTrailing) {
-                        newMenu
-                    }
-                } else {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        newMenu
-                    }
+                ToolbarItem(placement: .topBarTrailing) {
+                    newMenu
                 }
+            }
+    }
+
+    var body: some View {
+        framed
+            // The words the Search tab's Show all in Chats carries.
+            .onChange(of: app.openedPartSearch, initial: true) { _, search in
+                guard let search, search.area == .chats else { return }
+                app.openedPartSearch = nil
+                words = search.words
             }
             .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Title", text: $newTitle)
@@ -272,7 +232,6 @@ struct ConversationsSheet: View {
                     await chatOpened(try await connection.createGroupChat(draft))
                 }
             }
-        }
     }
 
     /// What starts a conversation: a side chat with the agent, when it is
@@ -354,7 +313,6 @@ struct ConversationsSheet: View {
                 }
             }
         }
-        .menuRow(isSelected: conversation.id == currentId)
         // No swipe actions, as for the other rows: everything is in the
         // long press.
         .contextMenu {
@@ -381,7 +339,6 @@ struct ConversationsSheet: View {
             Button {
                 Task {
                     await act { try await connection.updateConversation(conversation.id, isArchived: !conversation.isArchived) }
-                    if !conversation.isArchived { leaveIfOpen(conversation) }
                 }
             } label: {
                 if conversation.isArchived {
@@ -426,10 +383,7 @@ struct ConversationsSheet: View {
                 }
             }
         }
-        .menuRow(isSelected: conversation.id == currentId)
-        // No swipe actions: in the side menu a swipe left closes it and a
-        // swipe right is the one that opened it, so a row that also slid
-        // caught the menu's own gesture. Everything is in the long press.
+        // No swipe actions: everything is in the long press, as for the chats.
         .contextMenu {
             Button {
                 newTitle = conversation.title ?? ""
@@ -448,7 +402,6 @@ struct ConversationsSheet: View {
                 Button {
                     Task {
                         await act { try await connection.updateConversation(conversation.id, isArchived: !conversation.isArchived) }
-                        if !conversation.isArchived { leaveIfOpen(conversation) }
                     }
                 } label: {
                     if conversation.isArchived {
@@ -471,10 +424,7 @@ struct ConversationsSheet: View {
             titleVisibility: .visible, presenting: deleting
         ) { conversation in
             Button("Delete", role: .destructive) {
-                Task {
-                    await act { try await connection.deleteConversation(conversation.id) }
-                    leaveIfOpen(conversation)
-                }
+                Task { await act { try await connection.deleteConversation(conversation.id) } }
             }
         } message: { conversation in
             Text("“\(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))” and everything in it, the files that came with it too.")
@@ -482,12 +432,6 @@ struct ConversationsSheet: View {
     }
 
     /// Does a change to the list and reads it again.
-    /// A conversation deleted or archived while on screen gives way to the
-    /// main one, as the dashboard's drawer does.
-    private func leaveIfOpen(_ conversation: AgentConversation) {
-        if conversation.id == currentId { onChoose(nil) }
-    }
-
     private func act(_ change: () async throws -> Void) async {
         do {
             try await change()

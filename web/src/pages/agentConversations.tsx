@@ -53,12 +53,13 @@ export function AgentConversationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error])
 
-  // Typed words narrow the tiles at once, by what each conversation is
-  // called and by the summary the agent wrote of it.
-  const [filter, setFilter] = useState('')
   // Which kind is shown is kept in the address ("?kind=chats"), so a reload
   // or a link comes back to it.
   const [parameters, setParameters] = useSearchParams()
+  // Typed words narrow the tiles at once, by what each conversation is
+  // called and by the summary the agent wrote of it. They can arrive in the
+  // address ("?search="), from the search across everything.
+  const [filter, setFilter] = useState(() => parameters.get('search') ?? '')
   // Only while there are chats to tell apart: an address that says chats,
   // opened by somebody who has none, would show nothing with no control to
   // go back to all of them.

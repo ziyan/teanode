@@ -56,8 +56,6 @@ struct HealthRouteScreen: View {
                 Marker("Finish", systemImage: "flag.checkered", coordinate: finishCoordinate)
             }
         }
-        // A drag on the map moves the map, and never opens the side menu.
-        .keepsSidePanelClosed()
     }
 
     /// What the workout was: when, for how long, how far and how much energy.

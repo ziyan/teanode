@@ -13233,22 +13233,6 @@
         }
       }
     },
-    "Close the list": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "リストを閉じる"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭列表"
-          }
-        }
-      }
-    },
     "Close this message?": {
       "localizations": {
         "ja": {
@@ -24941,22 +24925,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "被提及于"
-          }
-        }
-      }
-    },
-    "Menu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニュー"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "菜单"
           }
         }
       }
@@ -62386,22 +62354,6 @@
         }
       }
     },
-    "Your chats are in the menu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "チャットはメニューにあります"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的聊天在菜单里"
-          }
-        }
-      }
-    },
     "The account is made; adding it to the circle again": {
       "localizations": {
         "ja": {
@@ -62462,22 +62414,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "该助手的主人不在此聊天中。"
-          }
-        }
-      }
-    },
-    "Open the menu to read and write to the people you share a circle with.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニューを開くと、サークルを共有している人とやり取りできます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开菜单，即可与和你同在一个圈子的人聊天。"
           }
         }
       }
@@ -76844,6 +76780,134 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理"
+          }
+        }
+      }
+    },
+    "Search everything": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてを検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索所有内容"
+          }
+        }
+      }
+    },
+    "Find a name or a few words across your chats, mail, contacts, photos and more.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャット、メール、連絡先、写真などから、名前や言葉を探します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在对话、邮件、联系人、照片等所有内容中查找名字或几个词。"
+          }
+        }
+      }
+    },
+    "Show all in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のすべてを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示%@中的全部结果"
+          }
+        }
+      }
+    },
+    "Could not search %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を検索できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法搜索%@。"
+          }
+        }
+      }
+    },
+    "Documents": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドキュメント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文档"
+          }
+        }
+      }
+    },
+    "Plans": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "計画"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划"
+          }
+        }
+      }
+    },
+    "Your chats are in the list": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットは一覧にあります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的聊天都在列表里"
+          }
+        }
+      }
+    },
+    "Go back to the list to read and write to the people you share a circle with.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一覧に戻ると、サークルを共有している人とやり取りできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回列表，即可与和你同在一个圈子的人聊天。"
           }
         }
       }

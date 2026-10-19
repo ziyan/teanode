@@ -2,15 +2,15 @@ import SwiftUI
 import TeaNodeKit
 import UIKit
 
-/// PhotoSection is what the side menu's collections choose: three lists of
-/// photos, the albums and the people. The name of the one on show is the
-/// large title.
+/// PhotoSection is what the Collections menu under the title chooses: three
+/// lists of photos, the albums and the people. The name of the one on show is
+/// the large title.
 enum PhotoSection: String, CaseIterable, Identifiable {
     case library, favorites, albums, people, trash
 
     var id: String { rawValue }
 
-    /// The name in the side menu and the large title.
+    /// The name in the Collections menu and the large title.
     var title: String {
         switch self {
         case .library: String(localized: "Library")
@@ -21,7 +21,7 @@ enum PhotoSection: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The symbol next to the name in the side menu.
+    /// The symbol next to the name in the Collections menu.
     var symbolName: String {
         switch self {
         case .library: "photo.on.rectangle"
@@ -310,7 +310,7 @@ final class PhotosModel {
         if library?.isFaceRecognitionAvailable == false, faceGroups == nil { await reloadFaceGroups(isQuiet: true) }
     }
 
-    /// The collections the side menu lists: People only when faces can be
+    /// The collections the Collections menu lists: People only when faces can be
     /// found, or people were found before, or it is the one being looked at.
     var sections: [PhotoSection] {
         PhotoSection.allCases.filter { $0 != .people || isPeopleShown || section == .people }
@@ -890,10 +890,10 @@ struct OpenedPhoto: Identifiable {
 /// PhotosScreen is the person's photo library: a large title with the days of
 /// the photos on screen under it, an edge to edge grid (or a picture for each
 /// month or year), a Select mode, Years, Months and All with Search floating at
-/// the bottom, and a viewer for one photo. The collections are in the side menu;
-/// Photo backup is in the More menu of the bar.
+/// the bottom, and a viewer for one photo. The collections are in the menu under
+/// the title; Photo backup is in the More menu of the bar.
 struct PhotosScreen: View {
-    /// Owned by the app shell, which also draws the collections in the side menu.
+    /// Owned by the app shell, which also opens the library on a filter or a person.
     @Bindable var model: PhotosModel
     /// Whether the photo backup screen is pushed; the More menu's Photo backup item sets it. It is
     /// pushed on the collection that was open, so the back button returns there.
@@ -1004,9 +1004,18 @@ struct PhotosScreen: View {
             content
                 .modifier(LibrarySearch(isActive: model.section == .library, text: $searchText, isPresented: $isSearchPresented))
                 // The large title is the collection on show, with the days of the photos on screen
-                // under it; the other collections are in the side menu.
+                // under it; tapping the title opens the menu of the other collections.
                 .navigationTitle(isSelecting ? selectionTitle : model.section.title)
                 .navigationSubtitle(subtitleText)
+                .toolbarTitleMenu {
+                    if !isSelecting {
+                        Picker("Collections", selection: $model.section) {
+                            ForEach(model.sections) { collection in
+                                Label(collection.title, systemImage: collection.symbolName).tag(collection)
+                            }
+                        }
+                    }
+                }
                 .navigationBarTitleDisplayMode(.large)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     // One column, so the visit window's chip sits under the others rather than over them.
@@ -1051,7 +1060,6 @@ struct PhotosScreen: View {
                     }
                 }
                 .toolbar { toolbarContent }
-                .withoutSwipeBack()
                 .refreshable {
                     if let key {
                         await model.reload(key)
@@ -1123,7 +1131,7 @@ struct PhotosScreen: View {
                     }
                 #endif
         }
-        // A collection chosen in the side menu opens on its own first page: an album
+        // A collection chosen in the Collections menu opens on its own first page: an album
         // or a person opened in the collection before is not left on top of it.
         .id(model.section)
         .onChange(of: model.section) { _, _ in
@@ -1132,8 +1140,8 @@ struct PhotosScreen: View {
             // The rebuilt stack does not see the list change, so the days of the
             // last collection's photos are cleared here.
             dateRangeText = ""
-            // The side menu can be opened by a swipe while Photo backup is shown;
-            // choosing a collection there must not leave the backup screen on top of it.
+            // A collection can be chosen while Photo backup is shown; it must not
+            // leave the backup screen on top of it.
             isShowingBackup = false
             openedPersonFaceGroupId = nil
         }
@@ -1144,6 +1152,26 @@ struct PhotosScreen: View {
             searchText = ""
             isSearchPresented = false
             model.showPhotos(ofPerson: person)
+        }
+        // The words the Search tab's Show all in Photos carries.
+        .onChange(of: app.openedPartSearch, initial: true) { _, search in
+            guard let search, search.area == .photos else { return }
+            app.openedPartSearch = nil
+            model.section = .library
+            searchText = search.words
+            isSearchPresented = true
+        }
+        // A photo the Search tab found: the library searched for the words, and the viewer on the photo.
+        .onChange(of: app.openedSearchedPhoto, initial: true) { _, searchedPhoto in
+            guard let searchedPhoto else { return }
+            app.openedSearchedPhoto = nil
+            model.section = .library
+            searchText = searchedPhoto.words
+            isSearchPresented = true
+            Task {
+                await model.load(.search(PhotoSearch.words(from: searchedPhoto.words) ?? searchedPhoto.words))
+                opened = OpenedPhoto(id: searchedPhoto.photoId)
+            }
         }
         // Read once for the whole screen, not again for each collection.
         .task { await model.loadLibrary() }
@@ -1217,7 +1245,6 @@ struct PhotosScreen: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        MenuButton()
         if isSelecting {
             ToolbarItem(placement: .primaryAction) {
                 Button("Done") { endSelection() }
@@ -1230,7 +1257,7 @@ struct PhotosScreen: View {
                     onEnd: endSelection)
             }
         } else {
-            // The collections are in the side menu; the bar has the filter, Select and what is
+            // The collections are in the menu under the title; the bar has the filter, Select and what is
             // particular to a collection.
             if model.section == .albums {
                 ToolbarItem(placement: .primaryAction) {

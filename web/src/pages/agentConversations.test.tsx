@@ -118,3 +118,15 @@ it('filters by kind from the address, and shows everything to somebody with no c
   expect(await screen.findByRole('button', { name: /Garden plans/ })).toBeTruthy()
   expect(screen.queryByRole('group', { name: 'agentConversations.kindLabel' })).toBeNull()
 })
+
+it('starts with the words the search across everything sent in the address', async () => {
+  execute.mockResolvedValue({ ListAgentConversations: CONVERSATIONS })
+  render(
+    <MemoryRouter initialEntries={['/chat?search=seeds']}>
+      <AgentConversationsPage />
+    </MemoryRouter>,
+  )
+  expect(await screen.findByRole('button', { name: 'Garden plans' })).toBeTruthy()
+  expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('seeds')
+  expect(screen.queryByRole('button', { name: 'Trip' })).toBeNull()
+})

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import {
   MailContent,
@@ -351,6 +351,7 @@ export function MoveToMenu({
 
 export function MailboxPage() {
   const { folderId, itemId } = useParams()
+  const location = useLocation()
   const mailboxes = useMailboxes()
   const { t } = useTranslation()
 
@@ -383,11 +384,17 @@ export function MailboxPage() {
     return <FollowRail view={view} folder={priorityFolder(view)} itemId={itemId} />
   }
 
-  // /mailbox on its own is the inbox of the mailbox last looked at.
+  // /mailbox on its own is the inbox of the mailbox last looked at. Its
+  // query goes along: /mailbox?q= is a search, as the search across
+  // everything links to it.
   const folder = folderId ? view.folders.find((candidate) => candidate.id === folderId) : undefined
   if (!folder) {
     const inbox = folderOfKind(view, 'inbox') ?? view.folders[0]
-    return inbox ? <Navigate to={`/mailbox/${inbox.id}`} replace /> : <p className="muted">{t('common.notFound')}</p>
+    return inbox ? (
+      <Navigate to={`/mailbox/${inbox.id}${location.search}`} replace />
+    ) : (
+      <p className="muted">{t('common.notFound')}</p>
+    )
   }
 
   return <FollowRail view={view} folder={folder} itemId={itemId} />
