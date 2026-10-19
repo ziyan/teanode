@@ -443,11 +443,13 @@ enum CodingPart: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: LocalizedStringKey {
+    /// The agents a session started have a key of their own: "Agents" alone
+    /// is the person's assistants elsewhere, which Chinese words otherwise.
+    var title: String {
         switch self {
-        case .turns: "Turns"
-        case .agents: "Agents"
-        case .screen: "Screen"
+        case .turns: String(localized: "Turns")
+        case .agents: String(localized: "coding-part-agents", defaultValue: "Agents")
+        case .screen: String(localized: "Screen")
         }
     }
 
@@ -632,7 +634,7 @@ struct CodingSessionView: View {
         }
         .menuIndicator(.hidden)
         .accessibilityLabel(Text("Choose what to show"))
-        .accessibilityValue(Text(part.title))
+        .accessibilityValue(Text(verbatim: part.title))
         .padding(.trailing)
         .padding(.top, 4)
     }

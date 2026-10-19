@@ -76715,7 +76715,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "还没有助手"
+            "value": "还没有代理"
           }
         }
       }
@@ -76731,7 +76731,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此会话在这次请求中还没有启动任何助手。"
+            "value": "此会话在这次请求中还没有启动任何代理。"
           }
         }
       }
@@ -76747,23 +76747,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法读取助手"
-          }
-        }
-      }
-    },
-    "The TeaNode program on the computer may be too old to show agents. Update it and restart it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コンピューター上の TeaNode プログラムが古く、エージェントを表示できない可能性があります。更新して再起動してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "电脑上的 TeaNode 程序可能太旧，无法显示助手。请更新并重新启动它。"
+            "value": "无法读取代理"
           }
         }
       }
@@ -76795,7 +76779,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仅显示最新的助手。"
+            "value": "仅显示最新的代理。"
           }
         }
       }
@@ -76844,13 +76828,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld 个助手"
+                  "value": "%lld 个代理"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld 个助手"
+                  "value": "%lld 个代理"
                 }
               }
             }
@@ -76870,6 +76854,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个运行中"
+          }
+        }
+      }
+    },
+    "coding-part-agents": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理"
           }
         }
       }

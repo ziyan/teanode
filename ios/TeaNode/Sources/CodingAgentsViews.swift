@@ -70,9 +70,9 @@ struct CodingAgentsList: View {
 
     private var failedSection: some View {
         Section {
-            ContentUnavailableView(
-                "The agents could not be read", systemImage: "exclamationmark.triangle",
-                description: Text("The TeaNode program on the computer may be too old to show agents. Update it and restart it."))
+            // Why is in the message shown with it: an older program on the
+            // computer, or the computer gone, says so in its own words.
+            ContentUnavailableView("The agents could not be read", systemImage: "exclamationmark.triangle")
         }
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)

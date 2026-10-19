@@ -224,9 +224,12 @@ func TestAnAgentWithoutAFinishedMarkIsJudgedByItsHistory(t *testing.T) {
 	// Ended its turn long ago: done, whatever the session does.
 	files.writeSubagent("a0000000000000011", meta("ended"),
 		subagentUserLine("a0000000000000011", 500), subagentReplyLine("a0000000000000011", 400, "example-model-main", "end_turn"))
-	// Silent for ten minutes without ending its turn.
+	// Silent for eight minutes after words that did not end its turn.
 	files.writeSubagent("a0000000000000012", meta("silent"),
-		subagentUserLine("a0000000000000012", 590), subagentReplyLine("a0000000000000012", 500, "example-model-main", "tool_use", "Read"))
+		subagentUserLine("a0000000000000012", 590), subagentReplyLine("a0000000000000012", 500, "example-model-main", ""))
+	// Called a tool eight minutes ago that has not answered: a long build.
+	files.writeSubagent("a0000000000000015", meta("waiting on a tool"),
+		subagentUserLine("a0000000000000015", 590), subagentReplyLine("a0000000000000015", 500, "example-model-main", "tool_use", "Bash"))
 	// Wrote a moment ago, and a final reply is not yet in.
 	files.writeSubagent("a0000000000000013", meta("writing"),
 		subagentUserLine("a0000000000000013", 200), subagentReplyLine("a0000000000000013", 30, "example-model-main", "tool_use", "Read"))
@@ -248,7 +251,8 @@ func TestAnAgentWithoutAFinishedMarkIsJudgedByItsHistory(t *testing.T) {
 		return found
 	}
 	idle := states(HerdrSessionStateIdle)
-	if idle["ended"] != HerdrSubagentStateDone || idle["silent"] != HerdrSubagentStateStopped || idle["writing"] != HerdrSubagentStateRunning || idle["resumed"] != HerdrSubagentStateRunning {
+	if idle["ended"] != HerdrSubagentStateDone || idle["silent"] != HerdrSubagentStateStopped || idle["writing"] != HerdrSubagentStateRunning || idle["resumed"] != HerdrSubagentStateRunning ||
+		idle["waiting on a tool"] != HerdrSubagentStateRunning {
 		t.Errorf("with the session idle: %v", idle)
 	}
 	for _, sessionState := range []string{HerdrSessionStateWorking, HerdrSessionStateAsking} {
@@ -361,5 +365,52 @@ func TestOnlyAConnectedServersNameIsKept(t *testing.T) {
 		if got := toolNameOfCall(name); got != want {
 			t.Errorf("%s is %s, want %s", name, got, want)
 		}
+	}
+}
+
+func TestASecondReadSeesWhatWasAddedSinceTheFirst(t *testing.T) {
+	path, files := writeSubagentSession(t, t.TempDir(), "session-cccc")
+	files.writeSubagent("a0000000000000041", map[string]any{"agentType": "Explore", "description": "first", "spawnDepth": 1, "finished": true},
+		subagentUserLine("a0000000000000041", 570), subagentReplyLine("a0000000000000041", 560, "example-model-small", "end_turn", "Read"))
+	first, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Subagents) != 1 || first.Subagents[0].ToolCallCount != 1 {
+		t.Fatalf("the first read: %+v", first.Subagents)
+	}
+
+	// The agent's history grows by two more tool calls, and the person speaks
+	// again, after which a new agent starts.
+	files.writeSubagent("a0000000000000041", map[string]any{"agentType": "Explore", "description": "first", "spawnDepth": 1, "finished": true},
+		subagentUserLine("a0000000000000041", 570), subagentReplyLine("a0000000000000041", 560, "example-model-small", "tool_use", "Read", "Grep", "Grep"),
+		subagentReplyLine("a0000000000000041", 300, "example-model-small", "end_turn"))
+	history, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintf(history, "{\"type\":\"user\",\"timestamp\":%q,\"message\":{\"role\":\"user\",\"content\":\"now the second part\"}}\n", subagentStamp(100)); err != nil {
+		t.Fatal(err)
+	}
+	_ = history.Close()
+	files.writeSubagent("a0000000000000042", map[string]any{"agentType": "general-purpose", "description": "second", "spawnDepth": 1, "finished": true},
+		subagentUserLine("a0000000000000042", 90), subagentReplyLine("a0000000000000042", 80, "example-model-small", "end_turn"))
+
+	second, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.RequestStartedAt == nil || !second.RequestStartedAt.Equal(subagentsNow.Add(-100*time.Second)) {
+		t.Errorf("the request started at %v", second.RequestStartedAt)
+	}
+	if len(second.Subagents) != 1 || second.Subagents[0].SubagentID != "a0000000000000042" {
+		t.Errorf("the second read's agents: %+v", second.Subagents)
+	}
+	// The first agent, now outside the request, is counted from its grown
+	// file, not taken from the first read.
+	candidate := readSubagentCandidate(filepath.Join(files.folder, "agent-a0000000000000041.meta.json"), HerdrSessionStateIdle, subagentsNow)
+	countSubagentTools(candidate)
+	if candidate.subagent.ToolCallCount != 3 || !slices.Equal(candidate.subagent.ToolNames, []string{"Grep", "Read"}) {
+		t.Errorf("the grown agent's tools: %d %v", candidate.subagent.ToolCallCount, candidate.subagent.ToolNames)
 	}
 }

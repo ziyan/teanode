@@ -408,6 +408,14 @@ func printHerdrSubagents(command *cli.Command, read *client.AgentHerdrSubagents,
 		}
 	}
 	printLevel(roots, "  ")
+	// An agent named as its own parent, or in a ring of parents, is reached
+	// from no root; it is shown with those the session started, as the
+	// dashboard and the iPhone show it.
+	for _, subagent := range read.Subagents {
+		if !printed[subagent.SubagentID] {
+			printLevel([]*client.AgentHerdrSubagent{subagent}, "  ")
+		}
+	}
 	if read.IsTruncated {
 		_, _ = fmt.Fprintln(command.Writer, "  (earlier agents not shown)")
 	}

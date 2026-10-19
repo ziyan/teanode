@@ -4,10 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,6 +45,18 @@ const (
 	// subagentsRunningWithin is how recently an agent's history was written
 	// for it to be taken as running when nothing else says.
 	subagentsRunningWithin = 120 * time.Second
+	// subagentsToolRunningWithin is how long an agent whose last reply
+	// called a tool is taken as still running: nothing is written while the
+	// tool runs, and a build or a test suite runs for many minutes.
+	subagentsToolRunningWithin = 30 * time.Minute
+	// subagentsMetaBytes is the most of an agent's metadata that is read; it
+	// is a few hundred bytes.
+	subagentsMetaBytes = 64 << 10
+	// subagentsTaskCharacters is the most of a task that is given.
+	subagentsTaskCharacters = 300
+	// subagentsCachedMost is how many agents' tool counts, and sessions'
+	// requests, are kept between reads before they are all let go.
+	subagentsCachedMost = 4096
 	// subagentsTailBytes is how much of an agent's history is read from its
 	// end for when it was last written and how its last reply stopped.
 	subagentsTailBytes = 256 << 10
@@ -48,6 +64,9 @@ const (
 	// read from its end for its model; the chunk doubles while the last
 	// person turn is not in it.
 	subagentsSessionChunkBytes = 1 << 20
+	// subagentsSessionOverlapBytes is how far before the end of the last read
+	// a read of what was added since starts.
+	subagentsSessionOverlapBytes = 64 << 10
 	// subagentsLineBytes is the longest line of an agent's history that is
 	// read, and subagentsScanBytes how much of the file is read for the tools
 	// it called.
@@ -142,7 +161,16 @@ func readSubagents(transcriptPath, sessionState string, now time.Time) (*HerdrSu
 	result := &HerdrSubagentsResult{SessionModelName: sessionModelName, RequestStartedAt: requestStartedAt, Subagents: []*HerdrSubagent{}}
 
 	folder := filepath.Join(strings.TrimSuffix(transcriptPath, ".jsonl"), "subagents")
-	metaPaths, _ := filepath.Glob(filepath.Join(folder, "agent-*.meta.json"))
+	entries, err := os.ReadDir(folder)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	var metaPaths []string
+	for _, entry := range entries {
+		if name := entry.Name(); strings.HasPrefix(name, "agent-") && strings.HasSuffix(name, ".meta.json") {
+			metaPaths = append(metaPaths, filepath.Join(folder, name))
+		}
+	}
 	var candidates []*subagentCandidate
 	for _, metaPath := range metaPaths {
 		// An agent whose history was last written before the request began
@@ -193,6 +221,10 @@ func readSubagents(transcriptPath, sessionState string, now time.Time) (*HerdrSu
 // readSessionRequest is the model the session last answered with and when
 // the person last spoke to it, from the end of its history. The lines of
 // agents that appear among the session's own are not the session's.
+//
+// A view of the agents asks every few seconds while the session writes, and
+// the person's last turn can be many megabytes back, so what was found is
+// kept: while the file only grows, only what was added since is read.
 func readSessionRequest(transcriptPath string) (string, *time.Time, error) {
 	file, err := os.Open(transcriptPath)
 	if err != nil {
@@ -203,9 +235,59 @@ func readSessionRequest(transcriptPath string) (string, *time.Time, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	if cached, isCached := subagentsCache.sessionRequest(transcriptPath); isCached && info.Size() >= cached.historySize {
+		if info.Size() == cached.historySize {
+			return cached.modelName, cached.requestStartedAt, nil
+		}
+		if addedBytes := info.Size() - cached.historySize; addedBytes <= transcriptMostChunkBytes {
+			// From a little before where the last read ended, so that a
+			// line it saw only half written is read whole.
+			lines, _, err := tailLines(file, info.Size(), addedBytes+subagentsSessionOverlapBytes)
+			if err != nil {
+				return "", nil, err
+			}
+			modelName, requestStartedAt := cached.modelName, cached.requestStartedAt
+			addedModelName, addedRequestStartedAt := sessionRequestOfLines(lines)
+			if addedModelName != "" {
+				modelName = addedModelName
+			}
+			if addedRequestStartedAt != nil && (requestStartedAt == nil || addedRequestStartedAt.After(*requestStartedAt)) {
+				requestStartedAt = addedRequestStartedAt
+			}
+			subagentsCache.keepSessionRequest(transcriptPath, &cachedSessionRequest{historySize: info.Size(), modelName: modelName, requestStartedAt: requestStartedAt})
+			return modelName, requestStartedAt, nil
+		}
+	}
+	modelName, requestStartedAt, err := readSessionRequestWhole(file, info.Size())
+	if err != nil {
+		return "", nil, err
+	}
+	subagentsCache.keepSessionRequest(transcriptPath, &cachedSessionRequest{historySize: info.Size(), modelName: modelName, requestStartedAt: requestStartedAt})
+	return modelName, requestStartedAt, nil
+}
+
+// sessionRequestOfLines is the newest model and person turn in lines, which
+// are in the file's order.
+func sessionRequestOfLines(lines [][]byte) (string, *time.Time) {
+	var modelName string
+	var requestStartedAt *time.Time
+	for index := len(lines) - 1; index >= 0 && (modelName == "" || requestStartedAt == nil); index-- {
+		if modelName == "" {
+			modelName = modelNameOfLine(lines[index])
+		}
+		if requestStartedAt == nil {
+			requestStartedAt = personTurnAtOfLine(lines[index])
+		}
+	}
+	return modelName, requestStartedAt
+}
+
+// readSessionRequestWhole reads the session's history from its end, a
+// doubling chunk at a time, until the person's last turn is in it.
+func readSessionRequestWhole(file *os.File, size int64) (string, *time.Time, error) {
 	var modelName string
 	for chunk := int64(subagentsSessionChunkBytes); ; chunk *= 2 {
-		lines, isCut, err := tailLines(file, info.Size(), chunk)
+		lines, isCut, err := tailLines(file, size, chunk)
 		if err != nil {
 			return "", nil, err
 		}
@@ -263,7 +345,7 @@ func personTurnAtOfLine(line []byte) *time.Time {
 // when its files cannot be read: an agent that is only half written is
 // there the next time.
 func readSubagentCandidate(metaPath, sessionState string, now time.Time) *subagentCandidate {
-	encodedMeta, err := os.ReadFile(metaPath)
+	encodedMeta, err := readFileStart(metaPath, subagentsMetaBytes)
 	if err != nil {
 		return nil
 	}
@@ -284,18 +366,18 @@ func readSubagentCandidate(metaPath, sessionState string, now time.Time) *subage
 	}
 
 	startedAt := readSubagentStartedAt(file)
-	lastWrittenAt, isReplyEnded := readSubagentEnd(file, info.Size())
+	lastWrittenAt, isReplyEnded, isToolRunning := readSubagentEnd(file, info.Size())
 	if lastWrittenAt == nil {
 		modifiedAt := info.ModTime()
 		lastWrittenAt = &modifiedAt
 	}
-	subagentState := subagentStateOf(&meta, isReplyEnded, sessionState, lastWrittenAt, now)
+	subagentState := subagentStateOf(&meta, isReplyEnded, isToolRunning, sessionState, lastWrittenAt, now)
 	subagent := &HerdrSubagent{
 		SubagentID:       subagentId,
 		ParentSubagentID: meta.ParentAgentID,
 		SubagentType:     meta.AgentType,
 		SubagentName:     meta.Name,
-		TaskText:         strings.TrimSpace(meta.Description),
+		TaskText:         firstCharacters(meta.Description, subagentsTaskCharacters),
 		ModelName:        meta.Model,
 		SubagentState:    subagentState,
 		SpawnDepth:       meta.SpawnDepth,
@@ -311,9 +393,10 @@ func readSubagentCandidate(metaPath, sessionState string, now time.Time) *subage
 // subagentStateOf decides whether an agent runs. What Claude Code wrote in
 // the metadata is taken as it is. Otherwise a reply that ended its turn is
 // the agent done, whatever the session is doing since. An agent still
-// writing, or whose session works or asks, runs. What is left stopped
-// without finishing.
-func subagentStateOf(meta *subagentMeta, isReplyEnded bool, sessionState string, lastWrittenAt *time.Time, now time.Time) string {
+// writing, one waiting on a tool it called not long ago, or one whose
+// session works or asks, runs. What is left stopped without finishing.
+func subagentStateOf(meta *subagentMeta, isReplyEnded, isToolRunning bool, sessionState string, lastWrittenAt *time.Time, now time.Time) string {
+	silence := now.Sub(*lastWrittenAt)
 	switch {
 	case meta.Finished:
 		return HerdrSubagentStateDone
@@ -321,7 +404,8 @@ func subagentStateOf(meta *subagentMeta, isReplyEnded bool, sessionState string,
 		return HerdrSubagentStateStopped
 	case isReplyEnded:
 		return HerdrSubagentStateDone
-	case now.Sub(*lastWrittenAt) <= subagentsRunningWithin, sessionState == HerdrSessionStateWorking, sessionState == HerdrSessionStateAsking:
+	case silence <= subagentsRunningWithin, isToolRunning && silence <= subagentsToolRunningWithin,
+		sessionState == HerdrSessionStateWorking, sessionState == HerdrSessionStateAsking:
 		return HerdrSubagentStateRunning
 	}
 	return HerdrSubagentStateStopped
@@ -343,15 +427,16 @@ func readSubagentStartedAt(file *os.File) *time.Time {
 }
 
 // readSubagentEnd is when the last line of an agent's history that can be
-// read was written, and whether the last reply in its end ended its turn.
-// The end may be a line only partly written, which is passed over.
-func readSubagentEnd(file *os.File, size int64) (*time.Time, bool) {
+// read was written, whether the last reply in its end ended its turn, and
+// whether that reply called a tool nothing has answered yet. The end may be
+// a line only partly written, which is passed over.
+func readSubagentEnd(file *os.File, size int64) (*time.Time, bool, bool) {
 	lines, _, err := tailLines(file, size, subagentsTailBytes)
 	if err != nil {
-		return nil, false
+		return nil, false, false
 	}
 	var lastWrittenAt *time.Time
-	isReplyFound, isReplyEnded := false, false
+	isReplyFound, isReplyEnded, isToolRunning := false, false, false
 	for index := len(lines) - 1; index >= 0; index-- {
 		var record subagentRecord
 		if len(bytes.TrimSpace(lines[index])) == 0 || json.Unmarshal(lines[index], &record) != nil {
@@ -371,28 +456,51 @@ func readSubagentEnd(file *os.File, size int64) (*time.Time, bool) {
 			var reply subagentReply
 			if json.Unmarshal(record.Message, &reply) == nil {
 				isReplyEnded = reply.StopReason != nil && *reply.StopReason == "end_turn"
+				isToolRunning = !isReplyEnded && bytes.Contains(reply.Content, []byte(`"tool_use"`))
 			}
 		}
 		if lastWrittenAt != nil && isReplyFound {
 			break
 		}
 	}
-	return lastWrittenAt, isReplyEnded
+	return lastWrittenAt, isReplyEnded, isToolRunning
 }
 
 // countSubagentTools reads an agent's history through once for the tools it
 // called, and for the model it answered with: the metadata holds the model
 // asked for, often a short name such as "sonnet", and is kept only when no
 // reply names one.
+//
+// What it finds is kept for as long as the file has the same size and time:
+// a finished agent's history no longer changes, and a view asks every few
+// seconds.
 func countSubagentTools(candidate *subagentCandidate) {
 	file, err := os.Open(candidate.historyPath)
 	if err != nil {
 		return
 	}
 	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return
+	}
 	subagent := candidate.subagent
-	callCounts := map[string]int{}
+	if cached, isCached := subagentsCache.toolCount(candidate.historyPath, info); isCached {
+		if cached.modelName != "" {
+			subagent.ModelName = cached.modelName
+		}
+		subagent.ToolNames, subagent.ToolCallCount = cached.toolNames, cached.toolCallCount
+		return
+	}
 	hasReplyModel := false
+	defer func() {
+		cached := &cachedToolCount{historySize: info.Size(), modifiedAt: info.ModTime(), toolNames: subagent.ToolNames, toolCallCount: subagent.ToolCallCount}
+		if hasReplyModel {
+			cached.modelName = subagent.ModelName
+		}
+		subagentsCache.keepToolCount(candidate.historyPath, cached)
+	}()
+	callCounts := map[string]int{}
 	scanSubagentHistory(file, func(line []byte) bool {
 		isToolCall := bytes.Contains(line, []byte(`"tool_use"`))
 		if !isToolCall && hasReplyModel {
@@ -464,4 +572,78 @@ func scanSubagentHistory(file *os.File, handle func(line []byte) bool) {
 			return
 		}
 	}
+}
+
+// readFileStart is at most mostBytes of the file at path, from its start.
+func readFileStart(path string, mostBytes int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+	return io.ReadAll(io.LimitReader(file, mostBytes))
+}
+
+// cachedToolCount is what an agent's history said of its tools and model,
+// for as long as the file has this size and time.
+type cachedToolCount struct {
+	historySize   int64
+	modifiedAt    time.Time
+	modelName     string
+	toolNames     []string
+	toolCallCount int
+}
+
+// cachedSessionRequest is the model and the person's last turn a session's
+// history had when it was this long.
+type cachedSessionRequest struct {
+	historySize      int64
+	modelName        string
+	requestStartedAt *time.Time
+}
+
+// subagentCache keeps what reading the agents found, between reads, by the
+// path of the file it was found in. It is let go whole when it grows past
+// subagentsCachedMost, so it stays small whatever sessions come and go.
+type subagentCache struct {
+	lock            sync.Mutex
+	toolCounts      map[string]*cachedToolCount
+	sessionRequests map[string]*cachedSessionRequest
+}
+
+var subagentsCache = &subagentCache{}
+
+func (self *subagentCache) toolCount(path string, info os.FileInfo) (*cachedToolCount, bool) {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	cached, isCached := self.toolCounts[path]
+	if !isCached || cached.historySize != info.Size() || !cached.modifiedAt.Equal(info.ModTime()) {
+		return nil, false
+	}
+	return cached, true
+}
+
+func (self *subagentCache) keepToolCount(path string, cached *cachedToolCount) {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	if self.toolCounts == nil || len(self.toolCounts) >= subagentsCachedMost {
+		self.toolCounts = map[string]*cachedToolCount{}
+	}
+	self.toolCounts[path] = cached
+}
+
+func (self *subagentCache) sessionRequest(path string) (*cachedSessionRequest, bool) {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	cached, isCached := self.sessionRequests[path]
+	return cached, isCached
+}
+
+func (self *subagentCache) keepSessionRequest(path string, cached *cachedSessionRequest) {
+	self.lock.Lock()
+	defer self.lock.Unlock()
+	if self.sessionRequests == nil || len(self.sessionRequests) >= subagentsCachedMost {
+		self.sessionRequests = map[string]*cachedSessionRequest{}
+	}
+	self.sessionRequests[path] = cached
 }

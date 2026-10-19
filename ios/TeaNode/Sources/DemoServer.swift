@@ -203,15 +203,15 @@
         /// One invented agent a coding session started, started and ended
         /// the given number of seconds before now.
         private static func herdrSubagent(
-            id: String, parent: String? = nil, type: String, task: String, model: String, state: String, depth: Int, startedSecondsAgo: Int,
-            endedSecondsAgo: Int? = nil, tools: [String], toolCallCount: Int
+            subagentId: String, parentSubagentId: String? = nil, subagentType: String, taskText: String, modelName: String, subagentState: String,
+            spawnDepth: Int, startedSecondsAgo: Int, endedSecondsAgo: Int? = nil, toolNames: [String], toolCallCount: Int
         ) -> String {
             let formatter = ISO8601DateFormatter()
             let startedAt = formatter.string(from: Date().addingTimeInterval(-Double(startedSecondsAgo)))
             let endedAt = endedSecondsAgo.map { "\"" + formatter.string(from: Date().addingTimeInterval(-Double($0))) + "\"" } ?? "null"
-            let parentText = parent.map { "\"\($0)\"" } ?? "null"
-            let toolText = tools.map { "\"\($0)\"" }.joined(separator: ",")
-            return #"{"subagentId":"\#(id)","parentSubagentId":\#(parentText),"subagentType":"\#(type)","subagentName":null,"taskText":"\#(task)","modelName":"\#(model)","subagentState":"\#(state)","spawnDepth":\#(depth),"startedAt":"\#(startedAt)","endedAt":\#(endedAt),"toolNames":[\#(toolText)],"toolCallCount":\#(toolCallCount)}"#
+            let parentText = parentSubagentId.map { "\"\($0)\"" } ?? "null"
+            let toolText = toolNames.map { "\"\($0)\"" }.joined(separator: ",")
+            return #"{"subagentId":"\#(subagentId)","parentSubagentId":\#(parentText),"subagentType":"\#(subagentType)","subagentName":null,"taskText":"\#(taskText)","modelName":"\#(modelName)","subagentState":"\#(subagentState)","spawnDepth":\#(spawnDepth),"startedAt":"\#(startedAt)","endedAt":\#(endedAt),"toolNames":[\#(toolText)],"toolCallCount":\#(toolCallCount)}"#
         }
 
         /// Seven invented agents of a session building a pricing page: a
@@ -221,29 +221,29 @@
         private static var herdrSubagentList: [String] {
             [
                 herdrSubagent(
-                    id: "researcher", type: "general-purpose", task: "Compare how three similar sites lay out their pricing tiers",
-                    model: "claude-sonnet-5-5", state: "running", depth: 1, startedSecondsAgo: 300, tools: ["WebFetch", "Read"], toolCallCount: 14),
+                    subagentId: "researcher", subagentType: "general-purpose", taskText: "Compare how three similar sites lay out their pricing tiers",
+                    modelName: "claude-sonnet-5-5", subagentState: "running", spawnDepth: 1, startedSecondsAgo: 300, toolNames: ["WebFetch", "Read"], toolCallCount: 14),
                 herdrSubagent(
-                    id: "finder", parent: "researcher", type: "Explore", task: "Find the pricing table component in the repository",
-                    model: "claude-haiku-5-0", state: "done", depth: 2, startedSecondsAgo: 290, endedSecondsAgo: 200, tools: ["Grep", "Read", "Glob"],
+                    subagentId: "finder", parentSubagentId: "researcher", subagentType: "Explore", taskText: "Find the pricing table component in the repository",
+                    modelName: "claude-haiku-5-0", subagentState: "done", spawnDepth: 2, startedSecondsAgo: 290, endedSecondsAgo: 200, toolNames: ["Grep", "Read", "Glob"],
                     toolCallCount: 9),
                 herdrSubagent(
-                    id: "lister", parent: "researcher", type: "Explore", task: "List the plan names and monthly prices the page must show",
-                    model: "claude-haiku-5-0", state: "running", depth: 2, startedSecondsAgo: 150, tools: ["Read"], toolCallCount: 3),
+                    subagentId: "lister", parentSubagentId: "researcher", subagentType: "Explore", taskText: "List the plan names and monthly prices the page must show",
+                    modelName: "claude-haiku-5-0", subagentState: "running", spawnDepth: 2, startedSecondsAgo: 150, toolNames: ["Read"], toolCallCount: 3),
                 herdrSubagent(
-                    id: "writer", type: "technical-writer", task: "Draft the headline and a one-line description for each plan",
-                    model: "claude-sonnet-5-5", state: "done", depth: 1, startedSecondsAgo: 280, endedSecondsAgo: 120, tools: ["Read", "Write"],
+                    subagentId: "writer", subagentType: "technical-writer", taskText: "Draft the headline and a one-line description for each plan",
+                    modelName: "claude-sonnet-5-5", subagentState: "done", spawnDepth: 1, startedSecondsAgo: 280, endedSecondsAgo: 120, toolNames: ["Read", "Write"],
                     toolCallCount: 6),
                 herdrSubagent(
-                    id: "coder", type: "general-purpose", task: "Build the pricing page component with three plan cards",
-                    model: "claude-sonnet-5-5", state: "running", depth: 1, startedSecondsAgo: 100, tools: ["Edit", "Write", "Bash"], toolCallCount: 21),
+                    subagentId: "coder", subagentType: "general-purpose", taskText: "Build the pricing page component with three plan cards",
+                    modelName: "claude-sonnet-5-5", subagentState: "running", spawnDepth: 1, startedSecondsAgo: 100, toolNames: ["Edit", "Write", "Bash"], toolCallCount: 21),
                 herdrSubagent(
-                    id: "tester", parent: "coder", type: "test-runner", task: "Run the pricing page tests and report what fails",
-                    model: "claude-haiku-5-0", state: "stopped", depth: 2, startedSecondsAgo: 70, endedSecondsAgo: 40, tools: ["Bash", "Read"],
+                    subagentId: "tester", parentSubagentId: "coder", subagentType: "test-runner", taskText: "Run the pricing page tests and report what fails",
+                    modelName: "claude-haiku-5-0", subagentState: "stopped", spawnDepth: 2, startedSecondsAgo: 70, endedSecondsAgo: 40, toolNames: ["Bash", "Read"],
                     toolCallCount: 5),
                 herdrSubagent(
-                    id: "reviewer", parent: "coder", type: "code-reviewer", task: "Review the new component for accessibility problems",
-                    model: "claude-sonnet-5-5", state: "running", depth: 2, startedSecondsAgo: 30, tools: ["Read", "Grep"], toolCallCount: 4),
+                    subagentId: "reviewer", parentSubagentId: "coder", subagentType: "code-reviewer", taskText: "Review the new component for accessibility problems",
+                    modelName: "claude-sonnet-5-5", subagentState: "running", spawnDepth: 2, startedSecondsAgo: 30, toolNames: ["Read", "Grep"], toolCallCount: 4),
             ]
         }
 

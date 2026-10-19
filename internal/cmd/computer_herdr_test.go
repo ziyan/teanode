@@ -191,14 +191,20 @@ func TestSubagentsArePrintedUnderTheAgentThatStartedThem(t *testing.T) {
 			{SubagentID: "a3", ParentSubagentID: "a2", SubagentType: "Explore", TaskText: "Look under the second file", ModelName: "example-model-small", SubagentState: "stopped", StartedAt: at(30), EndedAt: at(10)},
 			// Its parent was cut from the list, so it is shown with the first.
 			{SubagentID: "a4", ParentSubagentID: "a0", SubagentType: "Explore", TaskText: "Orphan", SubagentState: "done"},
+			// Two that name each other as parent: reached from no root, and
+			// still shown.
+			{SubagentID: "a5", ParentSubagentID: "a6", SubagentType: "Explore", TaskText: "Ring one", SubagentState: "done"},
+			{SubagentID: "a6", ParentSubagentID: "a5", SubagentType: "Explore", TaskText: "Ring two", SubagentState: "done"},
 		},
 	}, now)
 	want := "website ui on laptop: working, example-model-main\n" +
-		"  4 agents, 1 running\n" +
+		"  6 agents, 1 running\n" +
 		"  done  Explore  Look at the first file  example-model-small  2m 10s\n" +
 		"  running  general-purpose  Check the second file  45s\n" +
 		"    stopped  Explore  Look under the second file  example-model-small  20s\n" +
-		"  done  Explore  Orphan\n"
+		"  done  Explore  Orphan\n" +
+		"  done  Explore  Ring one\n" +
+		"    done  Explore  Ring two\n"
 	if output.String() != want {
 		t.Errorf("printed:\n%s\nwant:\n%s", output.String(), want)
 	}
