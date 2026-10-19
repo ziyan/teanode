@@ -43,8 +43,7 @@ struct IdeasScreen: View {
                 }
             }
             .navigationTitle("Ideas")
-            .toolbar { MenuButton() }
-            .withoutSwipeBack()
+            .toolbar { MoreBackButton() }
             .overlay { if list == nil { ProgressView() } }
             .refreshable { await load() }
             .task { await load() }

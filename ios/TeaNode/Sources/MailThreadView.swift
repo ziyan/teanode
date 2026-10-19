@@ -60,6 +60,8 @@ struct MailThreadScreen: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
+        // The bar at the bottom is this screen's own, so the tab bar gives way to it.
+        .toolbarVisibility(.hidden, for: .tabBar)
         .inMemory(memory, recordKind: "mail", recordId: opened.itemId)
         .task { await load() }
         .task(id: thread?.summary?.pending) {

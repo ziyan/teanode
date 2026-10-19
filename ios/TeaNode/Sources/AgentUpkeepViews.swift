@@ -1382,7 +1382,6 @@ struct MemoryCheckScoreRow: View {
             }
         }
         .chartXSelection(value: $selectedDate)
-        .keepsSidePanelClosed()
         .frame(height: 96)
         .padding(.top, 4)
         .accessibilityLabel(Text(verbatim: chartDescription))

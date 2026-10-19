@@ -191,7 +191,6 @@ struct CodingScreen: View {
             // A workspace's name is one short line, not a 44 point row.
             .environment(\.defaultMinListRowHeight, 24)
             .navigationTitle("Coding")
-            .withoutSwipeBack()
             .navigationDestination(for: CodingTarget.self) { target in
                 CodingSessionView(model: model, initialId: target.id, doneText: $doneText, problemText: $problemText)
             }
@@ -209,7 +208,7 @@ struct CodingScreen: View {
                 }
             }
             .toolbar {
-                MenuButton()
+                MoreBackButton()
                 ToolbarItem(placement: .topBarTrailing) {
                     codingMenu
                 }
@@ -233,8 +232,8 @@ struct CodingScreen: View {
                 }
             }
             .refreshable { await model.load() }
-            // The side menu's Coding row counts what asks, from each read
-            // here too, so an answered question leaves it at once.
+            // The badge on the tab that holds Coding counts what asks, from each
+            // read here too, so an answered question leaves it at once.
             .onChange(of: model.list.map { $0.sessions.filter(\.isAsking).count }) { _, askingCount in
                 if let askingCount { app.noteCodingAsking(askingCount) }
             }
@@ -588,6 +587,8 @@ struct CodingSessionView: View {
                 composer(session)
             }
         }
+        // The box is the session's own bottom bar, so the tab bar gives way to it.
+        .toolbarVisibility(.hidden, for: .tabBar)
     }
 
     private func transcript(_ session: HerdrSession) -> some View {
@@ -695,9 +696,6 @@ struct CodingSessionView: View {
             }
             .padding()
         }
-        // The screen is wider than the phone and is panned both ways; a
-        // drag to the right moves it, never opens the side menu.
-        .keepsSidePanelClosed()
         .overlay {
             if !isRead {
                 ProgressView()

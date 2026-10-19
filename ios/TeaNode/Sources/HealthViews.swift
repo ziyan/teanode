@@ -56,9 +56,8 @@ struct HealthScreen: View {
             content
                 .navigationTitle(HealthWords.title)
                 .navigationBarTitleDisplayMode(.inline)
-                .withoutSwipeBack()
                 .toolbar {
-                    MenuButton()
+                    MoreBackButton()
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         if !model.sharers.isEmpty {
                             HealthPersonMenu(model: model)

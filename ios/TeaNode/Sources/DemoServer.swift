@@ -29,7 +29,9 @@
             }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if let financeEntryAnswer = Self.financeEntryAnswer(query: query) {
+            if query.contains("SearchEverything") {
+                answer = Self.searchEverything(answering: request.httpBody)
+            } else if let financeEntryAnswer = Self.financeEntryAnswer(query: query) {
                 answer = financeEntryAnswer
             } else if let recordingAnswer = Self.recordingAnswer(query: query) {
                 answer = recordingAnswer
@@ -572,9 +574,52 @@
             }}}
             """#
 
-        /// Whether a screenshot opens with the side menu out: `-TeaNodeMenu`.
-        static var isMenuRequested: Bool {
-            ProcessInfo.processInfo.arguments.contains("-TeaNodeMenu")
+        /// Whether a screenshot opens on the main conversation instead of the
+        /// list of conversations: `-TeaNodeScreen conversation`, and the screens
+        /// named `conversation-long-message` that open one with a long message.
+        static var opensMainChat: Bool {
+            guard isRequested, let screen else { return false }
+            return screen == "conversation" || screen.hasPrefix("conversation-long-message")
+        }
+
+        /// What the Search tab finds for the words, as the server answers a
+        /// search across everything: one or two invented results from each
+        /// part, with more to be found in mail, photos and finance. Nothing is
+        /// found for words the demo has no results for ("nothing").
+        static func searchEverything(answering body: Data?) -> String {
+            let words = requestVariables(body)["words"] as? String ?? ""
+            if words.lowercased().contains("nothing") {
+                return #"{"data":{"SearchEverything":{"words":"\#(words)","areas":[],"failedAreas":[]}}}"#
+            }
+            func at(_ hours: Double) -> String { CalendarDates.text(Date().addingTimeInterval(-hours * 3600)) }
+            func result(_ area: String, _ targetId: String, _ title: String, _ detail: String, _ hours: Double?) -> String {
+                let happenedAt = hours.map { #""\#(at($0))""# } ?? "null"
+                return #"{"searchArea":"\#(area)","targetId":"\#(targetId)","titleText":"\#(title)","detailText":"\#(detail)","happenedAt":\#(happenedAt)}"#
+            }
+            func area(_ name: String, hasMore: Bool = false, _ results: [String]) -> String {
+                #"{"searchArea":"\#(name)","hasMore":\#(hasMore),"results":[\#(results.joined(separator: ","))]}"#
+            }
+            let areas = [
+                area(
+                    "chats",
+                    [
+                        result("chats", "trip", "Weekend trip", "We could walk along the harbor on Saturday.", 5),
+                        result("chats", "chat-sam", "Sam", "Found a harbor cafe that opens early.", 30),
+                    ]),
+                area(
+                    "mail", hasMore: true,
+                    [
+                        result("mail", "m2", "Lunch?", "sam@example.org: the noodle place by the harbor on Friday.", 3),
+                        result("mail", "m3", "Your order has shipped", "orders@bookshop.example: a harbor guide, arriving tomorrow.", 26),
+                    ]),
+                area("contacts", [result("contacts", "shop", "Orders", "orders@bookshop.example", nil)]),
+                area("photos", hasMore: true, [result("photos", "demo-01", "Harbor at sunset", "Riverside Park", 120)]),
+                area("memory", [result("memory", "travel", "Travel", "Trips taken and planned.", nil)]),
+                area("recordings", [result("recordings", "recording-harbor", "Planning the harbor walk", "Recorded on Tuesday", 96)]),
+                area("places", [result("places", "place-park", "Harbor Park", "Park", nil)]),
+                area("finance", hasMore: true, [result("finance", "transaction-ferry", "Harbor Ferry Co", "Everyday account, 18.50 USD", 200)]),
+            ]
+            return #"{"data":{"SearchEverything":{"words":"\#(words)","areas":[\#(areas.joined(separator: ","))],"failedAreas":[]}}}"#
         }
 
         static let contacts = #"""

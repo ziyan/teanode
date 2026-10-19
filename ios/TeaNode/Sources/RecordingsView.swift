@@ -260,6 +260,7 @@ struct RecordingsScreen: View {
     @State private var isDeleting = false
     @State private var localPlayback: LocalRecording?
     @State private var openedCitation: RecordingLink?
+    @Environment(AppModel.self) private var app
 
     init(connection: Connection) { _model = State(initialValue: RecordingsModel(connection: connection)) }
 
@@ -377,6 +378,12 @@ struct RecordingsScreen: View {
             .listSectionSpacing(.compact)
             .navigationTitle("Recordings")
             .searchable(text: $model.searchText, prompt: "Search")
+            // The words the Search tab's Show all in Recordings carries.
+            .onChange(of: app.openedPartSearch, initial: true) { _, search in
+                guard let search, search.area == .recordings else { return }
+                app.openedPartSearch = nil
+                model.searchText = search.words
+            }
             .onSubmit(of: .search) { Task { await model.search() } }
             .task(id: model.searchText) {
                 // Searches once typing pauses, and clears at once.
@@ -411,7 +418,7 @@ struct RecordingsScreen: View {
                 recorder.problemText = nil
             }
             .toolbar {
-                MenuButton()
+                MoreBackButton()
                 // One menu for a new recording, made here or brought in. A
                 // recording under way is reached from its row, its Live
                 // Activity, or the first item here.
@@ -467,7 +474,6 @@ struct RecordingsScreen: View {
                 case .failure(let error): model.problemText = error.localizedDescription
                 }
             }
-            .withoutSwipeBack()
         }
     }
 

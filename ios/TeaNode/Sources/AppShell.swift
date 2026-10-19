@@ -1,15 +1,16 @@
 import SwiftUI
 import TeaNodeKit
 
-/// AppSection is a part of TeaNode the side menu leads to, as the
-/// dashboard's sidebar does.
+/// AppSection is a part of TeaNode, as the dashboard's sidebar has them: a
+/// tab of the tab bar, a row of the More tab, or a row of the iPad's sidebar.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
     case agent, goals, ideas, mail, calendar, contacts, photos, location, health, knowledge, finance, recordings, coding, settings
 
     var id: String { rawValue }
 
-    /// The part's name in the side menu. The agent's part is Chats: it holds the
-    /// chats with people and groups as well as the agent's own.
+    /// The part's name in the tab bar's accessibility label, the More list and the
+    /// sidebar. The agent's part is Chats: it holds the chats with people and
+    /// groups as well as the agent's own.
     var title: String {
         switch self {
         case .agent: String(localized: "Chats")
@@ -49,102 +50,33 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// OpenMenu opens the side menu, for the button in every screen's bar.
-struct OpenMenu {
-    let action: () -> Void
-    @MainActor
-    func callAsFunction() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        action()
-    }
-}
-
-extension EnvironmentValues {
-    @Entry var openMenu = OpenMenu {}
-    /// Whether the side menu stays open as a column beside the screen, as it
-    /// does where the window is wide, so that there is no menu to open.
-    @Entry var isMenuPinned = false
-}
-
-/// MenuButton is the button at the top left of every screen that opens the
-/// side menu. Where the menu stays open as a column there is nothing to
-/// open, and the screen's bar has no button.
-struct MenuButton: ToolbarContent {
-    @Environment(\.openMenu) private var openMenu
-    @Environment(\.isMenuPinned) private var isMenuPinned
-    @Environment(AppModel.self) private var app
-
-    var body: some ToolbarContent {
-        if !isMenuPinned {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    openMenu()
-                } label: {
-                    Label("Menu", systemImage: "line.3.horizontal")
-                }
-                // Messages waiting in the chats are the news in the menu behind
-                // this button, where the chats are.
-                .overlay(alignment: .topTrailing) {
-                    if app.unreadChatCount > 0 {
-                        Circle()
-                            .fill(.tint)
-                            .frame(width: 9, height: 9)
-                            .accessibilityHidden(true)
-                    }
-                }
-                .accessibilityValue(app.unreadChatCount > 0 ? Text("\(app.unreadChatCount) unread") : Text(verbatim: ""))
-            }
-        }
-    }
-}
-
-/// MenuBrand is the TeaNode mark and name at the top of the side menu.
-struct MenuBrand: ToolbarContent {
-    var body: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            HStack(spacing: 8) {
-                Image("Logo")
-                    .resizable()
-                    .frame(width: 28, height: 28)
-                Text(verbatim: "TeaNode")
-                    .font(.title3.weight(.semibold))
-            }
-            .fixedSize()
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-        }
-        .sharedBackgroundVisibility(.hidden)
-    }
-}
-
-/// MainView is the signed-in app: one part of TeaNode on screen, and the
-/// side menu under it, as the Claude app keeps its list. The button at the
-/// top left or a drag to the right opens the menu. Where the window is wide,
-/// as on an iPad, the menu is a column that stays open beside the screen.
+/// MainView is the signed-in app: a tab bar of icons, with Chats, Mail, Photos
+/// and Calendar, then More, which holds the other parts, and Search. The bar
+/// shrinks to a small pill while a list scrolls. Where the window is wide, as
+/// on an iPad, the same tabs are a sidebar, and the parts that are under More
+/// on the phone are tabs in its groups.
 struct MainView: View {
     let connection: Connection
 
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var section = AppSection.agent
-    @State private var isMenuOpen = false
-    @State private var conversation: AgentConversation?
+    @State private var tab = MainTab.section(.agent)
+    /// The part open under the More tab; nil is the list of parts.
+    @State private var moreSection: AppSection?
+    /// A part a link asked for in a wide window, before it was known whether
+    /// the sidebar has it; it is opened once that is known.
+    @State private var pendingSection: AppSection?
+    /// What is pushed on the list of conversations in the Chats tab.
+    @State private var chatPath: [ChatPlace] = []
     @State private var mail: MailModel
-    @State private var mailPlace: MailPlace?
     @State private var finance: FinanceModel
     @State private var financePart = FinancePart.spending
-    /// The list under Location's map, which the side menu chooses.
+    /// The list under Location's map, which the menu under its title chooses.
     @State private var locationSegment = LocationSegment.visits
-    /// The photo library, held here so the side menu can list its collections
-    /// as it lists the mail folders.
+    /// The photo library, held here so a link can open it on a filter.
     @State private var photos: PhotosModel
     @State private var composing: ComposeStart?
-    /// How many times the side menu has been opened, for what it reads again
-    /// each time. The menu itself is kept while closed, so its lists stay
-    /// where they were scrolled. A menu that stays open as a column is never
-    /// opened, so it is counted again as the presence below is reported.
-    @State private var menuOpeningCount = 0
     /// Whether the services, the agent's identity and the chats have been
     /// read once. Until then it is not known whether the agent is on, and
     /// drawing the conversation or the offer to turn the agent on would be a
@@ -159,72 +91,28 @@ struct MainView: View {
     }
 
     var body: some View {
-        // In two parts: as one chain of modifiers the body was more than the
+        // In parts: as one chain of modifiers the body was more than the
         // compiler would type-check in reasonable time.
-        panel
-            .onChange(of: app.services) {
-                // Location and Coding are judged once the permissions and the computers
-                // have been read, not by services.
-                if section != .location, section != .health, section != .coding, !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
+        presented
+            // While the conversation is on screen the person is here, and
+            // notifications that would tell them what they see are held back.
+            // Elsewhere in the app they are away from it, so what the agent says
+            // first still reaches them, as a banner over the app. A chat is held
+            // back only while that chat is the one on screen, so the report
+            // names the conversation, and is made again when it changes.
+            .task(id: presenceKey) {
+                await refreshPresence()
             }
-            .onChange(of: mail.currentMailboxId) {
-                if let inbox = mail.folder(kind: "inbox") { mailPlace = .folder(inbox.id) }
+            // Which computers run herdr is asked in a task of its own, so a slow
+            // computer never holds up the mail above.
+            .task(id: "\(scenePhase)-\(app.account?.accountKey ?? "")") {
+                await refreshCodingPresenceSlowly()
             }
-            // Initially too: a notification of another account asks for its
-            // conversation as the app is drawn anew for that account.
-            .onChange(of: app.openedConversationId, initial: true) { _, conversationId in
-                guard let conversationId else { return }
-                app.openedConversationId = nil
-                section = .agent
-                isMenuOpen = false
-                // An empty id is the main conversation; for another, the kind is
-                // learned when the conversation loads.
-                conversation = conversationId.isEmpty ? nil : AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil)
-            }
-            .onChange(of: app.askingAbout) { _, reference in
-                if reference != nil { section = .agent }
-            }
-            .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
-                if knowledgePath != nil { section = .knowledge }
-            }
-            .onChange(of: app.openedSharedKnowledge) { _, link in
-                if link != nil { section = .knowledge }
-            }
-            .onChange(of: app.openedMailItemId) { _, itemId in
-                if itemId != nil { section = .mail }
-            }
-            .onChange(of: app.openedContactId) { _, contactId in
-                if contactId != nil { section = .contacts }
-            }
-            .onChange(of: app.openedPhotoPerson) { _, person in
-                guard person != nil else { return }
-                // Photos takes the request when it is drawn; when it cannot be shown the request ends here.
-                if app.isSectionAvailable(.photos) {
-                    section = .photos
-                    isMenuOpen = false
-                } else {
-                    app.openedPhotoPerson = nil
-                }
-            }
-            .onChange(of: app.openedSection) { _, opened in
-                guard let opened else { return }
-                app.openedSection = nil
-                section = opened
-                isMenuOpen = false
-            }
-            .onChange(of: app.openedPhotoFilter) { _, photoFilter in
-                guard let photoFilter else { return }
-                app.openedPhotoFilter = nil
-                photos.section = .library
-                photos.photoFilter = photoFilter
-                section = .photos
-                isMenuOpen = false
-            }
-            .onChange(of: app.openedFinancePart) { _, part in
-                guard let part else { return }
-                app.openedFinancePart = nil
-                financePart = part
-            }
+    }
+
+    /// The tabs with what they open by, and what is shown over them.
+    private var presented: some View {
+        routed
             .sheet(isPresented: Bindable(app).isShowingMailPrograms) {
                 NavigationStack {
                     if let mailboxId = mail.mailbox?.id {
@@ -257,151 +145,317 @@ struct MainView: View {
             } message: { text in
                 Text(text)
             }
-            // While the conversation is on screen the person is here, and
-            // notifications that would tell them what they see are held back.
-            // Elsewhere in the app they are away from it, so what the agent says
-            // first still reaches them, as a banner over the app. A chat is held
-            // back only while that chat is the one on screen, so the report
-            // names the conversation, and is made again when it changes.
-            .task(id: "\(scenePhase)-\(section)-\(conversation?.id ?? "")") {
-                await refreshPresence()
+    }
+
+    /// Every request to open something that arrives from outside a tab: a
+    /// notification, a link, the agent, the Search tab. Each selects the tab
+    /// that holds it, and the part takes the rest when it is drawn.
+    private var routed: some View {
+        routedWithState
+            // Initially too: a notification of another account asks for its
+            // conversation as the app is drawn anew for that account.
+            .onChange(of: app.openedConversationId, initial: true) { _, conversationId in
+                guard let conversationId else { return }
+                app.openedConversationId = nil
+                show(.agent)
+                // An empty id is the main conversation; for another, the kind is
+                // learned when the conversation loads.
+                if conversationId.isEmpty {
+                    chatPath = [ChatPlace.main]
+                } else {
+                    chatPath = [ChatPlace.conversation(AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil))]
+                }
             }
-            // Which computers run herdr is asked in a task of its own, so a slow
-            // computer never holds up the mail above.
-            .task(id: "\(scenePhase)-\(app.account?.accountKey ?? "")") {
-                await refreshCodingPresenceSlowly()
+            .onChange(of: app.askingAbout) { _, reference in
+                guard reference != nil else { return }
+                show(.agent)
+                // The conversation on screen takes it; with the list showing, the main one opens to.
+                if chatPath.isEmpty { chatPath = [ChatPlace.main] }
+            }
+            .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
+                if knowledgePath != nil { show(.knowledge) }
+            }
+            .onChange(of: app.openedSharedKnowledge) { _, link in
+                if link != nil { show(.knowledge) }
+            }
+            .onChange(of: app.openedMailItemId) { _, itemId in
+                if itemId != nil { show(.mail) }
+            }
+            .onChange(of: app.openedContactId) { _, contactId in
+                if contactId != nil { show(.contacts) }
+            }
+            .onChange(of: app.openedPhotoPerson) { _, person in
+                guard person != nil else { return }
+                // Photos takes the request when it is drawn; when it cannot be shown the request ends here.
+                if app.isSectionAvailable(.photos) {
+                    show(.photos)
+                } else {
+                    app.openedPhotoPerson = nil
+                }
+            }
+            .onChange(of: app.openedSearchedPhoto) { _, searchedPhoto in
+                if searchedPhoto != nil { show(.photos) }
             }
     }
 
-    /// The side panel and its screen, with what is set up when they first
-    /// appear.
-    private var panel: some View {
-        SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail && section != .location) {
-            SideMenu(
-                connection: connection, mail: mail, photos: photos, section: $section, conversation: $conversation, mailPlace: $mailPlace,
-                financePart: $financePart, locationSegment: $locationSegment, composing: $composing, openingCount: menuOpeningCount
-            ) {
-                isMenuOpen = false
+    /// The requests that set something of the part they open as well.
+    private var routedWithState: some View {
+        selectable
+            .onChange(of: app.openedSection) { _, opened in
+                guard let opened else { return }
+                app.openedSection = nil
+                show(opened)
             }
-        } content: {
-            screen
-                .environment(\.openMenu, OpenMenu { isMenuOpen = true })
-        }
-        .environment(\.symbolVariants, .none)
-        .sheet(item: $composing) { start in
-            ComposeView(mail: mail, start: start).environment(mail)
-        }
-        .onChange(of: isMenuOpen) { _, isOpen in
-            if isOpen { menuOpeningCount += 1 }
-        }
-        #if DEBUG
-            .task(id: app.canChat) {
-                // `-TeaNodeScreen conversations-restored`: the menu, once it has
-                // scrolled to its chats (a second after it does, in the list),
-                // closed and opened again, to show it opens where it was left.
-                guard DemoServer.isRequested, DemoServer.screen == "conversations-restored", app.canChat else { return }
-                try? await Task.sleep(for: .seconds(3))
-                isMenuOpen = false
-                try? await Task.sleep(for: .milliseconds(800))
-                isMenuOpen = true
+            .onChange(of: app.openedPhotoFilter) { _, photoFilter in
+                guard let photoFilter else { return }
+                app.openedPhotoFilter = nil
+                photos.section = .library
+                photos.photoFilter = photoFilter
+                show(.photos)
+            }
+            .onChange(of: app.openedFinancePart) { _, part in
+                guard let part else { return }
+                app.openedFinancePart = nil
+                financePart = part
+            }
+    }
+
+    /// The tabs, with what keeps the selection to a tab that exists.
+    private var selectable: some View {
+        tabs
+            .sheet(item: $composing) { start in
+                ComposeView(mail: mail, start: start).environment(mail)
+            }
+            .onChange(of: app.services) {
+                settleSelection()
+                retryPendingSection()
+            }
+            .onChange(of: app.hasReadPermissions) {
+                retryPendingSection()
+            }
+            .onChange(of: horizontalSizeClass) {
+                adaptToSizeClass()
+            }
+            .onAppear {
+                if let kept = app.keptSection {
+                    show(kept)
+                    app.keptSection = nil
+                }
+                #if DEBUG
+                    openDemoScreen()
+                #endif
             }
             .task {
-                // `-TeaNodeScreen finance-part-switch`: Net worth is chosen
-                // after FinanceScreen has opened a transaction list.
-                guard DemoServer.isRequested, DemoServer.screen == "finance-part-switch" else { return }
-                try? await Task.sleep(for: .milliseconds(2500))
-                financePart = .netWorth
+                await app.refreshServices()
+                if app.services?.isAssistantEnabled == true { await app.loadAgentName() }
+                await app.refreshChats()
+                hasReadAgentFacts = true
+                await app.setUpNotifications()
             }
-        #endif
-        .onAppear {
-            if let kept = app.keptSection {
-                section = kept
-                app.keptSection = nil
+            .task {
+                await app.refreshServices()
+                if app.services?.isMailboxEnabled == true { await mail.load() }
             }
-            #if DEBUG
-                if let tab = DemoServer.tab, let chosen = AppSection(rawValue: tab) { section = chosen }
-                if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
-                if DemoServer.screen?.hasPrefix("finance-") == true { financePart = .accounts }
-                if let screen = DemoServer.screen, ["location-places", "location-place", "location-address"].contains(screen) { locationSegment = .places }
-                if DemoServer.screen == "location-sharing" { locationSegment = .sharing }
-                if DemoServer.isMenuRequested { isMenuOpen = true }
-                if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
-                // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`, `chat-mention`).
-                if let chat = DemoServer.openedChat { conversation = chat }
-            #endif
-        }
-        .task {
-            await app.refreshServices()
-            if app.services?.isAssistantEnabled == true { await app.loadAgentName() }
-            await app.refreshChats()
-            // With the agent off the screen opens on a chat, the newest, and
-            // with none on the offer to turn the agent on.
-            if !app.isAgentOn, conversation == nil, app.canChat,
-                let chats = try? await connection.conversations().filter(\.isChat),
-                let newest = chats.max(by: { ($0.lastAt ?? "") < ($1.lastAt ?? "") })
-            {
-                conversation = newest
-            }
-            hasReadAgentFacts = true
-            await app.setUpNotifications()
-        }
-        .task {
-            await app.refreshServices()
-            if app.services?.isMailboxEnabled == true { await mail.load() }
-            if mailPlace == nil, let inbox = mail.folder(kind: "inbox") {
-                mailPlace = .folder(inbox.id)
-            }
-        }
     }
 
-    /// Asks at launch, when the app comes to the front and when the account
-    /// changes, then every half minute, so a question shows on the Coding
-    /// row soon after it comes. Not while the Coding section is on screen: it reads the list
-    /// itself and says what it finds.
-    private func refreshCodingPresenceSlowly() async {
-        guard scenePhase == .active else { return }
-        // Whether the assistant is on decides it, and at launch that is not
-        // known yet.
-        if app.services == nil { await app.refreshServices() }
-        repeat {
-            if section != .coding { await app.refreshCodingPresence() }
-            do { try await Task.sleep(for: .seconds(30)) } catch { return }
-        } while !Task.isCancelled && scenePhase == .active
+    // MARK: Tabs
+
+    /// The tab bar: an icon for each tab, named for VoiceOver. A wide window
+    /// has room to show the names, which the sidebar needs.
+    private var tabs: some View {
+        TabView(selection: $tab) {
+            ForEach(shownBarSections) { section in
+                sectionTab(section)
+            }
+            if horizontalSizeClass == .regular {
+                ForEach(shownGroups) { group in
+                    TabSection(group.title) {
+                        ForEach(shownSections(in: group)) { section in
+                            sectionTab(section)
+                        }
+                    }
+                }
+                sectionTab(.settings)
+            }
+            if horizontalSizeClass != .regular {
+                Tab(value: MainTab.more) {
+                    moreTab
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .accessibilityLabel("More")
+                }
+                .badge(app.codingAskingCount)
+            }
+            Tab(value: MainTab.search, role: .search) {
+                SearchTabScreen(connection: connection, onOpen: openSearchResult, onShowAll: showAllInPart)
+            }
+        }
+        .tabViewStyle(.sidebarAdaptable)
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .environment(\.symbolVariants, .none)
     }
 
-    private func refreshPresence() async {
-        let isVisible = scenePhase == .active && section == .agent
-        // The main conversation has no id until it is loaded and is never a
-        // chat, so it is reported as none.
-        let shownConversationId = isVisible ? conversation?.id ?? "" : ""
-        repeat {
-            await app.refreshServices()
-            if Task.isCancelled { return }
-            await app.refreshChats()
-            if app.services?.isAssistantEnabled == true || app.canChat { try? await connection.reportPresence(isVisible: isVisible, conversationId: shownConversationId) }
-            if isVisible && app.services?.isMailboxEnabled == true { await mail.load() }
-            // The column is always open, so the chats in it are read again
-            // here: as the app comes to the front, when another part or chat
-            // is chosen, and every half minute.
-            if horizontalSizeClass.isMenuColumn { menuOpeningCount += 1 }
-            if scenePhase != .active { return }
-            do { try await Task.sleep(for: .seconds(30)) } catch { return }
-        } while !Task.isCancelled
+    private func sectionTab(_ section: AppSection) -> some TabContent<MainTab> {
+        Tab(value: MainTab.section(section)) {
+            sectionScreen(section)
+        } label: {
+            sectionTabLabel(section)
+        }
+        .badge(badgeCount(of: section))
     }
 
     @ViewBuilder
-    private var screen: some View {
+    private func sectionTabLabel(_ section: AppSection) -> some View {
+        if horizontalSizeClass == .regular {
+            Label(section.title, systemImage: section.systemImage)
+        } else {
+            Image(systemName: section.systemImage)
+                .accessibilityLabel(section.title)
+        }
+    }
+
+    /// What waits in a part: the unread chats, and the coding sessions that
+    /// ask something.
+    private func badgeCount(of section: AppSection) -> Int {
+        switch section {
+        case .agent: app.unreadChatCount
+        case .coding: app.codingAskingCount
+        default: 0
+        }
+    }
+
+    /// The More tab: the list of the other parts, or the part chosen in it,
+    /// which has a button back to the list.
+    private var moreTab: some View {
+        ZStack {
+            if let moreSection {
+                sectionScreen(moreSection)
+                    .environment(\.leavePart, LeavePart { self.moreSection = nil })
+                    .transition(.opacity)
+            } else {
+                MoreList { opened in moreSection = opened }
+                    .transition(.opacity)
+            }
+        }
+        .animation(.default, value: moreSection)
+    }
+
+    /// Whether a part has a tab of its own. Until the server has said which
+    /// services it runs, the tabs of the phone are all there and say that
+    /// they are loading, rather than coming one by one.
+    private func isTabShown(_ section: AppSection) -> Bool {
+        if app.services == nil { return AppSection.tabBarSections.contains(section) || section == .settings }
+        return app.isSectionAvailable(section)
+    }
+
+    private var shownBarSections: [AppSection] {
+        AppSection.tabBarSections.filter { isTabShown($0) }
+    }
+
+    private func shownSections(in group: AppSectionGroup) -> [AppSection] {
+        group.sections.filter { app.isSectionAvailable($0) }
+    }
+
+    private var shownGroups: [AppSectionGroup] {
+        AppSectionGroup.allCases.filter { !shownSections(in: $0).isEmpty }
+    }
+
+    /// Opens a part: on its tab where it has one, under the More tab on the
+    /// phone where it has not.
+    private func show(_ section: AppSection) {
+        if horizontalSizeClass == .regular {
+            if isTabShown(section) {
+                tab = .section(section)
+            } else if isStillUnknown(section) {
+                pendingSection = section
+            } else {
+                app.openedLinkText = String(localized: "\(section.title) is off")
+            }
+        } else if AppSection.tabBarSections.contains(section), isTabShown(section) {
+            tab = .section(section)
+        } else {
+            moreSection = section
+            tab = .more
+        }
+    }
+
+    /// Whether the server has yet to say if the account has a part.
+    private func isStillUnknown(_ section: AppSection) -> Bool {
+        switch section {
+        case .location, .health: !app.hasReadPermissions
+        case .coding: false
+        default: app.services == nil
+        }
+    }
+
+    private func retryPendingSection() {
+        guard let section = pendingSection else { return }
+        pendingSection = nil
+        show(section)
+    }
+
+    /// Moves the selection off a tab that went away, when the services read
+    /// turned its part off.
+    private func settleSelection() {
+        guard case .section(let selected) = tab, !isTabShown(selected) else { return }
+        if let first = shownBarSections.first {
+            tab = .section(first)
+        } else {
+            tab = .more
+        }
+    }
+
+    /// Keeps the selection to a tab the window has: the parts under More on
+    /// the phone are tabs in a wide window, and the other way round.
+    private func adaptToSizeClass() {
+        if horizontalSizeClass == .regular {
+            guard tab == MainTab.more else { return }
+            let reopened = moreSection ?? AppSection.agent
+            tab = .section(isTabShown(reopened) ? reopened : AppSection.agent)
+        } else if case .section(let selected) = tab, !AppSection.tabBarSections.contains(selected) {
+            moreSection = selected
+            tab = .more
+        }
+    }
+
+    // MARK: Parts
+
+    /// The part on screen, if a part is.
+    private var visibleSection: AppSection? {
+        switch tab {
+        case .section(let section): section
+        case .more: moreSection
+        case .search: nil
+        }
+    }
+
+    /// The Chats tab: the list of conversations, and a conversation pushed on it.
+    private var chatsTab: some View {
+        NavigationStack(path: $chatPath) {
+            ConversationsList(connection: connection, onChoose: openChat)
+                .navigationDestination(for: ChatPlace.self) { place in
+                    ChatPlaceScreen(place: place, connection: connection, hasReadAgentFacts: hasReadAgentFacts)
+                }
+        }
+    }
+
+    private func openChat(_ chosen: AgentConversation?) {
+        if let chosen {
+            chatPath.append(ChatPlace.conversation(chosen))
+        } else {
+            chatPath.append(ChatPlace.main)
+        }
+    }
+
+    @ViewBuilder
+    private func sectionScreen(_ section: AppSection) -> some View {
         if app.services == nil, section != .settings, !(section == .recordings && app.isSectionAvailable(.recordings)) {
             // Which services the server runs is not known yet: neither the
             // part nor "off" is true until it is. Recordings stay open
             // offline once the account is known, so a meeting can be recorded.
             NavigationStack {
                 ServicesLoadingView()
-                    .toolbar {
-                        // Only the logo while it loads; the menu returns
-                        // when the server cannot be reached.
-                        if app.hasServicesFailedToLoad { MenuButton() }
-                    }
+                    .toolbar { MoreBackButton() }
             }
         } else if section == .location, !app.hasReadPermissions {
             // Whether the account may use Location is read with the chats; a
@@ -409,62 +463,42 @@ struct MainView: View {
             // told it is refused.
             NavigationStack {
                 ServicesLoadingView(isWaitingForPermissions: true)
-                    .toolbar { MenuButton() }
+                    .toolbar { MoreBackButton() }
             }
         } else if section == .location, !app.canUseLocation {
             NavigationStack {
                 LocationNotAllowedView()
-                    .toolbar { MenuButton() }
+                    .toolbar { MoreBackButton() }
             }
         } else if section == .health, !app.hasReadPermissions {
             // Whether the account may use Health is read with the chats, as
             // Location's is.
             NavigationStack {
                 ServicesLoadingView(isWaitingForPermissions: true)
-                    .toolbar { MenuButton() }
+                    .toolbar { MoreBackButton() }
             }
         } else if section == .health, !app.canUseHealth {
             NavigationStack {
                 HealthNotAllowedView()
-                    .toolbar { MenuButton() }
+                    .toolbar { MoreBackButton() }
             }
         } else if !app.isSectionAvailable(section) {
             NavigationStack {
                 ServiceOffView(section: section, connection: connection)
-                    .toolbar { MenuButton() }
+                    .toolbar { MoreBackButton() }
             }
         } else {
-            availableScreen
-        }
-    }
-
-    /// The conversation chosen, or where the main one would be with the
-    /// agent off, the offer to turn it on.
-    @ViewBuilder
-    private var agentScreen: some View {
-        if !hasReadAgentFacts, conversation == nil {
-            // A conversation chosen from a notification or the menu is shown as
-            // asked; the rest waits until it is known what to show.
-            ServicesLoadingView()
-        } else if !app.isAgentOn, conversation == nil {
-            AgentOffView()
-        } else {
-            ConversationView(model: ConversationModel(conversation: conversation, app: app, connection: connection))
-                .id(conversation?.id ?? "main")
+            availableScreen(section)
         }
     }
 
     @ViewBuilder
-    private var availableScreen: some View {
+    private func availableScreen(_ section: AppSection) -> some View {
         switch section {
         case .agent:
-            NavigationStack {
-                agentScreen
-                    .toolbar { MenuButton() }
-                    .withoutSwipeBack()
-            }
+            chatsTab
         case .mail:
-            MailScreen(mail: mail, place: $mailPlace, composing: $composing)
+            MailScreen(mail: mail, composing: $composing)
                 .toast(done: $mail.doneText, problem: $mail.problemText, undo: $mail.undo)
                 .environment(mail)
         case .calendar:
@@ -484,7 +518,7 @@ struct MainView: View {
         case .knowledge:
             KnowledgeStack(connection: connection)
         case .finance:
-            FinanceScreen(finance: finance, part: financePart)
+            FinanceScreen(finance: finance, part: $financePart)
         case .recordings:
             #if DEBUG
             if DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("recording-") {
@@ -500,12 +534,126 @@ struct MainView: View {
         case .settings:
             NavigationStack {
                 SettingsForm()
-                    .toolbar { MenuButton() }
-                    .withoutSwipeBack()
+                    .toolbar { MoreBackButton() }
             }
             .environment(mail)
         }
     }
+
+    // MARK: Search
+
+    /// Opens what the Search tab's row names, in the part that has it.
+    private func openSearchResult(_ result: SearchResult, words: String) {
+        switch result.opening {
+        case .conversation(let conversationId): app.openedConversationId = conversationId
+        case .mailItem(let mailItemId): app.openedMailItemId = mailItemId
+        case .contact(let contactId): app.openedContactId = contactId
+        case .photo(let photoId): app.openedSearchedPhoto = SearchedPhoto(photoId: photoId, words: words)
+        case .knowledgePage(let path): app.openedKnowledgePath = path
+        case .recording(let recordingId): app.show(path: "/recordings/\(recordingId)")
+        case .partOnly(let area): showAllInPart(area, words: words)
+        case .nowhere: break
+        }
+    }
+
+    /// Opens a part with the words in its own search, where it has one.
+    private func showAllInPart(_ area: SearchArea, words: String) {
+        app.openedPartSearch = PartSearch(area: area, words: words)
+        switch area {
+        case .chats:
+            chatPath = []
+            show(.agent)
+        case .mail:
+            show(.mail)
+        case .contacts:
+            show(.contacts)
+        case .photos:
+            show(.photos)
+        case .memory:
+            show(.knowledge)
+        case .recordings:
+            show(.recordings)
+        case .places:
+            locationSegment = .places
+            show(.location)
+        case .finance:
+            financePart = .transactions
+            show(.finance)
+        case .documents:
+            // No part of the app shows documents.
+            app.openedPartSearch = nil
+        }
+    }
+
+    // MARK: Presence
+
+    /// Changes whenever what the person is looking at does, so the report of it is made again.
+    private var presenceKey: String {
+        let shownChatKey = chatPath.last.map { $0.conversation?.id ?? "main" } ?? "list"
+        return "\(scenePhase)-\(String(describing: visibleSection))-\(shownChatKey)"
+    }
+
+    /// Asks at launch, when the app comes to the front and when the account
+    /// changes, then every half minute, so a question shows on the Coding
+    /// row soon after it comes. Not while the Coding section is on screen: it reads the list
+    /// itself and says what it finds.
+    private func refreshCodingPresenceSlowly() async {
+        guard scenePhase == .active else { return }
+        // Whether the assistant is on decides it, and at launch that is not
+        // known yet.
+        if app.services == nil { await app.refreshServices() }
+        repeat {
+            if visibleSection != .coding { await app.refreshCodingPresence() }
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+        } while !Task.isCancelled && scenePhase == .active
+    }
+
+    private func refreshPresence() async {
+        let isChatsTabShown = visibleSection == .agent
+        // A conversation is on screen when the Chats tab has one pushed; the
+        // list of them is not one.
+        let shownChat: ChatPlace? = isChatsTabShown ? chatPath.last : nil
+        let isVisible = scenePhase == .active && shownChat != nil
+        // The main conversation has no id until it is loaded and is never a
+        // chat, so it is reported as none.
+        let shownConversationId = isVisible ? shownChat?.conversation?.id ?? "" : ""
+        repeat {
+            await app.refreshServices()
+            if Task.isCancelled { return }
+            await app.refreshChats()
+            if app.services?.isAssistantEnabled == true || app.canChat { try? await connection.reportPresence(isVisible: isVisible, conversationId: shownConversationId) }
+            if isChatsTabShown && app.services?.isMailboxEnabled == true { await mail.load() }
+            if scenePhase != .active { return }
+            do { try await Task.sleep(for: .seconds(30)) } catch { return }
+        } while !Task.isCancelled
+    }
+
+    #if DEBUG
+        /// What a screenshot asks the app to open (`-TeaNodeTab`, `-TeaNodeScreen`).
+        private func openDemoScreen() {
+            if let name = DemoServer.tab {
+                if name == "more" {
+                    tab = .more
+                } else if name == "search" {
+                    tab = .search
+                } else if let chosen = AppSection(rawValue: name) {
+                    show(chosen)
+                }
+            }
+            if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
+            if DemoServer.screen?.hasPrefix("finance-") == true { financePart = .accounts }
+            if let screen = DemoServer.screen, ["location-places", "location-place", "location-address"].contains(screen) { locationSegment = .places }
+            if DemoServer.screen == "location-sharing" { locationSegment = .sharing }
+            if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
+            // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`, `chat-mention`),
+            // or the main conversation (`conversation`, `conversation-long-message`).
+            if let chat = DemoServer.openedChat {
+                chatPath = [ChatPlace.conversation(chat)]
+            } else if DemoServer.opensMainChat {
+                chatPath = [ChatPlace.main]
+            }
+        }
+    #endif
 }
 
 /// KnowledgeStack is the knowledge with its own way back, opening a page a
@@ -518,8 +666,7 @@ struct KnowledgeStack: View {
     var body: some View {
         NavigationStack(path: $path) {
             KnowledgeScreen(connection: connection, path: $path)
-                .toolbar { MenuButton() }
-                .withoutSwipeBack()
+                .toolbar { MoreBackButton() }
                 .modifier(KnowledgeDestination(connection: connection, path: $path))
         }
         .onChange(of: app.openedKnowledgePath, initial: true) { _, knowledgePath in
@@ -567,205 +714,6 @@ struct KnowledgeStack: View {
                 }
             }
         #endif
-    }
-}
-
-/// SideMenu is the menu under the screen: TeaNode's mark, the parts of
-/// TeaNode, and under them the list of the part on screen: the
-/// conversations with the agent, or the mail folders.
-struct SideMenu: View {
-    let connection: Connection
-    let mail: MailModel
-    let photos: PhotosModel
-    @Binding var section: AppSection
-    @Binding var conversation: AgentConversation?
-    @Binding var mailPlace: MailPlace?
-    @Binding var financePart: FinancePart
-    @Binding var locationSegment: LocationSegment
-    @Binding var composing: ComposeStart?
-    /// How many times the menu has been opened: the conversations are read
-    /// again each time.
-    let openingCount: Int
-    let onClose: () -> Void
-    @Environment(AppModel.self) private var app
-
-    var body: some View {
-        switch section {
-        case .agent:
-            ConversationsSheet(
-                connection: connection, isPanel: true, currentId: conversation?.id, leading: AnyView(sections),
-                openingCount: openingCount
-            ) { chosen in
-                conversation = chosen
-                onClose()
-            }
-        case .mail:
-            NavigationStack {
-                ScrollViewReader { scroller in
-                    MailboxesList(
-                        mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections),
-                        lastRowId: Self.partItemId(Self.mailLastRowName)
-                    ) { chosen in
-                        mailPlace = chosen
-                        onClose()
-                    }
-                    .menuListStyle()
-                    .navigationBarTitleDisplayMode(.inline)
-                    .task(id: [availableSectionCount, mail.folders.count]) { await showPartItems(scroller, lastItemId: Self.mailLastRowName) }
-                }
-            }
-        case .finance:
-            NavigationStack {
-                ScrollViewReader { scroller in
-                    List {
-                        Section { sections }
-                            .listSectionSeparator(.hidden)
-                        Section("Finance") {
-                            ForEach(FinancePart.allCases) { part in
-                                Button {
-                                    financePart = part
-                                    onClose()
-                                } label: {
-                                    Label(part.title, systemImage: part.systemImage)
-                                        .foregroundStyle(.primary)
-                                }
-                                .id(Self.partItemId(part.id))
-                                .menuRow(isSelected: financePart == part)
-                            }
-                        }
-                        .listSectionSeparator(.hidden)
-                    }
-                    .menuListStyle()
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { MenuBrand() }
-                    .task(id: [availableSectionCount, FinancePart.allCases.count]) { await showPartItems(scroller, lastItemId: FinancePart.allCases.last?.id) }
-                }
-            }
-        case .location:
-            NavigationStack {
-                ScrollViewReader { scroller in
-                    List {
-                        Section { sections }
-                            .listSectionSeparator(.hidden)
-                        Section("Location") {
-                            ForEach(LocationSegment.allCases) { segment in
-                                Button {
-                                    locationSegment = segment
-                                    onClose()
-                                } label: {
-                                    Label(segment.title, systemImage: segment.systemImage)
-                                        .foregroundStyle(.primary)
-                                }
-                                .id(Self.partItemId(segment.id))
-                                .menuRow(isSelected: locationSegment == segment)
-                            }
-                        }
-                        .listSectionSeparator(.hidden)
-                    }
-                    .menuListStyle()
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { MenuBrand() }
-                    .task(id: [availableSectionCount, LocationSegment.allCases.count]) { await showPartItems(scroller, lastItemId: LocationSegment.allCases.last?.id) }
-                }
-            }
-        case .photos:
-            NavigationStack {
-                ScrollViewReader { scroller in
-                    List {
-                        Section { sections }
-                            .listSectionSeparator(.hidden)
-                        Section("Photos") {
-                            ForEach(photos.sections) { collection in
-                                Button {
-                                    photos.section = collection
-                                    onClose()
-                                } label: {
-                                    Label(collection.title, systemImage: collection.symbolName)
-                                        .foregroundStyle(.primary)
-                                }
-                                .id(Self.partItemId(collection.id))
-                                .menuRow(isSelected: photos.section == collection)
-                            }
-                        }
-                        .listSectionSeparator(.hidden)
-                    }
-                    .menuListStyle()
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { MenuBrand() }
-                    .task(id: [availableSectionCount, photos.sections.count]) { await showPartItems(scroller, lastItemId: photos.sections.last?.id) }
-                }
-            }
-        default:
-            NavigationStack {
-                List {
-                    Section { sections }
-                        .listSectionSeparator(.hidden)
-                }
-                .menuListStyle()
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { MenuBrand() }
-            }
-        }
-    }
-
-    /// How many parts the menu lists. Some are known only once the server has answered (whether
-    /// it runs the agent, has coding computers, keeps recordings), and each one that appears
-    /// pushes the items of the part on screen further down.
-    private var availableSectionCount: Int { AppSection.allCases.filter { app.isSectionAvailable($0) }.count }
-
-    /// The name of the mail list's last row, which the menu scrolls to as it does to the
-    /// last item of the other parts. The menu is kept while closed, so it opens where the
-    /// person left it, and the scroll runs only when the list first appears or grows.
-    private static let mailLastRowName = "mailLastRow"
-
-    /// The id of a row that lists one of the items of the part on screen, under the list of the parts.
-    private static func partItemId(_ itemId: some Hashable) -> String { "partItem \(itemId)" }
-
-    /// Scrolls the menu down to the items of the part on screen: they are what the person opened
-    /// the menu for, and under all the parts they would otherwise start below the bottom of the
-    /// screen. The last item is brought to the bottom, so the parts stay in view above the items
-    /// for as long as there is room. It runs when the part's list first appears, and again when
-    /// a part or an item appears and pushes the items down; otherwise the menu, kept while
-    /// closed, opens where it was left. A scroll asked for before the list has
-    /// laid out its rows finds nothing to scroll to, and the menu slides in as it opens, so the
-    /// scroll is asked for once the rows are there and again once the menu is in place.
-    private func showPartItems(_ scroller: ScrollViewProxy, lastItemId: (some Hashable)?) async {
-        guard let lastItemId else { return }
-        for delay in [50, 400] {
-            try? await Task.sleep(for: .milliseconds(delay))
-            guard !Task.isCancelled else { return }
-            scroller.scrollTo(Self.partItemId(lastItemId), anchor: .bottom)
-        }
-    }
-
-    private var sections: some View {
-        ForEach(AppSection.allCases.filter { app.isSectionAvailable($0) }) { part in
-            Button {
-                if section == part {
-                    onClose()
-                } else {
-                    section = part
-                    // The agent's conversations, the mail folders, the
-                    // finance sections, Location's lists and the photo
-                    // collections stay open to choose from; the other parts
-                    // open at once.
-                    if part != .agent, part != .mail, part != .finance, part != .location, part != .photos { onClose() }
-                }
-            } label: {
-                // The part on screen is marked by its color and weight; the
-                // highlight is kept for the conversation or folder chosen.
-                Label(part.title, systemImage: part.systemImage)
-                    .fontWeight(section == part ? .semibold : .regular)
-                    .foregroundStyle(section == part ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-            }
-            // The chats are in the agent's part: what waits in them is the
-            // number on its entry. Before menuRow, so the row's hidden
-            // separator stays the outermost of its modifiers.
-            // The Coding row counts the sessions that ask something.
-            .badge(part == .agent ? app.unreadChatCount : part == .coding ? app.codingAskingCount : 0)
-            .menuRow(isSelected: false)
-            .accessibilityAddTraits(section == part ? .isSelected : [])
-        }
     }
 }
 
@@ -869,7 +817,7 @@ struct ServicesLoadingView: View {
 
 /// AgentOffView is where the main conversation would be for a person who has
 /// not turned their agent on: the offer to, with the way to Settings. Their
-/// chats are in the menu, and need no agent. A person who has no agent at
+/// chats are in the list, and need no agent. A person who has no agent at
 /// all is offered nothing to turn on: only their chats.
 struct AgentOffView: View {
     @Environment(AppModel.self) private var app
@@ -877,8 +825,8 @@ struct AgentOffView: View {
     var body: some View {
         if !app.hasAgent {
             ContentUnavailableView(
-                "Your chats are in the menu", systemImage: "bubble.left",
-                description: Text("Open the menu to read and write to the people you share a circle with."))
+                "Your chats are in the list", systemImage: "bubble.left",
+                description: Text("Go back to the list to read and write to the people you share a circle with."))
         } else {
             offer
         }
