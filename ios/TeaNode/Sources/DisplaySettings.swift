@@ -44,6 +44,7 @@ enum Appearance: String, CaseIterable, Identifiable {
     /// are set here as well.
     @MainActor
     func apply() {
+        StyleChangeRedraw.watchWindows()
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             // Only what differs is set: this runs each time the app comes to
@@ -57,6 +58,46 @@ enum Appearance: String, CaseIterable, Identifiable {
                     presented = controller.presentedViewController
                 }
             }
+        }
+    }
+}
+
+/// StyleChangeRedraw lays a window out again at once when its light or dark
+/// style changes. As the app leaves the screen, iOS draws it in light and in
+/// dark for the pictures the app switcher keeps, and takes each picture as
+/// soon as the style is set: the parts iOS draws itself had changed by then,
+/// but a conversation's bubbles and composer were still in the other style
+/// (a dark chat with light bubbles). Laying every view out when the style
+/// changes is meant to have SwiftUI draw them in the new style before the
+/// picture is taken.
+@MainActor
+enum StyleChangeRedraw {
+    /// The windows already watched, held weakly so a closed one goes.
+    private static let watchedWindows = NSHashTable<UIWindow>.weakObjects()
+
+    static func watchWindows() {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows where !watchedWindows.contains(window) {
+                watchedWindows.add(window)
+                window.registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (changedWindow: UIWindow, _: UITraitCollection) in
+                    // Trait changes arrive on the main thread.
+                    MainActor.assumeIsolated { layOutNow(changedWindow) }
+                }
+            }
+        }
+    }
+
+    /// Marks a view and everything in it as needing layout, then lays it out.
+    private static func layOutNow(_ view: UIView) {
+        markForLayout(view)
+        view.layoutIfNeeded()
+    }
+
+    private static func markForLayout(_ view: UIView) {
+        view.setNeedsLayout()
+        for subview in view.subviews {
+            markForLayout(subview)
         }
     }
 }
