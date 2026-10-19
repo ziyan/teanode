@@ -19474,9 +19474,36 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   font-weight: 650;
 }
 
-.photo-change-date {
+.photo-change-date,
+.photo-change-location {
   margin-left: var(--space-1);
   vertical-align: middle;
+}
+
+/* The cities a search found, in the dialog that changes where photos were
+   taken: a column of buttons, the name first and the distance under it. */
+.photo-place-results {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.photo-place-results button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.photo-place-results button:hover:not(:disabled) {
+  background: var(--sidebar-hover);
 }
 
 

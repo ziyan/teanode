@@ -229,6 +229,11 @@ struct PhotoSelectionToolbar: ToolbarContent {
         }
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
+            PhotoChangeLocationButton(model: model, photos: selectedPhotos, onChanged: onEnd)
+                .disabled(isEmpty)
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
             PhotosShareLink(photos: selectedPhotos, connection: model.connection)
                 .disabled(isEmpty)
         }

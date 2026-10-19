@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,6 +35,64 @@ func TestAPhotoFilterSendsOnlyWhatIsAsked(test *testing.T) {
 		if variables[name] != value {
 			test.Errorf("%s is %v, want %v", name, variables[name], value)
 		}
+	}
+}
+
+func TestPhotoLocationCallsSendOnlyWhatIsAsked(test *testing.T) {
+	var sent []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var asked struct {
+			Variables map[string]any `json:"variables"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&asked); err != nil {
+			http.Error(response, err.Error(), http.StatusBadRequest)
+			return
+		}
+		sent = append(sent, asked.Variables)
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case asked.Variables["query"] != nil:
+			_, _ = response.Write([]byte(`{"data":{"SearchPhotoPlaces":[{"placeName":"Harborview, Exampleland","latitude":10.5,"longitude":20.25,"distanceKilometers":null}]}}`))
+		case asked.Variables["latitude"] != nil:
+			_, _ = response.Write([]byte(`{"data":{"SetPhotoLocation":2}}`))
+		default:
+			_, _ = response.Write([]byte(`{"data":{"RemovePhotoLocation":1}}`))
+		}
+	}))
+	defer server.Close()
+	connection, err := New(Options{URL: server.URL, Token: "fixture-token"})
+	if err != nil {
+		test.Fatal(err)
+	}
+
+	places, err := SearchPhotoPlaces(test.Context(), connection, "harbor", nil, nil, 0)
+	if err != nil || len(places) != 1 || places[0].PlaceName != "Harborview, Exampleland" || places[0].DistanceKilometers != nil {
+		test.Fatalf("%v %v", places, err)
+	}
+	if len(sent[0]) != 1 {
+		test.Fatalf("a search with no point and no limit sent %v", sent[0])
+	}
+	latitude, longitude := 10.0, 20.0
+	if _, err := SearchPhotoPlaces(test.Context(), connection, "harbor", &latitude, &longitude, 5); err != nil {
+		test.Fatal(err)
+	}
+	if sent[1]["nearLatitude"] != 10.0 || sent[1]["nearLongitude"] != 20.0 || sent[1]["limitCount"] != 5.0 {
+		test.Fatalf("%v", sent[1])
+	}
+	// Half a point is not a point.
+	if _, err := SearchPhotoPlaces(test.Context(), connection, "harbor", &latitude, nil, 0); err != nil || sent[2]["nearLatitude"] != nil {
+		test.Fatalf("%v %v", sent[2], err)
+	}
+
+	if changed, err := SetPhotoLocation(test.Context(), connection, []string{"photo-1", "photo-2"}, 0, -20.5); err != nil || changed != 2 {
+		test.Fatalf("%d %v", changed, err)
+	}
+	// A latitude of zero is a position, and is sent.
+	if sent[3]["latitude"] != 0.0 || sent[3]["longitude"] != -20.5 {
+		test.Fatalf("%v", sent[3])
+	}
+	if changed, err := RemovePhotoLocation(test.Context(), connection, []string{"photo-1"}); err != nil || changed != 1 {
+		test.Fatalf("%d %v", changed, err)
 	}
 }
 

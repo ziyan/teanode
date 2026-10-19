@@ -6,6 +6,44 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.179.1] - 2026-10-19
+
+### Fixed
+
+- The assistant asks before removing where photos were taken, as the dashboard, iPhone and command line do. (#583)
+
+## [0.179.0] - 2026-10-18
+
+### Added
+
+- Change where photos were taken, or remove it, from the photo's details or for several chosen photos, on the dashboard, the iPhone, the command line and through the assistant. Removing asks first, and a removed location stays removed. (#580)
+
+### Fixed
+
+- On the iPhone, choosing another Photos collection in the side menu no longer leaves an album or a person open on top of it. (#580)
+
+## [0.178.4] - 2026-10-18
+
+### Changed
+
+- On the iPhone, Location's Places and Sharing show no list of people; the people sharing with you are under Visits. (#579)
+
+### Fixed
+
+- The iPhone's Location page no longer says "in 0 sec." for a position taken just now. (#579)
+
+## [0.178.3] - 2026-10-18
+
+### Fixed
+
+- On the iPhone, choosing another Finance part in the side menu closes a transaction list opened on the last one, and the taxpayer number row on a paystub or tax form is no longer cut off. (#581)
+
+## [0.178.2] - 2026-10-18
+
+### Changed
+
+- On the iPhone's Location page, a person you choose stays chosen until you choose someone else; your own row or picture takes you back. (#576)
+
 ## [0.178.1] - 2026-10-18
 
 ### Fixed

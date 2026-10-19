@@ -27,6 +27,10 @@ type PhotoOperation interface {
 	// it. The second value says it was made.
 	CreatePhoto(photo *models.Photo) (*models.Photo, bool, error)
 	GetPhoto(userId, photoId string) (*models.Photo, error)
+	// LockPhoto is GetPhoto holding the photo's row until the transaction
+	// ends, for a write that must not cross a change of the photo made
+	// meanwhile.
+	LockPhoto(userId, photoId string) (*models.Photo, error)
 	// ListPhotos lists a page of the photos the filter keeps: newest first,
 	// or best match first when the filter has search words.
 	ListPhotos(userId string, filter *PhotoFilter) ([]*models.Photo, error)
@@ -87,6 +91,14 @@ type PhotoOperation interface {
 	// came with it, in the same statement, so a date never keeps the offset of
 	// the one it replaced.
 	UpdatePhoto(userId, photoId string, update *PhotoUpdate) (*models.Photo, error)
+
+	// SetPhotoLocation says where the named photos were taken, for the ones
+	// the person owns that are not in the Trash, and says which it changed. A
+	// nil location removes the location and remembers that it was removed, so
+	// that reading the file again does not bring it back. A changed photo's
+	// description is cleared, because it was written knowing the old place.
+	SetPhotoLocation(userId string, photoIds []string, location *PhotoLocation) (*PhotoLocationChange, error)
+
 	TrashPhotos(userId string, photoIds []string) (int, error)
 	RestorePhotos(userId string, photoIds []string) (int, error)
 
@@ -371,6 +383,22 @@ type PhotoUpdate struct {
 	TakenAtOffsetMinutes *int
 }
 
+// PhotoLocation is a place a person says a photo was taken. PlaceName is the
+// text the photo shows for it, empty where no city is near.
+type PhotoLocation struct {
+	Latitude  float64
+	Longitude float64
+	PlaceName string
+}
+
+// PhotoLocationChange is what SetPhotoLocation changed: the photos it moved,
+// and of those the ones whose description it cleared because their place
+// changed.
+type PhotoLocationChange struct {
+	ChangedPhotoIDs   []string
+	DescribedPhotoIDs []string
+}
+
 // PhotoMetadata is what is read from a photo's file. Zero values say the file
 // did not say: the photo keeps what it has.
 type PhotoMetadata struct {
@@ -393,8 +421,13 @@ type PhotoMetadata struct {
 	Latitude             *float64
 	Longitude            *float64
 	PlaceName            string
-	CameraMake           string
-	CameraModel          string
+	// PlaceNameLatitude and PlaceNameLongitude are the position PlaceName was
+	// named from. A photo whose position is no longer that one, because the
+	// person moved it while the file was read, is not given the name.
+	PlaceNameLatitude  *float64
+	PlaceNameLongitude *float64
+	CameraMake         string
+	CameraModel        string
 }
 
 // PhotoLibraryCounts are the totals a library page shows.
@@ -542,6 +575,22 @@ func (self *transaction) GetPhoto(userId, photoId string) (*models.Photo, error)
 	}
 	var row photoModel
 	isFound, err := findOneRow(self.tx.Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, photoId, userId, photoMarkedForDeletion), &row)
+	if err != nil {
+		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
+	}
+	return photoFromModel(&row), nil
+}
+
+func (self *transaction) LockPhoto(userId, photoId string) (*models.Photo, error) {
+	if userId == "" || photoId == "" {
+		return nil, ErrNotFound
+	}
+	var row photoModel
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, photoId, userId, photoMarkedForDeletion), &row)
 	if err != nil {
 		return nil, err
 	}
@@ -891,11 +940,86 @@ func (self *transaction) UpdatePhoto(userId, photoId string, update *PhotoUpdate
 	return self.GetPhoto(userId, photoId)
 }
 
+// isPlaceNameOfPosition says a place name read with a file names the position
+// the photo will have: the one it has, or the file's where it has none. A
+// name made from another position, before the person moved the photo, is not.
+func isPlaceNameOfPosition(current photoModel, metadata *PhotoMetadata) bool {
+	latitude, longitude := current.Latitude, current.Longitude
+	if latitude == nil || longitude == nil {
+		latitude, longitude = metadata.Latitude, metadata.Longitude
+	}
+	if latitude == nil || longitude == nil || metadata.PlaceNameLatitude == nil || metadata.PlaceNameLongitude == nil {
+		return metadata.PlaceNameLatitude == nil && metadata.PlaceNameLongitude == nil
+	}
+	return *latitude == *metadata.PlaceNameLatitude && *longitude == *metadata.PlaceNameLongitude
+}
+
 // isPlausibleOffsetMinutes says an offset is one a clock has had: nothing is
 // further from UTC than 14 hours east or 12 hours west, and a day either way
 // is room for any error.
 func isPlausibleOffsetMinutes(offsetMinutes int) bool {
 	return offsetMinutes >= -24*60 && offsetMinutes <= 24*60
+}
+
+func (self *transaction) SetPhotoLocation(userId string, photoIds []string, location *PhotoLocation) (*PhotoLocationChange, error) {
+	if userId == "" || len(photoIds) > 500 {
+		return nil, ErrInvalidArguments
+	}
+	changes := map[string]any{"updated_at": photoNow()}
+	if location == nil {
+		changes["latitude"], changes["longitude"] = gorm.Expr("NULL"), gorm.Expr("NULL")
+		changes["place_name"], changes["is_location_removed"] = "", true
+	} else {
+		if math.IsNaN(location.Latitude) || location.Latitude < -90 || location.Latitude > 90 ||
+			math.IsNaN(location.Longitude) || location.Longitude < -180 || location.Longitude > 180 || len(location.PlaceName) > 255 {
+			return nil, ErrInvalidArguments
+		}
+		changes["latitude"], changes["longitude"] = location.Latitude, location.Longitude
+		changes["place_name"], changes["is_location_removed"] = location.PlaceName, false
+	}
+	change := &PhotoLocationChange{}
+	if len(photoIds) == 0 {
+		return change, nil
+	}
+	var found []photoModel
+	// Rows are locked in one order, so two changes of photos in common wait
+	// for each other rather than deadlock.
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "described_at", "place_name", "is_location_removed").
+		Where("user_id = ? AND id IN ? AND trashed_at IS NULL", userId, photoIds).Order("id").Find(&found).Error; err != nil {
+		return nil, err
+	}
+	newPlaceName := ""
+	if location != nil {
+		newPlaceName = location.PlaceName
+	}
+	for _, each := range found {
+		change.ChangedPhotoIDs = append(change.ChangedPhotoIDs, each.ID)
+		// A photo that stays in the same city keeps a description that names it.
+		isPlaceKept := each.PlaceName == newPlaceName && each.IsLocationRemoved == (location == nil)
+		if each.DescribedAt != nil && !isPlaceKept {
+			change.DescribedPhotoIDs = append(change.DescribedPhotoIDs, each.ID)
+		}
+	}
+	if len(change.ChangedPhotoIDs) == 0 {
+		return change, nil
+	}
+	if err := self.tx.Model(&photoModel{}).Where("id IN ?", change.ChangedPhotoIDs).Updates(changes).Error; err != nil {
+		return nil, err
+	}
+	// A description, and the vector read from it, were written knowing the
+	// old place and may name it, which a removed location must not leave
+	// behind.
+	if len(change.DescribedPhotoIDs) > 0 {
+		if err := self.tx.Model(&photoModel{}).Where("id IN ?", change.DescribedPhotoIDs).Updates(map[string]any{
+			"photo_description": "", "description_visible_text": "", "description_model": "", "described_at": nil,
+		}).Error; err != nil {
+			return nil, err
+		}
+		if err := self.tx.Exec(`DELETE FROM "photo_vector" WHERE "photo_id" IN ?`, change.DescribedPhotoIDs).Error; err != nil {
+			return nil, err
+		}
+	}
+	return change, self.refreshPhotoSearchDocumentsOf(change.ChangedPhotoIDs)
 }
 
 func (self *transaction) TrashPhotos(userId string, photoIds []string) (int, error) {
@@ -1579,11 +1703,16 @@ func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMeta
 	// said, and the kind is whatever the caller settled on.
 	changes := map[string]any{
 		"updated_at":   photoNow(),
-		"latitude":     gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude),
-		"longitude":    gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude),
-		"place_name":   gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName),
 		"camera_make":  gorm.Expr("CASE WHEN camera_make = '' THEN ? ELSE camera_make END", metadata.CameraMake),
 		"camera_model": gorm.Expr("CASE WHEN camera_model = '' THEN ? ELSE camera_model END", metadata.CameraModel),
+	}
+	// A location the person removed stays removed: the file still has it.
+	if !current.IsLocationRemoved {
+		changes["latitude"] = gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude)
+		changes["longitude"] = gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude)
+		if isPlaceNameOfPosition(current, metadata) {
+			changes["place_name"] = gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName)
+		}
 	}
 	if takenAt != nil {
 		changes["taken_at"] = takenAt.UTC()

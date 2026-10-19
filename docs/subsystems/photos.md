@@ -221,6 +221,60 @@ more than a day ahead of now (`picture.isPlausibleDate`), for EXIF and for a
 video's tags alike: a camera whose clock was never set writes the year it
 starts at.
 
+## Where a photo was taken
+
+A person can set where one photo or several were taken, or remove it, for a
+camera with no GPS or a phone that placed a photo in the wrong
+town. `SearchPhotoPlaces(query, nearLatitude, nearLongitude, limitCount)`
+searches the same bundled table that names every photo (`internal/place`),
+never an online geocoder, so it works with no provider and can be asked as a
+person types. It ignores case, accents and punctuation, and answers best match
+first: a whole name, then a name that starts with the words, then a name with a
+word that starts with them, then the words anywhere in "City, Country".
+Within one kind of match the city nearest to the near point comes first when
+one is given (and `distanceKilometers` is set), otherwise the largest. The query is
+1 to 100 characters and `limitCount` is 10 by default, at most 50. Text that is
+two numbers, `35.0116, 135.7681`, answers one row at that position, named by
+`place.Nearest`, or by the numbers where no city is near. Street addresses are
+not searched here; that belongs to Location, which needs its service and an
+online provider.
+
+`SetPhotoLocation(photoIds, latitude, longitude)` sets latitude, longitude and
+`place_name` (from `place.Nearest`, empty where no city is within reach) of
+each listed photo the caller owns that is not in the Trash. `RemovePhotoLocation(photoIds)`
+makes latitude and longitude null and the place name empty, and sets
+`photo.is_location_removed`. Both take up to 500 photos, say how many photos
+changed (photos that are not the caller's, or are in the Trash, are skipped, as
+`TrashPhotos` counts), set `updated_at` and refresh the photos' search
+documents, so the library's search finds a corrected photo by its new city.
+
+A photo that had a description loses it, with the vector read from it: the
+description was written knowing the old place and may name it, which a removed
+location must not leave behind. It is not asked for again on its own, since a
+photo is described only when somebody looks at it or asks; the next
+description is written with the new place. A `describe_photo` job that was
+looking at the photo when it moved keeps nothing and ends its request: it
+holds the photo's row (`LockPhoto`) while it compares the place it was told
+with the place the photo has now, so a move cannot fall between the two. A
+file being read when the photo moved names the position it read
+(`PhotoMetadata.PlaceNameLatitude` and `PlaceNameLongitude`), and that name is
+not put next to a position the photo no longer has. A copy a reader saved from
+a shared album keeps the owner's `is_location_removed`, since it is made from
+the owner's original file.
+
+Removing is for good: TeaNode keeps no copy of the old position, so every
+surface asks first (the dashboard's dialog, the iPhone's question, the
+command line's `--force`, the assistant's card). The original file is not
+changed, so a copy already shared, saved by a reader or downloaded keeps
+what the camera wrote, and every question says so.
+
+`is_location_removed` is why a removed location stays removed: `UpdatePhotoMetadata`
+reads the file again when a Live Photo's video arrives or a retry runs, and
+while the flag is set it fills in no latitude, longitude or place name. A location
+the person set is kept by the same rule that keeps any column the photo already has.
+Setting a location clears the flag. Neither operation changes the file: a
+download of the original still has what the camera wrote.
+
 ## Finding photos
 
 `ListPhotos` filters by date, kind, favorites, the trash, an album, a person
@@ -395,7 +449,14 @@ photos, `total_count` for the rest), as the mail and memory tools do. `library`
 gives `photo_count` for all items, videos among them, as albums count them, and
 `video_count` for the videos in it. `set-date` (a write) corrects the date a
 photo was taken, from an RFC 3339 time with an offset, as `teanode photo
-set-date` and the viewer's change of date do. `delete` (photos that are in the
+set-date` and the viewer's change of date do. `search-places` (`query`, and
+`near_latitude` with `near_longitude`) finds cities, `set-location`
+(`photo_ids`, and either `place`, whose best match is used, or `latitude` and
+`longitude`) and `remove-location` (`photo_ids`) change where photos were
+taken, as `teanode photo search-places`, `set-location` and `remove-location`
+do, for up to 100 photos at a time. `set-location` is a write like `set-date`;
+`remove-location` cannot be undone, so it is destructive and asks the person
+every time. `delete` (photos that are in the
 Trash) and `empty-trash` delete forever, as `teanode photo delete` and
 `empty-trash` do, and are destructive: they ask the person every time. `delete`
 says how many went and, when some did not, that the others were not in the Trash

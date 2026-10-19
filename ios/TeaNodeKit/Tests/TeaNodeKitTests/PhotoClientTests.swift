@@ -77,6 +77,65 @@ final class PhotoClientTests: XCTestCase {
         XCTAssertTrue(PhotoTimeline.rankedDay([]).isEmpty)
     }
 
+    // MARK: Location
+
+    func testSearchingPlacesSendsTheWordsAndWhereToBeNearAndReadsTheDistance() async throws {
+        let (connection, fake) = try connection { _ in
+            (200, #"{"data":{"SearchPhotoPlaces":[{"placeName":"Lakeside, Exampleland","latitude":10.5,"longitude":-20.25,"distanceKilometers":12.5},{"placeName":"Lakeview, Exampleland","latitude":11,"longitude":-21,"distanceKilometers":null}]}}"#)
+        }
+        let places = try await connection.searchPhotoPlaces(words: "lake", nearLatitude: 10.0, nearLongitude: -20.0)
+        XCTAssertEqual(places.map(\.placeName), ["Lakeside, Exampleland", "Lakeview, Exampleland"])
+        XCTAssertEqual(places[0].distanceKilometers, 12.5)
+        XCTAssertNil(places[1].distanceKilometers)
+        XCTAssertEqual(places[0].longitude, -20.25)
+        let variables = try sentVariables(of: try XCTUnwrap(fake.sent.first))
+        XCTAssertEqual(variables["query"] as? String, "lake")
+        XCTAssertEqual(variables["nearLatitude"] as? Double, 10.0)
+        XCTAssertEqual(variables["nearLongitude"] as? Double, -20.0)
+        XCTAssertTrue(Documents.searchPhotoPlaces.contains("SearchPhotoPlaces(query: $query"))
+    }
+
+    func testSearchingPlacesWithNoPointToBeNearLeavesItOut() async throws {
+        let (connection, fake) = try connection { _ in (200, #"{"data":{"SearchPhotoPlaces":[]}}"#) }
+        let places = try await connection.searchPhotoPlaces(words: "lake", nearLatitude: 10.0, nearLongitude: nil)
+        XCTAssertTrue(places.isEmpty)
+        let variables = try sentVariables(of: try XCTUnwrap(fake.sent.first))
+        XCTAssertNil(variables["nearLatitude"])
+        XCTAssertNil(variables["nearLongitude"])
+    }
+
+    func testSettingALocationSendsThePointAndSaysHowManyChanged() async throws {
+        let (connection, fake) = try connection { _ in (200, #"{"data":{"SetPhotoLocation":2}}"#) }
+        let changedCount = try await connection.setPhotoLocation(photoIds: ["p1", "p2"], latitude: 10.5, longitude: -20.25)
+        XCTAssertEqual(changedCount, 2)
+        let variables = try sentVariables(of: try XCTUnwrap(fake.sent.first))
+        XCTAssertEqual(variables["photoIds"] as? [String], ["p1", "p2"])
+        XCTAssertEqual(variables["latitude"] as? Double, 10.5)
+        XCTAssertEqual(variables["longitude"] as? Double, -20.25)
+        XCTAssertTrue(Documents.setPhotoLocation.contains("SetPhotoLocation(photoIds: $photoIds"))
+    }
+
+    func testRemovingLocationsNamesThePhotosAndSaysHowManyChanged() async throws {
+        let (connection, fake) = try connection { _ in (200, #"{"data":{"RemovePhotoLocation":1}}"#) }
+        let changedCount = try await connection.removePhotoLocation(photoIds: ["p1"])
+        XCTAssertEqual(changedCount, 1)
+        let variables = try sentVariables(of: try XCTUnwrap(fake.sent.first))
+        XCTAssertEqual(variables["photoIds"] as? [String], ["p1"])
+        XCTAssertTrue(Documents.removePhotoLocation.contains("RemovePhotoLocation(photoIds: $photoIds)"))
+    }
+
+    func testLocationsOfMoreThanFiveHundredPhotosAreChangedInBatches() async throws {
+        let (connection, fake) = try connection { request in
+            let object = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any]
+            let count = ((object?["variables"] as? [String: Any])?["photoIds"] as? [Any])?.count ?? 0
+            return (200, #"{"data":{"SetPhotoLocation":\#(count)}}"#)
+        }
+        let photoIds = (0..<1_200).map { "p\($0)" }
+        let changedCount = try await connection.setPhotoLocation(photoIds: photoIds, latitude: 1, longitude: 2)
+        XCTAssertEqual(changedCount, 1_200)
+        XCTAssertEqual(fake.sent.count, 3)
+    }
+
     // MARK: Retry
 
     func testRetryingFailedPhotosNamesThemAndCountsWhatMoved() async throws {

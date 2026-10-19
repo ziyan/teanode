@@ -94,19 +94,21 @@ struct LocationScreen: View {
         NavigationStack(path: $path) {
             GeometryReader { proxy in
                 VStack(spacing: 0) {
-                    LocationMapHeader(model: model, recorder: recorder)
+                    LocationMapHeader(model: model, recorder: recorder, isShowingPeople: isShowingPeople)
                         // Pictures on a map stay map-sized, as in Maps.
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .frame(height: proxy.size.height * mapHeightFraction)
-                    LocationPeopleRows(model: model)
-                    if let person = model.selectedPerson {
+                    if isShowingPeople {
+                        LocationPeopleRows(model: model)
+                    }
+                    if isShowingPeople, let person = model.selectedPerson {
                         LocationPersonPanel(model: model, person: person)
                     } else {
                         if model.isSetupShown {
                             LocationSetupList(model: model, recorder: recorder, allowLocation: allowLocation)
                         } else {
-                            // The list starts close to the people above it,
-                            // not a grouped list's usual top gap away.
+                            // The list starts close to what is above it, not
+                            // a grouped list's usual top gap away.
                             content.contentMargins(.top, 8, for: .scrollContent)
                         }
                     }
@@ -121,9 +123,11 @@ struct LocationScreen: View {
             // A list chosen in the side menu is shown at once: over whatever
             // was open on top of it, a person chosen on the map, or the setup
             // (whose rows say Places and Sharing are where those steps live).
+            // People are chosen only under Visits, so going there keeps the
+            // one a notification just opened.
             .onChange(of: segment) {
                 path = []
-                model.clearSelection()
+                if !isShowingPeople { model.clearSelection() }
                 if model.isSetupShown { model.dismissSetup() }
             }
             .toolbar {
@@ -173,6 +177,7 @@ struct LocationScreen: View {
         .onChange(of: app.openedLocationUserId, initial: true) { _, userId in
             guard let userId else { return }
             app.openedLocationUserId = nil
+            segment = .visits
             model.select(userId: userId)
         }
         .onChange(of: app.openedLocationDay, initial: true) { _, day in
@@ -185,8 +190,14 @@ struct LocationScreen: View {
     /// The map shares the screen with the people under it.
     private var mapHeightFraction: Double {
         if dynamicTypeSize.isAccessibilitySize { return 0.3 }
-        return model.people.isEmpty ? 0.45 : 0.36
+        return !isShowingPeople || model.people.isEmpty ? 0.45 : 0.36
     }
+
+    /// Whether the people sharing with the person are shown: their rows under
+    /// the map, their pictures on it, and the one chosen. That is where
+    /// everyone is, which Visits is about; Places and Sharing are the
+    /// person's own.
+    private var isShowingPeople: Bool { segment == .visits }
 
     /// The setup's first row: When In Use, then Always, through the flow the
     /// screen already has; Settings once the person has said no to either.
@@ -253,6 +264,9 @@ struct LocationScreen: View {
 struct LocationMapHeader: View {
     let model: LocationModel
     let recorder: LocationRecorder
+    /// Whether the pictures of the people sharing are on the map, beside the
+    /// person's own.
+    var isShowingPeople = true
     @State private var position = MapCameraPosition.automatic
 
     private var isShowingPhone: Bool {
@@ -262,25 +276,49 @@ struct LocationMapHeader: View {
         return recorder.isAuthorizedToLocate
     }
 
+    /// The person's own places to pin, leaving out each one that somebody on
+    /// the map is at now: MapKit draws a pin above every picture, so it would
+    /// cover them, and their picture already says they are there.
+    private var pinnedPlaces: [LocationPlace] {
+        let shownPeople: [PersonLocation] = isShowingPeople ? model.people : []
+        let coordinates: [CLLocationCoordinate2D] = ([model.latestCoordinate] + shownPeople.map(\.coordinate)).compactMap { $0 }
+        let pictures: [CLLocation] = coordinates.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+        return model.places.filter(\.isOfPersonsOwn).filter { place in
+            let center = CLLocation(latitude: place.latitudeDegrees, longitude: place.longitudeDegrees)
+            return !pictures.contains { $0.distance(from: center) <= place.radiusMeters }
+        }
+    }
+
     var body: some View {
         Map(position: $position) {
             if isShowingPhone {
                 UserAnnotation()
             } else if let coordinate = model.latestCoordinate, let own = model.location {
                 Annotation("You", coordinate: coordinate) {
-                    AvatarView(name: own.displayName, avatarUrl: own.avatarUrl, colorIndex: own.avatarColorIndex, size: 36)
-                        .overlay(Circle().stroke(model.selectedUserId == nil ? Color.accentColor : Color(.systemBackground), lineWidth: 3))
-                        .accessibilityLabel("You")
+                    // The way back from somebody chosen, as the own row is.
+                    Button {
+                        model.focusOnOwn()
+                    } label: {
+                        AvatarView(name: own.displayName, avatarUrl: own.avatarUrl, colorIndex: own.avatarColorIndex, size: 36)
+                            .overlay(Circle().stroke(model.selectedUserId == nil ? Color.accentColor : Color(.systemBackground), lineWidth: 3))
+                            // A touch target of 44 points around the picture.
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("You")
+                    .accessibilityHint("Shows you on the map")
                 }
             }
-            ForEach(model.places.filter(\.isOfPersonsOwn).prefix(40)) { place in
+            ForEach(pinnedPlaces.prefix(40)) { place in
                 Marker(place.shownName, systemImage: place.symbolName, coordinate: place.coordinate)
             }
-            ForEach(model.people) { person in
+            ForEach(isShowingPeople ? model.people : []) { person in
                 if let coordinate = person.coordinate {
                     Annotation(person.displayName, coordinate: coordinate) {
                         Button {
-                            if person.userId == model.selectedUserId { model.clearSelection() } else { model.select(userId: person.userId) }
+                            // Chosen again, they stay chosen: the own picture or row is the way back.
+                            if person.userId != model.selectedUserId { model.select(userId: person.userId) }
                         } label: {
                             AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36)
                                 .overlay(

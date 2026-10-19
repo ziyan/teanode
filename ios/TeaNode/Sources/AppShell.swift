@@ -186,6 +186,13 @@ struct MainView: View {
                 try? await Task.sleep(for: .milliseconds(800))
                 isMenuOpen = true
             }
+            .task {
+                // `-TeaNodeScreen finance-part-switch`: Net worth is chosen
+                // after FinanceScreen has opened a transaction list.
+                guard DemoServer.isRequested, DemoServer.screen == "finance-part-switch" else { return }
+                try? await Task.sleep(for: .milliseconds(2500))
+                financePart = .netWorth
+            }
         #endif
         .onAppear {
             if let kept = app.keptSection {

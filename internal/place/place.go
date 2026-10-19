@@ -49,6 +49,11 @@ type city struct {
 // band of latitudes that can be within reach instead of all of them.
 type finder struct {
 	cities []city
+
+	// keys are the cities' names as a search reads them, made when the first
+	// search asks.
+	keys           []searchKey
+	searchKeysOnce sync.Once
 }
 
 func newFinder(cities []city) *finder {

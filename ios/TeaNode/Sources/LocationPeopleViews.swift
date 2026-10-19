@@ -5,10 +5,11 @@ import TeaNodeKit
 // The people sharing their location with the person: their pictures on the
 // map, a row each under it, and, once one is chosen, their visits and places.
 
-/// LocationPeopleRows is a row for each person sharing, under the map. A tap
-/// selects them (the map centers on them); a tap on the selected one goes
-/// back to the person's own location. With more people than fit under the
-/// map, one row says how many and opens a screen of their own.
+/// LocationPeopleRows is a row for each person sharing, under the map, the
+/// person's own row first. A tap selects one (the map centers on them), and
+/// they stay chosen until another row is tapped: the own row is the way back
+/// to the person's own location. With more people than fit under the map, one
+/// row says how many and opens a screen of their own.
 struct LocationPeopleRows: View {
     let model: LocationModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -48,13 +49,13 @@ struct LocationPeopleRows: View {
                     .accessibilityHint("Shows everyone who shares where they are with you")
                     if let person = model.selectedPerson {
                         LocationPeopleDivider()
-                        LocationChosenPersonCard(person: person, own: model.location) { model.clearSelection() }
+                        LocationChosenPersonCard(person: person, own: model.location)
                     }
                 } else {
                     ForEach(model.people) { person in
                         LocationPeopleDivider()
                         if person.userId == model.selectedUserId {
-                            LocationChosenPersonCard(person: person, own: model.location) { model.clearSelection() }
+                            LocationChosenPersonCard(person: person, own: model.location)
                         } else {
                             LocationPersonRow(person: person, own: model.location, isSelected: false, isHighlightedWhenChosen: true) {
                                 model.select(userId: person.userId)
@@ -78,41 +79,36 @@ struct LocationPeopleRows: View {
 
 /// LocationChosenPersonCard is the person shown on the map, opened up in
 /// place of their row as Find My does: where they are and how far, the
-/// address, how fresh the position is, and directions there. A tap on their
-/// name goes back to the person's own location.
+/// address, how fresh the position is, and directions there. Tapping it
+/// again changes nothing: they stay chosen until another row is.
 struct LocationChosenPersonCard: View {
     let person: PersonLocation
     let own: PersonLocation?
-    let clear: () -> Void
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button(action: clear) {
-                HStack(alignment: .top, spacing: 12) {
-                    AvatarView(
-                        name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex,
-                        size: LocationPersonRow.avatarSize
-                    )
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: person.displayName)
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        if let placeText {
-                            Text(verbatim: placeText).font(.subheadline).foregroundStyle(.primary)
-                        }
-                        if let addressText {
-                            Text(verbatim: addressText).font(.subheadline).foregroundStyle(.secondary)
-                        }
-                        Text(verbatim: freshText).font(.subheadline).foregroundStyle(.tint)
+            HStack(alignment: .top, spacing: 12) {
+                AvatarView(
+                    name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex,
+                    size: LocationPersonRow.avatarSize
+                )
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: person.displayName)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if let placeText {
+                        Text(verbatim: placeText).font(.subheadline).foregroundStyle(.primary)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if let addressText {
+                        Text(verbatim: addressText).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Text(verbatim: freshText).font(.subheadline).foregroundStyle(.tint)
                 }
-                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isSelected)
-            .accessibilityHint("Shows your own location")
             if let point = person.latestPoint {
                 Button {
                     if let url = URL(string: "https://maps.apple.com/?daddr=\(point.latitudeDegrees),\(point.longitudeDegrees)") {
@@ -226,7 +222,7 @@ struct LocationPersonRow: View {
             distanceText: LocationText.distanceText(from: own, to: person), isSelected: isSelected,
             isHighlightedWhenChosen: isHighlightedWhenChosen, action: action
         )
-        .accessibilityHint(isSelected ? Text("Shows your own location") : Text("Shows them on the map"))
+        .accessibilityHint(isSelected ? Text("Shown on the map") : Text("Shows them on the map"))
     }
 }
 
@@ -290,10 +286,6 @@ struct LocationPersonPanel: View {
 
     var body: some View {
         List {
-            Section {
-                Button("Back to my location", systemImage: "chevron.backward") { model.clearSelection() }
-                    .actionColor()
-            }
             if person.level == .history {
                 Section {
                     Button("Previous day", systemImage: "chevron.left") { model.movePersonDay(by: -1) }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,7 @@ import (
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/photo"
+	"github.com/ziyan/teanode/internal/place"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -493,6 +495,91 @@ func TestPhotoOperationsListReadTrashRestoreAndDelete(test *testing.T) {
 		listed, err := world.graph.ListPhotos(ctx, ListPhotosArguments{})
 		if err != nil || len(listed) != 1 || listed[0].ClientPhotoID != "foreign" {
 			test.Fatalf("the other account's library is %v %v", listed, err)
+		}
+	})
+}
+
+func TestPhotoLocationIsSearchedSetAndRemoved(test *testing.T) {
+	world := newPhotoWorld(test)
+	ownerId := world.person("location-owner", models.PermissionPhotosUse)
+	otherId := world.person("location-other", models.PermissionPhotosUse)
+	first := world.storePhoto(ownerId, "first", "first.jpg", []byte("first original"), nil)
+	second := world.storePhoto(ownerId, "second", "second.jpg", []byte("second original"), nil)
+	foreign := world.storePhoto(otherId, "foreign", "foreign.jpg", []byte("foreign original"), nil)
+	allowed := []models.Permission{models.PermissionPhotosUse}
+	latitude, longitude := 35.0116, 135.7681
+	wantName, isNamed := place.Nearest(latitude, longitude)
+	if !isNamed {
+		test.Fatal("the bundled table names no city at the test's position")
+	}
+
+	world.ask(ownerId, allowed, func(ctx context.Context) {
+		// Two numbers answer the one position, named after the nearest city.
+		places, err := world.graph.SearchPhotoPlaces(ctx, SearchPhotoPlacesArguments{Query: " 35.0116, 135.7681 "})
+		if err != nil || len(places) != 1 || places[0].PlaceName != wantName || places[0].Latitude != latitude || places[0].Longitude != longitude || places[0].DistanceKilometers != nil {
+			test.Fatalf("a position was answered with %+v %v", places, err)
+		}
+		places, err = world.graph.SearchPhotoPlaces(ctx, SearchPhotoPlacesArguments{Query: wantName, NearLatitude: &latitude, NearLongitude: &longitude, LimitCount: new(3)})
+		if err != nil || len(places) == 0 || len(places) > 3 || places[0].PlaceName != wantName || places[0].DistanceKilometers == nil || *places[0].DistanceKilometers > 30 {
+			test.Fatalf("a city's own name found %+v %v", places, err)
+		}
+		for name, arguments := range map[string]SearchPhotoPlacesArguments{
+			"no words":          {Query: "   "},
+			"too many words":    {Query: strings.Repeat("a", 101)},
+			"no limit":          {Query: "a", LimitCount: new(0)},
+			"too large a limit": {Query: "a", LimitCount: new(51)},
+			"half a point":      {Query: "a", NearLatitude: &latitude},
+			"a point off earth": {Query: "a", NearLatitude: new(91.0), NearLongitude: &longitude},
+		} {
+			if _, err := world.graph.SearchPhotoPlaces(ctx, arguments); !errors.Is(err, api.ErrInvalidArguments) {
+				test.Fatalf("%s: %v", name, err)
+			}
+		}
+
+		changed, err := world.graph.SetPhotoLocation(ctx, SetPhotoLocationArguments{PhotoIDs: []string{first.ID, foreign.ID}, Latitude: latitude, Longitude: longitude})
+		if err != nil || changed != 1 {
+			test.Fatalf("set location changed %d: %v", changed, err)
+		}
+		found, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: first.ID})
+		if err != nil || found.Photo.Latitude == nil || *found.Photo.Latitude != latitude || *found.Photo.Longitude != longitude || found.Photo.PlaceName != wantName {
+			test.Fatalf("the photo is %+v %v", found, err)
+		}
+		for name, arguments := range map[string]SetPhotoLocationArguments{
+			"latitude off earth":  {PhotoIDs: []string{first.ID}, Latitude: -90.5, Longitude: 0},
+			"longitude off earth": {PhotoIDs: []string{first.ID}, Latitude: 0, Longitude: 180.5},
+			"too many photos":     {PhotoIDs: make([]string, 501), Latitude: 0, Longitude: 0},
+		} {
+			if _, err := world.graph.SetPhotoLocation(ctx, arguments); !errors.Is(err, api.ErrInvalidArguments) {
+				test.Fatalf("%s: %v", name, err)
+			}
+		}
+
+		changed, err = world.graph.RemovePhotoLocation(ctx, PhotoIDsArguments{PhotoIDs: []string{first.ID, second.ID, foreign.ID}})
+		if err != nil || changed != 2 {
+			test.Fatalf("remove location changed %d: %v", changed, err)
+		}
+		found, err = world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: first.ID})
+		if err != nil || found.Photo.Latitude != nil || found.Photo.Longitude != nil || found.Photo.PlaceName != "" {
+			test.Fatalf("the photo is %+v %v", found, err)
+		}
+	})
+	world.ask(otherId, allowed, func(ctx context.Context) {
+		found, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: foreign.ID})
+		if err != nil || found.Photo.Latitude != nil || found.Photo.PlaceName != "" {
+			test.Fatalf("a photo of somebody else's was changed: %+v %v", found, err)
+		}
+	})
+
+	userId := world.person("location-refused", models.PermissionCalendarUse)
+	world.ask(userId, []models.Permission{models.PermissionCalendarUse}, func(ctx context.Context) {
+		if _, err := world.graph.SearchPhotoPlaces(ctx, SearchPhotoPlacesArguments{Query: "a"}); err == nil {
+			test.Fatal("places were searched without photos:use")
+		}
+		if _, err := world.graph.SetPhotoLocation(ctx, SetPhotoLocationArguments{PhotoIDs: []string{first.ID}}); err == nil {
+			test.Fatal("a location was set without photos:use")
+		}
+		if _, err := world.graph.RemovePhotoLocation(ctx, PhotoIDsArguments{PhotoIDs: []string{first.ID}}); err == nil {
+			test.Fatal("a location was removed without photos:use")
 		}
 	})
 }
