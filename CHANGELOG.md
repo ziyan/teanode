@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.183.0] - 2026-10-19
+
+### Added
+
+- Health: the iPhone app copies the Apple Health data you allow (steps, sleep, heart rate, workouts with routes and the rest) to your own server. The dashboard and the app chart it, `teanode health` prints it, and you can share some categories with your circles. Your agent reads it only after you turn on "Let the agent read Health data". (#591)
+
 ## [0.182.1] - 2026-10-19
 
 ### Fixed
