@@ -87,8 +87,9 @@ read when Health is turned on and carried back by every answer). After the
 person erases everything, the server stores nothing from a phone that does not
 know of that erase, and answers with its time; the phone then turns Health off
 and forgets its anchors. The phone's clock plays no part, so a phone whose
-clock is off cannot slip past it (times are compared to the second, as the
-phone writes them). Erasing one type erases what is kept
+clock is off cannot slip past it (the server cuts its own erase time to the
+second before comparing, so a phone that kept it without the fraction of a
+second still counts as knowing it). Erasing one type erases what is kept
 of it; new readings of that type still arrive while Health is on.
 
 ## Who sees what
@@ -104,7 +105,7 @@ of it; new readings of that type still arrive while Health is on.
   `health` tool (types, summary, samples, set_up) only after the person turns on
   **Let the agent read Health data**, on the Settings tab of the Health page on
   the dashboard, or in Health in the iPhone app's Settings. Until then every action but set_up says so.
-  It runs only in a conversation the person asked for: a dream, a subagent, a
+  It runs only in a conversation the person, or somebody acting as them, is in: a dream, a subagent, a
   turn woken by a background command or survey, a speak-first run or any other
   run nobody is watching is refused. An operator with `agent:act` speaking as
   the person, and a client of the MCP surfaces, reach the tool only through the
@@ -116,11 +117,17 @@ of it; new readings of that type still arrive while Health is on.
   reads no routes: erasing cannot be undone, sharing and the switch are the
   person's own consent to give, and a route says where somebody runs, which
   the person shows on the map themselves.
-- **Memory.** Health data never goes into memory; dreams do not read it. The
-  run that files conversations into memory skips every assistant and tool
-  message of a turn in which the `health` tool ran, and keeps what the person
-  wrote. What the agent said about Health stays in that conversation, and
-  erasing does not remove it.
+- **Memory.** Dreams never read Health data. When a conversation is filed into
+  memory, what the agent said and what its tools answered in a turn that read
+  Health is left out, and what the person wrote is kept. A message the person
+  steers in while that turn runs belongs to the turn, which lasts until the
+  agent's final answer. The filter does not reach further: Health figures that
+  the person or the agent repeats later in a conversation (a follow-up question
+  about numbers already shown, say), and what the agent writes to memory
+  because the person asked it to, are kept like anything else said there. The
+  tool's guidance tells the agent not to copy Health into notes or memory
+  unless the person asks. What the agent said about Health stays in its
+  conversation, and erasing does not remove it.
 
 ## What leaves the server
 

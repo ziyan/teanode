@@ -19,6 +19,13 @@
 // coordinates as private as Location, which the model already learns the
 // existence of through has_route. Those are the person's to do, on the
 // dashboard, in the app or with the command line.
+//
+// Memory: dreams never read Health, and when conversations are filed into
+// memory, what a turn that read Health said is left out. The tool cannot stop
+// Health figures that the person or the agent repeats later in a conversation,
+// or that the agent writes to memory because the person asked, from being kept
+// like anything else said there, so its guidance tells the agent not to copy
+// Health into notes or memory unless asked.
 package health
 
 import (
@@ -33,7 +40,7 @@ func init() {
 			{
 				Name: "health_types", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: healthPermissions,
 				Description: "The kinds of Health data the person has, each with its Health category, its unit, the days it covers, how many readings there are and its latest day, " +
-					"and the facts about them that the Health app keeps once (their age, biological sex and blood type, when they gave them). " +
+					"and the facts about them that the Health app keeps once (their age, biological sex, blood type, skin type, wheelchair use and activity move mode, those they gave). " +
 					"Start here to learn the health_type to ask for. The person's own data only.",
 				Run: runTypes,
 			},
@@ -88,7 +95,7 @@ func init() {
 					"It reads only in a conversation with the person, never in a dream, a subagent, a background task or any other run nobody is watching. " +
 					"The person must first let you read their Health data (the switch \"Let the agent read Health data\" is in the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings); until then every action but set_up says so, and you tell them where to turn it on instead of trying again, offering set_up to take them to it. " +
 					"This is not medical advice, and you do not diagnose from it.",
-				Guidance: "Health is among the most private data the person has. Use it only when asked or when it plainly answers what they asked, and do not copy it into other tools, notes or messages unless they ask. " +
+				Guidance: "Health is among the most private data the person has. Use it only when asked or when it plainly answers what they asked, and do not copy it into other tools, notes, memory or messages unless they ask. " +
 					"In a chat with other people, do not post their Health into the room unless they ask you to.",
 				Members: []tools.Member{
 					{Action: "types", Tool: "health_types"},

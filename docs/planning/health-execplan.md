@@ -25,8 +25,11 @@ To see it working at the end: on a development server, a phone (or the demo data
 - [x] (2026-10-18) Milestone 3: the dashboard's Health page.
 - [x] (2026-10-18) First use on a development server: four months of invented data sent as a phone sends it, sent again (nothing new), read with `teanode health`; the dashboard walked in Chrome at 1400 and 390, light and dark.
 - [x] (2026-10-18) Review round 1 (server, dashboard, iPhone, words and parity, the walk-through): about 80 findings.
-- [ ] Milestone 4: getting started, documentation, privacy policy.
-- [ ] Review rounds until a round finds nothing; walk the dashboard in Chrome at 1400 and 390, light and dark; the iPhone screenshots from CI with the ux-review skill.
+- [x] (2026-10-18) Review round 2 (about 60 findings, none high) and fixes: the erase guard compares no clocks, the tool refuses runs nobody watches, one table of words (`internal/health/words.go`) that the dashboard and iPhone copy and pin in tests.
+- [x] (2026-10-19) Review round 3 (one medium per area) and fixes: what a turn that read Health said is left out of memory filing, percent kinds near 100 read as whole numbers, one tie rule for rounding, the dashboard lists readings without a range.
+- [x] (2026-10-19) Review round 4: the dashboard and the iPhone found nothing above low; the server one medium (the memory wording promised more than the code), fixed. Walked again in Chrome at 1400 and 390, light and dark; the agent checked for real on a development server (switch off, on, and asked about somebody who shares).
+- [x] (2026-10-18) Milestone 4: getting started (the paragraph in `docs/getting-started.md`, the phone tour's offer, the dashboard's and the app's empty states), `docs/subsystems/health.md`, the decision record, the command line reference, and the privacy policy on the teanode.com site (published 2026-10-18 by that site's session).
+- [ ] The iPhone screenshots from CI with the ux-review skill, once the hold is lifted (the app has not been compiled yet: macOS CI only).
 - [ ] Held: the pull request stays a draft with no macOS run until the first App Store version (build 518) is approved; then CI, TestFlight, the maintainer's phone.
 
 ## Surprises & Discoveries
@@ -63,7 +66,7 @@ To see it working at the end: on a development server, a phone (or the demo data
   Rationale: only the phone can merge sources as the Health app does (see Surprises). A chart that disagrees with the Health app would be wrong in the person's eyes.
   Date/Author: 2026-10-18, design.
 
-- Decision: health data does not go into memory. Dreams never read it, and the agent reads it only through the tool, which answers summaries first and samples a page at a time.
+- Decision: health data is kept out of memory as far as the code can. Dreams never read it, and the agent reads it only through the tool, which answers summaries first and samples a page at a time. When conversations are filed into memory, what a turn that read Health said is left out (a steered message belongs to the turn it was steered into). Health figures the person or the agent repeats later in a conversation, or that the agent writes to memory because the person asked, are kept like anything else said there; the tool's guidance tells the agent not to copy Health into notes or memory unless asked.
   Rationale: the iPhone plan's rule. Health data is among the most private there is; finance follows the same pattern (rows read in SQL, `docs/decisions/20260929-finance-transactions-are-rows-not-documents.md`), and location is the exception because its routine is the point.
   Date/Author: 2026-10-18, design.
 
@@ -203,7 +206,7 @@ Every operation needs `health:use`. `ownerUserId` reads a sharer's data: allowed
 
 ### The agent (`internal/agent/tools/health/health.go`)
 
-One read-only tool, `health`, needing `health:use`, with actions `types`, `summary` (health_type, from, to, period) and `samples` (health_type, from, to, limit, offset), and `set_up`; the person's own data only (see the Decision Log). While `can_agent_read_health` is false every action but set_up answers that the person has not let the agent read Health data, and where they turn it on (the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings). Summaries are preferred: the description says to use `summary` and to read samples only for a question about particular readings; samples page like every other read and say when there is more.
+One read-only tool, `health`, needing `health:use`, with actions `types`, `summary` (health_type, from, to, period) and `samples` (health_type, from, to, limit_count, offset), and `set_up`; the person's own data only (see the Decision Log). While `can_agent_read_health` is false every action but set_up answers that the person has not let the agent read Health data, and where they turn it on (the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings). Summaries are preferred: the description says to use `summary` and to read samples only for a question about particular readings; samples page like every other read and say when there is more.
 
 ### The command line (`internal/client/health.go`, `internal/cmd/health.go`)
 

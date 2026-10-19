@@ -242,10 +242,8 @@ func TestAHealthRouteNeedsItsWorkout(t *testing.T) {
 	})
 }
 
-// Days are replaced when sent again, and add up into weeks that start on
-// Monday and into months: sums are added, averages are weighted by how many
-// readings each day had, the lowest minimum and highest maximum are kept,
-// durations and the seconds of each category word are added.
+// A day worked out on a phone whose clock is ahead does not hold the day:
+// later sends of it, with or without a time, replace it.
 func TestADayWorkedOutInTheFutureDoesNotHoldTheDay(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -287,6 +285,10 @@ func TestADayWorkedOutInTheFutureDoesNotHoldTheDay(t *testing.T) {
 	})
 }
 
+// Days are replaced when sent again, and add up into weeks that start on
+// Monday and into months: sums are added, averages are weighted by how many
+// readings each day had, the lowest minimum and highest maximum are kept,
+// durations and the seconds of each category word are added.
 func TestHealthDaysAddUpIntoWeeksAndMonths(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()

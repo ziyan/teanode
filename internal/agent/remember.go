@@ -356,7 +356,7 @@ func (self *Agent) markRemembered(ctx context.Context, conversation *models.Agen
 // learned, and they are most of the tokens.
 //
 // What the agent said in a turn that read the person's Health is left out
-// too (see withoutHealthTurns): Health never goes into memory.
+// too (see withoutHealthTurns).
 func worthReading(messages []*models.AgentMessage) []*models.AgentMessage {
 	kept := make([]*models.AgentMessage, 0, len(messages))
 	for _, message := range withoutHealthTurns(messages) {
@@ -385,11 +385,17 @@ func isHealthToolName(name string) bool {
 // wrote is kept. The first stretch, before any message of the person, is a
 // turn too: a window that starts after a mark may begin in the middle of
 // one.
+//
+// A message the person writes while a turn runs is stored inside that
+// turn, once the tool calls of its round have come back (see takeSteering),
+// so it does not end the turn: it follows a tool message, or an assistant
+// message that made tool calls, and the turn goes on to the agent's final
+// answer. Only a message after an answer starts a turn.
 func withoutHealthTurns(messages []*models.AgentMessage) []*models.AgentMessage {
 	kept := make([]*models.AgentMessage, 0, len(messages))
 	for start := 0; start < len(messages); {
 		end := start + 1
-		for end < len(messages) && messages[end].Role != string(llm.RoleUser) {
+		for end < len(messages) && !isTurnStart(messages, end) {
 			end++
 		}
 		hasHealth := false
@@ -408,6 +414,28 @@ func withoutHealthTurns(messages []*models.AgentMessage) []*models.AgentMessage 
 		start = end
 	}
 	return kept
+}
+
+// isTurnStart says whether the message at index begins a turn: it is a
+// message of the person, and not one they steered into the running turn.
+// A steered message comes after the result of a tool call, or after an
+// assistant message that made one (notes between are not looked at).
+func isTurnStart(messages []*models.AgentMessage, index int) bool {
+	if messages[index].Role != string(llm.RoleUser) {
+		return false
+	}
+	for previous := index - 1; previous >= 0; previous-- {
+		switch messages[previous].Role {
+		case models.AgentMessageNote:
+			continue
+		case string(llm.RoleTool):
+			return false
+		case string(llm.RoleAssistant):
+			return len(messages[previous].ToolCalls) == 0
+		}
+		return true
+	}
+	return true
 }
 
 // chatName is how a run names the conversation it read. The main chat is

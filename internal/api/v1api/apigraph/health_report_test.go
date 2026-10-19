@@ -12,8 +12,8 @@ import (
 // stored: it would undo the erase. The phone sends the erase time it knew when
 // it turned Health on (null if there was none), and a report is stored only
 // when the person has never erased or that time is the last erase or later.
-// Server time is compared with server time, to the second as the phone writes
-// it, so a clock that is wrong on the phone changes nothing.
+// Server time is compared with server time, with the erase time cut to the
+// second, so a clock that is wrong on the phone changes nothing.
 func TestAReportAfterEraseIsNotStoredUnlessThePhoneKnowsOfTheErase(t *testing.T) {
 	world := newHealthWorld(t)
 	world.fill(t, world.ada)
@@ -66,8 +66,7 @@ func TestAReportAfterEraseIsNotStoredUnlessThePhoneKnowsOfTheErase(t *testing.T)
 
 	// A phone that knows of the erase reports as usual, and is still told when
 	// it was. It sends what it read, which is the time as the server wrote it,
-	// or the same time in whole seconds rounded down, as the phone writes
-	// every time.
+	// or the same time cut to the whole second.
 	answer := world.report(t, world.ada, batch(erasedText))
 	if answer["newSampleCount"] != float64(2) || answer["updatedDayCount"] != float64(1) || answer["healthErasedAt"] != erasedText {
 		t.Errorf("a phone that knows the erase time: %v", answer)

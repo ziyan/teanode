@@ -42,8 +42,8 @@ const notAllowedWords = "The person has not let you read their Health data. " +
 // run the person did not ask for: a dream, a subagent, a turn woken by a
 // background command or survey, a scheduled run, a goal, a speak-first run,
 // a turn of somebody else in the person's chat. What a run like that reads
-// would be filed away without the person having asked, and Health never goes
-// into memory.
+// would be filed away without the person having asked, and Health is kept
+// out of memory.
 const unattendedWords = "Health data is read only in a conversation with the person, not in a dream, a subagent, a background task or any other run nobody is watching, so ask them in a conversation instead."
 
 // Surfaces that are never the person asking: a turn woken by a finished

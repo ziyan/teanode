@@ -93,7 +93,7 @@ type HealthMutation interface {
 	// (the healthErasedAt of ReadHealthSettings when it turned Health on, null
 	// if there was none), a batch is stored only when the person has never
 	// erased, or when healthErasedAt is the time of the last erase or later
-	// (compared to the second, as the phone writes it). A batch that does not
+	// (compared with the server's erase time cut to the second). A batch that does not
 	// send healthErasedAt, or sends an earlier one, after an erase stores
 	// nothing and is answered with the erase time, which tells the phone to
 	// stop and forget where it was. Server time is only compared with server
@@ -1373,8 +1373,9 @@ func (self *graph) ReportHealth(ctx context.Context, arguments ReportHealthArgum
 	// had already read or queued: unless the phone knows of the last erase (it
 	// sends back the erase time it read when it turned Health on), store
 	// nothing, and say when they erased, which tells the phone to stop. Only
-	// server time is compared with server time, to the second because the phone
-	// writes whole seconds.
+	// server time is compared with server time, with the server's erase time
+	// cut to the second, so a phone that kept it without the fraction of a
+	// second still counts as knowing it.
 	choices, err := tx.GetHealthChoices(user.ID)
 	if err != nil {
 		return nil, translateError(err)

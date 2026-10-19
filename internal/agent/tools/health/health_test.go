@@ -479,8 +479,8 @@ func TestSamplesNameSleepStagesAndHoldTheLimits(t *testing.T) {
 // A run nobody is watching never reads Health: a dream, a background subagent
 // and a headless run (a schedule, a goal, a research run) get one plain
 // sentence, ask nothing of the server, and the person's own conversation still
-// reads. The docs say Health never goes into memory and the dreams do not read
-// it; this is what makes that true.
+// reads. The docs say the dreams do not read Health; this is what makes that
+// true.
 func TestARunNobodyIsWatchingNeverReadsHealth(t *testing.T) {
 	for name, run := range map[string]*fakeRun{
 		"a background run": {isUnattended: true},
