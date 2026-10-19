@@ -165,6 +165,19 @@ start unless the start satisfies the rule — an event beginning on a Tuesday
 with "every Monday" first happens on the following Monday. And an occurrence
 lasts as long as the first one did: it is the length that repeats, not the end.
 
+The rule is text and the server takes any of it, so the editors only have to
+build and read the parts a person can choose. The dashboard (`calendarRepeat.ts`)
+and the iPhone app (`CalendarRepeat` in TeaNodeKit) each offer Custom: every N
+days, weeks, months or years; chosen days of the week; in a month the day
+number or the second Tuesday; and ending never, on a date or after some times.
+Both are tested against one table of rules, read and written, so the two
+cannot drift. `UNTIL` is written as the end of the chosen day in the event's
+zone, as a UTC moment, and as a plain date for an all-day event. A rule with
+anything the editors do not show (`BYSETPOS`, `BYMONTH`, several days of a
+month) is described as far as it can be and kept exactly as it was unless the
+person changes what the editor does show, so opening and saving never loses
+what another program set.
+
 ## Time zones are written out, not named
 
 An event anchored to a zone carries a `VTIMEZONE` describing it: the offsets

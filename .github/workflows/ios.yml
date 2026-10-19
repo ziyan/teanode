@@ -512,6 +512,13 @@ jobs:
           shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
           shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
           shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
+          # The days of the morning brief, with Monday to Friday chosen and with none, and the brief's row that opens them.
+          for brief_days_screen in schedules-brief-days schedules-brief-days-none; do
+            shoot "$brief_days_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$brief_days_screen"
+            shoot "$brief_days_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$brief_days_screen"
+            shoot "$brief_days_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$brief_days_screen"
+          done
+          shoot schedules-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
           shoot activity-run-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
           shoot activity-run-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
           # The alert settings, with what the agent is following.
@@ -550,6 +557,10 @@ jobs:
             shoot "$calendar_screen-dark" dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
             shoot "$calendar_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
           done
+          # An event on each weekday, with its Custom repeat screen open.
+          shoot calendar-repeat-custom-light light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-repeat-custom
+          shoot calendar-repeat-custom-dark dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-repeat-custom
+          shoot calendar-repeat-custom-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-repeat-custom
           # Pages other people shared: the list by owner, and one page read only.
           for knowledge_screen in knowledge-shared knowledge-shared-page; do
             shoot "$knowledge_screen-light" light large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen "$knowledge_screen"

@@ -30,10 +30,12 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/setti
 import { Tabs, TabItem } from '../components/tabs'
 import { FinanceTab } from './agentFinance'
 import { useFinancePresence } from './finance/financePresence'
+import { dayNumbersFromCronField } from './agentBriefDays'
 import { GoalsTab } from './agentGoals'
 import { IdeasTab } from './agentIdeas'
 import { MemoryCheckSection } from '../components/memoryCheck'
 import { Tooltip } from '../components/tooltip'
+import { WeekdayButtons, languageWeekStart } from '../components/weekdayButtons'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -3165,7 +3167,7 @@ function DreamCard({
   )
 }
 
-function BriefCard() {
+export function BriefCard() {
   const { t } = useTranslation()
   const toast = useToast()
   const { data, error, loading, reload } = useQuery(
@@ -3175,32 +3177,21 @@ function BriefCard() {
   const [busy, setBusy] = useState(false)
   const brief = (data?.ListAgentSchedules ?? []).find((schedule) => schedule.name === 'Daily brief')
   const [at, setAt] = useState('')
-  const [days, setDays] = useState('')
+  // The days the person has chosen, once they have chosen any; until then
+  // the days the brief has.
+  const [days, setDays] = useState<number[] | null>(null)
+  const { language } = useTranslation()
 
-  // What the cron line says, for the two fields: "30 7 * * 1-5".
+  // What the cron line says, for the time and the days: "30 7 * * 1-5".
   const fields = (brief?.cron ?? '30 7 * * 1-5').split(/\s+/)
   const time = at || `${(fields[1] ?? '7').padStart(2, '0')}:${(fields[0] ?? '30').padStart(2, '0')}`
-  const chosenDays = days || (fields[4] ?? '1-5')
+  const chosenDays = days ?? dayNumbersFromCronField(fields[4] ?? '1-5')
+  const hasNoDay = chosenDays.length === 0
 
   const save = async (enabled: boolean) => {
     setBusy(true)
     try {
-      const parsed = chosenDays
-        .split(',')
-        .flatMap((part) => {
-          const range = part.split('-')
-          if (range.length === 2) {
-            const from = Number(range[0])
-            const until = Number(range[1])
-            return Number.isNaN(from) || Number.isNaN(until)
-              ? []
-              : Array.from({ length: until - from + 1 }, (_, index) => from + index)
-          }
-          const one = Number(part)
-          return Number.isNaN(one) ? [] : [one === 0 ? 7 : one]
-        })
-        .filter((day) => day >= 1 && day <= 7)
-      await graphql(SET_BRIEF, { enabled, at: time, days: parsed.length > 0 ? parsed : undefined })
+      await graphql(SET_BRIEF, { enabled, at: time, days: chosenDays })
       toast.done(enabled ? t('agent.briefOn') : t('agent.briefOff'))
       await reload()
     } catch (caught) {
@@ -3232,16 +3223,16 @@ function BriefCard() {
             <span>{t('agent.briefAt')}</span>
             <input type="time" value={time} disabled={busy} onChange={(change) => setAt(change.target.value)} />
           </label>
-          <label>
-            <span>{t('agent.briefDays')}</span>
-            <input
-              value={chosenDays}
-              disabled={busy}
-              placeholder="1-5"
-              onChange={(change) => setDays(change.target.value)}
-            />
-          </label>
         </div>
+        <div className="field-label">{t('agent.briefDays')}</div>
+        <WeekdayButtons
+          label={t('agent.briefDays')}
+          weekdays={chosenDays}
+          weekStart={languageWeekStart(language)}
+          disabled={busy}
+          onChange={setDays}
+        />
+        {hasNoDay ? <p className="muted field-hint">{t('agent.briefNoDays')}</p> : null}
         <div className="page-actions page-actions-end">
           {brief?.enabled ? (
             <>
@@ -3251,12 +3242,12 @@ function BriefCard() {
               <button type="button" disabled={busy} onClick={() => void save(false)}>
                 {t('agent.briefStop')}
               </button>
-              <button type="button" className="primary" disabled={busy} onClick={() => void save(true)}>
+              <button type="button" className="primary" disabled={busy || hasNoDay} onClick={() => void save(true)}>
                 {t('agent.briefSave')}
               </button>
             </>
           ) : (
-            <button type="button" className="primary" disabled={busy} onClick={() => void save(true)}>
+            <button type="button" className="primary" disabled={busy || hasNoDay} onClick={() => void save(true)}>
               {t('agent.briefStart')}
             </button>
           )}

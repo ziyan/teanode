@@ -901,6 +901,11 @@ public enum ScheduleWeekday {
         symbol(dayNumber, in: calendar(locale).shortStandaloneWeekdaySymbols)
     }
 
+    /// Some days' short names as the locale lists them: "Mon, Wed, and Fri".
+    public static func shortNamesText(_ dayNumbers: [Int], locale: Locale = .current) -> String {
+        dayNumbers.sorted().map { shortName($0, locale: locale) }.formatted(.list(type: .and).locale(locale))
+    }
+
     private static func symbol(_ dayNumber: Int, in symbols: [String]) -> String {
         let symbolIndex = calendarWeekday(fromDayNumber: dayNumber) - 1
         return symbols.indices.contains(symbolIndex) ? symbols[symbolIndex] : String(dayNumber)
@@ -942,7 +947,11 @@ public struct ScheduleTiming: Hashable, Sendable {
         self.dayNumbers = dayNumbers
     }
 
-    public var dayPattern: DayPattern {
+    public var dayPattern: DayPattern { Self.dayPattern(for: dayNumbers) }
+
+    /// How some days read to a person: every day, weekdays, weekends, one
+    /// day, or a few. The days are Monday 1 to Sunday 7, in order.
+    public static func dayPattern(for dayNumbers: [Int]) -> DayPattern {
         switch dayNumbers {
         case ScheduleWeekday.allDayNumbers: .everyDay
         case Array(1...5): .weekdays
