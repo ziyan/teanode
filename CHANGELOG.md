@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.184.0] - 2026-10-19
+
+### Added
+
+- A contact can be linked to a person in your circles. Photos then shows them with their circle picture, Circles and Location open their photos, and the assistant finds "photos of" them. Contacts whose address is a mailbox of someone in your circles are suggested for you to confirm. Only you see the link. (#596)
+
+### Changed
+
+- On the iPhone, Location's label filter is a small menu in the places list's heading, and the visits list no longer has one. (#596)
+
 ## [0.183.0] - 2026-10-19
 
 ### Added
