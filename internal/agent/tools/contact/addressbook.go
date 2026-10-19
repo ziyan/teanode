@@ -57,9 +57,9 @@ func init() {
 					case "remove-picture":
 						return "Take the picture off a contact, on every device too"
 					case "link-account":
-						return "Note which person in their circles a contact is"
+						return "Link a contact to a person in their circles"
 					case "unlink-account":
-						return "Take back the note of which person in their circles a contact is"
+						return "Unlink a contact from a person in their circles"
 					}
 					return "The address book"
 				},
@@ -399,7 +399,7 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		}, &answer); err != nil {
 			return nil, err
 		}
-		result := tools.TextResult("took back the note that this contact is a person in their circles; the contact is as it was")
+		result := tools.TextResult("this contact is no longer linked to a person in their circles; the contact is as it was")
 		result.Note = "unlinked a contact from a person in the circles"
 		return result, nil
 
