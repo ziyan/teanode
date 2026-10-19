@@ -1042,6 +1042,7 @@ struct PaystubDetailView: View {
                         } label: {
                             HStack {
                                 Label("Open the original", systemImage: "doc.viewfinder")
+                                    .actionColor()
                                 if isOpeningFile {
                                     Spacer()
                                     ProgressView()
@@ -1267,6 +1268,7 @@ struct TaxFormDetailView: View {
                     } label: {
                         HStack {
                             Label("Open the original", systemImage: "doc.viewfinder")
+                                .actionColor()
                             if isOpeningFile {
                                 Spacer()
                                 ProgressView()
@@ -1341,6 +1343,7 @@ struct TaxFormEntryRow: View {
                 Text(verbatim: text)
             } else if entry.isChecked == true {
                 Label("Marked", systemImage: "checkmark.square")
+                    .foregroundStyle(.primary)
             }
         } label: {
             VStack(alignment: .leading, spacing: 2) {

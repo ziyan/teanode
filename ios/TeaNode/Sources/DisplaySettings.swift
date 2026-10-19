@@ -46,11 +46,14 @@ enum Appearance: String, CaseIterable, Identifiable {
     func apply() {
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
+            // Only what differs is set: this runs each time the app comes to
+            // the front, and a window given its style again, even the same one,
+            // may work out its bars' look anew as the app wakes.
             for window in windowScene.windows {
-                window.overrideUserInterfaceStyle = interfaceStyle
+                if window.overrideUserInterfaceStyle != interfaceStyle { window.overrideUserInterfaceStyle = interfaceStyle }
                 var presented = window.rootViewController?.presentedViewController
                 while let controller = presented {
-                    controller.overrideUserInterfaceStyle = interfaceStyle
+                    if controller.overrideUserInterfaceStyle != interfaceStyle { controller.overrideUserInterfaceStyle = interfaceStyle }
                     presented = controller.presentedViewController
                 }
             }

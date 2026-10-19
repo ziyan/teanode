@@ -13,7 +13,10 @@
 // grey while it cannot be pressed), a destructive button's
 // `.actionColor(isDestructive: true)` after its tint, and any other label
 // `.foregroundStyle(.primary)`, the color of the words beside it. A row is
-// a label whose nearest container is a Section, Form or List.
+// a label whose nearest container is a Section, Form or List, looking
+// through the stacks that lay a row out (a label in an HStack beside a
+// count is still the row's), or a label in the body of a view named
+// `...Row`, which a list shows as one.
 //
 //   node ios/scripts/check-button-colors.mjs         lists them
 //   node ios/scripts/check-button-colors.mjs --fix   colors each
@@ -199,13 +202,23 @@ function containerOf(code, start) {
     // A section's header and footer are grey words under the rows, not one.
     if (/\b(header|footer):\s*$/.test(before)) return 'header'
     const words = before.match(/([A-Za-z_.]+)\s*(\((?:[^()]|\([^()]*\))*\))?\s*(?:[a-z]+:\s*)?$/)
-    if (words && containerPattern.test(words[1])) return words[1]
-    if (/-> some View\s*$|var body: some View\s*$/.test(before)) return null
+    // A stack inside a row lays the row out; what holds the stack decides.
+    if (words && containerPattern.test(words[1]) && !stackContainers.has(words[1])) return words[1]
+    if (/var body: some View\s*$/.test(before)) {
+      // The body of a view made to be a list's row is a row.
+      const viewName = code.slice(0, index).match(/struct\s+([A-Za-z]+)\s*:\s*View\s*\{(?![\s\S]*\bstruct\s+[A-Za-z]+\s*:)/)
+      return viewName && (/Row$/.test(viewName[1]) || rowViewNames.has(viewName[1])) ? 'Section' : null
+    }
+    if (/-> some View\s*$/.test(before)) return null
     index--
   }
   return null
 }
 const rowContainers = new Set(['Section', 'Form', 'List'])
+const stackContainers = new Set(['HStack', 'VStack', 'LazyVStack'])
+// The views a list shows as a row: their bodies' labels are rows' labels
+// wherever the view is written, so they are found by where they are used.
+const rowViewNames = new Set()
 
 // expressionEnd returns where the call that starts at `start` ends: its
 // argument list, then its trailing closures.
@@ -267,7 +280,9 @@ function controlOf(code, start) {
       index = closeIndex
     }
     const call = head.match(/([A-Za-z]+)\s*(\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))?\s*$/)
-    if (call && !/^(if|else|in|let|var)$/.test(call[1])) return { name: call[1], start: headStart + call.index }
+    // A stack lays out a control's label; the control is further out.
+    if (call && !/^(if|else|in|let|var)$/.test(call[1]) && !stackContainers.has(call[1])) return { name: call[1], start: headStart + call.index }
+    if (call && stackContainers.has(call[1])) index = headStart + call.index
     index--
   }
   return null
@@ -281,6 +296,19 @@ const actionControls = new Set(['Button', 'Menu', 'ShareLink'])
 // tint like its symbol, and a placeholder screen is not a row.
 const ownColorControls = new Set(['Link', 'ContentUnavailableView', 'PhotosPicker'])
 const colorModifiers = /^(foregroundStyle|foregroundColor|actionColor)$/
+
+// Twice, so that a view used as a row inside another row view is found.
+const sources = swiftFiles(iosDirectory).map((path) => codeOnly(readFileSync(path, 'utf8')))
+const viewNames = new Set(sources.flatMap((code) => [...code.matchAll(/\bstruct\s+([A-Z][A-Za-z]+)\s*:\s*View\b/g)].map((match) => match[1])))
+for (let pass = 0; pass < 2; pass++) {
+  for (const code of sources) {
+    for (const match of code.matchAll(/\b([A-Z][A-Za-z]+)\s*[({]/g)) {
+      if (!viewNames.has(match[1]) || rowViewNames.has(match[1])) continue
+      if (/\bstruct\s*$/.test(code.slice(Math.max(0, match.index - 10), match.index))) continue
+      if (rowContainers.has(containerOf(code, match.index))) rowViewNames.add(match[1])
+    }
+  }
+}
 
 const findings = []
 for (const path of swiftFiles(iosDirectory)) {
@@ -345,6 +373,8 @@ for (const path of swiftFiles(iosDirectory)) {
     const control = kind === 'Label' ? controlOf(code, start) : { name: kind, start }
     if (control && ownColorControls.has(control.name)) continue
     if (chainOf(code, end).some((name) => colorModifiers.test(name))) continue
+    // A label style of its own (a tag, icon only) draws its own colors.
+    if (chainOf(code, end).includes('labelStyle')) continue
     // A color on the control around the label is the label's too.
     if (kind === 'Label' && control && chainOf(code, expressionEnd(code, control.start)).some((name) => colorModifiers.test(name))) continue
     const isAction = actionControls.has(control?.name ?? '')

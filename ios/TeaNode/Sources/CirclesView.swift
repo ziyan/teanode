@@ -525,6 +525,7 @@ struct OpenCirclesLink: View {
             CirclesView(connection: connection)
         } label: {
             Label("Open Circles", systemImage: "person.2")
+                .foregroundStyle(.primary)
         }
     }
 }

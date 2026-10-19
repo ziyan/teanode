@@ -173,6 +173,12 @@ extension Error {
 /// swipe from the left edge opens it, and a tap on the screen or a swipe
 /// back closes it. The tab bar steps aside while it is open.
 ///
+/// Where the window is wide (an iPad, but not in Slide Over or a narrow
+/// Split View) there is room for both, so the panel stays open as a column
+/// at the left and the screen takes the rest; nothing slides, and the
+/// screens are told so with `isMenuPinned`, which takes their menu button
+/// away.
+///
 /// SwiftUI has no such container, so this one is drawn by hand.
 struct SidePanel<Panel: View, Content: View>: View {
     @Binding var isOpen: Bool
@@ -183,11 +189,44 @@ struct SidePanel<Panel: View, Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var dragged: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var isReducingMotion
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// How far from the left edge a swipe must start to open the panel.
     static var edgeWidth: CGFloat { 28 }
 
+    /// How wide the panel is when it stays open as a column: wider at the
+    /// accessibility text sizes, where a part's name in 320 points was broken
+    /// in the middle of the word.
+    private var columnWidth: CGFloat { dynamicTypeSize.isAccessibilitySize ? 440 : 320 }
+
     var body: some View {
+        if horizontalSizeClass.isMenuColumn {
+            column
+        } else {
+            slidingPanel
+        }
+    }
+
+    /// The panel at the left and the screen beside it, a hairline between.
+    /// The panel cannot be closed, so there is no offset, shadow, rounded
+    /// corner, drag or tap to close.
+    private var column: some View {
+        HStack(spacing: 0) {
+            panel()
+                .frame(width: columnWidth)
+                .environment(\.isMenuPinned, true)
+            Divider()
+            content()
+                .frame(maxWidth: .infinity)
+                .environment(\.isMenuPinned, true)
+        }
+        // The whole window, to its edges, as the sliding panel is; the
+        // screens keep their own safe areas.
+        .ignoresSafeArea()
+    }
+
+    private var slidingPanel: some View {
         GeometryReader { geometry in
             let width = min(geometry.size.width * 0.84, 380)
             let shift = max(0, min(width, (isOpen ? width : 0) + dragged))
@@ -252,6 +291,21 @@ struct SidePanel<Panel: View, Content: View>: View {
     }
 }
 
+extension Optional where Wrapped == UserInterfaceSizeClass {
+    /// Whether a window of this horizontal size class keeps the side menu
+    /// open as a column. The size class and not the device decides, so that
+    /// Slide Over and a narrow Split View, which are compact, slide the menu
+    /// as the iPhone does instead of leaving the screen no room.
+    var isMenuColumn: Bool { self == UserInterfaceSizeClass.regular }
+}
+
+extension UIScrollView {
+    /// Whether its content is wider than it is, so that it scrolls sideways.
+    fileprivate var isScrollableSideways: Bool {
+        contentSize.width > bounds.width - adjustedContentInset.left - adjustedContentInset.right + 1
+    }
+}
+
 /// SidePanelPan is the side panel's drag, as a UIKit pan so that it can
 /// cancel the touches of what is under the finger when it starts.
 struct SidePanelPan: UIGestureRecognizerRepresentable {
@@ -308,13 +362,37 @@ struct SidePanelPan: UIGestureRecognizerRepresentable {
             // A drag on a chart reads its values; it never opens the panel.
             let startInWindow = CGPoint(x: pan.location(in: nil).x - pan.translation(in: nil).x, y: pan.location(in: nil).y)
             if SidePanelExclusions.shared.contains(startInWindow) { return false }
+            // A drag to the right that starts on something scrolled sideways
+            // away from its start (a code block, a strip of attachments, a
+            // terminal) scrolls it back, as the finger asks, rather than
+            // opening the menu over it as well.
+            if let scrollView = Self.sidewaysScrollView(at: start, in: view), scrollView.contentOffset.x > -scrollView.adjustedContentInset.left + 1 {
+                return false
+            }
             return shouldBegin(start, pan.velocity(in: view))
         }
 
         /// Up and down still scroll the screen; only a sideways drag is
-        /// the panel's, and it begins only then.
+        /// the panel's, and it begins only then. Only a scroll view's own
+        /// pan runs beside it: a tap was allowed to as well, and since the
+        /// screen moves with the finger, the touch never left the photo or
+        /// row it began on, which then opened as the menu did.
+        /// A scroll view that scrolls sideways does not run beside it either:
+        /// one drag would both scroll it and open the menu.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            true
+            guard other is UIPanGestureRecognizer else { return false }
+            if let scrollView = other.view as? UIScrollView, scrollView.isScrollableSideways { return false }
+            return true
+        }
+
+        /// The innermost view under a point that scrolls sideways, if any.
+        private static func sidewaysScrollView(at point: CGPoint, in view: UIView) -> UIScrollView? {
+            var candidate = view.hitTest(point, with: nil)
+            while let current = candidate, current !== view {
+                if let scrollView = current as? UIScrollView, scrollView.isScrollableSideways { return scrollView }
+                candidate = current.superview
+            }
+            return nil
         }
     }
 }
@@ -365,6 +443,33 @@ struct MenuListStyle: ViewModifier {
             content
         }
     }
+}
+
+/// ReadableWidth keeps what is read in lines, such as a conversation or a
+/// mail, from running the whole width of a wide window, where a line of
+/// text is too long to follow. It is centered, and only where the window is
+/// wide: on the iPhone and in a narrow window it changes nothing.
+struct ReadableWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// The widest the content gets, in points.
+    static var maximumWidth: CGFloat { 720 }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if horizontalSizeClass == .regular {
+            content
+                .frame(maxWidth: Self.maximumWidth)
+                .frame(maxWidth: .infinity)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Content kept to a width that reads well, centered; see ReadableWidth.
+    func readableWidth() -> some View { modifier(ReadableWidth()) }
 }
 
 /// WithoutSwipeBack turns off going back by swiping in the navigation stack

@@ -340,7 +340,6 @@ struct ComposeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(AppModel.self) private var app
-    @State private var isConfirmingDiscard = false
     @State private var isConfirmingClose = false
 
     init(mail: MailModel, start: ComposeStart) {
@@ -424,6 +423,7 @@ struct ComposeView: View {
                     ForEach(model.carried, id: \.index) { file in
                         HStack {
                             Label(file.filename.isEmpty ? String(localized: "Attachment") : file.filename, systemImage: "paperclip")
+                                .foregroundStyle(.primary)
                             Spacer()
                             Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
                                 .font(.footnote)
@@ -469,17 +469,16 @@ struct ComposeView: View {
                                 dismiss()
                             }
                         }
-                        Button("Discard", role: .destructive) { isConfirmingDiscard = true }
-                    }
-                    .confirmationDialog("Discard this draft?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
-                        Button("Discard", role: .destructive) {
+                        // Choosing it here is the confirmation: a second dialog
+                        // asking again made discarding take two.
+                        Button("Discard draft", role: .destructive) {
                             Task {
                                 await model.discard()
                                 dismiss()
                             }
                         }
                     } message: {
-                        Text("What was written is gone.")
+                        Text("A discarded draft cannot be brought back.")
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -611,6 +610,7 @@ struct AttachButton: View {
             Button("Files", systemImage: "folder") { isPickingFiles = true }
         } label: {
             Label("Attach", systemImage: "paperclip")
+                .actionColor()
         }
         .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
         .cameraPicker(isPresented: $isTakingPicture) { picture in

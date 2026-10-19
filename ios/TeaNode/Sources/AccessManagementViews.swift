@@ -264,6 +264,7 @@ private struct AddToCircleMenu: View {
             }
         } label: {
             Label("Add to a circle", systemImage: "person.2")
+                .actionColor()
         }
     }
 }
@@ -387,7 +388,7 @@ struct PersonDetailView: View {
         .toolbar {
             if directory.canManageUsers, user != nil {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Edit") { isEditing = true }
+                    Button("Edit", systemImage: "pencil") { isEditing = true }
                 }
             }
         }
@@ -795,7 +796,7 @@ struct GroupDetailView: View {
         .toolbar {
             if directory.canManageGroups, group != nil {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Edit") { isEditing = true }
+                    Button("Edit", systemImage: "pencil") { isEditing = true }
                 }
             }
         }
@@ -1245,7 +1246,7 @@ struct RoleDetailView: View {
         .toolbar {
             if directory.canManageRoles, role != nil {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Edit") { isEditing = true }
+                    Button("Edit", systemImage: "pencil") { isEditing = true }
                 }
             }
         }

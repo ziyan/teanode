@@ -111,7 +111,9 @@ struct MailboxesList: View {
         .overlay {
             if mail.isLoaded, mail.entries.isEmpty {
                 ContentUnavailableView("No mailbox yet", systemImage: "tray", description: Text("A mailbox is made when an address is given to you on your server."))
-            } else if !mail.isLoaded {
+            } else if !mail.isLoaded, leading == nil {
+                // Not in the side menu, whose parts are there while the
+                // folders are read, as the chats' list does.
                 ProgressView()
             }
         }
@@ -195,6 +197,7 @@ struct FolderLink: View {
                 }
             } label: {
                 Label(name, systemImage: systemImage)
+                    .foregroundStyle(.primary)
             }
             .contentShape(.rect)
         }
@@ -511,12 +514,14 @@ struct ThreadList: View {
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button(editMode.isEditing ? LocalizedStringKey("Done") : "Select") {
-                withAnimation {
-                    if editMode.isEditing { finishEditing() } else { editMode = .active }
-                }
+            // Select is the circled check beside the circled filter, as in
+            // Photos; Done stays a word while choosing.
+            if editMode.isEditing {
+                Button("Done") { withAnimation { finishEditing() } }
+            } else {
+                Button("Select", systemImage: "checkmark.circle") { withAnimation { editMode = .active } }
+                    .disabled(list.threads.isEmpty)
             }
-            .disabled(list.threads.isEmpty)
         }
         if editMode.isEditing {
             ToolbarItemGroup(placement: .bottomBar) {

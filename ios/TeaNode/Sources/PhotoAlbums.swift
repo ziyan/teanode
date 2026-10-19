@@ -605,7 +605,7 @@ struct PhotoAlbumScreen: View {
         } else {
             if !photos.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Select") { isSelecting = true }
+                    Button("Select", systemImage: "checkmark.circle") { isSelecting = true }
                 }
             }
             if let album, album.canCallerContribute || album.canCallerManage {

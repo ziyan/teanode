@@ -950,6 +950,7 @@ struct PreviewLink: View {
             Task { await app.preview(path, name: name) }
         } label: {
             Label(name, systemImage: "doc")
+                .actionColor()
                 .font(.caption)
         }
     }
@@ -1514,6 +1515,7 @@ struct EvidenceRecordRow: View {
                     : (record.recordTitle.isEmpty ? KnowledgeRecordWords.kind(record.recordKind) : record.recordTitle),
                 systemImage: KnowledgeRecordKinds.symbol(record.recordKind)
             )
+            .actionColor()
             .font(.footnote)
         }
         .disabled(!record.canOpen)

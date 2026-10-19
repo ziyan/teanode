@@ -221,7 +221,10 @@ struct ConversationsSheet: View {
             .overlay {
                 if let problemText {
                     ContentUnavailableView("Cannot load conversations", systemImage: "wifi.exclamationmark", description: Text(problemText))
-                } else if !isLoaded {
+                } else if !isLoaded, !isPanel {
+                    // In the side menu nothing turns while the chats are read:
+                    // the parts above them are there at once, and a spinner in
+                    // the middle of the menu only drew the eye.
                     ProgressView()
                 }
             }
@@ -581,6 +584,7 @@ struct SettingsForm: View {
                                 // badge on the link itself is drawn after the chevron.
                                 HStack {
                                     Label("Circles", systemImage: "person.2")
+                                        .foregroundStyle(.primary)
                                     Spacer()
                                     if openCircleInvitationCount > 0 {
                                         Text(openCircleInvitationCount, format: .number)
@@ -861,6 +865,7 @@ struct PhotoBackupSettingsRow: View {
     var body: some View {
         HStack {
             Label("Photo backup", systemImage: "icloud.and.arrow.up")
+                .foregroundStyle(.primary)
             Spacer()
             statusText
                 .foregroundStyle(.secondary)

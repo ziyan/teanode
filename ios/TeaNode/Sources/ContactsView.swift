@@ -420,7 +420,7 @@ struct ContactDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") { isEditing = true }
+                Button("Edit", systemImage: "pencil") { isEditing = true }
                     .disabled(contact == nil)
             }
         }
@@ -457,6 +457,7 @@ struct ReachRow: View {
             if let address { openURL(address) }
         } label: {
             Label(text, systemImage: systemImage)
+                .actionColor()
         }
         .contextMenu {
             Button("Copy", systemImage: "doc.on.doc") {

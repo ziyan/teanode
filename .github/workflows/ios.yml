@@ -120,18 +120,33 @@ jobs:
       - name: Pick the simulators and compile the checks
         working-directory: ios
         run: |
+          # The newest simulator whose name starts and ends with the two
+          # words, or nothing when there is none.
           pick() {
             xcrun simctl list devices available -j | python3 -c '
           import json, sys
           runtimes = json.load(sys.stdin)["devices"]
-          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
-                    if device["name"].startswith("iPhone") and device["name"].endswith(sys.argv[1])]
-          print(phones[-1]["udid"])' "$1"
+          devices = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
+                     if device["name"].startswith(sys.argv[1]) and device["name"].endswith(sys.argv[2])]
+          print(devices[-1]["udid"] if devices else "")' "$1" "$2"
           }
-          phone=$(pick " Pro")
-          largest=$(pick " Pro Max")
+          phone=$(pick iPhone " Pro")
+          largest=$(pick iPhone " Pro Max")
+          # The 13 inch iPad Pro, the iPad the App Store wants pictures of;
+          # any iPad Pro when the image has no 13 inch one.
+          ipad=$(pick "iPad Pro 13" "")
+          if [ -z "$ipad" ]; then
+            ipad=$(pick "iPad Pro" "")
+          fi
+          for udid in "$phone" "$largest" "$ipad"; do
+            if [ -z "$udid" ]; then
+              echo "A simulator this job needs is not installed."
+              exit 1
+            fi
+          done
           echo "PHONE=$phone" >> "$GITHUB_ENV"
           echo "LARGEST_PHONE=$largest" >> "$GITHUB_ENV"
+          echo "IPAD=$ipad" >> "$GITHUB_ENV"
           mkdir -p build
           for check in recording device-setup knowledge conversation; do
             swiftc "scripts/assert-$check-screenshot.swift" -o "build/assert-$check-screenshot" &
@@ -557,6 +572,30 @@ jobs:
           shoot store/4-goals light large -TeaNodeDemo -TeaNodeTab goals
           shoot store/5-menu dark large -TeaNodeDemo -TeaNodeMenu
           shoot store/6-conversation-dark dark large -TeaNodeDemo
+
+          # The iPad: the same app with the side menu as a column that stays
+          # open beside the screen, upright. The phone is shut down
+          # first, so two simulators are not up at once, and the iPad has its
+          # own appearance and text size to set.
+          xcrun simctl shutdown "$device"
+          device=$IPAD
+          shown_appearance="" shown_size=""
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$app"
+          shoot ipad-conversation-light light large -TeaNodeDemo
+          shoot ipad-conversation-dark dark large -TeaNodeDemo
+          shoot ipad-mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
+          shoot ipad-photos-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
+          shoot ipad-location-light light large -TeaNodeDemo -TeaNodeTab location
+          shoot ipad-calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
+          # The App Store's iPad set, upright, with the same status bar.
+          xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
+          mkdir -p screenshots/store-ipad
+          shoot store-ipad/1-conversation light large -TeaNodeDemo
+          shoot store-ipad/2-mail light large -TeaNodeDemo -TeaNodeTab mail
+          shoot store-ipad/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
+          shoot store-ipad/4-goals light large -TeaNodeDemo -TeaNodeTab goals
 
       - name: Keep the screenshots
         if: always()

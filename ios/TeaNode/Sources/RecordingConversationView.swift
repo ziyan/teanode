@@ -565,6 +565,7 @@ struct RecordingConversationSection: View {
                     Task { await model.loadMoreSegments() }
                 } label: {
                     Label("Load more passages", systemImage: "chevron.down")
+                        .actionColor()
                 }
             } else {
                 ProgressView()
@@ -760,6 +761,7 @@ struct RecordingPassageMemorySheet: View {
                             } label: {
                                 HStack {
                                     Label(link.nodeName.isEmpty ? link.nodePath : link.nodeName, systemImage: KnowledgeSymbols.symbol(link.nodeKind))
+                                        .actionColor()
                                     Spacer()
                                     if link.isProposed {
                                         Chip(text: String(localized: "A guess"), isAlert: false)

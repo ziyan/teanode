@@ -109,6 +109,9 @@ struct ConversationView: View {
         ScrollViewReader { scroller in
             ScrollView {
                 messages(scroller)
+                    // Lines of a width that reads well on a wide screen; the
+                    // scroll view itself still runs from edge to edge.
+                    .readableWidth()
                     .padding(.horizontal)
                     .padding(.vertical, 12)
             }
@@ -296,6 +299,8 @@ struct ConversationView: View {
             }
             .animation(.spring(duration: 0.4, bounce: 0.15), value: isShowingTodos)
         }
+        // As wide as the messages above it, not the whole window.
+        .readableWidth()
     }
 
     @ViewBuilder
