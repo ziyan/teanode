@@ -154,12 +154,18 @@ func runContactBookList(ctx context.Context, command *cli.Command) error {
 		if len(contact.Addresses) > 0 && contact.Addresses[0] != nil {
 			written = contact.Addresses[0].Written
 		}
+		// The username of the person in your circles the contact is linked to,
+		// as 'contact show' says it.
+		linkedUsername := ""
+		if contact.Account != nil {
+			linkedUsername = contact.Account.Username
+		}
 		rows = append(rows, []string{
 			contact.Name, strings.Join(contact.Emails, ", "),
-			strings.Join(contact.Phones, ", "), written, contact.Organization, contact.ID,
+			strings.Join(contact.Phones, ", "), written, contact.Organization, linkedUsername, contact.ID,
 		})
 	}
-	return printTable([]string{"name", "email", "numbers", "address", "organization", "id"}, rows)
+	return printTable([]string{"name", "email", "numbers", "address", "organization", "in your circles as", "id"}, rows)
 }
 
 func runContactBookShow(ctx context.Context, command *cli.Command) error {
