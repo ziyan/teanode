@@ -25,6 +25,7 @@ import (
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/mcpserve"
 	"github.com/ziyan/teanode/internal/photo"
+	"github.com/ziyan/teanode/internal/place"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/util/ceremony"
@@ -40,6 +41,10 @@ type graph struct {
 	// locations throttles how often an account's zone and language are
 	// written; see location.go.
 	locations locationTouches
+
+	// photoAddresses remembers the street a provider named for a position, so
+	// that opening a photo again does not ask it again; see photo_place.go.
+	photoAddresses place.RememberedAddresses
 
 	database db.Database
 	config   config.Store

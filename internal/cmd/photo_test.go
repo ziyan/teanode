@@ -50,7 +50,10 @@ func TestPhotoParity(test *testing.T) {
 		// see into: said beside a search of a range.
 		"CountUndescribedPhotos": {client.DocumentCountUndescribedPhotos, []string{"list"}, []string{"list"}},
 		"ReadPhoto":              {client.DocumentReadPhoto, []string{"read", "download"}, []string{"read", "look", "show"}},
-		"ReadPhotoLibrary":       {client.DocumentReadPhotoLibrary, []string{"library"}, []string{"library"}},
+		// Where a photo was taken, by the person's own place or the street:
+		// said on the Place line of read, and beside the photo's details.
+		"ReadPhotoPlace":   {client.DocumentReadPhotoPlace, []string{"read"}, []string{"read"}},
+		"ReadPhotoLibrary": {client.DocumentReadPhotoLibrary, []string{"library"}, []string{"library"}},
 		// For a player that cannot send the person's sign-in; neither the
 		// command line nor the agent plays anything.
 		"PhotoPlaybackAddress": {client.DocumentPhotoPlaybackAddress, nil, nil},
@@ -111,7 +114,7 @@ func TestPhotoParity(test *testing.T) {
 
 	operations := map[string]bool{}
 	for _, interfaceType := range []reflect.Type{
-		reflect.TypeFor[apigraph.PhotoQuery](), reflect.TypeFor[apigraph.PhotoMutation](),
+		reflect.TypeFor[apigraph.PhotoQuery](), reflect.TypeFor[apigraph.PhotoPlaceQuery](), reflect.TypeFor[apigraph.PhotoMutation](),
 		reflect.TypeFor[apigraph.PhotoAlbumQuery](), reflect.TypeFor[apigraph.PhotoAlbumMutation](),
 	} {
 		for index := 0; index < interfaceType.NumMethod(); index++ {
@@ -271,6 +274,10 @@ type photoServer struct {
 	files map[string][]byte
 	// photoView is what ReadPhoto answers, by photo identifier.
 	photoViews map[string]string
+
+	// photoPlaces is what ReadPhotoPlace answers for a photo, by id; a photo
+	// not in it is answered null.
+	photoPlaces map[string]string
 	// albumsWithOthers makes the album listing hold an album shared with the
 	// person and one that belongs to a circle.
 	albumsWithOthers bool
@@ -315,6 +322,12 @@ func newPhotoServer(test *testing.T) *photoServer {
 					return
 				}
 				_, _ = response.Write([]byte(`{"data":{"ReadPhoto":` + view + `}}`))
+			case strings.Contains(asked.Query, "ReadPhotoPlace("):
+				answer, isKnown := self.photoPlaces[asked.Variables["photoId"].(string)]
+				if !isKnown {
+					answer = "null"
+				}
+				_, _ = response.Write([]byte(`{"data":{"ReadPhotoPlace":` + answer + `}}`))
 			case strings.Contains(asked.Query, "TrashPhotos("):
 				_, _ = response.Write([]byte(`{"data":{"TrashPhotos":2}}`))
 			case strings.Contains(asked.Query, "RetryPhotoProcessing("):
@@ -918,5 +931,34 @@ func TestListNearAPointSendsTheThreeNumbers(test *testing.T) {
 	}
 	if len(server.documents) != count {
 		test.Fatal("a point that was refused reached the server")
+	}
+}
+
+// read names where a photo was taken by the person's own place first, the
+// street next and the city the photo carries last, and its JSON carries both
+// answers.
+func TestReadNamesThePlaceByOwnPlaceThenStreetThenCity(test *testing.T) {
+	server := newPhotoServer(test)
+	const photoRow = `{"photo":{"id":"%s","photoKind":"picture","latitude":10.5,"longitude":20.25,"placeName":"Harbor City, Exampleland","createdAt":"2030-03-05T09:50:00Z"},"photoFiles":[],"photoPreviews":[],"albums":[]}`
+	for _, photoId := range []string{"photo-own", "photo-street", "photo-city"} {
+		server.photoViews[photoId] = fmt.Sprintf(photoRow, photoId)
+	}
+	server.photoPlaces = map[string]string{
+		"photo-own":    `{"locationPlace":{"id":"place-1","placeName":"Fixture Home","placeLabel":"home"},"addressText":""}`,
+		"photo-street": `{"locationPlace":null,"addressText":"1 Fixture Road, Harbor City"}`,
+	}
+	for photoId, want := range map[string]string{"photo-own": "Fixture Home", "photo-street": "1 Fixture Road, Harbor City", "photo-city": "Harbor City, Exampleland"} {
+		output, standardOutput, err := server.run(test, "read", photoId)
+		if err != nil || !strings.Contains(output+standardOutput, want) {
+			test.Fatalf("%s: %v %q %q", photoId, err, output, standardOutput)
+		}
+	}
+	output, standardOutput, err := server.run(test, "read", "photo-own", "--json")
+	if err != nil || !strings.Contains(output+standardOutput, `"locationPlace"`) || !strings.Contains(output+standardOutput, `"placeName": "Fixture Home"`) {
+		test.Fatalf("%v %q %q", err, output, standardOutput)
+	}
+	output, standardOutput, err = server.run(test, "read", "photo-street", "--json")
+	if err != nil || !strings.Contains(output+standardOutput, `"addressText": "1 Fixture Road, Harbor City"`) {
+		test.Fatalf("%v %q %q", err, output, standardOutput)
 	}
 }

@@ -69,6 +69,7 @@ type Query interface {
 	PhotoQuery
 	PhotoAlbumQuery
 	PhotoFaceQuery
+	PhotoPlaceQuery
 	RecordingPlaybackQuery
 	RecordingTranscriptQuery
 	AgentVoiceQuery
