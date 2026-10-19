@@ -414,3 +414,61 @@ func TestASecondReadSeesWhatWasAddedSinceTheFirst(t *testing.T) {
 		t.Errorf("the grown agent's tools: %d %v", candidate.subagent.ToolCallCount, candidate.subagent.ToolNames)
 	}
 }
+
+func TestAnAgentWaitingOnAToolStaysWhenThePersonSpeaksAgain(t *testing.T) {
+	path, files := writeSubagentSession(t, t.TempDir(), "session-dddd")
+	// Started before the person's last turn, 600 seconds ago, and called a
+	// tool 300 seconds before that turn, which has not answered.
+	files.writeSubagent("a0000000000000051", map[string]any{"agentType": "general-purpose", "description": "run the long tests", "spawnDepth": 1},
+		subagentUserLine("a0000000000000051", 1000), subagentReplyLine("a0000000000000051", 900, "example-model-main", "tool_use", "Bash"))
+	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Subagents) != 1 || result.Subagents[0].SubagentState != HerdrSubagentStateRunning {
+		t.Errorf("the agents: %+v", result.Subagents)
+	}
+}
+
+func TestAnAgentsLongLastLineIsReadWhole(t *testing.T) {
+	path, files := writeSubagentSession(t, t.TempDir(), "session-eeee")
+	// A tool call carrying a file of 600 KB, longer than the first window.
+	longReply := fmt.Sprintf(`{"type":"assistant","timestamp":%q,"agentId":"a0000000000000061","isSidechain":true,"message":{"model":"example-model-main","content":[{"type":"tool_use","id":"call-1","name":"Write","input":{"content":%q}}],"stop_reason":"tool_use"}}`,
+		subagentStamp(400), strings.Repeat("x", 600<<10))
+	files.writeSubagent("a0000000000000061", map[string]any{"agentType": "general-purpose", "description": "write a big file", "spawnDepth": 1},
+		subagentUserLine("a0000000000000061", 500), longReply)
+	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Subagents) != 1 || result.Subagents[0].SubagentState != HerdrSubagentStateRunning {
+		t.Errorf("the agents: %+v", result.Subagents)
+	}
+}
+
+func TestASessionHistoryRewrittenAtTheSameLengthIsReadAgain(t *testing.T) {
+	path, _ := writeSubagentSession(t, t.TempDir(), "session-ffff")
+	if _, _, err := readSessionRequest(path); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same bytes with the main model's name changed for one as long.
+	rewritten := strings.Replace(string(encoded), "example-model-main", "example-model-next", 1)
+	if err := os.WriteFile(path, []byte(rewritten), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Minute)
+	if err := os.Chtimes(path, later, later); err != nil {
+		t.Fatal(err)
+	}
+	modelName, _, err := readSessionRequest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modelName != "example-model-next" {
+		t.Errorf("the session's model is %q", modelName)
+	}
+}

@@ -58,8 +58,10 @@ const (
 	// requests, are kept between reads before they are all let go.
 	subagentsCachedMost = 4096
 	// subagentsTailBytes is how much of an agent's history is read from its
-	// end for when it was last written and how its last reply stopped.
-	subagentsTailBytes = 256 << 10
+	// end for when it was last written and how its last reply stopped, and
+	// subagentsTailMostBytes how far that read grows for a long last line.
+	subagentsTailBytes     = 256 << 10
+	subagentsTailMostBytes = 4 << 20
 	// subagentsSessionChunkBytes is how much of the session's own history is
 	// read from its end for its model; the chunk doubles while the last
 	// person turn is not in it.
@@ -173,13 +175,15 @@ func readSubagents(transcriptPath, sessionState string, now time.Time) (*HerdrSu
 	}
 	var candidates []*subagentCandidate
 	for _, metaPath := range metaPaths {
-		// An agent whose history was last written before the request began
-		// has nothing to do with it, whatever it says: one of an earlier
-		// request left unfinished would otherwise run whenever the session
-		// works. A long session has hundreds of these, so this is decided
-		// before any of its files is read.
+		// An agent whose history was last written well before the request
+		// began has nothing to do with it, whatever it says: one of an
+		// earlier request left unfinished would otherwise run whenever the
+		// session works. A long session has hundreds of these, so this is
+		// decided before any of its files is read. "Well before" leaves room
+		// for one still waiting on a tool it called then.
 		if requestStartedAt != nil {
-			if info, err := os.Stat(strings.TrimSuffix(metaPath, ".meta.json") + ".jsonl"); err == nil && info.ModTime().Before(*requestStartedAt) {
+			historyPath := strings.TrimSuffix(metaPath, ".meta.json") + ".jsonl"
+			if info, err := os.Stat(historyPath); err == nil && info.ModTime().Before(requestStartedAt.Add(-subagentsToolRunningWithin)) {
 				continue
 			}
 		}
@@ -235,7 +239,10 @@ func readSessionRequest(transcriptPath string) (string, *time.Time, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	if cached, isCached := subagentsCache.sessionRequest(transcriptPath); isCached && info.Size() >= cached.historySize {
+	// A history only grows; one of the same length written at another time,
+	// or a shorter one, was rewritten, and is read whole again.
+	if cached, isCached := subagentsCache.sessionRequest(transcriptPath); isCached &&
+		(info.Size() > cached.historySize || info.Size() == cached.historySize && info.ModTime().Equal(cached.modifiedAt)) {
 		if info.Size() == cached.historySize {
 			return cached.modelName, cached.requestStartedAt, nil
 		}
@@ -254,7 +261,7 @@ func readSessionRequest(transcriptPath string) (string, *time.Time, error) {
 			if addedRequestStartedAt != nil && (requestStartedAt == nil || addedRequestStartedAt.After(*requestStartedAt)) {
 				requestStartedAt = addedRequestStartedAt
 			}
-			subagentsCache.keepSessionRequest(transcriptPath, &cachedSessionRequest{historySize: info.Size(), modelName: modelName, requestStartedAt: requestStartedAt})
+			subagentsCache.keepSessionRequest(transcriptPath, &cachedSessionRequest{historySize: info.Size(), modifiedAt: info.ModTime(), modelName: modelName, requestStartedAt: requestStartedAt})
 			return modelName, requestStartedAt, nil
 		}
 	}
@@ -262,7 +269,7 @@ func readSessionRequest(transcriptPath string) (string, *time.Time, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	subagentsCache.keepSessionRequest(transcriptPath, &cachedSessionRequest{historySize: info.Size(), modelName: modelName, requestStartedAt: requestStartedAt})
+	subagentsCache.keepSessionRequest(transcriptPath, &cachedSessionRequest{historySize: info.Size(), modifiedAt: info.ModTime(), modelName: modelName, requestStartedAt: requestStartedAt})
 	return modelName, requestStartedAt, nil
 }
 
@@ -431,9 +438,22 @@ func readSubagentStartedAt(file *os.File) *time.Time {
 // whether that reply called a tool nothing has answered yet. The end may be
 // a line only partly written, which is passed over.
 func readSubagentEnd(file *os.File, size int64) (*time.Time, bool, bool) {
-	lines, _, err := tailLines(file, size, subagentsTailBytes)
+	// A last line longer than the window (a file an agent wrote, whole in its
+	// tool call) is cut away; the window doubles until a line is found.
+	for window := int64(subagentsTailBytes); ; window *= 2 {
+		lastWrittenAt, isReplyEnded, isToolRunning, isRecordFound, isCut := readSubagentEndWithin(file, size, window)
+		if isRecordFound || !isCut || window >= subagentsTailMostBytes {
+			return lastWrittenAt, isReplyEnded, isToolRunning
+		}
+	}
+}
+
+// readSubagentEndWithin is readSubagentEnd over the last window bytes, with
+// whether any line could be read there and whether the file holds more.
+func readSubagentEndWithin(file *os.File, size, window int64) (*time.Time, bool, bool, bool, bool) {
+	lines, isCut, err := tailLines(file, size, window)
 	if err != nil {
-		return nil, false, false
+		return nil, false, false, false, false
 	}
 	var lastWrittenAt *time.Time
 	isReplyFound, isReplyEnded, isToolRunning := false, false, false
@@ -463,7 +483,7 @@ func readSubagentEnd(file *os.File, size int64) (*time.Time, bool, bool) {
 			break
 		}
 	}
-	return lastWrittenAt, isReplyEnded, isToolRunning
+	return lastWrittenAt, isReplyEnded, isToolRunning, lastWrittenAt != nil || isReplyFound, isCut
 }
 
 // countSubagentTools reads an agent's history through once for the tools it
@@ -598,6 +618,7 @@ type cachedToolCount struct {
 // history had when it was this long.
 type cachedSessionRequest struct {
 	historySize      int64
+	modifiedAt       time.Time
 	modelName        string
 	requestStartedAt *time.Time
 }

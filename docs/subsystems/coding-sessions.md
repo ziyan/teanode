@@ -76,9 +76,12 @@ session's history (`<session id>/subagents/`), so it needs no hook and sees
 agents started before it looked. They are those started for the person's last
 request, plus any still running from before it, the newest 100. Older versions
 of Claude Code never write that an agent finished, so one without that mark is
-done when its last reply ended its turn, running while it is still being
-written (or the session works or asks), and stopped otherwise. A Codex session
-has none and answers with an empty tree.
+done when its last reply ended its turn, and running while it is still being
+written, for 30 minutes after a reply that called a tool (nothing is written
+while a build or a test suite runs), or while the session works or asks; it is
+stopped otherwise. An agent interrupted mid-tool by a version that writes no
+stop mark shows as running for those 30 minutes. A Codex session has none and
+answers with an empty tree.
 
 The three are independent. Hooks need no herdr, herdr needs no hooks, and
 without a transcript source the hooks still show what was filed before.
