@@ -997,16 +997,12 @@ struct CodingTurnView: View {
         case "tool":
             CodingToolTurnView(turn: turn, onWantDetail: onWantToolDetail)
         default:
+            // The agent writes Markdown (tables, lists, code), drawn as the
+            // chat draws an answer.
             AgentBubble {
-                Text(Self.markdown(turn.turnText))
-                    .textSelection(.enabled)
+                MarkdownView(text: turn.turnText)
             }
         }
-    }
-
-    /// The agent writes Markdown; its line breaks are kept.
-    static func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
     }
 }
 
