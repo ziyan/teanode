@@ -67,7 +67,8 @@ func TestAFilingRunKeepsASteeredMessageInsideTheTurnThatReadHealth(t *testing.T)
 		message("a1", llm.RoleAssistant, "Let me look", "health"),
 		message("t1", llm.RoleTool, `{"summary":"6 h 40 min"}`),
 		message("u2", llm.RoleUser, "and in minutes please"),
-		message("a2", llm.RoleAssistant, "400 minutes on average"),
+		message("u2b", llm.RoleUser, "and the deep sleep too"),
+		message("a2", llm.RoleAssistant, "400 minutes on average, 50 of them deep"),
 		message("u3", llm.RoleUser, "Thanks, I moved to a new flat"),
 		message("a3", llm.RoleAssistant, "Noted, congratulations"),
 	}
@@ -76,7 +77,7 @@ func TestAFilingRunKeepsASteeredMessageInsideTheTurnThatReadHealth(t *testing.T)
 	for _, each := range worthReading(messages) {
 		got = append(got, each.ID)
 	}
-	want := []string{"u1", "u2", "u3", "a3"}
+	want := []string{"u1", "u2", "u2b", "u3", "a3"}
 	if len(got) != len(want) {
 		t.Fatalf("worthReading kept %v, want %v", got, want)
 	}

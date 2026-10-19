@@ -419,14 +419,16 @@ func withoutHealthTurns(messages []*models.AgentMessage) []*models.AgentMessage 
 // isTurnStart says whether the message at index begins a turn: it is a
 // message of the person, and not one they steered into the running turn.
 // A steered message comes after the result of a tool call, or after an
-// assistant message that made one (notes between are not looked at).
+// assistant message that made one (notes between are not looked at), or
+// after another message of the person's that was itself steered in, since
+// a person may steer twice before the turn answers.
 func isTurnStart(messages []*models.AgentMessage, index int) bool {
 	if messages[index].Role != string(llm.RoleUser) {
 		return false
 	}
 	for previous := index - 1; previous >= 0; previous-- {
 		switch messages[previous].Role {
-		case models.AgentMessageNote:
+		case models.AgentMessageNote, string(llm.RoleUser):
 			continue
 		case string(llm.RoleTool):
 			return false
