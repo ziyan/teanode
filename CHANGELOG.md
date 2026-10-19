@@ -6,6 +6,19 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.180.0] - 2026-10-19
+
+### Added
+
+- The TeaNode app runs on the iPad, with the side menu open beside the screen in landscape and portrait. (#578)
+
+### Fixed
+
+- The side menu shows no spinner in its middle while its chats or mail folders load. (#578)
+- A swipe that opens the side menu no longer also opens the photo, person or row it began on, and a sideways strip scrolled away from its start scrolls back instead of opening the menu. (#578)
+- Discarding a mail draft asks once instead of twice. (#578)
+- Select in Mail, an album and a person's photos, and Edit on a contact and the management screens, are icons in the bar. (#578)
+
 ## [0.179.2] - 2026-10-19
 
 ### Fixed
