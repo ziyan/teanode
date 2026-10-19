@@ -230,6 +230,11 @@ func TestAnAgentWithoutAFinishedMarkIsJudgedByItsHistory(t *testing.T) {
 	// Wrote a moment ago, and a final reply is not yet in.
 	files.writeSubagent("a0000000000000013", meta("writing"),
 		subagentUserLine("a0000000000000013", 200), subagentReplyLine("a0000000000000013", 30, "example-model-main", "tool_use", "Read"))
+	// Ended its turn, then was handed the end of a command it left running a
+	// moment ago, and works again.
+	files.writeSubagent("a0000000000000014", meta("resumed"),
+		subagentUserLine("a0000000000000014", 300), subagentReplyLine("a0000000000000014", 290, "example-model-main", "end_turn"),
+		subagentUserLine("a0000000000000014", 20))
 
 	states := func(sessionState string) map[string]string {
 		result, err := readSubagents(path, sessionState, subagentsNow)
@@ -243,7 +248,7 @@ func TestAnAgentWithoutAFinishedMarkIsJudgedByItsHistory(t *testing.T) {
 		return found
 	}
 	idle := states(HerdrSessionStateIdle)
-	if idle["ended"] != HerdrSubagentStateDone || idle["silent"] != HerdrSubagentStateStopped || idle["writing"] != HerdrSubagentStateRunning {
+	if idle["ended"] != HerdrSubagentStateDone || idle["silent"] != HerdrSubagentStateStopped || idle["writing"] != HerdrSubagentStateRunning || idle["resumed"] != HerdrSubagentStateRunning {
 		t.Errorf("with the session idle: %v", idle)
 	}
 	for _, sessionState := range []string{HerdrSessionStateWorking, HerdrSessionStateAsking} {

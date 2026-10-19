@@ -17168,7 +17168,9 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   --agents-gap: 12px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* Centered while the row fits; a wider row starts at the left edge and
+     scrolls, rather than hanging off both sides. */
+  align-items: safe center;
   overflow-x: auto;
   padding-bottom: var(--space-2);
 }

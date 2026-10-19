@@ -360,6 +360,12 @@ func readSubagentEnd(file *os.File, size int64) (*time.Time, bool) {
 		if lastWrittenAt == nil {
 			lastWrittenAt = record.Timestamp
 		}
+		// Something handed to the agent after its last reply, such as the
+		// end of a command it left running, starts it again: that reply no
+		// longer ends anything.
+		if !isReplyFound && record.Type == "user" {
+			isReplyFound = true
+		}
 		if !isReplyFound && record.Type == "assistant" {
 			isReplyFound = true
 			var reply subagentReply
