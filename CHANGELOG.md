@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.184.2] - 2026-10-19
+
+### Fixed
+
+- On the dashboard, someone who joins a family that already shares is offered the Location setup, as on the iPhone. (#598)
+
 ## [0.184.1] - 2026-10-19
 
 ### Changed
