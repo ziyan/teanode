@@ -20512,3 +20512,114 @@ label.checkbox.is-plain > span > .muted {
     padding-bottom: 88px;
   }
 }
+
+/* The search box at the top of the rail, between the mark and the rows. The
+   rail is the narrow column, so the box takes its width and is the global
+   input in every other respect. Narrowed to icons it is one icon button. */
+.sidebar-search {
+  flex: 0 0 auto;
+  padding: 0 12px var(--space-2);
+}
+.sidebar-search input[type='search'] {
+  font-size: 13px;
+}
+.sidebar.collapsed .sidebar-search {
+  display: flex;
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+.sidebar-search-open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.sidebar-search-open:hover {
+  color: var(--text);
+}
+@media (max-width: 760px) {
+  /* The overlay is never narrowed to icons. */
+  .sidebar.collapsed .sidebar-search {
+    display: block;
+    padding: 0 12px var(--space-2);
+  }
+}
+
+/* The results page: a panel for each area that had something. A result is a
+   row that is the button, as an idea is, with when it happened at the right
+   where there is room. Nothing here is wider than the window: text wraps and
+   the title is cut to its line. */
+.search-page {
+  min-width: 0;
+}
+.search-page-form {
+  margin-bottom: var(--space-4);
+}
+.search-group h3 {
+  margin-bottom: var(--space-2);
+}
+.search-results {
+  display: flex;
+  flex-direction: column;
+}
+.search-result {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-2);
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.search-result:first-child {
+  border-top: 0;
+}
+.search-result:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.search-result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.search-result-title {
+  overflow: hidden;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-result-detail {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--text-label);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.search-result-time {
+  flex: none;
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+.search-group .page-actions {
+  margin-top: var(--space-3);
+}

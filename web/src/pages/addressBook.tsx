@@ -199,12 +199,21 @@ export function AddressBookPage() {
   const books = useQuery(() => graphql<{ ListAddressBooks: AddressBook[] }>(BOOKS), [], { refresh: false })
   const book = books.data?.ListAddressBooks?.[0] ?? null
   const bookId = book?.id ?? ''
+  // The address can name a card ("?contact=") or words to look for
+  // ("?search="), as the search across everything does: the words are asked of
+  // the server, and a chip over the table says so and takes them off.
+  const [parameters, setParameters] = useSearchParams()
+  const searchWords = (parameters.get('search') ?? '').trim()
   const contacts = useQuery(
     () =>
       bookId
-        ? graphql<{ ListContacts: Contact[] }>(CONTACTS, { addressBookId: bookId, query: null, first: null })
+        ? graphql<{ ListContacts: Contact[] }>(CONTACTS, {
+            addressBookId: bookId,
+            query: searchWords || null,
+            first: null,
+          })
         : Promise.resolve(null),
-    [bookId],
+    [bookId, searchWords],
     { refresh: false },
   )
   const me = useQuery(() => graphql<{ AgentGraphPage: { contact: { id: string } | null } | null }>(ME), [], {
@@ -227,7 +236,6 @@ export function AddressBookPage() {
   const [isRemovingPicture, setIsRemovingPicture] = useState(false)
   // A link from the agent's memory names the card in the address: the card
   // opens, once, as if its row had been chosen.
-  const [parameters, setParameters] = useSearchParams()
   const linkedContactId = parameters.get('contact') ?? ''
   const openedLink = useRef('')
   const [busy, setBusy] = useState(false)
@@ -593,6 +601,25 @@ export function AddressBookPage() {
         rowKey={(contact) => contact.id}
         loading={(contacts.loading && !contacts.data) || (books.loading && !books.data)}
         emptyMessage={t('addressBook.empty')}
+        pinned={
+          searchWords
+            ? [
+                {
+                  key: 'search',
+                  label: t('search.matching', { words: searchWords }),
+                  onClear: () =>
+                    setParameters(
+                      (previous) => {
+                        const next = new URLSearchParams(previous)
+                        next.delete('search')
+                        return next
+                      },
+                      { replace: true },
+                    ),
+                },
+              ]
+            : undefined
+        }
         countLabel={(count) => plural(count, { one: 'contacts.countOne', other: 'contacts.count' }, { count })}
       />
 

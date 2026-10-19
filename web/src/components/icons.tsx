@@ -747,6 +747,15 @@ export function PaperclipIcon(props: IconProps) {
 
 // The rich text toolbar. Bold, italic and underline are their letters, which
 // is what every editor uses; the rest are drawn.
+export function SearchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </Icon>
+  )
+}
+
 export function ListIcon(props: IconProps) {
   return (
     <Icon {...props}>

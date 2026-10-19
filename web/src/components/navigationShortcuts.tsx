@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAgentIdentity } from '../agentPreferences'
 import { useTranslation } from '../i18n/i18n'
 import { useMailboxes } from '../mailboxes'
+import { focusSearch } from '../searchEverything'
 import { isPathAvailable } from '../services'
 import { hasPermission, useSession } from '../session'
 import { Shortcut, shortcutKeys, ShortcutSection, useMountedShortcuts, useShortcuts } from '../shortcuts'
@@ -26,9 +27,21 @@ function pageSearch(): HTMLInputElement | null {
   return Array.from(boxes).find((box) => box.offsetParent !== null && !box.disabled) ?? null
 }
 
+// Control-K, or Command-K on a Mac: the search across everything.
+function isSearchEverythingKey(event: KeyboardEvent): boolean {
+  return event.key.toLowerCase() === 'k' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
+}
+
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+
 // NavigationShortcuts is the keys that work on every page: g and a letter to
 // go to a place in the rail, c to write a message, / to search, [ to narrow
 // the rail, and ? for the list of every key that works where you are.
+//
+// Control-K and Command-K, which the shortcut sets leave alone because a key
+// with a modifier belongs to the browser, are the one exception: they focus
+// the search box at the top of the rail from anywhere, a box included, as they
+// do in the programs people take the key from.
 //
 // Each place is offered only to somebody the rail would offer it to, so the
 // list never names a page the reader cannot open.
@@ -50,6 +63,21 @@ export function NavigationShortcuts({ onToggleSidebar }: { onToggleSidebar?: () 
   const hasMailbox = Boolean(session.userId) && Boolean(current)
   const hasAgentUse = hasPermission(session.permissions, 'agent:use')
   const managePath = firstManagementPath(session.permissions, session.services)
+  // The search box is the rail's, for somebody who has things to look through.
+  const hasSearch = Boolean(session.userId)
+
+  useEffect(() => {
+    if (!hasSearch) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isSearchEverythingKey(event)) return
+      // A question on the screen is the only thing being answered.
+      if (document.querySelector('.dialog-scrim')) return
+      event.preventDefault()
+      focusSearch()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [hasSearch])
 
   const goShortcuts = useMemo<Shortcut[]>(() => {
     const go = (key: string, label: string, to: string): Shortcut => ({
@@ -120,7 +148,12 @@ export function NavigationShortcuts({ onToggleSidebar }: { onToggleSidebar?: () 
       label: t('shortcuts.search'),
       run: () => {
         const box = pageSearch()
-        if (!box) return false
+        // A page with no box of its own is searched through the rail's.
+        if (!box) {
+          if (!hasSearch) return false
+          focusSearch()
+          return
+        }
         box.focus()
         box.select()
       },
@@ -130,7 +163,7 @@ export function NavigationShortcuts({ onToggleSidebar }: { onToggleSidebar?: () 
     }
     list.push({ key: '?', shift: true, label: t('shortcuts.help'), run: () => setShowingList(true) })
     return list
-  }, [navigate, t, hasMailbox, onToggleSidebar])
+  }, [navigate, t, hasMailbox, hasSearch, onToggleSidebar])
 
   useShortcuts(goShortcuts, true, 'go')
   useShortcuts(anywhereShortcuts, true, 'anywhere')
@@ -141,6 +174,7 @@ export function NavigationShortcuts({ onToggleSidebar }: { onToggleSidebar?: () 
   return (
     <ShortcutList
       hasAgentDrawer={agent.isAvailable && Boolean(session.username)}
+      hasSearch={hasSearch}
       onClose={() => setShowingList(false)}
     />
   )
@@ -157,7 +191,15 @@ const SECTIONS: {
 
 // ShortcutList is every key that works on the page behind it, the page's own
 // first: those are what somebody pressing ? on a page is usually after.
-function ShortcutList({ hasAgentDrawer, onClose }: { hasAgentDrawer: boolean; onClose: () => void }) {
+function ShortcutList({
+  hasAgentDrawer,
+  hasSearch,
+  onClose,
+}: {
+  hasAgentDrawer: boolean
+  hasSearch: boolean
+  onClose: () => void
+}) {
   const { t } = useTranslation()
   const registrations = useMountedShortcuts()
 
@@ -183,6 +225,9 @@ function ShortcutList({ hasAgentDrawer, onClose }: { hasAgentDrawer: boolean; on
                   return true
                 })
               const rows = shortcuts.map((shortcut) => ({ keys: shortcutKeys(shortcut), label: shortcut.label }))
+              if (section === 'anywhere' && hasSearch) {
+                rows.push({ keys: [isMac ? '⌘ K' : 'Ctrl K'], label: t('shortcuts.searchEverything') })
+              }
               if (section === 'anywhere' && hasAgentDrawer) {
                 rows.push({ keys: ['Esc'], label: t('shortcuts.agentDrawer') })
               }

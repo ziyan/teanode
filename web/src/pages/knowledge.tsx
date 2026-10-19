@@ -517,7 +517,11 @@ function OwnKnowledge() {
   const [frameElement, setFrameElement] = useState<HTMLDivElement | null>(null)
   const width = useContainerWidth(frameElement)
   const onePane = (width === null ? (desktop ? 2 : 1) : width >= 760 ? 2 : 1) === 1
-  const [filter, setFilter] = useState('')
+  // The address can carry words for either lookup ("?search=" for the pages,
+  // "?documents=" for what was read), as the search across everything opens
+  // them.
+  const [addressParameters, setAddressParameters] = useSearchParams()
+  const [filter, setFilter] = useState(() => addressParameters.get('search') ?? '')
   const search = filter.trim()
   // Whether the recall preview is open. A dialog rather than a third box
   // in the column: the answer is a list of pages with their facts under
@@ -527,7 +531,8 @@ function OwnKnowledge() {
   // reason, and a second one rather than a tab inside the first: recall
   // answers what a turn would carry, this answers what the sources hold,
   // and neither is a step on the way to the other.
-  const [searchingDocuments, setSearchingDocuments] = useState(false)
+  const [documentsWords] = useState(() => addressParameters.get('documents') ?? '')
+  const [searchingDocuments, setSearchingDocuments] = useState(() => documentsWords.trim() !== '')
   // The page the navigator is showing the inside of, when the URL alone
   // would have shown the folder it is filed in. A page with children is
   // two things at one address -- something to read and something to walk
@@ -648,7 +653,25 @@ function OwnKnowledge() {
     />
   ) : null
 
-  const documents = searchingDocuments ? <DocumentsDialog onClose={() => setSearchingDocuments(false)} /> : null
+  const documents = searchingDocuments ? (
+    <DocumentsDialog
+      initialQuery={documentsWords}
+      onClose={() => {
+        setSearchingDocuments(false)
+        // The words were for this opening only; a reload should not open it again.
+        if (addressParameters.has('documents')) {
+          setAddressParameters(
+            (previous) => {
+              const next = new URLSearchParams(previous)
+              next.delete('documents')
+              return next
+            },
+            { replace: true },
+          )
+        }
+      }}
+    />
+  ) : null
 
   // The toolbar above the list, the one the mail list has: the box that
   // searches the pages by name, beside the ways in that are not about a
@@ -1563,9 +1586,9 @@ function RecallDialog({ onSelect, onClose }: { onSelect: (path: string) => void;
 // the passages that matched, under the document each came from; Read opens
 // that document from its beginning in the same dialog, a slice at a time,
 // and the way back is the way back to the results rather than out.
-export function DocumentsDialog({ onClose }: { onClose: () => void }) {
+export function DocumentsDialog({ onClose, initialQuery = '' }: { onClose: () => void; initialQuery?: string }) {
   const { t } = useTranslation()
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQuery)
   const [sourceId, setSourceId] = useState('')
   const [directory, setDirectory] = useState('')
   // The search the passages in hand answer -- the words, the source and
@@ -1626,6 +1649,13 @@ export function DocumentsDialog({ onClose }: { onClose: () => void }) {
       }
     })()
   }
+
+  // Words the dialog was opened with are searched at once.
+  useEffect(() => {
+    if (initialQuery.trim() !== '') search()
+    // Once, on opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Another page of the passages, for the search they answer, in place of
   // the ones shown, and back to the top of them. Only the first page
