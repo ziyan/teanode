@@ -80,7 +80,9 @@ done when its last reply ended its turn, and running while it is still being
 written, for 30 minutes after a reply that called a tool (nothing is written
 while a build or a test suite runs), or while the session works or asks; it is
 stopped otherwise. An agent interrupted mid-tool by a version that writes no
-stop mark shows as running for those 30 minutes. A Codex session has none and
+stop mark shows as running for up to 30 minutes, or while the session works on
+the same request; one started for an earlier request runs only by its own
+signs. A Codex session has none and
 answers with an empty tree.
 
 The three are independent. Hooks need no herdr, herdr needs no hooks, and

@@ -187,7 +187,7 @@ func readSubagents(transcriptPath, sessionState string, now time.Time) (*HerdrSu
 				continue
 			}
 		}
-		candidate := readSubagentCandidate(metaPath, sessionState, now)
+		candidate := readSubagentCandidate(metaPath, sessionState, requestStartedAt, now)
 		if candidate == nil {
 			continue
 		}
@@ -350,8 +350,9 @@ func personTurnAtOfLine(line []byte) *time.Time {
 
 // readSubagentCandidate is the agent whose metadata is at metaPath, or nil
 // when its files cannot be read: an agent that is only half written is
-// there the next time.
-func readSubagentCandidate(metaPath, sessionState string, now time.Time) *subagentCandidate {
+// there the next time. One started before the request runs only by its own
+// signs: the session working on the new request says nothing of it.
+func readSubagentCandidate(metaPath, sessionState string, requestStartedAt *time.Time, now time.Time) *subagentCandidate {
 	encodedMeta, err := readFileStart(metaPath, subagentsMetaBytes)
 	if err != nil {
 		return nil
@@ -377,6 +378,9 @@ func readSubagentCandidate(metaPath, sessionState string, now time.Time) *subage
 	if lastWrittenAt == nil {
 		modifiedAt := info.ModTime()
 		lastWrittenAt = &modifiedAt
+	}
+	if requestStartedAt != nil && startedAt != nil && startedAt.Before(*requestStartedAt) {
+		sessionState = ""
 	}
 	subagentState := subagentStateOf(&meta, isReplyEnded, isToolRunning, sessionState, lastWrittenAt, now)
 	subagent := &HerdrSubagent{
@@ -449,7 +453,8 @@ func readSubagentEnd(file *os.File, size int64) (*time.Time, bool, bool) {
 }
 
 // readSubagentEndWithin is readSubagentEnd over the last window bytes, with
-// whether any line could be read there and whether the file holds more.
+// whether the last reply, or a line handed to the agent after it, is there,
+// and whether the file holds more.
 func readSubagentEndWithin(file *os.File, size, window int64) (*time.Time, bool, bool, bool, bool) {
 	lines, isCut, err := tailLines(file, size, window)
 	if err != nil {
@@ -483,7 +488,7 @@ func readSubagentEndWithin(file *os.File, size, window int64) (*time.Time, bool,
 			break
 		}
 	}
-	return lastWrittenAt, isReplyEnded, isToolRunning, lastWrittenAt != nil || isReplyFound, isCut
+	return lastWrittenAt, isReplyEnded, isToolRunning, isReplyFound, isCut
 }
 
 // countSubagentTools reads an agent's history through once for the tools it

@@ -408,7 +408,7 @@ func TestASecondReadSeesWhatWasAddedSinceTheFirst(t *testing.T) {
 	}
 	// The first agent, now outside the request, is counted from its grown
 	// file, not taken from the first read.
-	candidate := readSubagentCandidate(filepath.Join(files.folder, "agent-a0000000000000041.meta.json"), HerdrSessionStateIdle, subagentsNow)
+	candidate := readSubagentCandidate(filepath.Join(files.folder, "agent-a0000000000000041.meta.json"), HerdrSessionStateIdle, nil, subagentsNow)
 	countSubagentTools(candidate)
 	if candidate.subagent.ToolCallCount != 3 || !slices.Equal(candidate.subagent.ToolNames, []string{"Grep", "Read"}) {
 		t.Errorf("the grown agent's tools: %d %v", candidate.subagent.ToolCallCount, candidate.subagent.ToolNames)
@@ -417,8 +417,9 @@ func TestASecondReadSeesWhatWasAddedSinceTheFirst(t *testing.T) {
 
 func TestAnAgentWaitingOnAToolStaysWhenThePersonSpeaksAgain(t *testing.T) {
 	path, files := writeSubagentSession(t, t.TempDir(), "session-dddd")
-	// Started before the person's last turn, 600 seconds ago, and called a
-	// tool 300 seconds before that turn, which has not answered.
+	// Started 400 seconds before the person's last turn, which was 600
+	// seconds ago, and called a tool 300 seconds before that turn, which has
+	// not answered.
 	files.writeSubagent("a0000000000000051", map[string]any{"agentType": "general-purpose", "description": "run the long tests", "spawnDepth": 1},
 		subagentUserLine("a0000000000000051", 1000), subagentReplyLine("a0000000000000051", 900, "example-model-main", "tool_use", "Bash"))
 	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
@@ -470,5 +471,27 @@ func TestASessionHistoryRewrittenAtTheSameLengthIsReadAgain(t *testing.T) {
 	}
 	if modelName != "example-model-next" {
 		t.Errorf("the session's model is %q", modelName)
+	}
+}
+
+func TestAnUnfinishedAgentOfAnEarlierRequestIsNotTakenAsRunning(t *testing.T) {
+	path, files := writeSubagentSession(t, t.TempDir(), "session-gggg")
+	// Started and fell silent before the person's last turn without ending
+	// its turn or calling a tool: from an earlier request, though within the
+	// room left for one still waiting on a tool.
+	files.writeSubagent("a0000000000000071", map[string]any{"agentType": "general-purpose", "description": "left unfinished", "spawnDepth": 1},
+		subagentUserLine("a0000000000000071", 1600), subagentReplyLine("a0000000000000071", 1500, "example-model-main", ""))
+	// Written more than 30 minutes before the person's last turn: skipped
+	// before it is read, whatever it says.
+	files.writeSubagent("a0000000000000072", map[string]any{"agentType": "general-purpose", "description": "long gone", "spawnDepth": 1},
+		subagentUserLine("a0000000000000072", 2600), subagentReplyLine("a0000000000000072", 2500, "example-model-main", "tool_use", "Bash"))
+	for _, sessionState := range []string{HerdrSessionStateIdle, HerdrSessionStateWorking} {
+		result, err := readSubagents(path, sessionState, subagentsNow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Subagents) != 0 {
+			t.Errorf("with the session %s: %+v", sessionState, result.Subagents)
+		}
 	}
 }
