@@ -66266,38 +66266,6 @@
         }
       }
     },
-    "No visits to places with this label": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このラベルの場所への訪問はありません"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有该标签地点的到访记录"
-          }
-        }
-      }
-    },
-    "Choose another label, or all places, to see the rest.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ほかのラベルか「すべての場所」を選ぶと、残りが表示されます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择其他标签，或选择全部地点，查看其余记录。"
-          }
-        }
-      }
-    },
     "Erase this day": {
       "localizations": {
         "ja": {

@@ -292,6 +292,7 @@ jobs:
           shoot location-day-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
           shoot location-places-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
           shoot location-places-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
+          shoot location-places-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
           shoot location-place-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
           shoot location-place-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
           shoot location-place-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place

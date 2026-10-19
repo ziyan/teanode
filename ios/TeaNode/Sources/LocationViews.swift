@@ -382,11 +382,6 @@ struct LocationVisitsList: View {
 
     var body: some View {
         List {
-            Section {
-                PlaceLabelFilterPicker(
-                    selection: Binding(
-                        get: { model.visitLabelFilter }, set: { label in Task { await model.setVisitLabelFilter(label) } }))
-            }
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.visits) { visit in
@@ -431,11 +426,7 @@ struct LocationVisitsList: View {
         }
         .refreshable { await model.load() }
         .overlay {
-            if model.days.isEmpty, model.isFilteringVisits {
-                ContentUnavailableView(
-                    "No visits to places with this label", systemImage: "mappin.and.ellipse",
-                    description: Text("Choose another label, or all places, to see the rest."))
-            } else if model.days.isEmpty {
+            if model.days.isEmpty {
                 ContentUnavailableView(
                     "No visits yet", systemImage: "mappin.and.ellipse",
                     description: Text(
@@ -662,11 +653,6 @@ struct LocationPlacesList: View {
     var body: some View {
         List {
             Section {
-                PlaceLabelFilterPicker(
-                    selection: Binding(
-                        get: { model.placeLabelFilter }, set: { label in Task { await model.setPlaceLabelFilter(label) } }))
-            }
-            Section {
                 ForEach(model.sortedPlaces) { place in
                     NavigationLink(value: LocationRoute.place(place)) {
                         LocationPlaceRow(place: place)
@@ -674,6 +660,15 @@ struct LocationPlacesList: View {
                     .onAppear {
                         if place.id == model.places.last?.id { Task { await model.loadMorePlaces() } }
                     }
+                }
+            } header: {
+                // A small menu at the end of the list's heading, as a day of
+                // visits has its Map, rather than a row of its own under the map.
+                HStack {
+                    Spacer()
+                    PlaceLabelFilterPicker(
+                        selection: Binding(
+                            get: { model.placeLabelFilter }, set: { label in Task { await model.setPlaceLabelFilter(label) } }))
                 }
             }
             if model.isLoadingMorePlaces {
@@ -695,7 +690,9 @@ struct LocationPlacesList: View {
         }
         .overlay {
             if model.places.isEmpty, model.isFilteringPlaces {
+                // Taps go through to the label menu in the heading, the way out.
                 ContentUnavailableView.search
+                    .allowsHitTesting(false)
             } else if model.places.isEmpty {
                 ContentUnavailableView(
                     "No places yet", systemImage: "mappin.slash",
@@ -705,8 +702,8 @@ struct LocationPlacesList: View {
     }
 }
 
-/// PlaceLabelFilterPicker narrows a list to the places with one label, or
-/// shows them all.
+/// PlaceLabelFilterPicker narrows the places to those with one label, or
+/// shows them all. It sits in the places list's heading.
 struct PlaceLabelFilterPicker: View {
     @Binding var selection: PlaceLabel?
 
@@ -718,6 +715,8 @@ struct PlaceLabelFilterPicker: View {
             }
         }
         .pickerStyle(.menu)
+        .labelsHidden()
+        .font(.subheadline)
     }
 }
 

@@ -34,8 +34,6 @@ final class LocationModel {
 
     // MARK: What the lists are filtered by
 
-    /// Only visits to places with this label, when one is chosen.
-    private(set) var visitLabelFilter: PlaceLabel?
     /// Only places with this label, when one is chosen.
     private(set) var placeLabelFilter: PlaceLabel?
     /// Words the places' names are searched for, as typed.
@@ -119,9 +117,6 @@ final class LocationModel {
     /// The visits grouped by day, newest first.
     var days: [LocationVisitDay] { LocationDays.group(visits) }
 
-    /// Whether the visits shown are narrowed by a label.
-    var isFilteringVisits: Bool { visitLabelFilter != nil }
-
     /// Whether the places shown are narrowed by a label or by words.
     var isFilteringPlaces: Bool { placeLabelFilter != nil || !trimmedPlaceSearchText.isEmpty }
 
@@ -149,11 +144,10 @@ final class LocationModel {
             hasLoaded = true
         }
         let connection = self.connection
-        let visitLabel = visitLabelFilter?.rawValue
         let placeLabel = placeLabelFilter?.rawValue
         let placeQuery = trimmedPlaceSearchText
         async let readLocation = attempt { try await connection.location() }
-        async let readVisits = attempt { try await connection.locationVisits(placeLabel: visitLabel, limitCount: LocationModel.visitPageSize) }
+        async let readVisits = attempt { try await connection.locationVisits(limitCount: LocationModel.visitPageSize) }
         async let readPlaces = attempt {
             try await connection.locationPlaces(placeLabel: placeLabel, query: placeQuery, limitCount: LocationModel.placePageSize)
         }
@@ -225,7 +219,7 @@ final class LocationModel {
         isLoadingMoreVisits = true
         defer { isLoadingMoreVisits = false }
         do {
-            let page = try await connection.locationVisits(placeLabel: visitLabelFilter?.rawValue, offset: offset, limitCount: Self.visitPageSize)
+            let page = try await connection.locationVisits(offset: offset, limitCount: Self.visitPageSize)
             let known = Set(visits.map(\.id))
             visits += page.placeVisits.filter { !known.contains($0.id) }
             nextVisitOffset = page.nextOffset
@@ -249,29 +243,11 @@ final class LocationModel {
         }
     }
 
-    /// Shows only visits to places with this label, or all of them.
-    func setVisitLabelFilter(_ label: PlaceLabel?) async {
-        guard label != visitLabelFilter else { return }
-        visitLabelFilter = label
-        await reloadVisits()
-    }
-
     /// Shows only places with this label, or all of them.
     func setPlaceLabelFilter(_ label: PlaceLabel?) async {
         guard label != placeLabelFilter else { return }
         placeLabelFilter = label
         await reloadPlaces()
-    }
-
-    /// Reads the first page of visits again, for the filter chosen.
-    private func reloadVisits() async {
-        do {
-            let page = try await connection.locationVisits(placeLabel: visitLabelFilter?.rawValue, limitCount: Self.visitPageSize)
-            visits = page.placeVisits
-            nextVisitOffset = page.nextOffset
-        } catch {
-            problemText = error.localizedDescription
-        }
     }
 
     /// Reads the first page of places again, for the label and the words
@@ -531,9 +507,8 @@ final class LocationModel {
     /// phone changes.
     private func refreshOwn() async {
         let connection = self.connection
-        let visitLabel = visitLabelFilter?.rawValue
         async let readLocation = attempt { try await connection.location() }
-        async let readVisits = attempt { try await connection.locationVisits(placeLabel: visitLabel, limitCount: LocationModel.visitPageSize) }
+        async let readVisits = attempt { try await connection.locationVisits(limitCount: LocationModel.visitPageSize) }
         let (locationResult, visitsResult) = await (readLocation, readVisits)
         if case .success(let read) = locationResult { location = read }
         if case .success(let page) = visitsResult {
