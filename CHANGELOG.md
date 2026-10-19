@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.185.3] - 2026-10-19
+
+### Changed
+
+- `teanode contact list` shows who each contact is linked to in your circles. (#603)
+
 ## [0.185.2] - 2026-10-19
 
 ### Changed
