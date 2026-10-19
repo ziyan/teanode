@@ -273,6 +273,7 @@ func (self *graph) searchMail(ctx context.Context, words string, limit int) ([]*
 	// items, in one mailbox or across them; it is found once. Twice as many
 	// are asked for, so that the copies left out do not leave the page short.
 	seenMessageIds := map[string]bool{}
+	seenCopies := map[string]time.Time{}
 	asked := limit * 2
 	for _, mailbox := range mailboxes {
 		page, err := self.ListMailboxThreads(ctx, ListMailboxThreadsArguments{MailboxID: &mailbox.ID, Search: &words, First: &asked})
@@ -290,6 +291,14 @@ func (self *graph) searchMail(ctx context.Context, words string, limit int) ([]*
 				}
 				seenMessageIds[messageId] = true
 			}
+			// A sender that writes to each address separately gives each
+			// copy its own Message-ID: the same sender and subject within a
+			// few minutes is the same mail to the person.
+			copyKey := strings.ToLower(strings.TrimSpace(mail.From)) + "\x00" + strings.TrimSpace(mail.Subject)
+			if lastAt, isSeen := seenCopies[copyKey]; isSeen && absoluteDuration(lastAt.Sub(mail.ReceivedAt)) <= mailCopyWindow {
+				continue
+			}
+			seenCopies[copyKey] = mail.ReceivedAt
 			receivedAt := mail.ReceivedAt
 			threads = append(threads, found{receivedAt: receivedAt, result: &search.Result{
 				TargetID: thread.Item.ID, TitleText: strings.TrimSpace(mail.Subject),
@@ -545,4 +554,15 @@ func (self *graph) searchFinance(ctx context.Context, words string, limit int) (
 		})
 	}
 	return results, nil
+}
+
+// mailCopyWindow is how close in time two mails from one sender with one
+// subject arrive to be taken as copies of one mail.
+const mailCopyWindow = 10 * time.Minute
+
+func absoluteDuration(duration time.Duration) time.Duration {
+	if duration < 0 {
+		return -duration
+	}
+	return duration
 }
