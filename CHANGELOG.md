@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.181.0] - 2026-10-19
+
+### Added
+
+- Calendar events can repeat on a custom schedule, such as every weekday or every two weeks on Monday and Thursday, on the dashboard and the iPhone. (#588)
+
+### Changed
+
+- The morning brief's days are chosen from a list of days instead of a switch each, and on the dashboard from day buttons instead of typed numbers. (#588)
+
 ## [0.180.4] - 2026-10-19
 
 ### Changed
