@@ -98,7 +98,7 @@ func TestLinkingAContactToAPersonInTheCircles(test *testing.T) {
 		"ListCirclePeople":  `[{"userId":"user-riley","username":"riley-example","name":"Riley"},{"userId":"user-sam","username":"sam-example","name":"Sam"}]`,
 		"SetContactAccount": samContact,
 	}}
-	result, err := callContactBook(test, operations, `{"action":"link-account","contact_id":"contact-sam","username":"@Sam-Example"}`)
+	result, err := callContactBook(test, operations, `{"action":"link-account","contact_id":"contact-sam","person":"@Sam-Example"}`)
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -106,13 +106,13 @@ func TestLinkingAContactToAPersonInTheCircles(test *testing.T) {
 	if variables["addressBookId"] != "book-one" || variables["contactId"] != "contact-sam" || variables["accountUserId"] != "user-sam" {
 		test.Fatalf("%v", variables)
 	}
-	if !strings.Contains(result.Content, `"account_username":"sam-example"`) {
+	if !strings.Contains(result.Content, `"person":"sam-example"`) {
 		test.Fatalf("the answer shows who the contact is: %s", result.Content)
 	}
-	if _, err := callContactBook(test, operations, `{"action":"link-account","contact_id":"contact-sam","username":"nobody-here"}`); err == nil || !strings.Contains(err.Error(), "nobody in their circles") {
+	if _, err := callContactBook(test, operations, `{"action":"link-account","contact_id":"contact-sam","person":"nobody-here"}`); err == nil || !strings.Contains(err.Error(), "nobody in their circles") {
 		test.Fatalf("a username that is nobody in the circles: %v", err)
 	}
-	if _, err := callContactBook(test, operations, `{"action":"link-account","username":"sam-example"}`); err == nil {
+	if _, err := callContactBook(test, operations, `{"action":"link-account","person":"sam-example"}`); err == nil {
 		test.Fatal("a link needs a contact")
 	}
 
@@ -136,7 +136,7 @@ func TestAListShowsLinksAndOffersSuggestions(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{`"account_username":"sam-example"`, `"suggested_links":[{"address_book_id":"book-one","contact_id":"contact-riley","contact_name":"Riley Example","username":"riley-example"}]`, "look like people in the person's circles"} {
+	for _, want := range []string{`"person":"sam-example"`, `"suggested_links":[{"address_book_id":"book-one","contact_id":"contact-riley","contact_name":"Riley Example","person":"riley-example"}]`, "look like people in the person's circles"} {
 		if !strings.Contains(result.Content, want) {
 			test.Errorf("the list lacks %s:\n%s", want, result.Content)
 		}
@@ -160,5 +160,22 @@ func TestAListShowsLinksAndOffersSuggestions(test *testing.T) {
 	result, err = callContactBook(test, operations, `{"action":"list"}`)
 	if err != nil || strings.Contains(result.Content, "suggest") {
 		test.Fatalf("%v %s", err, result.Content)
+	}
+}
+
+// An address book the person did not give is an error, never the first one
+// instead.
+func TestAnAddressBookThatIsNotGrantedIsRefused(test *testing.T) {
+	operations := &fakeBookOperations{answers: map[string]string{
+		"ListAddressBooks": `[{"id":"book-one","name":"Contacts","contacts":2,"agentGranted":true},{"id":"book-two","name":"Work","contacts":1,"agentGranted":false}]`,
+		"ListContacts":     `[]`,
+	}}
+	for _, bookId := range []string{"book-two", "book-unknown"} {
+		if _, err := callContactBook(test, operations, `{"action":"link-account","contact_id":"contact-sam","address_book_id":"`+bookId+`","account_user_id":"user-sam"}`); err == nil || !strings.Contains(err.Error(), "not an address book they have given you") {
+			test.Errorf("%s: %v", bookId, err)
+		}
+	}
+	if _, err := callContactBook(test, operations, `{"action":"list","address_book_id":"book-one"}`); err != nil {
+		test.Errorf("a granted book is read: %v", err)
 	}
 }

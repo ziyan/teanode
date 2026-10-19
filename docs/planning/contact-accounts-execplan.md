@@ -40,7 +40,7 @@ To see it working: on the dashboard, open a contact who shares a circle with you
 ## Decision Log
 
 - Decision: the link is a nullable column `contact.account_user_id`, referencing `user.id` with `ON DELETE SET NULL`.
-  Rationale: the maintainer chose the contact over the face group, so Contacts, Photos and the agent share one link; a face group already points at a contact (0223) and a contact names at most one group (0242), so a second user id on the group could disagree with its contact. `user_id` means the owner everywhere in this schema, so the column is `account_user_id`: the account on this server that this contact is (the Circles session's suggestion, in the spirit of `person_relationship.related_user_id`). The same name in the model (`AccountUserID`), GraphQL (`accountUserId`), the agent (`account_user_id`) and the command line (`--account`).
+  Rationale: the maintainer chose the contact over the face group, so Contacts, Photos and the agent share one link; a face group already points at a contact (0223) and a contact names at most one group (0242), so a second user id on the group could disagree with its contact. `user_id` means the owner everywhere in this schema, so the column is `account_user_id`: the account on this server that this contact is (the Circles session's suggestion, in the spirit of `person_relationship.related_user_id`). The same name in the model (`AccountUserID`), GraphQL (`accountUserId`), the agent (`account_user_id`) and the command line (`--person`).
   Date/Author: 2026-10-18, design.
 
 - Decision: one contact per account in each address book: a partial unique index on (`addressbook_id`, `account_user_id`) where the account is set. Two books of the same person may each hold one.
@@ -67,6 +67,10 @@ To see it working: on the dashboard, open a contact who shares a circle with you
 - Decision: nothing the linked person reads changes: they are never told and never see the link. The caller's own view of a circle member gains one caller-private field, `linkedContactId` on `CircleMember` (filled by `describeCircleMember`, which already takes the caller's id as `relationshipWord` does): the caller's contact linked to that member, empty when none. The member rows and Location's chosen person offer Photos when it is set and that contact names a face group.
   Rationale: the maintainer chose "private to me"; the rows need the fact without a second request per member.
   Date/Author: 2026-10-18, design.
+
+- Decision: on people-facing surfaces, someone in your circles is a `person`, as Location already says: `teanode photo list --person <username>`, the photo tool's and contact_book's `person`, and the dashboard's `person=<user id>` in Photos' address. GraphQL keeps `accountUserId`, which mirrors the column. Opening a person's photos filters the library to them on the dashboard and the iPhone alike, so a person hidden from People still opens.
+  Rationale: review round 1 found four names for one idea and the two apps opening different screens.
+  Date/Author: 2026-10-18, review.
 
 ## Outcomes & Retrospective
 
@@ -100,7 +104,7 @@ GraphQL: `ContactView` gains `accountUserId` and `account { userId username name
 
 Agent: `contact_book` gains action `link-account` (contact and `account_user_id` or `username`) and `unlink-account`, and its rows show the account's username. The photo tool's `person-photos` and `list` take `username` (or `account_user_id`) as well as a contact or face group. The relationship lines the agent reads gain, for a related person whose contact has photos, that the photo tool finds them by username. `link-account` and `unlink-account` tell nobody, so they are `RiskWrite`, not `RiskOutward` (unlike `relate`, which tells the other person). The relationship lines gain the photos hint only when the person has `photos:use`, read with one joined query per prompt, never one per person. Suggestions appear only in the `contact_book` tool's answer when the person asks about contacts ("N contacts look like people in your circles; confirm with link-account"), never in the situation every turn.
 
-Command line: `teanode contact link <contact> <username>`, `teanode contact unlink <contact>`, `teanode contact suggestions`; `teanode contact show` prints "In your circles as <username>"; `teanode photo list --account <username>`. Parity tests check the names against the operations.
+Command line: `teanode contact link <contact> <username>`, `teanode contact unlink <contact>`, `teanode contact suggestions`; `teanode contact show` prints "In your circles as <username>"; `teanode photo list --person <username>`. Parity tests check the names against the operations.
 
 ### Milestone 3: the dashboard
 
@@ -108,7 +112,7 @@ Contacts (`addressBook.tsx`): a contact's dialog shows "In your circles: <name>"
 
 Photos (`web/src/pages/photos/people.tsx`, `personControls.tsx`): a linked person's tile shows the circle picture (the `avatarUrl` already loaded with `ListCirclePeople`) as a small badge and "In your circles", and is the same height with and without it, checked at 390 px; the naming dialog offers circle people only through a contact that already exists, never making one. The library keeps `account` in the address beside `contact` and `faceGroup` (`web/src/photos/filters.ts`), with the same chip and Back behavior, cleared when another person is picked.
 
-Circles (`circles.tsx`) and Location (`location.tsx`): a member's menu and Location's chosen person gain "Photos", opening `/photos?account=<username>` (the library reads `account` like `contact`), shown only when the member's `linkedContactId` is set and that contact names a face group.
+Circles (`circles.tsx`) and Location (`location.tsx`): a member's menu and Location's chosen person gain "Photos", opening `/photos?person=<user id>` (the library reads `person` like `contact`), shown only when the member's `linkedContactId` is set and that contact names a face group.
 
 ### Milestone 4: the iPhone
 
@@ -126,7 +130,7 @@ Work in `~/.cache/claude-tmp/teanode-location` on a branch from `origin/main`. B
 
 ## Validation and Acceptance
 
-On a development server with two invented accounts in one family circle, each with a mailbox: the first adds a contact with the second's mailbox address. `teanode contact suggestions` lists it; `teanode contact link` links it; a face group named with that contact shows the second account's picture on the dashboard's People; `teanode photo list --account <second>` lists that group's photos; the circle page's member menu offers Photos and it opens them. The second account sees nothing of it: as the second account, `teanode circle people`, `teanode contact list` and `teanode photo list` show no trace of the link, and its `ListCirclePeople` answer has no `linkedContactId` set. Removing the second account from the circle clears the link (`teanode contact show` no longer says "In your circles"). The agent, asked "show me photos of <the relationship word>" after the two said their relationship, answers with that group's photos.
+On a development server with two invented accounts in one family circle, each with a mailbox: the first adds a contact with the second's mailbox address. `teanode contact suggestions` lists it; `teanode contact link` links it; a face group named with that contact shows the second account's picture on the dashboard's People; `teanode photo list --person <second>` lists that group's photos; the circle page's member menu offers Photos and it opens them. The second account sees nothing of it: as the second account, `teanode circle people`, `teanode contact list` and `teanode photo list` show no trace of the link, and its `ListCirclePeople` answer has no `linkedContactId` set. Removing the second account from the circle clears the link (`teanode contact show` no longer says "In your circles"). The agent, asked "show me photos of <the relationship word>" after the two said their relationship, answers with that group's photos.
 
 ## Idempotence and Recovery
 

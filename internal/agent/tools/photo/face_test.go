@@ -404,19 +404,19 @@ func TestTheToolDeclaresEveryParameterItsOperationsTakeAndTellsTheAgentNotToGues
 // A person in the circles is asked for by username: the tool finds the account
 // among the people the person shares a circle with, and the listing asks for
 // that account's photos; a username that is nobody in the circles is refused.
-func TestAPersonsPhotosAreAskedForByUsername(test *testing.T) {
+func TestAPersonsPhotosAreAskedForByPerson(test *testing.T) {
 	current := newRun(test, map[string]string{
 		"ListPhotos":       `[` + pictureRow + `]`,
 		"ListCirclePeople": `[{"userId":"user-sam","username":"sam-example","name":"Sam Example","memberRole":"","relationshipKind":"","relationshipTermGender":"","relationshipWord":""}]`,
 	})
-	if _, err := current.call(map[string]any{"operation": "person-photos", "username": "@Sam-Example", "page_size": 5}); err != nil {
+	if _, err := current.call(map[string]any{"operation": "person-photos", "person": "@Sam-Example", "page_size": 5}); err != nil {
 		test.Fatal(err)
 	}
 	asked := current.operations.asked("ListPhotos")
 	if len(asked) != 1 || asked[0]["accountUserId"] != "user-sam" || asked[0]["contactId"] != nil {
 		test.Fatalf("the listing asked %v", asked)
 	}
-	if _, err := current.call(map[string]any{"operation": "list", "username": "nobody-here"}); err == nil || !strings.Contains(err.Error(), "does not share a circle") {
+	if _, err := current.call(map[string]any{"operation": "list", "person": "nobody-here"}); err == nil || !strings.Contains(err.Error(), "does not share a circle") {
 		test.Fatalf("an unknown username is refused: %v", err)
 	}
 
@@ -425,7 +425,7 @@ func TestAPersonsPhotosAreAskedForByUsername(test *testing.T) {
 		"ListPhotos":       `[]`,
 		"ListCirclePeople": `[{"userId":"user-sam","username":"sam-example","name":"Sam Example"}]`,
 	})
-	result, err := empty.call(map[string]any{"operation": "list", "username": "sam-example"})
+	result, err := empty.call(map[string]any{"operation": "list", "person": "sam-example"})
 	if err != nil || !strings.Contains(result.Content, "link-account") {
 		test.Fatalf("%v %v", result, err)
 	}
@@ -449,10 +449,10 @@ func TestAGroupSaysTheUsernameItsContactIsLinkedTo(test *testing.T) {
 	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
 		test.Fatal(err)
 	}
-	if answer.People[0]["username"] != "sam-example" {
+	if answer.People[0]["person"] != "sam-example" {
 		test.Fatalf("%s", result.Content)
 	}
-	if _, isThere := answer.People[1]["username"]; isThere {
+	if _, isThere := answer.People[1]["person"]; isThere {
 		test.Fatalf("an unlinked group names nobody: %s", result.Content)
 	}
 }

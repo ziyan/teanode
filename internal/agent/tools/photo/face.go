@@ -93,7 +93,7 @@ func groupRow(group *models.PhotoFaceGroup) map[string]any {
 		row["is_you"] = true
 	}
 	if group.Account != nil {
-		row["username"] = group.Account.Username
+		row["person"] = group.Account.Username
 	}
 	if group.IsHidden {
 		row["is_hidden"] = true
@@ -154,8 +154,8 @@ func personRead(ctx context.Context, executor client.Executor, asked *arguments)
 // the pages list gives.
 func personPhotos(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
 	faceGroupId, contactId := strings.TrimSpace(asked.FaceGroupID), strings.TrimSpace(asked.ContactID)
-	if faceGroupId == "" && contactId == "" && strings.TrimSpace(asked.Username) == "" {
-		return nil, errors.New("person-photos needs face_group_id or contact_id (or the username of a person in the circles); people gives them")
+	if faceGroupId == "" && contactId == "" && strings.TrimSpace(asked.Person) == "" {
+		return nil, errors.New("person-photos needs face_group_id or contact_id (or person, the username of somebody in the circles); people gives them")
 	}
 	return list(ctx, current, asked)
 }

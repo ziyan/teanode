@@ -533,6 +533,38 @@ func TestContactAccountSuggestionsMatchMailboxAddressesOnly(t *testing.T) {
 	})
 }
 
+// A contact with no email addresses that is already linked to an account still
+// stops that account being suggested for another contact in the same book.
+func TestContactAccountSuggestionsSkipAnAccountLinkedToAContactWithoutEmails(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newContactAccountWorld(t, tx)
+		domain, err := tx.CreateDomain(&models.Domain{Domain: "family.example"})
+		if err != nil {
+			t.Fatalf("CreateDomain: %s", err)
+		}
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: world.sam.ID, Name: "Personal"})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		if _, err := tx.CreateAlias(&models.Alias{DomainID: domain.ID, Pattern: world.sam.Username, Kind: models.AliasKindMailbox, MailboxID: mailbox.ID}); err != nil {
+			t.Fatalf("CreateAlias: %s", err)
+		}
+		linkedWithoutEmails := putTestContact(t, tx, world.book.ID, "urn:uuid:sam-bare", "Sam Bare")
+		if err := tx.SetContactAccount(world.book.ID, linkedWithoutEmails.ID, world.sam.ID); err != nil {
+			t.Fatalf("SetContactAccount: %s", err)
+		}
+		putTestContact(t, tx, world.book.ID, "urn:uuid:sam-mail", "Sam Mail", "link-sam@family.example")
+
+		suggestions, err := tx.ListContactAccountSuggestions(world.owner.ID)
+		if err != nil || len(suggestions) != 0 {
+			t.Fatalf("none, the book already links Sam: %+v %v", suggestions, err)
+		}
+	})
+}
+
 // The accounts whose linked contact names a group of faces are found in one
 // query, a photo listing can be narrowed to the contact in one address book,
 // and both stop when the two no longer share a circle.

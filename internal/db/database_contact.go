@@ -666,11 +666,22 @@ func (self *transaction) ListContactAccountSuggestions(ownerUserId string) ([]*m
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	// Every linked contact of the owner counts, including one with no email
+	// addresses, since the book's link is refused for any of them.
+	var linkedRows []struct {
+		AddressBookID string `gorm:"column:addressbook_id"`
+		AccountUserID string `gorm:"column:account_user_id"`
+	}
+	if err := self.tx.Table("contact").
+		Select("contact.addressbook_id, contact.account_user_id").
+		Joins("JOIN addressbook ON addressbook.id = contact.addressbook_id").
+		Where("addressbook.user_id = ? AND contact.account_user_id IS NOT NULL", ownerUserId).
+		Scan(&linkedRows).Error; err != nil {
+		return nil, err
+	}
 	linked := map[string]bool{}
-	for index := range rows {
-		if rows[index].AccountUserID != nil {
-			linked[rows[index].AddressBookID+"\n"+*rows[index].AccountUserID] = true
-		}
+	for _, linkedRow := range linkedRows {
+		linked[linkedRow.AddressBookID+"\n"+linkedRow.AccountUserID] = true
 	}
 	for index := range rows {
 		if rows[index].AccountUserID != nil {

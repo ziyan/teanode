@@ -251,12 +251,31 @@ address matched. Nothing is linked until the owner confirms.
 
 The surfaces say it the same way: `ContactView.accountUserId` and `account`
 (null unless linked and still sharing a circle), `SetContactAccount`,
-`PhotoFaceGroup.accountUserId` and `account`, `ListPhotos` and `CountPhotos`
-with `accountUserId`, `CircleMember.linkedContactId` (the caller's own contact
-for that person, empty for everybody else's view), the agent's `contact_book`
-actions `link-account` and `unlink-account` (both writes that tell nobody, so
-not outward) and its `account_username` rows, the photo tool's `username`, and
-`teanode contact link|unlink|suggestions` and `teanode photo list --account`.
+`ListContactAccountSuggestions`, `PhotoFaceGroup.accountUserId` and `account`,
+`ListPhotos` and `CountPhotos` with `accountUserId`,
+`CircleMember.linkedContactId` (the caller's own contact for that person, empty
+for everybody else's view), the agent's `contact_book` actions `link-account`
+(`person`, a username, or `account_user_id`) and `unlink-account` (both writes
+that tell nobody, so not outward) and its `person` rows, the photo tool's
+`person` on `list` and `person-photos`, and `teanode contact
+link|unlink|suggestions` and `teanode photo list --person`.
+
+The dashboard's address book and the iPhone's Contacts show the same
+suggestions at the top, "Contacts that may be people in your circles", each
+with Link and Not now. Not now is kept on each device (the browser, the
+iPhone) and is not synchronized: it writes nothing to the server, so the same
+suggestion can still show on another device. The agent's `contact_book` list
+answers `suggested_links`, each with `contact_id`, `contact_name`, `person` and
+`address_book_id` (and `address_book_name` when there are several books), which
+it offers and never acts on; `link-account` takes the same `address_book_id`.
+A contact id can be in more than one address book, so `address_book_id` that
+names a book the agent was not granted is an error, never the first granted
+book. `teanode contact suggestions` prints a table with CONTACT, IN YOUR
+CIRCLES AS, ADDRESS BOOK (only when there are several books) and TO CONFIRM,
+the `link` command that confirms it; `link` and `unlink` take `--address-book
+<id>` when the contact id is in more than one of your books, and refuse to
+guess. Suggestions skip an account that any contact in the same book (with or
+without email addresses) already is, since the link would be refused.
 The agent's situation adds "Their photos are found with the photo tool" to a
 relationship line only when the person may use photos and the linked contact
 names a group of faces, read with one query for all of them.

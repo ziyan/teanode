@@ -79,7 +79,7 @@ func relationshipLines(ownerId string, relationships []*models.PersonRelationshi
 		// group of faces is named by it, so the model does not look for photos
 		// that cannot be found this way.
 		if photoAccountUserIds[otherId] {
-			line += " Their photos are found with the photo tool, list with this username."
+			line += " Their photos are found with the photo tool, list with person set to this username."
 		}
 		lines = append(lines, line)
 	}

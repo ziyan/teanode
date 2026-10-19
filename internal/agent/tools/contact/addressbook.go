@@ -31,8 +31,8 @@ func init() {
 					"id":              tools.StringProperty("for get, remove, remove-picture, and for changing one that is kept: the contact's id, as list gives it"),
 					"contact_id":      tools.StringProperty("for link-account and unlink-account: the contact's id, as list gives it"),
 					"address_book_id": tools.StringProperty("for link-account and unlink-account: the address book the contact is in, as list gives it; the one you were given when left out"),
-					"username":        tools.StringProperty("for link-account: the username of the person in their circles the contact is, as the person tools give it"),
-					"account_user_id": tools.StringProperty("for link-account: the same person by account id, instead of a username"),
+					"person":          tools.StringProperty("for link-account: the username of the person in their circles the contact is, as the person tools give it"),
+					"account_user_id": tools.StringProperty("for link-account: the same person by account id, instead of person"),
 					"name":            tools.StringProperty("for save: what to call them"),
 					"organization":    tools.StringProperty("for save: where they work"),
 					"title":           tools.StringProperty("for save: what they do there"),
@@ -40,7 +40,7 @@ func init() {
 					"phones":          tools.ArrayProperty("for save: their telephone numbers, replacing what is there", tools.StringProperty("a number")),
 					"note":            tools.StringProperty("for save: anything else worth keeping about them"),
 				}, "action"),
-				Guidance: "contact_book: this is the person's own list of people, and the only one there is -- to answer whether somebody has written before, search the mail instead. To keep a sender -- \"save that sender to my contacts\" -- save them here with their name and address; there is no separate action for it, because a contact kept from a message is an ordinary contact. Saving without an id keeps a new contact; saving with one changes that contact, and anything you leave out is left as it was, so correcting a name does not throw away the address. A contact is stored as the card a phone would send, so a photograph or a birthday put there by a device survives an edit made here. Removing one removes it from the person's devices too, so say who it is and wait to be told to go ahead. A contact may have a picture, which the server sometimes cuts from a face in the person's photos when they name somebody; remove-picture takes just the picture off and leaves the rest of the contact. link-account records that a contact is a person in the circles they share (the account is chosen by username from the people they share a circle with); it is the person's own note, nobody is told, and the person it names never sees it. Make the link only when the person says so or confirms a suggestion that list reports; never because two names look alike. Rows of list show account_username for a linked contact, and when some contacts carry an address of somebody in their circles, list says so in suggested_links, which you offer to the person and do not act on. The photo tool then finds a linked person's photos by their username.",
+				Guidance: "contact_book: this is the person's own list of people, and the only one there is -- to answer whether somebody has written before, search the mail instead. To keep a sender -- \"save that sender to my contacts\" -- save them here with their name and address; there is no separate action for it, because a contact kept from a message is an ordinary contact. Saving without an id keeps a new contact; saving with one changes that contact, and anything you leave out is left as it was, so correcting a name does not throw away the address. A contact is stored as the card a phone would send, so a photograph or a birthday put there by a device survives an edit made here. Removing one removes it from the person's devices too, so say who it is and wait to be told to go ahead. A contact may have a picture, which the server sometimes cuts from a face in the person's photos when they name somebody; remove-picture takes just the picture off and leaves the rest of the contact. link-account records that a contact is a person in the circles they share (the account is chosen by username from the people they share a circle with); it is the person's own note, nobody is told, and the person it names never sees it. Make the link only when the person says so or confirms a suggestion that list reports; never because two names look alike. Rows of list show person for a linked contact, and when some contacts carry an address of somebody in their circles, list says so in suggested_links, which you offer to the person and do not act on. The photo tool then finds a linked person's photos by person.",
 				Preview: func(arguments json.RawMessage) string {
 					var call contactBookArguments
 					if err := json.Unmarshal(arguments, &call); err != nil {
@@ -101,7 +101,7 @@ type contactBookArguments struct {
 
 	ContactID     string `json:"contact_id"`
 	AddressBookID string `json:"address_book_id"`
-	Username      string `json:"username"`
+	Person        string `json:"person"`
 	AccountUserID string `json:"account_user_id"`
 }
 
@@ -155,9 +155,9 @@ type contactView struct {
 	Note         string   `json:"note,omitempty"`
 
 	// Account is the person in the circles the contact is linked to, as the
-	// server answers it; AccountUsername is what the model is shown.
-	Account         *accountView `json:"-"`
-	AccountUsername string       `json:"account_username,omitempty"`
+	// server answers it; Person is the username the model is shown.
+	Account *accountView `json:"-"`
+	Person  string       `json:"person,omitempty"`
 }
 
 type accountView struct {
@@ -180,7 +180,7 @@ func (self *contactView) UnmarshalJSON(data []byte) error {
 	*self = contactView(decoded.plain)
 	self.Account = decoded.Account
 	if decoded.Account != nil {
-		self.AccountUsername = decoded.Account.Username
+		self.Person = decoded.Account.Username
 	}
 	return nil
 }
@@ -227,6 +227,11 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 	if book == nil {
 		return nil, fmt.Errorf("they have not given you their address book; it is a switch on their agent's page, beside the mailboxes")
 	}
+	// A named book that is not one they gave you is an error, never the first
+	// book instead: a contact id from another book must not be acted on here.
+	if arguments.AddressBookID != "" && book.ID != arguments.AddressBookID {
+		return nil, fmt.Errorf("address_book_id %q is not an address book they have given you; list gives the ids", arguments.AddressBookID)
+	}
 
 	switch arguments.Action {
 	case "list":
@@ -263,7 +268,7 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 				// is named when there is more than one to tell apart.
 				offer := map[string]any{
 					"contact_id": suggestion.Contact.ID, "contact_name": suggestion.Contact.Name,
-					"username": suggestion.Account.Username, "address_book_id": suggestion.AddressBookID,
+					"person": suggestion.Account.Username, "address_book_id": suggestion.AddressBookID,
 				}
 				if len(books.ListAddressBooks) > 1 {
 					for _, candidate := range books.ListAddressBooks {
@@ -347,7 +352,7 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		}
 		accountUserId := strings.TrimSpace(arguments.AccountUserID)
 		if accountUserId == "" {
-			username := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(arguments.Username), "@"))
+			username := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(arguments.Person), "@"))
 			if username == "" {
 				return nil, fmt.Errorf("which person: give the username of somebody in their circles")
 			}

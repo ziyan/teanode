@@ -21,7 +21,7 @@ import (
 // A fake server for the commands that link a contact to a person in the
 // circles. The contact lives in the second of two address books, so linking
 // has to look past the first.
-func contactAccountServer(test *testing.T, linked *[]map[string]any) *httptest.Server {
+func contactAccountServer(test *testing.T, linked *[]map[string]any, holdingBoth *bool) *httptest.Server {
 	test.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		var asked struct {
@@ -36,6 +36,13 @@ func contactAccountServer(test *testing.T, linked *[]map[string]any) *httptest.S
 		switch {
 		case strings.Contains(asked.Query, "ListAddressBooks"):
 			_, _ = response.Write([]byte(`{"data":{"ListAddressBooks":[{"id":"book-one","name":"Contacts","contacts":1},{"id":"book-two","name":"Work","contacts":1}]}}`))
+		case strings.Contains(asked.Query, "ListContacts("):
+			// The contact is in the second book, and also in the first when a test asks.
+			if asked.Variables["addressBookId"] == "book-two" || *holdingBoth {
+				_, _ = response.Write([]byte(`{"data":{"ListContacts":[{"id":"contact-sam","name":"Sam Example","emails":[],"phones":[]}]}}`))
+				return
+			}
+			_, _ = response.Write([]byte(`{"data":{"ListContacts":[]}}`))
 		case strings.Contains(asked.Query, "ListCirclePeople"):
 			_, _ = response.Write([]byte(`{"data":{"ListCirclePeople":[{"userId":"user-sam","username":"sam-example","name":"Sam Example"}]}}`))
 		case strings.Contains(asked.Query, "SetContactAccount("):
@@ -81,14 +88,14 @@ func runContactCommand(test *testing.T, server *httptest.Server, arguments ...st
 // contact says who it is in the circles.
 func TestContactLinkAndUnlink(test *testing.T) {
 	var linked []map[string]any
-	server := contactAccountServer(test, &linked)
+	server := contactAccountServer(test, &linked, new(bool))
 
 	output, err := runContactCommand(test, server, "link", "contact-sam", "@Sam-Example")
 	if err != nil || !strings.Contains(output, "Sam Example is in your circles as sam-example") {
 		test.Fatalf("%v: %s", err, output)
 	}
-	if len(linked) != 2 || linked[0]["addressBookId"] != "book-one" || linked[1]["addressBookId"] != "book-two" ||
-		linked[1]["contactId"] != "contact-sam" || linked[1]["accountUserId"] != "user-sam" {
+	if len(linked) != 1 || linked[0]["addressBookId"] != "book-two" ||
+		linked[0]["contactId"] != "contact-sam" || linked[0]["accountUserId"] != "user-sam" {
 		test.Fatalf("%v", linked)
 	}
 
@@ -111,11 +118,34 @@ func TestContactLinkAndUnlink(test *testing.T) {
 	}
 }
 
+// A contact id that is in two of your address books is not linked until one
+// is chosen with --address-book.
+func TestContactLinkInTwoAddressBooksNeedsAChoice(test *testing.T) {
+	var linked []map[string]any
+	holdingBoth := true
+	server := contactAccountServer(test, &linked, &holdingBoth)
+
+	for _, arguments := range [][]string{{"link", "contact-sam", "sam-example"}, {"unlink", "contact-sam"}} {
+		_, err := runContactCommand(test, server, arguments...)
+		if err == nil || !strings.Contains(err.Error(), "more than one of your address books") ||
+			!strings.Contains(err.Error(), "Contacts (book-one)") || !strings.Contains(err.Error(), "Work (book-two)") {
+			test.Errorf("%v: %v", arguments, err)
+		}
+	}
+	if len(linked) != 0 {
+		test.Fatalf("nothing is linked before a book is chosen: %v", linked)
+	}
+	output, err := runContactCommand(test, server, "link", "contact-sam", "sam-example", "--address-book", "book-two")
+	if err != nil || !strings.Contains(output, "is in your circles as sam-example") || len(linked) != 1 || linked[0]["addressBookId"] != "book-two" {
+		test.Fatalf("%v: %s %v", err, output, linked)
+	}
+}
+
 // Suggestions are listed with the command that confirms each, and are JSON
 // with --json. The address that matched is not in them.
 func TestContactSuggestions(test *testing.T) {
 	var linked []map[string]any
-	server := contactAccountServer(test, &linked)
+	server := contactAccountServer(test, &linked, new(bool))
 
 	output, err := runContactCommand(test, server, "suggestions")
 	if err != nil || !strings.Contains(output, "Riley Example") || !strings.Contains(output, "riley-example") ||
@@ -206,14 +236,14 @@ func TestContactAccountParity(test *testing.T) {
 			continue
 		}
 		for _, flag := range subcommand.Flags {
-			foundFlag = foundFlag || slices.Contains(flag.Names(), "account")
+			foundFlag = foundFlag || slices.Contains(flag.Names(), "person")
 		}
 	}
 	if !foundFlag {
-		test.Error("teanode photo list has no --account")
+		test.Error("teanode photo list has no --person")
 	}
 	photoProperties, _ := tools.Build().Get("photo").Parameters["properties"].(map[string]any)
-	if _, isThere := photoProperties["username"]; !isThere {
-		test.Error("the photo tool takes no username")
+	if _, isThere := photoProperties["person"]; !isThere {
+		test.Error("the photo tool takes no person")
 	}
 }

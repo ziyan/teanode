@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -90,14 +89,14 @@ func NewContactCommand() *cli.Command {
 				Name:      "link",
 				Usage:     "say a contact is somebody you share a circle with; only you know, they are not told",
 				ArgsUsage: "<contact id> <username>",
-				Flags:     []cli.Flag{JSONFlag()},
+				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "address-book", Usage: "the address book the contact is in, when its id is in more than one of yours"}},
 				Action:    runContactBookLink,
 			},
 			{
 				Name:      "unlink",
 				Usage:     "take back the note that a contact is somebody in your circles",
 				ArgsUsage: "<contact id>",
-				Flags:     []cli.Flag{JSONFlag()},
+				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "address-book", Usage: "the address book the contact is in, when its id is in more than one of yours"}},
 				Action:    runContactBookUnlink,
 			},
 			{
@@ -379,20 +378,45 @@ func runContactBookRemovePicture(ctx context.Context, command *cli.Command) erro
 }
 
 // setContactAccountInYourBooks links a contact, or clears the link with an
-// empty account, in whichever of your address books holds it.
-func setContactAccountInYourBooks(ctx context.Context, connection *client.Client, contactId, accountUserId string) (*client.Contact, error) {
+// empty account, in the address book that holds it. A contact id can be in
+// more than one of your books; then the book must be chosen with
+// --address-book, since the link is a change to that one contact.
+func setContactAccountInYourBooks(ctx context.Context, command *cli.Command, connection *client.Client, contactId, accountUserId string) (*client.Contact, error) {
 	books, err := client.ListAddressBooks(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
+	chosenAddressBookId := strings.TrimSpace(command.String("address-book"))
+	holdingBooks := []*client.AddressBook{}
 	for _, book := range books {
-		contact, err := client.SetContactAccount(ctx, connection, book.ID, contactId, accountUserId)
-		if errors.Is(err, client.ErrNotFound) {
+		if chosenAddressBookId != "" && book.ID != chosenAddressBookId {
 			continue
 		}
-		return contact, err
+		contacts, err := client.ListContacts(ctx, connection, book.ID, "", 0)
+		if err != nil {
+			return nil, err
+		}
+		for _, contact := range contacts {
+			if contact.ID == contactId {
+				holdingBooks = append(holdingBooks, book)
+				break
+			}
+		}
 	}
-	return nil, fmt.Errorf("no such contact: 'teanode contact list' says their ids")
+	switch len(holdingBooks) {
+	case 0:
+		if chosenAddressBookId != "" {
+			return nil, fmt.Errorf("no such contact in that address book: 'teanode contact list' says their ids")
+		}
+		return nil, fmt.Errorf("no such contact: 'teanode contact list' says their ids")
+	case 1:
+		return client.SetContactAccount(ctx, connection, holdingBooks[0].ID, contactId, accountUserId)
+	}
+	descriptions := make([]string, 0, len(holdingBooks))
+	for _, book := range holdingBooks {
+		descriptions = append(descriptions, fmt.Sprintf("%s (%s)", forTerminal(book.Name), book.ID))
+	}
+	return nil, fmt.Errorf("that contact is in more than one of your address books: %s; choose one with --address-book <id>", strings.Join(descriptions, ", "))
 }
 
 func runContactBookLink(ctx context.Context, command *cli.Command) error {
@@ -407,7 +431,7 @@ func runContactBookLink(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
-	contact, err := setContactAccountInYourBooks(ctx, connection, command.Args().First(), accountUserId)
+	contact, err := setContactAccountInYourBooks(ctx, command, connection, command.Args().First(), accountUserId)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -426,7 +450,7 @@ func runContactBookUnlink(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	contact, err := setContactAccountInYourBooks(ctx, connection, command.Args().First(), "")
+	contact, err := setContactAccountInYourBooks(ctx, command, connection, command.Args().First(), "")
 	if err != nil {
 		return describeError(command, err)
 	}
