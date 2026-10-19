@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.180.1] - 2026-10-19
+
+### Fixed
+
+- A photo the iPhone reported as taken on 1 January 1970 takes its date from its filename, or counts as undated, instead of showing on 31 December 1969. (#585)
+
 ## [0.180.0] - 2026-10-19
 
 ### Added
