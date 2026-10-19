@@ -8,15 +8,15 @@ import UIKit
 import UserNotifications
 import WidgetKit
 
-/// AppModel is the app's sign-ins: every account kept in the keychain, the
-/// one in use and the connection made from it, and connecting, switching
-/// and signing out.
 /// OpenedPhotoPerson asks Photos to show the photos of one person in the circles.
 struct OpenedPhotoPerson: Hashable {
     let userId: String
     let name: String
 }
 
+/// AppModel is the app's sign-ins: every account kept in the keychain, the
+/// one in use and the connection made from it, and connecting, switching
+/// and signing out.
 @MainActor
 @Observable
 final class AppModel {

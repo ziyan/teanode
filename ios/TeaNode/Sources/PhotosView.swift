@@ -1009,7 +1009,10 @@ struct PhotosScreen: View {
                 .navigationSubtitle(subtitleText)
                 .navigationBarTitleDisplayMode(.large)
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if model.section.collection != nil, model.photoFilter.photoNearFilter != nil || !(model.photoFilter.accountUserId ?? "").isEmpty {
+                    // A search lists by its words alone, so the filters' chips are put away while it does.
+                    if model.section.collection != nil, searchWords == nil,
+                        model.photoFilter.photoNearFilter != nil || !(model.photoFilter.accountUserId ?? "").isEmpty
+                    {
                         VStack(spacing: 8) {
                             if let photoNearFilter = model.photoFilter.photoNearFilter {
                                 PhotoNearChip(photoNearFilter: photoNearFilter) {
