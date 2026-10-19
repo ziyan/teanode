@@ -4543,6 +4543,22 @@
         }
       }
     },
+    "Choose at least one day.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "曜日を 1 つ以上選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请至少选择一天。"
+          }
+        }
+      }
+    },
     "Close tab": {
       "localizations": {
         "ja": {
@@ -4943,6 +4959,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有编程会话"
+          }
+        }
+      }
+    },
+    "No days": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未选择"
           }
         }
       }
@@ -5557,6 +5589,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "星期"
+          }
+        }
+      }
+    },
+    "Weekdays": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作日"
+          }
+        }
+      }
+    },
+    "Weekends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "週末"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "周末"
           }
         }
       }

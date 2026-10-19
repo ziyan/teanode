@@ -285,6 +285,19 @@ final class AgentUpkeepTests: XCTestCase {
         XCTAssertNotEqual(ScheduleWeekday.name(5, locale: Locale(identifier: "ja_JP")), "Friday")
     }
 
+    func testNamesSomeDaysForTheBriefsRow() {
+        let english = Locale(identifier: "en_US")
+        XCTAssertEqual(ScheduleWeekday.shortNamesText([1, 3, 5], locale: english), "Mon, Wed, and Fri")
+        XCTAssertEqual(ScheduleWeekday.shortNamesText([5, 1], locale: english), "Mon and Fri")
+        XCTAssertEqual(ScheduleWeekday.shortNamesText([7], locale: english), "Sun")
+        XCTAssertEqual(ScheduleTiming.dayPattern(for: [1, 2, 3, 4, 5, 6, 7]), .everyDay)
+        XCTAssertEqual(ScheduleTiming.dayPattern(for: [1, 2, 3, 4, 5]), .weekdays)
+        XCTAssertEqual(ScheduleTiming.dayPattern(for: [6, 7]), .weekends)
+        XCTAssertEqual(ScheduleTiming.dayPattern(for: [3]), .oneDay(3))
+        XCTAssertEqual(ScheduleTiming.dayPattern(for: [1, 3]), .someDays([1, 3]))
+        XCTAssertEqual(ScheduleTiming.dayPattern(for: []), .someDays([]))
+    }
+
     func testDescribesAPlainCronLineAndLeavesTheRest() throws {
         let weekdays = try XCTUnwrap(ScheduleTiming(cron: "30 7 * * 1-5"))
         XCTAssertEqual(weekdays.dayPattern, .weekdays)
