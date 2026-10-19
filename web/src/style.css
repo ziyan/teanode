@@ -17164,7 +17164,9 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 }
 
 .agents-tree {
-  --agents-line: var(--border-strong);
+  /* The lines are the muted text's color: the border's is too faint to
+     read as a graph in dark mode. */
+  --agents-line: var(--muted);
   --agents-gap: 12px;
   /* A tree wider than the pane scrolls sideways here, never the page. */
   overflow-x: auto;
@@ -17307,6 +17309,20 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   left: 50%;
   height: var(--agents-gap);
   border-left: 1px solid var(--agents-line);
+}
+
+/* A dot where the session's line meets the session's card. */
+.agents-top::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--agents-line);
+  border-radius: 50%;
+  background: var(--surface);
+  transform: translateX(-50%);
 }
 
 .agents-top > li {
