@@ -742,18 +742,20 @@ export function AddressBookPage() {
                   <span className="account-link-text">
                     {t('addressBook.accountIs', { name: personName(draft.account) })}
                   </span>
-                  <button type="button" disabled={busy} onClick={openAccountPicker}>
-                    {t('addressBook.accountChange')}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      void setAccount(bookId, draft.id, draft.name.trim() || lines(draft.emails)[0] || '', null)
-                    }
-                  >
-                    {t('addressBook.accountRemove')}
-                  </button>
+                  <div className="account-link-actions">
+                    <button type="button" disabled={busy} onClick={openAccountPicker}>
+                      {t('addressBook.accountChange')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void setAccount(bookId, draft.id, draft.name.trim() || lines(draft.emails)[0] || '', null)
+                      }
+                    >
+                      {t('addressBook.accountRemove')}
+                    </button>
+                  </div>
                 </>
               ) : (
                 <button type="button" disabled={busy} onClick={openAccountPicker}>

@@ -6288,7 +6288,6 @@ export const en = {
   'location.durationMinutes': '{minutes} min',
   'location.hereNow': 'Here now',
   'location.moreMenu': 'More about visits',
-  'location.photos': 'Photos',
   'location.eraseHistory': 'Erase positions and visits…',
   'location.eraseTitle': 'Erase your positions and visits?',
   'location.eraseBody':

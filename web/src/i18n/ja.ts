@@ -6203,7 +6203,6 @@ export const ja: Catalog = {
   'location.durationMinutes': '{minutes}分',
   'location.hereNow': '現在ここにいます',
   'location.moreMenu': '訪問のその他の操作',
-  'location.photos': '写真',
   'location.eraseHistory': '位置と訪問を消去…',
   'location.eraseTitle': 'あなたの位置と訪問を消去しますか？',
   'location.eraseBody':

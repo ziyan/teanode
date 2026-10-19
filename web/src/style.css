@@ -12169,9 +12169,15 @@ main.content:has(> .knowledge-frame) {
 }
 
 .account-link-text {
-  flex: 1 1 10rem;
+  flex: 1 1 8rem;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Change and Remove stay together, on the line or under it. */
+.account-link-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 .contact-picker-row .avatar {

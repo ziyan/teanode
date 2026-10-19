@@ -662,7 +662,7 @@ function LocationContent({ userId }: { userId: string }) {
       <PageHeadingActions>
         {viewedPerson && isViewedPersonLinked && (
           <Link className="button" to={personPhotosAddress(viewedPerson.userId)}>
-            {t('location.photos')}
+            {t('photos.accountPhotosOf', { name: viewedName })}
           </Link>
         )}
         <button type="button" className="primary" onClick={() => setIsCheckingIn(true)}>

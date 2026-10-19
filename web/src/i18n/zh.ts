@@ -5977,7 +5977,6 @@ export const zh: Catalog = {
   'location.durationMinutes': '{minutes} 分钟',
   'location.hereNow': '正在这里',
   'location.moreMenu': '更多到访操作',
-  'location.photos': '照片',
   'location.eraseHistory': '清除位置和到访记录…',
   'location.eraseTitle': '清除你的位置和到访记录？',
   'location.eraseBody':

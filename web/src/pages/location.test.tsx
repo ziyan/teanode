@@ -1009,7 +1009,7 @@ it('offers Photos for a shared person the caller has a contact for, opening the 
     circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
   })
   renderAt('/location?person=person-b', { canUsePhotos: true })
-  const photos = await screen.findByRole('link', { name: 'Photos' })
+  const photos = await screen.findByRole('link', { name: /^Photos of / })
   expect(photos.getAttribute('href')).toBe(`/photos?person=${encodeURIComponent(PERSON_B_VIEW.userId)}`)
   fireEvent.click(photos)
   expect(await screen.findByText('The photos page')).toBeTruthy()
@@ -1019,7 +1019,7 @@ it('offers no Photos for the person themselves, a person with no linked contact,
   answerWith({ sharedViews: [PERSON_B_VIEW], circles: [{ members: [{ userId: 'person-b', linkedContactId: '' }] }] })
   renderAt('/location?person=person-b', { canUsePhotos: true })
   await screen.findByText('Visits of Person B')
-  expect(screen.queryByRole('link', { name: 'Photos' })).toBeNull()
+  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
   cleanup()
 
   answerWith({
@@ -1028,11 +1028,11 @@ it('offers no Photos for the person themselves, a person with no linked contact,
   })
   renderAt('/location?person=person-b')
   await screen.findByText('Visits of Person B')
-  expect(screen.queryByRole('link', { name: 'Photos' })).toBeNull()
+  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
   cleanup()
 
   answerWith({ circles: [{ members: [{ userId: 'person-a', linkedContactId: 'contact-1' }] }] })
   renderAt('/location', { canUsePhotos: true })
   await screen.findByRole('heading', { name: 'Visits' })
-  expect(screen.queryByRole('link', { name: 'Photos' })).toBeNull()
+  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
 })
