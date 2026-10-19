@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -195,9 +196,14 @@ func refusedAsUnavailable(err error) error {
 	return err
 }
 
+// markdownMarks are the marks at the start of a line of Markdown that say
+// what the line is (a heading's #, a list's - or 1., a quote's >), which a
+// one-line snippet shows as they are.
+var markdownMarks = regexp.MustCompile(`(?m)^[ \t]*(#{1,6}[ \t]+|[-*+][ \t]+|\d+\.[ \t]+|>[ \t]?)`)
+
 // snippetOf is the start of a longer text on one line, for a result to show.
 func snippetOf(text string) string {
-	text = strings.Join(strings.Fields(text), " ")
+	text = strings.Join(strings.Fields(markdownMarks.ReplaceAllString(text, "")), " ")
 	if utf8.RuneCountInString(text) <= snippetLength {
 		return text
 	}
@@ -263,8 +269,13 @@ func (self *graph) searchMail(ctx context.Context, words string, limit int) ([]*
 		receivedAt time.Time
 	}
 	var threads []found
+	// One message delivered to several of the person's addresses is several
+	// items, in one mailbox or across them; it is found once. Twice as many
+	// are asked for, so that the copies left out do not leave the page short.
+	seenMessageIds := map[string]bool{}
+	asked := limit * 2
 	for _, mailbox := range mailboxes {
-		page, err := self.ListMailboxThreads(ctx, ListMailboxThreadsArguments{MailboxID: &mailbox.ID, Search: &words, First: &limit})
+		page, err := self.ListMailboxThreads(ctx, ListMailboxThreadsArguments{MailboxID: &mailbox.ID, Search: &words, First: &asked})
 		if err != nil {
 			return nil, err
 		}
@@ -273,6 +284,12 @@ func (self *graph) searchMail(ctx context.Context, words string, limit int) ([]*
 				continue
 			}
 			mail := thread.Item.Mail
+			if messageId := strings.TrimSpace(mail.MessageID); messageId != "" {
+				if seenMessageIds[messageId] {
+					continue
+				}
+				seenMessageIds[messageId] = true
+			}
 			receivedAt := mail.ReceivedAt
 			threads = append(threads, found{receivedAt: receivedAt, result: &search.Result{
 				TargetID: thread.Item.ID, TitleText: strings.TrimSpace(mail.Subject),
