@@ -148,7 +148,8 @@ struct LocationChosenPersonCard: View {
     /// "3 minutes ago", for their latest position.
     private var freshText: String {
         guard let measured = person.latestPoint?.measuredDate else { return String(localized: "No position yet") }
-        return measured.formatted(.relative(presentation: .named, unitsStyle: .wide))
+        // A reading a moment ahead of this iPhone's clock is not in the future.
+        return min(measured, Date().addingTimeInterval(-1)).formatted(.relative(presentation: .named, unitsStyle: .wide))
     }
 }
 
