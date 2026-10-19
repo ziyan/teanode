@@ -252,11 +252,15 @@ struct CodingScreen: View {
                 }
             }
             #if DEBUG
-                // A screenshot of a session with its
-                // transcript (`-TeaNodeScreen coding-session`).
+                // A screenshot of a session with its transcript, asking
+                // (`-TeaNodeScreen coding-session`) or working
+                // (`-TeaNodeScreen coding-session-working`).
                 .task {
-                    if DemoServer.isRequested, DemoServer.screen == "coding-session", path.isEmpty {
+                    guard DemoServer.isRequested, path.isEmpty else { return }
+                    if DemoServer.screen == "coding-session" {
                         path.append(CodingTarget(computer: "laptop", paneId: "p2"))
+                    } else if DemoServer.screen == "coding-session-working" {
+                        path.append(CodingTarget(computer: "laptop", paneId: "p1"))
                     }
                 }
                 // A screenshot of the reporting hooks, once the computers
@@ -607,6 +611,11 @@ struct CodingSessionView: View {
                 ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
                     CodingTurnView(turn: turn) { isToolDetailWanted = true }
                 }
+                // As the agent chat's dots while it answers, for as long as
+                // the session works.
+                if session.isWorking, isRead {
+                    TypingBubble(label: Text("Working"))
+                }
                 if turns.isEmpty, isRead {
                     Text("Nothing has been said in this session yet.")
                         .font(.subheadline)
@@ -638,6 +647,9 @@ struct CodingSessionView: View {
             if isAtEnd { scrollPosition.scrollTo(edge: .bottom) }
         }
         .onChange(of: session.question) {
+            if isAtEnd { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        .onChange(of: session.isWorking) {
             if isAtEnd { scrollPosition.scrollTo(edge: .bottom) }
         }
         .onChange(of: isRead) { _, isRead in

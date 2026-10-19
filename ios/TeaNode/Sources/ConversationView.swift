@@ -1366,6 +1366,8 @@ struct CardSurface<Content: View>: View {
 /// reads as someone answering. The answer takes its place, in a bubble of
 /// the same look, once its first words arrive.
 struct TypingBubble: View {
+    /// What a screen reader says in place of the dots.
+    var label = Text("Thinking…")
     @Environment(\.accessibilityReduceMotion) private var isReducingMotion
 
     var body: some View {
@@ -1391,7 +1393,7 @@ struct TypingBubble: View {
             Spacer(minLength: 56)
         }
         .accessibilityElement()
-        .accessibilityLabel("Thinking…")
+        .accessibilityLabel(label)
     }
 }
 

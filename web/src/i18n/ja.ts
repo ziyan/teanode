@@ -1408,6 +1408,7 @@ export const ja: Catalog = {
   'herdr.opened': '{pane} を開きました',
   'herdr.closeSession': 'セッションを閉じる',
   'herdr.closeWhileWorking': '作業中です。終わるまで待ってください',
+  'herdr.workingNow': '作業中…',
   'herdr.closeTitle': 'このコーディングセッションを閉じますか？',
   'herdr.closeBody': '{computer} の {pane} の {agent} を終了し、ペインを閉じます。やり取りは履歴に残ります。',
   'herdr.closed': '{pane} を閉じました',
