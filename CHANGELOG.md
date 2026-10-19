@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.185.4] - 2026-10-19
+
+### Fixed
+
+- iPhone: tables, lists and code blocks in a coding session's turns are drawn, not shown as raw Markdown. (#604)
+
 ## [0.185.3] - 2026-10-19
 
 ### Changed
