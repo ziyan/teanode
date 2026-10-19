@@ -32,8 +32,10 @@ type queryExecution struct {
 // transaction held open while the model answers: recall for a question
 // embeds it, and a survey is minutes of runs. A photo search embeds its words,
 // and the listing and the count both do, so both are here. A search for
-// places waits on the place provider, which answers one request a second.
-var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true, "SearchPlaces": true, "SearchAddresses": true, "ListNearbyPlaces": true}
+// places waits on the place provider, which answers one request a second. A
+// search across everything runs each of its areas in a transaction of its own,
+// side by side, and holds none across them.
+var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true, "SearchPlaces": true, "SearchAddresses": true, "ListNearbyPlaces": true, "SearchEverything": true}
 
 // isTransactionFreeMutation is the mutations that do slow work, such as reading
 // and storing a file as large as a video, and so are not run inside the
