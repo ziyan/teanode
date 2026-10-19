@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.180.3] - 2026-10-19
+
+### Fixed
+
+- The iPhone app no longer closes when Location's Visits opens with people sharing their location, or when a message with a picture is long-pressed. (#587)
+
 ## [0.180.2] - 2026-10-19
 
 ### Changed
