@@ -153,8 +153,8 @@ type subagentCandidate struct {
 // readSubagents is the agents of the Claude Code session whose history is
 // at transcriptPath, those started for its current request: at or after the
 // person's last turn, and those still running from before it. sessionState
-// is the session's own, which says an agent without any other sign of
-// having ended still works.
+// is the session's own, which says an agent of the current request without
+// any other sign of having ended still works.
 func readSubagents(transcriptPath, sessionState string, now time.Time) (*HerdrSubagentsResult, error) {
 	sessionModelName, requestStartedAt, err := readSessionRequest(transcriptPath)
 	if err != nil {
@@ -443,7 +443,8 @@ func readSubagentStartedAt(file *os.File) *time.Time {
 // a line only partly written, which is passed over.
 func readSubagentEnd(file *os.File, size int64) (*time.Time, bool, bool) {
 	// A last line longer than the window (a file an agent wrote, whole in its
-	// tool call) is cut away; the window doubles until a line is found.
+	// tool call) is cut away; the window doubles until the last reply, or a
+	// line handed to the agent after it, is found.
 	for window := int64(subagentsTailBytes); ; window *= 2 {
 		lastWrittenAt, isReplyEnded, isToolRunning, isRecordFound, isCut := readSubagentEndWithin(file, size, window)
 		if isRecordFound || !isCut || window >= subagentsTailMostBytes {

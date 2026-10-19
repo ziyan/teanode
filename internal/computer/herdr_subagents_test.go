@@ -495,3 +495,47 @@ func TestAnUnfinishedAgentOfAnEarlierRequestIsNotTakenAsRunning(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentsOfTheCurrentRequestRunWhileTheSessionWorks(t *testing.T) {
+	path, files := writeSubagentSession(t, t.TempDir(), "session-hhhh")
+	// Started exactly as the person spoke, then silent for long after words.
+	files.writeSubagent("a0000000000000081", map[string]any{"agentType": "general-purpose", "description": "at the request", "spawnDepth": 1},
+		subagentUserLine("a0000000000000081", 600), subagentReplyLine("a0000000000000081", 590, "example-model-main", ""))
+	// Its history has no time at all.
+	files.writeSubagent("a0000000000000082", map[string]any{"agentType": "general-purpose", "description": "no times", "spawnDepth": 1},
+		`{"type":"user","agentId":"a0000000000000082","isSidechain":true,"message":{"role":"user","content":"do the task"}}`)
+	// With no time in it, the file's own time is all there is: a moment ago.
+	writtenAt := subagentsNow.Add(-30 * time.Second)
+	if err := os.Chtimes(filepath.Join(files.folder, "agent-a0000000000000082.jsonl"), writtenAt, writtenAt); err != nil {
+		t.Fatal(err)
+	}
+	result, err := readSubagents(path, HerdrSessionStateWorking, subagentsNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := map[string]string{}
+	for _, subagent := range result.Subagents {
+		states[subagent.TaskText] = subagent.SubagentState
+	}
+	if states["at the request"] != HerdrSubagentStateRunning || states["no times"] != HerdrSubagentStateRunning {
+		t.Errorf("the states: %v", states)
+	}
+}
+
+func TestALongLastReplyFollowedByAShortLineIsStillFound(t *testing.T) {
+	path, files := writeSubagentSession(t, t.TempDir(), "session-iiii")
+	// A reply of 600 KB that ended the turn, then a short line that is no
+	// reply, such as a note Claude Code writes after it.
+	longReply := fmt.Sprintf(`{"type":"assistant","timestamp":%q,"agentId":"a0000000000000091","isSidechain":true,"message":{"model":"example-model-main","content":[{"type":"text","text":%q}],"stop_reason":"end_turn"}}`,
+		subagentStamp(400), strings.Repeat("y", 600<<10))
+	note := fmt.Sprintf(`{"type":"system","timestamp":%q,"agentId":"a0000000000000091","isSidechain":true}`, subagentStamp(399))
+	files.writeSubagent("a0000000000000091", map[string]any{"agentType": "general-purpose", "description": "said a lot", "spawnDepth": 1},
+		subagentUserLine("a0000000000000091", 500), longReply, note)
+	result, err := readSubagents(path, HerdrSessionStateWorking, subagentsNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Subagents) != 1 || result.Subagents[0].SubagentState != HerdrSubagentStateDone {
+		t.Errorf("the agents: %+v", result.Subagents)
+	}
+}

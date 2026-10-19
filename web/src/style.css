@@ -17166,17 +17166,18 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 .agents-tree {
   --agents-line: var(--border-strong);
   --agents-gap: 12px;
-  display: flex;
-  flex-direction: column;
-  /* Centered while the row fits; a wider row starts at the left edge and
-     scrolls, rather than hanging off both sides. */
-  align-items: safe center;
+  /* A tree wider than the pane scrolls sideways here, never the page. */
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   padding-bottom: var(--space-2);
 }
 
-.agents-root,
-.agents-top {
+/* As wide as its widest row of agents, so that the session's card is over
+   the middle of them, and never narrower than the pane. */
+.agents-graph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   width: max-content;
   min-width: 100%;
 }
@@ -17352,51 +17353,12 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   width: 100%;
 }
 
-/* The agents as an indented list: on a phone, and wherever the session's
-   agents do not fit side by side (herdrSubagents.tsx decides). */
-.agents-view.is-listed .agents-tree {
-  align-items: stretch;
-  overflow-x: visible;
-}
-
-.agents-view.is-listed .agents-root,
-.agents-view.is-listed .agents-top {
-  width: auto;
-  min-width: 0;
-}
-
-.agents-view.is-listed .agents-root {
-  display: block;
-}
-
-.agents-view.is-listed .agent-card {
-  width: 100%;
-}
-
-.agents-view.is-listed .agents-top {
-  display: block;
-  margin: var(--space-2) 0 0 12px;
-  padding: 0 0 0 16px;
-  border-left: 1px solid var(--agents-line);
-}
-
-.agents-view.is-listed .agents-top::before,
-.agents-view.is-listed .agents-top > li::before,
-.agents-view.is-listed .agents-top > li::after {
-  display: none;
-}
-
-.agents-view.is-listed .agents-top > li {
-  padding: 0;
-}
-
-.agents-view.is-listed .agents-top > li + li {
-  margin-top: var(--space-2);
-}
-
-.agents-view.is-listed .agents-nested {
-  margin-left: 0;
-  padding-left: 16px;
+/* In a narrow pane the cards are narrower, so that more of the tree is in
+   view; it still scrolls sideways when it is wider. */
+@container coding (max-width: 860px) {
+  .agent-card {
+    width: 200px;
+  }
 }
 
 /* --- photos ---------------------------------------------------------------

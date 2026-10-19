@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { useTranslation, type Translation } from '../i18n/i18n'
 import { Tag } from './common'
@@ -251,36 +251,27 @@ function AgentBranch({
 
 // HerdrSubagentsView is the Agents view of one session: a heading with how
 // many agents there are and how many run, the session's card, and the tree.
-// A column of the tree: a card and the room beside it (style.css's
-// .agent-card and .agents-top > li).
-const TREE_COLUMN_PX = 272
-// Narrower than this, the agents are always the indented list.
-const TREE_LEAST_PX = 600
-
-// useWidth is the width of the element ref points at, kept as it changes;
-// null until it has been measured (and where nothing can measure it).
-function useWidth<Element extends HTMLElement>() {
+// useCenteredScroll keeps a sideways scroller showing its middle, where the
+// session's card is, whenever the number of columns changes: a tree wider
+// than its pane scrolls inside it, and should open on the session rather
+// than on its first agent. Later reads leave where the person scrolled to.
+function useCenteredScroll<Element extends HTMLElement>(columnCount: number) {
   const ref = useRef<Element>(null)
-  const [width, setWidth] = useState<number | null>(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = ref.current
-    if (!element || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width))
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [])
-  return { ref, width }
+    if (!element) return
+    element.scrollLeft = Math.max(0, (element.scrollWidth - element.clientWidth) / 2)
+  }, [columnCount])
+  return ref
 }
 
 export function HerdrSubagentsView({ read }: { read: HerdrSubagentsRead }) {
   const { t, plural } = useTranslation()
   const [foldedIds, setFoldedIds] = useState<ReadonlySet<string>>(new Set())
   const nodes = buildSubagentTree(read.subagents)
-  // The tree only while the session's agents fit side by side: a row that
-  // runs off the pane puts the session's card over the wrong agents and
-  // scrolls sideways, so the indented list is drawn instead.
-  const { ref: viewRef, width: viewWidth } = useWidth<HTMLDivElement>()
-  const isListed = viewWidth !== null && (viewWidth < TREE_LEAST_PX || nodes.length * TREE_COLUMN_PX > viewWidth)
+  // The tree at every width: one wider than the pane scrolls sideways in its
+  // own box, with the session's card over the middle of its agents.
+  const treeRef = useCenteredScroll<HTMLDivElement>(nodes.length)
   const runningCount = read.subagents.filter((subagent) => subagent.subagentState === 'running').length
   const isBusy = read.herdrSession.herdrSessionState === 'working' || read.herdrSession.herdrSessionState === 'asking'
   const now = useNow(runningCount > 0 || isBusy)
@@ -291,7 +282,7 @@ export function HerdrSubagentsView({ read }: { read: HerdrSubagentsRead }) {
       return next
     })
   return (
-    <div ref={viewRef} className={isListed ? 'agents-view is-listed' : 'agents-view'}>
+    <div className="agents-view">
       {read.subagents.length > 0 ? (
         <h3 className="agents-heading">
           <span>
@@ -305,18 +296,20 @@ export function HerdrSubagentsView({ read }: { read: HerdrSubagentsRead }) {
           {read.isTruncated ? <span className="muted">{t('herdr.agents.newestOnly')}</span> : null}
         </h3>
       ) : null}
-      <div className="agents-tree">
-        <div className="agents-root">
-          <SessionCard
-            session={read.herdrSession}
-            modelName={read.sessionModelName}
-            requestStartedAt={read.requestStartedAt}
-            now={now}
-          />
+      <div ref={treeRef} className="agents-tree">
+        <div className="agents-graph">
+          <div className="agents-root">
+            <SessionCard
+              session={read.herdrSession}
+              modelName={read.sessionModelName}
+              requestStartedAt={read.requestStartedAt}
+              now={now}
+            />
+          </div>
+          {nodes.length > 0 ? (
+            <AgentBranch nodes={nodes} isTop foldedIds={foldedIds} onToggle={toggle} now={now} />
+          ) : null}
         </div>
-        {nodes.length > 0 ? (
-          <AgentBranch nodes={nodes} isTop foldedIds={foldedIds} onToggle={toggle} now={now} />
-        ) : null}
       </div>
       {read.subagents.length === 0 ? <p className="coding-empty muted">{t('herdr.agents.none')}</p> : null}
     </div>
