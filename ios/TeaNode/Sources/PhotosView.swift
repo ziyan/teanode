@@ -1073,6 +1073,13 @@ struct PhotosScreen: View {
                 .onChange(of: model.photoFilter.photoNearFilter) { _, photoNearFilter in
                     if photoNearFilter != nil { searchText = "" }
                 }
+                // Photos opened from a visit show the visit's photos, so old search words are put away.
+                .onChange(of: model.photoFilter.takenAfter) { _, takenAfter in
+                    if takenAfter != nil { searchText = "" }
+                }
+                .onAppear {
+                    if model.photoFilter.takenAfter != nil { searchText = "" }
+                }
                 .sheet(isPresented: $isChoosingDates) { PhotoDateFilterSheet(model: model) }
                 .albumTitleAlert(model: model, scope: .library, isActive: opened == nil)
                 #if DEBUG

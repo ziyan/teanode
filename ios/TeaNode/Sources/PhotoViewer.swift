@@ -1084,6 +1084,7 @@ struct PhotoInfoView: View {
         } catch {
             guard !Task.isCancelled else { return }
             detailFailureText = model.describe(error)
+            return
         }
         await loadPositionPlace()
     }

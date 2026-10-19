@@ -212,6 +212,19 @@ final class PhotoSharingTests: XCTestCase {
         XCTAssertTrue(PhotoFilter(firstDay: last, lastDay: first).isRangeBackwards)
     }
 
+    func testChoosingDaysDropsTheMomentsOfAVisit() {
+        let arrival = Date(timeIntervalSince1970: 1_900_000_000)
+        let departure = arrival.addingTimeInterval(3600)
+        var filter = PhotoFilter(takenAfter: arrival, takenBefore: departure)
+        filter.firstDay = arrival
+        XCTAssertNil(filter.takenAfter)
+        XCTAssertNil(filter.takenBefore)
+        filter = PhotoFilter(takenAfter: arrival, takenBefore: departure)
+        filter.lastDay = nil
+        XCTAssertNil(filter.takenAfter)
+        XCTAssertNil(filter.takenBefore)
+    }
+
     func testAFilterWithMomentsSendsThemInPlaceOfTheDays() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = utc

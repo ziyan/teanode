@@ -153,9 +153,9 @@
                 Visit(id: "visit-1", placeId: parkPlaceId, arrivedAt: now.addingTimeInterval(-35 * 60), departedAt: nil),
                 Visit(
                     id: "visit-2", placeId: officePlaceId, arrivedAt: at(0, 9, 5), departedAt: at(0, 12, 30),
-                    photoIds: ["demo-01", "demo-02", "demo-05", "demo-06"], photoCount: 7),
+                    photoIds: ["demo-v1", "demo-v2", "demo-v3", "demo-v4"], photoCount: 7),
                 Visit(
-                    id: "visit-3", placeId: cafePlaceId, arrivedAt: at(0, 8, 5), departedAt: at(0, 8, 40), photoIds: ["demo-13", "demo-14"],
+                    id: "visit-3", placeId: cafePlaceId, arrivedAt: at(0, 8, 5), departedAt: at(0, 8, 40), photoIds: ["demo-v8", "demo-v9"],
                     photoCount: 2),
                 Visit(id: "visit-4", placeId: homePlaceId, arrivedAt: at(1, 19, 10), departedAt: at(0, 7, 50)),
                 Visit(id: "visit-5", placeId: schoolPlaceId, arrivedAt: at(1, 15, 0), departedAt: at(1, 15, 20)),

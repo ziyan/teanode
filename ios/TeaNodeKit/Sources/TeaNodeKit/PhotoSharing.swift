@@ -55,9 +55,15 @@ public struct PhotoNearFilter: Hashable, Sendable {
 public struct PhotoFilter: Hashable, Sendable {
     public var photoKindFilter: PhotoKindFilter
     /// The first day to keep, as any moment on that day; nil for no start.
-    public var firstDay: Date?
+    /// Setting it, even to nil, drops a visit window, which would hide it.
+    public var firstDay: Date? {
+        didSet { takenAfter = nil; takenBefore = nil }
+    }
     /// The last day to keep, as any moment on that day; nil for no end.
-    public var lastDay: Date?
+    /// Setting it, even to nil, drops a visit window, which would hide it.
+    public var lastDay: Date? {
+        didSet { takenAfter = nil; takenBefore = nil }
+    }
     /// The place the photos kept were taken near; nil for anywhere.
     public var photoNearFilter: PhotoNearFilter?
     /// The first moment to keep, such as when a visit began; nil for none.

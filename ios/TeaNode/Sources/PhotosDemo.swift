@@ -42,6 +42,9 @@
             var failureMessage = ""
             /// Whose the photo is when it is another person's, seen through a shared album.
             var ownerName = ""
+            /// Taken during a demo visit: shown by the visit's strip and by a window of time around the
+            /// visit, never in the library's plain list, so the other screens keep their content.
+            var isVisitOnly = false
 
             var isForeign: Bool { !ownerName.isEmpty }
         }
@@ -62,7 +65,9 @@
             return 2 * 6371 * asin(min(1, sqrt(haversine)))
         }
 
-        private static let demoPhotos: [DemoPhoto] = [
+        private static let demoPhotos: [DemoPhoto] = demoLibraryPhotos + demoVisitPhotos
+
+        private static let demoLibraryPhotos: [DemoPhoto] = [
             DemoPhoto(id: "demo-01", kind: "picture", takenAt: "2026-10-15T18:42:00Z", offsetMinutes: -240, isFavorite: true, placeName: "Riverside Park", isPortrait: true,
                 latitude: riversideLatitude, longitude: riversideLongitude),
             DemoPhoto(
@@ -108,6 +113,21 @@
             DemoPhoto(id: "demo-t2", kind: "picture", takenAt: "2026-10-09T09:00:00Z", offsetMinutes: -240, isTrashed: true, isPortrait: true),
             DemoPhoto(id: "demo-t3", kind: "video", takenAt: "2026-10-08T17:00:00Z", offsetMinutes: -240, durationMS: 9_000, isTrashed: true, trashedDaysAgo: 9),
         ]
+
+        /// The photos of the demo visits (Location's `visits`): seven inside the office visit and two
+        /// inside the cafe visit, each at a time of today's visit windows, earliest first.
+        private static let demoVisitPhotos: [DemoPhoto] = {
+            let offsetMinutes = TimeZone.current.secondsFromGMT() / 60
+            let moments = [
+                (9, 20), (9, 40), (10, 15), (10, 50), (11, 20), (11, 50), (12, 20),
+                (8, 15), (8, 30),
+            ]
+            return moments.enumerated().map { index, moment in
+                DemoPhoto(
+                    id: "demo-v\(index + 1)", kind: "picture", takenAt: demoTime(daysAgo: 0, hour: moment.0, minute: moment.1),
+                    offsetMinutes: offsetMinutes, isPortrait: index % 3 == 1, isVisitOnly: true)
+            }
+        }()
 
         private struct DemoAlbum {
             let id: String
@@ -337,7 +357,8 @@
                 let isFavorite = variables["isFavorite"] as? Bool == true
                 // Photos of other people are seen only through the album that shares them.
                 let isAlbumAsked = variables["albumId"] is String
-                var chosen = demoPhotos.filter { $0.isTrashed == isTrashed && (isAlbumAsked || !$0.isForeign) }
+                let isWindowAsked = variables["takenAfter"] is String || variables["takenBefore"] is String
+                var chosen = demoPhotos.filter { $0.isTrashed == isTrashed && (isAlbumAsked || !$0.isForeign) && (isWindowAsked || !$0.isVisitOnly) }
                 if isFavorite { chosen = chosen.filter(\.isFavorite) }
                 if let photoKind = variables["photoKind"] as? String { chosen = chosen.filter { $0.kind == photoKind } }
                 if let albumId = variables["albumId"] as? String {
@@ -356,11 +377,15 @@
                         return kilometers(fromLatitude: latitude, fromLongitude: longitude, toLatitude: photoLatitude, toLongitude: photoLongitude) <= distance
                     }
                 }
-                if let after = variables["takenAfter"] as? String { chosen = chosen.filter { $0.takenAt >= after } }
-                if let before = variables["takenBefore"] as? String { chosen = chosen.filter { $0.takenAt < before } }
+                if let after = (variables["takenAfter"] as? String).flatMap { ServerTime.date($0) } {
+                    chosen = chosen.filter { (ServerTime.date($0.takenAt) ?? .distantPast) >= after }
+                }
+                if let before = (variables["takenBefore"] as? String).flatMap { ServerTime.date($0) } {
+                    chosen = chosen.filter { (ServerTime.date($0.takenAt) ?? .distantFuture) < before }
+                }
                 // A search keeps the photos whose place or file name has the words.
                 if let words = variables["searchText"] as? String, !words.isEmpty {
-                    chosen = demoPhotos.filter { !$0.isTrashed && !$0.isForeign && ($0.placeName.localizedCaseInsensitiveContains(words) || $0.id.localizedCaseInsensitiveContains(words)) }
+                    chosen = demoPhotos.filter { !$0.isTrashed && !$0.isForeign && !$0.isVisitOnly && ($0.placeName.localizedCaseInsensitiveContains(words) || $0.id.localizedCaseInsensitiveContains(words)) }
                 }
                 // Everything fits in one page, so a page after it is empty.
                 if isEmpty || variables["beforePhotoId"] is String { chosen = [] }
