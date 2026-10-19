@@ -268,6 +268,7 @@ struct LocationMapHeader: View {
     /// person's own.
     var isShowingPeople = true
     @State private var position = MapCameraPosition.automatic
+    @Environment(AppModel.self) private var app
 
     private var isShowingPhone: Bool {
         #if DEBUG
@@ -308,6 +309,10 @@ struct LocationMapHeader: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("You")
                     .accessibilityHint("Shows you on the map")
+                    // A map draws an annotation's content in a host of its
+                    // own, which need not carry the screen's environment;
+                    // AvatarView reads the app from it.
+                    .environment(app)
                 }
             }
             ForEach(pinnedPlaces.prefix(40)) { place in
@@ -331,6 +336,7 @@ struct LocationMapHeader: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(person.displayName)
+                        .environment(app)
                     }
                 }
             }
