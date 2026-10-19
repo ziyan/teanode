@@ -399,8 +399,11 @@ func (self *transaction) UpsertHealthDaySummaries(userId string, summaries []*mo
 				return 0, fmt.Errorf("%w: the seconds of a category must be finite", ErrInvalidArguments)
 			}
 		}
+		// A day cannot have been worked out later than now: a phone whose
+		// clock ran ahead would otherwise hold the day against every
+		// resend, right or wrong, until the server's clock caught up.
 		workedOutAt := summary.WorkedOutAt
-		if workedOutAt.IsZero() {
+		if workedOutAt.IsZero() || workedOutAt.After(now) {
 			workedOutAt = now
 		}
 		key := summary.HealthType + "\x00" + summary.SummaryDay

@@ -1,4 +1,4 @@
-# Health is shared by category, as day summaries, and never with an agent
+# Health is shared by category, as day summaries, and no agent reads another person's Health
 
 - Status: proposed
 - Date: 2026-10-18
@@ -28,7 +28,9 @@ does not reach gets "not found".
 
 The agent reads only the person's own Health, and only after the person turns
 on "Let the agent read Health data". It never reads what others share with the
-person.
+person, and it only reads: erasing, sharing and the switch are the person's own
+to do, because each gives or takes back consent the agent cannot give for them.
+It reads no routes, which say where somebody runs.
 
 ## Consequences
 

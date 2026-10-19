@@ -6438,7 +6438,7 @@ export const ja: Catalog = {
   'health.personEmpty': '{name}さんはまだヘルスケアのデータを共有していません。',
   'health.emptyTitle': 'ヘルスケアのデータはまだありません',
   'health.emptyBody':
-    'ヘルスケアは、あなたの「ヘルスケア」App のデータを自分のサーバーにコピーします。データは iPhone の TeaNode アプリから届きます。アプリで「設定」を開き、「ヘルスケア」を開いてください。',
+    'ヘルスケアは、あなたの「ヘルスケア」App のデータを自分のサーバーにコピーします。データは iPhone の TeaNode アプリから届きます。アプリの「設定」でヘルスケアをオンにし、Apple のヘルスケアのアクセス許可画面で使いたいデータを許可してください。',
   'health.emptyAction': 'iPhone アプリを設定する',
   'health.typesTitle': 'ヘルスケアのデータ',
   'health.typesLabel': 'ヘルスケアのデータの種類',
@@ -6496,6 +6496,7 @@ export const ja: Catalog = {
   'health.noSamples': 'この種類の記録はまだありません。',
   'health.sampleCountOne': '1件の記録',
   'health.sampleCount': '{count}件の記録',
+  'health.samplesLimited': '最新の{count}件の記録だけを表示しています。',
   'health.showRoute': 'ルートを表示',
   'health.routeTitleUnknown': 'ワークアウトのルート',
   'health.routeFailed': 'ルートを読み込めませんでした。',
@@ -6503,7 +6504,7 @@ export const ja: Catalog = {
   'health.eraseType': '{name}を消去',
   'health.eraseTypeTitle': '{name}を消去しますか？',
   'health.eraseTypeBody':
-    'このサーバーに保存されている{name}の記録、日ごとの集計、ルートをすべて消去します。ヘルスケアがオンの間、iPhone アプリは新しい記録を送り続けます。エージェントがすでに学んだ内容は、あなたが削除するまでその記憶に残ります。この操作は元に戻せません。',
+    'このサーバーに保存されている{name}の記録、日ごとの集計、ルートをすべて消去します。ヘルスケアがオンの間、iPhone アプリは新しい記録を送り続けます。エージェントがヘルスケアについて会話の中で話した内容は、その会話に残ります。この操作は元に戻せません。',
   'health.settingsAgentTitle': 'エージェント',
   'health.agentSwitch': 'エージェントにヘルスケアのデータの読み取りを許可する',
   'health.agentProvider': 'エージェントが読み取った内容は{provider}に送られます。',
@@ -6516,6 +6517,8 @@ export const ja: Catalog = {
   'health.readingCountOne': '1件の記録を保存済み',
   'health.readingCount': '{count}件の記録を保存済み',
   'health.readingCountNone': '保存済みの記録はありません',
+  'health.settingsNoData':
+    'まだ何も届いていません。iPhone の TeaNode アプリで「設定」からヘルスケアをオンにし、Apple のヘルスケアのアクセス許可画面でデータを許可してください。',
   'health.lastReceived': '最後に受信',
   'health.shareTitle': '共有',
   'health.shareIntro':
@@ -6528,6 +6531,8 @@ export const ja: Catalog = {
   'health.shareEveryoneIn': '{name}の全員',
   'health.shareAdd': '追加',
   'health.shareNoPeople': 'まだ誰ともサークルを共有していません。',
+  'health.shareNeedsCircles':
+    'ヘルスケアのデータを共有するにはサークルが必要ですが、あなたのアカウントではオンになっていません。このサーバーを管理している人に依頼してください。',
   'health.shareCategories': '{name}と共有するカテゴリ',
   'health.shareStop': '{name}との共有をやめる',
   'health.shareSaved': '{name}との共有を保存しました。',
@@ -6537,7 +6542,7 @@ export const ja: Catalog = {
   'health.eraseAll': 'ヘルスケアのデータをすべて消去',
   'health.eraseAllTitle': 'ヘルスケアのデータをすべて消去しますか？',
   'health.eraseAllBody':
-    'このサーバーに保存されている記録、日ごとの集計、ルートをすべて消去し、ヘルスケアを再びオンにするまで iPhone アプリは送信を停止します。エージェントがすでに学んだ内容は、あなたが削除するまでその記憶に残ります。この操作は元に戻せません。',
+    'このサーバーに保存されている記録、日ごとの集計、ルートをすべて消去し、ヘルスケアを再びオンにするまで iPhone アプリは送信を停止します。エージェントがヘルスケアについて会話の中で話した内容は、その会話に残ります。この操作は元に戻せません。',
   'health.eraseConfirm': '消去',
   'health.erasedOne': '1件の記録を消去しました。',
   'health.erased': '{count}件の記録を消去しました。',

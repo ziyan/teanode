@@ -73598,22 +73598,6 @@
         }
       }
     },
-    "Period": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "単位"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "周期"
-          }
-        }
-      }
-    },
     "Let the agent read Health data": {
       "localizations": {
         "ja": {
@@ -73966,18 +73950,18 @@
         }
       }
     },
-    "Health copies your Apple Health data to your own TeaNode server, and nowhere else.": {
+    "Health copies your Apple Health data to your own TeaNode server, and nowhere else. Turn on Health, then allow the data you want on Apple's Health permissions screen.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ヘルスケアは、「ヘルスケア」App のデータをあなた自身の TeaNode サーバーにコピーします。それ以外の場所には送られません。"
+            "value": "ヘルスケアは、「ヘルスケア」App のデータをあなた自身の TeaNode サーバーにコピーします。それ以外の場所には送られません。ヘルスケアをオンにして、Apple のヘルスケアの権限画面でコピーしたいデータを許可してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "健康功能会把你的“健康”App 数据复制到你自己的 TeaNode 服务器，不会发往其他任何地方。"
+            "value": "健康功能会把你的“健康”App 数据复制到你自己的 TeaNode 服务器，不会发往其他任何地方。开启健康后，在 Apple 的“健康”权限屏幕上允许你想复制的数据。"
           }
         }
       }
@@ -74174,18 +74158,18 @@
         }
       }
     },
-    "The Health data you allow on the next screen: steps, heart rate, sleep, workouts with their routes, and more. TeaNode copies your history first, then keeps it up to date.": {
+    "The Health data you allow on Apple's Health permissions screen, which opens next: steps, heart rate, sleep, workouts with their routes, and more. TeaNode copies your history first, then keeps it up to date.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "次の画面で許可したヘルスケアのデータ（歩数、心拍数、睡眠、ルート付きのワークアウトなど）。TeaNode はまず過去のデータをコピーし、その後は最新の状態に保ちます。"
+            "value": "次に開く Apple のヘルスケアの権限画面で許可したデータ（歩数、心拍数、睡眠、ルート付きのワークアウトなど）。TeaNode はまず過去のデータをコピーし、その後は最新の状態に保ちます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "你在下一个屏幕上允许的健康数据：步数、心率、睡眠、带路线的锻炼等。TeaNode 会先复制你的历史数据，然后保持更新。"
+            "value": "你在接下来出现的 Apple“健康”权限屏幕上允许的健康数据：步数、心率、睡眠、带路线的锻炼等。TeaNode 会先复制你的历史数据，然后保持更新。"
           }
         }
       }
@@ -74488,34 +74472,34 @@
         }
       }
     },
-    "Erases every reading, day summary and route of %@ that this server keeps. The iPhone app keeps sending new readings of it while Health is on. Anything your agent already learned stays in its memory until you remove it. This cannot be undone.": {
+    "Erases every reading, day summary and route of %@ that this server keeps. The iPhone app keeps sending new readings of it while Health is on. What your agent said about your Health in conversations stays in those conversations. This cannot be undone.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このサーバーに保存されている%@の記録、日ごとの集計、ルートをすべて消去します。ヘルスケアがオンの間、iPhone アプリは新しい記録を送り続けます。エージェントがすでに学んだ内容は、あなたが削除するまでその記憶に残ります。この操作は元に戻せません。"
+            "value": "このサーバーに保存されている%@の記録、日ごとの集計、ルートをすべて消去します。ヘルスケアがオンの間、iPhone アプリは新しい記録を送り続けます。エージェントがヘルスケアについて会話の中で話した内容は、その会話に残ります。この操作は元に戻せません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "清除这台服务器上保存的所有%@的读数、每日汇总和路线。只要健康保持开启，iPhone 应用仍会继续发送新的读数。助手已经学到的内容会留在它的记忆中，直到你将其移除。此操作无法撤销。"
+            "value": "清除这台服务器上保存的所有%@的读数、每日汇总和路线。只要健康保持开启，iPhone 应用仍会继续发送新的读数。助手在对话中说过的与你的健康有关的内容，会留在那些对话里。此操作无法撤销。"
           }
         }
       }
     },
-    "Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. Anything your agent already learned stays in its memory until you remove it. This cannot be undone.": {
+    "Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. What your agent said about your Health in conversations stays in those conversations. This cannot be undone.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このサーバーに保存されている記録、日ごとの集計、ルートをすべて消去し、ヘルスケアを再びオンにするまで iPhone アプリは送信を停止します。エージェントがすでに学んだ内容は、あなたが削除するまでその記憶に残ります。この操作は元に戻せません。"
+            "value": "このサーバーに保存されている記録、日ごとの集計、ルートをすべて消去し、ヘルスケアを再びオンにするまで iPhone アプリは送信を停止します。エージェントがヘルスケアについて会話の中で話した内容は、その会話に残ります。この操作は元に戻せません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "清除这台服务器上保存的所有读数、每日汇总和路线，在你重新开启健康之前，iPhone 应用不会再发送数据。助手已经学到的内容会留在它的记忆中，直到你将其移除。此操作无法撤销。"
+            "value": "清除这台服务器上保存的所有读数、每日汇总和路线，在你重新开启健康之前，iPhone 应用不会再发送数据。助手在对话中说过的与你的健康有关的内容，会留在那些对话里。此操作无法撤销。"
           }
         }
       }

@@ -11,6 +11,7 @@ import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import {
+  HEALTH_SAMPLE_OFFSET_MOST,
   HealthRoute,
   HealthSample,
   HealthSamplePage,
@@ -18,7 +19,6 @@ import {
   LIST_HEALTH_SAMPLES,
   READ_HEALTH_ROUTE,
   SLEEP_VALUE_NAMES,
-  addDays,
   durationText,
   quantityText,
   stageName,
@@ -48,12 +48,6 @@ export function HealthSamples({
   const [range, setRange] = useState<Range | null>(null)
   const onRange = useCallback((nextRange: Range) => setRange(nextRange), [])
 
-  // From a day before the first reading to a day after today, so a reading
-  // near midnight in any zone is inside.
-  const fromMoment = chosenType.firstDay
-    ? `${addDays(chosenType.firstDay.slice(0, 10), -1)}T00:00:00Z`
-    : '2000-01-01T00:00:00Z'
-  const untilMoment = `${addDays(new Date().toISOString().slice(0, 10), 1)}T00:00:00Z`
   const samplePage = useQuery(
     async () =>
       range
@@ -62,15 +56,13 @@ export function HealthSamples({
             answer: (
               await graphql<{ ListHealthSamples: HealthSamplePage }>(LIST_HEALTH_SAMPLES, {
                 healthType: chosenType.healthType,
-                from: fromMoment,
-                to: untilMoment,
                 limitCount: range.limit,
                 offset: range.offset,
               })
             ).ListHealthSamples,
           }
         : null,
-    [chosenType.healthType, fromMoment, untilMoment, range?.offset, range?.limit],
+    [chosenType.healthType, range?.offset, range?.limit],
     { refresh: false },
   )
   const shown =
@@ -79,6 +71,10 @@ export function HealthSamples({
     samplePage.data.requestKey === JSON.stringify([chosenType.healthType, range.offset, range.limit])
       ? samplePage.data.answer
       : null
+
+  // The server lists no reading past an offset of 100,000, so a kind with more
+  // is paged as far as that and says so.
+  const isLimited = shown !== null && (shown.isTotalCountCapped || shown.totalCount > HEALTH_SAMPLE_OFFSET_MOST)
 
   const momentFormat = useMemo(
     () => new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }),
@@ -180,7 +176,7 @@ export function HealthSamples({
           rows={shown?.samples ?? []}
           rowKey={(row) => row.healthSampleId}
           loading={!shown}
-          remote={{ total: shown?.totalCount ?? 0, onRange }}
+          remote={{ total: Math.min(shown?.totalCount ?? 0, HEALTH_SAMPLE_OFFSET_MOST), onRange }}
           emptyMessage={t('health.noSamples')}
           countLabel={(sampleCount) =>
             plural(
@@ -190,6 +186,11 @@ export function HealthSamples({
             )
           }
         />
+        {isLimited && (
+          <p className="muted">
+            {t('health.samplesLimited', { count: wholeNumberText(HEALTH_SAMPLE_OFFSET_MOST, language) })}
+          </p>
+        )}
       </SettingsSection>
     </>
   )

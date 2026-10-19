@@ -64,7 +64,12 @@ type fakeRun struct {
 	// headless one (a dream, a schedule, a goal).
 	isUnattended bool
 	isHeadless   bool
+
+	// surface is where the person is, empty for the dashboard's drawer.
+	surface string
 }
+
+func (self *fakeRun) Surface() string { return self.surface }
 
 func (self *fakeRun) Headless() bool { return self.isHeadless }
 func (self *fakeRun) CanAsk() bool   { return !self.isUnattended && !self.isHeadless }
@@ -481,6 +486,10 @@ func TestARunNobodyIsWatchingNeverReadsHealth(t *testing.T) {
 		"a background run": {isUnattended: true},
 		"a headless run":   {isHeadless: true},
 		"both":             {isUnattended: true, isHeadless: true},
+		// Not headless and able to ask, as a turn woken by a background
+		// command or survey, and a subagent of a run that may ask, are.
+		"a turn woken by a background command": {surface: "background"},
+		"a subagent":                           {surface: "subagent"},
 	} {
 		operations := &routing{answers: map[string]string{
 			"ReadHealthSettings": switchOn,
@@ -494,7 +503,7 @@ func TestARunNobodyIsWatchingNeverReadsHealth(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s %s should answer, not fail: %s", name, action, err)
 			}
-			if !strings.Contains(content, "not in a dream, a background task or any other run nobody is watching") || strings.Contains(content, "\n") ||
+			if !strings.Contains(content, "not in a dream, a subagent, a background task or any other run nobody is watching") || strings.Contains(content, "\n") ||
 				strings.HasPrefix(strings.TrimSpace(content), "{") || result.Untrusted {
 				t.Errorf("%s %s: %q", name, action, content)
 			}
@@ -550,7 +559,7 @@ func TestTheToolIsReadOnlyAndSaysWhatToPrefer(t *testing.T) {
 	for _, words := range []string{"Prefer summary", "samples only for particular readings", "workout", "sleepAnalysis", "Deep, Core, REM, Awake", "unit",
 		"never what other people share with them", "not with their agents' model providers",
 		"What others share with the person is on the Health page under Showing, on the dashboard and in the iPhone app; you cannot read it",
-		"never in a dream, a background task or any other run nobody is watching",
+		"never in a dream, a subagent, a background task or any other run nobody is watching",
 		"the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings"} {
 		if !strings.Contains(tool.Description, words) {
 			t.Errorf("the description should say %q", words)

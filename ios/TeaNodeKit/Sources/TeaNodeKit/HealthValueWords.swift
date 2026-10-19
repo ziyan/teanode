@@ -70,6 +70,16 @@ public enum HealthValueWords {
         "degC": "°C", "degF": "°F", "ml/(kg*min)": "mL/kg·min", "kcal/(kg*hr)": "kcal/kg·hr", "dBASPL": "dB", "appleEffortScore": "",
     ]
 
+    /// How many decimals a percentage is worth, for the kinds whose size or
+    /// whose meaning decides it: blood oxygen and walking steadiness are read
+    /// in whole numbers (98%, as the Health app shows them), body fat, walking
+    /// asymmetry and walking double support in one (18.4%). Every other
+    /// percentage has the usual precision of its size.
+    static let percentDecimals: [String: Int] = [
+        "oxygenSaturation": 0, "appleWalkingSteadiness": 0, "bodyFatPercentage": 1, "walkingAsymmetryPercentage": 1,
+        "walkingDoubleSupportPercentage": 1,
+    ]
+
     /// A distance from this many meters up is written in kilometers.
     static let kilometerFromMeters = 1000.0
 
@@ -86,8 +96,14 @@ public enum HealthValueWords {
 
     /// A number with up to this many decimals (trailing zeros dropped) and
     /// thousands separated.
+    ///
+    /// A tie is rounded half away from zero as the number is written in its
+    /// shortest decimal form, like the table in words.go says: 0.35 to one
+    /// decimal is 0.4, 1.005 to two is 1.01, 2.5 to none is 3 and -0.5 is -1.
+    /// The formatter's own rule is half to even, so it is asked for the other.
     public static func numberText(_ value: Double, maximumFractionDigits: Int, locale: Locale = .current) -> String {
-        let text = value.formatted(.number.precision(.fractionLength(0...maximumFractionDigits)).locale(locale))
+        let text = value.formatted(
+            .number.precision(.fractionLength(0...maximumFractionDigits)).rounded(rule: .toNearestOrAwayFromZero).locale(locale))
         // A tiny negative number is zero, not "-0".
         let zero = (0.0).formatted(.number.precision(.fractionLength(0...0)).locale(locale))
         return text == "-" + zero ? zero : text
@@ -100,7 +116,8 @@ public enum HealthValueWords {
     }
 
     /// A reading split into its number and its unit. HealthKit and the server
-    /// keep a percentage as a fraction (0.975); it is written times 100.
+    /// keep a percentage as a fraction (0.975); it is written times 100, in whole
+    /// numbers or with one decimal for the kinds in `percentDecimals`.
     ///
     /// - Counts of something and rates are whole numbers ("74 bpm", "8,412
     ///   steps", and "1 step" for exactly one).
@@ -114,7 +131,14 @@ public enum HealthValueWords {
                 numberText: numberText(value / kilometerFromMeters, maximumFractionDigits: 1, locale: locale), unit: .spaced("km"))
         }
         if quantityUnit == "%" {
-            return HealthValueParts(numberText: numberText(value * 100, locale: locale), unit: .touching("%"))
+            let shownValue = value * 100
+            let percentText: String
+            if let decimals = percentDecimals[healthType] {
+                percentText = numberText(shownValue, maximumFractionDigits: decimals, locale: locale)
+            } else {
+                percentText = numberText(shownValue, locale: locale)
+            }
+            return HealthValueParts(numberText: percentText, unit: .touching("%"))
         }
         if quantityUnit == "count/min" {
             let rounded = value.rounded()

@@ -39,11 +39,21 @@ const notAllowedWords = "The person has not let you read their Health data. " +
 	"You can offer to open it with set_up."
 
 // unattendedWords is the whole answer of every action that reads Health in a
-// run nobody is watching: a dream, a subagent in the background, a scheduled
-// run, a goal, a turn of somebody else in the person's chat. What a run like
-// that reads would be filed away without the person having asked, and Health
-// never goes into memory.
-const unattendedWords = "Health data is read only in a conversation with the person, not in a dream, a background task or any other run nobody is watching, so ask them in a conversation instead."
+// run the person did not ask for: a dream, a subagent, a turn woken by a
+// background command or survey, a scheduled run, a goal, a speak-first run,
+// a turn of somebody else in the person's chat. What a run like that reads
+// would be filed away without the person having asked, and Health never goes
+// into memory.
+const unattendedWords = "Health data is read only in a conversation with the person, not in a dream, a subagent, a background task or any other run nobody is watching, so ask them in a conversation instead."
+
+// Surfaces that are never the person asking: a turn woken by a finished
+// background command or survey, whose text is not the person's, and a
+// subagent, whose answer comes back as a tool result that the filing of
+// conversations into memory cannot tell from any other.
+const (
+	backgroundSurface = "background"
+	subagentSurface   = "subagent"
+)
 
 // scope is what every action needs: the run, the person's zone and now.
 type scope struct {
@@ -130,7 +140,7 @@ func withGate(run func(ctx context.Context, call *tools.Call, here *scope) (*too
 		if err != nil {
 			return nil, err
 		}
-		if here.run.Headless() || !here.run.CanAsk() {
+		if here.run.Headless() || !here.run.CanAsk() || here.run.Surface() == backgroundSurface || here.run.Surface() == subagentSurface {
 			return tools.TextResult("%s", unattendedWords), nil
 		}
 		isAllowed, err := here.isAllowed(ctx)

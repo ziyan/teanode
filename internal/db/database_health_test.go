@@ -246,6 +246,47 @@ func TestAHealthRouteNeedsItsWorkout(t *testing.T) {
 // Monday and into months: sums are added, averages are weighted by how many
 // readings each day had, the lowest minimum and highest maximum are kept,
 // durations and the seconds of each category word are added.
+func TestADayWorkedOutInTheFutureDoesNotHoldTheDay(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newShareWorld(t, tx)
+		send := func(steps float64, workedOutAt time.Time) int {
+			updated, err := tx.UpsertHealthDaySummaries(world.ada.ID, []*models.HealthDaySummary{
+				daySummary("stepCount", "2026-03-02", func(summary *models.HealthDaySummary) {
+					summary.SumValue = number(steps)
+					summary.WorkedOutAt = workedOutAt
+				}),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return updated
+		}
+		// A phone whose clock is a day ahead.
+		if send(1000, time.Now().Add(24*time.Hour)) != 1 {
+			t.Fatal("the day was not stored")
+		}
+		// The same day again, without a time and then with the true one: both
+		// are later than the server's time of the first, and both are stored.
+		if send(2000, time.Time{}) != 1 {
+			t.Error("a day sent after one worked out in the future was passed over")
+		}
+		if send(3000, time.Now()) != 1 {
+			t.Error("a day worked out now was passed over")
+		}
+		days, _, err := tx.ListHealthPeriods(world.ada.ID, "stepCount", "2026-03-01", "2026-03-03", health.PeriodDay)
+		if err != nil || len(days) != 1 || *days[0].SumValue != 3000 {
+			t.Errorf("the day: %+v %v", days, err)
+		}
+		// A day worked out earlier than the stored one is still left alone.
+		if send(4000, time.Now().Add(-time.Hour)) != 0 {
+			t.Error("an older day replaced a newer one")
+		}
+	})
+}
+
 func TestHealthDaysAddUpIntoWeeksAndMonths(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()

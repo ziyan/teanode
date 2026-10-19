@@ -45,6 +45,7 @@ struct HealthScreen: View {
     @State private var path: [HealthDestination] = []
     @State private var isSettingUp = false
     @Environment(AppModel.self) private var app
+    private let sync = HealthSync.shared
 
     init(connection: Connection) {
         _model = State(initialValue: HealthModel(connection: connection))
@@ -88,6 +89,19 @@ struct HealthScreen: View {
         // Coming back from the settings, where Health may have been erased.
         .onChange(of: path.isEmpty) { _, isEmpty in
             if isEmpty { Task { await model.load() } }
+        }
+        // Health turned on from this screen: the sheet closing, a pass ending
+        // and, while nothing is shown yet, the first data reaching the server
+        // each read again, so that a new person sees their data arrive
+        // without leaving the screen.
+        .onChange(of: isSettingUp) { _, isSheetOpen in
+            if !isSheetOpen { Task { await model.load() } }
+        }
+        .onChange(of: sync.isSyncing) { _, isSyncing in
+            if !isSyncing { Task { await model.load() } }
+        }
+        .onChange(of: sync.sentSampleCount) {
+            if model.types.isEmpty { Task { await model.load() } }
         }
         .onChange(of: app.openedHealthLink, initial: true) { _, link in
             guard let link else { return }
@@ -247,7 +261,7 @@ struct HealthEmptyView: View {
     private var descriptionText: LocalizedStringKey {
         if !sync.isAvailable { return "Health is not available on this device." }
         if sync.isOn { return "Your Apple Health data is being copied to your server. It shows here as it arrives." }
-        return "Health copies your Apple Health data to your own TeaNode server, and nowhere else."
+        return "Health copies your Apple Health data to your own TeaNode server, and nowhere else. Turn on Health, then allow the data you want on Apple's Health permissions screen."
     }
 
     /// Why nothing is arriving: the copying met a problem, or it stopped

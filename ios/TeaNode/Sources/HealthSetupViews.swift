@@ -43,7 +43,7 @@ struct HealthSetupView: View {
                     HealthSetupPoint(
                         symbolName: "tray.and.arrow.up", title: "What is copied",
                         text:
-                            "The Health data you allow on the next screen: steps, heart rate, sleep, workouts with their routes, and more. TeaNode copies your history first, then keeps it up to date.")
+                            "The Health data you allow on Apple's Health permissions screen, which opens next: steps, heart rate, sleep, workouts with their routes, and more. TeaNode copies your history first, then keeps it up to date.")
                     HealthSetupPoint(
                         symbolName: "server.rack", title: "Where it goes",
                         text: "Only to your own TeaNode server, and nowhere else.")
@@ -88,8 +88,11 @@ struct HealthSetupView: View {
             }
             .padding()
         }
-        // Swiping the sheet away is a Cancel too.
-        .onDisappear { turnOnTask?.cancel() }
+        // Apple's permission screen is shown over this one, and whether that
+        // counts as this screen disappearing is not something to rely on, so
+        // nothing is cancelled when it disappears. Instead the sheet cannot be
+        // swiped away while Health is being turned on; Cancel is the way out.
+        .interactiveDismissDisabled(isTurningOn)
     }
 
     /// Turns Health on and closes as soon as Apple's screen is answered and

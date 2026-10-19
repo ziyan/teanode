@@ -313,6 +313,10 @@ final class HealthSync {
     func sceneDidChange(isActive: Bool, isBackground: Bool) {
         guard isOn, isAvailable, !Self.isDemo else { return }
         if isActive {
+            // Time that ended while the app was away does not apply to a pass
+            // asked for now; without this, a pass still winding down would
+            // leave the foreground request unserved.
+            isBackgroundTimeEnded = false
             requestForegroundPass()
         } else if isBackground {
             scheduleHistoryTask()
@@ -687,6 +691,10 @@ final class HealthSync {
         // Every type read to its end, with nothing held back: the history is
         // done, even if only the first page of each type was asked for.
         if request.isFullPass, outcome.isComplete {
+            guard isCurrent(generation, connection) else {
+                outcome.hasStopped = true
+                return outcome
+            }
             isHistoryDone = true
             syncState.markHistoryDone()
             saveState()
@@ -776,6 +784,10 @@ final class HealthSync {
                     ofWorkouts: page.samples.map(\.healthSampleId), generation: generation, connection: connection)
                 if routeOutcome != .finished { return routeOutcome }
             }
+            // The account may have changed while the last route was read; the
+            // anchor then belongs to the old account and must not be written
+            // into the new one's state.
+            guard isCurrent(generation, connection) else { return .stopped }
             syncState.setAnchor(page.newAnchorData, for: typeInfo.healthType)
             saveState()
             refreshPublishedValues()

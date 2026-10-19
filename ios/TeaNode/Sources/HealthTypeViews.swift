@@ -157,7 +157,7 @@ struct HealthTypeScreen: View {
             }
         } message: {
             Text(
-                "Erases every reading, day summary and route of \(name) that this server keeps. The iPhone app keeps sending new readings of it while Health is on. Anything your agent already learned stays in its memory until you remove it. This cannot be undone."
+                "Erases every reading, day summary and route of \(name) that this server keeps. The iPhone app keeps sending new readings of it while Health is on. What your agent said about your Health in conversations stays in those conversations. This cannot be undone."
             )
         }
     }

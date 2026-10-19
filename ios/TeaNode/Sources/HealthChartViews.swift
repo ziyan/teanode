@@ -58,7 +58,7 @@ struct HealthBarsChart: View {
         Chart {
             ForEach(plan.plots) { plot in
                 if let amountValue = plot.amountValue {
-                    BarMark(x: .value("Period", plot.periodKey), y: .value("Amount", amountValue))
+                    BarMark(x: .value(HealthWords.periodTitle, plot.periodKey), y: .value("Amount", amountValue))
                         .foregroundStyle(ChartPalette.seriesColor(at: 0))
                         .opacity(ChartPalette.markOpacity(isChosen: plot.periodKey == selectedKey, isAnyChosen: selectedKey != nil))
                         .accessibilityLabel(Text(verbatim: plot.titleText))
@@ -95,7 +95,7 @@ struct HealthStagesChart: View {
                 .opacity(selectedKey == nil ? 1 : 0)
             Chart {
                 ForEach(plan.stageSegments) { segment in
-                    BarMark(x: .value("Period", segment.periodKey), y: .value("Hours", segment.hours))
+                    BarMark(x: .value(HealthWords.periodTitle, segment.periodKey), y: .value("Hours", segment.hours))
                         .foregroundStyle(by: .value("Stage", segment.stageTitle))
                         .opacity(ChartPalette.markOpacity(isChosen: segment.periodKey == selectedKey, isAnyChosen: selectedKey != nil))
                 }
@@ -129,19 +129,19 @@ struct HealthLevelChart: View {
             ForEach(plan.plots) { plot in
                 if let lowestValue = plot.lowestValue, let highestValue = plot.highestValue {
                     AreaMark(
-                        x: .value("Period", plot.periodKey), yStart: .value("Lowest", lowestValue), yEnd: .value("Highest", highestValue)
+                        x: .value(HealthWords.periodTitle, plot.periodKey), yStart: .value("Lowest", lowestValue), yEnd: .value("Highest", highestValue)
                     )
                     .foregroundStyle(ChartPalette.seriesColor(at: 0).opacity(0.2))
                 }
                 if let amountValue = plot.amountValue {
-                    LineMark(x: .value("Period", plot.periodKey), y: .value("Average", amountValue))
+                    LineMark(x: .value(HealthWords.periodTitle, plot.periodKey), y: .value("Average", amountValue))
                         .foregroundStyle(ChartPalette.seriesColor(at: 0))
                         .accessibilityLabel(Text(verbatim: plot.titleText))
                         .accessibilityValue(Text(verbatim: plot.spokenText))
                 }
             }
             if let selectedPlot, let amountValue = selectedPlot.amountValue {
-                PointMark(x: .value("Period", selectedPlot.periodKey), y: .value("Average", amountValue))
+                PointMark(x: .value(HealthWords.periodTitle, selectedPlot.periodKey), y: .value("Average", amountValue))
                     .foregroundStyle(ChartPalette.seriesColor(at: 0))
                     .symbolSize(60)
                 ChartSelectionRule(value: selectedPlot.periodKey) {

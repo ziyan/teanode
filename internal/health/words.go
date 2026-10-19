@@ -30,8 +30,21 @@ import (
 //                   index, UV index, breathing disturbances, NikeFuel) keeps
 //                   one decimal and drops a trailing .0: 22.5, 3.
 //   Percent         HealthKit keeps a percentage as a fraction (0.975); it is
-//                   written times 100 with the usual precision and no space:
-//                   97.5%.
+//                   written times 100 and no space, with the usual precision
+//                   (97.5%) except for these: blood oxygen and walking
+//                   steadiness are whole numbers (0.9797 is 98%); body fat,
+//                   walking asymmetry and walking double support have one
+//                   decimal and drop a trailing .0 (0.1837 is 18.4%, 0.18 is
+//                   18%).
+//   Ties            a number is rounded half away from zero as it is written
+//                   in its shortest decimal form, never by its binary value:
+//                   0.35 to one decimal is 0.4, 1.005 to two is 1.01, 2.5 to
+//                   none is 3, -0.5 to none is -1 (not 0), and 1000.5 is
+//                   1,001. A number that rounds to zero has no sign: -0.001
+//                   is 0. The dashboard gets this from Intl.NumberFormat as it
+//                   is (do not round first with Math.round, which sends -0.5
+//                   to 0), and the iPhone by asking for the rounding rule
+//                   "to nearest, ties away from zero".
 //   Distance        meters below 1000 (850 m); from 1000 kilometers with one
 //                   decimal and no trailing .0: 1 km, 5.2 km, 13 km.
 //   Temperature     the degree sign touches the number: 36.6°C, 98.6°F.
@@ -410,14 +423,52 @@ func NumberWords(quantityValue float64) string {
 
 // numberWithDecimals writes the number with up to this many decimals and
 // thousands separated; trailing zeros are dropped when isTrimmed.
+//
+// The number is rounded half away from zero as it is written in its shortest
+// decimal form (the digits that read back as the same number): 0.35 to one
+// decimal is 0.4, 1.005 to two is 1.01, 2.5 to none is 3 and -0.5 is -1,
+// whatever the binary number behind it is. That is what Intl.NumberFormat
+// does when it is not told otherwise, and what the iPhone gets by asking for
+// the same rounding, so that the three agree on a tie. A number that rounds
+// to zero has no sign: -0.001 is 0.
 func numberWithDecimals(quantityValue float64, decimals int, isTrimmed bool) string {
-	text := strconv.FormatFloat(quantityValue, 'f', decimals, 64)
-	if decimals > 0 && isTrimmed {
-		text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
+	if math.IsNaN(quantityValue) || math.IsInf(quantityValue, 0) {
+		return strconv.FormatFloat(quantityValue, 'f', decimals, 64)
+	}
+	shortest := strconv.FormatFloat(math.Abs(quantityValue), 'f', -1, 64)
+	whole, fraction, _ := strings.Cut(shortest, ".")
+	digits := []byte(whole + fraction)
+	wholeLength := len(whole)
+	if len(fraction) > decimals {
+		isRoundedUp := fraction[decimals] >= '5'
+		digits = digits[:wholeLength+decimals]
+		for index := len(digits) - 1; isRoundedUp; index-- {
+			if index < 0 {
+				digits = append([]byte{'1'}, digits...)
+				wholeLength++
+				break
+			}
+			if digits[index] == '9' {
+				digits[index] = '0'
+				continue
+			}
+			digits[index]++
+			isRoundedUp = false
+		}
+	}
+	for len(digits) < wholeLength+decimals {
+		digits = append(digits, '0')
+	}
+	text := string(digits[:wholeLength])
+	if decimals > 0 {
+		text += "." + string(digits[wholeLength:])
+		if isTrimmed {
+			text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
+		}
 	}
 	sign := ""
-	if strings.HasPrefix(text, "-") {
-		sign, text = "-", text[1:]
+	if quantityValue < 0 && strings.Trim(text, "0.") != "" {
+		sign = "-"
 	}
 	whole, fraction, hasFraction := strings.Cut(text, ".")
 	var grouped strings.Builder
@@ -431,6 +482,19 @@ func numberWithDecimals(quantityValue float64, decimals int, isTrimmed bool) str
 		return sign + grouped.String() + "." + fraction
 	}
 	return sign + grouped.String()
+}
+
+// percentDecimals is how many decimals a percentage is worth, for the kinds
+// whose size or whose meaning decides it: blood oxygen and walking steadiness
+// are read in whole numbers (98%, as the Health app shows them), body fat,
+// walking asymmetry and walking double support in one (18.4%). Every other
+// percentage has the usual precision of NumberWords.
+var percentDecimals = map[string]int{
+	"oxygenSaturation":               0,
+	"appleWalkingSteadiness":         0,
+	"bodyFatPercentage":              1,
+	"walkingAsymmetryPercentage":     1,
+	"walkingDoubleSupportPercentage": 1,
 }
 
 // isWholeNumberKind says whether a kind is read in whole numbers: heart rate
@@ -454,11 +518,14 @@ func ValueWords(healthType string, quantityValue float64, quantityUnit string) s
 	case quantityUnit == "m" && math.Abs(quantityValue) >= 1000:
 		return numberWithDecimals(quantityValue/1000, 1, true) + " km"
 	case quantityUnit == "%":
-		return NumberWords(ShownValue(quantityValue, quantityUnit)) + "%"
+		shown := ShownValue(quantityValue, quantityUnit)
+		if decimals, isListed := percentDecimals[healthType]; isListed {
+			return numberWithDecimals(shown, decimals, true) + "%"
+		}
+		return NumberWords(shown) + "%"
 	case isWholeNumberKind(healthType, quantityUnit):
-		rounded := math.Round(quantityValue)
-		number := numberWithDecimals(rounded, 0, false)
-		if quantityUnit == "count" && math.Abs(rounded) == 1 {
+		number := numberWithDecimals(quantityValue, 0, false)
+		if quantityUnit == "count" && (number == "1" || number == "-1") {
 			return number + " " + countNouns[healthType][0]
 		}
 		return withUnit(number, UnitWords(healthType, quantityUnit))

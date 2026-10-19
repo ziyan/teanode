@@ -161,6 +161,17 @@ function HealthContent({ userId }: { userId: string }) {
     row?.focus()
   }, [chosenFromAddress])
 
+  const backButton = useRef<HTMLButtonElement>(null)
+  const shouldFocusBack = useRef(false)
+  useEffect(() => {
+    if (!chosenFromAddress || !shouldFocusBack.current) return
+    shouldFocusBack.current = false
+    // Back is drawn only where the list is hidden while a type is open.
+    if (backButton.current && window.getComputedStyle(backButton.current).display !== 'none') {
+      backButton.current.focus()
+    }
+  }, [chosenFromAddress])
+
   function choosePerson(chosenUserId: string) {
     changeParameters({
       person: chosenUserId || null,
@@ -172,6 +183,8 @@ function HealthContent({ userId }: { userId: string }) {
   }
 
   function chooseType(healthType: string | null) {
+    // On a phone the list the row sat in is hidden by now: focus goes to Back.
+    shouldFocusBack.current = healthType !== null
     changeParameters({ type: healthType, route: null, page: null })
   }
 
@@ -217,6 +230,13 @@ function HealthContent({ userId }: { userId: string }) {
         <>
           <ErrorMessage error={typesQuery.error} />
           {(isPersonPending || (typesQuery.loading && !typeList)) && <Loading />}
+          {typesQuery.error !== null && typeList === null && !typesQuery.loading && (
+            <div className="page-actions">
+              <button type="button" onClick={() => void typesQuery.reload()}>
+                {t('common.tryAgain')}
+              </button>
+            </div>
+          )}
           {isEmpty && viewedPerson && (
             <SettingsSection card title={t('health.title')}>
               <SettingsEmpty>{t('health.personEmpty', { name: viewedPerson.name })}</SettingsEmpty>
@@ -243,6 +263,7 @@ function HealthContent({ userId }: { userId: string }) {
               {chosenType && (
                 <div className="health-detail">
                   <button
+                    ref={backButton}
                     type="button"
                     className="button-quiet health-back"
                     onClick={() => {

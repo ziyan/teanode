@@ -248,7 +248,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 // meaning as those filed and are not filed twice.
 func (self *Agent) readLessonsOf(ctx context.Context, run *Run, conversation *models.AgentConversation, messages, unread []*models.AgentMessage, backlog int) ([]*models.AgentMessage, *models.AgentMessage, int, error) {
 	read := unread[len(unread)-1]
-	window := lessonWindowOf(messages, conversation.RememberedThrough, read)
+	window := withoutHealthTurns(lessonWindowOf(messages, conversation.RememberedThrough, read))
 	filedCount, readCount, err := self.readLessons(ctx, run, conversation, window)
 	if filedCount > 0 {
 		log.Debugf("filed %d lesson(s) from conversation %s", filedCount, conversation.ID)
@@ -354,15 +354,58 @@ func (self *Agent) markRemembered(ctx context.Context, conversation *models.Agen
 // person said and what the agent answered. A tool's call and its result
 // are left out -- they are how the answer was arrived at, not what was
 // learned, and they are most of the tokens.
+//
+// What the agent said in a turn that read the person's Health is left out
+// too (see withoutHealthTurns): Health never goes into memory.
 func worthReading(messages []*models.AgentMessage) []*models.AgentMessage {
 	kept := make([]*models.AgentMessage, 0, len(messages))
-	for _, message := range messages {
+	for _, message := range withoutHealthTurns(messages) {
 		switch message.Role {
 		case string(llm.RoleUser), string(llm.RoleAssistant):
 			if strings.TrimSpace(message.Content) != "" {
 				kept = append(kept, message)
 			}
 		}
+	}
+	return kept
+}
+
+// isHealthToolName says whether a tool call is the Health tool, as the
+// model calls it (health) or by the name of one of its actions.
+func isHealthToolName(name string) bool {
+	return name == "health" || strings.HasPrefix(name, "health_")
+}
+
+// withoutHealthTurns is the messages without what the agent said, and what
+// its tools answered, in any turn in which it read the person's Health. A
+// turn runs from a message of the person to the next one, and one call of
+// the Health tool anywhere in it makes every assistant and tool message of
+// it unfit to be filed: the figures it read, and what it said about them,
+// stay in the conversation where the person had them. What the person
+// wrote is kept. The first stretch, before any message of the person, is a
+// turn too: a window that starts after a mark may begin in the middle of
+// one.
+func withoutHealthTurns(messages []*models.AgentMessage) []*models.AgentMessage {
+	kept := make([]*models.AgentMessage, 0, len(messages))
+	for start := 0; start < len(messages); {
+		end := start + 1
+		for end < len(messages) && messages[end].Role != string(llm.RoleUser) {
+			end++
+		}
+		hasHealth := false
+		for _, message := range messages[start:end] {
+			for _, call := range message.ToolCalls {
+				if isHealthToolName(call.Name) {
+					hasHealth = true
+				}
+			}
+		}
+		for _, message := range messages[start:end] {
+			if !hasHealth || message.Role == string(llm.RoleUser) {
+				kept = append(kept, message)
+			}
+		}
+		start = end
 	}
 	return kept
 }

@@ -6211,7 +6211,7 @@ export const zh: Catalog = {
   'health.personEmpty': '{name}还没有与你共享健康数据。',
   'health.emptyTitle': '还没有健康数据',
   'health.emptyBody':
-    '健康功能会把你的“健康”App 数据复制到你自己的服务器，数据来自 iPhone 上的 TeaNode 应用。在应用中打开“设置”，再打开“健康”。',
+    '健康功能会把你的“健康”App 数据复制到你自己的服务器，数据来自 iPhone 上的 TeaNode 应用：在应用的“设置”中打开“健康”，再在 Apple 的“健康”权限界面中允许你想要的数据。',
   'health.emptyAction': '设置 iPhone 应用',
   'health.typesTitle': '健康数据',
   'health.typesLabel': '健康数据的种类',
@@ -6269,6 +6269,7 @@ export const zh: Catalog = {
   'health.noSamples': '还没有这类读数。',
   'health.sampleCountOne': '1 条读数',
   'health.sampleCount': '{count} 条读数',
+  'health.samplesLimited': '只列出最近的 {count} 条读数。',
   'health.showRoute': '显示路线',
   'health.routeTitleUnknown': '体能训练路线',
   'health.routeFailed': '无法读取路线。',
@@ -6276,7 +6277,7 @@ export const zh: Catalog = {
   'health.eraseType': '清除{name}',
   'health.eraseTypeTitle': '清除{name}？',
   'health.eraseTypeBody':
-    '清除这台服务器上保存的所有{name}的读数、每日汇总和路线。只要健康保持开启，iPhone 应用仍会继续发送新的读数。助手已经学到的内容会留在它的记忆中，直到你将其移除。此操作无法撤销。',
+    '清除这台服务器上保存的所有{name}的读数、每日汇总和路线。只要健康保持开启，iPhone 应用仍会继续发送新的读数。助手在对话中说过的与你的健康有关的内容，会留在那些对话里。此操作无法撤销。',
   'health.settingsAgentTitle': '助手',
   'health.agentSwitch': '允许助手读取健康数据',
   'health.agentProvider': '助手读取的内容会发送给{provider}。',
@@ -6288,6 +6289,8 @@ export const zh: Catalog = {
   'health.readingCountOne': '已保存 1 条读数',
   'health.readingCount': '已保存 {count} 条读数',
   'health.readingCountNone': '没有已保存的读数',
+  'health.settingsNoData':
+    '还没有收到任何数据。在 iPhone 上的 TeaNode 应用中，于“设置”里打开“健康”，再在 Apple 的“健康”权限界面中允许相应的数据。',
   'health.lastReceived': '最近收到',
   'health.shareTitle': '共享',
   'health.shareIntro': '与你共享的人只能看到你所选类别的每日汇总，看不到单条读数或路线。',
@@ -6299,6 +6302,7 @@ export const zh: Catalog = {
   'health.shareEveryoneIn': '{name}里的所有人',
   'health.shareAdd': '添加',
   'health.shareNoPeople': '你还没有和任何人在同一个圈子里。',
+  'health.shareNeedsCircles': '分享健康数据需要圈子，而你的账户尚未开通圈子。请联系管理这台服务器的人开通。',
   'health.shareCategories': '与{name}共享的类别',
   'health.shareStop': '停止与{name}共享',
   'health.shareSaved': '已保存与{name}的共享。',
@@ -6308,7 +6312,7 @@ export const zh: Catalog = {
   'health.eraseAll': '清除全部健康数据',
   'health.eraseAllTitle': '清除全部健康数据？',
   'health.eraseAllBody':
-    '清除这台服务器上保存的所有读数、每日汇总和路线，在你重新开启健康之前，iPhone 应用不会再发送数据。助手已经学到的内容会留在它的记忆中，直到你将其移除。此操作无法撤销。',
+    '清除这台服务器上保存的所有读数、每日汇总和路线，在你重新开启健康之前，iPhone 应用不会再发送数据。助手在对话中说过的与你的健康有关的内容，会留在那些对话里。此操作无法撤销。',
   'health.eraseConfirm': '清除',
   'health.erasedOne': '已清除 1 条读数。',
   'health.erased': '已清除 {count} 条读数。',

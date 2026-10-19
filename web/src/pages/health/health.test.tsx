@@ -169,6 +169,7 @@ type Shown = {
   shares?: unknown[]
   samples?: unknown[]
   totalSamples?: number
+  isTotalCountCapped?: boolean
   periods?: (healthType: string) => unknown[]
   canAgentReadHealth?: boolean
   modelProviderName?: string
@@ -200,6 +201,7 @@ function answerWith(shown: Shown = {}) {
         ListHealthSamples: {
           samples: shown.samples ?? [],
           totalCount: shown.totalSamples ?? (shown.samples ?? []).length,
+          isTotalCountCapped: shown.isTotalCountCapped ?? false,
           nextOffset: null,
         },
       } as never
@@ -411,6 +413,11 @@ it('pages the readings fifty at a time, with the page in the address', async () 
 
   await screen.findByText('Fixture phone')
   expect(calls('ListHealthSamples')[0][1]).toMatchObject({ healthType: 'stepCount', limitCount: 50, offset: 0 })
+  // No range is asked for, so the server counts every reading exactly.
+  expect(calls('ListHealthSamples')[0][1]).not.toHaveProperty('from')
+  expect(calls('ListHealthSamples')[0][1]).not.toHaveProperty('to')
+  expect(calls('ListHealthSamples')[0][0]).toContain('isTotalCountCapped')
+  expect(screen.queryByText(/Only the latest/)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
   await waitFor(() => expect(screen.getByTestId('address').textContent).toContain('page=2'))
   await waitFor(() =>
@@ -418,6 +425,34 @@ it('pages the readings fifty at a time, with the page in the address', async () 
       true,
     ),
   )
+})
+
+it('stops the pager at the offset the server allows and says only the latest readings are listed', async () => {
+  // A full last page of fifty, so the pager has nothing more to offer.
+  const samples = Array.from({ length: 50 }, (_, index) => ({
+    healthSampleId: `sample-${index}`,
+    healthType: 'stepCount',
+    startedAt: new Date().toISOString(),
+    endedAt: new Date().toISOString(),
+    quantityValue: 42,
+    quantityUnit: 'count',
+    categoryValue: null,
+    workoutActivityType: '',
+    sourceName: 'Fixture phone',
+    hasRoute: false,
+  }))
+  answerWith({ types: [healthType()], samples, totalSamples: 2_500_000 })
+  renderAt('/health?page=2000')
+
+  await screen.findAllByText('Fixture phone')
+  expect(screen.getByText('Only the latest 100,000 readings are listed.')).toBeTruthy()
+  // The last page starts at 99,950, not past the limit.
+  await waitFor(() =>
+    expect(
+      calls('ListHealthSamples').every(([, variables]) => (variables as { offset: number }).offset <= 100_000),
+    ).toBe(true),
+  )
+  expect(screen.getByRole('button', { name: 'Next page' }).hasAttribute('disabled')).toBe(true)
 })
 
 it('opens a workout route on the map', async () => {
@@ -702,6 +737,11 @@ it('says what Health is when there is nothing yet, and points to the iPhone app'
 
   expect(await screen.findByText('No Health data yet')).toBeTruthy()
   expect(screen.getByText(/copies your Apple Health data to your own server/)).toBeTruthy()
+  expect(
+    screen.getByText(
+      /turn on Health in the app's Settings, then allow the data you want on Apple's Health permissions screen/,
+    ),
+  ).toBeTruthy()
   fireEvent.click(screen.getByRole('link', { name: 'Set up the iPhone app' }))
   expect(await screen.findByText('Devices page')).toBeTruthy()
   expect(calls('ListHealthSamples')).toHaveLength(0)
@@ -1173,4 +1213,74 @@ it('takes a ticked category back when it could not be saved', async () => {
   await waitFor(() =>
     expect((within(group).getByRole('checkbox', { name: 'Sleep' }) as HTMLInputElement).checked).toBe(false),
   )
+})
+
+it('says on Settings, when nothing has arrived, where Health comes from', async () => {
+  answerWith({ types: [], sampleCountKept: () => 0 })
+  renderAt('/health?tab=settings')
+
+  expect(
+    await screen.findByText(/turn on Health in Settings, then allow the data on Apple's Health permissions screen/),
+  ).toBeTruthy()
+})
+
+it('asks neither circles nor people, and says sharing needs circles, without circle:use', async () => {
+  answerWith({ types: [healthType()] })
+  renderAt('/health?tab=settings', ['health:use'])
+
+  expect(await screen.findByText(/Sharing Health data needs circles/)).toBeTruthy()
+  await screen.findByText(/readings kept/)
+  expect(calls('ListCirclePeople')).toHaveLength(0)
+  expect(calls('ListCircles')).toHaveLength(0)
+  expect(screen.queryByRole('combobox', { name: 'Share with' })).toBeNull()
+  expect(screen.queryByText('You are not in a circle with anyone yet.')).toBeNull()
+})
+
+it('offers another try when the kinds of data cannot be read', async () => {
+  answerWith({ types: [healthType()] })
+  const answerBefore = vi.mocked(graphql).getMockImplementation() as (
+    document: string,
+    variables?: never,
+  ) => Promise<never>
+  let isBroken = true
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ListHealthTypes') && isBroken) throw new Error('the server is down')
+    return answerBefore(document, variables as never)
+  })
+  renderAt('/health')
+
+  const retry = await screen.findByRole('button', { name: 'Try again' })
+  isBroken = false
+  fireEvent.click(retry)
+  await screen.findByRole('img', { name: /Steps by day/ })
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+})
+
+it('offers another try when the settings cannot be read', async () => {
+  answerWith({ types: [healthType()] })
+  const answerBefore = vi.mocked(graphql).getMockImplementation() as (
+    document: string,
+    variables?: never,
+  ) => Promise<never>
+  let isBroken = true
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ReadHealthSettings') && isBroken) throw new Error('the server is down')
+    return answerBefore(document, variables as never)
+  })
+  renderAt('/health?tab=settings')
+
+  const retry = await screen.findByRole('button', { name: 'Try again' })
+  isBroken = false
+  fireEvent.click(retry)
+  expect(await screen.findByText(/readings kept/)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+})
+
+it('moves the focus to Back when a type is chosen from the list', async () => {
+  answerWith({ types: [healthType(), HEART_RATE] })
+  renderAt('/health')
+
+  const list = await screen.findByRole('group', { name: 'Kinds of Health data' })
+  fireEvent.click(within(list).getByRole('button', { name: /Heart rate/ }))
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'All Health data' })))
 })

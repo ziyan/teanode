@@ -87,7 +87,16 @@ export type HealthSample = {
   hasRoute: boolean
 }
 
-export type HealthSamplePage = { samples: HealthSample[]; totalCount: number; nextOffset: number | null }
+export type HealthSamplePage = {
+  samples: HealthSample[]
+  totalCount: number
+  isTotalCountCapped: boolean
+  nextOffset: number | null
+}
+
+// The deepest a page of readings may start (the server refuses more), and so
+// the most readings the list can reach, newest first.
+export const HEALTH_SAMPLE_OFFSET_MOST = 100_000
 
 export type HealthRoute = { healthSampleId: string; routePoints: number[][] }
 
@@ -136,10 +145,11 @@ export const READ_HEALTH_SUMMARY = `query ($healthType: String!, $fromDay: Strin
   }
 }`
 
-export const LIST_HEALTH_SAMPLES = `query ($healthType: String!, $from: DateTime!, $to: DateTime!, $limitCount: Int,
+// Without from and to the count is exact, whatever the number of readings.
+export const LIST_HEALTH_SAMPLES = `query ($healthType: String!, $from: DateTime, $to: DateTime, $limitCount: Int,
   $offset: Int) {
   ListHealthSamples(healthType: $healthType, from: $from, to: $to, limitCount: $limitCount, offset: $offset) {
-    totalCount nextOffset
+    totalCount isTotalCountCapped nextOffset
     samples { healthSampleId healthType startedAt endedAt quantityValue quantityUnit categoryValue
       workoutActivityType sourceName hasRoute }
   }
@@ -293,6 +303,19 @@ const UNIT_WORDS: Record<string, string> = {
   appleEffortScore: '',
 }
 
+// How many decimals a percentage is worth for the kinds whose size or meaning
+// decides it (the table at the top of internal/health/words.go): blood oxygen
+// and walking steadiness in whole numbers, body fat, walking asymmetry and
+// walking double support in one. Every other percentage has the usual
+// precision of numberText.
+const PERCENT_DECIMALS: Record<string, number> = {
+  oxygenSaturation: 0,
+  appleWalkingSteadiness: 0,
+  bodyFatPercentage: 1,
+  walkingAsymmetryPercentage: 1,
+  walkingDoubleSupportPercentage: 1,
+}
+
 // A distance from this many meters up is written in kilometers.
 const KILOMETER_FROM_METERS = 1000
 
@@ -307,7 +330,10 @@ export function unitWords(healthType: string, quantityUnit: string): string {
 }
 
 // decimalsText is a number with up to this many decimals, trailing zeros
-// dropped and thousands separated for the language.
+// dropped and thousands separated for the language. A tie is rounded half away
+// from zero on the number as it is written in its shortest decimal form
+// (0.35 to one decimal is 0.4), which is what Intl.NumberFormat does and what
+// the Go and Swift words do; do not round first with Math.round.
 export function decimalsText(measuredValue: number, language: string, mostDecimals: number): string {
   const text = new Intl.NumberFormat(language, {
     minimumFractionDigits: 0,
@@ -356,14 +382,20 @@ export function quantityText(
   if (quantityUnit === 'm' && Math.abs(measuredValue) >= KILOMETER_FROM_METERS) {
     return `${decimalsText(measuredValue / KILOMETER_FROM_METERS, language, 1)} km`
   }
-  if (quantityUnit === '%') return numberText(shownValue(measuredValue, quantityUnit), language) + '%'
+  if (quantityUnit === '%') {
+    const shown = shownValue(measuredValue, quantityUnit)
+    const decimals = PERCENT_DECIMALS[healthType]
+    return (decimals === undefined ? numberText(shown, language) : decimalsText(shown, language, decimals)) + '%'
+  }
   const countNoun = quantityUnit === 'count' ? COUNT_NOUNS[healthType] : undefined
   if (quantityUnit === 'count/min' || countNoun !== undefined) {
-    // What is counted, and every rate, is a whole number.
-    const rounded = Math.round(measuredValue)
-    const wholeWords = wholeNumberText(rounded, language)
+    // What is counted, and every rate, is a whole number. It is rounded by
+    // the number format alone, half away from zero (Math.round sends -0.5
+    // to 0), and 1 or -1 once written is the singular.
+    const wholeWords = wholeNumberText(measuredValue, language)
     if (countNoun !== undefined) {
-      const form = Math.abs(rounded) === 1 ? 'one' : 'other'
+      const isOne = wholeWords === wholeNumberText(1, language) || wholeWords === wholeNumberText(-1, language)
+      const form = isOne ? 'one' : 'other'
       return t(`health.count.${countNoun}.${form}` as Key, { number: wholeWords })
     }
     return withUnit(wholeWords, unitWords(healthType, quantityUnit))

@@ -795,7 +795,7 @@ final class HealthKitReader: @unchecked Sendable {
     /// Stops the observers and asks iOS to stop waking the app.
     func stopObserving() async {
         for query in forgetObserverQueries() { store.stop(query) }
-        try? await store.disableAllBackgroundDelivery()
+        _ = try? await store.disableAllBackgroundDelivery()
     }
 
     private func forgetObserverQueries() -> [HKObserverQuery] {

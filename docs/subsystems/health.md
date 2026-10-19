@@ -74,7 +74,8 @@ sources the way the Health app does: an iPhone and a Watch counting the same
 walk are counted once. Sleep and other times are the union of their readings,
 so two apps recording one night count it once. The day is the phone's calendar
 day. Each summary carries when the phone worked it out (`workedOutAt`), and the
-server keeps the latest, so a late resend cannot replace a newer day. When the
+server keeps the latest, so a late resend cannot replace a newer day. A time
+later than the server's own clock is taken as the server's time. When the
 server deletes samples it answers with their types and times, and the phone
 works those days out again.
 
@@ -101,18 +102,25 @@ of it; new readings of that type still arrive while Health is on.
   categories, is "not found". Leaving the circle ends the share.
 - **The agent** reads the person's own Health data through the read-only
   `health` tool (types, summary, samples, set_up) only after the person turns on
-  **Let the agent read Health data**, on the Settings tab of the Health page or
-  in Health in the app's Settings. Until then every action but set_up says so.
-  It runs only in a conversation with the person: a dream or any other run
-  nobody is watching is refused. It never reads what somebody shares with the
+  **Let the agent read Health data**, on the Settings tab of the Health page on
+  the dashboard, or in Health in the iPhone app's Settings. Until then every action but set_up says so.
+  It runs only in a conversation the person asked for: a dream, a subagent, a
+  turn woken by a background command or survey, a speak-first run or any other
+  run nobody is watching is refused. An operator with `agent:act` speaking as
+  the person, and a client of the MCP surfaces, reach the tool only through the
+  person's own switch: they act as the person, so with the switch on they read
+  what the person's agent reads. It never reads what somebody shares with the
   person (the person sees that on the Health page, under Showing): a person
   shares Health with people, not with their agents' model providers, and only
   the sharer can agree to their data going to one. The tool only reads, and
   reads no routes: erasing cannot be undone, sharing and the switch are the
   person's own consent to give, and a route says where somebody runs, which
   the person shows on the map themselves.
-- **Memory.** Health data never goes into memory; dreams do not read it. What
-  the agent said in a conversation stays in that conversation.
+- **Memory.** Health data never goes into memory; dreams do not read it. The
+  run that files conversations into memory skips every assistant and tool
+  message of a turn in which the `health` tool ran, and keeps what the person
+  wrote. What the agent said about Health stays in that conversation, and
+  erasing does not remove it.
 
 ## What leaves the server
 

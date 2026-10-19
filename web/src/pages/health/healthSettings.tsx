@@ -13,6 +13,7 @@ import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
+import { hasPermission, useSession } from '../../session'
 import {
   CHARACTERISTIC_TYPES,
   ERASE_HEALTH_DATA,
@@ -51,6 +52,7 @@ export function HealthSettings({
   onSharesChanged: () => Promise<void>
   onErased: () => void
 }) {
+  const { t } = useTranslation()
   const settings = useQuery(
     async () => (await graphql<{ ReadHealthSettings: HealthSettingsResult }>(READ_HEALTH_SETTINGS)).ReadHealthSettings,
     [],
@@ -59,6 +61,13 @@ export function HealthSettings({
   return (
     <>
       <ErrorMessage error={settings.error} />
+      {settings.error !== null && settings.data === null && !settings.loading && (
+        <div className="page-actions">
+          <button type="button" onClick={() => void settings.reload()}>
+            {t('common.tryAgain')}
+          </button>
+        </div>
+      )}
       <HealthStatus settings={settings.data} />
       <AgentSwitch settings={settings.data} onChanged={settings.reload} />
       <AboutYou characteristics={settings.data?.characteristics ?? []} />
@@ -79,21 +88,24 @@ function HealthStatus({ settings }: { settings: HealthSettingsResult | null }) {
   const { t, plural, language } = useTranslation()
   if (!settings) return null
   return (
-    <p className="muted health-status">
-      {settings.sampleCount === 0
-        ? t('health.readingCountNone')
-        : plural(
-            settings.sampleCount,
-            { one: 'health.readingCountOne', other: 'health.readingCount' },
-            { count: wholeNumberText(settings.sampleCount, language) },
-          )}
-      {settings.lastReceivedAt && (
-        <>
-          {' · '}
-          {t('health.lastReceived')} <RelativeTime value={settings.lastReceivedAt} />
-        </>
-      )}
-    </p>
+    <>
+      <p className="muted health-status">
+        {settings.sampleCount === 0
+          ? t('health.readingCountNone')
+          : plural(
+              settings.sampleCount,
+              { one: 'health.readingCountOne', other: 'health.readingCount' },
+              { count: wholeNumberText(settings.sampleCount, language) },
+            )}
+        {settings.lastReceivedAt && (
+          <>
+            {' · '}
+            {t('health.lastReceived')} <RelativeTime value={settings.lastReceivedAt} />
+          </>
+        )}
+      </p>
+      {settings.sampleCount === 0 && <p className="muted">{t('health.settingsNoData')}</p>}
+    </>
   )
 }
 
@@ -192,15 +204,21 @@ function HealthSharing({
   const { t } = useTranslation()
   const toast = useToast()
   const navigate = useNavigate()
+  const session = useSession()
+  // Who can be shared with is found through circles, which a person without
+  // circle:use cannot read: they get no list and no failure, and the shares
+  // they already have are shown as they are.
+  const canUseCircles = hasPermission(session.permissions, 'circle:use')
   const choices = useQuery(
     async () => {
+      if (!canUseCircles) return { people: [] as Person[], circles: [] as CircleChoice[] }
       const [people, circles] = await Promise.all([
         graphql<{ ListCirclePeople: Person[] }>(LIST_PEOPLE),
         graphql<{ ListCircles: CircleChoice[] }>(LIST_CIRCLES),
       ])
       return { people: people.ListCirclePeople, circles: circles.ListCircles }
     },
-    [],
+    [canUseCircles],
     { refresh: false },
   )
   const [chosenGrantee, setChosenGrantee] = useState('')
@@ -377,7 +395,9 @@ function HealthSharing({
         )
       })}
 
-      {choices.data && people.length === 0 && circles.length === 0 ? (
+      {!canUseCircles ? (
+        <p className="muted">{t('health.shareNeedsCircles')}</p>
+      ) : choices.data && people.length === 0 && circles.length === 0 ? (
         <>
           <p className="muted">{t('health.shareNoPeople')}</p>
           <div className="page-actions">

@@ -307,8 +307,8 @@ box, then **Message someone**. Every circle has a chat of its own.
   screen. The app
   then copies it in the background, history first, and the page shows a chart
   for each kind of data. The agent reads it only once the person turns on
-  **Let the agent read Health data** on the Settings tab of that page or in
-  Health in the app's settings, and a person
+  **Let the agent read Health data** on the Settings tab of the Health page on
+  the dashboard, or in Health in the iPhone app's settings, and a person
   can share some categories (Activity, Sleep) with a circle. There is nothing
   to set up on the server; to keep it from a role, take `health:use` away from
   it on **Manage → People and access**.

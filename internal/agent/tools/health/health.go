@@ -85,7 +85,7 @@ func init() {
 					"Always show the unit with a number (steps, bpm, kg, hours and minutes for a time). " +
 					"It reads the person's own Health only, never what other people share with them: a person who shares Health shares it with people, not with their agents' model providers. " +
 					"What others share with the person is on the Health page under Showing, on the dashboard and in the iPhone app; you cannot read it, so point the person there. " +
-					"It reads only in a conversation with the person, never in a dream, a background task or any other run nobody is watching. " +
+					"It reads only in a conversation with the person, never in a dream, a subagent, a background task or any other run nobody is watching. " +
 					"The person must first let you read their Health data (the switch \"Let the agent read Health data\" is in the Settings tab of the Health page on the dashboard, or Health in the iPhone app's Settings); until then every action but set_up says so, and you tell them where to turn it on instead of trying again, offering set_up to take them to it. " +
 					"This is not medical advice, and you do not diagnose from it.",
 				Guidance: "Health is among the most private data the person has. Use it only when asked or when it plainly answers what they asked, and do not copy it into other tools, notes or messages unless they ask. " +

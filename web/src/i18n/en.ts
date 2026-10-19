@@ -6524,7 +6524,7 @@ export const en = {
   'health.personEmpty': '{name} shares no Health data with you yet.',
   'health.emptyTitle': 'No Health data yet',
   'health.emptyBody':
-    'Health copies your Apple Health data to your own server. It comes from the TeaNode app on your iPhone. In the app, open Settings, then Health.',
+    "Health copies your Apple Health data to your own server. It comes from the TeaNode app on your iPhone: turn on Health in the app's Settings, then allow the data you want on Apple's Health permissions screen.",
   'health.emptyAction': 'Set up the iPhone app',
   'health.typesTitle': 'Health data',
   'health.typesLabel': 'Kinds of Health data',
@@ -6582,6 +6582,7 @@ export const en = {
   'health.noSamples': 'No readings of this kind yet.',
   'health.sampleCountOne': '1 reading',
   'health.sampleCount': '{count} readings',
+  'health.samplesLimited': 'Only the latest {count} readings are listed.',
   'health.showRoute': 'Show the route',
   'health.routeTitleUnknown': 'Workout route',
   'health.routeFailed': 'The route could not be read.',
@@ -6589,7 +6590,7 @@ export const en = {
   'health.eraseType': 'Erase {name}',
   'health.eraseTypeTitle': 'Erase {name}?',
   'health.eraseTypeBody':
-    'Erases every reading, day summary and route of {name} that this server keeps. The iPhone app keeps sending new readings of it while Health is on. Anything your agent already learned stays in its memory until you remove it. This cannot be undone.',
+    'Erases every reading, day summary and route of {name} that this server keeps. The iPhone app keeps sending new readings of it while Health is on. What your agent said about your Health in conversations stays in those conversations. This cannot be undone.',
   'health.settingsAgentTitle': 'The agent',
   'health.agentSwitch': 'Let the agent read Health data',
   'health.agentProvider': 'What the agent reads goes to {provider}.',
@@ -6601,6 +6602,8 @@ export const en = {
   'health.readingCountOne': '1 reading kept',
   'health.readingCount': '{count} readings kept',
   'health.readingCountNone': 'No readings kept',
+  'health.settingsNoData':
+    "Nothing has arrived yet. In the TeaNode app on your iPhone, turn on Health in Settings, then allow the data on Apple's Health permissions screen.",
   'health.lastReceived': 'Last received',
   'health.shareTitle': 'Sharing',
   'health.shareIntro':
@@ -6613,6 +6616,8 @@ export const en = {
   'health.shareEveryoneIn': 'Everyone in {name}',
   'health.shareAdd': 'Add',
   'health.shareNoPeople': 'You are not in a circle with anyone yet.',
+  'health.shareNeedsCircles':
+    'Sharing Health data needs circles, and they are not on for your account. Ask whoever runs this server to turn them on.',
   'health.shareCategories': 'Categories shared with {name}',
   'health.shareStop': 'Stop sharing with {name}',
   'health.shareSaved': 'Sharing with {name} saved.',
@@ -6622,7 +6627,7 @@ export const en = {
   'health.eraseAll': 'Erase all Health data',
   'health.eraseAllTitle': 'Erase all Health data?',
   'health.eraseAllBody':
-    'Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. Anything your agent already learned stays in its memory until you remove it. This cannot be undone.',
+    'Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. What your agent said about your Health in conversations stays in those conversations. This cannot be undone.',
   'health.eraseConfirm': 'Erase',
   'health.erasedOne': '1 reading erased.',
   'health.erased': '{count} readings erased.',

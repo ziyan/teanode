@@ -20377,13 +20377,19 @@ label.checkbox.is-plain > span > .muted {
   margin-top: var(--space-2);
 }
 
+/* A tablet keeps the list beside the chart, narrower, so the chart is not
+   below a hundred rows. */
 @media (max-width: 900px) {
   .health-layout {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
   }
 }
 
 @media (max-width: 760px) {
+  .health-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .health-layout .health-detail {
     display: none;
   }
@@ -20400,5 +20406,13 @@ label.checkbox.is-plain > span > .muted {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+  }
+}
+
+/* On a phone the page ends clear of the floating assistant button, which
+   would otherwise sit over the last row of the list, as on the Photos page. */
+@media (max-width: 600px) {
+  .health-layout {
+    padding-bottom: 88px;
   }
 }

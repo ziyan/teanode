@@ -104,8 +104,8 @@ func NewHealthCommand() *cli.Command {
 				ArgsUsage: "[type]",
 				Description: "Erases the readings, day summaries and routes of the type, or of every type\n" +
 					"when none is given; everything also tells your phone to stop sending until you\n" +
-					"turn Health on again. Anything your agent already learned stays in its memory\n" +
-					"until you remove it. This cannot be undone.",
+					"turn Health on again. What your agent said about your Health in conversations\n" +
+					"stays in those conversations. This cannot be undone.",
 				Flags:  []cli.Flag{JSONFlag(), ForceFlag()},
 				Action: runHealthErase,
 			},
@@ -606,9 +606,9 @@ func runHealthErase(ctx context.Context, command *cli.Command) error {
 	healthType := strings.TrimSpace(command.Args().First())
 	what := "all of your Health data, and tells your phone to stop sending it until you turn Health on again"
 	if healthType != "" {
-		what = "your " + healthType + " readings, day summaries and routes. Your phone keeps sending new readings of it, and readings it has already read may arrive again"
+		what = "every reading, day summary and route of " + healthType + " that this server keeps. The iPhone app keeps sending new readings of it while Health is on"
 	}
-	if err := confirm(command, "This erases "+what+". Anything your agent already learned stays in its memory until you remove it. This cannot be undone."); err != nil {
+	if err := confirm(command, "This erases "+what+". What your agent said about your Health in conversations stays in those conversations. This cannot be undone."); err != nil {
 		return err
 	}
 	connection, err := openClient(command)

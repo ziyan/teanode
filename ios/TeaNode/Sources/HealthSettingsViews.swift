@@ -62,6 +62,10 @@ struct HealthSettingsScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await model.load() }
         .task { await model.load() }
+        // What the server holds changes as the copying sends data.
+        .onChange(of: sync.isSyncing) { _, isSyncing in
+            if !isSyncing { Task { await model.load() } }
+        }
         .sheet(isPresented: $isSettingUp) { HealthSetupSheet() }
         .sheet(isPresented: $isSharing) { HealthShareSheet(model: model) }
         .toast(done: $model.doneText, problem: $model.problemText)
@@ -288,7 +292,7 @@ struct HealthSettingsScreen: View {
                 }
             } message: {
                 Text(
-                    "Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. Anything your agent already learned stays in its memory until you remove it. This cannot be undone."
+                    "Erases every reading, day summary and route this server keeps, and the iPhone app stops sending until you turn Health on again. What your agent said about your Health in conversations stays in those conversations. This cannot be undone."
                 )
             }
         }

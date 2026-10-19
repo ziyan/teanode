@@ -31,9 +31,23 @@ final class HealthValueWordsTests: XCTestCase {
             ("distanceWalkingRunning", 12980, "m", "13 km"), ("distanceWalkingRunning", 1_234_567, "m", "1,234.6 km"),
             ("runningStrideLength", 0.93, "m", "0.93 m"), ("bodyTemperature", 36.62, "degC", "36.62°C"),
             ("vo2Max", 42.3, "ml/(kg*min)", "42.3 mL/kg·min"), ("physicalEffort", 4.25, "kcal/(kg*hr)", "4.25 kcal/kg·hr"),
-            ("activeEnergyBurned", 512.7, "kcal", "512.7 kcal"), ("oxygenSaturation", 0.975, "%", "97.5%"),
+            ("activeEnergyBurned", 512.7, "kcal", "512.7 kcal"), ("oxygenSaturation", 0.975, "%", "98%"),
             ("bodyMass", 72.456, "kg", "72.46 kg"), ("environmentalAudioExposure", 71.2, "dBASPL", "71.2 dB"),
             ("workoutEffortScore", 6.5, "appleEffortScore", "6.5"), ("bodyMass", 72, "", "72"), ("bodyMass", -0.001, "kg", "0 kg"),
+            // Percentages: whole numbers for blood oxygen and walking steadiness,
+            // one decimal for body fat, walking asymmetry and double support, the
+            // usual precision for the rest.
+            ("oxygenSaturation", 0.9797, "%", "98%"), ("oxygenSaturation", 0.94, "%", "94%"), ("oxygenSaturation", 1, "%", "100%"),
+            ("appleWalkingSteadiness", 0.674, "%", "67%"), ("bodyFatPercentage", 0.1837, "%", "18.4%"),
+            ("bodyFatPercentage", 0.18, "%", "18%"), ("walkingAsymmetryPercentage", 0.0345, "%", "3.5%"),
+            ("walkingDoubleSupportPercentage", 0.2849, "%", "28.5%"), ("peripheralPerfusionIndex", 0.0235, "%", "2.35%"),
+            ("bloodAlcoholContent", 0.0008, "%", "0.08%"), ("bodyFatPercentage", 0.1845, "%", "18.5%"),
+            // The tie rule: half away from zero on the shortest decimal form.
+            ("bodyMassIndex", 22.25, "", "22.25"), ("x", 0.355, "", "0.36"), ("x", 1.005, "", "1.01"), ("x", 0.975, "", "0.98"),
+            ("x", 150.25, "", "150.3"), ("x", 1000.5, "", "1,001"), ("x", -150.25, "", "-150.3"), ("x", -0.001, "", "0"),
+            ("x", -0.004, "kg", "0 kg"), ("heartRate", 72.5, "count/min", "73 bpm"), ("heartRate", -0.5, "count/min", "-1 bpm"),
+            ("stepCount", 2.5, "count", "3 steps"), ("stepCount", 0.5, "count", "1 step"),
+            ("stepCount", 999_999.5, "count", "1,000,000 steps"), ("distanceWalkingRunning", 1050, "m", "1.1 km"),
         ]
         for (healthType, value, quantityUnit, expected) in cases {
             XCTAssertEqual(words(healthType, value, quantityUnit), expected, "\(healthType) \(value) \(quantityUnit)")
@@ -49,7 +63,10 @@ final class HealthValueWordsTests: XCTestCase {
             HealthValueParts(numberText: "8,412", unit: .noun(.step, isSingular: false)))
         XCTAssertEqual(
             HealthValueWords.parts(healthType: "oxygenSaturation", value: 0.975, quantityUnit: "%", locale: english),
-            HealthValueParts(numberText: "97.5", unit: .touching("%")))
+            HealthValueParts(numberText: "98", unit: .touching("%")))
+        XCTAssertEqual(
+            HealthValueWords.parts(healthType: "bodyFatPercentage", value: 0.1837, quantityUnit: "%", locale: english),
+            HealthValueParts(numberText: "18.4", unit: .touching("%")))
         XCTAssertEqual(
             HealthValueWords.parts(healthType: "heartRate", value: 74, quantityUnit: "count/min", locale: english),
             HealthValueParts(numberText: "74", unit: .spaced("bpm")))
