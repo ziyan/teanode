@@ -86,7 +86,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode 会将你允许的健康数据复制到你自己的 TeaNode 服务器。只有你在健康设置中开启后，助理才会读取这些数据。"
+            "value": "TeaNode 会将你允许的健康数据复制到你自己的 TeaNode 服务器。只有你在健康设置中开启后，助手才会读取这些数据。"
           }
         },
         "ja": {
@@ -134,7 +134,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode 会记录你去过的地方，方便你回顾、与家人共享你的位置，并让助理了解你的日常。"
+            "value": "TeaNode 会记录你去过的地方，方便你回顾、与家人共享你的位置，并让助手了解你的日常。"
           }
         },
         "ja": {
@@ -158,7 +158,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode 会在地图上显示你的位置并在应用打开时跟随你；当你的请求取决于你所在的位置时，助理会询问你在哪里。"
+            "value": "TeaNode 会在地图上显示你的位置并在应用打开时跟随你；当你的请求取决于你所在的位置时，助手会询问你在哪里。"
           }
         },
         "ja": {
@@ -182,7 +182,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在你呼叫助理或明确录制会议时，TeaNode 会使用麦克风。"
+            "value": "在你呼叫助手或明确录制会议时，TeaNode 会使用麦克风。"
           }
         },
         "ja": {
