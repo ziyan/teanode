@@ -101,6 +101,14 @@ it('shows each album with its title, its photo count and the dates it spans', as
   expect(screen.queryByText('Suggested')).toBeNull()
 })
 
+it('puts the person’s albums before the suggestions', async () => {
+  serve()
+  showPage()
+  const picnic = await screen.findByRole('link', { name: /Picnic/ })
+  const suggested = await screen.findByText('Suggested')
+  expect(picnic.compareDocumentPosition(suggested) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})
+
 it('makes an album from a suggestion with the title the person confirms and every photo of its dates', async () => {
   serve()
   showPage()

@@ -256,9 +256,9 @@ struct PhotoSelectionToolbar: ToolbarContent {
 
 // MARK: The albums
 
-/// PhotoAlbumsView is the Albums section: the suggestions across the top, then
-/// the person's albums as covers with their titles, then the albums shared
-/// with them and the albums of each circle they are in, each under a heading.
+/// PhotoAlbumsView is the Albums section: the person's albums as covers with
+/// their titles, then the albums shared with them and the albums of each circle
+/// they are in, each under a heading, and the suggestions last.
 struct PhotoAlbumsView: View {
     let model: PhotosModel
 
@@ -280,9 +280,6 @@ struct PhotoAlbumsView: View {
                 } else {
                     let sections = PhotoAlbumSections(albums)
                     ScrollView {
-                        if !model.suggestions.isEmpty {
-                            PhotoSuggestionsSection(model: model)
-                        }
                         if !sections.own.isEmpty {
                             albumGrid(sections.own, title: sections.hasOthers ? String(localized: "Your albums") : nil)
                         }
@@ -291,6 +288,9 @@ struct PhotoAlbumsView: View {
                         }
                         ForEach(sections.circles) { circleAlbums in
                             albumGrid(circleAlbums.albums, title: circleAlbums.circleName)
+                        }
+                        if !model.suggestions.isEmpty {
+                            PhotoSuggestionsSection(model: model)
                         }
                     }
                 }
@@ -420,7 +420,7 @@ struct PhotoSuggestionsSection: View {
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 12) {
                     ForEach(model.suggestions) { suggestion in
-                        // As wide as the album grids under it, so its edges line up with theirs;
+                        // As wide as the album grids above it, so its edges line up with theirs;
                         // with several suggestions each one is a page to swipe to.
                         PhotoSuggestionCard(suggestion: suggestion, model: model)
                             .containerRelativeFrame(.horizontal) { containerWidth, _ in
