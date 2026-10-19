@@ -1141,7 +1141,8 @@ export const ja: Catalog = {
   'agent.briefHint':
     '今日の予定と待っていることを、メールで送ります。実体は「Daily brief」という通常のスケジュールで、内容は下のスケジュールで変えられます。',
   'agent.briefAt': '時刻',
-  'agent.briefDays': '曜日（1 月曜〜7 日曜）',
+  'agent.briefDays': '曜日',
+  'agent.briefNoDays': '曜日を 1 つ以上選んでください。',
   'agent.briefStart': 'ブリーフを送る',
   'agent.briefSave': '保存',
   'agent.briefStop': '停止',

@@ -1144,7 +1144,8 @@ export const en = {
   'agent.briefHint':
     'What the day holds and what is waiting for you, sent to you as mail. It is an ordinary schedule called "Daily brief" — change what it asks for in Schedules below.',
   'agent.briefAt': 'At',
-  'agent.briefDays': 'On days (1 Monday to 7 Sunday)',
+  'agent.briefDays': 'On days',
+  'agent.briefNoDays': 'Choose at least one day.',
   'agent.briefStart': 'Send me a brief',
   'agent.briefSave': 'Save',
   'agent.briefStop': 'Stop',

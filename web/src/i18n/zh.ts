@@ -1098,7 +1098,8 @@ export const zh: Catalog = {
   'agent.briefHint':
     '今天有什么安排、有什么在等你，以邮件发送。它其实是一条名为“Daily brief”的普通日程——在下面的日程中可以修改内容。',
   'agent.briefAt': '时间',
-  'agent.briefDays': '星期（1 周一至 7 周日）',
+  'agent.briefDays': '星期',
+  'agent.briefNoDays': '请至少选择一天。',
   'agent.briefStart': '给我发简报',
   'agent.briefSave': '保存',
   'agent.briefStop': '停止',
