@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.184.1] - 2026-10-19
+
+### Changed
+
+- The dashboard's Location visits no longer have a label filter, as on the iPhone. Places keep theirs. (#597)
+- Getting started says how to set up Location. (#597)
+
 ## [0.184.0] - 2026-10-19
 
 ### Added
