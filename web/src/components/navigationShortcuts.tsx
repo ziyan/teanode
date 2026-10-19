@@ -69,7 +69,7 @@ export function NavigationShortcuts({ onToggleSidebar }: { onToggleSidebar?: () 
       if (sent) list.push(go('t', t('mailbox.folder.sent'), `/mailbox/${sent.id}`))
     }
     if (agent.isAvailable) {
-      list.push(go('a', t('nav.chats'), '/agent'))
+      list.push(go('a', t('nav.chats'), '/chat'))
     }
     const services = session.services
     if (isPathAvailable('/calendar', services) && (hasMailbox || hasPermission(session.permissions, 'calendar:use'))) {

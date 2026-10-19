@@ -28,6 +28,7 @@ import {
   ShieldIcon,
   SmartphoneIcon,
   SparkIcon,
+  ChatIcon,
   TerminalIcon,
   UserIcon,
   WalletIcon,
@@ -234,12 +235,22 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/recordings', '/coding', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/location', '/circles'].some(
-      (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
-    ) ||
+    [
+      '/chat',
+      '/knowledge',
+      '/recordings',
+      '/coding',
+      '/finance',
+      '/calendar',
+      '/contacts',
+      '/reminders',
+      '/photos',
+      '/location',
+      '/circles',
+    ].some((path) => location.pathname === path || location.pathname.startsWith(path + '/')) ||
     location.pathname === '/mailbox' ||
     location.pathname.startsWith('/mailbox/') ||
-    (hasMailbox && (location.pathname === '/agent' || surface?.rail === 'mailbox'))
+    (hasMailbox && (location.pathname === '/chat' || surface?.rail === 'mailbox'))
   const inAccount = surface?.category === 'account' && !inMailbox
   const inManagement = !inAccount && !inMailbox
 
@@ -342,9 +353,9 @@ export function Sidebar({
                   page of their own. Above the mailbox's folders because it
                   reads every mailbox, not one. */}
               {agent.isAvailable && (
-                <NavLink to="/agent" end title={collapsed ? agentLabel : undefined}>
+                <NavLink to="/chat" end title={collapsed ? agentLabel : undefined}>
                   <span className="sidebar-icon">
-                    <SparkIcon />
+                    <ChatIcon />
                   </span>
                   <span className="sidebar-label">{agentLabel}</span>
                 </NavLink>
@@ -537,9 +548,9 @@ export function Sidebar({
           {!current && !inManagement && (
             <div className="sidebar-group">
               {session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use') && (
-                <NavLink to="/agent">
-                  <SparkIcon />
-                  <span className="sidebar-label">{t('agent.title')}</span>
+                <NavLink to="/chat">
+                  <ChatIcon />
+                  <span className="sidebar-label">{t('nav.chats')}</span>
                 </NavLink>
               )}
               {session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use') && (

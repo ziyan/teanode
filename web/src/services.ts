@@ -59,7 +59,7 @@ export function homePath(session: Session): string {
       : '/manage/server/setup'
   if (session.services?.isMailboxEnabled !== false && session.userId && hasPermission(session.permissions, 'mail:read'))
     return '/mailbox'
-  if (session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use')) return '/agent'
+  if (session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use')) return '/chat'
   if (session.services?.isCalendarEnabled && hasPermission(session.permissions, 'calendar:use')) return '/calendar'
   if (session.services?.isRemindersEnabled && hasPermission(session.permissions, 'calendar:use')) return '/reminders'
   if (session.services?.isContactsEnabled && hasPermission(session.permissions, 'contacts:use')) return '/contacts'

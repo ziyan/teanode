@@ -249,6 +249,15 @@ export function PriorityIcon(props: IconProps) {
   )
 }
 
+// ChatIcon marks the chats: a speech bubble, as the iPhone's side menu has.
+export function ChatIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.7-.8L3 20.5l1.6-4.8a8.4 8.4 0 0 1-.6-4.2A8.5 8.5 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5z" />
+    </Icon>
+  )
+}
+
 // SparkIcon marks the agent: what acts on the person's behalf.
 export function SparkIcon(props: IconProps) {
   return (
