@@ -131,6 +131,33 @@ function AccountAlbumsPage() {
         </button>
       </PhotoToolbar>
 
+      {albums.loading && !albums.data ? (
+        <Loading />
+      ) : list.length === 0 ? (
+        <SettingsEmpty>{t('photos.emptyAlbums')}</SettingsEmpty>
+      ) : (
+        <>
+          <AlbumSection
+            headingId="photo-albums-own"
+            heading={hasOtherSections ? t('photos.albumsOwn') : null}
+            albums={ownAlbums}
+            emptyText={hasOtherSections ? t('photos.albumsOwnEmpty') : null}
+          />
+          <AlbumSection
+            headingId="photo-albums-circles"
+            heading={t('photos.albumsCircles')}
+            hint={t('photos.albumsCirclesHint')}
+            albums={circleAlbums}
+          />
+          <AlbumSection
+            headingId="photo-albums-shared"
+            heading={t('photos.albumsShared')}
+            hint={t('photos.albumsSharedHint')}
+            albums={sharedAlbums}
+          />
+        </>
+      )}
+
       {suggested.length > 0 && (
         <section className="photo-suggestions" aria-labelledby="photo-suggestions-heading">
           <h2 id="photo-suggestions-heading" className="photo-section-heading">
@@ -182,33 +209,6 @@ function AccountAlbumsPage() {
             ))}
           </ul>
         </section>
-      )}
-
-      {albums.loading && !albums.data ? (
-        <Loading />
-      ) : list.length === 0 ? (
-        <SettingsEmpty>{t('photos.emptyAlbums')}</SettingsEmpty>
-      ) : (
-        <>
-          <AlbumSection
-            headingId="photo-albums-own"
-            heading={hasOtherSections ? t('photos.albumsOwn') : null}
-            albums={ownAlbums}
-            emptyText={hasOtherSections ? t('photos.albumsOwnEmpty') : null}
-          />
-          <AlbumSection
-            headingId="photo-albums-circles"
-            heading={t('photos.albumsCircles')}
-            hint={t('photos.albumsCirclesHint')}
-            albums={circleAlbums}
-          />
-          <AlbumSection
-            headingId="photo-albums-shared"
-            heading={t('photos.albumsShared')}
-            hint={t('photos.albumsSharedHint')}
-            albums={sharedAlbums}
-          />
-        </>
       )}
 
       {isNaming && (
