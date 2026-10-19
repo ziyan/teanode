@@ -175,13 +175,6 @@ enum LocationText {
         return distance(meters)
     }
 
-    /// "At Home since 14:05", for the visit in progress.
-    static func current(_ visit: PlaceVisit) -> String {
-        let name = visit.place.shownName
-        if let arrived = visit.arrivedDate { return String(localized: "At \(name) since \(time(arrived))") }
-        return String(localized: "At \(name)")
-    }
-
     static func distance(_ meters: Double) -> String {
         Measurement(value: meters, unit: UnitLength.meters).formatted(.measurement(width: .abbreviated, usage: .road))
     }
