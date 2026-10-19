@@ -457,6 +457,7 @@ struct ReachRow: View {
             if let address { openURL(address) }
         } label: {
             Label(text, systemImage: systemImage)
+                .actionColor()
         }
         .contextMenu {
             Button("Copy", systemImage: "doc.on.doc") {

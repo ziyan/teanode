@@ -1514,6 +1514,7 @@ struct EvidenceRecordRow: View {
                     : (record.recordTitle.isEmpty ? KnowledgeRecordWords.kind(record.recordKind) : record.recordTitle),
                 systemImage: KnowledgeRecordKinds.symbol(record.recordKind)
             )
+            .actionColor()
             .font(.footnote)
         }
         .disabled(!record.canOpen)

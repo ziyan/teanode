@@ -3413,6 +3413,7 @@ private struct ProviderSignInSection: View {
                     Button("Copy", systemImage: "doc.on.doc") {
                         UIPasteboard.general.string = waiting.userCode
                     }
+                    .actionColor()
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
                 }

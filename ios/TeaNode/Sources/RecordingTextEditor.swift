@@ -128,7 +128,7 @@ struct RecordingTextHistoryScreen: View {
                         Text(Duration.milliseconds(correction.passageStartMS).formatted(.time(pattern: .hourMinuteSecond)))
                             .font(.caption).foregroundStyle(.secondary)
                         Text(correction.correctedTranscriptText).textSelection(.enabled)
-                        if correction.isRemoved { Label("Correction removed", systemImage: "arrow.uturn.backward").font(.caption) }
+                        if correction.isRemoved { Label("Correction removed", systemImage: "arrow.uturn.backward").foregroundStyle(.primary).font(.caption) }
                         DisclosureGroup("Original transcript") { Text(correction.originalTranscriptText).textSelection(.enabled) }
                         if !correction.isRemoved {
                             Button("Remove text correction", role: .destructive) { selectedCorrection = correction }.disabled(isResetting)

@@ -13,7 +13,10 @@
 // grey while it cannot be pressed), a destructive button's
 // `.actionColor(isDestructive: true)` after its tint, and any other label
 // `.foregroundStyle(.primary)`, the color of the words beside it. A row is
-// a label whose nearest container is a Section, Form or List.
+// a label whose nearest container is a Section, Form or List, looking
+// through the stacks that lay a row out (a label in an HStack beside a
+// count is still the row's), or a label in the body of a view named
+// `...Row`, which a list shows as one.
 //
 //   node ios/scripts/check-button-colors.mjs         lists them
 //   node ios/scripts/check-button-colors.mjs --fix   colors each
@@ -199,13 +202,20 @@ function containerOf(code, start) {
     // A section's header and footer are grey words under the rows, not one.
     if (/\b(header|footer):\s*$/.test(before)) return 'header'
     const words = before.match(/([A-Za-z_.]+)\s*(\((?:[^()]|\([^()]*\))*\))?\s*(?:[a-z]+:\s*)?$/)
-    if (words && containerPattern.test(words[1])) return words[1]
-    if (/-> some View\s*$|var body: some View\s*$/.test(before)) return null
+    // A stack inside a row lays the row out; what holds the stack decides.
+    if (words && containerPattern.test(words[1]) && !stackContainers.has(words[1])) return words[1]
+    if (/var body: some View\s*$/.test(before)) {
+      // The body of a view made to be a list's row is a row.
+      const viewName = code.slice(0, index).match(/struct\s+([A-Za-z]+)\s*:\s*View\s*\{(?![\s\S]*\bstruct\s+[A-Za-z]+\s*:)/)
+      return viewName && /Row$/.test(viewName[1]) ? 'Section' : null
+    }
+    if (/-> some View\s*$/.test(before)) return null
     index--
   }
   return null
 }
 const rowContainers = new Set(['Section', 'Form', 'List'])
+const stackContainers = new Set(['HStack', 'VStack', 'LazyVStack'])
 
 // expressionEnd returns where the call that starts at `start` ends: its
 // argument list, then its trailing closures.
@@ -267,7 +277,9 @@ function controlOf(code, start) {
       index = closeIndex
     }
     const call = head.match(/([A-Za-z]+)\s*(\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))?\s*$/)
-    if (call && !/^(if|else|in|let|var)$/.test(call[1])) return { name: call[1], start: headStart + call.index }
+    // A stack lays out a control's label; the control is further out.
+    if (call && !/^(if|else|in|let|var)$/.test(call[1]) && !stackContainers.has(call[1])) return { name: call[1], start: headStart + call.index }
+    if (call && stackContainers.has(call[1])) index = headStart + call.index
     index--
   }
   return null

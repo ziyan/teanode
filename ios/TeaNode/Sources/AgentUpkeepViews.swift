@@ -471,6 +471,7 @@ struct DeclinedFilesView: View {
                                     Task { await preview(file) }
                                 } label: {
                                     Label(file.name, systemImage: "doc")
+                                        .actionColor()
                                 }
                             }
                             if !file.placeText.isEmpty {

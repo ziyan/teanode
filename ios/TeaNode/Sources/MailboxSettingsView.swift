@@ -154,6 +154,7 @@ struct MailFoldersView: View {
                 let folder = row.folder
                 HStack {
                     Label(MailNames.folder(folder), systemImage: MailNames.symbol(folder))
+                        .foregroundStyle(.primary)
                         .padding(.leading, CGFloat(min(row.depth, 3)) * 16)
                     Spacer()
                     if folder.pinnedAt != nil {

@@ -79,6 +79,7 @@ struct LocationAddressScreen: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Label("Keep this address as typed", systemImage: "text.cursor")
+                                .actionColor()
                             Text(verbatim: searchedWords)
                                 .font(.subheadline)
                                 .foregroundStyle(Color(.secondaryLabel))

@@ -423,6 +423,7 @@ struct ComposeView: View {
                     ForEach(model.carried, id: \.index) { file in
                         HStack {
                             Label(file.filename.isEmpty ? String(localized: "Attachment") : file.filename, systemImage: "paperclip")
+                                .foregroundStyle(.primary)
                             Spacer()
                             Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
                                 .font(.footnote)

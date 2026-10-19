@@ -584,6 +584,7 @@ struct SettingsForm: View {
                                 // badge on the link itself is drawn after the chevron.
                                 HStack {
                                     Label("Circles", systemImage: "person.2")
+                                        .foregroundStyle(.primary)
                                     Spacer()
                                     if openCircleInvitationCount > 0 {
                                         Text(openCircleInvitationCount, format: .number)
@@ -864,6 +865,7 @@ struct PhotoBackupSettingsRow: View {
     var body: some View {
         HStack {
             Label("Photo backup", systemImage: "icloud.and.arrow.up")
+                .foregroundStyle(.primary)
             Spacer()
             statusText
                 .foregroundStyle(.secondary)

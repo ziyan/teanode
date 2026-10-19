@@ -218,6 +218,7 @@ struct RecordingSpeakersScreen: View {
                             }
                         } label: {
                             Label("Play reference passage", systemImage: "play")
+                                .actionColor()
                         }
                     }.swipeActions { Button("Remove voice reference", role: .destructive) { Task { await removeReference(reference) } } }
                 }

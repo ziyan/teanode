@@ -510,6 +510,7 @@ struct RecordingDetailsSheet: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Label(model.mediaTitle(media), systemImage: media.originalContentType.hasPrefix("video/") ? "video" : "waveform")
+                                        .actionColor()
                                     Text(
                                         media.recordingUploadState == "complete"
                                             ? String(localized: "Ready to play") : String(localized: "Upload pending")
