@@ -5951,6 +5951,7 @@ export const zh: Catalog = {
   'location.day': '日期',
   'location.allDays': '所有日期',
   'location.showDay': '显示 {day} 的路线',
+  'location.dayMap': '地图',
   'location.timeRange': '{from} 至 {until}',
   'location.timeSince': '{from}起',
   'location.timeUntil': '到 {until}',

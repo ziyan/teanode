@@ -6262,6 +6262,7 @@ export const en = {
   'location.day': 'Day',
   'location.allDays': 'All days',
   'location.showDay': 'Show the path of {day}',
+  'location.dayMap': 'Map',
   'location.timeRange': '{from} to {until}',
   'location.timeSince': 'since {from}',
   'location.timeUntil': 'until {until}',

@@ -19205,24 +19205,25 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: var(--space-3);
 }
 
+/* A day's name, and at its end the button that draws the day's path on the
+   map, as the iPhone's day heading does. */
 .location-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   margin: var(--space-4) 0 var(--space-2);
 }
 
-/* The name of a day that chooses it. A heading first, so it is drawn as one
-   and not as a button. */
-.location-day-button {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-weight: 600;
-  color: inherit;
-  text-align: left;
+.location-day-head h4 {
+  margin: 0;
 }
 
-.location-day-button:hover:not(:disabled) {
-  text-decoration: underline;
+.location-day-head .button-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
 }
 
 .location-credit {

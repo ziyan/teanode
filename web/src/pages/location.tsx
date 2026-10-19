@@ -6,7 +6,7 @@ import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { MoreIcon, PencilIcon } from '../components/icons'
+import { MapIcon, MoreIcon, PencilIcon } from '../components/icons'
 import { isLocationPermissionGranted, readFreshBrowserLocation } from '../components/browserLocation'
 import { LocationAddressChooser } from '../components/locationAddressChooser'
 import { LocationCheckInDialog } from '../components/locationCheckIn'
@@ -808,20 +808,20 @@ function LocationContent({ userId }: { userId: string }) {
             return (
               <Fragment key={visit.id}>
                 {isFirstOfDay && key && (
-                  <h4 className="location-day-head">
-                    {dayKey === key ? (
-                      dayFormat.format(parseDayKey(key) ?? new Date())
-                    ) : (
+                  <div className="location-day-head">
+                    <h4>{dayFormat.format(parseDayKey(key) ?? new Date())}</h4>
+                    {dayKey !== key && (
                       <button
                         type="button"
-                        className="location-day-button"
+                        className="button-quiet"
                         aria-label={t('location.showDay', { day: dayFormat.format(parseDayKey(key) ?? new Date()) })}
                         onClick={() => selectDay(key)}
                       >
-                        {dayFormat.format(parseDayKey(key) ?? new Date())}
+                        <MapIcon size={14} />
+                        {t('location.dayMap')}
                       </button>
                     )}
-                  </h4>
+                  </div>
                 )}
                 <button
                   type="button"

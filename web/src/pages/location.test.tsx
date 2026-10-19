@@ -456,6 +456,19 @@ it('does not read the day on a timer, only when the page or the viewed person as
   await waitFor(() => expect(calls('ListLocationPoints')).toHaveLength(2))
 })
 
+it("draws a day's path from the Map button on its heading", async () => {
+  answerWith({ visits: [visit()] })
+  renderAt('/location')
+  await screen.findByText('Fixture Park')
+  // Every day is listed and no path is read until a day is chosen.
+  expect(calls('ListLocationPoints')).toHaveLength(0)
+
+  fireEvent.click(screen.getByRole('button', { name: /^Show the path of / }))
+  await waitFor(() => expect(calls('ListLocationPoints')).toHaveLength(1))
+  // The chosen day's heading has no button: its path is the one drawn.
+  expect(screen.queryByRole('button', { name: /^Show the path of / })).toBeNull()
+})
+
 it('erases the selected day, or everything, with the sentence that says what stays', async () => {
   answerWith({ visits: [visit()] })
   renderAt('/location?day=2030-03-05')

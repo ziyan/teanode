@@ -6177,6 +6177,7 @@ export const ja: Catalog = {
   'location.day': '日付',
   'location.allDays': 'すべての日',
   'location.showDay': '{day}の経路を表示',
+  'location.dayMap': '地図',
   'location.timeRange': '{from}から{until}',
   'location.timeSince': '{from}から',
   'location.timeUntil': '{until}まで',
