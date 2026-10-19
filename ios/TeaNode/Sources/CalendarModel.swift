@@ -373,8 +373,14 @@ struct EventDraft: Identifiable {
     /// another. Nil until the calendars are read.
     var calendarId: String?
 
-    /// The repeat choices the editor offers; any other rule is kept as it is.
-    static let repeats = ["", "FREQ=DAILY", "FREQ=WEEKLY", "FREQ=MONTHLY", "FREQ=YEARLY"]
+    /// What the repeat is read against: the day it starts, the zone its days
+    /// are counted in (the calendar's own, as the change below sends) and
+    /// whether it is a whole-day event.
+    func repeatContext(in calendar: AgentCalendar?) -> CalendarRepeat.Context {
+        let zoneName = calendar?.timezone.flatMap { $0.isEmpty ? nil : $0 } ?? TimeZone.current.identifier
+        return CalendarRepeat.Context(
+            startDay: CalendarDay(containing: startsAt, in: .current), timeZone: TimeZone(identifier: zoneName) ?? .current, isAllDay: isAllDay)
+    }
 
     init(startingAt start: Date) {
         startsAt = start
@@ -442,3 +448,17 @@ struct EventDraft: Identifiable {
         return CalendarChange(operation: "save", summary: summary, variables: variables)
     }
 }
+
+#if DEBUG
+    extension EventDraft {
+        /// The event the Custom repeat screenshots open: a standup on each
+        /// weekday, so the screen shows Monday to Friday chosen.
+        static var demoWeekdayStandup: EventDraft {
+            let morning = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
+            var draft = EventDraft(startingAt: morning)
+            draft.summary = "Team standup"
+            draft.recurrence = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
+            return draft
+        }
+    }
+#endif

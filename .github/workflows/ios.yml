@@ -535,6 +535,10 @@ jobs:
             shoot "$calendar_screen-dark" dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
             shoot "$calendar_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
           done
+          # An event on each weekday, with its Custom repeat screen open.
+          shoot calendar-repeat-custom-light light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-repeat-custom
+          shoot calendar-repeat-custom-dark dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-repeat-custom
+          shoot calendar-repeat-custom-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-repeat-custom
           # Pages other people shared: the list by owner, and one page read only.
           for knowledge_screen in knowledge-shared knowledge-shared-page; do
             shoot "$knowledge_screen-light" light large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen "$knowledge_screen"
