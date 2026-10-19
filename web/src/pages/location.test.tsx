@@ -1132,6 +1132,23 @@ it('takes a place nobody has out of the address', async () => {
   await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('/location?tab=places&day=2030-03-05'))
 })
 
+it("ends a visit's photo window where the server counted its photos", async () => {
+  answerWith({
+    visits: [
+      visit({
+        departedAt: null,
+        durationSeconds: 0,
+        photoCount: 1,
+        photos: [photoOf('photo-1')],
+        photosTakenBefore: '2030-03-05T11:00:00Z',
+      }),
+    ],
+  })
+  renderAt('/location')
+  const link = await screen.findByRole('link', { name: /^Photo taken during the visit/ })
+  expect(link.getAttribute('href')).toContain('before=2030-03-05T11%3A00%3A00.000Z')
+})
+
 it('ends the photo window of an open visit at one moment per answer, not at every render', async () => {
   answerWith({
     visits: [

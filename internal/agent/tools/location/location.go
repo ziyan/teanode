@@ -38,7 +38,7 @@ func init() {
 			{
 				Name: "location_visits", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
 				Description: "Where the person has been: their visits, newest first, each with the place, when they arrived and left and how long the visit lasted. " +
-					"Their own visits say 'photo_count', how many photos they took during the visit; the photo tool's list with taken_after set to the row's arrived and taken_before set to its left shows them; for a visit still going ('left' is 'still there') leave taken_before out. " +
+					"Their own visits say 'photo_count', how many photos they took during the visit; the photo tool's list with taken_after set to the row's arrived and taken_before set to its photos_taken_before shows exactly them. " +
 					"Give a date range for 'last weekend' or 'this week', 'place_id' for one place, or 'place_label' for the places they call home, work and so on. " +
 					"Use it to answer what they did and how long they were there, and to plan a weekend that is not a repeat of the last one: read their recent visits, then search for places that are not among them. " +
 					"With 'person', the visits of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
@@ -56,7 +56,7 @@ func init() {
 			{
 				Name: "location_path", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
 				Description: "The path of one day: how many positions the person's phone reported, the first and last time, how far they travelled in kilometers (the distances between one position and the next, added up), " +
-					"and up to 60 of the positions, evenly spread, each with its time, latitude_degrees and longitude_degrees; 'truncated' says some were left out. " +
+					"and up to 60 of the positions, evenly spread, each with its time, latitude_degrees and longitude_degrees; 'is_truncated' says some were left out. " +
 					"'day' is YYYY-MM-DD in the person's own time zone, today by default. Use it for where they went through the day between their visits. " +
 					"With 'person', the path of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
 				Parameters: tools.Object(map[string]any{

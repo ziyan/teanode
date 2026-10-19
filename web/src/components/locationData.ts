@@ -37,6 +37,9 @@ export type PlaceVisit = {
   // person's visit and when they cannot use Photos.
   photoCount?: number | null
   photos?: { id: string; smallPreviewUrl: string }[] | null
+  // When the photos counted end: the departure, the latest position of a
+  // visit left without one, or the time of the answer.
+  photosTakenBefore?: string | null
 }
 
 export type LocationView = {

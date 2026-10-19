@@ -18,7 +18,7 @@ const (
 	pointFields       = `latitudeDegrees longitudeDegrees accuracyMeters measuredAt locationSource`
 	placeFields       = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText isAddressTyped visitCount lastVisitAt`
 	visitFields       = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
-	listedVisitFields = visitFields + ` photoCount`
+	listedVisitFields = visitFields + ` photoCount photosTakenBefore`
 	foundFields       = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
 	documentGetLocation = `query ($userId: String) {
@@ -99,11 +99,12 @@ type placeData struct {
 }
 
 type visitData struct {
-	ArrivedAt       *time.Time `json:"arrivedAt"`
-	DepartedAt      *time.Time `json:"departedAt"`
-	DurationSeconds *int       `json:"durationSeconds"`
-	Place           *placeData `json:"place"`
-	PhotoCount      *int       `json:"photoCount"`
+	ArrivedAt         *time.Time `json:"arrivedAt"`
+	DepartedAt        *time.Time `json:"departedAt"`
+	DurationSeconds   *int       `json:"durationSeconds"`
+	Place             *placeData `json:"place"`
+	PhotoCount        *int       `json:"photoCount"`
+	PhotosTakenBefore *time.Time `json:"photosTakenBefore"`
 }
 
 type locationData struct {
@@ -512,6 +513,7 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		if visit.PhotoCount != nil && *visit.PhotoCount > 0 {
 			row["photo_count"] = *visit.PhotoCount
+			row["photos_taken_before"] = here.timeText(visit.PhotosTakenBefore)
 		}
 		rows = append(rows, row)
 	}
@@ -523,6 +525,9 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 // pathPointsMost is how many positions of a day's path the answer lists; a
 // day holds far more, so the rest are left out evenly.
 const pathPointsMost = 60
+
+// pathReadHours is how much of a day one reading of its positions covers.
+const pathReadHours = 6
 
 type pathArguments struct {
 	Day    string `json:"day"`
@@ -550,21 +555,31 @@ func runPath(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	from := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, here.where)
 	until := from.AddDate(0, 0, 1)
-	variables := map[string]any{"from": from.UTC().Format(time.RFC3339), "until": until.UTC().Format(time.RFC3339)}
 	userId, err := here.personId(ctx, arguments.Person, true)
 	if err != nil {
 		return nil, err
 	}
-	if userId != nil {
-		variables["userId"] = *userId
+	// The day is read a quarter at a time: the server answers at most a few
+	// thousand positions at once, and a phone recording every few seconds
+	// passes that in a day.
+	var points []pointData
+	for start := from; start.Before(until); start = start.Add(pathReadHours * time.Hour) {
+		end := start.Add(pathReadHours * time.Hour)
+		if end.After(until) {
+			end = until
+		}
+		variables := map[string]any{"from": start.UTC().Format(time.RFC3339), "until": end.UTC().Format(time.RFC3339)}
+		if userId != nil {
+			variables["userId"] = *userId
+		}
+		var result struct {
+			ListLocationPoints []pointData `json:"ListLocationPoints"`
+		}
+		if err := here.operations.Execute(ctx, documentListPoints, variables, &result); err != nil {
+			return nil, err
+		}
+		points = append(points, result.ListLocationPoints...)
 	}
-	var result struct {
-		ListLocationPoints []pointData `json:"ListLocationPoints"`
-	}
-	if err := here.operations.Execute(ctx, documentListPoints, variables, &result); err != nil {
-		return nil, err
-	}
-	points := result.ListLocationPoints
 	answer := map[string]any{"timezone": here.where.String(), "day": from.Format("2006-01-02"), "point_count": len(points)}
 	if len(points) > 0 {
 		var travelledMeters float64
@@ -583,7 +598,7 @@ func runPath(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			})
 		}
 		answer["points"] = sampled
-		answer["truncated"] = len(points) > pathPointsMost
+		answer["is_truncated"] = len(points) > pathPointsMost
 	}
 	return untrusted(tools.JSONResult(answer))
 }

@@ -137,7 +137,7 @@
                 var duration = "null"
                 if let arrivedAt, let departedAt { duration = String(Int(departedAt.timeIntervalSince(arrivedAt))) }
                 return #"""
-                    {"id":"\#(id)","arrivedAt":\#(arrived),"departedAt":\#(departed),"durationSeconds":\#(duration),"latitudeDegrees":\#(place.latitudeDegrees),"longitudeDegrees":\#(place.longitudeDegrees),"accuracyMeters":30,"visitSource":"visit","photoCount":\#(photoIds.isEmpty ? "null" : String(photoCount)),"photos":\#(photoIds.isEmpty ? "null" : DemoServer.demoVisitPhotosJSON(photoIds)),"place":\#(place.json)}
+                    {"id":"\#(id)","arrivedAt":\#(arrived),"departedAt":\#(departed),"durationSeconds":\#(duration),"latitudeDegrees":\#(place.latitudeDegrees),"longitudeDegrees":\#(place.longitudeDegrees),"accuracyMeters":30,"visitSource":"visit","photoCount":\#(photoIds.isEmpty ? "null" : String(photoCount)),"photos":\#(photoIds.isEmpty ? "null" : DemoServer.demoVisitPhotosJSON(photoIds)),"photosTakenBefore":\#(photoIds.isEmpty ? "null" : departed),"place":\#(place.json)}
                     """#
             }
         }

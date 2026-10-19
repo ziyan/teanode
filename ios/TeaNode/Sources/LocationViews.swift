@@ -477,7 +477,7 @@ struct VisitPhotoStrip: View {
         Button {
             // A visit still going on has no end yet, so its photos run to now.
             guard let arrival = visit.arrivedDate else { return }
-            app.openedPhotoFilter = PhotoFilter(takenAfter: arrival, takenBefore: visit.departedDate ?? Date())
+            app.openedPhotoFilter = PhotoFilter(takenAfter: arrival, takenBefore: visit.photosTakenBeforeDate ?? visit.departedDate ?? Date())
         } label: {
             HStack(spacing: 4) {
                 ForEach(photos) { photo in

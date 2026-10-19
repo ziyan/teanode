@@ -282,7 +282,7 @@ level for another person). The dashboard and the iPhone draw it with the Map
 button on each day heading, `teanode location path` prints it on the command
 line, and the agent's `location_path` answers the number of positions, the first
 and last time, the distance travelled in kilometers and up to 60 positions
-evenly spread, with `truncated` saying some were left out.
+evenly spread, with `is_truncated` saying some were left out.
 
 ## Photos taken during a visit
 

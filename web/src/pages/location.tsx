@@ -80,7 +80,7 @@ const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, 
   $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel,
     offset: $offset, limitCount: $limitCount) {
-    placeVisits { ${VISIT_FIELDS} photoCount photos { id smallPreviewUrl } } nextOffset
+    placeVisits { ${VISIT_FIELDS} photoCount photosTakenBefore photos { id smallPreviewUrl } } nextOffset
   }
 }`
 // The place an address names, when it is not on the loaded page.
@@ -649,7 +649,7 @@ function LocationContent({ userId }: { userId: string }) {
     if (!visit.photoCount || photos.length === 0 || !visit.arrivedAt) return null
     const windowQuery = new URLSearchParams({
       after: new Date(visit.arrivedAt).toISOString(),
-      before: new Date(visit.departedAt ?? openVisitEndedAt).toISOString(),
+      before: new Date(visit.photosTakenBefore ?? visit.departedAt ?? openVisitEndedAt).toISOString(),
     }).toString()
     const title = placeTitle(visit.place, t)
     const moreCount = visit.photoCount - photos.length

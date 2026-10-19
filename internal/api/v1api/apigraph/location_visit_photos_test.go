@@ -38,7 +38,7 @@ func (self *locationWorld) takePhoto(t *testing.T, user *models.User, clientPhot
 	return photoId
 }
 
-const visitPhotosQuery = `query { ListLocationVisits%s { placeVisits { id photoCount photos { id takenAt } } } }`
+const visitPhotosQuery = `query { ListLocationVisits%s { placeVisits { id photoCount photosTakenBefore photos { id takenAt } } } }`
 
 func firstVisitOf(t *testing.T, data map[string]any) map[string]any {
 	t.Helper()
@@ -128,5 +128,9 @@ func TestOpenVisitThePersonLeftEndsAtTheirLatestPosition(t *testing.T) {
 	visit := firstVisitOf(t, world.call(t, world.ada, fmt.Sprintf(visitPhotosQuery, "")))
 	if visit["photoCount"] != float64(1) {
 		t.Errorf("only the photo taken before the latest position counts: %v", visit)
+	}
+	// Photos opened over the visit end where the count did.
+	if ended, _ := time.Parse(time.RFC3339, fmt.Sprint(visit["photosTakenBefore"])); !ended.Equal(latest) {
+		t.Errorf("the photos end at the latest position, not now: %v", visit["photosTakenBefore"])
 	}
 }

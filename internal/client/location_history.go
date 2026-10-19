@@ -58,8 +58,9 @@ type PlaceVisit struct {
 	// PhotoCount and Photos are the person's own photos taken during the
 	// visit (the first few, earliest first). Both are nil for somebody
 	// else's visits, without Photos, and for a visit with no arrival.
-	PhotoCount *int          `json:"photoCount"`
-	Photos     []*VisitPhoto `json:"photos"`
+	PhotoCount        *int          `json:"photoCount"`
+	Photos            []*VisitPhoto `json:"photos"`
+	PhotosTakenBefore *time.Time    `json:"photosTakenBefore"`
 }
 
 // VisitPhoto is one picture shown under a visit.
@@ -133,7 +134,7 @@ const (
     place { ` + placeFields + ` }`
 
 	listedVisitFields = placeVisitFields + `
-    photoCount photos { id smallPreviewUrl takenAt }`
+    photoCount photosTakenBefore photos { id smallPreviewUrl takenAt }`
 
 	foundPlaceFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 

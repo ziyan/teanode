@@ -550,20 +550,45 @@ func TestFindAddressGivesWhatSavePlaceTakes(t *testing.T) {
 	}
 }
 
-// A day's path is read for the day in the person's zone, and answers the
-// count, the first and last time, the distance and a sample of at most 60.
-func TestPathAnswersADayWithASample(t *testing.T) {
-	var points []string
-	for index := 0; index < 100; index++ {
-		measuredAt := time.Date(2026, 10, 17, 8, 0, 0, 0, time.UTC).Add(time.Duration(index) * time.Minute)
-		points = append(points, fmt.Sprintf(`{"latitudeDegrees":%v,"longitudeDegrees":-75,"accuracyMeters":10,"measuredAt":%q,"locationSource":"phone"}`, 40+float64(index)*0.001, measuredAt.Format(time.RFC3339)))
+// dayOfPositions answers ListLocationPoints with the positions inside the
+// window asked, as the server does, and keeps each window asked.
+type dayOfPositions struct {
+	routing
+	measuredTimes []time.Time
+	positions     []string
+	asked         [][2]string
+}
+
+func (self *dayOfPositions) Execute(ctx context.Context, document string, variables map[string]any, result any) error {
+	from, _ := time.Parse(time.RFC3339, variables["from"].(string))
+	until, _ := time.Parse(time.RFC3339, variables["until"].(string))
+	self.asked = append(self.asked, [2]string{variables["from"].(string), variables["until"].(string)})
+	var inside []string
+	for index, measuredAt := range self.measuredTimes {
+		if !measuredAt.Before(from) && measuredAt.Before(until) {
+			inside = append(inside, self.positions[index])
+		}
 	}
-	operations := &routing{answers: map[string]string{"ListLocationPoints": "[" + strings.Join(points, ",") + "]"}}
+	self.answers = map[string]string{"ListLocationPoints": "[" + strings.Join(inside, ",") + "]"}
+	return self.routing.Execute(ctx, document, variables, result)
+}
+
+// A day's path is read for the day in the person's zone, a quarter at a time,
+// and answers the count, the first and last time, the distance and a sample
+// of at most 60.
+func TestPathAnswersADayWithASample(t *testing.T) {
+	operations := &dayOfPositions{}
+	for index := 0; index < 100; index++ {
+		// From 04:00 for 100 minutes, across the first quarter's end.
+		measuredAt := time.Date(2026, 10, 17, 4, 50, 0, 0, time.UTC).Add(time.Duration(index) * time.Minute)
+		operations.measuredTimes = append(operations.measuredTimes, measuredAt)
+		operations.positions = append(operations.positions, fmt.Sprintf(`{"latitudeDegrees":%v,"longitudeDegrees":-75,"accuracyMeters":10,"measuredAt":%q,"locationSource":"phone"}`, 40+float64(index)*0.001, measuredAt.Format(time.RFC3339)))
+	}
 	answer, result, err := act(t, runOf(operations), "path", `{"day":"2026-10-17"}`, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer["point_count"] != float64(100) || answer["first_at"] != "08:00:00" || answer["last_at"] != "09:39:00" || answer["truncated"] != true {
+	if answer["point_count"] != float64(100) || answer["first_at"] != "04:50:00" || answer["last_at"] != "06:29:00" || answer["is_truncated"] != true {
 		t.Errorf("the day: %v", answer)
 	}
 	// 99 steps of 0.001 degrees of latitude are about 11 kilometers.
@@ -571,12 +596,17 @@ func TestPathAnswersADayWithASample(t *testing.T) {
 		t.Errorf("the distance: %v", kilometers)
 	}
 	sampled := answer["points"].([]any)
-	if len(sampled) != 60 || sampled[0].(map[string]any)["time"] != "08:00:00" || sampled[59].(map[string]any)["time"] != "09:39:00" {
+	if len(sampled) != 60 || sampled[0].(map[string]any)["time"] != "04:50:00" || sampled[59].(map[string]any)["time"] != "06:29:00" {
 		t.Errorf("the sample keeps the first and the last: %d %v", len(sampled), sampled)
 	}
-	sent := operations.sent["ListLocationPoints"]
-	if sent["from"] != "2026-10-17T00:00:00Z" || sent["until"] != "2026-10-18T00:00:00Z" {
-		t.Errorf("what was sent: %v", sent)
+	wanted := [][2]string{
+		{"2026-10-17T00:00:00Z", "2026-10-17T06:00:00Z"},
+		{"2026-10-17T06:00:00Z", "2026-10-17T12:00:00Z"},
+		{"2026-10-17T12:00:00Z", "2026-10-17T18:00:00Z"},
+		{"2026-10-17T18:00:00Z", "2026-10-18T00:00:00Z"},
+	}
+	if fmt.Sprint(operations.asked) != fmt.Sprint(wanted) {
+		t.Errorf("what was asked: %v", operations.asked)
 	}
 	if !result.Untrusted {
 		t.Error("a path is the person's data")

@@ -232,6 +232,13 @@ type PlaceVisitView struct {
 	// and the caller may use Photos, and for a visit with no arrival.
 	PhotoCount *int             `json:"photoCount"`
 	Photos     *[]*models.Photo `json:"photos"`
+
+	// PhotosTakenBefore is when the photos counted end: the departure, the
+	// person's latest position for a visit they left without a departure
+	// being seen, or the time of the answer for a visit still going. A
+	// window opened on Photos ends there, so it holds the photos counted.
+	// Null when PhotoCount is.
+	PhotosTakenBefore *time.Time `json:"photosTakenBefore"`
 }
 
 // PlaceVisitPageView is a page of visits.
@@ -925,6 +932,7 @@ func (self *graph) attachVisitPhotos(ctx context.Context, principal *api.Princip
 		}
 	}
 	windows := make([]db.VisitPhotoWindow, 0, len(views))
+	endedAtOf := make(map[string]time.Time, len(views))
 	for index, view := range views {
 		if view.ArrivedAt == nil {
 			continue
@@ -936,6 +944,7 @@ func (self *graph) attachVisitPhotos(ctx context.Context, principal *api.Princip
 			endedAt = latest.MeasuredAt
 		}
 		windows = append(windows, db.VisitPhotoWindow{VisitID: view.ID, StartedAt: *view.ArrivedAt, EndedAt: endedAt})
+		endedAtOf[view.ID] = endedAt
 	}
 	if len(windows) == 0 {
 		return nil
@@ -951,7 +960,8 @@ func (self *graph) attachVisitPhotos(ctx context.Context, principal *api.Princip
 			continue
 		}
 		photoCount := visitPhotos.PhotoCount
-		view.PhotoCount, view.Photos = &photoCount, &visitPhotos.Photos
+		endedAt := endedAtOf[view.ID]
+		view.PhotoCount, view.Photos, view.PhotosTakenBefore = &photoCount, &visitPhotos.Photos, &endedAt
 		shown = append(shown, visitPhotos.Photos...)
 	}
 	if len(shown) == 0 {

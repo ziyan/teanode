@@ -154,9 +154,14 @@ public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
     public let photoCount: Int?
     /// The first few of them, earliest first; nil when `photoCount` is.
     public let photos: [Photo]?
+    /// RFC 3339: when the photos counted end (the departure, the person's
+    /// latest position for a visit they left without one being seen, or the
+    /// time of the answer); nil when `photoCount` is.
+    public let photosTakenBefore: String?
 
     public var arrivedDate: Date? { ServerTime.date(arrivedAt) }
     public var departedDate: Date? { ServerTime.date(departedAt) }
+    public var photosTakenBeforeDate: Date? { ServerTime.date(photosTakenBefore) }
 
     /// Whether the person is still there, as far as the server knows.
     public var isOpen: Bool { departedAt == nil }
@@ -174,7 +179,8 @@ public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         id: String, place: LocationPlace, arrivedAt: String?, departedAt: String?, durationSeconds: Double? = nil, latitudeDegrees: Double,
-        longitudeDegrees: Double, accuracyMeters: Double = 0, visitSource: String = "visit", photoCount: Int? = nil, photos: [Photo]? = nil
+        longitudeDegrees: Double, accuracyMeters: Double = 0, visitSource: String = "visit", photoCount: Int? = nil, photos: [Photo]? = nil,
+        photosTakenBefore: String? = nil
     ) {
         self.id = id
         self.place = place
@@ -187,6 +193,7 @@ public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
         self.visitSource = visitSource
         self.photoCount = photoCount
         self.photos = photos
+        self.photosTakenBefore = photosTakenBefore
     }
 }
 
@@ -475,7 +482,7 @@ extension Documents {
         """
     static let placeVisitFields = """
         id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
-        photoCount
+        photoCount photosTakenBefore
         photos {
           id createdAt photoKind takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel
           originalFilename isFavorite isScreenshot photoProcessingState trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl
