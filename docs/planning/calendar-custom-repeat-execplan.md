@@ -1,4 +1,4 @@
-# Custom repeats in the calendar
+# Custom repeats in the calendar, and the brief's days
 
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds. It follows `~/.claude/PLAN.md`.
 
@@ -13,6 +13,7 @@ To see it working: open an event on the dashboard or the iPhone, choose Repeat, 
 - [ ] Milestone 1: the rule, read and written, on both clients, with tests.
 - [ ] Milestone 2: the dashboard editor.
 - [ ] Milestone 3: the iPhone editor, its demo and screenshots.
+- [ ] Milestone 4: the morning brief's days use the same day picker, on the iPhone and the dashboard.
 - [ ] Docs and the agent tool's description; review until a round finds nothing.
 
 ## Surprises & Discoveries
@@ -49,6 +50,8 @@ Milestone 2, the dashboard. Add "Every weekday" and "Custom…" to the Repeat se
 Milestone 3, the iPhone. Add "Every weekday" and "Custom" to the Repeat picker. Custom pushes a screen like the iPhone Calendar's (the person's reference): a section with Frequency (a menu picker) and Every (a stepper row: "1 week"), the sentence as that section's footer, then for weekly a section of the seven days as rows with a checkmark (the system's trailing checkmark, tint colored, as the Calendar shows), for monthly "Each day 15" versus "On the second Tuesday" (two pickers), and an End Repeat section (Never, On date with a DatePicker, After with a stepper of times). The Repeat row shows the sentence's short form when custom. Demo data: a demo event with `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR`, and a `-TeaNodeScreen calendar-repeat-custom` that opens the Custom screen for it.
 
 Docs and parity. `docs/reference/command-line.md` (the `--repeat` flag) and the agent tool's `repeat` description get two examples (weekdays, every 2 weeks until a date) so a person and the agent write the same rules the editors do. The docs page for the calendar under `docs/subsystems/` (find it) says the editors offer Custom.
+
+Milestone 4, the morning brief's days. The person asked for the brief's schedule to work like the custom repeat, saying it has too many switches. On the iPhone, the brief's settings (`ios/TeaNode/Sources/AgentUpkeepViews.swift`, the section with "Send me a brief", which uses `WeekdayToggles(dayNumbers: $briefDayNumbers)` defined near line 2145 of the same file) show a time row and, at larger text sizes, seven switches, one a day. Replace `WeekdayToggles` with one row, "Days", whose value is the short summary ("Every day", "Weekdays", "Weekends", or the short names joined: "Mon, Wed, Fri", using `ScheduleWeekday` in the same file and the platform's list formatter), and which pushes a screen listing the seven days in the person's week order, each a row with the system's trailing checkmark when chosen, exactly as the Custom repeat's weekly days do. Build that list once, as a view both screens use (for example `WeekdayChecklist(dayNumbers:)`), and delete `WeekdayToggles`. A brief with no day chosen cannot be saved (the Save button is disabled, with the footer saying to choose a day). On the dashboard, the brief's settings (`web/src/pages/agent.tsx` near line 3226, the `agent.briefDays` field) take the days as typed text with the placeholder `1-5`; replace that input with the same seven weekday toggle buttons the Custom repeat dialog uses (one shared component), saving the same value the text did (find what `setDays` and the save send, and keep that value format, since the server and the agent read it). Add the `-TeaNodeScreen` demo screenshots for the brief days list next to the existing agent upkeep shots in `.github/workflows/ios.yml`.
 
 ## Concrete Steps
 
