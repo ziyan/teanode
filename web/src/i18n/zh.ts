@@ -6135,7 +6135,6 @@ export const zh: Catalog = {
     '会清除你在{day}的位置和到访记录，以及不再有任何到访、且你没有命名或加标签的地点。你命名或加了标签的地点会保留。助手已经从这一天了解到的内容，会一直留在它的记忆中，直到你将其删除。此操作无法撤销。',
   'location.filterAllLabels': '所有标签',
   'location.searchPlaces': '搜索地点',
-  'location.visitsNoMatch': '没有符合条件的到访记录。',
   'location.placesNoMatch': '没有符合条件的地点。',
   'location.placeVisits': '到访此地点的记录',
   'location.placeVisitsLatest': '显示最近的 {visitCount} 条。',

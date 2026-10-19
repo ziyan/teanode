@@ -6361,7 +6361,6 @@ export const ja: Catalog = {
     '{day}の位置と訪問、および訪問がなくなり名前もラベルも付けていない場所を消去します。名前またはラベルを付けた場所は残ります。エージェントがその日にすでに学んだことは、削除するまでエージェントの記憶に残ります。元に戻せません。',
   'location.filterAllLabels': 'すべてのラベル',
   'location.searchPlaces': '場所を検索',
-  'location.visitsNoMatch': '一致する訪問がありません。',
   'location.placesNoMatch': '一致する場所がありません。',
   'location.placeVisits': 'この場所への訪問',
   'location.placeVisitsLatest': '最新の{visitCount}件を表示しています。',

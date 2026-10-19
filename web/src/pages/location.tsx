@@ -80,9 +80,9 @@ const LIST_LINKED_MEMBERS = `query { ListCircles { members { userId linkedContac
 type LinkedCircle = { members: { userId: string; linkedContactId?: string | null }[] }
 const LOCATION_EVENTS = `subscription { LocationEvents { userId } }`
 const LIST_SHARED_LOCATIONS = `query { ListSharedLocations { ${PERSON_FIELDS} } }`
-const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String,
+const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String,
   $offset: Int, $limitCount: Int) {
-  ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel,
+  ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId,
     offset: $offset, limitCount: $limitCount) {
     placeVisits { ${VISIT_FIELDS} photoCount photosTakenBefore photos { id smallPreviewUrl } } nextOffset
   }
@@ -197,10 +197,9 @@ function LocationContent({ userId }: { userId: string }) {
   const dayKey = dayStart ? dayKeyOf(dayStart) : null
   const visitsPaging = usePageInAddress()
   const placesPaging = usePageInAddress({ pageParameter: 'placesPage', pageSizeParameter: 'placesRows' })
-  // The filters of the two lists, in the address with the page: a label for
-  // the visits, a label and some words for the places.
+  // The filters of the places, in the address with the page: a label and
+  // some words.
   const isKnownLabel = (value: string | null) => PLACE_LABELS.some((each) => each === value)
-  const visitsLabel = isKnownLabel(parameters.get('visitsLabel')) ? (parameters.get('visitsLabel') ?? '') : ''
   const placesLabel = isKnownLabel(parameters.get('placesLabel')) ? (parameters.get('placesLabel') ?? '') : ''
   const placesQuery = parameters.get('placesQuery') ?? ''
 
@@ -311,7 +310,6 @@ function LocationContent({ userId }: { userId: string }) {
   const visitsRequestKey = JSON.stringify([
     viewedUserId,
     range?.from ?? null,
-    visitsLabel,
     visitsPaging.offset,
     visitsPaging.pageSize,
   ])
@@ -325,7 +323,6 @@ function LocationContent({ userId }: { userId: string }) {
                 userId: viewedUserId,
                 from: range?.from ?? null,
                 until: range?.until ?? null,
-                placeLabel: visitsLabel || null,
                 offset: visitsPaging.offset,
                 limitCount: visitsPaging.pageSize,
               })
@@ -902,10 +899,6 @@ function LocationContent({ userId }: { userId: string }) {
                 {t('location.allDays')}
               </button>
             )}
-            <LabelFilter
-              value={visitsLabel}
-              onChange={(placeLabel) => changeParameters({ visitsLabel: placeLabel || null, page: null })}
-            />
           </div>
           <ErrorMessage error={visits.error} />
           {viewedPerson && !canReadHistory && <SettingsEmpty>{notSharedHistoryText}</SettingsEmpty>}
@@ -914,11 +907,9 @@ function LocationContent({ userId }: { userId: string }) {
           {canReadHistory && !visitPage && visits.loading && <Loading />}
           {visitPage && visitRows.length === 0 && (
             <SettingsEmpty>
-              {visitsLabel
-                ? t('location.visitsNoMatch')
-                : dayKey
-                  ? t('location.visitsEmptyDay')
-                  : t(isReadOnly ? 'location.personVisitsEmpty' : 'location.visitsEmpty')}
+              {dayKey
+                ? t('location.visitsEmptyDay')
+                : t(isReadOnly ? 'location.personVisitsEmpty' : 'location.visitsEmpty')}
             </SettingsEmpty>
           )}
           {visitRows.map((visit, index) => {

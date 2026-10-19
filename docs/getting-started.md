@@ -312,6 +312,18 @@ box, then **Message someone**. Every circle has a chat of its own.
   can share some categories (Activity, Sleep) with a circle. There is nothing
   to set up on the server; to keep it from a role, take `health:use` away from
   it on **Manage → People and access**.
+- **Location.** On from the first start: each person has a Location page in
+  the rail. The first time it is opened, **Set up Location** points to the
+  iPhone app, saves home and shares with a family circle, and **Not now** puts
+  it away. Only the iPhone app records where they go, once they turn on
+  **Record where I go** in Location's settings in the app. A person shares
+  where they are now, or that and their visits, with each circle, and the
+  agent answers where they went. Places are named from OpenStreetMap: the
+  server sends a new place's position to the OpenStreetMap Foundation's
+  Nominatim server unless `places.providerKind` names another, or is empty to
+  send nothing (see [subsystems/location.md](subsystems/location.md)). To keep
+  it from a role, take `location:use` away from it on **Manage → People and
+  access**.
 - **More domains.** Each gets its own signing key by default. If you would
   rather they all shared one, point `<selector>._domainkey` at the primary
   domain with a CNAME and the dashboard will show you the record to publish.
