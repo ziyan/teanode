@@ -139,7 +139,7 @@ func withGroupPictureAddresses(ownContactId string, groups ...*models.PhotoFaceG
 }
 
 // withGroupAccounts says, for each group named by a contact the caller linked
-// to somebody in their circles, who that is. The link is the caller's own note:
+// to somebody in their circles, who that is. Only the caller sees the link:
 // it is read through the caller's contacts only, and only while they still share
 // a circle with the person, so a group never shows an account its contact does
 // not say.

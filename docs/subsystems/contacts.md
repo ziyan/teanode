@@ -213,8 +213,8 @@ to the limit, and a card over it is refused with `507`.
 ## A contact that is a person in your circles
 
 A contact can say which account on this server it is: `contact.account_user_id`
-(migration 0246), chosen from the people the owner shares a circle with. It is
-the owner's own note. The person it names is never told and sees nothing of
+(migration 0246), chosen from the people the owner shares a circle with. Only
+the owner sees the link. The person it names is never told and sees nothing of
 it, no photos are shared with them, and address books are never shared, so the
 link is visible only to the owner.
 

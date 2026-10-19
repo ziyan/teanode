@@ -59,8 +59,8 @@ type AddressBookMutation interface {
 	// it is. Needs contacts:use.
 	RemoveContactPicture(ctx context.Context, arguments ContactArguments) (*ContactView, error)
 
-	// Say which person in the caller's circles a contact is, or take the link
-	// away (an empty accountUserId). The link is the caller's own note: the
+	// Link a contact to a person in the caller's circles, or take the link
+	// away (an empty accountUserId). Only the caller sees the link: the
 	// person is not told and sees nothing of it. Refused for the caller's own
 	// account and for somebody they share no circle with, and when another
 	// contact in the same address book is already that person. Needs

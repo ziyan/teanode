@@ -54,8 +54,8 @@ const GET = `query ($id: String!) {
 
 const DELETE = `mutation ($id: String!) { DeleteContact(id: $id) }`
 
-// The link to the person in the person's circles that a contact is. It is the
-// owner's own note: nobody is told, and an empty account takes the link off.
+// The link from a contact to a person in the owner's circles. Only the owner
+// sees it: nobody is told, and an empty account takes the link off.
 const SET_ACCOUNT = `
   mutation ($addressBookId: String!, $contactId: String!, $accountUserId: String) {
     SetContactAccount(addressBookId: $addressBookId, contactId: $contactId, accountUserId: $accountUserId) {
