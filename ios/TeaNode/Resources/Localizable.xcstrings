@@ -15109,22 +15109,6 @@
         }
       }
     },
-    "Discard this draft?": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この下書きを破棄しますか？"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "丢弃这份草稿？"
-          }
-        }
-      }
-    },
     "Disconnect": {
       "localizations": {
         "ja": {
@@ -46136,22 +46120,6 @@
         }
       }
     },
-    "What was written is gone.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "書いた内容は失われます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已写的内容会丢失。"
-          }
-        }
-      }
-    },
     "What will hold it": {
       "localizations": {
         "ja": {
@@ -70510,6 +70478,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "它们将进入新账户 %@。"
+          }
+        }
+      }
+    },
+    "Discard draft": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下書きを破棄"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "丢弃草稿"
+          }
+        }
+      }
+    },
+    "A discarded draft cannot be brought back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "破棄した下書きは元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "丢弃的草稿无法恢复。"
           }
         }
       }

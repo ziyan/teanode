@@ -340,7 +340,6 @@ struct ComposeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(AppModel.self) private var app
-    @State private var isConfirmingDiscard = false
     @State private var isConfirmingClose = false
 
     init(mail: MailModel, start: ComposeStart) {
@@ -469,17 +468,16 @@ struct ComposeView: View {
                                 dismiss()
                             }
                         }
-                        Button("Discard", role: .destructive) { isConfirmingDiscard = true }
-                    }
-                    .confirmationDialog("Discard this draft?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
-                        Button("Discard", role: .destructive) {
+                        // Choosing it here is the confirmation: a second dialog
+                        // asking again made discarding take two.
+                        Button("Discard draft", role: .destructive) {
                             Task {
                                 await model.discard()
                                 dismiss()
                             }
                         }
                     } message: {
-                        Text("What was written is gone.")
+                        Text("A discarded draft cannot be brought back.")
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {

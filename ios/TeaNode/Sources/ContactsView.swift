@@ -420,7 +420,7 @@ struct ContactDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit") { isEditing = true }
+                Button("Edit", systemImage: "pencil") { isEditing = true }
                     .disabled(contact == nil)
             }
         }
