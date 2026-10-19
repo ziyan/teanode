@@ -1682,6 +1682,8 @@ private enum AccessWords {
         case "calendar:use": String(localized: "Keep a calendar, and sync it to a device")
         case "circle:use": String(localized: "Make circles of people on this server, and join them")
         case "location:use": String(localized: "Record where you go, and share it")
+        case "photos:use": String(localized: "Keep a photo library, and back up a device to it")
+        case "health:use": String(localized: "Keep your Health data from the iPhone, and share some of it")
         case "agent:audit": String(localized: "See every person's agent: what it may reach, its usage and limits, never its content")
         case "agent:act": String(localized: "Read every person's agent conversations and runs, and speak to their agent as them")
         default: permissionKey

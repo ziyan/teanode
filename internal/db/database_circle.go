@@ -443,16 +443,22 @@ func deleteCircleRow(tx *gorm.DB, circleId string, memberIds []string) error {
 // nothing: they reach a person only through circle_member. Every kind of
 // share that can name a person is ended here, so leaving a circle has one
 // meaning whatever was shared, and so is what the two said they are to each
-// other.
+// other, and a contact the owner linked to the other's account.
 func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 	for _, userId := range userIds {
 		if err := endRelationshipsOutsideCircles(tx, userId); err != nil {
+			return err
+		}
+		if err := endContactAccountsOutsideCircles(tx, userId); err != nil {
 			return err
 		}
 		if err := endCalendarSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
 		if err := endLocationSharesOutsideCircles(tx, userId); err != nil {
+			return err
+		}
+		if err := endHealthSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
 		if err := endPageSharesOutsideCircles(tx, userId); err != nil {

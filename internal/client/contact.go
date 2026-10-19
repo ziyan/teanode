@@ -27,6 +27,32 @@ type Contact struct {
 	Note         string     `json:"note,omitempty"`
 	HasPhoto     bool       `json:"hasPhoto"`
 	Card         string     `json:"card,omitempty"`
+
+	// AccountUserID and Account say which person in the signed-in account's
+	// circles the contact is linked to, when it is and they still share a
+	// circle. Null otherwise.
+	AccountUserID *string         `json:"accountUserId"`
+	Account       *ContactAccount `json:"account"`
+}
+
+// ContactAccount is the person a contact is linked to, as the circles show
+// them.
+type ContactAccount struct {
+	UserID           string  `json:"userId"`
+	Username         string  `json:"username"`
+	Name             string  `json:"name"`
+	AvatarURL        *string `json:"avatarUrl"`
+	AvatarColorIndex int     `json:"avatarColorIndex"`
+}
+
+// ContactAccountSuggestion offers to link a contact to a person in the
+// circles, because the contact carries one of that person's mailbox addresses.
+// It never says which address.
+type ContactAccountSuggestion struct {
+	// AddressBookID is the book the contact is in.
+	AddressBookID string          `json:"addressBookId"`
+	Contact       *Contact        `json:"contact"`
+	Account       *ContactAccount `json:"account"`
 }
 
 // Address is one postal address on a contact. Written is the same thing on
@@ -44,9 +70,12 @@ type Address struct {
 const (
 	DocumentListAddressBooks = `query { ListAddressBooks { id name description contacts } }`
 
+	contactAccountSelection = `{ userId username name avatarUrl avatarColorIndex }`
+
 	DocumentListContacts = `query ($addressBookId: String!, $query: String, $first: Int) {
   ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
     id uid name organization emails phones hasPhoto addresses { written }
+    accountUserId account ` + contactAccountSelection + `
   }
 }`
 
@@ -54,6 +83,21 @@ const (
   GetContact(id: $id) {
     id uid etag name organization emails phones note hasPhoto card
     addresses { label street locality region postalCode country written }
+    accountUserId account ` + contactAccountSelection + `
+  }
+}`
+
+	DocumentSetContactAccount = `mutation ($addressBookId: String!, $contactId: String!, $accountUserId: String) {
+  SetContactAccount(addressBookId: $addressBookId, contactId: $contactId, accountUserId: $accountUserId) {
+    id uid name emails phones accountUserId account ` + contactAccountSelection + `
+  }
+}`
+
+	DocumentListContactAccountSuggestions = `query {
+  ListContactAccountSuggestions {
+    addressBookId
+    contact { id uid name organization emails phones }
+    account ` + contactAccountSelection + `
   }
 }`
 
@@ -184,4 +228,32 @@ func RemoveContactPicture(ctx context.Context, executor Executor, id string) (*C
 		return nil, err
 	}
 	return result.RemoveContactPicture, nil
+}
+
+// SetContactAccount links a contact to the person in the signed-in account's
+// circles it is, or takes the link away when accountUserId is empty.
+func SetContactAccount(ctx context.Context, executor Executor, addressBookId, contactId, accountUserId string) (*Contact, error) {
+	arguments := map[string]any{"addressBookId": addressBookId, "contactId": contactId, "accountUserId": nil}
+	if accountUserId != "" {
+		arguments["accountUserId"] = accountUserId
+	}
+	var result struct {
+		SetContactAccount *Contact `json:"SetContactAccount"`
+	}
+	if err := executor.Execute(ctx, DocumentSetContactAccount, arguments, &result); err != nil {
+		return nil, err
+	}
+	return result.SetContactAccount, nil
+}
+
+// ListContactAccountSuggestions are the contacts that look like people in the
+// circles, for the caller to confirm one by one.
+func ListContactAccountSuggestions(ctx context.Context, executor Executor) ([]*ContactAccountSuggestion, error) {
+	var result struct {
+		ListContactAccountSuggestions []*ContactAccountSuggestion `json:"ListContactAccountSuggestions"`
+	}
+	if err := executor.Execute(ctx, DocumentListContactAccountSuggestions, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListContactAccountSuggestions, nil
 }

@@ -387,6 +387,14 @@ struct PhotoPersonCell: View {
     var body: some View {
         VStack(spacing: 4) {
             FacePictureView(facePictureUrl: group.facePictureUrl, name: PhotoPersonWords.name(of: group), connection: connection)
+                .overlay(alignment: .bottomTrailing) {
+                    // The circle picture sits on the face, so a linked person is
+                    // no taller than one who is not.
+                    if let account = group.account, group.isInCircles {
+                        AvatarView(name: account.displayName, avatarUrl: account.avatarUrl, colorIndex: account.avatarColorIndex, size: 28)
+                            .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                    }
+                }
                 .padding(.bottom, 4)
             PhotoPersonNameText(name: PhotoPersonWords.name(of: group), isOwnContact: group.isOwnContact)
                 .font(.subheadline.weight(group.isNamed ? .semibold : .regular))
@@ -408,6 +416,7 @@ struct PhotoPersonCell: View {
         .opacity(group.isHidden ? 0.5 : 1)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(group.isInCircles ? Text("In your circles") : Text(verbatim: ""))
     }
 }
 
@@ -593,6 +602,15 @@ struct PhotoPersonScreen: View {
             VStack(spacing: 12) {
                 FacePictureView(facePictureUrl: current.facePictureUrl, name: PhotoPersonWords.name(of: current), connection: model.connection)
                     .frame(width: 96, height: 96)
+                if let account = current.account, current.isInCircles {
+                    HStack(spacing: 8) {
+                        AvatarView(name: account.displayName, avatarUrl: account.avatarUrl, colorIndex: account.avatarColorIndex, size: 24)
+                        Text("In your circles as \(account.displayName)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
                 if current.isHidden {
                     Label("Hidden from People", systemImage: "eye.slash")
                         .font(.subheadline)

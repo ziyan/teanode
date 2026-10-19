@@ -275,3 +275,81 @@ func TestRemovingAContactsPictureLeavesTheRestOfTheCard(test *testing.T) {
 		}
 	})
 }
+
+// A group named by a contact the owner linked to somebody in their circles
+// says who, and the photos of that account are the photos of the group; the
+// person it names asks for the same account and finds nothing of the owner's.
+func TestAGroupNamedByALinkedContactSaysWhoAndListsTheirPhotos(test *testing.T) {
+	world, ownerId, permissions := newFaceWorld(test, "linked-person-owner")
+	samId := world.person("linked-person-sam", models.PermissionPhotosUse, models.PermissionContactsUse)
+	world.circleOf("Home", ownerId, samId)
+	preview := facePictureJpeg(test)
+	groupId := world.groupOfPhotos(ownerId, "linked", preview, 3, 0)
+	otherGroupId := world.groupOfPhotos(ownerId, "unlinked", preview, 2, 90)
+	contactId := world.keepContact(ownerId, "Example Sam")
+	otherContactId := world.keepContact(ownerId, "Example Stranger")
+	var bookId string
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		books, err := transaction.ListAddressBooks(ownerId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		for _, book := range books {
+			if contact, _ := transaction.GetContact(book.ID, contactId); contact != nil {
+				bookId = book.ID
+			}
+		}
+	})
+
+	world.ask(ownerId, permissions, func(ctx context.Context) {
+		if _, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: groupId, ContactID: contactId}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := world.graph.NamePhotoFaceGroup(ctx, NamePhotoFaceGroupArguments{PhotoFaceGroupID: otherGroupId, ContactID: otherContactId}); err != nil {
+			test.Fatal(err)
+		}
+		// Before the link nothing is said, and the account lists nothing.
+		before, err := world.graph.ReadPhotoFaceGroup(ctx, PhotoFaceGroupArguments{PhotoFaceGroupID: groupId})
+		if err != nil || before.AccountUserID != nil || before.Account != nil {
+			test.Fatalf("%+v %v", before, err)
+		}
+		if photos, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AccountUserID: samId}); err != nil || len(photos) != 0 {
+			test.Fatalf("%v %v", photos, err)
+		}
+
+		if _, err := world.graph.SetContactAccount(ctx, SetContactAccountArguments{AddressBookID: bookId, ContactID: contactId, AccountUserID: samId}); err != nil {
+			test.Fatal(err)
+		}
+		groups, err := world.graph.ListPhotoFaceGroups(ctx, ListPhotoFaceGroupsArguments{})
+		if err != nil {
+			test.Fatal(err)
+		}
+		sawLinked, sawUnlinked := false, false
+		for _, group := range groups {
+			switch group.ID {
+			case groupId:
+				sawLinked = group.AccountUserID != nil && *group.AccountUserID == samId && group.Account != nil && group.Account.Username == "linked-person-sam"
+			case otherGroupId:
+				sawUnlinked = group.AccountUserID == nil && group.Account == nil
+			}
+		}
+		if !sawLinked || !sawUnlinked {
+			test.Fatalf("the linked group says who and the other does not: %+v", groups)
+		}
+		photos, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AccountUserID: samId})
+		if err != nil || len(photos) != 3 {
+			test.Fatalf("the photos of the linked account are the group's: %d %v", len(photos), err)
+		}
+		if count, err := world.graph.CountPhotos(ctx, ListPhotosArguments{AccountUserID: samId}); err != nil || count != 3 {
+			test.Fatalf("%d %v", count, err)
+		}
+	})
+
+	// Sam asking for the owner's account finds none of the owner's photos.
+	world.ask(samId, []models.Permission{models.PermissionPhotosUse, models.PermissionContactsUse}, func(ctx context.Context) {
+		photos, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AccountUserID: ownerId})
+		if err != nil || len(photos) != 0 {
+			test.Fatalf("the person named finds the owner's photos: %v %v", photos, err)
+		}
+	})
+}

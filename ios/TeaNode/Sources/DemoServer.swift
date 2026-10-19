@@ -43,6 +43,8 @@
                 answer = circlesAnswer
             } else if let locationAnswer = Self.locationAnswer(query: query, body: request.httpBody) {
                 answer = locationAnswer
+            } else if let healthAnswer = Self.healthAnswer(query: query, body: request.httpBody) {
+                answer = healthAnswer
             } else if query.contains("AgentServerUsage") {
                 answer = Self.serverUsage
             } else if query.contains("ReadRecordingLimits") {
@@ -133,7 +135,19 @@
             } else if query.contains("ListReminders") {
                 answer = #"{"data":{"ListReminders":[]}}"#
             } else if query.contains("ListAddressBooks") {
-                answer = #"{"data":{"ListAddressBooks":[{"id":"book","name":"Contacts","contacts":4}]}}"#
+                answer = #"{"data":{"ListAddressBooks":[{"id":"book","name":"Contacts","contacts":5}]}}"#
+            } else if query.contains("ListContactAccountSuggestions") {
+                // Alex's card has an address that is Alex's account: offered, never linked on its own.
+                answer = #"{"data":{"ListContactAccountSuggestions":[{"addressBookId":"book","contact":{"id":"alex","name":"Alex","organization":null,"emails":["alex@example.org"],"phones":[],"hasPhoto":false},"account":\#(Self.personJSON("alex"))}]}}"#
+            } else if query.contains("SetContactAccount") {
+                let variables = Self.requestVariables(request.httpBody)
+                let accountUserId = variables["accountUserId"] as? String ?? ""
+                let account = accountUserId.isEmpty ? "null" : Self.personJSON(accountUserId)
+                answer = #"{"data":{"SetContactAccount":{"id":"\#(variables["contactId"] as? String ?? "")","accountUserId":\#(accountUserId.isEmpty ? "null" : "\"" + accountUserId + "\""),"account":\#(account)}}}"#
+            } else if query.contains("GetContact(") {
+                // Sam's card is linked to Sam's account; the rest are not.
+                let contactId = Self.requestVariables(request.httpBody)["id"] as? String ?? "sam"
+                answer = Self.contactDetail(contactId)
             } else if query.contains("ListContacts") {
                 answer = Self.contacts
             } else if query.contains("SaveContact") {
@@ -567,10 +581,24 @@
             {"data":{"ListContacts":[
               {"id":"plumber","name":"The plumber","organization":null,"emails":["plumber@example.com"],"phones":["+1 555 0100"],"hasPhoto":false,"addresses":[]},
               {"id":"robin","name":"Robin","organization":null,"emails":["robin@example.com"],"phones":[],"hasPhoto":false,"addresses":[]},
+              {"id":"alex","name":"Alex","organization":null,"emails":["alex@example.org"],"phones":[],"hasPhoto":false,"addresses":[]},
               {"id":"sam","name":"Sam","organization":null,"emails":["sam@example.org"],"phones":["+1 555 0142"],"hasPhoto":false,"addresses":[]},
               {"id":"shop","name":null,"organization":null,"emails":["orders@bookshop.example"],"phones":[],"hasPhoto":false,"addresses":[]}
             ]}}
             """#
+
+        /// One contact as a read of the whole card answers: Sam's is linked to
+        /// Sam's account in the person's circles, and no other is.
+        static func contactDetail(_ contactId: String) -> String {
+            let isLinked = contactId == "sam"
+            let account = isLinked ? personJSON("sam") : "null"
+            let accountUserId = isLinked ? #""sam""# : "null"
+            let names = ["plumber": "The plumber", "robin": "Robin", "sam": "Sam", "alex": "Alex", "shop": "Orders"]
+            let name = names[contactId] ?? "Sam"
+            let email = isLinked ? "sam@example.org" : "\(contactId)@example.org"
+            return
+                #"{"data":{"GetContact":{"id":"\#(contactId)","name":"\#(name)","organization":null,"emails":["\#(email)"],"phones":[],"note":null,"hasPhoto":false,"addresses":[],"accountUserId":\#(accountUserId),"account":\#(account)}}}"#
+        }
 
         static let conversations = #"""
             {"data":{"ListAgentConversations":[
@@ -644,7 +672,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use","health:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 

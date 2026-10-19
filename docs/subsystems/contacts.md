@@ -210,6 +210,76 @@ A picture is why the megabyte limit on a card matters in practice. One
 photograph from a phone is around three hundred kilobytes; two would be close
 to the limit, and a card over it is refused with `507`.
 
+## A contact that is a person in your circles
+
+A contact can say which account on this server it is: `contact.account_user_id`
+(migration 0246), chosen from the people the owner shares a circle with. It is
+the owner's own note. The person it names is never told and sees nothing of
+it, no photos are shared with them, and address books are never shared, so the
+link is visible only to the owner.
+
+The link has one writer, `transaction.SetContactAccount`. `PutContact` names
+the columns it updates and leaves `account_user_id` out, so a vCard sync from a
+phone or an edit, both of which build the contact afresh from a card, keep it.
+A vCard has no field for it and none is invented, since that would put the link
+on every phone the book synchronizes to. `SetContactAccount` refuses, inside
+its own transaction, the owner's own account (the owner's own card stays "my
+card", `user.contact_id`), an account the owner shares no circle with, and an
+account another contact in the same book already is (a partial unique index on
+`addressbook_id, account_user_id`). An empty account clears the link. Two books
+of one person may each hold a contact for the same account; the agent and the
+photo filter read the first book, by its `created_at` then `id`
+(`FindContactByAccount`).
+
+A link lasts while the two share a circle. It is cleared in the transaction in
+which they stop sharing any (`endContactAccountsOutsideCircles`, called from
+`endSharesOutsideCircles`, in both directions: the person's contacts that point
+at someone they no longer share a circle with, and other people's contacts that
+point at the person), and every read checks it too, so a row the cleanup missed
+never shows. It does not come back when they share a circle again.
+
+It is lost when a card is deleted and put again, which a phone's CardDAV client
+may do, or moved to another book: the row is a new one. Suggestions offer it
+again.
+
+`ListContactAccountSuggestions` answers the owner's unlinked contacts whose
+email addresses include a mailbox address of an account they share a circle
+with (`AliasKindMailbox`, read by `loadMailboxAddresses`). An account's
+notification address (`User.Email`) is never matched: it is private profile
+data. The answer is pairs of a contact and an account and never says which
+address matched. Nothing is linked until the owner confirms.
+
+The surfaces say it the same way: `ContactView.accountUserId` and `account`
+(null unless linked and still sharing a circle), `SetContactAccount`,
+`ListContactAccountSuggestions`, `PhotoFaceGroup.accountUserId` and `account`,
+`ListPhotos` and `CountPhotos` with `accountUserId`,
+`CircleMember.linkedContactId` (the caller's own contact for that person, empty
+for everybody else's view), the agent's `contact_book` actions `link-account`
+(`person`, a username, or `account_user_id`) and `unlink-account` (both writes
+that tell nobody, so not outward) and its `person` rows, the photo tool's
+`person` on `list` and `person-photos`, and `teanode contact
+link|unlink|suggestions` and `teanode photo list --person`.
+
+The dashboard's address book and the iPhone's Contacts show the same
+suggestions at the top, "Contacts that may be people in your circles", each
+with Link and Not now. Not now is kept on each device (the browser, the
+iPhone) and is not synchronized: it writes nothing to the server, so the same
+suggestion can still show on another device. The agent's `contact_book` list
+answers `suggested_links`, each with `contact_id`, `contact_name`, `person` and
+`address_book_id` (and `address_book_name` when there are several books), which
+it offers and never acts on; `link-account` takes the same `address_book_id`.
+A contact id can be in more than one address book, so `address_book_id` that
+names a book the agent was not granted is an error, never the first granted
+book. `teanode contact suggestions` prints a table with CONTACT, IN YOUR
+CIRCLES AS, ADDRESS BOOK (only when there are several books) and TO CONFIRM,
+the `link` command that confirms it; `link` and `unlink` take `--address-book
+<id>` when the contact id is in more than one of your books, and refuse to
+guess. Suggestions skip an account that any contact in the same book (with or
+without email addresses) already is, since the link would be refused.
+The agent's situation adds "Their photos are found with the photo tool" to a
+relationship line only when the person may use photos and the linked contact
+names a group of faces, read with one query for all of them.
+
 ## Keeping a sender
 
 Somebody writes, and the person decides to keep them. That is an ordinary save

@@ -32,6 +32,13 @@ type AddressBookQuery interface {
 
 	// One contact, with its card. Needs contacts:use.
 	GetContact(ctx context.Context, arguments ContactArguments) (*ContactView, error)
+
+	// The caller's contacts that have no link and whose email addresses
+	// include a mailbox address of somebody the caller shares a circle with,
+	// each with that person. Never says which address matched. A suggestion
+	// is only a suggestion: nothing is linked until SetContactAccount is
+	// called. Needs contacts:use.
+	ListContactAccountSuggestions(ctx context.Context) ([]*ContactAccountSuggestionView, error)
 }
 
 // AddressBookMutation changes it.
@@ -51,6 +58,14 @@ type AddressBookMutation interface {
 	// rest of the card as it was. A contact with no picture is answered as
 	// it is. Needs contacts:use.
 	RemoveContactPicture(ctx context.Context, arguments ContactArguments) (*ContactView, error)
+
+	// Say which person in the caller's circles a contact is, or take the link
+	// away (an empty accountUserId). The link is the caller's own note: the
+	// person is not told and sees nothing of it. Refused for the caller's own
+	// account and for somebody they share no circle with, and when another
+	// contact in the same address book is already that person. Needs
+	// contacts:use.
+	SetContactAccount(ctx context.Context, arguments SetContactAccountArguments) (*ContactView, error)
 
 	// Rename an address book or change what it says about itself. Needs
 	// contacts:use.
@@ -90,6 +105,22 @@ type ContactView struct {
 	// is several hundred kilobytes and a listing of them would be a page
 	// that cost megabytes to draw a column of faces.
 	HasPhoto bool `json:"hasPhoto"`
+
+	// AccountUserID is the account on this server that the caller linked this
+	// contact to, and Account that person as ListCirclePeople shows them. Both
+	// are null unless the contact is linked and the caller still shares a
+	// circle with that account.
+	AccountUserID *string       `json:"accountUserId"`
+	Account       *CircleMember `json:"account"`
+}
+
+// ContactAccountSuggestionView offers a link for the caller to confirm.
+type ContactAccountSuggestionView struct {
+	// AddressBookID is the book the contact is in, which SetContactAccount
+	// takes with the contact's id.
+	AddressBookID string        `json:"addressBookId"`
+	Contact       *ContactView  `json:"contact"`
+	Account       *CircleMember `json:"account"`
 }
 
 // AddressView is one postal address, in the components a card keeps it in.
@@ -117,6 +148,14 @@ type ListContactsArguments struct {
 
 type ContactArguments struct {
 	ID string `json:"id"`
+}
+
+type SetContactAccountArguments struct {
+	AddressBookID string `json:"addressBookId"`
+	ContactID     string `json:"contactId"`
+
+	// The account to link, or empty or null to take the link away.
+	AccountUserID string `json:"accountUserId" graphapi:"nullable"`
 }
 
 type SaveContactArguments struct {
@@ -253,15 +292,119 @@ func (self *graph) ListContacts(ctx context.Context, arguments ListContactsArgum
 		view.Note = ""
 		views = append(views, view)
 	}
+	if err := self.attachContactAccounts(ctx, book.UserID, found, views); err != nil {
+		return nil, err
+	}
 	return views, nil
 }
 
 func (self *graph) GetContact(ctx context.Context, arguments ContactArguments) (*ContactView, error) {
-	contact, _, err := self.ownContact(ctx, arguments.ID)
+	contact, book, err := self.ownContact(ctx, arguments.ID)
 	if err != nil {
 		return nil, err
 	}
-	return contactView(contact, true), nil
+	return self.contactViewWithAccount(ctx, book.UserID, contact, true)
+}
+
+// attachContactAccounts fills in the linked person of each view, reading the
+// caller's circle people once and only when some contact is linked.
+func (self *graph) attachContactAccounts(ctx context.Context, ownerUserId string, contactList []*models.Contact, views []*ContactView) error {
+	var people map[string]*CircleMember
+	for index, contact := range contactList {
+		if contact.AccountUserID == "" {
+			continue
+		}
+		if people == nil {
+			var err error
+			if people, err = self.circlePeopleOf(ctx, ownerUserId); err != nil {
+				return err
+			}
+		}
+		// A contact is linked only to somebody the owner shares a circle
+		// with, and the database reads the link only while that holds, so a
+		// person missing here is one who left in this very moment.
+		if account := people[contact.AccountUserID]; account != nil {
+			accountUserId := contact.AccountUserID
+			views[index].AccountUserID = &accountUserId
+			views[index].Account = account
+		}
+	}
+	return nil
+}
+
+// circlePeopleOf is everybody the person shares a circle with, by account id,
+// as the same type ListCirclePeople answers.
+func (self *graph) circlePeopleOf(ctx context.Context, userId string) (map[string]*CircleMember, error) {
+	people, err := self.transaction(ctx).ListCirclePeople(userId)
+	if err != nil {
+		return nil, err
+	}
+	byUserId := make(map[string]*CircleMember, len(people))
+	for _, person := range people {
+		byUserId[person.UserID] = describeCircleMember(person, userId, nil, nil)
+	}
+	return byUserId, nil
+}
+
+func (self *graph) contactViewWithAccount(ctx context.Context, ownerUserId string, contact *models.Contact, withCard bool) (*ContactView, error) {
+	view := contactView(contact, withCard)
+	if err := self.attachContactAccounts(ctx, ownerUserId, []*models.Contact{contact}, []*ContactView{view}); err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+func (self *graph) ListContactAccountSuggestions(ctx context.Context) ([]*ContactAccountSuggestionView, error) {
+	principal, err := self.requireAddressBookPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	found, err := self.transaction(ctx).ListContactAccountSuggestions(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	people, err := self.circlePeopleOf(ctx, principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	suggestions := make([]*ContactAccountSuggestionView, 0, len(found))
+	for _, suggestion := range found {
+		account := people[suggestion.AccountUserID]
+		if account == nil {
+			continue
+		}
+		// The card is left out, as in a list. The contact is not linked yet,
+		// so it carries no account of its own.
+		view := contactView(suggestion.Contact, false)
+		view.Note = ""
+		suggestions = append(suggestions, &ContactAccountSuggestionView{AddressBookID: suggestion.Contact.AddressBookID, Contact: view, Account: account})
+	}
+	return suggestions, nil
+}
+
+func (self *graph) SetContactAccount(ctx context.Context, arguments SetContactAccountArguments) (*ContactView, error) {
+	book, err := self.requireOwnAddressBook(ctx, arguments.AddressBookID)
+	if err != nil {
+		return nil, err
+	}
+	contactId := strings.TrimSpace(arguments.ContactID)
+	if err := self.transaction(ctx).SetContactAccount(book.ID, contactId, strings.TrimSpace(arguments.AccountUserID)); err != nil {
+		switch {
+		case errors.Is(err, db.ErrInvalidArguments):
+			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		case errors.Is(err, db.ErrAlreadyExists):
+			return nil, fmt.Errorf("%w: %s", api.ErrAlreadyExists, err)
+		}
+		return nil, translateError(err)
+	}
+	contact, err := self.transaction(ctx).GetContact(book.ID, contactId)
+	if err != nil {
+		return nil, err
+	}
+	if contact == nil {
+		return nil, api.ErrNotFound
+	}
+	return self.contactViewWithAccount(ctx, book.UserID, contact, true)
 }
 
 // ownContact is one contact, if it is in a book belonging to the caller.
@@ -316,7 +459,7 @@ func (self *graph) SaveContact(ctx context.Context, arguments SaveContactArgumen
 	if err != nil {
 		return nil, translateError(err)
 	}
-	return contactView(kept, true), nil
+	return self.contactViewWithAccount(ctx, principal.User.ID, kept, true)
 }
 
 func (self *graph) DeleteContact(ctx context.Context, arguments ContactArguments) (bool, error) {
@@ -339,7 +482,7 @@ func (self *graph) RemoveContactPicture(ctx context.Context, arguments ContactAr
 	if err != nil {
 		return nil, translateError(err)
 	}
-	return contactView(kept, true), nil
+	return self.contactViewWithAccount(ctx, principal.User.ID, kept, true)
 }
 
 func (self *graph) SaveAddressBook(ctx context.Context, arguments SaveAddressBookArguments) (*AddressBookView, error) {

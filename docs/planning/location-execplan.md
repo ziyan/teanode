@@ -303,9 +303,8 @@ Acceptance: a photo taken at the person's home reads "Home" with a map pinned th
 
 ## Concrete Steps
 
-Work in the clone, never in the main checkout, which another session uses:
+Work in a clone of its own, never in a checkout another session uses:
 
-    cd ~/.cache/claude-tmp/teanode-location
     git status            # branch location, made from origin/design/circles-and-chats
 
 The server's tests need Docker for PostgreSQL:

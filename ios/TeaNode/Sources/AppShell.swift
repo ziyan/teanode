@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode the side menu leads to, as the
 /// dashboard's sidebar does.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, goals, ideas, mail, calendar, contacts, photos, location, knowledge, finance, recordings, coding, settings
+    case agent, goals, ideas, mail, calendar, contacts, photos, location, health, knowledge, finance, recordings, coding, settings
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .mail: String(localized: "Mail")
         case .calendar: String(localized: "Calendar")
         case .location: String(localized: "Location")
+        case .health: HealthWords.title
         case .contacts: String(localized: "Contacts")
         case .photos: String(localized: "Photos")
         case .knowledge: String(localized: "Knowledge")
@@ -36,6 +37,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .mail: "envelope"
         case .calendar: "calendar"
         case .location: "location"
+        case .health: "heart.text.square"
         case .contacts: "person"
         case .photos: "photo.on.rectangle"
         case .knowledge: "brain"
@@ -157,6 +159,123 @@ struct MainView: View {
     }
 
     var body: some View {
+        // In two parts: as one chain of modifiers the body was more than the
+        // compiler would type-check in reasonable time.
+        panel
+            .onChange(of: app.services) {
+                // Location and Coding are judged once the permissions and the computers
+                // have been read, not by services.
+                if section != .location, section != .health, section != .coding, !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
+            }
+            .onChange(of: mail.currentMailboxId) {
+                if let inbox = mail.folder(kind: "inbox") { mailPlace = .folder(inbox.id) }
+            }
+            // Initially too: a notification of another account asks for its
+            // conversation as the app is drawn anew for that account.
+            .onChange(of: app.openedConversationId, initial: true) { _, conversationId in
+                guard let conversationId else { return }
+                app.openedConversationId = nil
+                section = .agent
+                isMenuOpen = false
+                // An empty id is the main conversation; for another, the kind is
+                // learned when the conversation loads.
+                conversation = conversationId.isEmpty ? nil : AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil)
+            }
+            .onChange(of: app.askingAbout) { _, reference in
+                if reference != nil { section = .agent }
+            }
+            .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
+                if knowledgePath != nil { section = .knowledge }
+            }
+            .onChange(of: app.openedSharedKnowledge) { _, link in
+                if link != nil { section = .knowledge }
+            }
+            .onChange(of: app.openedMailItemId) { _, itemId in
+                if itemId != nil { section = .mail }
+            }
+            .onChange(of: app.openedContactId) { _, contactId in
+                if contactId != nil { section = .contacts }
+            }
+            .onChange(of: app.openedPhotoPerson) { _, person in
+                guard person != nil else { return }
+                // Photos takes the request when it is drawn; when it cannot be shown the request ends here.
+                if app.isSectionAvailable(.photos) {
+                    section = .photos
+                    isMenuOpen = false
+                } else {
+                    app.openedPhotoPerson = nil
+                }
+            }
+            .onChange(of: app.openedSection) { _, opened in
+                guard let opened else { return }
+                app.openedSection = nil
+                section = opened
+                isMenuOpen = false
+            }
+            .onChange(of: app.openedPhotoFilter) { _, photoFilter in
+                guard let photoFilter else { return }
+                app.openedPhotoFilter = nil
+                photos.section = .library
+                photos.photoFilter = photoFilter
+                section = .photos
+                isMenuOpen = false
+            }
+            .onChange(of: app.openedFinancePart) { _, part in
+                guard let part else { return }
+                app.openedFinancePart = nil
+                financePart = part
+            }
+            .sheet(isPresented: Bindable(app).isShowingMailPrograms) {
+                NavigationStack {
+                    if let mailboxId = mail.mailbox?.id {
+                        MailAppPasswordsView(mail: mail, mailboxId: mailboxId)
+                            .toolbar {
+                                ToolbarItem(placement: .confirmationAction) {
+                                    Button("Done") { app.isShowingMailPrograms = false }
+                                }
+                            }
+                    } else {
+                        ContentUnavailableView("No mailbox", systemImage: "envelope", description: Text("This account has no mailbox to set up on the phone."))
+                    }
+                }
+                .environment(mail)
+            }
+            .onChange(of: app.composingTo) { _, address in
+                guard let address else { return }
+                app.composingTo = nil
+                composing = ComposeStart(kind: .new, to: address)
+            }
+            .sheet(isPresented: Bindable(app).isAddingAccount) {
+                ConnectView(isAdding: true)
+            }
+            .alert(
+                "TeaNode",
+                isPresented: Bindable(app).isShowingOpenedLinkText,
+                presenting: app.openedLinkText
+            ) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { text in
+                Text(text)
+            }
+            // While the conversation is on screen the person is here, and
+            // notifications that would tell them what they see are held back.
+            // Elsewhere in the app they are away from it, so what the agent says
+            // first still reaches them, as a banner over the app. A chat is held
+            // back only while that chat is the one on screen, so the report
+            // names the conversation, and is made again when it changes.
+            .task(id: "\(scenePhase)-\(section)-\(conversation?.id ?? "")") {
+                await refreshPresence()
+            }
+            // Which computers run herdr is asked in a task of its own, so a slow
+            // computer never holds up the mail above.
+            .task(id: "\(scenePhase)-\(app.account?.accountKey ?? "")") {
+                await refreshCodingPresenceSlowly()
+            }
+    }
+
+    /// The side panel and its screen, with what is set up when they first
+    /// appear.
+    private var panel: some View {
         SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail && section != .location) {
             SideMenu(
                 connection: connection, mail: mail, photos: photos, section: $section, conversation: $conversation, mailPlace: $mailPlace,
@@ -233,105 +352,6 @@ struct MainView: View {
                 mailPlace = .folder(inbox.id)
             }
         }
-        .onChange(of: app.services) {
-            // Location and Coding are judged once the permissions and the computers
-            // have been read, not by services.
-            if section != .location, section != .coding, !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
-        }
-        .onChange(of: mail.currentMailboxId) {
-            if let inbox = mail.folder(kind: "inbox") { mailPlace = .folder(inbox.id) }
-        }
-        // Initially too: a notification of another account asks for its
-        // conversation as the app is drawn anew for that account.
-        .onChange(of: app.openedConversationId, initial: true) { _, conversationId in
-            guard let conversationId else { return }
-            app.openedConversationId = nil
-            section = .agent
-            isMenuOpen = false
-            // An empty id is the main conversation; for another, the kind is
-            // learned when the conversation loads.
-            conversation = conversationId.isEmpty ? nil : AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil)
-        }
-        .onChange(of: app.askingAbout) { _, reference in
-            if reference != nil { section = .agent }
-        }
-        .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
-            if knowledgePath != nil { section = .knowledge }
-        }
-        .onChange(of: app.openedSharedKnowledge) { _, link in
-            if link != nil { section = .knowledge }
-        }
-        .onChange(of: app.openedMailItemId) { _, itemId in
-            if itemId != nil { section = .mail }
-        }
-        .onChange(of: app.openedContactId) { _, contactId in
-            if contactId != nil { section = .contacts }
-        }
-        .onChange(of: app.openedSection) { _, opened in
-            guard let opened else { return }
-            app.openedSection = nil
-            section = opened
-            isMenuOpen = false
-        }
-        .onChange(of: app.openedPhotoFilter) { _, photoFilter in
-            guard let photoFilter else { return }
-            app.openedPhotoFilter = nil
-            photos.section = .library
-            photos.photoFilter = photoFilter
-            section = .photos
-            isMenuOpen = false
-        }
-        .onChange(of: app.openedFinancePart) { _, part in
-            guard let part else { return }
-            app.openedFinancePart = nil
-            financePart = part
-        }
-        .sheet(isPresented: Bindable(app).isShowingMailPrograms) {
-            NavigationStack {
-                if let mailboxId = mail.mailbox?.id {
-                    MailAppPasswordsView(mail: mail, mailboxId: mailboxId)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { app.isShowingMailPrograms = false }
-                            }
-                        }
-                } else {
-                    ContentUnavailableView("No mailbox", systemImage: "envelope", description: Text("This account has no mailbox to set up on the phone."))
-                }
-            }
-            .environment(mail)
-        }
-        .onChange(of: app.composingTo) { _, address in
-            guard let address else { return }
-            app.composingTo = nil
-            composing = ComposeStart(kind: .new, to: address)
-        }
-        .sheet(isPresented: Bindable(app).isAddingAccount) {
-            ConnectView(isAdding: true)
-        }
-        .alert(
-            "TeaNode",
-            isPresented: Bindable(app).isShowingOpenedLinkText,
-            presenting: app.openedLinkText
-        ) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { text in
-            Text(text)
-        }
-        // While the conversation is on screen the person is here, and
-        // notifications that would tell them what they see are held back.
-        // Elsewhere in the app they are away from it, so what the agent says
-        // first still reaches them, as a banner over the app. A chat is held
-        // back only while that chat is the one on screen, so the report
-        // names the conversation, and is made again when it changes.
-        .task(id: "\(scenePhase)-\(section)-\(conversation?.id ?? "")") {
-            await refreshPresence()
-        }
-        // Which computers run herdr is asked in a task of its own, so a slow
-        // computer never holds up the mail above.
-        .task(id: "\(scenePhase)-\(app.account?.accountKey ?? "")") {
-            await refreshCodingPresenceSlowly()
-        }
     }
 
     /// Asks at launch, when the app comes to the front and when the account
@@ -396,6 +416,18 @@ struct MainView: View {
                 LocationNotAllowedView()
                     .toolbar { MenuButton() }
             }
+        } else if section == .health, !app.hasReadPermissions {
+            // Whether the account may use Health is read with the chats, as
+            // Location's is.
+            NavigationStack {
+                ServicesLoadingView(isWaitingForPermissions: true)
+                    .toolbar { MenuButton() }
+            }
+        } else if section == .health, !app.canUseHealth {
+            NavigationStack {
+                HealthNotAllowedView()
+                    .toolbar { MenuButton() }
+            }
         } else if !app.isSectionAvailable(section) {
             NavigationStack {
                 ServiceOffView(section: section, connection: connection)
@@ -439,6 +471,8 @@ struct MainView: View {
             CalendarScreen(connection: connection, username: app.account?.username ?? "")
         case .location:
             LocationScreen(connection: connection, segment: $locationSegment)
+        case .health:
+            HealthScreen(connection: connection)
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:

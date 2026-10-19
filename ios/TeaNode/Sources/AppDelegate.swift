@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // or iOS relaunched it for a visit, a significant change or a place
         // being entered: events go only to a manager that exists then.
         LocationRecorder.shared.launch()
+        // The history task registered, and the observers HealthKit wakes the
+        // app through made, for the same two reasons.
+        HealthSync.shared.launch()
         return true
     }
 

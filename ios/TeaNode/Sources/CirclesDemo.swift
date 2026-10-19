@@ -150,7 +150,13 @@
             let person = demoPerson(userId)
             let relationship = demoRelationship(userId)
             return
-                #"{"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"memberRole":"\#(memberRole)","joinedAt":"2026-09-01T09:00:00Z","relationshipKind":"\#(relationship.relationshipKind)","relationshipTermGender":"\#(relationship.termGender)","relationshipWord":"\#(relationship.word)"}"#
+                #"{"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"memberRole":"\#(memberRole)","joinedAt":"2026-09-01T09:00:00Z","relationshipKind":"\#(relationship.relationshipKind)","relationshipTermGender":"\#(relationship.termGender)","relationshipWord":"\#(relationship.word)","linkedContactId":"\#(demoLinkedContactId(userId))"}"#
+        }
+
+        /// The demo person's own contact that is this circle member: Sam's card.
+        /// Empty for the rest, as the server says it.
+        static func demoLinkedContactId(_ userId: String) -> String {
+            userId == "sam" ? "sam" : ""
         }
 
         /// What a demo person is to Robin: only Sam is anything, Robin's mother,
@@ -199,7 +205,7 @@
             let person = demoPerson(userId)
             let chosen = demoRelationshipTerms.first { $0.term == term } ?? demoRelationshipTerms[0]
             return
-                #"{"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"memberRole":"","joinedAt":"2026-09-01T09:00:00Z","relationshipKind":"\#(chosen.relationshipKind)","relationshipTermGender":"\#(chosen.termGender)","relationshipWord":"\#(chosen.word)"}"#
+                #"{"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"memberRole":"","joinedAt":"2026-09-01T09:00:00Z","relationshipKind":"\#(chosen.relationshipKind)","relationshipTermGender":"\#(chosen.termGender)","relationshipWord":"\#(chosen.word)","linkedContactId":"\#(demoLinkedContactId(userId))"}"#
         }
 
         /// The invitation to the hiking group, waiting for the person's answer.

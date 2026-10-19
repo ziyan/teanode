@@ -86,6 +86,26 @@ func NewContactCommand() *cli.Command {
 				Action:    runContactBookRemovePicture,
 			},
 			{
+				Name:      "link",
+				Usage:     "say a contact is somebody you share a circle with; only you know, they are not told",
+				ArgsUsage: "<contact id> <username>",
+				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "address-book", Usage: "the address book the contact is in, when its id is in more than one of yours"}},
+				Action:    runContactBookLink,
+			},
+			{
+				Name:      "unlink",
+				Usage:     "take back the note that a contact is somebody in your circles",
+				ArgsUsage: "<contact id>",
+				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "address-book", Usage: "the address book the contact is in, when its id is in more than one of yours"}},
+				Action:    runContactBookUnlink,
+			},
+			{
+				Name:   "suggestions",
+				Usage:  "contacts that carry a mailbox address of somebody you share a circle with; 'contact link' confirms one",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runContactBookSuggestions,
+			},
+			{
 				Name:      "me",
 				Usage:     "say which contact is you, so your agent knows your own addresses; with no id, say who it thinks you are",
 				ArgsUsage: "[id]",
@@ -182,6 +202,9 @@ func runContactBookShow(ctx context.Context, command *cli.Command) error {
 	}
 	if contact.HasPhoto {
 		fmt.Printf("  has a picture\n")
+	}
+	if contact.Account != nil {
+		fmt.Printf("  In your circles as %s\n", forTerminal(contact.Account.Username))
 	}
 	if contact.Note != "" {
 		fmt.Printf("  %s\n", contact.Note)
@@ -352,6 +375,129 @@ func runContactBookRemovePicture(ctx context.Context, command *cli.Command) erro
 	}
 	fmt.Printf("took the picture off %s\n", displayed(contact))
 	return nil
+}
+
+// setContactAccountInYourBooks links a contact, or clears the link with an
+// empty account, in the address book that holds it. A contact id can be in
+// more than one of your books; then the book must be chosen with
+// --address-book, since the link is a change to that one contact.
+func setContactAccountInYourBooks(ctx context.Context, command *cli.Command, connection *client.Client, contactId, accountUserId string) (*client.Contact, error) {
+	books, err := client.ListAddressBooks(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+	chosenAddressBookId := strings.TrimSpace(command.String("address-book"))
+	holdingBooks := []*client.AddressBook{}
+	for _, book := range books {
+		if chosenAddressBookId != "" && book.ID != chosenAddressBookId {
+			continue
+		}
+		contacts, err := client.ListContacts(ctx, connection, book.ID, "", 0)
+		if err != nil {
+			return nil, err
+		}
+		for _, contact := range contacts {
+			if contact.ID == contactId {
+				holdingBooks = append(holdingBooks, book)
+				break
+			}
+		}
+	}
+	switch len(holdingBooks) {
+	case 0:
+		if chosenAddressBookId != "" {
+			return nil, fmt.Errorf("no such contact in that address book: 'teanode contact list' says their ids")
+		}
+		return nil, fmt.Errorf("no such contact: 'teanode contact list' says their ids")
+	case 1:
+		return client.SetContactAccount(ctx, connection, holdingBooks[0].ID, contactId, accountUserId)
+	}
+	descriptions := make([]string, 0, len(holdingBooks))
+	for _, book := range holdingBooks {
+		descriptions = append(descriptions, fmt.Sprintf("%s (%s)", forTerminal(book.Name), book.ID))
+	}
+	return nil, fmt.Errorf("that contact is in more than one of your address books: %s; choose one with --address-book <id>", strings.Join(descriptions, ", "))
+}
+
+func runContactBookLink(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 2 {
+		return usage("usage: teanode contact link <contact id> <username>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	accountUserId, username, err := photoPersonNamed(ctx, connection, strings.TrimPrefix(strings.TrimSpace(command.Args().Get(1)), "@"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	contact, err := setContactAccountInYourBooks(ctx, command, connection, command.Args().First(), accountUserId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(contact)
+	}
+	fmt.Printf("%s is in your circles as %s\n", displayed(contact), forTerminal(username))
+	return nil
+}
+
+func runContactBookUnlink(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode contact unlink <contact id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	contact, err := setContactAccountInYourBooks(ctx, command, connection, command.Args().First(), "")
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(contact)
+	}
+	fmt.Printf("%s is no longer noted as somebody in your circles\n", displayed(contact))
+	return nil
+}
+
+func runContactBookSuggestions(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	suggestions, err := client.ListContactAccountSuggestions(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(suggestions)
+	}
+	if len(suggestions) == 0 {
+		fmt.Println("no contact looks like somebody in your circles")
+		return nil
+	}
+	// The book is named only when there is more than one to tell apart.
+	books, err := client.ListAddressBooks(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	bookNames := make(map[string]string, len(books))
+	for _, book := range books {
+		bookNames[book.ID] = book.Name
+	}
+	rows := make([][]string, 0, len(suggestions))
+	for _, suggestion := range suggestions {
+		row := []string{forTerminal(displayed(suggestion.Contact)), forTerminal(suggestion.Account.Username)}
+		if len(books) > 1 {
+			row = append(row, forTerminal(bookNames[suggestion.AddressBookID]))
+		}
+		rows = append(rows, append(row, "teanode contact link "+suggestion.Contact.ID+" "+suggestion.Account.Username))
+	}
+	if len(books) > 1 {
+		return printTable([]string{"CONTACT", "IN YOUR CIRCLES AS", "ADDRESS BOOK", "TO CONFIRM"}, rows)
+	}
+	return printTable([]string{"CONTACT", "IN YOUR CIRCLES AS", "TO CONFIRM"}, rows)
 }
 
 // displayed is what to call a contact in a line of output.

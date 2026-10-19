@@ -279,6 +279,12 @@ final class PhotosModel {
         album(in: key)?.canCallerRemove(photo) ?? false
     }
 
+    /// Shows the library narrowed to the photos of a person in the circles.
+    func showPhotos(ofPerson person: OpenedPhotoPerson) {
+        section = .library
+        photoFilter = PhotoFilter(accountUserId: person.userId, accountName: person.name)
+    }
+
     /// Shows the library narrowed to the photos taken near a place.
     func showPhotos(near photoNearFilter: PhotoNearFilter) {
         section = .library
@@ -911,6 +917,9 @@ struct PhotosScreen: View {
     /// The photo the grid is to scroll to once it is on screen: the first of the
     /// month or year that was pressed in Months or Years.
     @State private var pendingJumpPhotoId: String?
+    @Environment(AppModel.self) private var app
+    /// The person (group of faces) pushed on People, so Back lands there.
+    @State private var openedPersonFaceGroupId: String?
     #if DEBUG
         @State private var isDemoViewerOpened = false
         @State private var isDemoAlbumOpened = false
@@ -1000,20 +1009,36 @@ struct PhotosScreen: View {
                 .navigationSubtitle(subtitleText)
                 .navigationBarTitleDisplayMode(.large)
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if let photoNearFilter = model.photoFilter.photoNearFilter, model.section.collection != nil {
-                        PhotoNearChip(photoNearFilter: photoNearFilter) {
-                            model.photoFilter.photoNearFilter = nil
+                    // One column, so the visit window's chip sits under the others rather than over them.
+                    VStack(spacing: 0) {
+                        // A search lists by its words alone, so the filters' chips are put away while it does.
+                        if model.section.collection != nil, searchWords == nil,
+                            model.photoFilter.photoNearFilter != nil || !(model.photoFilter.accountUserId ?? "").isEmpty
+                        {
+                            VStack(spacing: 8) {
+                                if let photoNearFilter = model.photoFilter.photoNearFilter {
+                                    PhotoNearChip(photoNearFilter: photoNearFilter) {
+                                        model.photoFilter.photoNearFilter = nil
+                                    }
+                                }
+                                if !(model.photoFilter.accountUserId ?? "").isEmpty {
+                                    PhotoPersonChip(personName: model.photoFilter.accountName) {
+                                        model.photoFilter.accountUserId = nil
+                                        model.photoFilter.accountName = ""
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
-                    }
-                    if model.photoFilter.takenAfter != nil || model.photoFilter.takenBefore != nil, model.section.collection != nil {
-                        PhotoWindowChip(takenAfter: model.photoFilter.takenAfter, takenBefore: model.photoFilter.takenBefore) {
-                            model.photoFilter.takenAfter = nil
-                            model.photoFilter.takenBefore = nil
+                        if model.photoFilter.takenAfter != nil || model.photoFilter.takenBefore != nil, model.section.collection != nil {
+                            PhotoWindowChip(takenAfter: model.photoFilter.takenAfter, takenBefore: model.photoFilter.takenBefore) {
+                                model.photoFilter.takenAfter = nil
+                                model.photoFilter.takenBefore = nil
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
                         }
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1066,12 +1091,19 @@ struct PhotosScreen: View {
                 .onChange(of: key) { _, _ in dateRangeText = "" }
                 .onChange(of: scale) { _, _ in dateRangeText = "" }
                 .navigationDestination(isPresented: $isShowingBackup) { PhotoBackupView(connection: model.connection) }
+                .navigationDestination(item: $openedPersonFaceGroupId) { photoFaceGroupId in
+                    PhotoPersonScreen(model: model, photoFaceGroupId: photoFaceGroupId)
+                }
                 // Typing in the search field changes the list under the chosen photos.
                 .onChange(of: searchWords) { _, _ in endSelection() }
                 .onChange(of: model.photoFilter) { _, _ in endSelection() }
                 // "Photos taken near here" shows the library, so words typed in its search are put away.
                 .onChange(of: model.photoFilter.photoNearFilter) { _, photoNearFilter in
                     if photoNearFilter != nil { searchText = "" }
+                }
+                // Photos of a person show the library, so words typed in its search are put away.
+                .onChange(of: model.photoFilter.accountUserId) { _, accountUserId in
+                    if accountUserId != nil { searchText = "" }
                 }
                 // Photos opened from a visit show the visit's photos, so old search words are put away.
                 .onChange(of: model.photoFilter.takenAfter) { _, takenAfter in
@@ -1103,6 +1135,15 @@ struct PhotosScreen: View {
             // The side menu can be opened by a swipe while Photo backup is shown;
             // choosing a collection there must not leave the backup screen on top of it.
             isShowingBackup = false
+            openedPersonFaceGroupId = nil
+        }
+        // Initially too: the section is drawn after the request was made.
+        .onChange(of: app.openedPhotoPerson, initial: true) { _, person in
+            guard let person else { return }
+            app.openedPhotoPerson = nil
+            searchText = ""
+            isSearchPresented = false
+            model.showPhotos(ofPerson: person)
         }
         // Read once for the whole screen, not again for each collection.
         .task { await model.loadLibrary() }

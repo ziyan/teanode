@@ -345,10 +345,12 @@ struct CircleDetailView: View {
                         Text("\(member.displayName) will no longer be in \(circle.name). They can be invited again.")
                     }
                     .swipeActions {
+                        if !isCurrentUser { photosAction(member) }
                         if !isCurrentUser { relationshipAction(member) }
                         if circle.isAdmin && !isCurrentUser { memberActions(member, in: circle) }
                     }
                     .contextMenu {
+                        if !isCurrentUser { photosAction(member) }
                         if !isCurrentUser { relationshipAction(member) }
                         if circle.isAdmin && !isCurrentUser { memberActions(member, in: circle) }
                     }
@@ -372,6 +374,18 @@ struct CircleDetailView: View {
             }
             .foregroundStyle(.primary)
             .accessibilityHint("Says what they are to you")
+        }
+    }
+
+    /// The photos of a member the person linked to one of their contacts, in
+    /// Photos. Only the person knows of the link, so nothing shows otherwise.
+    @ViewBuilder
+    private func photosAction(_ member: CircleMember) -> some View {
+        if member.isLinkedToContact, AppModel.shared.isSectionAvailable(.photos) {
+            Button("Photos", systemImage: "photo.on.rectangle") {
+                AppModel.shared.openedPhotoPerson = OpenedPhotoPerson(userId: member.userId, name: member.displayName)
+            }
+            .tint(.blue)
         }
     }
 

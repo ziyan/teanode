@@ -301,6 +301,17 @@ box, then **Message someone**. Every circle has a chat of its own.
   it up with the database. **Manage → Server → Setup** turns it off, or turns
   on Calendar, Contacts and the rest; the page says what starts after a
   restart and has a **Restart now** button.
+- **Health.** On from the first start: each person has a Health page in the
+  rail, and nothing is kept until they turn on **Health** in the
+  iPhone app's settings and allow what to copy on Apple's Health permissions
+  screen. The app
+  then copies it in the background, history first, and the page shows a chart
+  for each kind of data. The agent reads it only once the person turns on
+  **Let the agent read Health data** on the Settings tab of the Health page on
+  the dashboard, or in Health in the iPhone app's settings, and a person
+  can share some categories (Activity, Sleep) with a circle. There is nothing
+  to set up on the server; to keep it from a role, take `health:use` away from
+  it on **Manage → People and access**.
 - **More domains.** Each gets its own signing key by default. If you would
   rather they all shared one, point `<selector>._domainkey` at the primary
   domain with a CNAME and the dashboard will show you the record to publish.

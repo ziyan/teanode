@@ -983,7 +983,8 @@ func (self *transaction) photoFaceConditions(query *gorm.DB, userId string, filt
 	}
 	if filter.ContactID != "" {
 		query = query.Where(`EXISTS (SELECT 1 FROM photo_face JOIN photo_face_group ON photo_face_group.id = photo_face.photo_face_group_id
-			WHERE photo_face.photo_id = photo.id AND photo_face_group.user_id = ? AND photo_face_group.contact_id = ?)`, userId, filter.ContactID)
+			WHERE photo_face.photo_id = photo.id AND photo_face_group.user_id = ? AND photo_face_group.contact_id = ?
+			AND (? = '' OR photo_face_group.addressbook_id = ?))`, userId, filter.ContactID, filter.ContactAddressBookID, filter.ContactAddressBookID)
 	}
 	return query, nil
 }

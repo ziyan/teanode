@@ -29,6 +29,7 @@ change with it.
 | `calendar.md` | The calendar, CalDAV, free-busy, and invitations by mail |
 | `circles.md` | Circles of people on one server, their admins and members, invitations, and who sees whom |
 | `location.md` | Where a person goes: positions, visits and places, how places are named, who a location is shared with and at what level, and what erasing deletes |
+| `health.md` | Apple Health from the iPhone: what is kept, how the phone sends it and works out day summaries, who sees what (shares by category, the agent's switch), and what erasing deletes |
 | `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
 | `photos.md` | The photo library: uploads, processing, descriptions, faces, albums, the iPhone's backup |
 | `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |

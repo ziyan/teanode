@@ -6,6 +6,28 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.184.0] - 2026-10-19
+
+### Added
+
+- A contact can be linked to a person in your circles. Photos then shows them with their circle picture, Circles and Location open their photos, and the assistant finds "photos of" them. Contacts whose address is a mailbox of someone in your circles are suggested for you to confirm. Only you see the link. (#596)
+
+### Changed
+
+- On the iPhone, Location's label filter is a small menu in the places list's heading, and the visits list no longer has one. (#596)
+
+## [0.183.0] - 2026-10-19
+
+### Added
+
+- Health: the iPhone app copies the Apple Health data you allow (steps, sleep, heart rate, workouts with routes and the rest) to your own server. The dashboard and the app chart it, `teanode health` prints it, and you can share some categories with your circles. Your agent reads it only after you turn on "Let the agent read Health data". (#591)
+
+## [0.182.1] - 2026-10-19
+
+### Fixed
+
+- The iPhone app's picture in the app switcher no longer mixes light bubbles into a dark screen. (#595)
+
 ## [0.182.0] - 2026-10-19
 
 ### Added

@@ -136,6 +136,13 @@ type ListPhotosArguments struct {
 	// ContactID the photos with a face in any group that contact names.
 	FaceGroupID string `json:"faceGroupId" graphapi:"nullable"`
 	ContactID   string `json:"contactId" graphapi:"nullable"`
+
+	// AccountUserID keeps the photos of the caller's own contact that they
+	// linked to that account in their circles. It is found through the
+	// caller's contacts only, so it lists nothing when there is no such link
+	// (or the two no longer share a circle), and never a face group the
+	// caller did not name. It replaces contactId when both are given.
+	AccountUserID string `json:"accountUserId" graphapi:"nullable"`
 }
 
 // PhotoArguments names one photo.
@@ -390,6 +397,25 @@ func photoFilter(arguments ListPhotosArguments) *db.PhotoFilter {
 	return filter
 }
 
+// withAccountFilter turns the account a listing asks for into the caller's own
+// contact linked to it. It says false when the caller has no such contact, in
+// which case the listing is empty rather than refused.
+func (self *graph) withAccountFilter(ctx context.Context, userId string, accountUserId string, filter *db.PhotoFilter) (bool, error) {
+	accountUserId = strings.TrimSpace(accountUserId)
+	if accountUserId == "" {
+		return true, nil
+	}
+	contact, err := self.transaction(ctx).FindContactByAccount(userId, accountUserId)
+	if err != nil {
+		return false, translateError(err)
+	}
+	if contact == nil {
+		return false, nil
+	}
+	filter.ContactID, filter.ContactAddressBookID = contact.ID, contact.AddressBookID
+	return true, nil
+}
+
 // ListPhotos is a page of the library. It is one of isModelBackedQuery: a
 // search reads the meaning of its words from an embedding model, which takes as
 // long as the model takes, so the words are read in a short transaction of
@@ -407,6 +433,14 @@ func (self *graph) ListPhotos(ctx context.Context, arguments ListPhotosArguments
 		principal, err := self.requirePhotosPerson(ctx)
 		if err != nil {
 			return err
+		}
+		isLinked, err := self.withAccountFilter(ctx, principal.User.ID, arguments.AccountUserID, filter)
+		if err != nil {
+			return err
+		}
+		if !isLinked {
+			photos = []*models.Photo{}
+			return nil
 		}
 		photos, err = self.transaction(ctx).ListPhotos(principal.User.ID, filter)
 		if err != nil {
@@ -550,6 +584,10 @@ func (self *graph) CountPhotos(ctx context.Context, arguments ListPhotosArgument
 		if err != nil {
 			return err
 		}
+		isLinked, err := self.withAccountFilter(ctx, principal.User.ID, arguments.AccountUserID, filter)
+		if err != nil || !isLinked {
+			return err
+		}
 		count, err = self.transaction(ctx).CountPhotos(principal.User.ID, filter)
 		return translateError(err)
 	}); err != nil {
@@ -567,6 +605,10 @@ func (self *graph) CountUndescribedPhotos(ctx context.Context, arguments ListPho
 	}
 	filter := photoFilter(arguments)
 	filter.BeforePhotoID, filter.Offset = "", 0
+	isLinked, err := self.withAccountFilter(ctx, principal.User.ID, arguments.AccountUserID, filter)
+	if err != nil || !isLinked {
+		return 0, err
+	}
 	count, err := self.transaction(ctx).CountUndescribedPhotos(principal.User.ID, filter)
 	return count, translateError(err)
 }

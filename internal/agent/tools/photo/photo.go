@@ -53,7 +53,7 @@ func init() {
 				"Organize photos into albums when the person asks: `album-create` (album_title, and photo_ids to put in it), `album-rename`, `album-add` and `album-remove` (album_id, photo_ids; removing leaves the photos in the library). " +
 				"`album-suggest` finds trips and events among the photos that are in no album (runs of at least 12 photos), with their dates, places and a proposed title; offer them to the person and create an album only when they agree, by listing the photos between the suggestion's taken_after and taken_before and giving their ids to `album-create`. " +
 				"`album-cover` (album_id, photo_id) chooses which photo of the album stands for it. `album-delete` deletes an album, never its photos, and always asks the person first. " +
-				"Faces in photos are found on the server and grouped by person, and a group is named by a contact from the person's address book. `people` lists the groups with their names and counts; `person-read` (face_group_id) gives one group: its name, contact, counts and cover face; `list` with face_group_id or contact_id (or `person-photos`) gives a person's photos; `read` says who is in a photo. A group or a face with is_you true is the person themselves. " +
+				"Faces in photos are found on the server and grouped by person, and a group is named by a contact from the person's address book. `people` lists the groups with their names and counts; `person-read` (face_group_id) gives one group: its name, contact, counts and cover face; `list` with face_group_id, contact_id or person (or `person-photos`) gives a person's photos; person is a username of somebody in the circles they share, found through the contact the person linked to them, so \"photos of my wife\" is list with her username as person when the situation says she has photos; if there are none, the person has not linked a contact to her and can be asked; `read` says who is in a photo. A group or a face with is_you true is the person themselves. " +
 				"`person-name` (face_group_id, contact_id) names a group, and only with a contact the person chose or confirmed: never guess who somebody is from their face or from a likeness. When you look at a photo and do not know who is in it, ask the person who it is, and name the group after the contact they pick. A contact names one person: naming a group with a contact that already names another of the person's groups puts the two together (the answer has merged_into, the group left), and a contact with no picture is given a face of the group as its picture (contact_picture_set). `person-merge` (face_group_ids) puts groups that are one person together. `person-unname` (face_group_id) takes the name off a group; its faces stay grouped. `person-hide` (face_group_id, is_hidden) leaves a group out of `people`, or with is_hidden false lists it again; `people` with is_hidden_included true lists the hidden ones too. `person-remove-face` (photo_face_id, as `read` gives it) says that one face is not that person: it leaves its group and is not put back. A group of faces nobody has named is listed once it has at least three faces. " +
 				"`faces` says whether faces are being found; with is_enabled it switches them on, which finds and keeps a face vector for every face in every photo, or off, which deletes every face and group found so far; either always asks the person first. " +
 				"A photo's taken_at is the clock where it was taken, with its UTC offset; a photo that has not been processed yet is shown on UTC. " +
@@ -80,7 +80,7 @@ func init() {
 				"offset":                   tools.IntegerProperty("list, album-list, album-read, people, person-photos and album-shares: how many rows to pass over, the next_offset of the page before, to read the next page; 0 for the first"),
 				"page_size":                tools.IntegerProperty("list, album-list, album-read, people, person-photos and album-shares: rows to a page, 1 to 100; 25 photos or 50 other rows by default"),
 				"album_id":                 tools.StringProperty("list, album-read, album-rename, album-delete, album-add, album-remove, album-cover, album-share, album-shares and album-share-update: which album, by the id album-list gives"),
-				"person":                   tools.StringProperty("album-share: the username of a person the owner shares a circle with, to share with; leave out when sharing with a circle"),
+				"person":                   tools.StringProperty("album-share: the username of a person the owner shares a circle with, to share with; leave out when sharing with a circle. list and person-photos: the username of a person in the circles the person shares, to list the photos of the contact the person linked to them (see contact_book link-account); the relationship lines in your situation give usernames"),
 				"circle":                   tools.StringProperty("album-share: a circle the owner is in, by name or id, to share with everyone in it. album-create: make the album that circle's, which every member adds photos to"),
 				"share_id":                 tools.StringProperty("album-share-update and album-unshare: the share, by the id album-shares gives"),
 				"share_level":              tools.EnumProperty("album-share: what they may do; view when left out. album-share-update: what they may do from now on; leave out to keep the share's level", "view", "contribute"),
@@ -532,11 +532,19 @@ func list(ctx context.Context, current tools.Run, asked *arguments) (*tools.Resu
 		return nil, err
 	}
 	executor := current.Operations()
+	if username := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(asked.Person), "@")); username != "" {
+		if filter.AccountUserID, _, err = personNamed(ctx, executor, username); err != nil {
+			return nil, err
+		}
+	}
 	photos, err := client.ListPhotos(ctx, executor, filter)
 	if err != nil {
 		return nil, err
 	}
 	answer := map[string]any{"photos": listedRows(photos)}
+	if filter.AccountUserID != "" && len(photos) == 0 && filter.Offset == 0 {
+		answer["person_note"] = "no photos: the person may not have linked a contact to this person (contact_book link-account), or that contact names no group of faces yet"
+	}
 	if filter.SearchText != "" {
 		answer["search_note"] = photoSearchNote
 		// The part of the range a search by what is in the pictures cannot see

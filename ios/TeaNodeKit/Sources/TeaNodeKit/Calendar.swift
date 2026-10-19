@@ -359,6 +359,8 @@ public struct ContactSummary: Codable, Identifiable, Hashable, Sendable {
     public let phones: [String]?
     public let hasPhoto: Bool?
     public let addresses: [Written]?
+    /// The account in the person's circles this contact is, when they said so.
+    public var accountUserId: String? = nil
 
     /// What the list calls them: their name, or else their first address.
     public var shownName: String {
@@ -397,6 +399,39 @@ public struct ContactDetail: Codable, Hashable, Sendable {
     public let note: String?
     public let hasPhoto: Bool?
     public let addresses: [ContactAddress]?
+    /// The account on this server the contact is, when the person said so and
+    /// still shares a circle with it; nil otherwise. Private to the person.
+    public let accountUserId: String?
+    public let account: ChatPerson?
+
+    /// Whether the contact is linked to somebody in the person's circles.
+    public var isLinkedToAccount: Bool { !(accountUserId ?? "").isEmpty && account != nil }
+}
+
+/// ContactAccountLink is what linking a contact to an account (or clearing
+/// the link) answers: the contact and the account it is now.
+public struct ContactAccountLink: Codable, Hashable, Sendable {
+    public let id: String
+    public let accountUserId: String?
+    public let account: ChatPerson?
+}
+
+/// ContactAccountSuggestion is an unlinked contact that looks like somebody
+/// in the person's circles, offered for the person to confirm. Nothing is
+/// linked until they do, and the server does not say which address matched.
+public struct ContactAccountSuggestion: Codable, Identifiable, Hashable, Sendable {
+    /// The address book the contact is in, which linking takes with the contact.
+    public let addressBookId: String
+    public let contact: ContactSummary
+    public let account: ChatPerson
+
+    public var id: String { contact.id }
+
+    public init(addressBookId: String, contact: ContactSummary, account: ChatPerson) {
+        self.addressBookId = addressBookId
+        self.contact = contact
+        self.account = account
+    }
 }
 
 extension Documents {
@@ -492,7 +527,7 @@ extension Documents {
     public static let contacts = """
         query ($addressBookId: String!, $query: String, $first: Int) {
           ListContacts(addressBookId: $addressBookId, query: $query, first: $first) {
-            id name organization emails phones hasPhoto addresses { written }
+            id name organization emails phones hasPhoto addresses { written } accountUserId
           }
         }
         """
@@ -501,6 +536,7 @@ extension Documents {
           GetContact(id: $id) {
             id name organization emails phones note hasPhoto
             addresses { street locality region postalCode country }
+            accountUserId account { userId username name avatarUrl avatarColorIndex }
           }
         }
         """
@@ -523,6 +559,22 @@ extension Documents {
     public static let setMyContact = """
         mutation ($contactId: String) { SetMyContact(contactId: $contactId) }
         """
+    public static let setContactAccount = """
+        mutation ($addressBookId: String!, $contactId: String!, $accountUserId: String) {
+          SetContactAccount(addressBookId: $addressBookId, contactId: $contactId, accountUserId: $accountUserId) {
+            id accountUserId account { userId username name avatarUrl avatarColorIndex }
+          }
+        }
+        """
+    public static let contactAccountSuggestions = """
+        query {
+          ListContactAccountSuggestions {
+            addressBookId
+            contact { id name organization emails phones hasPhoto }
+            account { userId username name avatarUrl avatarColorIndex }
+          }
+        }
+        """
 
     /// The calendar's and contacts' documents, for the server's schema check.
     public static let calendarAndContacts: [String: String] = [
@@ -535,6 +587,7 @@ extension Documents {
         "reminders": reminders, "saveReminder": saveReminder, "setReminderDone": setReminderDone,
         "deleteReminder": deleteReminder, "addressBooks": addressBooks, "contacts": contacts, "contact": contact,
         "saveContact": saveContact, "importContact": importContact, "deleteContact": deleteContact, "removeContactPicture": removeContactPicture, "myContact": myContact, "setMyContact": setMyContact,
+        "setContactAccount": setContactAccount, "contactAccountSuggestions": contactAccountSuggestions,
     ]
 }
 
@@ -776,5 +829,23 @@ extension Connection {
     public func setMyContact(_ contactId: String?) async throws {
         struct Answer: Decodable, Sendable { let SetMyContact: Bool? }
         _ = try await execute(Documents.setMyContact, variables: ["contactId": contactId.map { .string($0) } ?? .null], as: Answer.self)
+    }
+
+    /// Says which account on this server a contact is, chosen from the people
+    /// the person shares a circle with. An empty or nil `accountUserId` clears
+    /// the link. Private to the person: the account is never told.
+    public func setContactAccount(addressBookId: String, contactId: String, accountUserId: String?) async throws -> ContactAccountLink {
+        struct Answer: Decodable, Sendable { let SetContactAccount: ContactAccountLink }
+        let variables: [String: JSONValue] = [
+            "addressBookId": .string(addressBookId), "contactId": .string(contactId), "accountUserId": accountUserId.map { .string($0) } ?? .null,
+        ]
+        return try await execute(Documents.setContactAccount, variables: variables, as: Answer.self).SetContactAccount
+    }
+
+    /// The contacts that look like people in the person's circles, each to be
+    /// confirmed or left alone.
+    public func contactAccountSuggestions() async throws -> [ContactAccountSuggestion] {
+        struct Answer: Decodable, Sendable { let ListContactAccountSuggestions: [ContactAccountSuggestion] }
+        return try await execute(Documents.contactAccountSuggestions, as: Answer.self).ListContactAccountSuggestions
     }
 }

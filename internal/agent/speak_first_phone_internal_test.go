@@ -23,3 +23,18 @@ func TestPhoneTourOffersLocationOnlyWhenThePersonCanUseIt(t *testing.T) {
 		t.Errorf("Location comes before mail:\n%s", withMail)
 	}
 }
+
+// Health is offered on the tour only to a person who may use it, and the
+// offer says the agent reads it only once they let it.
+func TestPhoneTourOffersHealthOnlyWhenThePersonCanUseIt(t *testing.T) {
+	without := phoneTourInstructions(phoneTourFacts{isPushEnabled: true})
+	if strings.Contains(without, "Health") {
+		t.Errorf("Health is offered to a person without health:use:\n%s", without)
+	}
+	with := phoneTourInstructions(phoneTourFacts{isPushEnabled: true, hasHealth: true})
+	for _, want := range []string{"Health: the app can copy their Apple Health data", "Let the agent read Health data", "set_up action"} {
+		if !strings.Contains(with, want) {
+			t.Errorf("the Health offer lacks %q:\n%s", want, with)
+		}
+	}
+}

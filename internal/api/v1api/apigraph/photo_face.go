@@ -138,6 +138,56 @@ func withGroupPictureAddresses(ownContactId string, groups ...*models.PhotoFaceG
 	}
 }
 
+// withGroupAccounts says, for each group named by a contact the caller linked
+// to somebody in their circles, who that is. The link is the caller's own note:
+// it is read through the caller's contacts only, and only while they still share
+// a circle with the person, so a group never shows an account its contact does
+// not say.
+func (self *graph) withGroupAccounts(ctx context.Context, ownerUserId string, groups ...*models.PhotoFaceGroup) error {
+	isNamed := false
+	for _, group := range groups {
+		if group.ContactID != "" {
+			isNamed = true
+		}
+	}
+	if !isNamed {
+		return nil
+	}
+	links, err := self.transaction(ctx).ListContactAccountLinks(ownerUserId)
+	if err != nil {
+		return err
+	}
+	if len(links) == 0 {
+		return nil
+	}
+	accountUserIds := make(map[string]string, len(links))
+	for _, link := range links {
+		accountUserIds[link.AddressBookID+"\n"+link.ID] = link.AccountUserID
+	}
+	var people map[string]*CircleMember
+	for _, group := range groups {
+		accountUserId := accountUserIds[group.ContactAddressBookID+"\n"+group.ContactID]
+		if group.ContactID == "" || accountUserId == "" {
+			continue
+		}
+		if people == nil {
+			if people, err = self.circlePeopleOf(ctx, ownerUserId); err != nil {
+				return err
+			}
+		}
+		person := people[accountUserId]
+		if person == nil {
+			continue
+		}
+		group.AccountUserID = &accountUserId
+		group.Account = &models.PhotoFaceGroupAccount{
+			UserID: person.UserID, Username: person.Username, Name: person.Name,
+			AvatarURL: person.AvatarURL, AvatarColorIndex: person.AvatarColorIndex,
+		}
+	}
+	return nil
+}
+
 // withFacePictureAddresses is the same for faces.
 func withFacePictureAddresses(ownContactId string, faces ...*models.PhotoFace) {
 	for _, face := range faces {
@@ -162,6 +212,9 @@ func (self *graph) ListPhotoFaceGroups(ctx context.Context, arguments ListPhotoF
 		return nil, translateError(err)
 	}
 	withGroupPictureAddresses(principal.User.ContactID, groups...)
+	if err := self.withGroupAccounts(ctx, principal.User.ID, groups...); err != nil {
+		return nil, err
+	}
 	return groups, nil
 }
 
@@ -175,6 +228,9 @@ func (self *graph) ReadPhotoFaceGroup(ctx context.Context, arguments PhotoFaceGr
 		return nil, translateError(err)
 	}
 	withGroupPictureAddresses(principal.User.ContactID, group)
+	if err := self.withGroupAccounts(ctx, principal.User.ID, group); err != nil {
+		return nil, err
+	}
 	return group, nil
 }
 
@@ -209,6 +265,9 @@ func (self *graph) NamePhotoFaceGroup(ctx context.Context, arguments NamePhotoFa
 		return nil, err
 	}
 	withGroupPictureAddresses(principal.User.ContactID, group)
+	if err := self.withGroupAccounts(ctx, principal.User.ID, group); err != nil {
+		return nil, err
+	}
 	return &NamedPhotoFaceGroup{PhotoFaceGroup: group, MergedPhotoFaceGroupID: mergedPhotoFaceGroupId, IsContactPictureSet: isContactPictureSet}, nil
 }
 
@@ -222,6 +281,9 @@ func (self *graph) UnnamePhotoFaceGroup(ctx context.Context, arguments PhotoFace
 		return nil, translateError(err)
 	}
 	withGroupPictureAddresses(principal.User.ContactID, group)
+	if err := self.withGroupAccounts(ctx, principal.User.ID, group); err != nil {
+		return nil, err
+	}
 	return group, nil
 }
 
@@ -235,6 +297,9 @@ func (self *graph) MergePhotoFaceGroups(ctx context.Context, arguments MergePhot
 		return nil, translateError(err)
 	}
 	withGroupPictureAddresses(principal.User.ContactID, group)
+	if err := self.withGroupAccounts(ctx, principal.User.ID, group); err != nil {
+		return nil, err
+	}
 	return group, nil
 }
 
@@ -248,6 +313,9 @@ func (self *graph) RemovePhotoFaceFromGroup(ctx context.Context, arguments Photo
 		return nil, translateError(err)
 	}
 	withGroupPictureAddresses(principal.User.ContactID, group)
+	if err := self.withGroupAccounts(ctx, principal.User.ID, group); err != nil {
+		return nil, err
+	}
 	return group, nil
 }
 
@@ -261,6 +329,9 @@ func (self *graph) HidePhotoFaceGroup(ctx context.Context, arguments HidePhotoFa
 		return nil, translateError(err)
 	}
 	withGroupPictureAddresses(principal.User.ContactID, group)
+	if err := self.withGroupAccounts(ctx, principal.User.ID, group); err != nil {
+		return nil, err
+	}
 	return group, nil
 }
 

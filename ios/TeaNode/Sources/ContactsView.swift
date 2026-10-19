@@ -13,11 +13,67 @@ final class ContactsModel {
     var searchText = ""
     var doneText: String?
     var problemText: String?
+    /// Contacts that look like people in the person's circles, as the server
+    /// last offered them, for the person to confirm.
+    private(set) var suggestions: [ContactAccountSuggestion] = []
+    /// The contacts whose suggestion the person answered "Not now", kept on
+    /// this phone only: the server never hears of it.
+    private(set) var dismissedSuggestionContactIds: Set<String>
 
     let connection: Connection
+    private let dismissedSuggestionsKey: String
 
     init(connection: Connection) {
         self.connection = connection
+        let key = "contact-account-suggestions-dismissed.\(connection.accountKey)"
+        dismissedSuggestionsKey = key
+        dismissedSuggestionContactIds = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+    }
+
+    /// The suggestions the person has not put off.
+    var shownSuggestions: [ContactAccountSuggestion] {
+        suggestions.filter { !dismissedSuggestionContactIds.contains($0.contact.id) }
+    }
+
+    /// Reads the suggestions. Quietly: a server that does not offer them, or
+    /// a person without circles, simply has none.
+    func loadSuggestions() async {
+        suggestions = (try? await connection.contactAccountSuggestions()) ?? []
+    }
+
+    func dismissSuggestion(of contactId: String) {
+        dismissedSuggestionContactIds.insert(contactId)
+        UserDefaults.standard.set(Array(dismissedSuggestionContactIds), forKey: dismissedSuggestionsKey)
+    }
+
+    /// Says the contact is the account; false when the server refused, with
+    /// the reason in `problemText` unless `isQuiet`.
+    /// `addressBookId` is the book the contact is in; a suggestion carries it,
+    /// otherwise it is the book on this screen.
+    func link(contactId: String, to account: ChatPerson, contactName: String, addressBookId: String? = nil, isQuiet: Bool = false) async -> Bool {
+        guard let bookId = addressBookId ?? addressBook?.id else { return false }
+        do {
+            _ = try await connection.setContactAccount(addressBookId: bookId, contactId: contactId, accountUserId: account.userId)
+            suggestions.removeAll { $0.contact.id == contactId }
+            doneText = String(localized: "\(contactName) is in your circles as \(account.displayName)")
+            return true
+        } catch {
+            if !isQuiet { problemText = error.localizedDescription }
+            return false
+        }
+    }
+
+    func unlink(contactId: String) async -> Bool {
+        guard let addressBook else { return false }
+        do {
+            _ = try await connection.setContactAccount(addressBookId: addressBook.id, contactId: contactId, accountUserId: nil)
+            doneText = String(localized: "Removed the link to your circles")
+            await loadSuggestions()
+            return true
+        } catch {
+            problemText = error.localizedDescription
+            return false
+        }
     }
 
     func load() async {
@@ -92,6 +148,15 @@ struct ContactsScreen: View {
             // Laid out as the mail and recordings lists are, under a letter
             // instead of a period: no chevrons, no lines, rows close together.
             List {
+                if model.searchText.isEmpty, !model.shownSuggestions.isEmpty {
+                    ListPeriodHeader(title: String(localized: "Contacts that may be people in your circles"))
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 2, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(model.shownSuggestions) { suggestion in
+                        ContactSuggestionRows(model: model, suggestion: suggestion)
+                    }
+                }
                 // Each letter is a row of its own rather than a section header: a plain list puts a fixed band
                 // above every section, which left a letter with one contact mostly empty space.
                 ForEach(ContactLetterSection.sections(of: model.contacts)) { section in
@@ -124,7 +189,11 @@ struct ContactsScreen: View {
                 }
                 await model.load()
             }
-            .refreshable { await model.load() }
+            .task { await model.loadSuggestions() }
+            .refreshable {
+                await model.load()
+                await model.loadSuggestions()
+            }
             .overlay {
                 if model.isLoaded, model.contacts.isEmpty {
                     if model.searchText.isEmpty {
@@ -177,6 +246,45 @@ struct ContactsScreen: View {
             }
         }
         .toast(done: $model.doneText, problem: $model.problemText)
+    }
+}
+
+/// ContactSuggestionRows is one contact the server thinks is somebody in the
+/// person's circles: who, and two rows to answer it. Link says so; Not now
+/// puts it away on this phone.
+struct ContactSuggestionRows: View {
+    let model: ContactsModel
+    let suggestion: ContactAccountSuggestion
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AvatarView(
+                name: suggestion.account.displayName, avatarUrl: suggestion.account.avatarUrl,
+                colorIndex: suggestion.account.avatarColorIndex, size: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(suggestion.contact.shownName.isEmpty ? String(localized: "No name") : suggestion.contact.shownName)
+                    .font(.headline)
+                    .lineLimit(2)
+                Text("\(suggestion.contact.shownName.isEmpty ? String(localized: "No name") : suggestion.contact.shownName) may be \(suggestion.account.displayName) in your circles")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .listRowSeparator(.hidden)
+        .accessibilityElement(children: .combine)
+        Button {
+            Task { _ = await model.link(contactId: suggestion.contact.id, to: suggestion.account, contactName: suggestion.contact.shownName, addressBookId: suggestion.addressBookId) }
+        } label: {
+            Label("Link", systemImage: "link")
+                .actionColor()
+        }
+        .listRowSeparator(.hidden)
+        Button {
+            model.dismissSuggestion(of: suggestion.contact.id)
+        } label: {
+            Label("Not now", systemImage: "clock")
+                .actionColor()
+        }
     }
 }
 
@@ -304,6 +412,7 @@ struct ContactDetailView: View {
     @State private var isEditing = false
     @State private var isConfirmingDelete = false
     @State private var isConfirmingRemovePicture = false
+    @State private var isChoosingAccount = false
     @State private var memory = InMemoryModel()
 
     var body: some View {
@@ -328,6 +437,7 @@ struct ContactDetailView: View {
                         .frame(maxWidth: .infinity)
                         .listRowBackground(Color.clear)
                     }
+                    accountSection(of: contact)
                     if let emails = contact.emails, !emails.isEmpty {
                         Section("Email") {
                             ForEach(emails, id: \.self) { email in
@@ -431,8 +541,54 @@ struct ContactDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $isChoosingAccount) {
+            if let contact {
+                ContactAccountPicker(model: model, contact: contact) {
+                    Task { await read() }
+                }
+            }
+        }
         .inMemory(memory, recordKind: "contact", recordId: contactId)
         .task { await read() }
+    }
+
+    /// Which account in the person's circles this contact is, or the way to
+    /// say so. Only the person sees it: the account is not told.
+    @ViewBuilder
+    private func accountSection(of contact: ContactDetail) -> some View {
+        Section {
+            if let account = contact.account, contact.isLinkedToAccount {
+                HStack(spacing: 12) {
+                    AvatarView(name: account.displayName, avatarUrl: account.avatarUrl, colorIndex: account.avatarColorIndex, size: 36)
+                    Text("In your circles as \(account.displayName)")
+                }
+                .accessibilityElement(children: .combine)
+                Button {
+                    isChoosingAccount = true
+                } label: {
+                    Label("Change", systemImage: "person.2")
+                        .actionColor()
+                }
+                Button(role: .destructive) {
+                    Task {
+                        if await model.unlink(contactId: contactId) { await read() }
+                    }
+                } label: {
+                    Label("Remove", systemImage: "person.crop.circle.badge.minus")
+                }
+                .tint(.red)
+                .actionColor(isDestructive: true)
+            } else {
+                Button {
+                    isChoosingAccount = true
+                } label: {
+                    Label("Is in your circles as…", systemImage: "person.2")
+                        .actionColor()
+                }
+            }
+        } footer: {
+            Text("Only you see this. They are not told.")
+        }
     }
 
     private func read() async {
@@ -475,8 +631,118 @@ enum ContactWords {
     }
 }
 
+/// ContactAccountPicker chooses which of the people the person shares a
+/// circle with a contact is. It makes no contact and changes nothing on the
+/// card; the server keeps the link apart from the card's fields.
+struct ContactAccountPicker: View {
+    let model: ContactsModel
+    let contact: ContactDetail
+    let onLinked: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var people: [ChatPerson] = []
+    @State private var hasReadPeople = false
+    /// The accounts another contact of this book already is: a book keeps one
+    /// contact for each person, so they are not offered.
+    @State private var takenAccountIds: Set<String> = []
+    @State private var searchText = ""
+    @State private var isLinking = false
+    /// Why the link was not made, or the people not read: shown in the
+    /// sheet, since the toast of the screen under it cannot be seen.
+    @State private var failureText: String?
+
+    private var shownPeople: [ChatPerson] {
+        let words = searchText.trimmed
+        let available = people.filter { !takenAccountIds.contains($0.userId) }
+        guard !words.isEmpty else { return available }
+        return available.filter { $0.displayName.localizedStandardContains(words) || $0.username.localizedStandardContains(words) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let failureText {
+                    Section {
+                        Label(failureText, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                    }
+                }
+                Section {
+                    ForEach(shownPeople) { person in
+                        Button {
+                            choose(person)
+                        } label: {
+                            HStack(spacing: 12) {
+                                AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(verbatim: person.displayName)
+                                        .foregroundStyle(.primary)
+                                    if person.displayName != person.username {
+                                        Text(verbatim: person.username)
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                if person.userId == contact.accountUserId {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                        .accessibilityLabel("Current choice")
+                                }
+                            }
+                        }
+                    }
+                    if hasReadPeople, people.isEmpty {
+                        Text("You do not share a circle with anybody yet.")
+                            .foregroundStyle(.secondary)
+                    }
+                } footer: {
+                    Text("Choose who \(contact.name ?? "") is among the people you share a circle with. Only you see this.")
+                }
+            }
+            .navigationTitle("Is in your circles as…")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search people")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .disabled(isLinking)
+            .task {
+                do {
+                    people = try await model.connection.chatPeople()
+                    // A failure here only costs the filter: the server still refuses a second link.
+                    if let bookId = model.addressBook?.id,
+                        let bookContacts = try? await model.connection.contacts(addressBookId: bookId, first: 500)
+                    {
+                        takenAccountIds = Set(
+                            bookContacts.filter { $0.id != contact.id }.compactMap(\.accountUserId).filter { !$0.isEmpty })
+                    }
+                    hasReadPeople = true
+                } catch {
+                    failureText = error.localizedDescription.asReasonSentence
+                }
+            }
+        }
+    }
+
+    private func choose(_ person: ChatPerson) {
+        isLinking = true
+        Task {
+            if await model.link(contactId: contact.id, to: person, contactName: contact.name ?? "", isQuiet: true) {
+                onLinked()
+                dismiss()
+            } else {
+                failureText = String(localized: "That could not be linked. Another contact may already be them.")
+            }
+            isLinking = false
+        }
+    }
+}
+
 /// ContactEditor adds a contact or changes one: every field is written
-/// back, the addresses after the first kept as they were.
+/// back, the addresses after the first kept as they were. The link to an
+/// account in the person's circles is not part of the card and is left alone.
 struct ContactEditor: View {
     let model: ContactsModel
     let contact: ContactDetail?

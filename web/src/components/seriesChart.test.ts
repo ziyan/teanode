@@ -38,6 +38,18 @@ it('fits the scale around the values when asked', () => {
   expect(crossing.grid).toContain(0)
 })
 
+// A fraction that does not move, such as one blood oxygen reading of 0.98: the
+// band around it is the size of the value, not a whole unit, which would draw
+// it from -0.02 to 1.98.
+it('gives a flat line of a small value a band of its own size', () => {
+  const flat = chartScale([0.98, 0.98], { isFitted: true })
+  expect(flat.floor).toBeGreaterThan(0.9)
+  expect(flat.ceiling).toBeLessThan(1.1)
+  expect(flat.floor).toBeLessThan(0.98)
+  expect(flat.ceiling).toBeGreaterThan(0.98)
+  expect(chartScale([0, 0], { isFitted: true }).grid).toContain(0)
+})
+
 // The axis is as wide as its widest label, within bounds.
 it('sizes the axis to its widest label', () => {
   expect(axisWidthFor(['$0', '$10k'])).toBeLessThan(axisWidthFor(['$0', '$1,250,000.00']))

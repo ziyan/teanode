@@ -424,6 +424,8 @@ At the end, merging to `main` uploads a build to TestFlight, and a version is on
 
 ### Milestone 13 (later): health data from the iPhone, synced into TeaNode
 
+Superseded by `docs/planning/health-execplan.md` (2026-10-18), which corrects the summaries (worked out on the phone, so sources overlapping count once), the charts (the dashboard's own SVG charts, not ECharts), the upload (GraphQL `ReportHealth`, not a REST route) and adds routes and sharing with circles. What follows is the first sketch.
+
 At the end, the person turns on "Health" in the app, chooses what to share, and TeaNode has their steps, heart rate, sleep, workouts and the rest, kept up to date; the agent answers "how many steps did I average this month?" and "how did I sleep since the trip?" from them; the dashboard shows them; and `teanode health` prints them.
 
 What is read (HealthKit types, each asked for separately, each one the person may refuse):
