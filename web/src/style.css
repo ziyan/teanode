@@ -17189,6 +17189,13 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   justify-content: center;
 }
 
+/* A node of the graph is a box on every screen: the phone's rule that runs
+   cards to the screen's edges without sides would make the tree a list. */
+.agents-tree .agent-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+}
+
 .agent-card {
   display: flex;
   flex-direction: column;
