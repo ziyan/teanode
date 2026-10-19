@@ -67,17 +67,6 @@ enum CalendarRepeatWords {
         case .yearly: return intervalCount > 1 ? String(localized: "Every \(intervalCount) years") : String(localized: "Every year")
         }
     }
-
-    /// The interval as the number and the unit: "2 weeks".
-    static func intervalText(_ parts: CalendarRepeat.Parts) -> String {
-        let intervalCount = parts.intervalCount
-        switch parts.frequency {
-        case .daily: return String(localized: "\(intervalCount) days")
-        case .weekly: return String(localized: "\(intervalCount) weeks")
-        case .monthly: return String(localized: "\(intervalCount) months")
-        case .yearly: return String(localized: "\(intervalCount) years")
-        }
-    }
 }
 
 /// CustomRepeatScreen is the screen behind Custom in an event's Repeat row,
@@ -136,8 +125,10 @@ struct CustomRepeatScreen: View {
                 Text("Every month").tag(CalendarRepeat.Frequency.monthly)
                 Text("Every year").tag(CalendarRepeat.Frequency.yearly)
             }
+            // The whole phrase as the stepper's label: a title and a value beside
+            // the stepper were squeezed until the largest text broke the word.
             Stepper(value: $parts.intervalCount, in: 1...999) {
-                LabeledContent("Every", value: CalendarRepeatWords.intervalText(parts))
+                Text(verbatim: CalendarRepeatWords.shortText(parts))
             }
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
@@ -272,7 +263,7 @@ struct CustomRepeatScreen: View {
             }
             if endKindBinding.wrappedValue == .afterCount {
                 Stepper(value: occurrenceCountBinding, in: 1...999) {
-                    LabeledContent("Ends after", value: occurrenceCountText)
+                    Text(verbatim: occurrenceCountText)
                 }
             }
         } header: {
