@@ -121,13 +121,13 @@ TeaNodeKit: the contact, face group and suggestion models and calls, with decodi
 
 ## Concrete Steps
 
-Work in `~/.cache/claude-tmp/teanode-location` on a branch from `origin/main`. Before opening the pull request, check the next free migration number on `main` and in open pull requests (`gh pr list -R ziyan/teanode --state open`), and rename 0246 if it was taken.
+Work in a clone of the repository, on a branch from `origin/main`. Before opening the pull request, check the next free migration number on `main` and in open pull requests (`gh pr list -R ziyan/teanode --state open`), and rename 0246 if it was taken.
 
     make format
     set -o pipefail; make lint-ci
-    TMPDIR=~/.cache/claude-tmp/tmp go test ./internal/db/ -run Contact ./internal/api/v1api/apigraph/ -run 'Contact|PhotoFace' ./internal/cmd/ ./internal/agent/tools/contact/ ./internal/agent/tools/photo/
+    go test ./internal/db/ -run Contact ./internal/api/v1api/apigraph/ -run 'Contact|PhotoFace' ./internal/cmd/ ./internal/agent/tools/contact/ ./internal/agent/tools/photo/
     cd web && npx vitest run src/pages/addressBook.test.tsx src/pages/photos src/pages/circles.test.tsx && npx tsc --noEmit -p .
-    docker run --rm --name kit-contacts -v ~/.cache/claude-tmp/teanode-location/ios/TeaNodeKit:/kit -w /kit swift:6.1 swift test
+    docker run --rm --name kit-contacts -v "$PWD/ios/TeaNodeKit:/kit" -w /kit swift:6.1 swift test
 
 ## Validation and Acceptance
 
