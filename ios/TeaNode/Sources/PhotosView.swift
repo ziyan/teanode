@@ -613,6 +613,9 @@ final class PhotosModel {
             return true
         } catch {
             problemText = describe(error)
+            // The photos go in batches of 500, and the batches before the
+            // one that failed are already changed.
+            await refreshHeldPhotos(changed: photos)
             return false
         }
     }
@@ -627,6 +630,9 @@ final class PhotosModel {
             return true
         } catch {
             problemText = describe(error)
+            // The photos go in batches of 500, and the batches before the
+            // one that failed are already changed.
+            await refreshHeldPhotos(changed: photos)
             return false
         }
     }

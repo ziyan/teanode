@@ -454,7 +454,9 @@ set-date` and the viewer's change of date do. `search-places` (`query`, and
 (`photo_ids`, and either `place`, whose best match is used, or `latitude` and
 `longitude`) and `remove-location` (`photo_ids`) change where photos were
 taken, as `teanode photo search-places`, `set-location` and `remove-location`
-do; both writes are confirmed like `set-date`. `delete` (photos that are in the
+do, for up to 100 photos at a time. `set-location` is a write like `set-date`;
+`remove-location` cannot be undone, so it is destructive and asks the person
+every time. `delete` (photos that are in the
 Trash) and `empty-trash` delete forever, as `teanode photo delete` and
 `empty-trash` do, and are destructive: they ask the person every time. `delete`
 says how many went and, when some did not, that the others were not in the Trash

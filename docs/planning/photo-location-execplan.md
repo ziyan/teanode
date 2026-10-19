@@ -75,8 +75,9 @@ the person keeps it: the metadata only fills empty columns already.
 Assistant (`internal/agent/tools/photo/photo.go`), new actions:
 `search-places` (query, optional near latitude/longitude), `set-location`
 (photo_ids, and either `place`, whose best match is used, or latitude and
-longitude), `remove-location` (photo_ids). `set-location`, `remove-location`
-are confirmed like `set-date`.
+longitude), `remove-location` (photo_ids). `set-location` is a write like
+`set-date`; `remove-location` cannot be undone, so it is destructive and asks
+every time.
 
 CLI (`internal/cmd/photo.go`): `teanode photo search-places <words>`,
 `teanode photo set-location <id>... --place <words> | --at <latitude>,<longitude>`,

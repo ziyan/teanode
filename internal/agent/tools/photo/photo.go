@@ -189,6 +189,11 @@ func riskOf(raw json.RawMessage) tools.Risk {
 	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
 	case "trash", "delete", "empty-trash", "album-delete":
 		return tools.RiskDestructive
+	case "remove-location":
+		// TeaNode keeps no copy of the old position, so this cannot be
+		// undone and asks the person every time, as the dashboard, the
+		// iPhone and the command line do.
+		return tools.RiskDestructive
 	case "album-share", "album-unshare":
 		// Who may see the person's photos: a way in for somebody else, which
 		// the person is asked about unless they allowed it.
@@ -204,7 +209,7 @@ func riskOf(raw json.RawMessage) tools.Risk {
 			return tools.RiskGranting
 		}
 		return tools.RiskWrite
-	case "favorite", "set-date", "set-location", "remove-location", "restore", "retry", "save", "save-shared", "describe", "album-create", "album-rename", "album-add", "album-remove", "album-cover":
+	case "favorite", "set-date", "set-location", "restore", "retry", "save", "save-shared", "describe", "album-create", "album-rename", "album-add", "album-remove", "album-cover":
 		return tools.RiskWrite
 	}
 	if risk, isFaceOperation := faceRiskOf(asked); isFaceOperation {
