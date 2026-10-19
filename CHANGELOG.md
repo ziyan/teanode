@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.179.2] - 2026-10-19
+
+### Fixed
+
+- On the iPhone, Location's sharing rows wrap from the left at large text sizes, and the chosen person's latest time no longer reads as in the future. (#584)
+
 ## [0.179.1] - 2026-10-19
 
 ### Fixed
