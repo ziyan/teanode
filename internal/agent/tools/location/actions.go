@@ -169,13 +169,13 @@ func (self *scope) moment(value string) (*string, error) {
 	return &text, nil
 }
 
-// exactTimeText is a time to the second in the person's zone with its
-// offset, for a value the model passes on to another tool.
+// exactTimeText is a time in the person's zone with its offset and any
+// fraction of a second, for a value the model passes on to another tool.
 func (self *scope) exactTimeText(value *time.Time) string {
 	if value == nil {
 		return ""
 	}
-	return value.In(self.where).Format(time.RFC3339)
+	return value.In(self.where).Format(time.RFC3339Nano)
 }
 
 func (self *scope) timeText(value *time.Time) string {
@@ -522,9 +522,8 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		if visit.PhotoCount != nil && *visit.PhotoCount > 0 {
 			row["photo_count"] = *visit.PhotoCount
-			// To the second, with the zone's offset, so the photo tool's
-			// taken_after and taken_before given them list exactly the photos
-			// counted.
+			// Exact, with the zone's offset, so the photo tool's taken_after
+			// and taken_before given them list exactly the photos counted.
 			row["photos_taken_after"] = here.exactTimeText(visit.ArrivedAt)
 			row["photos_taken_before"] = here.exactTimeText(visit.PhotosTakenBefore)
 		}

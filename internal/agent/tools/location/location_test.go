@@ -164,7 +164,7 @@ func TestNowAsksWhereItCanAndFallsBack(t *testing.T) {
 // Visits are read in the person's zone and paged.
 func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ListLocationVisits": `{"nextOffset":20,"placeVisits":[
-		{"arrivedAt":"2026-10-17T09:30:30Z","departedAt":"2026-10-17T10:15:40Z","durationSeconds":2710,"photoCount":3,"photosTakenBefore":"2026-10-17T10:15:40Z","place":{"id":"p1","placeName":"Maple Park","osmName":"Maple Park","placeLabel":"home"}},
+		{"arrivedAt":"2026-10-17T09:30:30Z","departedAt":"2026-10-17T10:15:40Z","durationSeconds":2710,"photoCount":3,"photosTakenBefore":"2026-10-17T10:15:40.7Z","place":{"id":"p1","placeName":"Maple Park","osmName":"Maple Park","placeLabel":"home"}},
 		{"arrivedAt":"2026-10-17T11:00:00Z","place":{"id":"p2","placeName":"Elm Library"}}]}`}}
 	answer, result, err := act(t, runOf(operations), "visits", `{"from":"2026-10-17","until":"2026-10-19","place_label":"Home","limit":20}`, false)
 	if err != nil {
@@ -178,11 +178,12 @@ func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	if first["photo_count"] != float64(3) || second["photo_count"] != nil {
 		t.Errorf("the photo count is told when there are photos: %v %v", first, second)
 	}
-	// The window is given to the second, and reads back as the same instants.
-	for key, wanted := range map[string]string{"photos_taken_after": "2026-10-17T09:30:30Z", "photos_taken_before": "2026-10-17T10:15:40Z"} {
+	// The window is given exactly, a fraction of a second included, and reads
+	// back as the same instants.
+	for key, wanted := range map[string]string{"photos_taken_after": "2026-10-17T09:30:30Z", "photos_taken_before": "2026-10-17T10:15:40.7Z"} {
 		given, _ := first[key].(string)
 		parsed, err := tools.ParseTime(given, time.UTC, time.Now())
-		if err != nil || parsed.UTC().Format(time.RFC3339) != wanted {
+		if err != nil || parsed.UTC().Format(time.RFC3339Nano) != wanted {
 			t.Errorf("%s is %q, read back as %v (%v)", key, given, parsed, err)
 		}
 	}
