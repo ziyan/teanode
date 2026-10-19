@@ -250,8 +250,10 @@ export function roundedTop(x: number, y: number, width: number, height: number, 
 }
 
 // The colours a series can take, named for the usage chart's parts whose
-// colours they are: the full leaf, a paler leaf, and a neutral grey.
-export type SeriesTone = 'output' | 'input' | 'cached'
+// colours they are: the full leaf, a paler leaf, and a neutral grey. The
+// rest are the stages of a night's sleep (deep, core, REM, awake), and the
+// pale band behind a line that shows how far its values ranged.
+export type SeriesTone = 'output' | 'input' | 'cached' | 'deep' | 'core' | 'rem' | 'awake' | 'band'
 
 export type ChartSeries = {
   id: string
@@ -262,6 +264,16 @@ export type ChartSeries = {
   // for, which a line leaves a gap at.
   shape: 'column' | 'line'
   values: (number | null)[]
+}
+
+// ChartBand is the area between a low and a high value at each key, drawn
+// behind the lines: the lowest and highest reading of a period around its
+// average. A key either value is missing for leaves a gap.
+export type ChartBand = {
+  id: string
+  tone: SeriesTone
+  lows: (number | null)[]
+  highs: (number | null)[]
 }
 
 // SeriesChart draws one or more series over the same keys: days of a
@@ -290,6 +302,8 @@ export function SeriesChart({
   tooltipNote,
   isFitted = false,
   isEveryDipShown = false,
+  isStacked = false,
+  bands = NO_BANDS,
 }: {
   keys: string[]
   keyLabel: (key: string) => string
@@ -321,18 +335,31 @@ export function SeriesChart({
   // Any value below zero is drawn below it (see chartScale), for a flow
   // whose small losses matter.
   isEveryDipShown?: boolean
+  // The column series are piled in one column a key, first at the foot,
+  // rather than side by side: the stages of a night, whose sum is the night.
+  // Their values are not negative.
+  isStacked?: boolean
+  bands?: ChartBand[]
 }) {
   const [holder, width] = useWidth()
   const [hovered, setHovered] = useChartHover(holder)
 
-  const scale = useMemo(
-    () =>
-      chartScale(
-        series.flatMap((one) => one.values.filter((value): value is number => value !== null)),
-        { isFitted, isEveryDipShown },
-      ),
-    [series, isFitted, isEveryDipShown],
-  )
+  const scale = useMemo(() => {
+    const present = (values: (number | null)[]) => values.filter((value): value is number => value !== null)
+    const stackedTotals = isStacked
+      ? keys.map((_, index) =>
+          series.reduce((total, one) => total + (one.shape === 'column' ? (one.values[index] ?? 0) : 0), 0),
+        )
+      : []
+    return chartScale(
+      [
+        ...series.filter((one) => !isStacked || one.shape === 'line').flatMap((one) => present(one.values)),
+        ...stackedTotals,
+        ...bands.flatMap((band) => [...present(band.lows), ...present(band.highs)]),
+      ],
+      { isFitted, isEveryDipShown },
+    )
+  }, [keys, series, bands, isStacked, isFitted, isEveryDipShown])
   const axisLabels = axisLabelsFor(scale.grid, axisFormat ?? ((value) => format(value)), format)
   const axisWidth = axisWidthFor(axisLabels)
 
@@ -364,6 +391,8 @@ export function SeriesChart({
             label={label}
             selectedKey={selectedKey ?? null}
             onSelectKey={onSelectKey}
+            isStacked={isStacked}
+            bands={bands}
           />
         ) : null}
         {hovered !== null && keys[hovered] !== undefined && width > 0 ? (
@@ -398,6 +427,8 @@ export function SeriesChart({
   )
 }
 
+const NO_BANDS: ChartBand[] = []
+
 function SeriesDrawing({
   keys,
   keyLabel,
@@ -413,6 +444,8 @@ function SeriesDrawing({
   label,
   selectedKey,
   onSelectKey,
+  isStacked,
+  bands,
 }: {
   keys: string[]
   keyLabel: (key: string) => string
@@ -428,6 +461,8 @@ function SeriesDrawing({
   label: string
   selectedKey: string | null
   onSelectKey?: (key: string) => void
+  isStacked: boolean
+  bands: ChartBand[]
 }) {
   const slotButtons = useRef<(SVGRectElement | null)[]>([])
   const { ceiling, floor } = scale
@@ -436,8 +471,9 @@ function SeriesDrawing({
   const slot = plotWidth / Math.max(1, keys.length)
   const columns = series.filter((one) => one.shape === 'column')
   const lines = series.filter((one) => one.shape === 'line')
-  const groupWidth = Math.max(2, Math.min(28 * Math.max(1, columns.length), slot * 0.62))
-  const columnWidth = groupWidth / Math.max(1, columns.length)
+  const sideBySideCount = isStacked ? 1 : columns.length
+  const groupWidth = Math.max(2, Math.min(28 * Math.max(1, sideBySideCount), slot * 0.62))
+  const columnWidth = groupWidth / Math.max(1, sideBySideCount)
   const span = Math.max(1e-9, ceiling - floor)
   // Held inside the scale, so a dip the scale chose not to reach for is
   // drawn on the zero line rather than over the axis labels.
@@ -527,24 +563,26 @@ function SeriesDrawing({
         const isDimmed = selectedIndex < 0 && hovered !== null && hovered !== index
         return (
           <g key={key} className={isUnselected ? 'series-chart-unselected' : isDimmed ? 'usage-chart-dim' : ''}>
-            {columns.map((one, position) => {
-              const value = one.values[index]
-              if (value === null || value === undefined || value === 0) return null
-              const x = groupX + position * columnWidth
-              const height = Math.max(1, Math.abs(yOf(value) - zero))
-              const radius = Math.min(4, columnWidth / 2, height)
-              return (
-                <path
-                  key={one.id}
-                  className={`usage-chart-column ${one.tone}`}
-                  d={
-                    value > 0
-                      ? roundedTop(x, zero - height, columnWidth, height, radius)
-                      : `M${x},${zero}h${columnWidth}v${height}h${-columnWidth}z`
-                  }
-                />
-              )
-            })}
+            {isStacked
+              ? stackedColumns(columns, index, groupX, columnWidth, yOf, zero)
+              : columns.map((one, position) => {
+                  const value = one.values[index]
+                  if (value === null || value === undefined || value === 0) return null
+                  const x = groupX + position * columnWidth
+                  const height = Math.max(1, Math.abs(yOf(value) - zero))
+                  const radius = Math.min(4, columnWidth / 2, height)
+                  return (
+                    <path
+                      key={one.id}
+                      className={`usage-chart-column ${one.tone}`}
+                      d={
+                        value > 0
+                          ? roundedTop(x, zero - height, columnWidth, height, radius)
+                          : `M${x},${zero}h${columnWidth}v${height}h${-columnWidth}z`
+                      }
+                    />
+                  )
+                })}
             {labeled.has(index) ? (
               <text
                 className={index === selectedIndex ? 'usage-chart-axis series-chart-axis-selected' : 'usage-chart-axis'}
@@ -562,6 +600,9 @@ function SeriesDrawing({
           </g>
         )
       })}
+      {bands.map((band) => (
+        <path key={band.id} className={`series-chart-band ${band.tone}`} d={bandPath(band, slot, yOf, axisWidth)} />
+      ))}
       {lines.map((one) => (
         <path key={one.id} className={`series-chart-line ${one.tone}`} d={linePath(one.values, slot, yOf, axisWidth)} />
       ))}
@@ -641,6 +682,61 @@ export function isolatedIndexes(values: (number | null | undefined)[]): number[]
   return values.flatMap((_, index) =>
     isPresent(index) && !isPresent(index - 1) && !isPresent(index + 1) ? [index] : [],
   )
+}
+
+// stackedColumns piles one key's column series on each other, the first at
+// the foot, with only the topmost rounded so the pile reads as one column.
+function stackedColumns(
+  columns: ChartSeries[],
+  index: number,
+  x: number,
+  width: number,
+  yOf: (value: number) => number,
+  zero: number,
+) {
+  const present = columns.filter((one) => (one.values[index] ?? 0) > 0)
+  let total = 0
+  return present.map((one, position) => {
+    const value = one.values[index] ?? 0
+    const bottom = total === 0 ? zero : yOf(total)
+    total += value
+    const top = yOf(total)
+    const height = Math.max(1, bottom - top)
+    const radius = Math.min(4, width / 2, height)
+    return (
+      <path
+        key={one.id}
+        className={`usage-chart-column ${one.tone}`}
+        d={
+          position === present.length - 1
+            ? roundedTop(x, bottom - height, width, height, radius)
+            : `M${x},${bottom}V${bottom - height}h${width}V${bottom}z`
+        }
+      />
+    )
+  })
+}
+
+// bandPath is the area between a band's lows and highs, one piece for each
+// run of keys that have both, so a gap is a break in the area.
+function bandPath(band: ChartBand, slot: number, yOf: (value: number) => number, axisWidth: number): string {
+  const parts: string[] = []
+  let run: number[] = []
+  const finish = () => {
+    if (run.length > 0) {
+      const xOf = (index: number) => (axisWidth + index * slot + slot / 2).toFixed(1)
+      const top = run.map((index) => `${xOf(index)},${yOf(band.highs[index] as number).toFixed(1)}`)
+      const bottom = [...run].reverse().map((index) => `${xOf(index)},${yOf(band.lows[index] as number).toFixed(1)}`)
+      parts.push(`M${[...top, ...bottom].join('L')}Z`)
+    }
+    run = []
+  }
+  band.lows.forEach((low, index) => {
+    if (low === null || low === undefined || band.highs[index] === null || band.highs[index] === undefined) finish()
+    else run.push(index)
+  })
+  finish()
+  return parts.join(' ')
 }
 
 // linePath runs through the middle of each slot, lifting the pen over a

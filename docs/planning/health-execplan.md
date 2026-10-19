@@ -210,7 +210,7 @@ Server: a batch sent twice stores it once; deleting samples answers their times;
 
 ## Plan of Work
 
-Milestone 1, the server (two subagents from this plan: storage and GraphQL; then tool and command line against the GraphQL). Milestone 2, the iPhone (one subagent for TeaNodeKit and its tests, one for the app against TeaNodeKit's interfaces as written above). Milestone 3, the dashboard (one subagent, against the GraphQL). Milestone 4, docs (`docs/subsystems/health.md`, `docs/reference/command-line.md`, `docs/getting-started.md`, the phone tour), the privacy policy (teanode.github.io `app/privacy.html`, checked with that site's session first), and a decision record `docs/decisions/20261018-health-is-shared-by-category-as-day-summaries.md`. Every diff is read, built and tested here before it is committed.
+Milestone 1, the server (two subagents from this plan: storage and GraphQL; then tool and command line against the GraphQL). Milestone 2, the iPhone (one subagent for TeaNodeKit and its tests, one for the app against TeaNodeKit's interfaces as written above). Milestone 3, the dashboard (one subagent, against the GraphQL). Milestone 4, docs (`docs/subsystems/health.md`, `docs/reference/command-line.md`, `docs/getting-started.md`, the phone tour), the privacy policy (`app/privacy.html` on the teanode.com site, checked with that site's session first), and a decision record `docs/decisions/20261018-health-is-shared-by-category-as-day-summaries.md`. Every diff is read, built and tested here before it is committed.
 
 ## Validation and Acceptance
 

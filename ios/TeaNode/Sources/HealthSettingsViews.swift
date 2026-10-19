@@ -1,0 +1,187 @@
+import SwiftUI
+import TeaNodeKit
+
+// Health in Settings: the switch that copies Apple Health data to the server,
+// what has been sent, whether the agent may read it, who it is shared with,
+// and erasing it.
+
+/// HealthSettingsRow is the row in Settings that opens the Health settings,
+/// saying whether Health is on.
+struct HealthSettingsRow: View {
+    private let sync = HealthSync.shared
+
+    var body: some View {
+        HStack {
+            Label {
+                Text(verbatim: HealthWords.title)
+            } icon: {
+                Image(systemName: AppSection.health.systemImage)
+            }
+            .foregroundStyle(.primary)
+            Spacer()
+            if HealthSyncSnapshot.current().isOn {
+                Text("On").foregroundStyle(.secondary)
+            } else {
+                Text("Off").foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// HealthSettingsScreen is what the person decides about Health: copying it
+/// to the server, the agent reading it, sharing it, and erasing it.
+struct HealthSettingsScreen: View {
+    @State private var model: HealthSettingsModel
+    @State private var isSettingUp = false
+    @State private var isSharing = false
+    @State private var isConfirmingErase = false
+    private let sync = HealthSync.shared
+
+    init(connection: Connection) {
+        _model = State(initialValue: HealthSettingsModel(connection: connection))
+    }
+
+    var body: some View {
+        let snapshot = HealthSyncSnapshot.current()
+        Form {
+            copyingSection(snapshot)
+            if snapshot.isOn {
+                statusSection(snapshot)
+            }
+            agentSection
+            HealthSharingSections(model: model, isSharing: $isSharing)
+            eraseSection
+        }
+        .navigationTitle(HealthWords.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await model.load() }
+        .task { await model.load() }
+        .sheet(isPresented: $isSettingUp) { HealthSetupSheet() }
+        .sheet(isPresented: $isSharing) { HealthShareSheet(model: model) }
+        .toast(done: $model.doneText, problem: $model.problemText)
+        #if DEBUG
+            .onAppear {
+                // `-TeaNodeScreen health-setup`: the setup over the settings.
+                if DemoServer.isRequested, DemoServer.screen == "health-setup" { isSettingUp = true }
+            }
+        #endif
+    }
+
+    // MARK: Copying
+
+    private func copyingSection(_ snapshot: HealthSyncSnapshot) -> some View {
+        Section {
+            Toggle(
+                isOn: Binding(
+                    get: { snapshot.isOn },
+                    set: { isOn in
+                        if isOn { isSettingUp = true } else { sync.turnOff() }
+                    })
+            ) {
+                Text(verbatim: HealthWords.title)
+            }
+            .disabled(!snapshot.isAvailable)
+        } footer: {
+            if snapshot.isAvailable {
+                Text("Copies the Health data you allow to your own TeaNode server. Turned off, it sends nothing new. What is already on your server stays until you erase it.")
+            } else {
+                Text("Health is not available on this iPhone.")
+            }
+        }
+    }
+
+    private func statusSection(_ snapshot: HealthSyncSnapshot) -> some View {
+        Section {
+            LabeledContent("Last sent") {
+                if let lastSentAt = snapshot.lastSentAt {
+                    Text(verbatim: lastSentAt.formatted(.relative(presentation: .named)))
+                } else {
+                    Text("Not yet")
+                }
+            }
+            LabeledContent("Readings sent") {
+                Text(snapshot.sentSampleCount, format: .number).monospacedDigit()
+            }
+            if !snapshot.isHistoryDone {
+                LabeledContent("Older readings") {
+                    Text("Still being read")
+                }
+            }
+            if snapshot.pendingDayCount > 0 {
+                LabeledContent("Days waiting to be added up") {
+                    Text(snapshot.pendingDayCount, format: .number).monospacedDigit()
+                }
+            }
+            if let problemText = snapshot.problemText {
+                Label {
+                    Text(verbatim: problemText)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                }
+                .foregroundStyle(.primary)
+            }
+            Button(syncButtonTitle(snapshot), systemImage: "arrow.triangle.2.circlepath") {
+                Task { await sync.syncNow() }
+            }
+            .actionColor()
+            .disabled(snapshot.isSyncing)
+        } header: {
+            Text("Status")
+        }
+    }
+
+    private func syncButtonTitle(_ snapshot: HealthSyncSnapshot) -> String {
+        snapshot.isSyncing ? String(localized: "Sending…") : String(localized: "Sync Now")
+    }
+
+    // MARK: The agent
+
+    private var agentSection: some View {
+        Section {
+            Toggle(
+                "Let the agent read Health data",
+                isOn: Binding(
+                    get: { model.settings?.canAgentReadHealth ?? false },
+                    set: { canRead in Task { await model.setAgentCanRead(canRead) } })
+            )
+            .disabled(model.settings == nil || model.isBusy)
+        } header: {
+            Text("The agent")
+        } footer: {
+            Text(agentFooterText)
+        }
+    }
+
+    /// Where what the agent reads goes: to the provider of its model.
+    private var agentFooterText: String {
+        let providerName = model.settings?.modelProviderName ?? ""
+        if providerName.isEmpty { return String(localized: "What the agent reads goes to the provider of its model.") }
+        return String(localized: "What the agent reads goes to \(providerName).")
+    }
+
+    // MARK: Erasing
+
+    private var eraseSection: some View {
+        Section {
+            Button(role: .destructive) {
+                isConfirmingErase = true
+            } label: {
+                // The icon takes the tint unless it is colored too.
+                Label("Erase Health Data", systemImage: "trash").foregroundStyle(.red)
+            }
+            .tint(.red)
+            .actionColor(isDestructive: true)
+            .disabled(model.isBusy)
+            .confirmationDialog("Erase all Health data?", isPresented: $isConfirmingErase, titleVisibility: .visible) {
+                Button("Erase Health Data", role: .destructive) {
+                    Task { await model.eraseEverything() }
+                }
+            } message: {
+                Text(
+                    "Every reading, summary and route kept on your server is deleted. This cannot be undone, and the app stops sending until you turn Health on again."
+                )
+            }
+        }
+    }
+}

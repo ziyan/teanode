@@ -22,6 +22,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/finance"
 	_ "github.com/ziyan/teanode/internal/agent/tools/folder"
 	_ "github.com/ziyan/teanode/internal/agent/tools/goal"
+	_ "github.com/ziyan/teanode/internal/agent/tools/health"
 	_ "github.com/ziyan/teanode/internal/agent/tools/idea"
 	_ "github.com/ziyan/teanode/internal/agent/tools/knowledge"
 	_ "github.com/ziyan/teanode/internal/agent/tools/location"

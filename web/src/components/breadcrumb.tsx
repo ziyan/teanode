@@ -45,6 +45,7 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/circles', trail: [{ label: 'circles.title', to: '/circles' }] },
   // A page of its own in the mailbox's rail, after the calendar.
   { prefix: '/location', trail: [{ label: 'location.title', to: '/location' }] },
+  { prefix: '/health', trail: [{ label: 'health.title', to: '/health' }] },
   { prefix: '/manage/mail', trail: [{ label: 'nav.mail', to: '/manage/mail' }] },
   { prefix: '/manage/queue', trail: [{ label: 'nav.queue', to: '/manage/queue' }] },
   { prefix: '/manage/reports', trail: [{ label: 'nav.reports', to: '/manage/reports' }] },

@@ -30,6 +30,15 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 	schema := component.(*graph).schema
 
 	documents := map[string]string{
+		"ListHealthTypes":            client.DocumentListHealthTypes,
+		"ReadHealthSummary":          client.DocumentReadHealthSummary,
+		"ListHealthSamples":          client.DocumentListHealthSamples,
+		"ReadHealthRoute":            client.DocumentReadHealthRoute,
+		"ReadHealthSettings":         client.DocumentReadHealthSettings,
+		"UpdateHealthSettings":       client.DocumentUpdateHealthSettings,
+		"EraseHealthData":            client.DocumentEraseHealthData,
+		"ListHealthShares":           client.DocumentListHealthShares,
+		"SetHealthShare":             client.DocumentSetHealthShare,
 		"GetDeviceSetupCapabilities": client.DocumentDeviceSetupCapabilities,
 		"CreateDeviceSetupProfile":   client.DocumentCreateDeviceSetupProfile,
 

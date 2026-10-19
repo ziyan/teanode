@@ -12,6 +12,7 @@ import {
   ComposeIcon,
   DomainsIcon,
   GridIcon,
+  HeartIcon,
   KeyIcon,
   LinkIcon,
   ListIcon,
@@ -246,6 +247,7 @@ export function Sidebar({
       '/reminders',
       '/photos',
       '/location',
+      '/health',
       '/circles',
     ].some((path) => location.pathname === path || location.pathname.startsWith(path + '/')) ||
     location.pathname === '/mailbox' ||
@@ -528,6 +530,14 @@ export function Sidebar({
                   <span className="sidebar-label">{t('location.title')}</span>
                 </NavLink>
               )}
+              {hasPermission(session.permissions, 'health:use') && (
+                <NavLink to="/health" title={collapsed ? t('health.title') : undefined}>
+                  <span className="sidebar-icon">
+                    <HeartIcon />
+                  </span>
+                  <span className="sidebar-label">{t('health.title')}</span>
+                </NavLink>
+              )}
               {/* What the agent knows and what the person's money did, under
                   the calendar: pages read often, not settings. The mailbox's
                   own settings are with the rest of the person's, in the
@@ -583,6 +593,12 @@ export function Sidebar({
                 <NavLink to="/location">
                   <LocationIcon />
                   <span className="sidebar-label">{t('location.title')}</span>
+                </NavLink>
+              )}
+              {hasPermission(session.permissions, 'health:use') && (
+                <NavLink to="/health">
+                  <HeartIcon />
+                  <span className="sidebar-label">{t('health.title')}</span>
                 </NavLink>
               )}
               {session.services?.isContactsEnabled && hasPermission(session.permissions, 'contacts:use') && (

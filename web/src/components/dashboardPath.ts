@@ -83,7 +83,7 @@ export const FINANCE_LINK_PATH = '/finance/link'
 // The parts of the dashboard the agent may take the person to: their own
 // pages, never an operator's (internal/agent/tools/openpage holds the same
 // list).
-const SHOWN_PREFIXES = ['/knowledge', '/mailbox', '/settings/agent', '/settings', '/finance', '/location']
+const SHOWN_PREFIXES = ['/knowledge', '/mailbox', '/settings/agent', '/settings', '/finance', '/location', '/health']
 
 // shownPath is a path the agent asked the dashboard to show, or null: under
 // one of the prefixes above, in segments of letters, digits and -._~, so no
