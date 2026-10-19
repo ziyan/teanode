@@ -6447,7 +6447,6 @@ export const en = {
     'Erases your positions and visits on {day}, and the places left with no visit that you did not name or label. Places you named or labeled stay. Anything your agent already learned from that day stays in its memory until you remove it. This cannot be undone.',
   'location.filterAllLabels': 'All labels',
   'location.searchPlaces': 'Search places',
-  'location.visitsNoMatch': 'No visits match.',
   'location.placesNoMatch': 'No places match.',
   'location.placeVisits': 'Visits to this place',
   'location.placeVisitsLatest': 'Showing the latest {visitCount}.',

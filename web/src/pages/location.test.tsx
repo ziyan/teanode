@@ -535,18 +535,11 @@ it('offers Erase this day only when a day is selected', async () => {
   expect(screen.queryByRole('menuitem', { name: 'Erase this day…' })).toBeNull()
 })
 
-it('narrows the visits by label and the places by label and by the words typed', async () => {
+it('narrows the places by label and by the words typed, and not the visits', async () => {
   answerWith({ visits: [visit()], places: [place()] })
   renderAt('/location')
   await screen.findByText('Fixture Park')
-
-  fireEvent.click(screen.getByRole('combobox', { name: 'Label' }))
-  fireEvent.click(screen.getByRole('option', { name: 'Home' }))
-  await waitFor(() =>
-    expect(
-      calls('ListLocationVisits').some(([, variables]) => (variables as { placeLabel?: string }).placeLabel === 'home'),
-    ).toBe(true),
-  )
+  expect(screen.queryByRole('combobox', { name: 'Label' })).toBeNull()
 
   cleanup()
   vi.mocked(graphql).mockClear()
