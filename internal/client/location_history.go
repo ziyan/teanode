@@ -54,6 +54,19 @@ type PlaceVisit struct {
 	LongitudeDegrees float64    `json:"longitudeDegrees"`
 	AccuracyMeters   float64    `json:"accuracyMeters"`
 	VisitSource      string     `json:"visitSource"`
+
+	// PhotoCount and Photos are the person's own photos taken during the
+	// visit (the first few, earliest first). Both are nil for somebody
+	// else's visits, without Photos, and for a visit with no arrival.
+	PhotoCount *int          `json:"photoCount"`
+	Photos     []*VisitPhoto `json:"photos"`
+}
+
+// VisitPhoto is one picture shown under a visit.
+type VisitPhoto struct {
+	ID              string     `json:"id"`
+	SmallPreviewURL string     `json:"smallPreviewUrl"`
+	TakenAt         *time.Time `json:"takenAt"`
 }
 
 // Location is where a person is.
@@ -119,6 +132,9 @@ const (
 	placeVisitFields = `id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
     place { ` + placeFields + ` }`
 
+	listedVisitFields = placeVisitFields + `
+    photoCount photos { id smallPreviewUrl takenAt }`
+
 	foundPlaceFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
 	DocumentGetLocation = `query ($userId: String) {
@@ -132,7 +148,7 @@ const (
 	DocumentListLocationVisits = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String, $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel, offset: $offset, limitCount: $limitCount) {
     nextOffset
-    placeVisits { ` + placeVisitFields + ` }
+    placeVisits { ` + listedVisitFields + ` }
   }
 }`
 

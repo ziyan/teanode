@@ -269,6 +269,17 @@ answers carry the untrusted mark.
 - **Only where a turn can ask a browser or phone** does `now` ask for a fresh
   position, once; elsewhere it answers the last one kept, with its age.
 
+## Photos taken during a visit
+
+`ListLocationVisits` adds `photoCount` and `photos` to each of the caller's
+own visits: how many of their library photos (not in the trash) were taken from
+the arrival up to, not including, the departure (now, for a visit still going),
+and the first four, earliest first. One database call (`ListVisitPhotos`) covers
+the whole page. They are null for a family member reading the visits, for a
+caller without Photos (the service off, or no `photos:use`), and for a visit
+with no arrival. Location works without Photos. Other operations that return a
+visit (the open visit in `GetLocation`, `CheckIn`) leave them null.
+
 ## Where it lives
 
 - `internal/db/database_location*.go`: the queries; `internal/place`: visits and

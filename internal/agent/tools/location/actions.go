@@ -14,10 +14,11 @@ import (
 // The documents the actions send, as the person. They ask for what an answer
 // is made of and no more.
 const (
-	pointFields = `latitudeDegrees longitudeDegrees accuracyMeters measuredAt locationSource`
-	placeFields = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText isAddressTyped visitCount lastVisitAt`
-	visitFields = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
-	foundFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
+	pointFields       = `latitudeDegrees longitudeDegrees accuracyMeters measuredAt locationSource`
+	placeFields       = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText isAddressTyped visitCount lastVisitAt`
+	visitFields       = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
+	listedVisitFields = visitFields + ` photoCount`
+	foundFields       = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
 	documentGetLocation = `query ($userId: String) {
   GetLocation(userId: $userId) { username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } }
@@ -27,7 +28,7 @@ const (
 }`
 	documentListVisits = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String, $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel, offset: $offset, limitCount: $limitCount) {
-    nextOffset placeVisits { ` + visitFields + ` }
+    nextOffset placeVisits { ` + listedVisitFields + ` }
   }
 }`
 	documentListPlaces = `query ($userId: String, $placeLabel: String, $query: String, $offset: Int, $limitCount: Int) {
@@ -95,6 +96,7 @@ type visitData struct {
 	DepartedAt      *time.Time `json:"departedAt"`
 	DurationSeconds *int       `json:"durationSeconds"`
 	Place           *placeData `json:"place"`
+	PhotoCount      *int       `json:"photoCount"`
 }
 
 type locationData struct {
@@ -500,6 +502,9 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		if visit.DurationSeconds != nil {
 			row["visit_duration"] = durationWords(time.Duration(*visit.DurationSeconds) * time.Second)
+		}
+		if visit.PhotoCount != nil && *visit.PhotoCount > 0 {
+			row["photo_count"] = *visit.PhotoCount
 		}
 		rows = append(rows, row)
 	}

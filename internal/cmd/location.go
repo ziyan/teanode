@@ -422,9 +422,13 @@ func runLocationVisits(ctx context.Context, command *cli.Command) error {
 		if visit.DurationSeconds != nil {
 			duration = timeWords(time.Duration(*visit.DurationSeconds) * time.Second)
 		}
-		rows = append(rows, []string{timeCell(visit.ArrivedAt), left, duration, placeLine(visit.Place), visit.Place.ID})
+		photos := ""
+		if visit.PhotoCount != nil && *visit.PhotoCount > 0 {
+			photos = fmt.Sprintf("%d", *visit.PhotoCount)
+		}
+		rows = append(rows, []string{timeCell(visit.ArrivedAt), left, duration, photos, placeLine(visit.Place), visit.Place.ID})
 	}
-	if err := printTable([]string{"arrived", "left", "duration", "place", "place id"}, rows); err != nil {
+	if err := printTable([]string{"arrived", "left", "duration", "photos", "place", "place id"}, rows); err != nil {
 		return err
 	}
 	noteNextPage(page.NextOffset, first)

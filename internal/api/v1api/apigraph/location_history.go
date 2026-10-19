@@ -219,6 +219,13 @@ type PlaceVisitView struct {
 
 	// VisitSource is visit, region, check_in or browser.
 	VisitSource string `json:"visitSource"`
+
+	// PhotoCount is how many of the caller's own library photos were taken
+	// during the visit, and Photos the first visitPhotoPreviewCount of them,
+	// earliest first. Both are null unless the visits are the caller's own
+	// and the caller may use Photos, and for a visit with no arrival.
+	PhotoCount *int             `json:"photoCount"`
+	Photos     *[]*models.Photo `json:"photos"`
 }
 
 // PlaceVisitPageView is a page of visits.
@@ -870,7 +877,58 @@ func (self *graph) ListLocationVisits(ctx context.Context, arguments ListLocatio
 	for _, visit := range visits {
 		page.PlaceVisits = append(page.PlaceVisits, describePlaceVisit(visit, reach.ShareLevel == models.LocationShareLevelOwner))
 	}
+	if reach.ShareLevel == models.LocationShareLevelOwner {
+		if err := self.attachVisitPhotos(ctx, principal, page.PlaceVisits); err != nil {
+			return nil, err
+		}
+	}
 	return page, nil
+}
+
+// visitPhotoPreviewCount is how many pictures a visit carries.
+const visitPhotoPreviewCount = 4
+
+// attachVisitPhotos fills in the photos the caller took during each of their
+// own visits. A caller who may not use Photos (the service is off, or the
+// permission is missing) gets nulls and no error: Location works without
+// Photos. A visit with no arrival has no window, so it stays null.
+func (self *graph) attachVisitPhotos(ctx context.Context, principal *api.Principal, views []*PlaceVisitView) error {
+	if !self.isServiceEnabled(models.ServicePhotos) || !principal.Permissions.Has(models.PermissionPhotosUse) {
+		return nil
+	}
+	now := time.Now().UTC()
+	windows := make([]db.VisitPhotoWindow, 0, len(views))
+	for _, view := range views {
+		if view.ArrivedAt == nil {
+			continue
+		}
+		endedAt := now
+		if view.DepartedAt != nil {
+			endedAt = *view.DepartedAt
+		}
+		windows = append(windows, db.VisitPhotoWindow{VisitID: view.ID, StartedAt: *view.ArrivedAt, EndedAt: endedAt})
+	}
+	if len(windows) == 0 {
+		return nil
+	}
+	found, err := self.transaction(ctx).ListVisitPhotos(principal.User.ID, windows, visitPhotoPreviewCount)
+	if err != nil {
+		return translateError(err)
+	}
+	var shown []*models.Photo
+	for _, view := range views {
+		visitPhotos := found[view.ID]
+		if view.ArrivedAt == nil || visitPhotos == nil {
+			continue
+		}
+		photoCount := visitPhotos.PhotoCount
+		view.PhotoCount, view.Photos = &photoCount, &visitPhotos.Photos
+		shown = append(shown, visitPhotos.Photos...)
+	}
+	if len(shown) == 0 {
+		return nil
+	}
+	return translateError(self.withFilesAndPreviews(ctx, principal.User.ID, shown, false))
 }
 
 func (self *graph) ListPlaces(ctx context.Context, arguments ListPlacesArguments) (*PlacePageView, error) {

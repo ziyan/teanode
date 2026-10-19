@@ -164,7 +164,7 @@ func TestNowAsksWhereItCanAndFallsBack(t *testing.T) {
 // Visits are read in the person's zone and paged.
 func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ListLocationVisits": `{"nextOffset":20,"placeVisits":[
-		{"arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T10:15:00Z","durationSeconds":2700,"place":{"id":"p1","placeName":"Maple Park","osmName":"Maple Park","placeLabel":"home"}},
+		{"arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T10:15:00Z","durationSeconds":2700,"photoCount":3,"place":{"id":"p1","placeName":"Maple Park","osmName":"Maple Park","placeLabel":"home"}},
 		{"arrivedAt":"2026-10-17T11:00:00Z","place":{"id":"p2","placeName":"Elm Library"}}]}`}}
 	answer, result, err := act(t, runOf(operations), "visits", `{"from":"2026-10-17","until":"2026-10-19","place_label":"Home","limit":20}`, false)
 	if err != nil {
@@ -174,6 +174,9 @@ func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	first, second := visits[0].(map[string]any), visits[1].(map[string]any)
 	if first["place_display_name"] != "Home" || first["osm_name"] != "Maple Park" || first["place_label"] != "home" || first["visit_duration"] != "45 minutes" || first["arrived"] != "2026-10-17 09:30" {
 		t.Errorf("a finished visit: %v", first)
+	}
+	if first["photo_count"] != float64(3) || second["photo_count"] != nil {
+		t.Errorf("the photo count is told when there are photos: %v %v", first, second)
 	}
 	if second["left"] != "still there" {
 		t.Errorf("a visit in progress: %v", second)
