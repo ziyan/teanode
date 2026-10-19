@@ -24,11 +24,12 @@ To see it working: on the dashboard, open a contact who shares a circle with you
 - [x] (2026-10-18) Review by the Photos session: `accountUserId` resolved through the caller's contacts only, `account` in the library's address like `contact`, a badge that does not change the tile's height, no contact made silently. Applied.
 - [x] (2026-10-18) Review by the Circles session: caller-private `linkedContactId`, suggestions by mailbox address only and without addresses, links lost on re-created cards, refusals in `SetContactAccount`, agent risk levels, book order, a fuller check that the linked person sees nothing. Applied.
 - [x] (2026-10-18) The maintainer chose to match mailbox addresses only (relayed by the Circles session).
-- [ ] Milestone 1: the column, the database functions, the cleanup when two people stop sharing a circle.
-- [ ] Milestone 2: GraphQL, the agent tools and the command line.
-- [ ] Milestone 3: the dashboard (Contacts, Photos, Circles, Location).
-- [ ] Milestone 4: the iPhone (Contacts, Photos, Circles, Location) and TeaNodeKit.
-- [ ] Review until a round finds nothing; parity check; screenshots; deploy.
+- [x] (2026-10-18) Milestone 1: the column (0246), the database functions, the cleanup when two people stop sharing a circle.
+- [x] (2026-10-18) Milestone 2: GraphQL, the agent tools and the command line.
+- [x] (2026-10-18) Milestone 3: the dashboard (Contacts, Photos, Circles, Location).
+- [x] (2026-10-18) Milestone 4: the iPhone (Contacts, Photos, Circles, Location) and TeaNodeKit.
+- [x] (2026-10-19) Review rounds 1 to 3 (privacy and server, dashboard, iPhone, parity and words); the third found nothing. Walked the contact dialog, Location and Photos in headless Chrome at 1400 and 390 px, light and dark: Change and Remove kept together, and Location's button says whose photos.
+- [ ] The iPhone screenshots from CI, deploy with the migration (a backup first), and use it for real.
 
 ## Surprises & Discoveries
 
