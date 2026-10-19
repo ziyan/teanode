@@ -14,8 +14,9 @@ To see it working: in a Claude Code session in a herdr pane on a computer runnin
 
 - [x] Milestone 1: the reader on the computer (`internal/computer/herdr_subagents.go`, `herdr_subagents_test.go`), the `herdr_subagents` action and its feature. (2026-10-19)
 - [x] Milestone 2: the server: `Agent.ReadHerdrSubagents`, the GraphQL query `ReadAgentHerdrSubagents`, the herdr tool's `subagents` action, the `teanode computer herdr subagents` command, the parity table, docs. (2026-10-19; `go test` of computer, tools/computer, cmd, client and the apigraph document tests pass)
-- [x] Milestone 3: the dashboard's Agents view on the Coding page (2026-10-19): `web/src/components/herdrSubagents.tsx` (tree builder, cards, view), the `ReadAgentHerdrSubagents` document and types in `herdrSessions.tsx`, the three-way view switch and `view=agents` in `pages/coding.tsx`, styles in `style.css`, strings in the three catalogs, tests in `herdrSubagents.test.tsx` and `coding.test.tsx`. Checked: tsc, eslint, prettier on the changed files, vitest, `npm run build`, `make check-catalogs check-link-buttons`; not yet looked at in a browser.
+- [x] Milestone 3: the dashboard's Agents view on the Coding page (2026-10-19): `web/src/components/herdrSubagents.tsx` (tree builder, cards, view), the `ReadAgentHerdrSubagents` document and types in `herdrSessions.tsx`, the three-way view switch and `view=agents` in `pages/coding.tsx`, styles in `style.css`, strings in the three catalogs, tests in `herdrSubagents.test.tsx` and `coding.test.tsx`. Checked: tsc, eslint, prettier on the changed files, vitest, `npm run build`, `make check-catalogs check-link-buttons`; looked at on production at 1400 and 390 px, light and dark, against a live session.
 - [x] Milestone 4 (code written 2026-10-19; TeaNodeKit tests pass, 17 Herdr tests; the app compiles first in CI, whose `coding-session-agents-*` screenshots still have to be opened): the iPhone's Agents view in a coding session, its demo and screenshots.
+- [x] (2026-10-19) Tried end to end: the program on the person's computer and the server deployed from this branch read a live session's three agents through `teanode computer herdr subagents`, the dashboard and its headless screenshots.
 - [ ] Review until a round finds nothing; CI's screenshots opened.
 
 ## Surprises & Discoveries
@@ -37,6 +38,11 @@ To see it working: in a Claude Code session in a herdr pane on a computer runnin
 - Milestones 1 and 2: the tools of an agent are counted only for the (at most 100) agents kept, after the filter and the cut, so an old session with hundreds of large agent files costs a first-line and a 256 KB read for each, not a pass over each file.
 - Milestones 1 and 2: an agent whose parent was cut by the 100 limit (or is from before the request) names a `parentSubagentId` that is not in the list; the command line shows it with the agents the session started, and the dashboard and iPhone views should do the same.
 - Milestones 1 and 2: a session without a history file yet answers with an empty tree rather than the refusal `herdr_read` gives, since an Agents view on a fresh session should say it has no agents, not show an error. The herdr tool refuses on a program without `herdr_subagents` itself (it asks the computer directly, not through `Agent.ReadHerdrSubagents`).
+
+- Looking at it on production showed two things the tests had not. A row of agents wider than the pane was centered and hung off both sides, its first cards out of reach; and in the Coding page's pane (about 700 px beside the session list) four agents never fit side by side, which leaves the session's card over the wrong agents. The view now measures itself and draws the tree only while the session's agents fit side by side (272 px a column, and never under 600 px), and the indented list otherwise.
+- An agent that ended its turn and was then handed the end of a command it had left running works again, though its last reply ended its turn. A newer line handed to it after that reply now means it runs.
+- The metadata's `model` is the model asked for, often a short name ("sonnet"); the replies carry the full name, which is what is shown.
+- A long session's subagents folder has hundreds of agents; an agent whose history file was last written before the request began is passed over before any of its files is read, which also keeps an unfinished agent of an earlier request from showing as running.
 
 ## Decision Log
 
