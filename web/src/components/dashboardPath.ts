@@ -83,13 +83,18 @@ export const FINANCE_LINK_PATH = '/finance/link'
 // The parts of the dashboard the agent may take the person to: their own
 // pages, never an operator's (internal/agent/tools/openpage holds the same
 // list).
-const SHOWN_PREFIXES = ['/knowledge', '/mailbox', '/settings/agent', '/settings', '/finance', '/location']
+const HEALTH_SETTINGS_PATH = '/health?tab=settings'
+
+const SHOWN_PREFIXES = ['/knowledge', '/mailbox', '/settings/agent', '/settings', '/finance', '/location', '/health']
 
 // shownPath is a path the agent asked the dashboard to show, or null: under
 // one of the prefixes above, in segments of letters, digits and -._~, so no
 // scheme, host, query, '..' or '//' reaches the router.
 export function shownPath(written: string): string | null {
   if (!written.startsWith('/') || written.length > 600) return null
+  // The Health page's settings, where the person lets the agent read their
+  // Health data: the agent's health tool opens it while that is off.
+  if (written === HEALTH_SETTINGS_PATH) return written
   // The one query a path of ours carries: whose shared page a Knowledge
   // address opens (memoryPath). Checked here, apart from the segments.
   const [withoutQuery, owner, ...others] = written.split('?owner=')

@@ -1,0 +1,246 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSCameraUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode uses the camera to scan the code that connects it to your server, and to take pictures you send."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 使用相机扫描连接服务器的二维码，并拍摄你要发送的照片。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はサーバーに接続するためのコードを読み取り、送信する写真を撮るためにカメラを使用します。"
+          }
+        }
+      }
+    },
+    "NSContactsUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode reads your iPhone's contacts only when you choose to import them into your address book."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有在你选择将 iPhone 通讯录导入地址簿时，TeaNode 才会读取它们。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は、アドレス帳への読み込みを選んだときだけ iPhone の連絡先を読み取ります。"
+          }
+        }
+      }
+    },
+    "NSFaceIDUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode asks for Face ID before you approve a payment somebody made with a skill you share."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有人使用你共享的技能付款时，TeaNode 会在你批准前要求面容 ID。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有したスキルで誰かが支払いをしたとき、承認の前に TeaNode が Face ID を求めます。"
+          }
+        }
+      }
+    },
+    "NSHealthShareUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode copies the Health data you allow to your own TeaNode server. Your agent reads it only if you turn that on in Health settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 会将你允许的健康数据复制到你自己的 TeaNode 服务器。只有你在健康设置中开启后，助理才会读取这些数据。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は、許可したヘルスケアデータをあなた自身の TeaNode サーバーにコピーします。エージェントが読むのは、ヘルスケア設定でオンにした場合だけです。"
+          }
+        }
+      }
+    },
+    "NSHealthUpdateUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode only reads Apple Health and never writes to it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 只读取 Apple 健康数据，从不写入。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は Apple ヘルスケアを読み取るだけで、書き込むことはありません。"
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode records the places you go, so you can look back on them, share where you are with your family, and so your agent knows your routine."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 会记录你去过的地方，方便你回顾、与家人共享你的位置，并让助理了解你的日常。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は行った場所を記録し、振り返ったり、家族と現在地を共有したり、エージェントがあなたの日課を把握したりできるようにします。"
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode shows where you are on the map and follows you while the app is open, and your agent asks where you are when something you asked depends on it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 会在地图上显示你的位置并在应用打开时跟随你；当你的请求取决于你所在的位置时，助理会询问你在哪里。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はアプリを開いている間、地図に現在地を表示して追跡します。依頼内容が現在地に関わるとき、エージェントが現在地を尋ねます。"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode uses the microphone while you call your agent or explicitly record a meeting."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你呼叫助理或明确录制会议时，TeaNode 会使用麦克风。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントと通話しているときや、会議を明示的に録音しているときに、TeaNode はマイクを使用します。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryAddUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode saves the photos you choose to your library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 会将你选择的照片存入你的图库。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は選んだ写真をライブラリに保存します。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription": {
+      "comment": "Info.plist purpose string; the English is the value in ios/project.yml.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode backs up your photos and videos to your server when you turn on backup."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启备份后，TeaNode 会将你的照片和视频备份到你的服务器。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップをオンにすると、TeaNode は写真とビデオをあなたのサーバーにバックアップします。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

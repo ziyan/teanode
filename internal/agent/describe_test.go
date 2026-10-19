@@ -2,6 +2,8 @@ package agent_test
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,4 +124,109 @@ func TestQuietConversationsAreDescribed(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A conversation in which the agent read the person's Health keeps the title
+// and the summary it had: the figures it read are not put into a name that
+// the list and the picker show. The same conversation without a call of the
+// Health tool is described as usual.
+func TestAConversationThatReadHealthIsNotDescribed(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	model, requests := fakeModel(t, []string{describedRound})
+	defer model.Close()
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	configuration.Agent.Features.Dreaming = new(bool)
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: model.URL, APIKey: "k"}}
+	configuration.Agent.Models.Default = "fake:thinker"
+	registry, err := llm.Open(&configuration.Agent)
+	if err != nil {
+		t.Fatalf("llm.Open: %s", err)
+	}
+	store, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("storage.Open: %s", err)
+	}
+	worker := agent.New(&agent.Settings{Database: database, Storage: store, Registry: registry, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
+	operations := &fakeOperations{permissions: models.NewEffectivePermissions(nil)}
+	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
+
+	var readHealth, readActionTool, readNothing *models.AgentConversation
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		found, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		make := func(toolName string) *models.AgentConversation {
+			conversation, err := tx.CreateAgentConversation(&models.AgentConversation{
+				AgentID: found.ID, Kind: models.AgentConversationNamed, Title: "Weekly check", TitledBy: "agent", LastAt: time.Now(),
+			})
+			if err != nil {
+				t.Fatalf("CreateAgentConversation: %s", err)
+			}
+			assistantCall := &models.AgentMessage{ConversationID: conversation.ID, Role: "assistant", Content: "Let me look."}
+			if toolName != "" {
+				assistantCall.ToolCalls = []models.AgentToolCall{{ID: "call-1", Name: toolName}}
+			}
+			for _, message := range []*models.AgentMessage{
+				{ConversationID: conversation.ID, Role: "user", Content: "how did I do this week?"},
+				assistantCall,
+				{ConversationID: conversation.ID, Role: "tool", Content: `{"steps":8412}`},
+				{ConversationID: conversation.ID, Role: "assistant", Content: "You averaged 8,412 steps a day."},
+			} {
+				if _, err := tx.AppendAgentMessage(message); err != nil {
+					t.Fatalf("AppendAgentMessage: %s", err)
+				}
+			}
+			updated, err := tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
+				conversation.LastAt = time.Now().Add(-10 * time.Minute)
+				conversation.Summary = "A check of the week."
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("UpdateAgentConversation: %s", err)
+			}
+			return updated
+		}
+		readHealth = make("health")
+		readActionTool = make("health_summary")
+		readNothing = make("weather")
+	})
+
+	if err := worker.TickAt(context.Background(), time.Now()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	worker.Wait()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for _, conversation := range []*models.AgentConversation{readHealth, readActionTool} {
+			kept, _ := tx.GetAgentConversation(conversation.ID)
+			if kept.Title != "Weekly check" || kept.Summary != "A check of the week." {
+				t.Errorf("a conversation that read Health keeps its title and summary: %q, %q", kept.Title, kept.Summary)
+			}
+			if kept.DescribedAt == nil {
+				t.Error("it is still marked described, so that it is not asked about every minute")
+			}
+		}
+		described, _ := tx.GetAgentConversation(readNothing.ID)
+		if described.Title != "The plumber" || described.Summary != "Finding the plumber's invoice." {
+			t.Errorf("a conversation that read nothing private is described: %q, %q", described.Title, described.Summary)
+		}
+	})
+	// Filing into memory asks the model too; only titling is of interest.
+	describing := 0
+	for _, request := range *requests {
+		raw, _ := json.Marshal(request["messages"])
+		if strings.Contains(string(raw), "talking through the describe") {
+			describing++
+		}
+	}
+	if describing != 1 {
+		t.Errorf("the model was asked to describe %d conversations, want 1: the one that read nothing private", describing)
+	}
 }

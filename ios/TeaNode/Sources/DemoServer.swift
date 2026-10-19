@@ -43,6 +43,8 @@
                 answer = circlesAnswer
             } else if let locationAnswer = Self.locationAnswer(query: query, body: request.httpBody) {
                 answer = locationAnswer
+            } else if let healthAnswer = Self.healthAnswer(query: query, body: request.httpBody) {
+                answer = healthAnswer
             } else if query.contains("AgentServerUsage") {
                 answer = Self.serverUsage
             } else if query.contains("ReadRecordingLimits") {
@@ -670,7 +672,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use","health:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 

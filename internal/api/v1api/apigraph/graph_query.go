@@ -18,6 +18,10 @@ type queryExecution struct {
 	User         *models.User
 	Impersonator *models.User
 
+	// CredentialKind is what the request signed in with, empty for the
+	// agent's own operations (see access.Principal.CredentialKind).
+	CredentialKind models.CredentialKind
+
 	// PermissionLimit, when set, is what the caller is held to besides its own
 	// permissions: the agent's.
 	PermissionLimit *models.EffectivePermissions
@@ -128,6 +132,7 @@ func (self *graph) queryPrincipal(transaction db.Transaction, execution *queryEx
 	principal, err := self.resolvePrincipal(transaction, execution.Username, user)
 	if principal != nil {
 		principal.Impersonator = execution.Impersonator
+		principal.CredentialKind = execution.CredentialKind
 		if execution.PermissionLimit != nil {
 			principal.Permissions = principal.Permissions.Within(execution.PermissionLimit)
 		}

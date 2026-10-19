@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	stdlog "log"
+	"os"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/aggregate"
@@ -60,6 +63,22 @@ type database struct {
 	vectorIndexing bool
 }
 
+// newLogger is GORM's own default logger (to standard output, warnings and
+// errors, slow statements at 200 milliseconds, in color) with one change: it
+// prints a statement with its placeholders and not the values bound to them.
+// A statement that fails or runs slowly is logged whole, and a batch insert of
+// readings or a route of thousands of points would otherwise put what a person
+// keeps, Health above all, into the server log.
+func newLogger(writer logger.Writer) logger.Interface {
+	return logger.New(writer, logger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  logger.Warn,
+		IgnoreRecordNotFoundError: false,
+		Colorful:                  true,
+		ParameterizedQueries:      true,
+	})
+}
+
 // Open database.
 func Open(settings *Settings) (Database, error) {
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s", settings.Host, settings.Port, settings.User, settings.Password, settings.DBName)
@@ -69,7 +88,7 @@ func Open(settings *Settings) (Database, error) {
 	if settings.SSLRootCertificate != "" {
 		dsn += " sslrootcert=" + settings.SSLRootCertificate
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: newLogger(stdlog.New(os.Stdout, "\r\n", stdlog.LstdFlags))})
 	if err != nil {
 		return nil, err
 	}

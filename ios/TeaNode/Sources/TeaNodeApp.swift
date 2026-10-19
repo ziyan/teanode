@@ -59,6 +59,7 @@ struct TeaNodeApp: App {
                     PhotoBackupEngine.shared.sceneBecameActive()
                 }
                 LocationRecorder.shared.sceneDidChange(isActive: phase == .active, isBackground: phase == .background)
+                HealthSync.shared.sceneDidChange(isActive: phase == .active, isBackground: phase == .background)
             }
         }
     }
@@ -649,6 +650,15 @@ struct SettingsForm: View {
                         }
                     }
                 }
+                if let connection = app.connection, app.canUseHealth {
+                    Section {
+                        NavigationLink {
+                            HealthSettingsScreen(connection: connection)
+                        } label: {
+                            HealthSettingsRow()
+                        }
+                    }
+                }
                 if let connection = app.connection {
                     Section("Your agent") {
                         NavigationLink {
@@ -844,6 +854,7 @@ struct SettingsForm: View {
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
                 case "settings-picture": PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
+                case "health-settings", "health-setup": HealthSettingsScreen(connection: connection)
                 default: EmptyView()
                 }
             }

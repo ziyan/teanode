@@ -302,8 +302,10 @@ func TestTheCatalogStaysShort(t *testing.T) {
 	// photos and videos, with its own service and permission, and every verb
 	// that belongs to it in one tool. 68 since circle, which is one noun with
 	// its verbs and has no other tool's to join: a circle is a set of people,
-	// which nothing else is.
-	if count := len(catalog.All()); count > 68 {
+	// which nothing else is. 69 since health, a new thing with its own
+	// permission: the person's Health data, read only, whose verbs no other
+	// tool has.
+	if count := len(catalog.All()); count > 69 {
 		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
 	}
 

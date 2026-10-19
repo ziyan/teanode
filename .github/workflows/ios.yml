@@ -305,6 +305,23 @@ jobs:
             shoot "$location_screen-dark" dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
             shoot "$location_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
           done
+          # Health: the list of kinds of data, the side menu with its row, a steps chart, a night's stages, a heart rate line, a
+          # workout's route, somebody sharing Health, the settings and the setup that comes before iOS asks.
+          shoot health-light light large -TeaNodeDemo -TeaNodeTab health
+          shoot health-dark dark large -TeaNodeDemo -TeaNodeTab health
+          shoot health-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab health
+          shoot health-menu-light light large -TeaNodeDemo -TeaNodeTab health -TeaNodeMenu
+          for health_screen in health-steps health-sleep health-heart health-route health-person; do
+            shoot "$health_screen-light" light large -TeaNodeDemo -TeaNodeTab health -TeaNodeScreen "$health_screen"
+            shoot "$health_screen-dark" dark large -TeaNodeDemo -TeaNodeTab health -TeaNodeScreen "$health_screen"
+          done
+          shoot health-sleep-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab health -TeaNodeScreen health-sleep
+          shoot health-route-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab health -TeaNodeScreen health-route
+          for health_settings_screen in health-settings health-setup; do
+            shoot "$health_settings_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$health_settings_screen"
+            shoot "$health_settings_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$health_settings_screen"
+            shoot "$health_settings_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$health_settings_screen"
+          done
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings

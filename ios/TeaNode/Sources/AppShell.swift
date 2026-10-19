@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode the side menu leads to, as the
 /// dashboard's sidebar does.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, goals, ideas, mail, calendar, contacts, photos, location, knowledge, finance, recordings, coding, settings
+    case agent, goals, ideas, mail, calendar, contacts, photos, location, health, knowledge, finance, recordings, coding, settings
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .mail: String(localized: "Mail")
         case .calendar: String(localized: "Calendar")
         case .location: String(localized: "Location")
+        case .health: HealthWords.title
         case .contacts: String(localized: "Contacts")
         case .photos: String(localized: "Photos")
         case .knowledge: String(localized: "Knowledge")
@@ -36,6 +37,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .mail: "envelope"
         case .calendar: "calendar"
         case .location: "location"
+        case .health: "heart.text.square"
         case .contacts: "person"
         case .photos: "photo.on.rectangle"
         case .knowledge: "brain"
@@ -163,7 +165,7 @@ struct MainView: View {
             .onChange(of: app.services) {
                 // Location and Coding are judged once the permissions and the computers
                 // have been read, not by services.
-                if section != .location, section != .coding, !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
+                if section != .location, section != .health, section != .coding, !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
             }
             .onChange(of: mail.currentMailboxId) {
                 if let inbox = mail.folder(kind: "inbox") { mailPlace = .folder(inbox.id) }
@@ -414,6 +416,18 @@ struct MainView: View {
                 LocationNotAllowedView()
                     .toolbar { MenuButton() }
             }
+        } else if section == .health, !app.hasReadPermissions {
+            // Whether the account may use Health is read with the chats, as
+            // Location's is.
+            NavigationStack {
+                ServicesLoadingView(isWaitingForPermissions: true)
+                    .toolbar { MenuButton() }
+            }
+        } else if section == .health, !app.canUseHealth {
+            NavigationStack {
+                HealthNotAllowedView()
+                    .toolbar { MenuButton() }
+            }
         } else if !app.isSectionAvailable(section) {
             NavigationStack {
                 ServiceOffView(section: section, connection: connection)
@@ -457,6 +471,8 @@ struct MainView: View {
             CalendarScreen(connection: connection, username: app.account?.username ?? "")
         case .location:
             LocationScreen(connection: connection, segment: $locationSegment)
+        case .health:
+            HealthScreen(connection: connection)
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:

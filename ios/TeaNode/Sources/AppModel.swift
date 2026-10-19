@@ -118,6 +118,9 @@ final class AppModel {
     /// A narrowing of the photo library that Photos opens with, such as the
     /// moments of a visit: the section shows the library under it and clears it.
     var openedPhotoFilter: PhotoFilter?
+    /// What the Health screen opens on, from a link such as `/health` or
+    /// `/health?type=stepCount`. The screen takes it and clears it.
+    var openedHealthLink: HealthLink?
     /// The section to open again after the app is drawn anew, as it is when
     /// the display language changes.
     var keptSection: AppSection?
@@ -200,6 +203,26 @@ final class AppModel {
         return LocationLink(day: nil)
     }
 
+    /// The Health page's address, `/health`, with the kind of data it may name
+    /// (`?type=stepCount`) or the settings (`?tab=settings`); nil for any
+    /// other address.
+    static func healthLink(_ written: String) -> HealthLink? {
+        let parts = written.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let pathText = parts.first, pathText == "/health" || pathText == "/health/" else { return nil }
+        var link = HealthLink(healthType: nil, isSettings: false)
+        guard parts.count == 2 else { return link }
+        for pair in parts[1].split(separator: "&") {
+            let sides = pair.split(separator: "=", maxSplits: 1)
+            guard sides.count == 2 else { continue }
+            if sides[0] == "tab", sides[1] == "settings" { link = HealthLink(healthType: nil, isSettings: true) }
+            // A kind of data is its HealthKit name: letters and digits.
+            if sides[0] == "type", !sides[1].isEmpty, sides[1].count <= 96, sides[1].allSatisfy({ $0.isLetter || $0.isNumber }) {
+                link = HealthLink(healthType: String(sides[1]), isSettings: false)
+            }
+        }
+        return link
+    }
+
     /// Goes to the dashboard path the agent's open_page names, checked as
     /// the dashboard checks it: the person's own pages, in plain segments.
     func show(path written: String) {
@@ -212,6 +235,11 @@ final class AppModel {
         if let location = Self.locationLink(written) {
             openedLocationDay = location.day
             openedSection = .location
+            return
+        }
+        if let health = Self.healthLink(written) {
+            openedHealthLink = health
+            openedSection = .health
             return
         }
         let path = written.count > 1 && written.hasSuffix("/") ? String(written.dropLast()) : written
@@ -460,6 +488,10 @@ final class AppModel {
     /// on it (the server's location:use), as far as the server has said.
     private(set) var canUseLocation = false
 
+    /// Whether the account may copy Apple Health data to the server and look
+    /// at it (the server's health:use), as far as the server has said.
+    private(set) var canUseHealth = false
+
     /// Whether the permissions of the account in use have been read once
     /// (`canUseLocation` and `canChat` are only true after that). Until
     /// then, a screen that needs one of them is not known to be refused.
@@ -479,6 +511,7 @@ final class AppModel {
         hasPermissionReadFailed = session == nil && !hasReadPermissions
         if let session {
             canUseLocation = session.holds("location:use")
+            canUseHealth = session.holds("health:use")
             hasReadPermissions = true
         }
         let canUseCircles = session?.holds("circle:use") ?? false
@@ -517,6 +550,7 @@ final class AppModel {
                 accounts = [DemoServer.account]
                 connection = Connection(account: DemoServer.account, transport: transport)
                 canUseLocation = true
+                canUseHealth = true
                 hasReadPermissions = true
                 return
             }
@@ -542,6 +576,7 @@ final class AppModel {
         ownUserId = nil
         canChat = false
         canUseLocation = false
+        canUseHealth = false
         hasReadPermissions = false
         hasPermissionReadFailed = false
         unreadChatCount = 0
@@ -572,6 +607,7 @@ final class AppModel {
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
         // What the phone noticed belongs to the account that was in use.
         LocationRecorder.shared.accountDidChange(accountKey: account.accountKey)
+        HealthSync.shared.accountDidChange(accountKey: account.accountKey)
     }
 
     /// Puts another sign-in to use: the whole app is drawn again for it.
@@ -893,6 +929,7 @@ final class AppModel {
             ConversationDraft.forget(accountKey: account.accountKey)
             forgetProfile(accountKey: account.accountKey)
             LocationRecorder.shared.accountWasRemoved(accountKey: account.accountKey)
+            HealthSync.shared.accountWasRemoved(accountKey: account.accountKey)
         }
         try? store.delete()
         phone = nil
@@ -911,6 +948,7 @@ final class AppModel {
         forgetAccountFacts()
         self.signedOutText = signedOutText
         LocationRecorder.shared.accountDidChange(accountKey: nil)
+        HealthSync.shared.accountDidChange(accountKey: nil)
     }
 
     /// Signs out of the account in use when its own connection found the
@@ -940,6 +978,7 @@ final class AppModel {
         try? PayloadKey.keyring.forget(for: other.accountKey)
         ConversationDraft.forget(accountKey: other.accountKey)
         LocationRecorder.shared.accountWasRemoved(accountKey: other.accountKey)
+        HealthSync.shared.accountWasRemoved(accountKey: other.accountKey)
         try? store.remove(other.accountKey)
         accounts = (try? store.accounts().accounts) ?? accounts
     }
@@ -1082,10 +1121,19 @@ extension AppModel {
         case .agent: return services.isAssistantEnabled || canChat
         case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .location: return canUseLocation
+        case .health: return canUseHealth
         case .coding: return services.isAssistantEnabled && hasCodingComputers
         case .settings: return true
         }
     }
+}
+
+/// HealthLink is what an address of the Health page asks for.
+struct HealthLink: Equatable {
+    /// The kind of data whose chart to open, when the address names one.
+    let healthType: String?
+    /// Whether to open the Health settings.
+    let isSettings: Bool
 }
 
 /// LocationLink is what an address of the Location page asks for.

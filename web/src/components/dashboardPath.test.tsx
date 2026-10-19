@@ -54,6 +54,9 @@ it('shows only the parts of the dashboard the agent may take the person to', () 
   expect(shownPath('/settings/agent')).toBe('/settings/agent')
   expect(shownPath('/finance/budgets')).toBe('/finance/budgets')
   expect(shownPath('/connect')).toBe('/connect')
+  expect(shownPath('/health')).toBe('/health')
+  expect(shownPath('/health?tab=settings')).toBe('/health?tab=settings')
+  expect(shownPath('/health?tab=other')).toBeNull()
   expect(shownPath('/connect/extra')).toBeNull()
   for (const path of [
     '',

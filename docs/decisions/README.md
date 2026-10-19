@@ -217,6 +217,12 @@ provider the operator chooses and can turn off), and why the person's own name
 always wins. Both are proposed; their plan is
 `docs/planning/location-execplan.md`.
 
+`20261018-health-is-shared-by-category-as-day-summaries.md` says why a
+person shares Health by the Health app's categories, why the people it reaches
+see day summaries and never readings, routes or characteristics, and why an
+agent reads only its own person's Health, never what others share with them.
+It is proposed; its plan is `docs/planning/health-execplan.md`.
+
 `20261018-a-relationship-is-one-fact-between-two-people.md` says why what
 two people in a circle are to each other is one fact either of them can
 change, seen only by the two of them, and why each person says how they are
