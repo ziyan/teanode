@@ -4497,6 +4497,30 @@ a.button.primary:hover {
   color: var(--good);
 }
 
+/* The days of the week as toggle buttons, one row of seven that wraps on a
+   narrow screen. A pressed day is drawn as the welcome page's chosen service
+   is, in the text color with the same border width, so that choosing one
+   moves nothing. */
+.weekday-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.weekday-buttons button {
+  flex: 1 1 2.75rem;
+  min-height: 40px;
+  padding-inline: var(--space-2);
+  justify-content: center;
+}
+
+.weekday-buttons button[aria-pressed='true'] {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
+  color: var(--text);
+}
+
 /* A segmented pair, drawn in the Tag palette. First used for teaching the
    spam filter under a message's verdict; also for choosing how a message is
    rendered in the dark.
@@ -10907,6 +10931,37 @@ button.with-icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A number and the word for what it counts, side by side: "Every [2] weeks". */
+.repeat-interval {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.repeat-interval input {
+  flex: none;
+  width: 6rem;
+}
+
+/* The sentence a custom repeat makes, with the button that changes it at the
+   end of the line, or under it when the line is short of room. */
+.calendar-repeat-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.calendar-repeat-summary p {
+  margin: 0;
+}
+
+.calendar-repeat-summary > div {
+  flex: 1 1 14rem;
 }
 
 .field-row {

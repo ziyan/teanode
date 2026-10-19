@@ -15,8 +15,18 @@ import { TabItem, Tabs } from '../components/tabs'
 import { RemindersView } from '../components/reminders'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
+import type { WeekStart } from '../components/weekdayButtons'
 import { useTranslation } from '../i18n/i18n'
 import { InMemory } from '../memoryLinks'
+import {
+  describeRepeat,
+  parseRepeat,
+  presetOf,
+  presetRule,
+  type RepeatContext,
+  type RepeatPreset,
+} from './calendarRepeat'
+import { RepeatDialog } from './calendarRepeatDialog'
 
 // The calendar: what somebody has on, and the form for putting something in.
 //
@@ -107,10 +117,6 @@ type CalendarEvent = {
 
 type View = 'month' | 'week' | 'workweek' | 'day' | 'agenda' | 'reminders'
 
-// The two conventions worth keeping. The server holds this per calendar and
-// answers with one of these, so the page never has to guess.
-type WeekStart = 'sunday' | 'monday'
-
 // A form's worth of one event. The times are held as the two halves a browser
 // edits them in -- a date and a clock time -- because that is what the native
 // controls take, and joining them only when the form is sent keeps a person
@@ -136,20 +142,10 @@ type Draft = {
   calendarId: string
 }
 
-// The repeats worth offering as a list, each with a name a catalogue can
-// carry. Anything else a phone or another program set is kept and shown as it
-// is, because a rule this page cannot name is still a rule the person meant.
-const REPEATS = [
-  { name: 'never', rule: '' },
-  { name: 'daily', rule: 'FREQ=DAILY' },
-  { name: 'weekly', rule: 'FREQ=WEEKLY' },
-  { name: 'monthly', rule: 'FREQ=MONTHLY' },
-  { name: 'yearly', rule: 'FREQ=YEARLY' },
-] as const
-
-function namedRepeat(rule: string): boolean {
-  return REPEATS.some((repeat) => repeat.rule === rule)
-}
+// The repeats the Repeat list offers by name, in the order it lists them.
+// Anything else, whether the person made it with Custom or another program
+// set it, is "Custom" there, with the sentence it makes beside it.
+const REPEAT_PRESETS: RepeatPreset[] = ['never', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly']
 
 // The column views and how wide each is. A day is one column, the working
 // week five, the week seven -- all the same drawing, differing only in how
@@ -710,6 +706,18 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   // own: a circle's has no owner to send invitations from.
   const draftCalendar = draft ? (calendarsById.get(draft.calendarId) ?? calendar) : null
   const draftIsOwn = !draftCalendar || isOwn(draftCalendar)
+  // The zone the event's days are counted in: the calendar's own, so that a
+  // repeat keeps its hour when the clocks change. A whole-day event is a date
+  // and has no zone at all.
+  const draftZone = draft && !draft.allDay ? draftCalendar?.timezone || browserZone() : ''
+  // What the event's repeat is read against: where it starts, the zone, and
+  // whether it is a whole day.
+  const repeatContext: RepeatContext = {
+    startDate: draft?.startDate ?? '',
+    timeZone: draftZone,
+    isAllDay: draft?.allDay ?? false,
+  }
+  const [isEditingRepeat, setEditingRepeat] = useState(false)
 
   // Grouped by the day they start on, which is how every view here reads
   // them. An event running over several days is listed on the day it begins;
@@ -1355,7 +1363,9 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
               </button>
             ) : null
           }
-          onClose={() => setDraft(null)}
+          // The Custom repeat dialog is open over this one, and an Escape
+          // that closes it must not close the event under it as well.
+          onClose={() => !isEditingRepeat && setDraft(null)}
           onSubmit={() =>
             void run(
               () =>
@@ -1376,12 +1386,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                       ? `${dayShifted(draft.endDate || draft.startDate, 1)}T00:00:00Z`
                       : joined(draft.endDate || draft.startDate, draft.endTime),
                     allDay: draft.allDay,
-                    // The calendar's own zone, so that a repeat keeps its
-                    // hour when the clocks change. An all-day event is a
-                    // date and has no zone at all.
-                    timezone: draft.allDay
-                      ? ''
-                      : (calendarsById.get(draft.calendarId) ?? calendar)?.timezone || browserZone(),
+                    timezone: draftZone,
                     recurrence: draft.recurrence.trim(),
                     status: draft.status.trim(),
                     // Only in the person's own calendar: in a circle's, or one
@@ -1498,25 +1503,24 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           <label>
             {t('calendar.repeat')}
             <select
-              value={namedRepeat(draft.recurrence) ? draft.recurrence : 'other'}
-              onChange={(event) =>
-                setDraft({
-                  ...draft,
-                  recurrence: event.target.value === 'other' ? draft.recurrence : event.target.value,
-                })
-              }
+              value={presetOf(draft.recurrence)}
+              onChange={(event) => {
+                const preset = event.target.value as RepeatPreset
+                if (preset === 'custom') setEditingRepeat(true)
+                else setDraft({ ...draft, recurrence: presetRule(preset) })
+              }}
             >
-              {REPEATS.map((repeat) => (
-                <option key={repeat.name} value={repeat.rule}>
-                  {t(`calendar.repeatEvery.${repeat.name}` as Parameters<typeof t>[0])}
+              {REPEAT_PRESETS.map((preset) => (
+                <option key={preset} value={preset}>
+                  {t(`calendar.repeatEvery.${preset}` as Parameters<typeof t>[0])}
                 </option>
               ))}
-              {!namedRepeat(draft.recurrence) && <option value="other">{t('calendar.repeatOther')}</option>}
+              <option value="custom">{t('calendar.repeatCustom')}</option>
             </select>
-            {/* A rule another program set is shown as it is rather than
-                quietly replaced by the nearest one on the list. */}
-            {!namedRepeat(draft.recurrence) && <span className="mono muted">{draft.recurrence}</span>}
           </label>
+          {presetOf(draft.recurrence) === 'custom' && (
+            <RepeatSummary rule={draft.recurrence} context={repeatContext} onChange={() => setEditingRepeat(true)} />
+          )}
           {draftIsOwn && (
             <label>
               {t('calendar.guests')}
@@ -1538,6 +1542,19 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           </label>
           {draft.id ? <InMemory recordKind="calendar_event" recordId={draft.id} /> : null}
         </FormDialog>
+      )}
+
+      {draft && isEditingRepeat && !submission.pending && (
+        <RepeatDialog
+          rule={draft.recurrence}
+          context={repeatContext}
+          weekStart={weekStart}
+          onSave={(recurrence) => {
+            setDraft({ ...draft, recurrence })
+            setEditingRepeat(false)
+          }}
+          onClose={() => setEditingRepeat(false)}
+        />
       )}
 
       {viewing && (
@@ -1610,6 +1627,26 @@ function joined(day: string, clock: string): string {
   const at = new Date(`${day}T${clock || '00:00'}:00`)
   if (Number.isNaN(at.getTime())) return ''
   return at.toISOString()
+}
+
+// RepeatSummary says what a custom repeat is, in a sentence, beside the button
+// that changes it. A rule this page cannot read at all has no sentence, only
+// the note that it is kept as it is.
+function RepeatSummary({ rule, context, onChange }: { rule: string; context: RepeatContext; onChange: () => void }) {
+  const translation = useTranslation()
+  const { t } = translation
+  const parts = parseRepeat(rule, context)
+  return (
+    <div className="calendar-repeat-summary">
+      <div>
+        {parts && <p className="muted">{describeRepeat(parts, translation)}</p>}
+        {(!parts || parts.hasUnshownParts) && <p className="muted">{t('calendar.repeatKept')}</p>}
+      </div>
+      <button type="button" className="button-quiet" onClick={onChange}>
+        {t('calendar.repeatEdit')}
+      </button>
+    </div>
+  )
 }
 
 // browserZone is where the person reading the page is, which is the best
