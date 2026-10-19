@@ -279,6 +279,12 @@ final class PhotosModel {
         album(in: key)?.canCallerRemove(photo) ?? false
     }
 
+    /// Shows the library narrowed to the photos of a person in the circles.
+    func showPhotos(ofPerson person: OpenedPhotoPerson) {
+        section = .library
+        photoFilter = PhotoFilter(accountUserId: person.userId, accountName: person.name)
+    }
+
     /// Shows the library narrowed to the photos taken near a place.
     func showPhotos(near photoNearFilter: PhotoNearFilter) {
         section = .library
@@ -912,8 +918,7 @@ struct PhotosScreen: View {
     /// month or year that was pressed in Months or Years.
     @State private var pendingJumpPhotoId: String?
     @Environment(AppModel.self) private var app
-    /// The person (group of faces) a circle member or Location asked to show:
-    /// pushed on People, so Back lands there.
+    /// The person (group of faces) pushed on People, so Back lands there.
     @State private var openedPersonFaceGroupId: String?
     #if DEBUG
         @State private var isDemoViewerOpened = false
@@ -985,19 +990,6 @@ struct PhotosScreen: View {
         return PhotoOverview.dateRangeText(of: Array(photos.prefix(Self.firstScreenPhotoCount))) ?? ""
     }
 
-    /// Shows the photos of the person the contact names: People, then that
-    /// person. The groups are read again, since a person named a moment ago
-    /// may not be in the ones held.
-    private func openPhotos(ofContactId contactId: String) async {
-        model.section = .people
-        await model.reloadFaceGroups()
-        if let group = model.faceGroups?.first(where: { $0.contactId == contactId }) {
-            openedPersonFaceGroupId = group.id
-        } else {
-            model.problemText = String(localized: "There are no photos of them yet.")
-        }
-    }
-
     /// Keeps the range under the title to the photos the grid has on screen.
     private func updateDateRange(visiblePhotoIds: [String]) {
         guard activeScale == .all else { return }
@@ -1017,9 +1009,19 @@ struct PhotosScreen: View {
                 .navigationSubtitle(subtitleText)
                 .navigationBarTitleDisplayMode(.large)
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if let photoNearFilter = model.photoFilter.photoNearFilter, model.section.collection != nil {
-                        PhotoNearChip(photoNearFilter: photoNearFilter) {
-                            model.photoFilter.photoNearFilter = nil
+                    if model.section.collection != nil, model.photoFilter.photoNearFilter != nil || !(model.photoFilter.accountUserId ?? "").isEmpty {
+                        VStack(spacing: 8) {
+                            if let photoNearFilter = model.photoFilter.photoNearFilter {
+                                PhotoNearChip(photoNearFilter: photoNearFilter) {
+                                    model.photoFilter.photoNearFilter = nil
+                                }
+                            }
+                            if !(model.photoFilter.accountUserId ?? "").isEmpty {
+                                PhotoPersonChip(personName: model.photoFilter.accountName) {
+                                    model.photoFilter.accountUserId = nil
+                                    model.photoFilter.accountName = ""
+                                }
+                            }
                         }
                         .padding(.horizontal)
                         .padding(.bottom, 8)
@@ -1085,6 +1087,10 @@ struct PhotosScreen: View {
                 .onChange(of: model.photoFilter.photoNearFilter) { _, photoNearFilter in
                     if photoNearFilter != nil { searchText = "" }
                 }
+                // Photos of a person show the library, so words typed in its search are put away.
+                .onChange(of: model.photoFilter.accountUserId) { _, accountUserId in
+                    if accountUserId != nil { searchText = "" }
+                }
                 .sheet(isPresented: $isChoosingDates) { PhotoDateFilterSheet(model: model) }
                 .albumTitleAlert(model: model, scope: .library, isActive: opened == nil)
                 #if DEBUG
@@ -1111,10 +1117,12 @@ struct PhotosScreen: View {
             openedPersonFaceGroupId = nil
         }
         // Initially too: the section is drawn after the request was made.
-        .onChange(of: app.openedPhotoContactId, initial: true) { _, contactId in
-            guard let contactId else { return }
-            app.openedPhotoContactId = nil
-            Task { await openPhotos(ofContactId: contactId) }
+        .onChange(of: app.openedPhotoPerson, initial: true) { _, person in
+            guard let person else { return }
+            app.openedPhotoPerson = nil
+            searchText = ""
+            isSearchPresented = false
+            model.showPhotos(ofPerson: person)
         }
         // Read once for the whole screen, not again for each collection.
         .task { await model.loadLibrary() }

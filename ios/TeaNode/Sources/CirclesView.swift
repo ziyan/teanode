@@ -383,7 +383,7 @@ struct CircleDetailView: View {
     private func photosAction(_ member: CircleMember) -> some View {
         if member.isLinkedToContact, AppModel.shared.isSectionAvailable(.photos) {
             Button("Photos", systemImage: "photo.on.rectangle") {
-                AppModel.shared.openedPhotoContactId = member.linkedContactId
+                AppModel.shared.openedPhotoPerson = OpenedPhotoPerson(userId: member.userId, name: member.displayName)
             }
             .tint(.blue)
         }

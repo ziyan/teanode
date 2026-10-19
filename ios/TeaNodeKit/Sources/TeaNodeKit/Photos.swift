@@ -960,15 +960,6 @@ extension Connection {
         return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
     }
 
-    /// One page of the photos of the person's own contact that is an account
-    /// in their circles, newest first. Nothing when no contact is linked to it.
-    public func photos(ofAccount accountUserId: String, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
-        struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
-        var variables: [String: JSONValue] = ["pageSize": .number(Double(pageSize)), "accountUserId": .string(accountUserId)]
-        if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
-        return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
-    }
-
     /// Asks for a description of a photo, or a new one when isRedescribed. The
     /// answer is how the photo's description now stands: isDescriptionRequested
     /// while it is on its way, and describedAt once it has been written.

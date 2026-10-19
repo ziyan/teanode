@@ -11,6 +11,12 @@ import WidgetKit
 /// AppModel is the app's sign-ins: every account kept in the keychain, the
 /// one in use and the connection made from it, and connecting, switching
 /// and signing out.
+/// OpenedPhotoPerson asks Photos to show the photos of one person in the circles.
+struct OpenedPhotoPerson: Hashable {
+    let userId: String
+    let name: String
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -92,10 +98,10 @@ final class AppModel {
     /// A contact card a link from the agent's memory asks to open.
     var openedContactId: String?
 
-    /// The contact whose photos Photos opens on, from a circle member or a
-    /// person on the Location screen that the person linked to their contact.
-    /// The Photos screen takes it and clears it.
-    var openedPhotoContactId: String?
+    /// The person in the circles whose photos Photos opens the library
+    /// filtered to, from Circles or Location. The Photos screen takes it and
+    /// clears it; the app shell clears it when Photos cannot be shown.
+    var openedPhotoPerson: OpenedPhotoPerson?
 
     /// An address to write to, from a contact: compose opens with it.
     var composingTo: String?

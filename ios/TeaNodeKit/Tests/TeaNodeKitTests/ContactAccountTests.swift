@@ -99,9 +99,9 @@ final class ContactAccountTests: XCTestCase {
         XCTAssertFalse(older.isLinkedToContact)
     }
 
-    func testPhotosOfAnAccountSendTheAccountAndTheDocumentsAskForTheLink() async throws {
+    func testPhotosOfAPersonSendTheAccountAndTheDocumentsAskForTheLink() async throws {
         let (connection, fake) = try connection(answering: #"{"data":{"ListPhotos":[]}}"#)
-        let photos = try await connection.photos(ofAccount: "user-2")
+        let photos = try await connection.photos(in: .library, filter: PhotoFilter(accountUserId: "user-2", accountName: "Sam Placeholder"))
         XCTAssertEqual(photos.count, 0)
         let request = try XCTUnwrap(fake.sent.first)
         XCTAssertEqual(try sentVariables(request)["accountUserId"] as? String, "user-2")
@@ -109,5 +109,22 @@ final class ContactAccountTests: XCTestCase {
         XCTAssertTrue(Documents.contact.contains("accountUserId account {"))
         XCTAssertNotNil(Documents.calendarAndContacts["setContactAccount"])
         XCTAssertNotNil(Documents.calendarAndContacts["contactAccountSuggestions"])
+    }
+
+    func testAPersonFilterIsActiveCombinesWithDaysAndSendsOnlyTheID() {
+        XCTAssertFalse(PhotoFilter(accountName: "Sam Placeholder").isActive)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let day = calendar.date(from: DateComponents(year: 2026, month: 3, day: 10, hour: 15))!
+        var filter = PhotoFilter(firstDay: day, lastDay: day, accountUserId: "user-2", accountName: "Sam Placeholder")
+        XCTAssertTrue(filter.isActive)
+        let sent = filter.variables(calendar: calendar)
+        XCTAssertEqual(sent["accountUserId"], .string("user-2"))
+        XCTAssertEqual(sent["takenAfter"], .string("2026-03-10T00:00:00Z"))
+        XCTAssertEqual(sent.count, 3)
+        // Clearing the person keeps the days.
+        filter.accountUserId = nil
+        XCTAssertNil(filter.variables(calendar: calendar)["accountUserId"])
+        XCTAssertNotNil(filter.variables(calendar: calendar)["takenAfter"])
     }
 }

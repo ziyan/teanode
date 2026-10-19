@@ -50,8 +50,8 @@ public struct PhotoNearFilter: Hashable, Sendable {
 }
 
 /// PhotoFilter narrows a list of the library by kind, by the days the photos
-/// were taken on and by how near a place they were taken. An empty filter keeps
-/// everything.
+/// were taken on, by how near a place they were taken and by the person in the
+/// circles they are of. An empty filter keeps everything; the choices combine.
 public struct PhotoFilter: Hashable, Sendable {
     public var photoKindFilter: PhotoKindFilter
     /// The first day to keep, as any moment on that day; nil for no start.
@@ -60,16 +60,28 @@ public struct PhotoFilter: Hashable, Sendable {
     public var lastDay: Date?
     /// The place the photos kept were taken near; nil for anywhere.
     public var photoNearFilter: PhotoNearFilter?
+    /// The ID of the person in the circles whose photos are kept (the photos of
+    /// the contact the caller linked to them); nil for everybody.
+    public var accountUserId: String?
+    /// The name the chip shows for accountUserId. It is not sent.
+    public var accountName: String
 
-    public init(photoKindFilter: PhotoKindFilter = .all, firstDay: Date? = nil, lastDay: Date? = nil, photoNearFilter: PhotoNearFilter? = nil) {
+    public init(
+        photoKindFilter: PhotoKindFilter = .all, firstDay: Date? = nil, lastDay: Date? = nil, photoNearFilter: PhotoNearFilter? = nil,
+        accountUserId: String? = nil, accountName: String = ""
+    ) {
         self.photoKindFilter = photoKindFilter
         self.firstDay = firstDay
         self.lastDay = lastDay
         self.photoNearFilter = photoNearFilter
+        self.accountUserId = accountUserId
+        self.accountName = accountName
     }
 
     /// Whether anything is filtered.
-    public var isActive: Bool { photoKindFilter != .all || firstDay != nil || lastDay != nil || photoNearFilter != nil }
+    public var isActive: Bool {
+        photoKindFilter != .all || firstDay != nil || lastDay != nil || photoNearFilter != nil || !(accountUserId ?? "").isEmpty
+    }
 
     /// Whether the days are asked for backwards, which no photo is in.
     public var isRangeBackwards: Bool {
@@ -89,6 +101,7 @@ public struct PhotoFilter: Hashable, Sendable {
         if let lastDay, let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: lastDay)) {
             variables["takenBefore"] = .string(Self.text(of: next))
         }
+        if let accountUserId, !accountUserId.isEmpty { variables["accountUserId"] = .string(accountUserId) }
         // The server wants all three of the place or none.
         if let photoNearFilter {
             variables["nearLatitude"] = .number(photoNearFilter.latitudeDegrees)

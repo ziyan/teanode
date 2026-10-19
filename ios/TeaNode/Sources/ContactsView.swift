@@ -149,7 +149,7 @@ struct ContactsScreen: View {
             // instead of a period: no chevrons, no lines, rows close together.
             List {
                 if model.searchText.isEmpty, !model.shownSuggestions.isEmpty {
-                    ListPeriodHeader(title: String(localized: "Look like people in your circles"))
+                    ListPeriodHeader(title: String(localized: "Contacts that may be people in your circles"))
                         .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 2, trailing: 16))
                         .listRowSeparator(.hidden)
                         .accessibilityAddTraits(.isHeader)
@@ -265,7 +265,7 @@ struct ContactSuggestionRows: View {
                 Text(suggestion.contact.shownName.isEmpty ? String(localized: "No name") : suggestion.contact.shownName)
                     .font(.headline)
                     .lineLimit(2)
-                Text("Looks like \(suggestion.account.displayName) in your circles")
+                Text("\(suggestion.contact.shownName.isEmpty ? String(localized: "No name") : suggestion.contact.shownName) may be \(suggestion.account.displayName) in your circles")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

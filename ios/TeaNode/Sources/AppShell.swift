@@ -267,10 +267,15 @@ struct MainView: View {
         .onChange(of: app.openedContactId) { _, contactId in
             if contactId != nil { section = .contacts }
         }
-        .onChange(of: app.openedPhotoContactId) { _, contactId in
-            guard contactId != nil else { return }
-            section = .photos
-            isMenuOpen = false
+        .onChange(of: app.openedPhotoPerson) { _, person in
+            guard person != nil else { return }
+            // Photos takes the request when it is drawn; when it cannot be shown the request ends here.
+            if app.isSectionAvailable(.photos) {
+                section = .photos
+                isMenuOpen = false
+            } else {
+                app.openedPhotoPerson = nil
+            }
         }
         .onChange(of: app.openedSection) { _, opened in
             guard let opened else { return }

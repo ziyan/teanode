@@ -70658,44 +70658,12 @@
         }
       }
     },
-    "Look like people in your circles": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サークルの人に似ています"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "看起来是你圈子里的人"
-          }
-        }
-      }
-    },
-    "Looks like %@ in your circles": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サークルの %@ さんのようです"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "看起来是你圈子里的 %@"
-          }
-        }
-      }
-    },
     "In your circles as %@": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サークルでは %@ さん"
+            "value": "サークルでは %@"
           }
         },
         "zh-Hans": {
@@ -70733,7 +70701,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在我的圈子里是…"
+            "value": "在你的圈子里是…"
           }
         }
       }
@@ -70759,7 +70727,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ はサークルでは %2$@ さん"
+            "value": "%1$@ はサークルでは %2$@"
           }
         },
         "zh-Hans": {
@@ -70823,7 +70791,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サークルを共有している人の中から、%@ さんが誰かを選んでください。あなただけに表示されます。"
+            "value": "サークルを共有している人の中から、%@ が誰かを選んでください。あなただけに表示されます。"
           }
         },
         "zh-Hans": {
@@ -70866,18 +70834,66 @@
         }
       }
     },
-    "There are no photos of them yet.": {
+    "Contacts that may be people in your circles": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この人の写真はまだありません。"
+            "value": "サークルの人かもしれない連絡先"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "还没有他们的照片。"
+            "value": "可能是你的圈子里的人的联系人"
+          }
+        }
+      }
+    },
+    "%@ may be %@ in your circles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ はサークルの %2$@ かもしれません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 可能是你的圈子里的 %2$@"
+          }
+        }
+      }
+    },
+    "Photos of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の写真"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的照片"
+          }
+        }
+      }
+    },
+    "Photos of a person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人の写真"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "某人的照片"
           }
         }
       }

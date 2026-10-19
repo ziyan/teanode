@@ -346,6 +346,11 @@
                     let members = demoFaceGroups.first { $0.id == faceGroupId }?.photoIds ?? []
                     chosen = chosen.filter { members.contains($0.id) }
                 }
+                // The photos of the contact linked to a person in the circles: Sam's card is the only one.
+                if let accountUserId = variables["accountUserId"] as? String {
+                    let members = ["sam", "user-sam"].contains(accountUserId) ? demoFaceGroups.first { $0.id == "demo-person-2" }?.photoIds ?? [] : []
+                    chosen = chosen.filter { members.contains($0.id) }
+                }
                 if let latitude = variables["nearLatitude"] as? Double, let longitude = variables["nearLongitude"] as? Double,
                     let distance = variables["nearDistanceKilometers"] as? Double
                 {
