@@ -1008,3 +1008,59 @@ it('keeps the address buttons off while the editor has unsaved changes', async (
   fireEvent.click(mapButton)
   expect(calls('SavePlace')).toHaveLength(0)
 })
+
+const photoOf = (id: string) => ({ id, smallPreviewUrl: `/photos/${id}/small` })
+
+it('shows up to four pictures taken during a visit, and the number of the rest', async () => {
+  answerWith({
+    visits: [
+      visit({
+        photoCount: 6,
+        photos: ['photo-1', 'photo-2', 'photo-3', 'photo-4'].map(photoOf),
+      }),
+    ],
+  })
+  renderAt('/location')
+  const first = (await screen.findAllByRole('link', { name: /^Photo taken during the visit to Fixture Park/ }))[0]
+  expect(first.getAttribute('href')).toBe(
+    '/photos/photo-1?after=2030-03-05T12%3A00%3A00.000Z&before=2030-03-05T13%3A30%3A00.000Z',
+  )
+  expect(screen.getAllByRole('link', { name: /^Photo taken during the visit to Fixture Park/ })).toHaveLength(4)
+  const more = screen.getByRole('link', { name: /^Photos taken during the visit to Fixture Park.*all 6/ })
+  expect(more.textContent).toBe('+2')
+  expect(more.getAttribute('href')).toBe(
+    '/photos?after=2030-03-05T12%3A00%3A00.000Z&before=2030-03-05T13%3A30%3A00.000Z',
+  )
+  // The row is still a button of its own, with the pictures beside it.
+  expect(first.closest('button')).toBeNull()
+})
+
+it('shows no count tile when every picture of the visit is shown', async () => {
+  answerWith({ visits: [visit({ photoCount: 2, photos: [photoOf('photo-1'), photoOf('photo-2')] })] })
+  renderAt('/location')
+  await screen.findAllByRole('link', { name: /^Photo taken during the visit/ })
+  expect(screen.queryByText(/^\+\d/)).toBeNull()
+})
+
+it('shows no pictures under the visits of another person', async () => {
+  answerWith({
+    sharedViews: [PERSON_B_VIEW],
+    visits: [visit({ photoCount: null, photos: null })],
+  })
+  renderAt('/location?person=person-b')
+  await screen.findByText('Fixture Park')
+  expect(screen.queryByRole('link', { name: /taken during the visit/ })).toBeNull()
+})
+
+it('selects the place the address names, on the Places tab', async () => {
+  answerWith({
+    places: [
+      place({ id: 'place-one', placeName: 'Fixture Park' }),
+      place({ id: 'place-two', placeName: 'Fixture Cafe' }),
+    ],
+  })
+  renderAt('/location?tab=places&place=place-two')
+  const row = (await screen.findByText('Fixture Cafe')).closest('button')!
+  expect(row.className).toContain('is-selected')
+  expect(screen.getByText('Fixture Park').closest('button')!.className).not.toContain('is-selected')
+})

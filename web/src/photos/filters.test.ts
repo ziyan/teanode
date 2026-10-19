@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { isFoundByMeaningOnly, parseDay, parsePhotoKind, startOfDay, startOfNextDay } from './filters'
+import {
+  isFoundByMeaningOnly,
+  parseDay,
+  parseInstant,
+  parsePhotoKind,
+  startOfDay,
+  startOfNextDay,
+  windowEnds,
+} from './filters'
 
 describe('the filters in the address', () => {
   it('knows the kinds the server knows and nothing else', () => {
@@ -22,6 +30,25 @@ describe('the filters in the address', () => {
     expect([first.getFullYear(), first.getMonth(), first.getDate(), first.getHours()]).toEqual([2030, 6, 12, 0])
     expect([after.getFullYear(), after.getMonth(), after.getDate(), after.getHours()]).toEqual([2030, 6, 15, 0])
     expect(startOfNextDay('2030-12-31')!.slice(0, 4)).toMatch(/2030|2031/)
+  })
+})
+
+describe('a window of moments in the address', () => {
+  it('keeps a moment that exists as an instant and drops anything else', () => {
+    expect(parseInstant('2030-03-05T09:50:00.000Z')).toBe('2030-03-05T09:50:00.000Z')
+    expect(parseInstant('2030-03-05T09:50:00+02:00')).toBe('2030-03-05T07:50:00.000Z')
+    expect(parseInstant('2030-03-05')).toBeUndefined()
+    expect(parseInstant('2030-02-31T10:00:00Z')).toBeUndefined()
+    expect(parseInstant('yesterday')).toBeUndefined()
+    expect(parseInstant(null)).toBeUndefined()
+  })
+
+  it('names the end as a time alone when it is on the same day', () => {
+    const same = windowEnds('2030-03-05T09:50:00.000Z', '2030-03-05T10:59:00.000Z', 'en', 'UTC')
+    expect(same).toEqual({ start: 'Mar 5, 9:50 AM', end: '10:59 AM' })
+    const other = windowEnds('2030-03-05T09:50:00.000Z', '2030-03-06T10:59:00.000Z', 'en', 'UTC')
+    expect(other.end).toBe('Mar 6, 10:59 AM')
+    expect(windowEnds(undefined, '2030-03-06T10:59:00.000Z', 'en', 'UTC').start).toBe('')
   })
 })
 

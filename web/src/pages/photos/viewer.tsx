@@ -20,6 +20,7 @@ import {
   TrashIcon,
   ZoomInIcon,
 } from '../../components/icons'
+import { LocationMap } from '../../components/locationMap'
 import { MenuButton } from '../../components/menuButton'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
@@ -27,6 +28,7 @@ import { useTranslation } from '../../i18n/i18n'
 import {
   photoFilePath,
   readPhoto,
+  readPhotoPlace,
   type Photo,
   type PhotoAlbum,
   type PhotoFace,
@@ -75,6 +77,9 @@ const SWIPE_DISTANCE = 60
 const DESCRIPTION_POLL_MS = 3000
 const DESCRIPTION_SLOW_AFTER_MS = 2 * 60 * 1000
 const DESCRIPTION_SLOW_POLL_MS = 15 * 1000
+
+// How close the details' map starts: a street, not a city.
+const PHOTO_MAP_ZOOM = 16
 
 // The files of a photo that can be downloaded, in the order the menu lists them.
 const DOWNLOADABLE_ROLES: {
@@ -213,6 +218,18 @@ export function PhotoViewer({
   const altText = usePhotoAltText()
   const assistantWords = useAssistantWords()
   const files = useQuery(() => readPhoto(photo.id), [photo.id], { refresh: false })
+  const hasPosition = typeof photo.latitude === 'number' && typeof photo.longitude === 'number'
+  const [isShowingDetails, setIsShowingDetails] = useState(() => window.matchMedia('(min-width: 761px)').matches)
+  // Where the photo was taken, asked for when the details are open. Keyed on
+  // the position as well as the photo, so a photo that was moved asks again. A
+  // failed request leaves the city text the photo already has.
+  const placeRead = useQuery(
+    async () => (isShowingDetails && hasPosition ? await readPhotoPlace(photo.id).catch(() => null) : null),
+    [photo.id, photo.latitude, photo.longitude, isShowingDetails],
+    { refresh: false },
+  )
+  const ownPlace = hasPosition ? (placeRead.data?.locationPlace ?? null) : null
+  const addressText = hasPosition ? (placeRead.data?.addressText ?? '') : ''
   const isRead = files.data !== null && files.data.photo.id === photo.id
   const photoFiles: PhotoFile[] = isRead ? files.data!.photoFiles : []
   const albums = isRead ? (files.data!.albums ?? []) : []
@@ -243,7 +260,6 @@ export function PhotoViewer({
   const isOwn = photo.isOwnedByCaller
   const owner = useQuery(async () => (isOwn ? [] : await listCirclePeople()), [isOwn], { refresh: false })
   const ownerPerson = (owner.data ?? []).find((person) => person.userId === photo.userId) ?? null
-  const [isShowingDetails, setIsShowingDetails] = useState(() => window.matchMedia('(min-width: 761px)').matches)
   const viewerElement = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
   // The shape of the picture as the browser drew it, for the photo it was read
@@ -500,7 +516,14 @@ export function PhotoViewer({
   const daysLeftInTrash = trashDaysLeft(photo.trashedAt, photoLibrary?.trashRetentionDays ?? 0, new Date())
   const details: [string, string][] = [
     [t('photos.detailDate'), photoDateTime(photo, language, personTimeZone())],
-    [t('photos.detailPlace'), photo.placeName || coordinatesText || (canChangeLocation ? t('photos.noPlace') : '')],
+    [
+      t('photos.detailPlace'),
+      ownPlace?.placeName ||
+        addressText ||
+        photo.placeName ||
+        coordinatesText ||
+        (canChangeLocation ? t('photos.noPlace') : ''),
+    ],
     [t('photos.detailCamera'), cameraText],
     [
       t('photos.detailKind'),
@@ -966,7 +989,11 @@ export function PhotoViewer({
                     <div key={label}>
                       <dt>{label}</dt>
                       <dd>
-                        {value}
+                        {ownPlace && label === t('photos.detailPlace') ? (
+                          <Link to={`/location?tab=places&place=${encodeURIComponent(ownPlace.id)}`}>{value}</Link>
+                        ) : (
+                          value
+                        )}
                         {canChangeLocation && label === t('photos.detailPlace') && (
                           <Tooltip label={t('photos.changeLocation')}>
                             <button
@@ -987,6 +1014,27 @@ export function PhotoViewer({
                               {t('photos.showNearby')}
                             </button>
                           )}
+                        {label === t('photos.detailPlace') && hasPosition && (
+                          <div className="photo-viewer-map">
+                            <LocationMap
+                              key={`${photo.latitude},${photo.longitude}`}
+                              people={[]}
+                              places={[
+                                {
+                                  id: photo.id,
+                                  placeName: value,
+                                  placeLabel: ownPlace?.placeLabel ?? '',
+                                  latitudeDegrees: photo.latitude as number,
+                                  longitudeDegrees: photo.longitude as number,
+                                  radiusMeters: 0,
+                                },
+                              ]}
+                              singlePointZoom={PHOTO_MAP_ZOOM}
+                              isScrollZoomEnabled={false}
+                              mapLabel={t('photos.detailMapLabel')}
+                            />
+                          </div>
+                        )}
                         {canChangeDate && label === t('photos.detailDate') && (
                           <Tooltip label={t('photos.changeDate')}>
                             <button
@@ -1162,7 +1210,11 @@ function ViewerPerson({
     <li className="photo-viewer-person">
       {isNameable ? (
         <Tooltip label={t('photos.nameThisPerson')}>
-          <button type="button" className="photo-viewer-person-link photo-viewer-person-name-button" onClick={() => setIsNaming(true)}>
+          <button
+            type="button"
+            className="photo-viewer-person-link photo-viewer-person-name-button"
+            onClick={() => setIsNaming(true)}
+          >
             <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
             <span className="photo-viewer-person-name muted">{shownName}</span>
           </button>

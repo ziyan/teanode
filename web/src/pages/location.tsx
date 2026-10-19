@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { graphql, subscribe } from '../api'
 import { Avatar } from '../components/avatar'
@@ -80,7 +80,7 @@ const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, 
   $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel,
     offset: $offset, limitCount: $limitCount) {
-    placeVisits { ${VISIT_FIELDS} } nextOffset
+    placeVisits { ${VISIT_FIELDS} photoCount photos { id smallPreviewUrl } } nextOffset
   }
 }`
 const LIST_POINTS = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
@@ -191,7 +191,9 @@ function LocationContent({ userId }: { userId: string }) {
   // What the live feed has read again about people who moved, until the next
   // full reading of everybody replaces it.
   const [movedViews, setMovedViews] = useState<Record<string, LocationView>>({})
-  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null)
+  // The selected place is in the address (`place`), so a link from a photo's
+  // details lands on it.
+  const selectedPlaceId = parameters.get('place')
   const [isCheckingIn, setIsCheckingIn] = useState(false)
   // Where this browser is, for a viewer with no recorded position. It is only
   // drawn: nothing is stored, and it is gone when the page is.
@@ -218,6 +220,7 @@ function LocationContent({ userId }: { userId: string }) {
       return written
     })
   }
+  const setSelectedPlaceId = (placeId: string | null) => changeParameters({ place: placeId })
   const selectTab = (id: string) => changeParameters({ tab: id === 'visits' ? null : id })
   // A different day is a different list: back to its first page.
   const selectDay = (nextDayKey: string | null) => changeParameters({ day: nextDayKey, page: null })
@@ -583,6 +586,43 @@ function LocationContent({ userId }: { userId: string }) {
     return ''
   }
 
+  // The pictures taken during a visit, under its row: up to four, and the
+  // number of the rest when there are more. They open the Photos library over
+  // the visit's own window of time.
+  function photoStrip(visit: PlaceVisit) {
+    const photos = visit.photos ?? []
+    if (!visit.photoCount || photos.length === 0 || !visit.arrivedAt) return null
+    const windowQuery = new URLSearchParams({
+      after: new Date(visit.arrivedAt).toISOString(),
+      before: new Date(visit.departedAt ?? Date.now()).toISOString(),
+    }).toString()
+    const title = placeTitle(visit.place, t)
+    const moreCount = visit.photoCount - photos.length
+    return (
+      <div className="location-visit-photos">
+        {photos.map((photo) => (
+          <Link
+            key={photo.id}
+            to={`/photos/${encodeURIComponent(photo.id)}?${windowQuery}`}
+            className="location-visit-photo"
+            aria-label={t('location.visitPhoto', { place: title, time: rangeText(visit) })}
+          >
+            <img src={photo.smallPreviewUrl} alt="" loading="lazy" draggable={false} />
+          </Link>
+        ))}
+        {moreCount > 0 && (
+          <Link
+            to={`/photos?${windowQuery}`}
+            className="location-visit-photo location-visit-photo-more"
+            aria-label={t('location.visitPhotosAll', { place: title, time: rangeText(visit), count: visit.photoCount })}
+          >
+            {`+${moreCount}`}
+          </Link>
+        )}
+      </div>
+    )
+  }
+
   const visitDayKey = (visit: PlaceVisit) => {
     const moment = visit.arrivedAt ?? visit.departedAt
     return moment ? dayKeyOf(moment) : ''
@@ -840,6 +880,7 @@ function LocationContent({ userId }: { userId: string }) {
                   </span>
                   <span className="muted location-row-meta">{visitDurationText(visit, t)}</span>
                 </button>
+                {photoStrip(visit)}
               </Fragment>
             )
           })}

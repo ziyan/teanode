@@ -25,6 +25,8 @@ vi.mock('../../session', async (importOriginal) => ({
   }),
 }))
 // Files whose names start with "hang" are never read to the end.
+// The details' map needs WebGL, which the test browser does not have.
+vi.mock('../../components/locationMap', () => ({ LocationMap: () => null }))
 vi.mock('../../photos/uploader', () => ({
   isPhotoFile: () => true,
   sha256Of: vi.fn(
@@ -461,6 +463,33 @@ it('asks for the kind and the days in the address, and writes them back when the
   fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
   await waitFor(() => expect(address()).toBe('/photos'))
   expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull()
+})
+
+it('asks for an exact window in the address in place of the days, shows it as a chip and takes it off', async () => {
+  show('/photos?from=2030-07-12&to=2030-07-14&after=2030-03-05T09:50:00.000Z&before=2030-03-05T10:59:00.000Z')
+  await screen.findAllByRole('button', { name: /^Open / })
+  const variables = callsTo('ListPhotos')[0]
+  expect(variables.takenAfter).toBe('2030-03-05T09:50:00.000Z')
+  expect(variables.takenBefore).toBe('2030-03-05T10:59:00.000Z')
+  fireEvent.click(await screen.findByRole('button', { name: /^Remove the filter “.* to .*”$/ }))
+  await waitFor(() => expect(address()).toBe('/photos?from=2030-07-12&to=2030-07-14'))
+  await waitFor(() =>
+    expect(callsTo('ListPhotos').some((each) => new Date(String(each.takenAfter)).getFullYear() === 2030)).toBe(true),
+  )
+  expect(String(callsTo('ListPhotos').slice(-1)[0]?.takenAfter)).not.toBe('2030-03-05T09:50:00.000Z')
+})
+
+it('ignores a window that is not a moment, and keeps the window when a photo is opened', async () => {
+  show('/photos?after=yesterday&before=2030-02-31T10:00:00Z')
+  await screen.findAllByRole('button', { name: /^Open / })
+  expect(callsTo('ListPhotos')[0].takenAfter).toBeFalsy()
+  expect(callsTo('ListPhotos')[0].takenBefore).toBeFalsy()
+  cleanup()
+  show('/photos?after=2030-03-05T09:50:00.000Z&before=2030-03-05T10:59:00.000Z')
+  fireEvent.click((await screen.findAllByRole('button', { name: /^Open / }))[0])
+  await waitFor(() =>
+    expect(address()).toMatch(/^\/photos\/photo-1\?after=2030-03-05T09(%3A|:)50.*&before=2030-03-05T10(%3A|:)59/),
+  )
 })
 
 it('offers the kind of photo to keep, and writes the choice to the address', async () => {
