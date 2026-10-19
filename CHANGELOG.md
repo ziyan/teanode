@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.180.2] - 2026-10-19
+
+### Changed
+
+- The dashboard's chats are at /chat, with a chat icon in the sidebar; old /agent links still open them. (#586)
+
+### Fixed
+
+- On the chats page the search box is as tall as the tabs and the button beside it. (#586)
+
 ## [0.180.1] - 2026-10-19
 
 ### Fixed
