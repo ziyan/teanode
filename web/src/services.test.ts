@@ -35,9 +35,9 @@ describe('homePath', () => {
   it('sends an operator with a model but setup unfinished to setup', () => {
     expect(homePath(operator({ hasModelProvider: true }))).toBe('/manage/server/setup')
   })
-  it('sends a finished assistant server to the assistant', () => {
+  it('sends a finished assistant server to the chats', () => {
     expect(homePath(operator({ hasCompletedSetup: true, hasModelProvider: true, isAssistantEnabled: true }))).toBe(
-      '/agent',
+      '/chat',
     )
   })
   // Photos is on by default, so a brand-new server has it running too, and

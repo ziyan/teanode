@@ -133,8 +133,8 @@ A feature has to pass all three:
    It is on the Administrator role only, for the operator of a private
    server debugging what an agent did. The `/manage/agent` page in the
    management rail has the tabs: agents, use and cost, every run, jobs
-   given up on. (`/agent` is the person's own conversations with their
-   agent, a row at the top of the mailbox's rail.)
+   given up on. (`/chat` is the person's chats with their agent and with
+   people, a row at the top of the mailbox's rail; `/agent` forwards there.)
 3. **The person.** Their agent's own switch, and the policy on each source.
 
 An operator can also switch one person's agent off (`OperatorDisabledAt`),

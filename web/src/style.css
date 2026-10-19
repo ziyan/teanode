@@ -748,7 +748,8 @@ a.tile:hover strong {
    it, and starting a new conversation at its end. */
 .conversation-toolbar {
   display: flex;
-  align-items: center;
+  /* The tabs, the search box and the button the same height: the row's. */
+  align-items: stretch;
   gap: var(--space-2);
   margin-bottom: var(--space-4);
 }

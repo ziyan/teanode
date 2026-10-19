@@ -508,9 +508,11 @@ export function App() {
                       <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
                       <Route path="/mailbox/:folderId" element={<MailboxPage />} />
                       <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
-                      {/* The person's agent, by its name in the rail: their
-                      conversations with it, as tiles. */}
-                      <Route path="/agent" element={<AgentConversationsPage />} />
+                      {/* The chats: the person's conversations with their agent
+                      and with people, as tiles. /agent was its address before,
+                      and links the server and the phone still make use it. */}
+                      <Route path="/chat" element={<AgentConversationsPage />} />
+                      <Route path="/agent" element={<RedirectKeepingQuery to="/chat" />} />
 
                       {/* The operator's pages, all under /manage: /settings is
                       the signed-in person's own, and /manage configures the

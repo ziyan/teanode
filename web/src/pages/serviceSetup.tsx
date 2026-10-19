@@ -442,7 +442,7 @@ export function SetupPage() {
           <p>
             <Link
               className="button"
-              to="/agent"
+              to="/chat"
               onClick={(event) => {
                 // The drawer is where the conversation is; the agent's page
                 // is only for a server where the drawer is not there.
