@@ -621,8 +621,11 @@ struct CodingSessionView: View {
             }
             .pickerStyle(.inline)
         } label: {
+            // The circle stays 44 points, so the symbol stops growing at the
+            // largest sizes rather than spilling out of it.
             Image(systemName: part.systemImage)
                 .font(.body.weight(.medium))
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .frame(width: 44, height: 44)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .contentShape(.circle)
