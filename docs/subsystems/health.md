@@ -151,7 +151,7 @@ conversations in the app and on the dashboard, never over Telegram or Discord
 and never in a chat with other people. Conversation titles and summaries are
 not refreshed from a turn that read Health. Nothing else leaves: Health data
 never goes to the push relay or into a notification's text, the server log
-never prints values, and it is never used for anything but showing it to the
+does not print the values of a statement, and it is never used for anything but showing it to the
 person and the people they share with.
 
 ## Erasing
