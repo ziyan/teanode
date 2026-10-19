@@ -443,7 +443,7 @@ func (self *transaction) FindContactByAddress(userId, address string) (*models.C
 
 // contactAccountSharedCondition holds for a contact row, joined to its
 // address book, whose owner shares a circle with the account the contact is
-// linked to. A link is the owner's note about a person in their circles, so it
+// linked to. Only the owner sees a link to a person in their circles, and it
 // is read only while that is true; endContactAccountsOutsideCircles clears it
 // in the transaction in which it stops being true.
 const contactAccountSharedCondition = `EXISTS (SELECT 1 FROM "circle_member" "mine" JOIN "circle_member" "theirs" ON "theirs"."circle_id" = "mine"."circle_id"

@@ -237,7 +237,6 @@
             if query.contains("ListLocationVisits(") {
                 var visits = LocationDemo.visits
                 if let placeId = variables["placeId"] as? String { visits = visits.filter { $0.placeId == placeId } }
-                if let placeLabel = variables["placeLabel"] as? String { visits = visits.filter { LocationDemo.place($0.placeId).label == placeLabel } }
                 if let text = variables["from"] as? String, let from = ServerTime.date(text) {
                     visits = visits.filter { ($0.arrivedAt ?? $0.departedAt ?? .distantPast) >= from }
                 }

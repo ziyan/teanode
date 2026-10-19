@@ -64332,38 +64332,6 @@
         }
       }
     },
-    "At %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@にいます"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在%@"
-          }
-        }
-      }
-    },
-    "At %@ since %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%2$@から%1$@にいます"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%2$@起在%1$@"
-          }
-        }
-      }
-    },
     "Check in": {
       "localizations": {
         "ja": {

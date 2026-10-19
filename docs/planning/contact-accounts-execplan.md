@@ -13,7 +13,7 @@ After this change, a contact can say which account on this server it is, chosen 
 - The agent finds "photos of my wife" or "photos of Sam" through the relationship and the link, with no matching of names.
 - When a contact's email address is an address of a circle member's account, the link is offered for the person to confirm. It is never made silently.
 
-The link is the owner's own note. The linked person never sees it, is never told, and no photos are shared with them.
+Only the owner sees the link. The linked person never sees it, is never told, and no photos are shared with them.
 
 To see it working: on the dashboard, open a contact who shares a circle with you, choose "Is in your circles as..." and pick the account; Photos then shows that person with the circle picture, and the circle page's row for them offers "Photos".
 
