@@ -29,7 +29,8 @@ func newComputerHerdrCommand() *cli.Command {
 		Description: "Your agent works in the Claude Code and Codex sessions you keep in herdr: it reads\n" +
 			"them, types into them where you can see, and shows you the questions they ask so\n" +
 			"you can answer from anywhere. 'list' says what each is doing and what it asks,\n" +
-			"'read' prints its last turns, 'screen' what its pane shows, 'send' types into it,\n" +
+			"'read' prints its last turns, 'subagents' the agents it started, 'screen' what its\n" +
+			"pane shows, 'send' types into it,\n" +
 			"'wait' waits for it to finish, 'answer' answers its question, 'watch' wakes a\n" +
 			"conversation when it finishes, 'open' starts a session (beside another with\n" +
 			"--pane), 'focus' brings a session's tab forward in herdr on its computer, and\n" +
@@ -49,6 +50,13 @@ func newComputerHerdrCommand() *cli.Command {
 				Flags: []cli.Flag{computerFlag, &cli.IntFlag{Name: "turns", Usage: "how many of the last turns; 10 by default, 100 at most"},
 					&cli.BoolFlag{Name: "detail", Usage: "print each tool call's whole input and what the tool answered"}, JSONFlag()},
 				Action: runComputerHerdrRead,
+			},
+			{
+				Name:      "subagents",
+				Usage:     "print the agents a session started for its current request, as a tree",
+				ArgsUsage: "<pane>",
+				Flags:     []cli.Flag{computerFlag, JSONFlag()},
+				Action:    runComputerHerdrSubagents,
 			},
 			{
 				Name:      "screen",
@@ -331,6 +339,113 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 // indentLines puts prefix before every line of text.
 func indentLines(text, prefix string) string {
 	return prefix + strings.ReplaceAll(text, "\n", "\n"+prefix)
+}
+
+func runComputerHerdrSubagents(ctx context.Context, command *cli.Command) error {
+	paneId, err := herdrPane(command, "subagents <pane>")
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	read, err := client.ReadAgentHerdrSubagents(ctx, connection, command.String("computer"), paneId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(read)
+	}
+	printHerdrSubagents(command, read, time.Now())
+	return nil
+}
+
+// printHerdrSubagents prints the session, then the agents it started under
+// it, each indented under the agent that started it: its state, kind, task,
+// model and how long it has run or ran.
+func printHerdrSubagents(command *cli.Command, read *client.AgentHerdrSubagents, now time.Time) {
+	session := read.HerdrSession
+	line := fmt.Sprintf("%s: %s", herdrPaneWords(session), herdrStateWords(session))
+	if read.SessionModelName != "" {
+		line += ", " + read.SessionModelName
+	}
+	_, _ = fmt.Fprintln(command.Writer, forTerminal(line))
+	if len(read.Subagents) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "  it has not started any agents for this request")
+		return
+	}
+	runningCount := 0
+	known := map[string]bool{}
+	children := map[string][]*client.AgentHerdrSubagent{}
+	for _, subagent := range read.Subagents {
+		known[subagent.SubagentID] = true
+		if subagent.SubagentState == "running" {
+			runningCount++
+		}
+	}
+	var roots []*client.AgentHerdrSubagent
+	for _, subagent := range read.Subagents {
+		// An agent whose parent is not in the list (it was cut, or is from
+		// before this request) is shown with those the session started.
+		if subagent.ParentSubagentID == "" || !known[subagent.ParentSubagentID] {
+			roots = append(roots, subagent)
+			continue
+		}
+		children[subagent.ParentSubagentID] = append(children[subagent.ParentSubagentID], subagent)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "  %s, %d running\n", countWords(len(read.Subagents), "agent"), runningCount)
+	printed := map[string]bool{}
+	var printLevel func(level []*client.AgentHerdrSubagent, indent string)
+	printLevel = func(level []*client.AgentHerdrSubagent, indent string) {
+		for _, subagent := range level {
+			if printed[subagent.SubagentID] {
+				continue
+			}
+			printed[subagent.SubagentID] = true
+			_, _ = fmt.Fprintln(command.Writer, forTerminal(indent+herdrSubagentWords(subagent, now)))
+			printLevel(children[subagent.SubagentID], indent+"  ")
+		}
+	}
+	printLevel(roots, "  ")
+	// An agent named as its own parent, or in a ring of parents, is reached
+	// from no root; it is shown with those the session started, as the
+	// dashboard and the iPhone show it.
+	for _, subagent := range read.Subagents {
+		if !printed[subagent.SubagentID] {
+			printLevel([]*client.AgentHerdrSubagent{subagent}, "  ")
+		}
+	}
+	if read.IsTruncated {
+		_, _ = fmt.Fprintln(command.Writer, "  (earlier agents not shown)")
+	}
+}
+
+// herdrSubagentWords is an agent in a line: its state, kind, task, model
+// and how long it ran, parts it has none of left out.
+func herdrSubagentWords(subagent *client.AgentHerdrSubagent, now time.Time) string {
+	parts := []string{subagent.SubagentState, subagent.SubagentType, subagent.TaskText, subagent.ModelName}
+	if subagent.StartedAt != nil {
+		endedAt := now
+		if subagent.EndedAt != nil {
+			endedAt = *subagent.EndedAt
+		}
+		parts = append(parts, shortDuration(endedAt.Sub(*subagent.StartedAt)))
+	}
+	return strings.Join(slices.DeleteFunc(parts, func(part string) bool { return part == "" }), "  ")
+}
+
+// shortDuration is how long something took in the least that reads at a
+// glance: "45s", "2m 10s", "1h 5m".
+func shortDuration(duration time.Duration) string {
+	duration = max(duration, 0).Round(time.Second)
+	switch {
+	case duration < time.Minute:
+		return fmt.Sprintf("%ds", int(duration/time.Second))
+	case duration < time.Hour:
+		return fmt.Sprintf("%dm %ds", int(duration/time.Minute), int(duration%time.Minute/time.Second))
+	}
+	return fmt.Sprintf("%dh %dm", int(duration/time.Hour), int(duration%time.Hour/time.Minute))
 }
 
 // colorForTerminal is forTerminal that lets through the codes selecting a

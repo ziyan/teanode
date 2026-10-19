@@ -189,6 +189,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"StopAgentBackgroundCommand":  client.DocumentStopAgentBackgroundCommand,
 		"ListAgentHerdrSessions":      client.DocumentListAgentHerdrSessions,
 		"ReadAgentHerdrSession":       client.DocumentReadAgentHerdrSession,
+		"ReadAgentHerdrSubagents":     client.DocumentReadAgentHerdrSubagents,
 		"ReadAgentHerdrScreen":        client.DocumentReadAgentHerdrScreen,
 		"SendAgentHerdrSession":       client.DocumentSendAgentHerdrSession,
 		"WaitAgentHerdrSession":       client.DocumentWaitAgentHerdrSession,

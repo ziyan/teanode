@@ -42,6 +42,7 @@ type HerdrAction struct {
 var HerdrActions = []HerdrAction{
 	{ToolAction: "list", Operation: "ListAgentHerdrSessions", Command: "list"},
 	{ToolAction: "read", Operation: "ReadAgentHerdrSession", Command: "read"},
+	{ToolAction: "subagents", Operation: "ReadAgentHerdrSubagents", Command: "subagents"},
 	{ToolAction: "screen", Operation: "ReadAgentHerdrScreen", Command: "screen"},
 	{ToolAction: "send", Operation: "SendAgentHerdrSession", Command: "send"},
 	{ToolAction: "wait", Operation: "WaitAgentHerdrSession", Command: "wait"},
@@ -76,7 +77,7 @@ func init() {
 				// asks, or an answer to a question that changed, is refused
 				// whoever calls.
 				Annotations: tools.LocalReadOnly(),
-				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is the sessions on every computer (or the one named), those asking first, then those working, a page at a time with totalCount and nextOffset, each with the state it is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, and files (attachment ids of this conversation: a picture, a document) are written on that computer and named after the text so the session opens them; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), or, given pane, beside that pane (a new tab in that pane's workspace, in its directory with its coding agent unless directory and coding_agent say otherwise); focus brings the session's tab forward in herdr on that computer, so whoever sits there sees it, only when the person asks; and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
+				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is the sessions on every computer (or the one named), those asking first, then those working, a page at a time with totalCount and nextOffset, each with the state it is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; subagents is the agents a Claude Code session started for its current request, as a tree: each with its kind, one-line task, model, whether it runs, is done or was stopped, how long it ran and the tools it used, an agent started by another listed under it (a Codex session has none), at most 100, the newest; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, and files (attachment ids of this conversation: a picture, a document) are written on that computer and named after the text so the session opens them; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), or, given pane, beside that pane (a new tab in that pane's workspace, in its directory with its coding agent unless directory and coding_agent say otherwise); focus brings the session's tab forward in herdr on that computer, so whoever sits there sees it, only when the person asks; and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
 				Parameters: tools.Object(map[string]any{
 					"action":                     tools.EnumProperty("what to do", herdrToolActions()...),
 					"computer":                   tools.StringProperty("which computer, by name; list covers every one, and the others need it when more than one runs herdr"),
@@ -106,7 +107,7 @@ func init() {
 						return tools.RiskWrite
 					}
 					switch strings.ToLower(strings.TrimSpace(call.Action)) {
-					case "list", "read", "screen", "wait", "watch":
+					case "list", "read", "subagents", "screen", "wait", "watch":
 						return tools.RiskRead
 					}
 					// A send and an answer go to the person's own sessions
@@ -264,6 +265,11 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		asked.TurnCount = arguments.TurnCount
 		asked.ShouldIncludeToolDetail = arguments.ShouldIncludeToolDetail
 		note = "read the coding session in " + asked.PaneID
+	case "subagents":
+		if holder, ok := attached.(tools.FeatureHolder); !ok || !holder.HasFeature(deviceComputer.FeatureHerdrSubagents) {
+			return nil, fmt.Errorf("the program on %s is too old to show a session's agents; ask the person to update teanode there and restart it", attached.Name())
+		}
+		note = "looked at the agents of the coding session in " + asked.PaneID
 	case "screen":
 		asked.LineCount = arguments.LineCount
 		note = "looked at the screen of " + asked.PaneID

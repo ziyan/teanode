@@ -17012,15 +17012,21 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   min-height: 0;
 }
 
-.coding-view-toggle {
+.coding-view-switch {
   position: absolute;
   top: var(--space-2);
   right: var(--space-3);
   z-index: 1;
-  border: 1px solid var(--border);
-  border-radius: 50%;
   background: var(--surface);
   box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+.coding-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 36px;
 }
 
 .coding-scroll {
@@ -17029,6 +17035,30 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   padding: var(--space-2) var(--space-3);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* The agents tree scrolls sideways with the whole pane, so that the bar is at
+   the pane's foot rather than under a short tree in the middle of it. */
+.coding-scroll.showing-agents {
+  overflow-x: auto;
+}
+
+.coding-scroll.showing-agents .agents-tree {
+  overflow-x: visible;
+}
+
+/* The heading stays at the pane's left while the tree scrolls under it: the
+   view is as wide as the tree, and the heading only as wide as its words, so
+   that it has room to stay. */
+.coding-scroll.showing-agents .agents-view {
+  width: max-content;
+  min-width: 100%;
+}
+
+.coding-scroll.showing-agents .agents-heading {
+  position: sticky;
+  left: 0;
+  width: fit-content;
 }
 
 .coding-earlier {
@@ -17128,6 +17158,254 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 .coding-working {
   width: fit-content;
   margin-top: var(--space-2);
+}
+
+/* --- the Agents view -------------------------------------------------------
+   One list of cards, drawn two ways by the frame's width. Wide: the session's
+   card centered at the top, its agents in a row under it with lines joining
+   them to it, and each agent's own agents in a column under it with a line
+   down its left. Narrow: every level is an indented list with the line down
+   its left, so that nothing pushes the page sideways. A wide tree with more
+   agents than the pane has room for scrolls inside its own box. */
+.agents-view {
+  padding-bottom: var(--space-3);
+}
+
+.agents-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  min-height: 36px;
+  margin: 0 0 var(--space-2);
+  /* The view switch floats over this corner. */
+  padding-right: 136px;
+  font-size: var(--text-label);
+}
+
+.agents-heading .muted {
+  font-weight: 400;
+}
+
+.agents-tree {
+  /* The lines are the muted text's color: the border's is too faint to
+     read as a graph in dark mode. */
+  --agents-line: var(--muted);
+  --agents-gap: 12px;
+  /* A tree wider than the pane scrolls sideways here, never the page. */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: var(--space-2);
+}
+
+/* As wide as its widest row of agents, so that the session's card is over
+   the middle of them, and never narrower than the pane. */
+.agents-graph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+}
+
+.agents-root {
+  display: flex;
+  justify-content: center;
+}
+
+/* A node of the graph is a box on every screen: the phone's rule that runs
+   cards to the screen's edges without sides would make the tree a list. */
+.agents-tree .agent-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+}
+
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 260px;
+  max-width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.agent-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.agent-card-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-card-title > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-title .muted {
+  font-size: 12px;
+}
+
+.agent-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.agent-badge .agent-dots i {
+  background: currentColor;
+}
+
+.agent-card-task {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.agent-card-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+
+.agent-card-tools {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-time {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.agent-card-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  min-height: 28px;
+  padding: 2px 8px 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-card-toggle:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--sidebar-hover);
+}
+
+.agents-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agents-children > li {
+  position: relative;
+}
+
+/* Wide: the first level is a row hung from the session by a stem, each
+   card dropped from a bar that runs from the first card to the last. */
+.agents-top {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: var(--agents-gap);
+}
+
+.agents-top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: var(--agents-gap);
+  border-left: 1px solid var(--agents-line);
+}
+
+/* A dot where the session's line meets the session's card. */
+.agents-top::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--agents-line);
+  border-radius: 50%;
+  background: var(--surface);
+  transform: translateX(-50%);
+}
+
+.agents-top > li {
+  flex: 0 0 auto;
+  padding: var(--agents-gap) 6px 0;
+}
+
+.agents-top > li::before,
+.agents-top > li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: var(--agents-gap);
+  border-top: 1px solid var(--agents-line);
+}
+
+.agents-top > li::before {
+  right: 50%;
+}
+
+.agents-top > li::after {
+  left: 50%;
+  border-left: 1px solid var(--agents-line);
+}
+
+.agents-top > li:first-child::before,
+.agents-top > li:last-child::after {
+  border-top: 0;
+}
+
+/* Deeper levels are a column under the card with a line down its left. */
+.agents-nested {
+  margin: var(--space-2) 0 0 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--agents-line);
+}
+
+.agents-nested > li + li {
+  margin-top: var(--space-2);
+}
+
+.agents-nested .agent-card {
+  width: 100%;
+}
+
+/* In a narrow pane the cards are narrower, so that more of the tree is in
+   view; it still scrolls sideways when it is wider. */
+@container coding (max-width: 860px) {
+  .agent-card {
+    width: 200px;
+  }
 }
 
 /* --- photos ---------------------------------------------------------------
