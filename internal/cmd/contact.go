@@ -87,14 +87,14 @@ func NewContactCommand() *cli.Command {
 			},
 			{
 				Name:      "link",
-				Usage:     "say a contact is somebody you share a circle with; only you know, they are not told",
+				Usage:     "link a contact to somebody you share a circle with; only you know, they are not told",
 				ArgsUsage: "<contact id> <username>",
 				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "address-book", Usage: "the address book the contact is in, when its id is in more than one of yours"}},
 				Action:    runContactBookLink,
 			},
 			{
 				Name:      "unlink",
-				Usage:     "take back the note that a contact is somebody in your circles",
+				Usage:     "unlink a contact from somebody in your circles; only you knew, so nobody is told",
 				ArgsUsage: "<contact id>",
 				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "address-book", Usage: "the address book the contact is in, when its id is in more than one of yours"}},
 				Action:    runContactBookUnlink,
@@ -457,7 +457,7 @@ func runContactBookUnlink(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(contact)
 	}
-	fmt.Printf("%s is no longer noted as somebody in your circles\n", displayed(contact))
+	fmt.Printf("%s is no longer linked to somebody in your circles\n", displayed(contact))
 	return nil
 }
 
