@@ -90,8 +90,12 @@ func (self *graph) SetPersonRelationship(ctx context.Context, arguments SetPerso
 		}
 	}
 	log.Noticef("%s said how they are related to another account", user.Username)
+	linkedContactIds, err := self.linkedContactIdsOf(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
 	return describeCircleMember(&models.CircleMember{UserID: other.ID, User: other}, user.ID,
-		map[string]*models.PersonRelationship{other.ID: relationship}), nil
+		map[string]*models.PersonRelationship{other.ID: relationship}, linkedContactIds), nil
 }
 
 type RemovePersonRelationshipArguments struct {

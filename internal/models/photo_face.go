@@ -74,4 +74,21 @@ type PhotoFaceGroup struct {
 	// CoverPhotoFaceID is the face the group is shown by; the id of
 	// FacePictureURL.
 	CoverPhotoFaceID string `json:"coverPhotoFaceId"`
+
+	// AccountUserID and Account say who the group's contact is on this server,
+	// when the caller linked it to somebody in their circles and still shares
+	// a circle with them. Both are null otherwise. They are the caller's own
+	// note and are set by whoever answers the caller.
+	AccountUserID *string                `json:"accountUserId"`
+	Account       *PhotoFaceGroupAccount `json:"account"`
+}
+
+// PhotoFaceGroupAccount is the person a group's contact is linked to, as the
+// circles show them.
+type PhotoFaceGroupAccount struct {
+	UserID           string  `json:"userId"`
+	Username         string  `json:"username"`
+	Name             string  `json:"name"`
+	AvatarURL        *string `json:"avatarUrl"`
+	AvatarColorIndex int     `json:"avatarColorIndex"`
 }

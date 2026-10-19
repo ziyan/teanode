@@ -16,7 +16,7 @@ import (
 const (
 	photoFaceSelection = `id photoId userId createdAt boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction detectionScore photoFaceGroupId isGroupConfirmed contactId contactName isOwnContact facePictureUrl`
 
-	photoFaceGroupSelection = `{ id userId createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl isHidden coverPhotoFaceId }`
+	photoFaceGroupSelection = `{ id userId createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl isHidden coverPhotoFaceId accountUserId account { userId username name avatarUrl avatarColorIndex } }`
 )
 
 const (

@@ -41,6 +41,10 @@ type CircleMember struct {
 	RelationshipKind       string `json:"relationshipKind"`
 	RelationshipTermGender string `json:"relationshipTermGender"`
 	RelationshipWord       string `json:"relationshipWord"`
+
+	// LinkedContactID is the signed-in account's own contact linked to this
+	// person, empty when there is none. Private to the signed-in account.
+	LinkedContactID string `json:"linkedContactId"`
 }
 
 // CircleInvitation asks one person to join one circle.
@@ -56,7 +60,7 @@ type CircleInvitation struct {
 	ExpiresAt       time.Time `json:"expiresAt"`
 }
 
-const circleMemberFields = `{ userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord }`
+const circleMemberFields = `{ userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord linkedContactId }`
 
 const circleInvitationFields = `{ id circleId circleName circleKind invitedByName invitedUsername memberRole createdAt expiresAt }`
 

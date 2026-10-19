@@ -57,6 +57,10 @@ type contactModel struct {
 	// the card is what anybody asking a real question reads.
 	Emails string `gorm:"column:emails"`
 	Phones string `gorm:"column:phones"`
+
+	// AccountUserID is written only by SetContactAccount: PutContact leaves it
+	// out of the columns it updates, so a card sync or an edit keeps it.
+	AccountUserID *string `gorm:"column:account_user_id"`
 }
 
 func (contactModel) TableName() string { return "contact" }
@@ -67,6 +71,7 @@ func (self *contactModel) toModel() *models.Contact {
 		ModifiedAt: self.ModifiedAt, UID: self.UID, ETag: self.ETag, Card: self.Card,
 		Name: self.Name, Organization: self.Organization,
 		Emails: splitLines(self.Emails), Phones: splitLines(self.Phones),
+		AccountUserID: stringOrEmpty(self.AccountUserID),
 	}
 }
 
@@ -253,6 +258,9 @@ func (self *transaction) ListContacts(addressBookId, query string, limit int) ([
 	for index := range found {
 		contacts = append(contacts, found[index].toModel())
 	}
+	if err := self.hideUnsharedAccounts(addressBookId, "", contacts); err != nil {
+		return nil, err
+	}
 	return contacts, nil
 }
 
@@ -280,7 +288,11 @@ func (self *transaction) contact(addressBookId, contactId string, holding bool) 
 	if len(found) == 0 {
 		return nil, nil
 	}
-	return found[0].toModel(), nil
+	contact := found[0].toModel()
+	if err := self.hideUnsharedAccounts(addressBookId, "", []*models.Contact{contact}); err != nil {
+		return nil, err
+	}
+	return contact, nil
 }
 
 // GetContactByUID finds the same person a device already knows about. Two
@@ -295,10 +307,17 @@ func (self *transaction) GetContactByUID(addressBookId, uid string) (*models.Con
 	if len(found) == 0 {
 		return nil, nil
 	}
-	return found[0].toModel(), nil
+	contact := found[0].toModel()
+	if err := self.hideUnsharedAccounts(addressBookId, "", []*models.Contact{contact}); err != nil {
+		return nil, err
+	}
+	return contact, nil
 }
 
-// PutContact writes one, replacing what was there under that id.
+// PutContact writes one, replacing what was there under that id. It names the
+// columns it updates and leaves account_user_id out, so that a card sync or an
+// edit, which build the contact afresh from a card, keep the link the owner
+// made; SetContactAccount is the only writer of it.
 //
 // Not audited, deliberately. A person's phone rewrites contacts all day, and
 // a row per edit would bury the administrative log that exists to show what
@@ -348,10 +367,15 @@ func (self *transaction) PutContact(contact *models.Contact) (*models.Contact, e
 		return nil, fmt.Errorf("%w: it holds %d bytes and this card is %d, against a limit of %d",
 			ErrBookFull, held, len(row.Card), BytesPerBook)
 	}
-	if err := self.tx.Save(row).Error; err != nil {
+	if err := self.tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "addressbook_id"}, {Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"created_at", "modified_at", "uid", "etag", "card", "name", "organization", "emails", "phones",
+		}),
+	}).Create(row).Error; err != nil {
 		return nil, err
 	}
-	return row.toModel(), nil
+	return self.GetContact(row.AddressBookID, row.ID)
 }
 
 func (self *transaction) DeleteContact(addressBookId, contactId string) error {
@@ -410,5 +434,267 @@ func (self *transaction) FindContactByAddress(userId, address string) (*models.C
 	if len(rows) == 0 {
 		return nil, nil
 	}
+	contact := rows[0].toModel()
+	if err := self.hideUnsharedAccounts("", userId, []*models.Contact{contact}); err != nil {
+		return nil, err
+	}
+	return contact, nil
+}
+
+// contactAccountSharedCondition holds for a contact row, joined to its
+// address book, whose owner shares a circle with the account the contact is
+// linked to. A link is the owner's note about a person in their circles, so it
+// is read only while that is true; endContactAccountsOutsideCircles clears it
+// in the transaction in which it stops being true.
+const contactAccountSharedCondition = `EXISTS (SELECT 1 FROM "circle_member" "mine" JOIN "circle_member" "theirs" ON "theirs"."circle_id" = "mine"."circle_id"
+	WHERE "mine"."user_id" = "addressbook"."user_id" AND "theirs"."user_id" = "contact"."account_user_id")`
+
+// hideUnsharedAccounts blanks the link on every contact whose owner no longer
+// shares a circle with the account, so a row the cleanup missed is never shown.
+// The owner is the address book's, or ownerUserId when the caller knows it.
+func (self *transaction) hideUnsharedAccounts(addressBookId, ownerUserId string, contacts []*models.Contact) error {
+	accountUserIds := []string{}
+	seen := map[string]bool{}
+	for _, contact := range contacts {
+		if contact.AccountUserID != "" && !seen[contact.AccountUserID] {
+			seen[contact.AccountUserID] = true
+			accountUserIds = append(accountUserIds, contact.AccountUserID)
+		}
+	}
+	if len(accountUserIds) == 0 {
+		return nil
+	}
+	if ownerUserId == "" {
+		var ownerUserIds []string
+		if err := self.tx.Model(&addressBookModel{}).Where("\"id\" = ?", addressBookId).Pluck("user_id", &ownerUserIds).Error; err != nil {
+			return err
+		}
+		if len(ownerUserIds) == 0 {
+			return nil
+		}
+		ownerUserId = ownerUserIds[0]
+	}
+	var sharedUserIds []string
+	if err := self.tx.Table("circle_member AS mine").
+		Joins("JOIN circle_member AS theirs ON theirs.circle_id = mine.circle_id").
+		Where("mine.user_id = ? AND theirs.user_id IN ?", ownerUserId, accountUserIds).
+		Distinct().Pluck("theirs.user_id", &sharedUserIds).Error; err != nil {
+		return err
+	}
+	shared := map[string]bool{}
+	for _, userId := range sharedUserIds {
+		shared[userId] = true
+	}
+	for _, contact := range contacts {
+		if !shared[contact.AccountUserID] {
+			contact.AccountUserID = ""
+		}
+	}
+	return nil
+}
+
+// SetContactAccount links a contact to the account on this server it is, or
+// clears the link when accountUserId is empty. It is the only writer of the
+// link. It refuses, in its own transaction, the owner's own account and an
+// account the owner shares no circle with (the owner is reached through the
+// address book, so neither can be a CHECK), and an account another contact in
+// the same book already is. The circle lock is held so that the check and the
+// write cannot straddle two people leaving their last circle.
+func (self *transaction) SetContactAccount(addressBookId, contactId, accountUserId string) error {
+	accountUserId = strings.TrimSpace(accountUserId)
+	if err := lockCircleMembership(self.tx); err != nil {
+		return err
+	}
+	book, err := self.GetAddressBook(addressBookId)
+	if err != nil {
+		return err
+	}
+	if book == nil {
+		return ErrNotFound
+	}
+	var rows []contactModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).Limit(1).Find(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return ErrNotFound
+	}
+	if accountUserId == "" {
+		return self.tx.Model(&contactModel{}).Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
+			Update("account_user_id", nil).Error
+	}
+	if accountUserId == book.UserID {
+		return fmt.Errorf("%w: a contact cannot be linked to its owner's own account", ErrInvalidArguments)
+	}
+	shares, err := self.SharesCircle(book.UserID, accountUserId)
+	if err != nil {
+		return err
+	}
+	if !shares {
+		return fmt.Errorf("%w: that account is not in a circle with the owner of the address book", ErrInvalidArguments)
+	}
+	var taken int64
+	if err := self.tx.Model(&contactModel{}).
+		Where("\"addressbook_id\" = ? AND \"account_user_id\" = ? AND \"id\" <> ?", addressBookId, accountUserId, contactId).
+		Count(&taken).Error; err != nil {
+		return err
+	}
+	if taken > 0 {
+		return fmt.Errorf("%w: another contact in this address book is already linked to that account", ErrAlreadyExists)
+	}
+	return self.tx.Model(&contactModel{}).Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
+		Update("account_user_id", accountUserId).Error
+}
+
+// ListContactAccountLinks are the owner's contacts that are linked to an
+// account they still share a circle with, in the order the owner's books were
+// made (then by contact id), so that where two books link the same account the
+// first one comes first.
+func (self *transaction) ListContactAccountLinks(ownerUserId string) ([]*models.Contact, error) {
+	contacts := []*models.Contact{}
+	if ownerUserId == "" {
+		return contacts, nil
+	}
+	var rows []contactModel
+	if err := self.tx.Table("contact").
+		Select("contact.*").
+		Joins("JOIN addressbook ON addressbook.id = contact.addressbook_id").
+		Where("addressbook.user_id = ? AND contact.account_user_id IS NOT NULL AND "+contactAccountSharedCondition, ownerUserId).
+		Order("addressbook.created_at ASC, addressbook.id ASC, contact.id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		contacts = append(contacts, rows[index].toModel())
+	}
+	return contacts, nil
+}
+
+// FindContactByAccount is the owner's contact that is this account, or nil:
+// the first address book that has one, by the book's created_at then id, and
+// only while they share a circle.
+func (self *transaction) FindContactByAccount(ownerUserId, accountUserId string) (*models.Contact, error) {
+	if ownerUserId == "" || accountUserId == "" || ownerUserId == accountUserId {
+		return nil, nil
+	}
+	var rows []contactModel
+	if err := self.tx.Table("contact").
+		Select("contact.*").
+		Joins("JOIN addressbook ON addressbook.id = contact.addressbook_id").
+		Where("addressbook.user_id = ? AND contact.account_user_id = ? AND "+contactAccountSharedCondition, ownerUserId, accountUserId).
+		Order("addressbook.created_at ASC, addressbook.id ASC, contact.id ASC").
+		Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
 	return rows[0].toModel(), nil
+}
+
+// ListPhotoPeopleAccountUserIDs are the accounts the owner linked a contact to
+// that a face group of theirs is named by, in one query, for a prompt that
+// says which of their people can be found in photos.
+func (self *transaction) ListPhotoPeopleAccountUserIDs(ownerUserId string) ([]string, error) {
+	accountUserIds := []string{}
+	if ownerUserId == "" {
+		return accountUserIds, nil
+	}
+	if err := self.tx.Table("contact").
+		Joins("JOIN addressbook ON addressbook.id = contact.addressbook_id").
+		Joins("JOIN photo_face_group ON photo_face_group.addressbook_id = contact.addressbook_id AND photo_face_group.contact_id = contact.id AND photo_face_group.user_id = addressbook.user_id").
+		Where("addressbook.user_id = ? AND contact.account_user_id IS NOT NULL AND "+contactAccountSharedCondition+
+			" AND EXISTS (SELECT 1 FROM photo_face WHERE photo_face.photo_face_group_id = photo_face_group.id)", ownerUserId).
+		Distinct().Order("contact.account_user_id ASC").Pluck("contact.account_user_id", &accountUserIds).Error; err != nil {
+		return nil, err
+	}
+	return accountUserIds, nil
+}
+
+// ListContactAccountSuggestions are the owner's unlinked contacts whose email
+// addresses include a mailbox address of an account the owner shares a circle
+// with, one account for each contact (the first of the card's addresses that
+// matches), by contact name. Only mailbox addresses are matched: an account's
+// notification address (User.Email) is private profile data. The answer names
+// the account and never the address that matched. An account the contact's
+// book already links to another contact is not suggested, since the link would
+// be refused.
+func (self *transaction) ListContactAccountSuggestions(ownerUserId string) ([]*models.ContactAccountSuggestion, error) {
+	suggestions := []*models.ContactAccountSuggestion{}
+	if ownerUserId == "" {
+		return suggestions, nil
+	}
+	circleUserIds, err := self.CircleUserIDs(ownerUserId)
+	if err != nil {
+		return nil, err
+	}
+	if len(circleUserIds) == 0 {
+		return suggestions, nil
+	}
+	var mailboxes []struct {
+		ID     string `gorm:"column:id"`
+		UserID string `gorm:"column:user_id"`
+	}
+	if err := self.tx.Table("mailbox").Select("id, user_id").Where("user_id IN ?", circleUserIds).Scan(&mailboxes).Error; err != nil {
+		return nil, err
+	}
+	mailboxIds := make([]string, 0, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		mailboxIds = append(mailboxIds, mailbox.ID)
+	}
+	addresses, err := loadMailboxAddresses(self.tx, mailboxIds)
+	if err != nil {
+		return nil, err
+	}
+	accountByAddress := map[string]string{}
+	for _, mailbox := range mailboxes {
+		for _, address := range addresses[mailbox.ID] {
+			accountByAddress[strings.ToLower(address.Address)] = mailbox.UserID
+		}
+	}
+	if len(accountByAddress) == 0 {
+		return suggestions, nil
+	}
+
+	var rows []contactModel
+	if err := self.tx.Table("contact").
+		Select("contact.*").
+		Joins("JOIN addressbook ON addressbook.id = contact.addressbook_id").
+		Where("addressbook.user_id = ? AND contact.emails <> ''", ownerUserId).
+		Order("contact.name ASC, contact.addressbook_id ASC, contact.id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	linked := map[string]bool{}
+	for index := range rows {
+		if rows[index].AccountUserID != nil {
+			linked[rows[index].AddressBookID+"\n"+*rows[index].AccountUserID] = true
+		}
+	}
+	for index := range rows {
+		if rows[index].AccountUserID != nil {
+			continue
+		}
+		for _, address := range splitLines(rows[index].Emails) {
+			accountUserId, found := accountByAddress[strings.ToLower(strings.TrimSpace(address))]
+			if !found || linked[rows[index].AddressBookID+"\n"+accountUserId] {
+				continue
+			}
+			suggestions = append(suggestions, &models.ContactAccountSuggestion{Contact: rows[index].toModel(), AccountUserID: accountUserId})
+			break
+		}
+	}
+	return suggestions, nil
+}
+
+// endContactAccountsOutsideCircles clears every link between this person and
+// an account they no longer share any circle with, in the transaction that
+// changed the circles, as endRelationshipsOutsideCircles does: both the
+// person's own contacts that point at somebody, and other people's contacts
+// that point at the person (the owner is the address book's).
+func endContactAccountsOutsideCircles(tx *gorm.DB, userId string) error {
+	return tx.Exec(`UPDATE "contact" SET "account_user_id" = NULL FROM "addressbook"
+		WHERE "addressbook"."id" = "contact"."addressbook_id" AND "contact"."account_user_id" IS NOT NULL
+		AND ("addressbook"."user_id" = ? OR "contact"."account_user_id" = ?) AND NOT `+contactAccountSharedCondition, userId, userId).Error
 }

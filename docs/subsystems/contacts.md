@@ -210,6 +210,57 @@ A picture is why the megabyte limit on a card matters in practice. One
 photograph from a phone is around three hundred kilobytes; two would be close
 to the limit, and a card over it is refused with `507`.
 
+## A contact that is a person in your circles
+
+A contact can say which account on this server it is: `contact.account_user_id`
+(migration 0246), chosen from the people the owner shares a circle with. It is
+the owner's own note. The person it names is never told and sees nothing of
+it, no photos are shared with them, and address books are never shared, so the
+link is visible only to the owner.
+
+The link has one writer, `transaction.SetContactAccount`. `PutContact` names
+the columns it updates and leaves `account_user_id` out, so a vCard sync from a
+phone or an edit, both of which build the contact afresh from a card, keep it.
+A vCard has no field for it and none is invented, since that would put the link
+on every phone the book synchronizes to. `SetContactAccount` refuses, inside
+its own transaction, the owner's own account (the owner's own card stays "my
+card", `user.contact_id`), an account the owner shares no circle with, and an
+account another contact in the same book already is (a partial unique index on
+`addressbook_id, account_user_id`). An empty account clears the link. Two books
+of one person may each hold a contact for the same account; the agent and the
+photo filter read the first book, by its `created_at` then `id`
+(`FindContactByAccount`).
+
+A link lasts while the two share a circle. It is cleared in the transaction in
+which they stop sharing any (`endContactAccountsOutsideCircles`, called from
+`endSharesOutsideCircles`, in both directions: the person's contacts that point
+at someone they no longer share a circle with, and other people's contacts that
+point at the person), and every read checks it too, so a row the cleanup missed
+never shows. It does not come back when they share a circle again.
+
+It is lost when a card is deleted and put again, which a phone's CardDAV client
+may do, or moved to another book: the row is a new one. Suggestions offer it
+again.
+
+`ListContactAccountSuggestions` answers the owner's unlinked contacts whose
+email addresses include a mailbox address of an account they share a circle
+with (`AliasKindMailbox`, read by `loadMailboxAddresses`). An account's
+notification address (`User.Email`) is never matched: it is private profile
+data. The answer is pairs of a contact and an account and never says which
+address matched. Nothing is linked until the owner confirms.
+
+The surfaces say it the same way: `ContactView.accountUserId` and `account`
+(null unless linked and still sharing a circle), `SetContactAccount`,
+`PhotoFaceGroup.accountUserId` and `account`, `ListPhotos` and `CountPhotos`
+with `accountUserId`, `CircleMember.linkedContactId` (the caller's own contact
+for that person, empty for everybody else's view), the agent's `contact_book`
+actions `link-account` and `unlink-account` (both writes that tell nobody, so
+not outward) and its `account_username` rows, the photo tool's `username`, and
+`teanode contact link|unlink|suggestions` and `teanode photo list --account`.
+The agent's situation adds "Their photos are found with the photo tool" to a
+relationship line only when the person may use photos and the linked contact
+names a group of faces, read with one query for all of them.
+
 ## Keeping a sender
 
 Somebody writes, and the person decides to keep them. That is an ordinary save

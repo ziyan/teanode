@@ -157,6 +157,13 @@ circle, the person leaves the circle's chat and every group chat in which they
 now share a circle with none of the others; a direct chat stays readable by
 both and takes no new message until they share a circle again.
 
+The same transaction ends what two people said to each other and what one noted
+about the other: relationships, shares of calendars, locations, pages, skills
+and albums, and a contact one linked to the other's account
+(`endContactAccountsOutsideCircles`, see `docs/subsystems/contacts.md`). A
+`CircleMember` carries `linkedContactId`, the caller's own contact linked to
+that person; it is for the caller alone and is empty in everybody else's view.
+
 ## Relationships
 
 A person can say what somebody they share a circle with is to them: "Sam is my

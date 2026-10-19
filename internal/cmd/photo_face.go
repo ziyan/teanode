@@ -59,7 +59,11 @@ func newPhotoFacesCommand() *cli.Command {
 // nobody has named, by nothing.
 func photoPersonText(group *models.PhotoFaceGroup) string {
 	if group.ContactName != "" {
-		return group.ContactName + yourselfText(group.IsOwnContact)
+		text := group.ContactName + yourselfText(group.IsOwnContact)
+		if group.Account != nil {
+			text += " [in your circles as " + group.Account.Username + "]"
+		}
+		return text
 	}
 	return ""
 }

@@ -140,6 +140,10 @@ type PhotoFilter struct {
 	// ContactID the photos with a face in any group that contact names.
 	FaceGroupID string
 	ContactID   string
+
+	// AccountUserID keeps the photos of the contact the signed-in account
+	// linked to that account in their circles. Nothing when there is none.
+	AccountUserID string
 }
 
 // variables are the filter's arguments, leaving out what is not asked.
@@ -193,14 +197,17 @@ func (self *PhotoFilter) variables() map[string]any {
 	if self.ContactID != "" {
 		variables["contactId"] = self.ContactID
 	}
+	if self.AccountUserID != "" {
+		variables["accountUserId"] = self.AccountUserID
+	}
 	return variables
 }
 
 const (
 	photoSelection = `{ id userId isOwnedByCaller ownerName createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt photoDescription descriptionVisibleText describedAt isDescriptionRequested smallPreviewUrl largePreviewUrl videoPreviewUrl photoFileRoles }`
 
-	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float, $albumId: String, $faceGroupId: String, $contactId: String`
-	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers, albumId: $albumId, faceGroupId: $faceGroupId, contactId: $contactId`
+	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float, $albumId: String, $faceGroupId: String, $contactId: String, $accountUserId: String`
+	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers, albumId: $albumId, faceGroupId: $faceGroupId, contactId: $contactId, accountUserId: $accountUserId`
 )
 
 const (

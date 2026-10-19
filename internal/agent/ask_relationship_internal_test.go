@@ -135,7 +135,7 @@ func TestTheSituationSaysWhenThePersonHasNotSaidHowTheyAreDescribed(t *testing.T
 			t.Errorf("%q says %q, want %q", pronoun, said, wanted)
 		}
 	}
-	if lines := relationshipLines("robin", nil, nil); lines != nil {
+	if lines := relationshipLines("robin", nil, nil, nil); lines != nil {
 		t.Errorf("with no relationships the prompt lists %q", lines)
 	}
 }
@@ -152,5 +152,33 @@ func TestARelatedNameCannotStartALineOfThePrompt(t *testing.T) {
 	}
 	if said := relatedName("Sam\u202eeil"); said != "Sameil" {
 		t.Errorf("a character that turns the line around is kept: %q", said)
+	}
+}
+
+// A relationship line says the person's photos can be found with the photo
+// tool only for somebody whose linked contact names a group of faces.
+func TestARelationshipLineSaysPhotosAreFoundOnlyForThoseWhoHaveThem(t *testing.T) {
+	relationships := []*models.PersonRelationship{
+		{UserID: "robin", RelatedUserID: "sam", RelationshipKind: models.RelationshipParent, RelatedUserTermGender: models.TermGenderMasculine},
+		{UserID: "robin", RelatedUserID: "alex", RelationshipKind: models.RelationshipSpouse, RelatedUserTermGender: models.TermGenderFeminine},
+	}
+	others := map[string]*models.User{
+		"sam":  {ID: "sam", Username: "sam-example", Name: "Sam Lee"},
+		"alex": {ID: "alex", Username: "alex-example", Name: "Alex Kim"},
+	}
+	lines := relationshipLines("robin", relationships, others, map[string]bool{"alex": true})
+	if len(lines) != 3 {
+		t.Fatalf("%q", lines)
+	}
+	if strings.Contains(lines[1], "photo tool") {
+		t.Errorf("somebody with no photos is said to have some: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "alex-example") || !strings.Contains(lines[2], "photo tool") {
+		t.Errorf("somebody with photos is not said to: %q", lines[2])
+	}
+	for _, line := range relationshipLines("robin", relationships, others, nil)[1:] {
+		if strings.Contains(line, "photo tool") {
+			t.Errorf("no photos are known, and the line says there are: %q", line)
+		}
 	}
 }

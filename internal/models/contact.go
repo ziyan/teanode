@@ -50,4 +50,19 @@ type Contact struct {
 	Organization string   `json:"organization,omitempty"`
 	Emails       []string `json:"emails,omitempty"`
 	Phones       []string `json:"phones,omitempty"`
+
+	// AccountUserID is the account on this server that the owner says this
+	// contact is, or empty. It is the owner's own note: read only while the
+	// owner still shares a circle with that account, never carried in the
+	// card, and never seen by the account. It is written only by
+	// SetContactAccount, so saving a card does not touch it.
+	AccountUserID string `json:"accountUserId,omitempty"`
+}
+
+// ContactAccountSuggestion is a contact the owner has not linked whose email
+// addresses include a mailbox address of an account they share a circle with.
+// It says which account, never which address matched.
+type ContactAccountSuggestion struct {
+	Contact       *Contact `json:"contact"`
+	AccountUserID string   `json:"accountUserId"`
 }

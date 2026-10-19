@@ -331,6 +331,10 @@ type PhotoFilter struct {
 	// face in any group that contact names.
 	FaceGroupID string
 	ContactID   string
+
+	// ContactAddressBookID, when set, narrows ContactID to the contact of
+	// that address book: a contact's id is unique only within its book.
+	ContactAddressBookID string
 }
 
 // PhotoSearchMeaning is some words as one embedding model read them.
