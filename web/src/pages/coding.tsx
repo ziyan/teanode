@@ -902,7 +902,13 @@ function CodingSession({
         </div>
         <div
           ref={scroller}
-          className={view === 'screen' ? 'coding-scroll showing-screen' : 'coding-scroll'}
+          className={
+            view === 'screen'
+              ? 'coding-scroll showing-screen'
+              : view === 'agents'
+                ? 'coding-scroll showing-agents'
+                : 'coding-scroll'
+          }
           onScroll={(event) => {
             const element = event.currentTarget
             isAtEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < AT_END_PX

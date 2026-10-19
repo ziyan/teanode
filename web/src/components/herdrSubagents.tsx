@@ -255,12 +255,21 @@ function AgentBranch({
 // session's card is, whenever the number of columns changes: a tree wider
 // than its pane scrolls inside it, and should open on the session rather
 // than on its first agent. Later reads leave where the person scrolled to.
+//
+// The tree scrolls in its own box, unless the page has the whole pane scroll
+// sideways (the Coding page does, so that the bar is at the pane's foot, not
+// under a short tree in the middle of the screen); then the pane is centered.
 function useCenteredScroll<Element extends HTMLElement>(columnCount: number) {
   const ref = useRef<Element>(null)
   useLayoutEffect(() => {
     const element = ref.current
     if (!element) return
-    element.scrollLeft = Math.max(0, (element.scrollWidth - element.clientWidth) / 2)
+    const scroller =
+      element.scrollWidth > element.clientWidth
+        ? element
+        : element.closest<HTMLElement>('.coding-scroll.showing-agents')
+    if (!scroller) return
+    scroller.scrollLeft = Math.max(0, (scroller.scrollWidth - scroller.clientWidth) / 2)
   }, [columnCount])
   return ref
 }

@@ -17037,6 +17037,22 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   overscroll-behavior: contain;
 }
 
+/* The agents tree scrolls sideways with the whole pane, so that the bar is at
+   the pane's foot rather than under a short tree in the middle of it. */
+.coding-scroll.showing-agents {
+  overflow-x: auto;
+}
+
+.coding-scroll.showing-agents .agents-tree {
+  overflow-x: visible;
+}
+
+/* The heading stays at the pane's left while the tree scrolls under it. */
+.coding-scroll.showing-agents .agents-heading {
+  position: sticky;
+  left: 0;
+}
+
 .coding-earlier {
   display: block;
   width: 100%;
