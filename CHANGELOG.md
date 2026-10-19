@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.185.1] - 2026-10-19
+
+### Fixed
+
+- On the dashboard's Location page, a person's arrival says its day when it was not today, so an old visit no longer reads as this evening's. (#600)
+
 ## [0.185.0] - 2026-10-19
 
 ### Added
