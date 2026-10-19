@@ -1,6 +1,7 @@
 package place
 
 import (
+	"container/list"
 	"fmt"
 	"math"
 	"sync"
@@ -22,19 +23,29 @@ const (
 // safe for concurrent use; the zero value is ready to use.
 type RememberedAddresses struct {
 	lock    sync.Mutex
-	entries map[string]rememberedAddress
+	entries map[string]*list.Element
 
-	// order lists the keys oldest first.
-	order []string
+	// order holds the keys, the one remembered longest ago at the front. A
+	// key remembered again moves to the back.
+	order list.List
 }
 
 type rememberedAddress struct {
+	key         string
 	addressText string
 	expiresAt   time.Time
 }
 
+// RememberedPosition is the position the way Get and Remember know it, rounded
+// to 4 decimals. Ask the provider about this position, so that the address
+// kept under a key is exactly the answer to what that key asks.
+func RememberedPosition(latitudeDegrees, longitudeDegrees float64) (float64, float64) {
+	return math.Round(latitudeDegrees*1e4) / 1e4, math.Round(longitudeDegrees*1e4) / 1e4
+}
+
 func rememberedKey(latitudeDegrees, longitudeDegrees float64) string {
-	return fmt.Sprintf("%.4f,%.4f", math.Round(latitudeDegrees*1e4)/1e4, math.Round(longitudeDegrees*1e4)/1e4)
+	latitudeDegrees, longitudeDegrees = RememberedPosition(latitudeDegrees, longitudeDegrees)
+	return fmt.Sprintf("%.4f,%.4f", latitudeDegrees, longitudeDegrees)
 }
 
 // Get is the address remembered for the position, and whether there is one. An
@@ -42,8 +53,12 @@ func rememberedKey(latitudeDegrees, longitudeDegrees float64) string {
 func (self *RememberedAddresses) Get(latitudeDegrees, longitudeDegrees float64, now time.Time) (string, bool) {
 	self.lock.Lock()
 	defer self.lock.Unlock()
-	entry, isRemembered := self.entries[rememberedKey(latitudeDegrees, longitudeDegrees)]
-	if !isRemembered || !now.Before(entry.expiresAt) {
+	element, isRemembered := self.entries[rememberedKey(latitudeDegrees, longitudeDegrees)]
+	if !isRemembered {
+		return "", false
+	}
+	entry := element.Value.(rememberedAddress)
+	if !now.Before(entry.expiresAt) {
 		return "", false
 	}
 	return entry.addressText, true
@@ -54,15 +69,19 @@ func (self *RememberedAddresses) Remember(latitudeDegrees, longitudeDegrees floa
 	self.lock.Lock()
 	defer self.lock.Unlock()
 	if self.entries == nil {
-		self.entries = map[string]rememberedAddress{}
+		self.entries = map[string]*list.Element{}
 	}
 	key := rememberedKey(latitudeDegrees, longitudeDegrees)
-	if _, isRemembered := self.entries[key]; !isRemembered {
-		self.order = append(self.order, key)
+	entry := rememberedAddress{key: key, addressText: addressText, expiresAt: now.Add(rememberedLifetime)}
+	if element, isRemembered := self.entries[key]; isRemembered {
+		element.Value = entry
+		self.order.MoveToBack(element)
+		return
 	}
-	self.entries[key] = rememberedAddress{addressText: addressText, expiresAt: now.Add(rememberedLifetime)}
-	for len(self.order) > rememberedMostCount {
-		delete(self.entries, self.order[0])
-		self.order = self.order[1:]
+	self.entries[key] = self.order.PushBack(entry)
+	for self.order.Len() > rememberedMostCount {
+		oldest := self.order.Front()
+		delete(self.entries, oldest.Value.(rememberedAddress).key)
+		self.order.Remove(oldest)
 	}
 }

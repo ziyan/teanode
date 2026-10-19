@@ -44,6 +44,12 @@ type LocationQuery interface {
 	// location:use.
 	ListPlaces(ctx context.Context, arguments ListPlacesArguments) (*PlacePageView, error)
 
+	// One place by its id, as a row of ListPlaces is: the caller's own, or
+	// somebody else's who shares their history with the caller. Not found
+	// when the id is unknown or the place is not the caller's to read. Needs
+	// location:use.
+	ReadPlace(ctx context.Context, arguments ReadPlaceArguments) (*PlaceView, error)
+
 	// What is at and around a position, nearest first, for a check-in: the named
 	// place OpenStreetMap knows at the position, and the caller's own places
 	// there; only the caller's own while the place provider is switched off.
@@ -325,6 +331,13 @@ type ListPlacesArguments struct {
 
 	Offset     *int `json:"offset" graphapi:"nullable"`
 	LimitCount *int `json:"limitCount" graphapi:"nullable"`
+}
+
+type ReadPlaceArguments struct {
+	PlaceID string `json:"placeId"`
+
+	// UserID is whose place; empty is the caller's own.
+	UserID string `json:"userId" graphapi:"nullable"`
 }
 
 type ListNearbyPlacesArguments struct {
@@ -878,7 +891,7 @@ func (self *graph) ListLocationVisits(ctx context.Context, arguments ListLocatio
 		page.PlaceVisits = append(page.PlaceVisits, describePlaceVisit(visit, reach.ShareLevel == models.LocationShareLevelOwner))
 	}
 	if reach.ShareLevel == models.LocationShareLevelOwner {
-		if err := self.attachVisitPhotos(ctx, principal, page.PlaceVisits); err != nil {
+		if err := self.attachVisitPhotos(ctx, principal, visits, page.PlaceVisits); err != nil {
 			return nil, err
 		}
 	}
@@ -891,20 +904,36 @@ const visitPhotoPreviewCount = 4
 // attachVisitPhotos fills in the photos the caller took during each of their
 // own visits. A caller who may not use Photos (the service is off, or the
 // permission is missing) gets nulls and no error: Location works without
-// Photos. A visit with no arrival has no window, so it stays null.
-func (self *graph) attachVisitPhotos(ctx context.Context, principal *api.Principal, views []*PlaceVisitView) error {
+// Photos. A visit with no arrival has no window, so it stays null. A visit
+// nobody ended that the person is no longer at (the phone never sent the
+// departure) ends at their latest position, by the rule GetLocation uses;
+// only a visit the person is still at runs to now. The views are the visits,
+// in the same order.
+func (self *graph) attachVisitPhotos(ctx context.Context, principal *api.Principal, visits []*models.PlaceVisit, views []*PlaceVisitView) error {
 	if !self.isServiceEnabled(models.ServicePhotos) || !principal.Permissions.Has(models.PermissionPhotosUse) {
 		return nil
 	}
 	now := time.Now().UTC()
+	var latest *models.LocationPoint
+	for _, visit := range visits {
+		if visit.DepartedAt == nil {
+			var err error
+			if latest, err = self.transaction(ctx).GetLatestLocationPoint(principal.User.ID); err != nil {
+				return translateError(err)
+			}
+			break
+		}
+	}
 	windows := make([]db.VisitPhotoWindow, 0, len(views))
-	for _, view := range views {
+	for index, view := range views {
 		if view.ArrivedAt == nil {
 			continue
 		}
 		endedAt := now
 		if view.DepartedAt != nil {
 			endedAt = *view.DepartedAt
+		} else if !place.IsStillThere(visits[index], latest) {
+			endedAt = latest.MeasuredAt
 		}
 		windows = append(windows, db.VisitPhotoWindow{VisitID: view.ID, StartedAt: *view.ArrivedAt, EndedAt: endedAt})
 	}
@@ -963,6 +992,29 @@ func (self *graph) ListPlaces(ctx context.Context, arguments ListPlacesArguments
 		}
 	}
 	return page, nil
+}
+
+func (self *graph) ReadPlace(ctx context.Context, arguments ReadPlaceArguments) (*PlaceView, error) {
+	principal, err := self.requireLocationPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reach, err := self.reachLocation(ctx, principal, arguments.UserID, models.LocationShareLevelHistory)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	found, err := tx.GetPlace(reach.User.ID, strings.TrimSpace(arguments.PlaceID))
+	if err != nil {
+		return nil, locationFailure(err)
+	}
+	if err := attachVisitSummaries(tx, reach.User.ID, []*models.Place{found}); err != nil {
+		return nil, locationFailure(err)
+	}
+	if reach.ShareLevel == models.LocationShareLevelOwner {
+		return describePlace(found), nil
+	}
+	return describePlaceForViewer(found), nil
 }
 
 // ListNearbyPlaces waits on the place provider, so it reads in two short

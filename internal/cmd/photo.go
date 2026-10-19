@@ -342,12 +342,12 @@ func printPhotoTable(photos []*models.Photo) error {
 // the photo carries.
 func photoPlaceText(photo *models.Photo, photoPlace *client.PhotoPositionPlaceView) string {
 	if photoPlace != nil {
-		if own := photoPlace.LocationPlace; own != nil {
-			if own.PlaceName != "" {
-				return forTerminal(own.PlaceName)
+		if ownPlace := photoPlace.LocationPlace; ownPlace != nil {
+			if ownPlace.PlaceName != "" {
+				return forTerminal(ownPlace.PlaceName)
 			}
-			if own.PlaceLabel != "" {
-				return forTerminal(own.PlaceLabel)
+			if ownPlace.PlaceLabel != "" {
+				return forTerminal(ownPlace.PlaceLabel)
 			}
 		}
 		if photoPlace.AddressText != "" {

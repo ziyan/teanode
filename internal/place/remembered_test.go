@@ -41,8 +41,35 @@ func TestRememberedAddressesDropTheOldestPastTheLimit(test *testing.T) {
 	if _, isRemembered := remembered.Get(float64(rememberedMostCount+9)/1000, 1, now); !isRemembered {
 		test.Fatal("the newest was dropped")
 	}
-	if len(remembered.entries) != rememberedMostCount || len(remembered.order) != rememberedMostCount {
-		test.Fatalf("%d entries, %d keys", len(remembered.entries), len(remembered.order))
+	if len(remembered.entries) != rememberedMostCount || remembered.order.Len() != rememberedMostCount {
+		test.Fatalf("%d entries, %d keys", len(remembered.entries), remembered.order.Len())
+	}
+}
+
+func TestRememberedAddressesRememberedAgainIsTheNewest(test *testing.T) {
+	var remembered RememberedAddresses
+	now := time.Now()
+	for index := 0; index < rememberedMostCount; index++ {
+		remembered.Remember(float64(index)/1000, 1, fmt.Sprintf("address %d", index), now)
+	}
+	// The oldest is remembered again, so the next one in line is dropped.
+	remembered.Remember(0, 1, "address 0 again", now)
+	remembered.Remember(50, 50, "one more", now)
+	if addressText, isRemembered := remembered.Get(0, 1, now); !isRemembered || addressText != "address 0 again" {
+		test.Fatalf("the address remembered again was dropped: %q %v", addressText, isRemembered)
+	}
+	if _, isRemembered := remembered.Get(0.001, 1, now); isRemembered {
+		test.Fatal("the oldest address was kept")
+	}
+	if len(remembered.entries) != rememberedMostCount || remembered.order.Len() != rememberedMostCount {
+		test.Fatalf("%d entries, %d keys", len(remembered.entries), remembered.order.Len())
+	}
+}
+
+func TestRememberedPositionIsWhatTheKeyAsksFor(test *testing.T) {
+	latitudeDegrees, longitudeDegrees := RememberedPosition(11.50004, 21.49996)
+	if latitudeDegrees != 11.5 || longitudeDegrees != 21.5 {
+		test.Fatalf("got %v %v", latitudeDegrees, longitudeDegrees)
 	}
 }
 

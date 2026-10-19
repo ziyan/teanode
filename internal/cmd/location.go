@@ -69,6 +69,13 @@ func NewLocationCommand() *cli.Command {
 				Action: runLocationPlaces,
 			},
 			{
+				Name:      "place",
+				Usage:     "one of your places by its id, as places shows it",
+				ArgsUsage: "<place id>",
+				Flags:     []cli.Flag{JSONFlag(), personFlag},
+				Action:    runLocationPlace,
+			},
+			{
 				Name:  "path",
 				Usage: "the positions of one day, oldest first",
 				Flags: []cli.Flag{
@@ -422,13 +429,13 @@ func runLocationVisits(ctx context.Context, command *cli.Command) error {
 		if visit.DurationSeconds != nil {
 			duration = timeWords(time.Duration(*visit.DurationSeconds) * time.Second)
 		}
-		photos := ""
+		photoCountText := ""
 		if visit.PhotoCount != nil && *visit.PhotoCount > 0 {
-			photos = fmt.Sprintf("%d", *visit.PhotoCount)
+			photoCountText = fmt.Sprintf("%d", *visit.PhotoCount)
 		}
-		rows = append(rows, []string{timeCell(visit.ArrivedAt), left, duration, photos, placeLine(visit.Place), visit.Place.ID})
+		rows = append(rows, []string{timeCell(visit.ArrivedAt), left, duration, photoCountText, placeLine(visit.Place), visit.Place.ID})
 	}
-	if err := printTable([]string{"arrived", "left", "duration", "photos", "place", "place id"}, rows); err != nil {
+	if err := printTable([]string{"arrived", "left", "duration", "photo count", "place", "place id"}, rows); err != nil {
 		return err
 	}
 	noteNextPage(page.NextOffset, first)
@@ -479,6 +486,39 @@ func runLocationPlaces(ctx context.Context, command *cli.Command) error {
 	}
 	noteNextPage(page.NextOffset, first)
 	return nil
+}
+
+func runLocationPlace(ctx context.Context, command *cli.Command) error {
+	placeId := command.Args().First()
+	if placeId == "" {
+		return usage("usage: teanode location place <place id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	userId, err := locationPerson(ctx, command, connection, true)
+	if err != nil {
+		return err
+	}
+	found, err := client.ReadPlace(ctx, connection, userId, placeId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(found)
+	}
+	last := ""
+	if found.LastVisitAt != nil {
+		last = timeCell(found.LastVisitAt)
+	}
+	address := found.AddressText
+	if found.IsAddressTyped && address != "" {
+		address += " (typed)"
+	}
+	return printTable([]string{"place", "address", "visits", "last visit", "radius", "id"}, [][]string{
+		{placeLine(found), address, fmt.Sprintf("%d", found.VisitCount), last, fmt.Sprintf("%.0f m", found.RadiusMeters), found.ID},
+	})
 }
 
 func runLocationPath(ctx context.Context, command *cli.Command) error {

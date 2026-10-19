@@ -53,12 +53,12 @@ func (self *graph) ReadPhotoPlace(ctx context.Context, arguments PhotoArguments)
 	}
 	latitudeDegrees, longitudeDegrees := *found.Latitude, *found.Longitude
 	if principal.Permissions.Has(models.PermissionLocationUse) {
-		own, err := transaction.FindPlaceAt(principal.User.ID, latitudeDegrees, longitudeDegrees)
+		ownPlace, err := transaction.FindPlaceAt(principal.User.ID, latitudeDegrees, longitudeDegrees)
 		if err != nil {
 			return nil, translateError(err)
 		}
-		if own != nil {
-			return &PhotoPositionPlaceView{LocationPlace: describePlace(own)}, nil
+		if ownPlace != nil {
+			return &PhotoPositionPlaceView{LocationPlace: describePlace(ownPlace)}, nil
 		}
 	}
 	return &PhotoPositionPlaceView{AddressText: self.photoAddressText(ctx, latitudeDegrees, longitudeDegrees)}, nil
@@ -79,7 +79,10 @@ func (self *graph) photoAddressText(ctx context.Context, latitudeDegrees, longit
 	if addressText, isRemembered := self.photoAddresses.Get(latitudeDegrees, longitudeDegrees, time.Now()); isRemembered {
 		return addressText
 	}
-	found, err := provider.Name(ctx, latitudeDegrees, longitudeDegrees)
+	// Ask about the position the cache key stands for, so that what is kept
+	// under the key is exactly the answer to it.
+	askedLatitudeDegrees, askedLongitudeDegrees := place.RememberedPosition(latitudeDegrees, longitudeDegrees)
+	found, err := provider.Name(ctx, askedLatitudeDegrees, askedLongitudeDegrees)
 	if err != nil {
 		log.Debugf("the place provider could not name a photo's position: %s", err)
 		return ""

@@ -38,6 +38,7 @@ func TestLocationParity(test *testing.T) {
 		"GetLocation":          {"now", "now"},
 		"ListLocationVisits":   {"visits", "visits"},
 		"ListPlaces":           {"places", "places"},
+		"ReadPlace":            {"place", "places"},
 		"ListNearbyPlaces":     {"nearby", "nearby"},
 		"SearchPlaces":         {"search", "search"},
 		"SearchAddresses":      {"addresses", "find_address"},
@@ -118,6 +119,7 @@ func TestLocationParity(test *testing.T) {
 		"SearchAddresses.query.command":    "the words are the arguments of the subcommand",
 		"SearchPlaces.placeId.command":     "the flag is --near-place, since --place would read as a filter",
 		"SearchAddresses.placeId.command":  "the flag is --near-place, as it is for search",
+		"ReadPlace.placeId.command":        "the place id is the argument of the subcommand",
 		"ListLocationPoints.from.command":  "a day is given with --day",
 		"ListLocationPoints.until.command": "a day is given with --day",
 	}
@@ -255,7 +257,7 @@ func TestLocationVisitsListsVisitsAndFilters(test *testing.T) {
 	if !strings.Contains(output, "Maple Park") || !strings.Contains(output, "still there") || !strings.Contains(output, "20 minutes") {
 		test.Errorf("the visits: %q", output)
 	}
-	if !strings.Contains(output, "photos") || !regexp.MustCompile(`20 minutes\s+3\s`).MatchString(output) {
+	if !strings.Contains(output, "photo count") || !regexp.MustCompile(`20 minutes\s+3\s`).MatchString(output) {
 		test.Errorf("the photo count of the first visit and none for the second: %q", output)
 	}
 	variables := called("ListLocationVisits")

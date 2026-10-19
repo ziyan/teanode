@@ -473,7 +473,9 @@ do, for up to 100 photos at a time. `set-location` is a write like `set-date`;
 every time. `read` also says where a photo was taken: `location_place` (`id`,
 `place_name`, `place_label`) when it was inside one of the person's own
 Location places, else `address_text` from the place provider, beside the city
-in `place_name`. `delete` (photos that are in the
+in `place_name`; the command line's `teanode photo read` says the same in its
+place line (your own place, else the street, else the city) and adds
+`locationPlace` and `addressText` to `--json`. `delete` (photos that are in the
 Trash) and `empty-trash` delete forever, as `teanode photo delete` and
 `empty-trash` do, and are destructive: they ask the person every time. `delete`
 says how many went and, when some did not, that the others were not in the Trash

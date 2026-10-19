@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -233,5 +235,42 @@ func TestPhotoPlaceClientDocumentMatchesTheBuiltSchema(test *testing.T) {
 	}
 	if validated := graphql.ValidateDocument(&schema, document, nil); !validated.IsValid {
 		test.Fatalf("ReadPhotoPlace does not match the built schema: %v", validated.Errors)
+	}
+}
+
+func TestPhotoPlaceAsksTheProviderAboutTheRoundedPosition(test *testing.T) {
+	world := newPhotoWorld(test)
+	var askedQuery atomic.Value
+	provider := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		askedQuery.Store(request.URL.Query())
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"osm_type":"way","osm_id":7,"lat":"10.5","lon":"20.5","category":"building","type":"yes","display_name":"1 Fixture Road, Harbor City","address":{"house_number":"1","road":"Fixture Road","city":"Harbor City"}}`))
+	}))
+	test.Cleanup(provider.Close)
+	if err := world.config.Update(func(configuration *config.Configuration) error {
+		configuration.Places.ProviderKind = config.PlacesProviderNominatim
+		configuration.Places.ProviderURL = provider.URL
+		return nil
+	}); err != nil {
+		test.Fatal(err)
+	}
+	adaId := world.person("place-rounded-ada", photoAndLocationAllowed...)
+	photo := world.storePhoto(adaId, "rounded", "rounded.jpg", []byte("rounded"), nil)
+	latitude, longitude := 10.50004, 20.49996
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		if err := transaction.UpdatePhotoMetadata(photo.ID, &db.PhotoMetadata{Latitude: &latitude, Longitude: &longitude}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	world.ask(adaId, photoAndLocationAllowed, func(ctx context.Context) {
+		if view, err := world.graph.ReadPhotoPlace(ctx, PhotoArguments{PhotoID: photo.ID}); err != nil || view == nil || view.AddressText == "" {
+			test.Fatalf("%+v %v", view, err)
+		}
+	})
+	query, _ := askedQuery.Load().(url.Values)
+	askedLatitude, _ := strconv.ParseFloat(query.Get("lat"), 64)
+	askedLongitude, _ := strconv.ParseFloat(query.Get("lon"), 64)
+	if askedLatitude != 10.5 || askedLongitude != 20.5 {
+		test.Fatalf("the provider was asked about %v, not the rounded position", query)
 	}
 }

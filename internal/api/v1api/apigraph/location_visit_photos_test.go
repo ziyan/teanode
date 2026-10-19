@@ -113,3 +113,20 @@ func TestVisitPhotoPreviewHoldsTheFirstFour(t *testing.T) {
 		t.Errorf("six counted, four listed: %v", visit)
 	}
 }
+
+// A visit nobody ended whose person has since been somewhere else ends at
+// their latest position, not at now: a photo taken after it is not in it.
+func TestOpenVisitThePersonLeftEndsAtTheirLatestPosition(t *testing.T) {
+	world := newLocationWorld(t)
+	world.allowPhotos(t, world.ada)
+	arrival := time.Now().Add(-5 * 24 * time.Hour).UTC().Truncate(time.Second)
+	latest := arrival.Add(2 * time.Hour)
+	world.report(t, world.ada, pointInput(40, -75, arrival.Format(time.RFC3339)), visitInput("never-ended", 40, -75, arrival.Format(time.RFC3339), ""))
+	world.report(t, world.ada, pointInput(45, -70, latest.Format(time.RFC3339)), "")
+	world.takePhoto(t, world.ada, "while-there", arrival.Add(time.Hour))
+	world.takePhoto(t, world.ada, "days-later", latest.Add(48*time.Hour))
+	visit := firstVisitOf(t, world.call(t, world.ada, fmt.Sprintf(visitPhotosQuery, "")))
+	if visit["photoCount"] != float64(1) {
+		t.Errorf("only the photo taken before the latest position counts: %v", visit)
+	}
+}

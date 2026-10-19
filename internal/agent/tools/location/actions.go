@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/place"
 )
 
 // The documents the actions send, as the person. They ask for what an answer
@@ -31,10 +32,16 @@ const (
     nextOffset placeVisits { ` + listedVisitFields + ` }
   }
 }`
+	documentListPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
+  ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + pointFields + ` }
+}`
 	documentListPlaces = `query ($userId: String, $placeLabel: String, $query: String, $offset: Int, $limitCount: Int) {
   ListPlaces(userId: $userId, placeLabel: $placeLabel, query: $query, offset: $offset, limitCount: $limitCount) {
     nextOffset places { ` + placeFields + ` }
   }
+}`
+	documentReadPlace = `query ($placeId: String!, $userId: String) {
+  ReadPlace(placeId: $placeId, userId: $userId) { ` + placeFields + ` }
 }`
 	documentListNearby = `query ($latitudeDegrees: Float!, $longitudeDegrees: Float!, $radiusMeters: Float) {
   ListNearbyPlaces(latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters) { ` + foundFields + ` }
@@ -513,12 +520,126 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return untrusted(tools.JSONResult(answer))
 }
 
+// pathPointsMost is how many positions of a day's path the answer lists; a
+// day holds far more, so the rest are left out evenly.
+const pathPointsMost = 60
+
+type pathArguments struct {
+	Day    string `json:"day"`
+	Person string `json:"person"`
+}
+
+// runPath answers one day of the person's path: how many positions there are,
+// the first and last time, how far they went, and a sample of the positions.
+func runPath(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[pathArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	day := here.now.In(here.where)
+	if given := strings.TrimSpace(arguments.Day); given != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", given, here.where)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a day: write YYYY-MM-DD", given)
+		}
+		day = parsed
+	}
+	from := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, here.where)
+	until := from.AddDate(0, 0, 1)
+	variables := map[string]any{"from": from.UTC().Format(time.RFC3339), "until": until.UTC().Format(time.RFC3339)}
+	userId, err := here.personId(ctx, arguments.Person, true)
+	if err != nil {
+		return nil, err
+	}
+	if userId != nil {
+		variables["userId"] = *userId
+	}
+	var result struct {
+		ListLocationPoints []pointData `json:"ListLocationPoints"`
+	}
+	if err := here.operations.Execute(ctx, documentListPoints, variables, &result); err != nil {
+		return nil, err
+	}
+	points := result.ListLocationPoints
+	answer := map[string]any{"timezone": here.where.String(), "day": from.Format("2006-01-02"), "point_count": len(points)}
+	if len(points) > 0 {
+		var travelledMeters float64
+		for index := 1; index < len(points); index++ {
+			travelledMeters += place.DistanceMeters(points[index-1].LatitudeDegrees, points[index-1].LongitudeDegrees, points[index].LatitudeDegrees, points[index].LongitudeDegrees)
+		}
+		answer["first_at"] = points[0].MeasuredAt.In(here.where).Format("15:04:05")
+		answer["last_at"] = points[len(points)-1].MeasuredAt.In(here.where).Format("15:04:05")
+		answer["distance_travelled_kilometers"] = roundTo(travelledMeters/1000, 2)
+		sampled := make([]map[string]any, 0, pathPointsMost)
+		for _, index := range sampleIndexes(len(points), pathPointsMost) {
+			sampled = append(sampled, map[string]any{
+				"time":              points[index].MeasuredAt.In(here.where).Format("15:04:05"),
+				"latitude_degrees":  roundTo(points[index].LatitudeDegrees, 5),
+				"longitude_degrees": roundTo(points[index].LongitudeDegrees, 5),
+			})
+		}
+		answer["points"] = sampled
+		answer["truncated"] = len(points) > pathPointsMost
+	}
+	return untrusted(tools.JSONResult(answer))
+}
+
+// sampleIndexes is up to most indexes of a list of count, evenly spread, the
+// first and the last among them.
+func sampleIndexes(count, most int) []int {
+	if count <= most {
+		indexes := make([]int, count)
+		for index := range indexes {
+			indexes[index] = index
+		}
+		return indexes
+	}
+	indexes := make([]int, most)
+	for index := range indexes {
+		indexes[index] = index * (count - 1) / (most - 1)
+	}
+	return indexes
+}
+
 type placesArguments struct {
+	PlaceID    string `json:"place_id"`
 	PlaceLabel string `json:"place_label"`
 	Query      string `json:"query"`
 	Person     string `json:"person"`
 	Limit      *int   `json:"limit"`
 	Offset     *int   `json:"offset"`
+}
+
+// runReadPlace answers one place by its id, as a row of the list is.
+func runReadPlace(ctx context.Context, here *scope, placeId, person string) (*tools.Result, error) {
+	variables := map[string]any{"placeId": placeId}
+	userId, err := here.personId(ctx, person, true)
+	if err != nil {
+		return nil, err
+	}
+	if userId != nil {
+		variables["userId"] = *userId
+	}
+	var result struct {
+		ReadPlace *placeData `json:"ReadPlace"`
+	}
+	if err := here.operations.Execute(ctx, documentReadPlace, variables, &result); err != nil {
+		return nil, err
+	}
+	rows := []map[string]any{}
+	if result.ReadPlace != nil {
+		row := here.placeRow(result.ReadPlace)
+		row["visit_count"] = result.ReadPlace.VisitCount
+		if result.ReadPlace.LastVisitAt != nil {
+			row["last_visit"] = here.timeText(result.ReadPlace.LastVisitAt)
+		}
+		rows = append(rows, row)
+	}
+	return untrusted(tools.JSONResult(map[string]any{"timezone": here.where.String(), "places": rows}))
 }
 
 func runPlaces(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -529,6 +650,9 @@ func runPlaces(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	here, err := scopeOf(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if placeId := strings.TrimSpace(arguments.PlaceID); placeId != "" {
+		return runReadPlace(ctx, here, placeId, arguments.Person)
 	}
 	variables := map[string]any{}
 	withPaging(variables, arguments.Offset, arguments.Limit)

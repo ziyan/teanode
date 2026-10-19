@@ -1049,3 +1049,34 @@ func TestMakingHomeFromAnAddressReusesAnOwnPlaceThere(t *testing.T) {
 		}
 	}
 }
+
+// One place is read by its id: the caller's own, another person's at history
+// level; not below it, and an unknown id is not found.
+func TestReadPlaceByID(t *testing.T) {
+	world := newLocationWorld(t)
+	world.report(t, world.ada, pointInput(40, -75, ago(5*time.Minute)), visitInput("k1", 40, -75, ago(60*time.Minute), ago(30*time.Minute)))
+	listed := world.call(t, world.ada, `query { ListPlaces { places { id } } }`)["ListPlaces"].(map[string]any)["places"].([]any)
+	if len(listed) != 1 {
+		t.Fatalf("one place wanted: %v", listed)
+	}
+	placeId := listed[0].(map[string]any)["id"].(string)
+	asAda := fmt.Sprintf(`placeId: %q, userId: %q`, placeId, world.ada.ID)
+	const fields = `{ id placeName visitCount }`
+
+	own := world.call(t, world.ada, fmt.Sprintf(`query { ReadPlace(placeId: %q) %s }`, placeId, fields))["ReadPlace"].(map[string]any)
+	if own["id"] != placeId || own["visitCount"] != float64(1) {
+		t.Errorf("the caller's own place: %v", own)
+	}
+	world.refused(t, world.ben, fmt.Sprintf(`query { ReadPlace(%s) %s }`, asAda, fields))
+	world.refused(t, world.ben, fmt.Sprintf(`query { ReadPlace(placeId: %q) %s }`, placeId, fields))
+
+	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))
+	world.refused(t, world.ben, fmt.Sprintf(`query { ReadPlace(%s) %s }`, asAda, fields))
+
+	world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "history") { id } }`, world.ben.ID))
+	seen := world.call(t, world.ben, fmt.Sprintf(`query { ReadPlace(%s) %s }`, asAda, fields))["ReadPlace"].(map[string]any)
+	if seen["id"] != placeId {
+		t.Errorf("at history, the place: %v", seen)
+	}
+	world.refused(t, world.ada, `query { ReadPlace(placeId: "no-such-place") `+fields+` }`)
+}

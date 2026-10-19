@@ -159,6 +159,10 @@ const (
   }
 }`
 
+	DocumentReadPlace = `query ($placeId: String!, $userId: String) {
+  ReadPlace(placeId: $placeId, userId: $userId) { ` + placeFields + ` }
+}`
+
 	DocumentListNearbyPlaces = `query ($latitudeDegrees: Float!, $longitudeDegrees: Float!, $radiusMeters: Float) {
   ListNearbyPlaces(latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters) {
     ` + foundPlaceFields + `
@@ -300,6 +304,22 @@ func ListPlaces(ctx context.Context, connection *Client, query PlacesQuery) (*Pl
 		return nil, err
 	}
 	return result.ListPlaces, nil
+}
+
+// ReadPlace is one place by its id, of the caller or, with a userId, of
+// somebody who shares their history with them.
+func ReadPlace(ctx context.Context, connection *Client, userId, placeId string) (*Place, error) {
+	variables := map[string]any{"placeId": placeId}
+	if userId != "" {
+		variables["userId"] = userId
+	}
+	var result struct {
+		ReadPlace *Place `json:"ReadPlace"`
+	}
+	if err := connection.Execute(ctx, DocumentReadPlace, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ReadPlace, nil
 }
 
 // ListNearbyPlaces is what is at and around a point; a nil radius is the
