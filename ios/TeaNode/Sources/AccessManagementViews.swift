@@ -264,6 +264,7 @@ private struct AddToCircleMenu: View {
             }
         } label: {
             Label("Add to a circle", systemImage: "person.2")
+                .actionColor()
         }
     }
 }

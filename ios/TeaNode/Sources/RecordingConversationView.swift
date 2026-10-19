@@ -565,6 +565,7 @@ struct RecordingConversationSection: View {
                     Task { await model.loadMoreSegments() }
                 } label: {
                     Label("Load more passages", systemImage: "chevron.down")
+                        .actionColor()
                 }
             } else {
                 ProgressView()

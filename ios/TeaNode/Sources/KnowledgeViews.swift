@@ -950,6 +950,7 @@ struct PreviewLink: View {
             Task { await app.preview(path, name: name) }
         } label: {
             Label(name, systemImage: "doc")
+                .actionColor()
                 .font(.caption)
         }
     }

@@ -207,7 +207,7 @@ function containerOf(code, start) {
     if (/var body: some View\s*$/.test(before)) {
       // The body of a view made to be a list's row is a row.
       const viewName = code.slice(0, index).match(/struct\s+([A-Za-z]+)\s*:\s*View\s*\{(?![\s\S]*\bstruct\s+[A-Za-z]+\s*:)/)
-      return viewName && /Row$/.test(viewName[1]) ? 'Section' : null
+      return viewName && (/Row$/.test(viewName[1]) || rowViewNames.has(viewName[1])) ? 'Section' : null
     }
     if (/-> some View\s*$/.test(before)) return null
     index--
@@ -216,6 +216,9 @@ function containerOf(code, start) {
 }
 const rowContainers = new Set(['Section', 'Form', 'List'])
 const stackContainers = new Set(['HStack', 'VStack', 'LazyVStack'])
+// The views a list shows as a row: their bodies' labels are rows' labels
+// wherever the view is written, so they are found by where they are used.
+const rowViewNames = new Set()
 
 // expressionEnd returns where the call that starts at `start` ends: its
 // argument list, then its trailing closures.
@@ -294,6 +297,19 @@ const actionControls = new Set(['Button', 'Menu', 'ShareLink'])
 const ownColorControls = new Set(['Link', 'ContentUnavailableView', 'PhotosPicker'])
 const colorModifiers = /^(foregroundStyle|foregroundColor|actionColor)$/
 
+// Twice, so that a view used as a row inside another row view is found.
+const sources = swiftFiles(iosDirectory).map((path) => codeOnly(readFileSync(path, 'utf8')))
+const viewNames = new Set(sources.flatMap((code) => [...code.matchAll(/\bstruct\s+([A-Z][A-Za-z]+)\s*:\s*View\b/g)].map((match) => match[1])))
+for (let pass = 0; pass < 2; pass++) {
+  for (const code of sources) {
+    for (const match of code.matchAll(/\b([A-Z][A-Za-z]+)\s*[({]/g)) {
+      if (!viewNames.has(match[1]) || rowViewNames.has(match[1])) continue
+      if (/\bstruct\s*$/.test(code.slice(Math.max(0, match.index - 10), match.index))) continue
+      if (rowContainers.has(containerOf(code, match.index))) rowViewNames.add(match[1])
+    }
+  }
+}
+
 const findings = []
 for (const path of swiftFiles(iosDirectory)) {
   let text = readFileSync(path, 'utf8')
@@ -357,6 +373,8 @@ for (const path of swiftFiles(iosDirectory)) {
     const control = kind === 'Label' ? controlOf(code, start) : { name: kind, start }
     if (control && ownColorControls.has(control.name)) continue
     if (chainOf(code, end).some((name) => colorModifiers.test(name))) continue
+    // A label style of its own (a tag, icon only) draws its own colors.
+    if (chainOf(code, end).includes('labelStyle')) continue
     // A color on the control around the label is the label's too.
     if (kind === 'Label' && control && chainOf(code, expressionEnd(code, control.start)).some((name) => colorModifiers.test(name))) continue
     const isAction = actionControls.has(control?.name ?? '')

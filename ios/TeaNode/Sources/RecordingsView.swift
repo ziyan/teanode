@@ -736,6 +736,7 @@ struct RecordingPlaybackScreen: View {
                     VStack {
                         if isCompatibleAudioPreview {
                             Label("Compatible audio preview", systemImage: "waveform")
+                                .foregroundStyle(.primary)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text("Audio preview prepared locally; original unchanged.")
                                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -767,6 +768,7 @@ struct RecordingPlaybackScreen: View {
                                     isCompatibleAudioPreview
                                         ? String(localized: "Share full audio preview") : String(localized: "Share full original"),
                                     systemImage: "square.and.arrow.up")
+                                .actionColor()
                                 .fixedSize(horizontal: false, vertical: true)
                             }
                             .disabled(isChangingPlayback || (try? requireCurrentConnection()) == nil)

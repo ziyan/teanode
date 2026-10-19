@@ -610,6 +610,7 @@ struct AttachButton: View {
             Button("Files", systemImage: "folder") { isPickingFiles = true }
         } label: {
             Label("Attach", systemImage: "paperclip")
+                .actionColor()
         }
         .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
         .cameraPicker(isPresented: $isTakingPicture) { picture in
