@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.186.1] - 2026-10-20
+
+### Fixed
+
+- Location: driving past a place you labeled is no longer a visit, and the people you share your location with are not told you arrived and left. A short stop there still counts. (#607)
+- Location: a visit iOS reported twice is one visit, not a visit that lasted no time followed by another. (#607)
+- Location: on the dashboard, the day filter of Visits lines up with its button, and keeps its width when no day is chosen. (#607)
+
 ## [0.186.0] - 2026-10-20
 
 ### Added
