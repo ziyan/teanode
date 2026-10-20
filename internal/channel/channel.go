@@ -742,6 +742,11 @@ func (self *chatState) follow(ctx context.Context, run *agent.AskRun, chat Chat,
 				self.pending = &pendingCard{run: run, callId: event.CallID, question: true}
 				self.mutex.Unlock()
 				question := "The agent asks: " + event.Note
+				if event.Tool == "browser" {
+					// A request to take the browser tab over, which is done
+					// on the dashboard; a reply here answers it in words.
+					question = "The agent needs you in your browser tab: " + event.Note + "\n\nTake it over on the Browser page of your dashboard and hand it back when you are done, or reply here."
+				}
 				if strings.TrimSpace(event.Text) != "" {
 					question += "\n- " + strings.ReplaceAll(strings.TrimSpace(event.Text), "\n", "\n- ")
 				}

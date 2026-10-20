@@ -893,7 +893,15 @@ type InteractionKind string
 const (
 	InteractionQuestion InteractionKind = "question"
 	InteractionApproval InteractionKind = "approval"
+	// InteractionTakeOver asks the person to take their browser tab over
+	// from the dashboard, do what only they can, and hand it back.
+	InteractionTakeOver InteractionKind = "take_over"
 )
+
+// InteractionHandedBack begins the answer a take-over card gets when the
+// person hands the tab back, followed by what they said, if anything. A
+// typed reply to the card is anything else.
+const InteractionHandedBack = "[handed back]"
 
 // The answers an approval can have, and the one a card gets when the
 // turn waiting on it was stopped.

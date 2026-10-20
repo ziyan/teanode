@@ -2846,6 +2846,27 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 
 // Ask shows the question card and waits for the person's words.
 func (self *AskRun) Ask(ctx context.Context, callId, question string, choices []string) (string, error) {
+	return self.waitForPerson(ctx, &models.AgentInteraction{
+		CallID: callId, InteractionKind: models.InteractionQuestion, ToolName: "ask_user",
+		InteractionText: question, InteractionChoices: choices,
+	})
+}
+
+// AskToTakeOver asks the person to take their browser tab over from the
+// dashboard, do what the request says, and hand it back, and waits as a
+// question does. Handing back answers it with models.InteractionHandedBack
+// and their note; a typed reply answers it with what they typed.
+func (self *AskRun) AskToTakeOver(ctx context.Context, callId, request string) (string, error) {
+	return self.waitForPerson(ctx, &models.AgentInteraction{
+		CallID: callId, InteractionKind: models.InteractionTakeOver, ToolName: "browser", InteractionText: request,
+	})
+}
+
+// waitForPerson raises a card a person answers in words, a question or a
+// request to take the tab over, and waits for the answer: a few minutes,
+// after which a kept card is left open and the turn ends.
+func (self *AskRun) waitForPerson(ctx context.Context, card *models.AgentInteraction) (string, error) {
+	callId, question := card.CallID, card.InteractionText
 	release, err := self.takeCardSlot(ctx)
 	if err != nil {
 		return "", err
@@ -2858,11 +2879,8 @@ func (self *AskRun) Ask(ctx context.Context, callId, question string, choices []
 	}
 	self.questions[callId] = channel
 	self.mutex.Unlock()
-	interaction := self.raiseInteraction(ctx, &models.AgentInteraction{
-		CallID: callId, InteractionKind: models.InteractionQuestion, ToolName: "ask_user",
-		InteractionText: question, InteractionChoices: choices,
-	})
-	self.emit(Event{Kind: EventQuestion, CallID: callId, Tool: "ask_user", Note: question, Text: strings.Join(choices, "\n")})
+	interaction := self.raiseInteraction(ctx, card)
+	self.emit(Event{Kind: EventQuestion, CallID: callId, Tool: card.ToolName, Note: question, Text: strings.Join(card.InteractionChoices, "\n")})
 	wait := confirmationWait
 	if interaction != nil {
 		wait = interactionLiveWait

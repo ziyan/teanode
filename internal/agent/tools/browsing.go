@@ -49,4 +49,14 @@ type Tab interface {
 	// HasTab says there is a tab to act in: a browser connected through
 	// the extension may have none until one is opened or attached.
 	HasTab() bool
+	// IsTakenOver says the person has taken the tab over from the
+	// dashboard: it may be read, not acted in, until they hand it back.
+	IsTakenOver() bool
+}
+
+// TakeOverAsker is a turn that can ask the person to take their browser tab
+// over from the dashboard and wait until they hand it back. Only a turn the
+// person can answer is one.
+type TakeOverAsker interface {
+	AskToTakeOver(ctx context.Context, callId, request string) (string, error)
 }

@@ -138,6 +138,7 @@ type Mutation interface {
 	AgentMutation
 	AgentAdminMutation
 	AgentAskMutation
+	AgentTabMutation
 	AgentMemoryMutation
 	AgentGraphMutation
 	AgentPageShareMutation

@@ -891,6 +891,14 @@ export interface ThreadSummary {
   pending: boolean
 }
 
+// csrfToken is the token the server set in the csrftoken cookie, which a
+// websocket sends in its opening message since a browser lets a script set
+// no header on one. Empty when there is none.
+export function csrfToken(): string {
+  const match = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/)
+  return match ? decodeURIComponent(match[1]) : ''
+}
+
 // subscribe follows a GraphQL subscription over the websocket the API
 // serves on the same path, and calls back with each result. The returned
 // function stops it. The socket speaks the same small protocol the server
@@ -940,10 +948,6 @@ export function subscribe<T>(
     window.clearTimeout(silence)
     onEnd?.(error)
   }
-  const csrf = () => {
-    const match = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/)
-    return match ? decodeURIComponent(match[1]) : ''
-  }
   const connect = () => {
     if (ended) {
       return
@@ -965,7 +969,7 @@ export function subscribe<T>(
       current.send(
         JSON.stringify({
           type: 'connection_init',
-          payload: { 'X-CSRFToken': csrf(), ...locationHeaders(), ...authorization() },
+          payload: { 'X-CSRFToken': csrfToken(), ...locationHeaders(), ...authorization() },
         }),
       )
     }
