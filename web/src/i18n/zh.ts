@@ -3585,6 +3585,7 @@ export const zh: Catalog = {
   'lightbox.fit': '适应窗口',
   'lightbox.scale': '{percent}%',
   'lightbox.hint': '滚动或双指缩放，拖动可平移。',
+  'linkPreview.open': '打开{title}',
   'reminders.addPlaceholder': '添加提醒事项',
   'reminders.add': '添加',
   'reminders.dueDay': '截止日期',

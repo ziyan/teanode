@@ -3718,6 +3718,7 @@ export const ja: Catalog = {
   'lightbox.fit': '全体',
   'lightbox.scale': '{percent}%',
   'lightbox.hint': 'ホイールまたはピンチで拡大縮小、ドラッグで移動します。',
+  'linkPreview.open': '{title}を開く',
   'reminders.addPlaceholder': 'リマインダーを追加',
   'reminders.add': '追加',
   'reminders.dueDay': '期限',
