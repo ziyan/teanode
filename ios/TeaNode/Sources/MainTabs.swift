@@ -204,14 +204,23 @@ struct MoreRow: View {
                 Label(section.title, systemImage: section.systemImage)
                     .foregroundStyle(Color.primary)
                 Spacer(minLength: 8)
+                // The red badge of the More tab, on the row it counts, as
+                // Settings marks a row that waits for the person.
                 if waitingCount > 0 {
                     Text(waitingCount, format: .number)
+                        .font(.subheadline.weight(.semibold))
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .frame(minWidth: 24)
+                        .background(Color.red, in: .capsule)
                 }
+                // A color rather than a level: inside a button .tertiary
+                // is a faded green.
                 Image(systemName: "chevron.forward")
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
                     .accessibilityHidden(true)
             }
             .contentShape(.rect)
