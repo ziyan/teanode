@@ -115,6 +115,24 @@ type LocationOperation interface {
 	// visit that one was joined into, with its place, or nil when there is none.
 	GetPlaceVisitByClientKey(userId, clientVisitKey string) (*models.PlaceVisit, error)
 
+	// GetPlaceVisitByArrival is the person's visit from iOS visit monitoring
+	// (VisitSourceVisit) that arrived in the same second, or nil when there is
+	// none. iOS reports a visit again with its departure and a position it
+	// has made more exact, and the phone keys a visit by its position, so the
+	// departure can come under a key the server has not seen.
+	GetPlaceVisitByArrival(userId string, arrivedAt time.Time) (*models.PlaceVisit, error)
+
+	// DeletePassByVisits deletes the person's pass-bys that ended in the
+	// range, or near enough to it for a position in it to tell of them, and
+	// answers the ids of the visits it deleted. A pass-by is a
+	// visit from a place's circle (VisitSourceRegion) shorter than
+	// PassByDurationMost, with a position near it at
+	// PassBySpeedMetersPerSecondLeast or faster and none during it at
+	// PassByStoppedSpeedMetersPerSecondMost or slower: the phone crossing the
+	// circle on the way somewhere else. Call it once the positions and the
+	// visits of a report are stored.
+	DeletePassByVisits(userId string, from, until time.Time) ([]string, error)
+
 	// GetOpenPlaceVisit is the visit in progress, the latest one with no
 	// departure, with its place; nil when there is none.
 	GetOpenPlaceVisit(userId string) (*models.PlaceVisit, error)
@@ -292,6 +310,26 @@ const (
 	// placeVisitJoinGap is how close two Visits to one place must be to be one:
 	// iOS sometimes reports a visit as two, with a few minutes between.
 	placeVisitJoinGap = 10 * time.Minute
+
+	// PassByDurationMost is how long a visit from a place's circle may last
+	// and still be a pass-by: iOS tells of crossing a watched circle the
+	// moment it happens, with no least stay, so driving past a place the
+	// person labeled would otherwise be a visit to it.
+	PassByDurationMost = 3 * time.Minute
+
+	// PassBySpeedMetersPerSecondLeast is a speed that says the person was
+	// travelling through: faster than a jog (4 m/s is 14 km/h).
+	PassBySpeedMetersPerSecondLeast = 4.0
+
+	// PassByStoppedSpeedMetersPerSecondMost is a speed that says the person
+	// stopped, as for a drop-off at a school: a short visit with such a
+	// position during it is a visit.
+	PassByStoppedSpeedMetersPerSecondMost = 0.5
+
+	// passByPositionWindow is how long before the arrival and after the
+	// departure a position still says how the person went through the
+	// circle: in the background iOS gives a position every few minutes.
+	passByPositionWindow = 2 * time.Minute
 
 	// placeNamingPerPersonMost is how many of one person's places the naming
 	// job takes in a run.
