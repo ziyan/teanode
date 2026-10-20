@@ -282,8 +282,12 @@ func init() {
 			// place or checking in changes only the person's own records,
 			// forgetting a place or erasing history cannot be undone, and
 			// sharing lets somebody else follow the person.
+			//
+			// Behind tool_search rather than in every request: its
+			// definition is the largest of the tools that were, about a
+			// sixth of them, for a question few turns ask.
 			tools.Group{
-				Name: "location", Family: tools.FamilyGeneral, Core: true,
+				Name: "location", Family: tools.FamilyGeneral,
 				Description: "Where the person is and where they have been: their position now, their visits to places and how long each lasted, the path of a day, the places they named or labeled, " +
 					"places OpenStreetMap knows near them, and sharing where they are with their circles. Place names come from OpenStreetMap unless the person named the place.",
 				Guidance: "Location is the person's own and private; use it when the answer depends on where they are or have been, and say plainly what you used. " +
