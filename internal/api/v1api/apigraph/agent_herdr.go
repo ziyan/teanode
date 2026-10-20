@@ -26,6 +26,12 @@ type AgentHerdrQuery interface {
 	// them, 10 by default, 100 at most. Needs agent:use.
 	ReadAgentHerdrSession(ctx context.Context, arguments ReadAgentHerdrSessionArguments) (*AgentHerdrReadView, error)
 
+	// The agents one Claude Code session started for its current request, as
+	// a tree: each with its kind, task, model, state, how long it ran and
+	// the tools it used. An agent started by another names it in
+	// parentSubagentId. A Codex session has none. Needs agent:use.
+	ReadAgentHerdrSubagents(ctx context.Context, arguments ReadAgentHerdrSubagentsArguments) (*AgentHerdrSubagentsView, error)
+
 	// One session's screen as it stands, or its last lineCount lines.
 	// Needs agent:use.
 	ReadAgentHerdrScreen(ctx context.Context, arguments ReadAgentHerdrScreenArguments) (*AgentHerdrScreenView, error)
@@ -93,6 +99,12 @@ type ReadAgentHerdrSessionArguments struct {
 	// ShouldIncludeToolDetail gives each tool turn its whole input and what
 	// the tool answered, in toolInputText and toolResultText.
 	ShouldIncludeToolDetail bool `json:"shouldIncludeToolDetail" graphapi:"nullable"`
+}
+
+// ReadAgentHerdrSubagentsArguments name a session.
+type ReadAgentHerdrSubagentsArguments struct {
+	Computer string `json:"computer" graphapi:"nullable"`
+	PaneID   string `json:"paneId"`
 }
 
 // ReadAgentHerdrScreenArguments name a session, and how many lines.
@@ -261,6 +273,44 @@ type AgentHerdrReadView struct {
 	IsTruncated  bool                   `json:"isTruncated"`
 }
 
+// AgentHerdrSubagentView is one agent a session started, or one an agent
+// started.
+type AgentHerdrSubagentView struct {
+	SubagentID string `json:"subagentId"`
+	// ParentSubagentID is the agent that started this one; empty when the
+	// session itself did.
+	ParentSubagentID string `json:"parentSubagentId"`
+	// SubagentType is the kind of agent, such as general-purpose or Explore.
+	SubagentType string `json:"subagentType"`
+	SubagentName string `json:"subagentName"`
+	// TaskText is the one-line task its parent gave it.
+	TaskText  string `json:"taskText"`
+	ModelName string `json:"modelName"`
+	// SubagentState is running, done or stopped.
+	SubagentState string `json:"subagentState"`
+	// SpawnDepth is 1 for an agent the session started, 2 for one that
+	// agent started, and so on.
+	SpawnDepth int        `json:"spawnDepth"`
+	StartedAt  *time.Time `json:"startedAt" graphapi:"nullable"`
+	// EndedAt is when its history was last written; null while it runs.
+	EndedAt *time.Time `json:"endedAt" graphapi:"nullable"`
+	// ToolNames are the tools it called, the most used first, at most 5.
+	ToolNames     []string `json:"toolNames"`
+	ToolCallCount int      `json:"toolCallCount"`
+}
+
+// AgentHerdrSubagentsView is the agents of a session's current request: those
+// started at or after the person's last turn, and those still running from
+// before it, the newest 100.
+type AgentHerdrSubagentsView struct {
+	HerdrSession     *AgentHerdrSessionView `json:"herdrSession"`
+	SessionModelName string                 `json:"sessionModelName"`
+	// RequestStartedAt is when the person last spoke to the session.
+	RequestStartedAt *time.Time                `json:"requestStartedAt" graphapi:"nullable"`
+	Subagents        []*AgentHerdrSubagentView `json:"subagents"`
+	IsTruncated      bool                      `json:"isTruncated"`
+}
+
 // AgentHerdrScreenView is a session's screen.
 type AgentHerdrScreenView struct {
 	HerdrSession *AgentHerdrSessionView `json:"herdrSession"`
@@ -338,6 +388,35 @@ func (self *graph) ReadAgentHerdrSession(ctx context.Context, arguments ReadAgen
 		view.Turns = append(view.Turns, &AgentHerdrTurnView{
 			HerdrTurnRole: turn.HerdrTurnRole, TurnText: turn.TurnText, TurnAt: turn.TurnAt,
 			ToolInputText: turn.ToolInputText, ToolResultText: turn.ToolResultText, HasToolDetail: turn.HasToolDetail,
+		})
+	}
+	return view, nil
+}
+
+func (self *graph) ReadAgentHerdrSubagents(ctx context.Context, arguments ReadAgentHerdrSubagentsArguments) (*AgentHerdrSubagentsView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	read, err := worker.ReadHerdrSubagents(ctx, found.ID, arguments.Computer, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	view := &AgentHerdrSubagentsView{
+		HerdrSession: herdrSessionView(read.ComputerName, read.HerdrSession), SessionModelName: read.SessionModelName,
+		RequestStartedAt: read.RequestStartedAt, Subagents: []*AgentHerdrSubagentView{}, IsTruncated: read.IsTruncated,
+	}
+	for _, subagent := range read.Subagents {
+		view.Subagents = append(view.Subagents, &AgentHerdrSubagentView{
+			SubagentID: subagent.SubagentID, ParentSubagentID: subagent.ParentSubagentID,
+			SubagentType: subagent.SubagentType, SubagentName: subagent.SubagentName,
+			TaskText: subagent.TaskText, ModelName: subagent.ModelName, SubagentState: subagent.SubagentState,
+			SpawnDepth: subagent.SpawnDepth, StartedAt: subagent.StartedAt, EndedAt: subagent.EndedAt,
+			ToolNames: subagent.ToolNames, ToolCallCount: subagent.ToolCallCount,
 		})
 	}
 	return view, nil
