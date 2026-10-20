@@ -12,9 +12,9 @@ To see it working: open a chat with Sam, tap Sam's picture on a message, and the
 
 ## Progress
 
-- [ ] Milestone 1: the server's `ReadPersonCard` query, the agent action, the command, docs.
-- [ ] Milestone 2: the dashboard's `/people/<userId>` page and the links into it.
-- [ ] Milestone 3: the iPhone's card sheet, the taps that open it, Location's card, demo data and screenshots.
+- [x] (2026-10-20) Milestone 1: `ReadPersonCard` (`apigraph/person_card.go`, mail across mailboxes in `internal/db/database_person_card.go`), the circle tool's `person` action, `teanode circle person`, docs; the speaker tie (migration 0247, `SetRecordingSpeakerContact`, `ListRecordingsSpokenByContact`, `teanode recording speaker-contact`). Go tests against a database pass; `make lint-ci` clean.
+- [x] (2026-10-20) Milestone 2: `web/src/pages/person.tsx` at `/people/:userId` and `/people/contact/:addressBookId/:contactId`, the links from chat authors, Circles, Location, Photos and the address book, the speaker's contact on the recording pages; 1694 tests, tsc, eslint, build. Not yet looked at in a browser.
+- [x] (2026-10-20) Milestone 3, written without a Swift compiler for the app (the Kit's 1130 tests pass in Docker): the sheet (`PersonCardView.swift`, `PersonCardSections.swift`, `PersonCardLinking.swift`, `PersonVisitsScreen.swift`), the taps, Contacts and Location giving way to it, the speaker's contact on the recording screens, demo data and `shoot` lines. CI's App job is the first compile.
 - [ ] Review until a round finds nothing; parity check.
 
 ## Surprises & Discoveries
@@ -23,6 +23,9 @@ To see it working: open a chat with Sam, tap Sam's picture on a message, and the
 - (2026-10-20) Most sections hang on the viewer's contact linked to the person (`Contact.AccountUserID`, migration 0246), not on the account: mail is found by the contact's addresses, photos of them by the face group named by the contact (`ListPhotos(accountUserId)`), memory pages by `ReadRecordMemoryLinks(recordKind: "contact")`. Location, health, shared albums and the chat hang on the account and its shares.
 - (2026-10-20) Mail can only be filtered by one `from` or `to` string within one mailbox (`ListMailboxThreads`, `apigraph/mailbox.go:496`); the card needs a search over all the viewer's mailboxes for any of the contact's addresses, done on the server in one query.
 - (2026-10-20) A recording's speaker is a name owned by the viewer (`RecordingSpeakerIdentity`, `internal/models/recording_speaker.go:6`) with no link to a contact or an account, and `ListRecordings` filters only by words. See the open decision below.
+
+- (2026-10-20, Milestone 1) A mail's snippet is the agent's one-line summary of it: the text is kept in the blob store and is not read for a card. A section's photos are `models.Photo` as `ListPhotos` answers them, since `PhotoView` would mean a read per photo.
+- (2026-10-20, Milestone 3) Removing Location's person panel would have lost browsing another person's visits day by day and their places; it is a pushed screen of the card ("Visits and places") at the history level.
 
 ## Decision Log
 
