@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { buttonOf, clickCountOf, keyMessage, modifiersOf, pointToTab } from './browserInput'
+import { buttonOf, clickCountOf, keyMessage, modifiersOf, piecesOf, pointToTab } from './browserInput'
 
 const noModifiers = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }
 
@@ -123,4 +123,14 @@ it('counts a second press nearby and soon as a double click', () => {
   expect(clickCountOf(first, 1800, 100, 100, 'left')).toBe(1)
   expect(clickCountOf(first, 1300, 160, 100, 'left')).toBe(1)
   expect(clickCountOf(first, 1300, 100, 100, 'right')).toBe(1)
+})
+
+it('cuts pasted text into pieces without splitting an emoji', () => {
+  expect(piecesOf('abcdef', 4)).toEqual(['abcd', 'ef'])
+  // An emoji is two code units; a piece that would end on its first half
+  // ends before it instead.
+  const pieces = piecesOf('abc\u{1F600}def', 4)
+  expect(pieces).toEqual(['abc', '\u{1F600}de', 'f'])
+  expect(pieces.join('')).toBe('abc\u{1F600}def')
+  expect(piecesOf('', 4)).toEqual([])
 })

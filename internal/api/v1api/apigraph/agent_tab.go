@@ -145,7 +145,8 @@ func (self *graph) HandBackAgentTab(ctx context.Context, arguments HandBackAgent
 		if interaction.InteractionKind != models.InteractionTakeOver || interaction.ResolvedAt != nil {
 			continue
 		}
-		if arguments.CallID != "" && (interaction.CallID != arguments.CallID || interaction.RunID != arguments.RunID) {
+		// Each id given narrows it: a run alone, a call alone, or both.
+		if (arguments.RunID != "" && interaction.RunID != arguments.RunID) || (arguments.CallID != "" && interaction.CallID != arguments.CallID) {
 			continue
 		}
 		isAnswered, err := self.answerInteraction(ctx, found, worker, interaction.CallID, answer, agent.RunCommand{RunID: interaction.RunID, Action: agent.CommandAnswer, CallID: interaction.CallID, Answer: answer})

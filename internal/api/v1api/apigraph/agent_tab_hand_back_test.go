@@ -116,6 +116,15 @@ func TestHandingBackAnswersOnlyTheNewestRequestOrTheOneNamed(t *testing.T) {
 		return answer
 	}
 
+	// Ids that name no open take-over card answer nothing: a question's
+	// run, or a call nobody made.
+	if handBack(HandBackAgentTabArguments{RunID: question.RunID}) || handBack(HandBackAgentTabArguments{CallID: "call-nobody-made"}) {
+		t.Fatal("ids naming no request said they handed back")
+	}
+	if answerOf(older) != "" || answerOf(newer) != "" || answerOf(question) != "" {
+		t.Fatal("ids naming no request answered one")
+	}
+
 	if !handBack(HandBackAgentTabArguments{Note: "Typed the code"}) {
 		t.Fatal("handing back with a request open said there was nothing to hand back")
 	}
@@ -129,8 +138,8 @@ func TestHandingBackAnswersOnlyTheNewestRequestOrTheOneNamed(t *testing.T) {
 		t.Fatalf("a question was answered %q", answer)
 	}
 
-	// Named by run and call, the older one is answered.
-	handBack(HandBackAgentTabArguments{RunID: older.RunID, CallID: older.CallID})
+	// Named by its call alone, the older one is answered.
+	handBack(HandBackAgentTabArguments{CallID: older.CallID})
 	if answer := answerOf(older); !strings.HasPrefix(answer, models.InteractionHandedBack) {
 		t.Fatalf("the request named was answered %q", answer)
 	}

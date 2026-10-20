@@ -7,7 +7,7 @@ import { SettingsEmpty } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useTranslation } from '../i18n/i18n'
-import { buttonOf, clickCountOf, keyMessage, modifiersOf, pointToTab, type ClickRecord } from './browserInput'
+import { buttonOf, clickCountOf, keyMessage, modifiersOf, piecesOf, pointToTab, type ClickRecord } from './browserInput'
 
 // The Browser page: the person's browser tab live, with Take over and Hand
 // back. The picture and the input travel over a websocket of their own,
@@ -430,7 +430,7 @@ export function BrowserPage() {
     if (!isControlling) return
     event.preventDefault()
     const text = event.clipboardData.getData('text')
-    for (let start = 0; start < text.length; start += TEXT_PIECE) send({ type: 'text', text: text.slice(start, start + TEXT_PIECE) })
+    for (const piece of piecesOf(text, TEXT_PIECE)) send({ type: 'text', text: piece })
   }
 
   // What the phone's keyboard types into the hidden field goes to the tab as

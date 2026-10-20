@@ -165,3 +165,19 @@ export function clickCountOf(
   }
   return 1
 }
+
+// piecesOf cuts text into pieces of at most most code units, never between
+// the two halves of a character outside the basic plane (an emoji), which
+// would arrive as two characters that mean nothing.
+export function piecesOf(text: string, most: number): string[] {
+  const pieces: string[] = []
+  let start = 0
+  while (start < text.length) {
+    let end = Math.min(text.length, start + most)
+    const last = text.charCodeAt(end - 1)
+    if (end < text.length && end - start > 1 && last >= 0xd800 && last <= 0xdbff) end -= 1
+    pieces.push(text.slice(start, end))
+    start = end
+  }
+  return pieces
+}

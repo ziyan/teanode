@@ -519,6 +519,11 @@ function cdpRefusal(method) {
   return `${asked} is not one of the methods an attached tab answers: driving it (Input.), reading it (DOM., Runtime., CSS., Accessibility.), watching what it fetches (Network.enable, Network.getResponseBody) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser, which attaching one tab does not allow`
 }
 
+// agentUsing are the tabs whose debugger the agent's cdp action uses,
+// marked before it waits for the attachment, so a stream's start or stop
+// meanwhile never lets the debugger go from under it.
+const agentUsing = new Set()
+
 // attaching are the attachments under way, so that two callers at once,
 // the agent and the dashboard's stream, share one rather than the second
 // failing with Chrome's "another debugger is already attached".
@@ -536,7 +541,7 @@ async function debuggerFor(tabId) {
       chrome.debugger
         .attach({ tabId }, DEBUGGER_PROTOCOL)
         .then(() => {
-          const state = { events: [], until: Date.now() + DEBUGGER_IDLE, isAgentUsing: false }
+          const state = { events: [], until: Date.now() + DEBUGGER_IDLE }
           debugging.set(tabId, state)
           return state
         })
@@ -548,6 +553,7 @@ async function debuggerFor(tabId) {
 
 async function letDebuggerGo(tabId) {
   forgetCast(tabId)
+  agentUsing.delete(tabId)
   if (!debugging.delete(tabId)) return
   await chrome.debugger.detach({ tabId }).catch(() => {})
 }
@@ -645,18 +651,18 @@ async function startCast(tabId, options) {
     console.warn('[TeaNode] could not stream the tab:', reason)
     if (isOvertaken()) return
     // The server still thinks it streams, and the page waits for a
-    // picture: it is told the stream ended, as Chrome ending it would.
+    // picture: it is told the stream ended, as Chrome ending it would,
+    // before anything else can start one again.
     forgetCast(tabId)
-    await releaseIfUnused(tabId)
     if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'castEnded', tab: tabId }))
+    await releaseIfUnused(tabId)
   }
 }
 
 // releaseIfUnused lets the debugger go when neither a stream nor the agent
 // needs it, and Chrome's bar with it.
 async function releaseIfUnused(tabId) {
-  const state = debugging.get(tabId)
-  if (state && !state.isAgentUsing && !casting.has(tabId)) await letDebuggerGo(tabId)
+  if (debugging.has(tabId) && !agentUsing.has(tabId) && !casting.has(tabId)) await letDebuggerGo(tabId)
 }
 
 // forgetCast stops treating a tab as streamed, and its stills with it.
@@ -877,8 +883,8 @@ async function act(action, args) {
       if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
       const refusal = cdpRefusal(args.method)
       if (refusal) return { ok: false, error: refusal }
-      const state = await debuggerFor(tab.id)
-      state.isAgentUsing = true
+      agentUsing.add(tab.id)
+      await debuggerFor(tab.id)
       const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
       return { ok: true, data: { result: answer === undefined ? null : answer } }
     }
@@ -898,10 +904,8 @@ async function act(action, args) {
       // protocol: what the agent kept is let go, the attachment is not.
       if (casting.has(tab.id)) {
         const state = debugging.get(tab.id)
-        if (state) {
-          state.events = []
-          state.isAgentUsing = false
-        }
+        if (state) state.events = []
+        agentUsing.delete(tab.id)
         // What the agent may have turned on to watch is turned off; the
         // stream does not need it.
         await chrome.debugger.sendCommand({ tabId: tab.id }, 'Network.disable').catch(() => {})

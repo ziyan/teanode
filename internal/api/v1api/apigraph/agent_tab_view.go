@@ -40,16 +40,17 @@ type tabViewerSocket struct {
 	writeMutex sync.Mutex
 
 	// messages are the ones a viewer must not miss, in order; a viewer
-	// too far behind to take them is closed. state and frame are the
-	// newest state and picture not yet written, which replace older ones,
+	// too far behind to take them is closed. pendingState and pendingFrame
+	// are the newest state and picture not yet written, which replace older
+	// ones,
 	// and ready says there is one.
-	messages   chan []byte
-	frameMutex sync.Mutex
-	state      []byte
-	frame      []byte
-	ready      chan struct{}
-	closed     chan struct{}
-	closeOnce  sync.Once
+	messages     chan []byte
+	frameMutex   sync.Mutex
+	pendingState []byte
+	pendingFrame []byte
+	ready        chan struct{}
+	closed       chan struct{}
+	closeOnce    sync.Once
 }
 
 // tabViewerBacklog is how many messages may wait for a viewer.
@@ -81,7 +82,7 @@ func (self *tabViewerSocket) Send(message []byte) error {
 // has not written yet.
 func (self *tabViewerSocket) SendState(message []byte) {
 	self.frameMutex.Lock()
-	self.state = message
+	self.pendingState = message
 	self.frameMutex.Unlock()
 	self.wake()
 }
@@ -90,7 +91,7 @@ func (self *tabViewerSocket) SendState(message []byte) {
 // written yet.
 func (self *tabViewerSocket) SendFrame(message []byte) {
 	self.frameMutex.Lock()
-	self.frame = message
+	self.pendingFrame = message
 	self.frameMutex.Unlock()
 	self.wake()
 }
@@ -116,10 +117,9 @@ func (self *tabViewerSocket) write() {
 			batch = append(batch, message)
 		case <-self.ready:
 			self.frameMutex.Lock()
-			state, frame := self.state, self.frame
-			self.state, self.frame = nil, nil
+			batch = append(batch, self.pendingState, self.pendingFrame)
+			self.pendingState, self.pendingFrame = nil, nil
 			self.frameMutex.Unlock()
-			batch = append(batch, state, frame)
 		}
 		for _, message := range batch {
 			if message == nil {
