@@ -26,7 +26,7 @@ func TestCircleParity(test *testing.T) {
 	test.Parallel()
 
 	operations := map[string]bool{}
-	for _, kind := range []reflect.Type{reflect.TypeFor[apigraph.CircleQuery](), reflect.TypeFor[apigraph.CircleMutation]()} {
+	for _, kind := range []reflect.Type{reflect.TypeFor[apigraph.CircleQuery](), reflect.TypeFor[apigraph.CircleMutation](), reflect.TypeFor[apigraph.PersonCardQuery]()} {
 		for index := 0; index < kind.NumMethod(); index++ {
 			operations[kind.Method(index).Name] = true
 		}
@@ -43,6 +43,7 @@ func TestCircleParity(test *testing.T) {
 		"ReadCircle":               {[]string{"show"}, []string{"show"}},
 		"ListCircleInvitations":    {[]string{"invitations"}, []string{"list"}},
 		"ListCirclePeople":         {[]string{"people"}, []string{"people"}},
+		"ReadPersonCard":           {[]string{"person"}, []string{"person"}},
 		"CreateCircle":             {[]string{"create"}, []string{"create"}},
 		"RenameCircle":             {[]string{"rename"}, []string{"rename"}},
 		"DeleteCircle":             {[]string{"delete"}, []string{"delete"}},
