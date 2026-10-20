@@ -63,6 +63,45 @@ struct PersonVisitsScreen: View {
     }
 
     var body: some View {
+        PersonVisitsList(model: model)
+            .navigationTitle("Visits and places")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// LocationChosenPersonVisits is what is under the map on Location once
+/// somebody sharing is chosen there: their visits and places, as the card's
+/// page shows them, or a line saying they share only where they are now.
+struct LocationChosenPersonVisits: View {
+    let person: PersonLocation
+    @State private var model: PersonVisitsModel
+
+    init(connection: Connection, person: PersonLocation) {
+        self.person = person
+        _model = State(initialValue: PersonVisitsModel(connection: connection, userId: person.userId))
+    }
+
+    var body: some View {
+        if person.level == .history {
+            PersonVisitsList(model: model)
+        } else {
+            List {
+                Section {
+                    Text("\(person.displayName) shares where they are now. Their visits and places are not shared with you.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+/// PersonVisitsList is somebody's visits for a day, with a way back and forth
+/// by the day, and their places: the list of PersonVisitsScreen and of
+/// LocationChosenPersonVisits.
+struct PersonVisitsList: View {
+    let model: PersonVisitsModel
+
+    var body: some View {
         List {
             Section {
                 Button("Previous day", systemImage: "chevron.left") { model.move(by: -1) }
@@ -98,8 +137,6 @@ struct PersonVisitsScreen: View {
                 OpenStreetMapCredit()
             }
         }
-        .navigationTitle("Visits and places")
-        .navigationBarTitleDisplayMode(.inline)
         .refreshable { await model.load() }
         .task { await model.load() }
     }
