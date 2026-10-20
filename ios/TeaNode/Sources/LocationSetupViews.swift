@@ -10,6 +10,9 @@ import TeaNodeKit
 struct LocationSetupList: View {
     let model: LocationModel
     let recorder: LocationRecorder
+    /// Whether the people sharing are at the top, as they are over the visits:
+    /// someone who joins a family that already shares sees them first.
+    let isShowingPeople: Bool
     /// Starts the permission flow: When In Use, then Always.
     let allowLocation: () -> Void
     @State private var isWorking = false
@@ -18,6 +21,9 @@ struct LocationSetupList: View {
     var body: some View {
         let setup = model.setup
         List {
+            if isShowingPeople {
+                LocationPeopleSection(model: model)
+            }
             Section {
                 LocationSetupRow(
                     title: String(localized: "Allow location"),

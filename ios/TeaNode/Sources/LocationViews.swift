@@ -10,8 +10,8 @@ enum LocationRoute: Hashable {
     case settings
 }
 
-/// LocationSegment is what the list under the map shows, chosen in the menu
-/// under the title as Finance's parts and Photos' collections are.
+/// LocationSegment is what the drawer over the map shows, chosen at the top
+/// of the drawer.
 enum LocationSegment: String, CaseIterable, Identifiable {
     case visits
     case places
@@ -70,10 +70,11 @@ struct OpenStreetMapCredit: View {
     }
 }
 
-/// LocationScreen is where the person is and where they have been: a map with
-/// their position, the visit in progress under it, and below that their
-/// visits by day and the places they were at. Which list shows is chosen in
-/// the menu under the title.
+/// LocationScreen is where the person is and where they have been: a map of
+/// the whole screen with their position and the people sharing with them, and
+/// over it a drawer of their visits by day, their places and their sharing,
+/// chosen at the top of the drawer. The drawer opens at half the screen and is
+/// dragged up to all of it or down to its header.
 struct LocationScreen: View {
     @State private var model: LocationModel
     @Binding var segment: LocationSegment
@@ -81,7 +82,8 @@ struct LocationScreen: View {
     @State private var isCheckingIn = false
     @State private var isExplainingAlways = false
     @State private var isAllowingLocation = false
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var drawerDetent = LocationDrawerDetent.half
+    @State private var drawerHeaderHeight: CGFloat = 64
     @Environment(AppModel.self) private var app
     private let recorder = LocationRecorder.shared
 
@@ -93,50 +95,40 @@ struct LocationScreen: View {
     var body: some View {
         NavigationStack(path: $path) {
             GeometryReader { proxy in
-                VStack(spacing: 0) {
+                let drawerHeight = drawerDetent.height(availableHeight: proxy.size.height, headerHeight: drawerHeaderHeight)
+                ZStack(alignment: .bottom) {
                     LocationMapHeader(model: model, recorder: recorder, isShowingPeople: isShowingPeople)
                         // Pictures on a map stay map-sized, as in Maps.
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                        .frame(height: proxy.size.height * mapHeightFraction)
-                    if isShowingPeople {
-                        LocationPeopleRows(model: model)
-                    }
-                    if isShowingPeople, let person = model.selectedPerson {
-                        // A new list for each person chosen, so one person's
-                        // day and visits never show under another's name.
-                        LocationChosenPersonVisits(connection: model.connection, person: person)
-                            .id(person.userId)
-                            .contentMargins(.top, 8, for: .scrollContent)
-                    } else if model.isSetupShown {
-                        LocationSetupList(model: model, recorder: recorder, allowLocation: allowLocation)
-                    } else {
-                        // The list starts close to what is above it, not
-                        // a grouped list's usual top gap away.
-                        content.contentMargins(.top, 8, for: .scrollContent)
+                        // The map fills the screen, under the bars and the
+                        // drawer, and keeps what it centers on, its controls
+                        // and its logo in the part left showing.
+                        .safeAreaPadding(.top, proxy.safeAreaInsets.top)
+                        .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom + drawerHeight)
+                        .ignoresSafeArea()
+                    LocationDrawer(detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height) {
+                        drawerHeader
+                    } content: {
+                        drawerContent
                     }
                 }
-                // The grouped gray of the lists, so the card of people stands
-                // out from it as the lists' rows do.
-                .background(Color(.systemGroupedBackground))
             }
-            .navigationTitle(title)
+            // The name a pushed screen's back button carries; over the map,
+            // as in Find My, the drawer says what is shown.
+            .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarTitleMenu {
-                Picker("Location", selection: $segment) {
-                    ForEach(LocationSegment.allCases) { choice in
-                        Label(choice.title, systemImage: choice.systemImage).tag(choice)
-                    }
-                }
-            }
-            // A list chosen in the title menu is shown at once: over whatever
-            // was open on top of it, a person chosen on the map, or the setup
-            // (whose rows say Places and Sharing are where those steps live).
-            // People are chosen only under Visits, so going there keeps the
-            // one a notification just opened.
+            .toolbar(removing: .title)
+            // A list chosen at the top of the drawer is shown at once, and
+            // the drawer comes up to show it: over whatever was open on top
+            // of it, a person chosen on the map, or the setup (whose rows say
+            // Places and Sharing are where those steps live). People are
+            // chosen only under Visits, so going there keeps the one a
+            // notification just opened.
             .onChange(of: segment) {
                 path = []
                 if !isShowingPeople { model.clearSelection() }
                 if model.isSetupShown { model.dismissSetup() }
+                if drawerDetent == .collapsed { drawerDetent = .half }
             }
             .toolbar {
                 MoreBackButton()
@@ -202,12 +194,6 @@ struct LocationScreen: View {
         }
     }
 
-    /// The map shares the screen with the people under it.
-    private var mapHeightFraction: Double {
-        if dynamicTypeSize.isAccessibilitySize { return 0.3 }
-        return !isShowingPeople || model.people.isEmpty ? 0.45 : 0.36
-    }
-
     /// Whether the people sharing with the person are shown: their rows under
     /// the map, their pictures on it, and the one chosen. That is where
     /// everyone is, which Visits is about; Places and Sharing are the
@@ -227,10 +213,39 @@ struct LocationScreen: View {
         }
     }
 
-    /// The list on screen, as Finance names its part; Location while the
-    /// setup or a chosen person's visits fill the screen instead.
-    private var title: String {
-        model.isSetupShown || (isShowingPeople && model.selectedPerson != nil) ? String(localized: "Location") : segment.title
+    /// The top of the drawer: the lists to choose between, or, while a person
+    /// sharing is chosen, who they are and the way back to everyone.
+    @ViewBuilder
+    private var drawerHeader: some View {
+        if isShowingPeople, let person = model.selectedPerson {
+            LocationChosenPersonHeader(person: person) { model.focusOnOwn() }
+        } else {
+            Picker("Location", selection: $segment) {
+                ForEach(LocationSegment.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 10)
+        }
+    }
+
+    /// What the drawer holds under its header.
+    @ViewBuilder
+    private var drawerContent: some View {
+        if isShowingPeople, let person = model.selectedPerson {
+            // A new list for each person chosen, so one person's day and
+            // visits never show under another's name.
+            LocationChosenPersonVisits(connection: model.connection, person: person)
+                .id(person.userId)
+                .contentMargins(.top, 0, for: .scrollContent)
+        } else if model.isSetupShown {
+            LocationSetupList(model: model, recorder: recorder, isShowingPeople: isShowingPeople, allowLocation: allowLocation)
+                .contentMargins(.top, 0, for: .scrollContent)
+        } else {
+            content.contentMargins(.top, 0, for: .scrollContent)
+        }
     }
 
     @ViewBuilder
@@ -256,7 +271,9 @@ struct LocationScreen: View {
         /// brings up), `location-people` (more
         /// people than fit under the map), `location-checkin` (the check-in
         /// sheet), `location-address` (the address search of a place);
-        /// `location-setup` is the server having no position yet. MainView
+        /// `location-setup` is the server having no position yet;
+        /// `location-full` and `location-collapsed` are the drawer at full
+        /// height and collapsed to its header. MainView
         /// chooses the list (Places for `location-places`, `location-place`
         /// and `location-address`, Sharing for `location-sharing`).
         private func openDemoScreen() {
@@ -269,6 +286,8 @@ struct LocationScreen: View {
             case "location-place", "location-address":
                 if let place = model.places.first(where: { $0.id == LocationDemo.parkPlaceId }) { path = [.place(place)] }
             case "location-settings": path = [.settings]
+            case "location-full": drawerDetent = .full
+            case "location-collapsed": drawerDetent = .collapsed
             default: break
             }
         }
@@ -400,6 +419,19 @@ struct LocationVisitsList: View {
 
     var body: some View {
         List {
+            LocationPeopleSection(model: model)
+            if model.days.isEmpty {
+                // Under the people, not over them as an overlay would be.
+                Section {
+                    ContentUnavailableView(
+                        "No visits yet", systemImage: "mappin.and.ellipse",
+                        description: Text(
+                            recorder.isRecordingOn
+                                ? LocalizedStringKey("A visit shows up here after you spend a while somewhere.")
+                                : LocalizedStringKey("Turn on Record where I go in the settings, and your visits show up here.")))
+                }
+                .listRowBackground(Color.clear)
+            }
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.visits) { visit in
@@ -443,16 +475,6 @@ struct LocationVisitsList: View {
             }
         }
         .refreshable { await model.load() }
-        .overlay {
-            if model.days.isEmpty {
-                ContentUnavailableView(
-                    "No visits yet", systemImage: "mappin.and.ellipse",
-                    description: Text(
-                        recorder.isRecordingOn
-                            ? LocalizedStringKey("A visit shows up here after you spend a while somewhere.")
-                            : LocalizedStringKey("Turn on Record where I go in the settings, and your visits show up here.")))
-            }
-        }
     }
 }
 

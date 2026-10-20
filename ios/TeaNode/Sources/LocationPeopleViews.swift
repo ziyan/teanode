@@ -5,8 +5,8 @@ import TeaNodeKit
 // The people sharing their location with the person: their pictures on the
 // map, a row each under it, and, once one is chosen, their visits and places.
 
-/// LocationPeopleRows is a row for each person sharing, under the map, the
-/// person's own row first. A tap selects one (the map centers on them) and
+/// LocationPeopleRows is a row for each person sharing, at the top of the
+/// drawer's visits, the person's own row first. A tap selects one (the map centers on them) and
 /// brings up their card over the map, and they stay chosen until another row
 /// is tapped: the own row is the way back to the person's own location. With more people than fit under the map, one
 /// row says how many and opens a screen of their own.
@@ -62,11 +62,8 @@ struct LocationPeopleRows: View {
             }
             .background(Color(.secondarySystemGroupedBackground))
             .clipShape(.rect(cornerRadius: 22, style: .continuous))
-            .padding(.horizontal)
-            .padding(.vertical, 12)
-            // The rows keep their height and the list under them gives way.
             // Past the first accessibility size the text here stops growing,
-            // so the rows still leave the list room on the screen.
+            // so a row still leaves the visits room in the drawer.
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -77,6 +74,23 @@ struct LocationPeopleRows: View {
     private func choose(_ person: PersonLocation) {
         model.select(userId: person.userId)
         app.openedPerson = .account(userId: person.userId)
+    }
+}
+
+/// LocationPeopleSection is the people's card as the first section of a list
+/// in the drawer, so it scrolls with the visits under it.
+struct LocationPeopleSection: View {
+    let model: LocationModel
+
+    var body: some View {
+        if model.location != nil || !model.people.isEmpty {
+            Section {
+                LocationPeopleRows(model: model)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        }
     }
 }
 
