@@ -11,7 +11,8 @@ import (
 )
 
 // NewLinkCommand builds "teanode link", what the server knows about web links:
-// the same previews as the card under a message in the dashboard and the app.
+// the same previews as the card under a message in the dashboard and the app,
+// for links in a conversation.
 func NewLinkCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "link",
@@ -21,8 +22,11 @@ func NewLinkCommand() *cli.Command {
 				Name:      "preview",
 				Usage:     "show what the page behind each link says about itself, with the link's tracking parameters taken off",
 				ArgsUsage: fmt.Sprintf("<url>... (at most %d)", client.MostLinkPreviewURLs),
-				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runLinkPreview,
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "conversation", Usage: "the conversation the links are in (required): a link gets a preview only if somebody other than the agent wrote it there"},
+				},
+				Action: runLinkPreview,
 			},
 		},
 	}
@@ -31,7 +35,11 @@ func NewLinkCommand() *cli.Command {
 func runLinkPreview(ctx context.Context, command *cli.Command) error {
 	urls := command.Args().Slice()
 	if len(urls) == 0 {
-		return usage("which links? usage: teanode link preview <url>...")
+		return usage("which links? usage: teanode link preview --conversation <id> <url>...")
+	}
+	conversationId := strings.TrimSpace(command.String("conversation"))
+	if conversationId == "" {
+		return usage("which conversation are the links in? give --conversation <id>, as teanode agent conversation list shows them")
 	}
 	if len(urls) > client.MostLinkPreviewURLs {
 		return usage(fmt.Sprintf("at most %d links at a time", client.MostLinkPreviewURLs))
@@ -40,7 +48,7 @@ func runLinkPreview(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	previews, err := client.ReadLinkPreviews(ctx, connection, urls)
+	previews, err := client.ReadLinkPreviews(ctx, connection, conversationId, urls)
 	if err != nil {
 		return describeError(command, err)
 	}

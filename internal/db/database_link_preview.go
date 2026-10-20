@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"gorm.io/gorm/clause"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // LinkPreviewOperation is the cache of what web pages say about themselves.
@@ -13,6 +15,15 @@ type LinkPreviewOperation interface {
 	// ListLinkPreviews is what is cached for these addresses, keyed by
 	// address. An address that was never fetched is absent.
 	ListLinkPreviews(urls []string) (map[string]*LinkPreview, error)
+
+	// HasLinkNotWrittenByAgent says whether any of the texts appears, exactly
+	// and anywhere in the text, in a message of the conversation that its agent
+	// did not write: a person's, or what a tool answered. For a chat that is its messages by a person and not deleted;
+	// for any other conversation, its user and tool messages. It is the rule
+	// that decides which links the server may fetch for a card: a reply can be
+	// made to carry what the agent read in a link's query, and fetching it
+	// would send that to whoever runs the site.
+	HasLinkNotWrittenByAgent(conversation *models.AgentConversation, texts ...string) (bool, error)
 
 	// GetLinkPreviewByImageFile is the row whose picture is stored under the
 	// file, or nil when no row names it.
@@ -125,4 +136,27 @@ func (self *transaction) DeleteLinkPreviews(urls []string) error {
 		return nil
 	}
 	return self.tx.Where("\"url\" IN ?", urls).Delete(&LinkPreview{}).Error
+}
+
+func (self *transaction) HasLinkNotWrittenByAgent(conversation *models.AgentConversation, texts ...string) (bool, error) {
+	query := `SELECT EXISTS (SELECT 1 FROM "agent_message" WHERE "conversation_id" = ? AND "role" IN ('user', 'tool') AND strpos("content", ?) > 0)`
+	arguments := []any{conversation.ID}
+	if conversation.IsChat() {
+		query = `SELECT EXISTS (SELECT 1 FROM "chat_message" WHERE "chat_id" = ? AND "deleted_at" IS NULL
+			AND "author_kind" <> 'agent' AND ("author_agent_id" IS NULL OR "author_agent_id" = '') AND strpos("body", ?) > 0)`
+		arguments = []any{conversation.ChatID}
+	}
+	for _, text := range texts {
+		if text == "" {
+			continue
+		}
+		var found bool
+		if err := self.tx.Raw(query, append(arguments, text)...).Scan(&found).Error; err != nil {
+			return false, err
+		}
+		if found {
+			return true, nil
+		}
+	}
+	return false, nil
 }

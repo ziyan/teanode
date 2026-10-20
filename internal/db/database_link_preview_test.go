@@ -6,6 +6,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // A preview is saved per address, and saving the same address again replaces
@@ -115,6 +116,102 @@ func TestOldLinkPreviewsAreListedOldestFirstAndDeleted(t *testing.T) {
 		left, err := tx.ListLinkPreviews([]string{"https://example.com/old", "https://example.com/older", "https://example.com/fresh"})
 		if err != nil || len(left) != 1 || left["https://example.com/fresh"] == nil {
 			t.Errorf("after the delete %d rows are left (%v), want only the fresh one", len(left), err)
+		}
+	})
+}
+
+// A link may be fetched for a card only if it is written in a message of the
+// conversation that the agent did not write: a person's, or a tool's answer.
+// A reply of the agent's alone is not enough, since it can be made to carry
+// what the agent read.
+func TestALinkIsAllowedOnlyWhereSomebodyOtherThanTheAgentWroteIt(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner := newCircleTestUser(t, tx, "link-owner")
+		agent, err := tx.EnsureAgent(owner.ID)
+		if err != nil {
+			t.Fatalf("EnsureAgent: %s", err)
+		}
+		conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		if err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		other, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationNamed, LastAt: time.Now()})
+		if err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		for _, message := range []*models.AgentMessage{
+			{ConversationID: conversation.ID, Role: "assistant", Content: "Look: https://example.com/collect?data=secret"},
+			{ConversationID: conversation.ID, Role: "user", Content: "Is https://example.com/shop/chair?color=blue good?"},
+			{ConversationID: conversation.ID, Role: "tool", Name: "web_search", ToolCallID: "call_1", Content: `[{"url":"https://example.org/guide?id=7"}]`},
+			{ConversationID: other.ID, Role: "user", Content: "https://example.com/collect?data=secret"},
+		} {
+			if _, err := tx.AppendAgentMessage(message); err != nil {
+				t.Fatalf("AppendAgentMessage: %s", err)
+			}
+		}
+		check := func(conversation *models.AgentConversation, want bool, texts ...string) {
+			t.Helper()
+			got, err := tx.HasLinkNotWrittenByAgent(conversation, texts...)
+			if err != nil || got != want {
+				t.Errorf("HasLinkNotWrittenByAgent(%v) = %v, %v; want %v", texts, got, err, want)
+			}
+		}
+		check(conversation, false, "https://example.com/collect?data=secret")
+		check(conversation, true, "https://example.com/shop/chair?color=blue")
+		check(conversation, true, "https://example.org/guide?id=7")
+		// The cleaned form is tried too, and either is enough.
+		check(conversation, true, "https://example.com/shop/chair?color=blue&gclid=1", "https://example.com/shop/chair?color=blue")
+		// A prefix of what was written is not what was written: a page the
+		// agent read may plant the start of a link and the agent add the rest.
+		check(conversation, false, "https://example.com/shop/chair?color=blue&data=secret")
+		check(conversation, false, "https://example.org/guide?id=7&data=secret")
+		check(conversation, false, "")
+		// Another conversation's messages are not this one's.
+		check(conversation, false, "https://example.com/collect?data=secret")
+		check(other, true, "https://example.com/collect?data=secret")
+	})
+}
+
+func TestALinkInAChatIsAllowedOnlyWhereAPersonWroteIt(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alice := newCircleTestUser(t, tx, "link-chat-alice")
+		bob := newCircleTestUser(t, tx, "link-chat-bob")
+		chat, err := tx.OpenDirectChat(alice.ID, bob.ID)
+		if err != nil {
+			t.Fatalf("OpenDirectChat: %s", err)
+		}
+		agent, err := tx.GetAgentByUser(bob.ID)
+		if err != nil || agent == nil {
+			t.Fatalf("GetAgentByUser: %v %v", agent, err)
+		}
+		if _, err := tx.AppendChatMessage(&models.ChatMessage{
+			ChatID: chat.ID, AuthorUserID: bob.ID, AuthorName: "Agent", AuthorKind: models.ChatAuthorAgent, AuthorAgentID: agent.ID,
+			Body: "See https://example.com/collect?data=secret",
+		}); err != nil {
+			t.Fatalf("AppendChatMessage: %s", err)
+		}
+		say(t, tx, chat.ID, alice, "I like https://example.com/shop/chair?color=blue")
+		deleted := say(t, tx, chat.ID, alice, "https://example.com/deleted?x=1")
+		if _, err := tx.DeleteChatMessage(deleted.ID); err != nil {
+			t.Fatalf("DeleteChatMessage: %s", err)
+		}
+
+		conversation := conversationOf(t, tx, alice, chat.ID)
+		for link, want := range map[string]bool{
+			"https://example.com/collect?data=secret":   false,
+			"https://example.com/shop/chair?color=blue": true,
+			"https://example.com/deleted?x=1":           false,
+		} {
+			got, err := tx.HasLinkNotWrittenByAgent(conversation, link)
+			if err != nil || got != want {
+				t.Errorf("HasLinkNotWrittenByAgent(%q) = %v, %v; want %v", link, got, err, want)
+			}
 		}
 	})
 }

@@ -23,18 +23,20 @@ type LinkPreview struct {
 // MostLinkPreviewURLs is how many links one question may be about.
 const MostLinkPreviewURLs = 10
 
-const DocumentReadLinkPreviews = `query ($urls: [String!]!) {
-  ReadLinkPreviews(urls: $urls) {
+const DocumentReadLinkPreviews = `query ($conversationId: String!, $urls: [String!]!) {
+  ReadLinkPreviews(conversationId: $conversationId, urls: $urls) {
     url cleanedUrl displayText isAvailable title description siteName imageUrl imageWidthPixels imageHeightPixels
   }
 }`
 
-// ReadLinkPreviews is the preview of each link, in the order given.
-func ReadLinkPreviews(ctx context.Context, connection *Client, urls []string) ([]*LinkPreview, error) {
+// ReadLinkPreviews is the preview of each link, in the order given, for links
+// in the words of a conversation: a link gets one only if somebody other than
+// the agent wrote it there.
+func ReadLinkPreviews(ctx context.Context, connection *Client, conversationId string, urls []string) ([]*LinkPreview, error) {
 	var result struct {
 		ReadLinkPreviews []*LinkPreview `json:"ReadLinkPreviews"`
 	}
-	if err := connection.Execute(ctx, DocumentReadLinkPreviews, map[string]any{"urls": urls}, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentReadLinkPreviews, map[string]any{"conversationId": conversationId, "urls": urls}, &result); err != nil {
 		return nil, err
 	}
 	return result.ReadLinkPreviews, nil

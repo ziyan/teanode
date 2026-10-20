@@ -17,6 +17,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/linkpreview"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -65,10 +66,41 @@ func newLinkPreviewSite(t *testing.T) *linkPreviewSite {
 }
 
 // useLinkPreviewSite makes the graph fetch with the site's own client, which
-// reaches the loopback address that the guarded one refuses.
-func (self *avatarWorld) useLinkPreviewSite(site *linkPreviewSite) {
+// reaches the loopback address that the guarded one refuses, and makes a person
+// with a conversation whose first message, the person's own, holds the links.
+func (self *avatarWorld) useLinkPreviewSite(t *testing.T, site *linkPreviewSite, links ...string) {
+	t.Helper()
 	self.graph.linkPreviews.fetcher = linkpreview.NewFetcherWith(site.Client())
 	self.router.Path(api.PathLinkPreviewImage).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.graph.linkPreviewImageView)
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		asker, err := tx.CreateUser(&models.User{Username: "link-asker"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		grantAgentUse(t, tx, asker)
+		agent, err := tx.CreateAgent(&models.Agent{UserID: asker.ID, Enabled: true, Name: "Bertie"})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		if err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		self.linkAsker, self.linkConversationID = asker, conversation.ID
+	})
+	if len(links) > 0 {
+		self.sayInLinkConversation(t, "user", strings.Join(links, " "))
+	}
+}
+
+// sayInLinkConversation adds a message to the conversation of the link tests.
+func (self *avatarWorld) sayInLinkConversation(t *testing.T, role, content string) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: self.linkConversationID, Role: role, Name: map[string]string{"tool": "web_search"}[role], ToolCallID: map[string]string{"tool": "call_1"}[role], Content: content}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+	})
 }
 
 func (self *avatarWorld) readLinkPreviews(t *testing.T, addresses ...string) []map[string]any {
@@ -77,7 +109,7 @@ func (self *avatarWorld) readLinkPreviews(t *testing.T, addresses ...string) []m
 	for index, address := range addresses {
 		quoted[index] = fmt.Sprintf("%q", address)
 	}
-	data, failures := self.ask(t, self.person, `query { ReadLinkPreviews(urls: [`+strings.Join(quoted, ",")+`]) { `+linkPreviewFields+` } }`)
+	data, failures := self.ask(t, self.linkAsker, fmt.Sprintf(`query { ReadLinkPreviews(conversationId: %q, urls: [%s]) { %s } }`, self.linkConversationID, strings.Join(quoted, ","), linkPreviewFields))
 	if len(failures) > 0 {
 		t.Fatalf("ReadLinkPreviews: %v", failures)
 	}
@@ -91,7 +123,7 @@ func (self *avatarWorld) readLinkPreviews(t *testing.T, addresses ...string) []m
 func TestAPageIsFetchedCleanedAndItsPictureServedFromHere(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site, site.URL+"/shop/chair?color=blue&gclid=abc123&utm_source=mail#reviews")
 
 	written := site.URL + "/shop/chair?color=blue&gclid=abc123&utm_source=mail#reviews"
 	previews := world.readLinkPreviews(t, written)
@@ -131,7 +163,7 @@ func TestAPageIsFetchedCleanedAndItsPictureServedFromHere(t *testing.T) {
 func TestAPictureIsServedOnlyToASignedInReaderAndOnlyByAKeptName(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site, site.URL+"/page")
 	address := world.readLinkPreviews(t, site.URL+"/page")[0]["imageUrl"].(string)
 
 	signedOut := httptest.NewRecorder()
@@ -152,7 +184,7 @@ func TestAPictureIsServedOnlyToASignedInReaderAndOnlyByAKeptName(t *testing.T) {
 func TestAKeptPreviewIsNotFetchedAgainUntilItIsOld(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site, site.URL+"/page", site.URL+"/page#section")
 	address := site.URL + "/page"
 
 	world.readLinkPreviews(t, address)
@@ -187,7 +219,7 @@ func TestAKeptPreviewIsNotFetchedAgainUntilItIsOld(t *testing.T) {
 func TestAPageThatCannotBeReadIsRememberedAsUnavailable(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site, site.URL+"/missing")
 
 	missing := world.readLinkPreviews(t, site.URL+"/missing")[0]
 	if missing["isAvailable"] != false || missing["title"] != "" || missing["imageUrl"] != nil {
@@ -213,7 +245,7 @@ func TestAPageThatCannotBeReadIsRememberedAsUnavailable(t *testing.T) {
 func TestAPageWithoutAPictureStillHasACard(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site, site.URL+"/bare")
 	bare := world.readLinkPreviews(t, site.URL+"/bare")[0]
 	if bare["isAvailable"] != true || bare["title"] != "A bare page" || bare["imageUrl"] != nil {
 		t.Errorf("a page with only a title came back as %v", bare)
@@ -226,7 +258,7 @@ func TestAPageWithoutAPictureStillHasACard(t *testing.T) {
 func TestWhatIsNotAWebAddressIsNotFetched(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site)
 
 	previews := world.readLinkPreviews(t, "mailto:someone@example.com", "ftp://example.com/file", "javascript:alert(1)")
 	for _, preview := range previews {
@@ -244,6 +276,9 @@ func TestWhatIsNotAWebAddressIsNotFetched(t *testing.T) {
 func TestAnAddressInsideTheNetworkIsRefusedByDefault(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
+	world.useLinkPreviewSite(t, site, site.URL+"/page")
+	// What useLinkPreviewSite put there is the guarded fetcher's to refuse.
+	world.graph.linkPreviews.fetcher = nil
 
 	preview := world.readLinkPreviews(t, site.URL+"/page")[0]
 	if preview["isAvailable"] != false {
@@ -257,19 +292,20 @@ func TestAnAddressInsideTheNetworkIsRefusedByDefault(t *testing.T) {
 func TestLinkPreviewQuestionsAreBounded(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site)
 
+	head := fmt.Sprintf(`query { ReadLinkPreviews(conversationId: %q, urls: `, world.linkConversationID)
 	var many []string
 	for index := 0; index < 11; index++ {
 		many = append(many, fmt.Sprintf("%q", fmt.Sprintf("%s/page-%d", site.URL, index)))
 	}
-	if _, failures := world.ask(t, world.person, `query { ReadLinkPreviews(urls: [`+strings.Join(many, ",")+`]) { url } }`); len(failures) == 0 {
+	if _, failures := world.ask(t, world.linkAsker, head+`[`+strings.Join(many, ",")+`]) { url } }`); len(failures) == 0 {
 		t.Error("eleven links were accepted")
 	}
-	if _, failures := world.ask(t, world.person, `query { ReadLinkPreviews(urls: []) { url } }`); len(failures) == 0 {
+	if _, failures := world.ask(t, world.linkAsker, head+`[]) { url } }`); len(failures) == 0 {
 		t.Error("no links were accepted")
 	}
-	if _, failures := world.ask(t, world.person, `query { ReadLinkPreviews(urls: ["  "]) { url } }`); len(failures) == 0 {
+	if _, failures := world.ask(t, world.linkAsker, head+`["  "]) { url } }`); len(failures) == 0 {
 		t.Error("a blank link was accepted")
 	}
 	if visits := site.visits.Load(); visits != 0 {
@@ -280,7 +316,7 @@ func TestLinkPreviewQuestionsAreBounded(t *testing.T) {
 func TestOldLinkPreviewsAreRemovedWithTheirPictures(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site, site.URL+"/page", site.URL+"/other-page")
 	address := site.URL + "/page"
 	world.readLinkPreviews(t, address)
 
@@ -320,15 +356,15 @@ func TestOldLinkPreviewsAreRemovedWithTheirPictures(t *testing.T) {
 func TestTheDocumentTheClientsSendIsAcceptedWithTheLinksAsAVariable(t *testing.T) {
 	world := newAvatarWorld(t)
 	site := newLinkPreviewSite(t)
-	world.useLinkPreviewSite(site)
+	world.useLinkPreviewSite(t, site, site.URL+"/page?gclid=1")
 
-	body, err := json.Marshal(graphRequest{Query: client.DocumentReadLinkPreviews, Variables: map[string]any{"urls": []string{site.URL + "/page?gclid=1"}}})
+	body, err := json.Marshal(graphRequest{Query: client.DocumentReadLinkPreviews, Variables: map[string]any{"conversationId": world.linkConversationID, "urls": []string{site.URL + "/page?gclid=1"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set(api.AuthenticatedUsernameHeader, world.person.Username)
+	request.Header.Set(api.AuthenticatedUsernameHeader, world.linkAsker.Username)
 	request.Header.Set(api.CredentialKindHeader, string(models.CredentialSession))
 	response := httptest.NewRecorder()
 	world.graph.graphView(response, request)
@@ -349,5 +385,109 @@ func TestTheDocumentTheClientsSendIsAcceptedWithTheLinksAsAVariable(t *testing.T
 	}
 	if answer.Data.ReadLinkPreviews[0].ImageWidthPixels == nil || *answer.Data.ReadLinkPreviews[0].ImageWidthPixels != 600 {
 		t.Errorf("the picture's width is %v", answer.Data.ReadLinkPreviews[0].ImageWidthPixels)
+	}
+}
+
+// A reply of the agent's can be made to carry what it read in a link's query,
+// and drawing the card would send that to the link's site with no click: a link
+// is previewed only if somebody other than the agent wrote it.
+func TestALinkOnlyTheAgentWroteIsNeverFetched(t *testing.T) {
+	world := newAvatarWorld(t)
+	site := newLinkPreviewSite(t)
+	world.useLinkPreviewSite(t, site)
+	injected := site.URL + "/collect?data=secret"
+	world.sayInLinkConversation(t, "assistant", "Here you go: "+injected)
+
+	preview := world.readLinkPreviews(t, injected)[0]
+	if preview["isAvailable"] != false || preview["title"] != "" {
+		t.Errorf("a link only the agent wrote has the preview %v", preview)
+	}
+	if preview["cleanedUrl"] != injected {
+		t.Errorf("the link came back as %v", preview["cleanedUrl"])
+	}
+	if visits := site.visits.Load(); visits != 0 {
+		t.Errorf("the site was visited %d times", visits)
+	}
+	// Not the start of a link a person or a page wrote, with the rest added.
+	world.sayInLinkConversation(t, "tool", "a page said "+site.URL+"/collect")
+	if previewed := world.readLinkPreviews(t, injected)[0]; previewed["isAvailable"] != false || site.visits.Load() != 0 {
+		t.Errorf("a link that only starts as one a tool showed was previewed: %v", previewed)
+	}
+}
+
+func TestACachedPreviewIsNotGivenForALinkOnlyTheAgentWrote(t *testing.T) {
+	world := newAvatarWorld(t)
+	site := newLinkPreviewSite(t)
+	world.useLinkPreviewSite(t, site, site.URL+"/page")
+	if world.readLinkPreviews(t, site.URL+"/page")[0]["isAvailable"] != true {
+		t.Fatal("the page the person wrote has no preview, so the test says nothing")
+	}
+	// Another conversation of the same person, where only the agent wrote it.
+	var otherId string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		agent, err := tx.GetAgentByUser(world.linkAsker.ID)
+		if err != nil || agent == nil {
+			t.Fatalf("GetAgentByUser: %v %v", agent, err)
+		}
+		other, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationNamed, LastAt: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		otherId = other.ID
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: other.ID, Role: "assistant", Content: site.URL + "/page"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.linkConversationID = otherId
+	if preview := world.readLinkPreviews(t, site.URL+"/page")[0]; preview["isAvailable"] != false {
+		t.Errorf("a cached preview was given for a link only the agent wrote: %v", preview)
+	}
+}
+
+func TestALinkARepliesToolShowedTheAgentIsPreviewed(t *testing.T) {
+	world := newAvatarWorld(t)
+	site := newLinkPreviewSite(t)
+	world.useLinkPreviewSite(t, site)
+	shown := site.URL + "/shop/chair?color=blue"
+	world.sayInLinkConversation(t, "tool", `[{"title":"Garden Chair","url":"`+shown+`"}]`)
+	world.sayInLinkConversation(t, "assistant", "I found "+shown)
+	if preview := world.readLinkPreviews(t, shown)[0]; preview["isAvailable"] != true || preview["title"] != "Garden Chair" {
+		t.Errorf("a link a tool showed has the preview %v", preview)
+	}
+}
+
+func TestALinkWithTrackingIsPreviewedWhenItsCleanedFormWasWritten(t *testing.T) {
+	world := newAvatarWorld(t)
+	site := newLinkPreviewSite(t)
+	world.useLinkPreviewSite(t, site, site.URL+"/page")
+	if preview := world.readLinkPreviews(t, site.URL+"/page?gclid=1&utm_source=x")[0]; preview["isAvailable"] != true {
+		t.Errorf("the tracked form of a written link has the preview %v", preview)
+	}
+}
+
+func TestAConversationOfSomebodyElseIsNotFound(t *testing.T) {
+	world := newAvatarWorld(t)
+	site := newLinkPreviewSite(t)
+	world.useLinkPreviewSite(t, site, site.URL+"/page")
+	// Somebody who may use an agent of their own, so that it is the
+	// conversation that is refused and not the person.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		grantAgentUse(t, tx, world.person)
+		if _, err := tx.CreateAgent(&models.Agent{UserID: world.person.ID, Enabled: true, Name: "Other"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+	for _, conversationId := range []string{"no-such-conversation", world.linkConversationID} {
+		asker := world.person
+		if conversationId == "no-such-conversation" {
+			asker = world.linkAsker
+		}
+		_, failures := world.ask(t, asker, fmt.Sprintf(`query { ReadLinkPreviews(conversationId: %q, urls: [%q]) { url } }`, conversationId, site.URL+"/page"))
+		if len(failures) == 0 {
+			t.Errorf("a conversation %q of nobody's, or somebody else's, was read by %s", conversationId, asker.Username)
+		}
+	}
+	if visits := site.visits.Load(); visits != 0 {
+		t.Errorf("a refused question fetched %d pages", visits)
 	}
 }

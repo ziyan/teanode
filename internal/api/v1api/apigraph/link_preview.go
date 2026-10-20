@@ -81,20 +81,29 @@ const (
 
 // LinkPreviewQuery reads what the pages behind links say about themselves.
 type LinkPreviewQuery interface {
-	// Reads the previews of up to 10 links, in the order given: for each, the
-	// link with its tracking parameters taken off, the short text to show for
-	// it, and, when the page could be read, its title, a line about it, the
-	// name of its site and the address of its picture. The page is fetched by
-	// the server and what it said is kept for a day, or an hour when it could
-	// not be read, so asking again is cheap. A link that is not a web address,
-	// or whose page could not be read, comes back with isAvailable false and
-	// nothing else filled in. The picture is served from the server, never
-	// from the linked site. Needs a signed-in caller.
+	// Reads the previews of up to 10 links in the words of a conversation, in
+	// the order given: for each, the link with its tracking parameters taken
+	// off, the short text to show for it, and, when the page could be read, its
+	// title, a line about it, the name of its site and the address of its
+	// picture. A link gets a preview only if its exact text, as given or
+	// cleaned, is in a message of the conversation that its agent did not
+	// write: a person's, or what a tool answered. Any other link comes back
+	// with isAvailable false and is never fetched, since a reply can be made to
+	// carry what the agent read in a link's query. The page is fetched by the
+	// server and what it said is kept for a day, or an hour when it could not
+	// be read, so asking again is cheap. A link that is not a web address, or
+	// whose page could not be read, comes back with isAvailable false and
+	// nothing else filled in. The picture is served from the server, never from
+	// the linked site. Needs a signed-in caller who may use the conversation.
 	ReadLinkPreviews(ctx context.Context, arguments ReadLinkPreviewsArguments) ([]*LinkPreviewView, error)
 }
 
 // ReadLinkPreviewsArguments names the links.
 type ReadLinkPreviewsArguments struct {
+	// ConversationID is the conversation whose messages the links are in. It
+	// is one the caller may read, as for ReadAgentConversation.
+	ConversationID string `json:"conversationId"`
+
 	// URLs are the links, at most 10, each at most 2048 characters.
 	URLs []string `json:"urls"`
 }
@@ -190,15 +199,48 @@ func (self *graph) ReadLinkPreviews(ctx context.Context, arguments ReadLinkPrevi
 	var limitKey string
 	cached := map[string]*db.LinkPreview{}
 	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
-		principal, err := self.requireSignedIn(phaseContext)
+		// The conversation is resolved as ReadAgentConversation resolves it.
+		principal, found, err := self.requireConversationPerson(phaseContext)
 		if err != nil {
 			return err
 		}
-		limitKey = "console"
-		if principal.User != nil {
-			limitKey = principal.User.ID
+		tx := self.transaction(phaseContext)
+		if strings.TrimSpace(arguments.ConversationID) == "" {
+			if err := requireConversationUse(principal, found, &models.AgentConversation{Kind: models.AgentConversationMain}); err != nil {
+				return err
+			}
 		}
-		cached, err = self.transaction(phaseContext).ListLinkPreviews(keys)
+		conversation, other, _, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
+		if err != nil {
+			return err
+		}
+		// A chat is between its people: an operator with agent:act reads none
+		// of them but their own.
+		if conversation.IsChat() && other != nil {
+			return api.ErrNotFound
+		}
+		if err := requireConversationUse(principal, found, conversation); err != nil {
+			return err
+		}
+		limitKey = principal.User.ID
+		// Only a link somebody other than the agent wrote is looked up or
+		// fetched; the rest are answered as having no preview.
+		keys = keys[:0]
+		for _, each := range asked {
+			if each.key == "" {
+				continue
+			}
+			isAllowed, err := tx.HasLinkNotWrittenByAgent(conversation, each.written, each.cleaned)
+			if err != nil {
+				return err
+			}
+			if !isAllowed {
+				each.key = ""
+				continue
+			}
+			keys = append(keys, each.key)
+		}
+		cached, err = tx.ListLinkPreviews(keys)
 		return err
 	}); err != nil {
 		return nil, err

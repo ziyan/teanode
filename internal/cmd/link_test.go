@@ -83,9 +83,12 @@ func runLinkAgainst(test *testing.T, server *httptest.Server, arguments ...strin
 // could not be read says so rather than printing blanks.
 func TestLinkPreviewPrintsTheCleanedLinkAndWhatThePageSaid(test *testing.T) {
 	server, recorded := linkPreviewServer(test)
-	output, err := runLinkAgainst(test, server, "https://www.example.com/shop/chair?gclid=abc&color=blue", "https://example.net/gone")
+	output, err := runLinkAgainst(test, server, "--conversation", "conversation-1", "https://www.example.com/shop/chair?gclid=abc&color=blue", "https://example.net/gone")
 	if err != nil {
 		test.Fatal(err)
+	}
+	if recorded()["conversationId"] != "conversation-1" {
+		test.Errorf("the conversation asked about was %v", recorded()["conversationId"])
 	}
 	if urls, _ := recorded()["urls"].([]any); len(urls) != 2 || urls[0] != "https://www.example.com/shop/chair?gclid=abc&color=blue" {
 		test.Errorf("the links asked for were %v", recorded()["urls"])
@@ -106,7 +109,7 @@ func TestLinkPreviewPrintsTheCleanedLinkAndWhatThePageSaid(test *testing.T) {
 
 func TestLinkPreviewJSONIsTheOperationsAnswer(test *testing.T) {
 	server, _ := linkPreviewServer(test)
-	output, err := runLinkAgainst(test, server, "--json", "https://www.example.com/shop/chair?gclid=abc&color=blue", "https://example.net/gone")
+	output, err := runLinkAgainst(test, server, "--conversation", "conversation-1", "--json", "https://www.example.com/shop/chair?gclid=abc&color=blue", "https://example.net/gone")
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -119,16 +122,19 @@ func TestLinkPreviewJSONIsTheOperationsAnswer(test *testing.T) {
 	}
 }
 
-func TestLinkPreviewNeedsBetweenOneAndTenLinks(test *testing.T) {
+func TestLinkPreviewNeedsAConversationAndBetweenOneAndTenLinks(test *testing.T) {
 	server, _ := linkPreviewServer(test)
-	if _, err := runLinkAgainst(test, server); err == nil {
+	if _, err := runLinkAgainst(test, server, "https://example.com/page"); err == nil {
+		test.Error("links with no conversation were accepted")
+	}
+	if _, err := runLinkAgainst(test, server, "--conversation", "conversation-1"); err == nil {
 		test.Error("no links were accepted")
 	}
 	many := make([]string, 11)
 	for index := range many {
 		many[index] = "https://example.com/page"
 	}
-	if _, err := runLinkAgainst(test, server, many...); err == nil {
+	if _, err := runLinkAgainst(test, server, append([]string{"--conversation", "conversation-1"}, many...)...); err == nil {
 		test.Error("eleven links were accepted")
 	}
 }
