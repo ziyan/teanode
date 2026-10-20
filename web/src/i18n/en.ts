@@ -6826,6 +6826,7 @@ export const en = {
   'person.showAllAlbums': 'Show all albums',
   'person.today': 'Today',
   'person.visitsToday': 'Visits today',
+  'person.matchedByName': 'Found by name',
   'person.noVisitsToday': 'No visits today.',
   'person.locationNotShared': '{name} does not share where they are.',
   'person.healthNotShared': '{name} does not share their health.',

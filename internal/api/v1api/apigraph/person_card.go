@@ -232,6 +232,10 @@ type PersonCardMemoryPage struct {
 	Summary string `json:"summary"`
 
 	UpdatedAt time.Time `json:"updatedAt"`
+
+	// IsMatchedByName says the page is not tied to the contact: it is the
+	// person page with the contact's name, shown while nothing is tied.
+	IsMatchedByName bool `json:"isMatchedByName"`
 }
 
 const (
@@ -863,9 +867,38 @@ func (self *graph) readPersonCardMemory(ctx context.Context, subject *personCard
 			nodeIds = append(nodeIds, link.NodeID)
 		}
 	}
-	nodes, err := tx.GetAgentNodes(found.ID, nodeIds)
+	linkedNodes, err := tx.GetAgentNodes(found.ID, nodeIds)
 	if err != nil {
 		return nil, err
+	}
+	// The pages that say they are about the contact, and the pages that
+	// link to it, each once.
+	nodes, err := tx.ListAgentNodesOfContact(found.ID, subject.contact.ID, recordLinkPageMost)
+	if err != nil {
+		return nil, err
+	}
+	seenNodeIds = map[string]bool{}
+	for _, node := range nodes {
+		seenNodeIds[node.ID] = true
+	}
+	for _, node := range linkedNodes {
+		if !seenNodeIds[node.ID] {
+			seenNodeIds[node.ID] = true
+			nodes = append(nodes, node)
+		}
+	}
+	// Nothing tied to the contact yet (the dreams tie a person page to its
+	// contact when they come to it): the person page with the contact's own
+	// name, if it is not another contact's, marked as found by its name.
+	isMatchedByName := false
+	if len(nodes) == 0 {
+		named, err := tx.FindAgentNodeByName(found.ID, "people", models.NodePerson, subject.contact.Name)
+		if err != nil {
+			return nil, err
+		}
+		if named != nil && (named.ContactID == "" || named.ContactID == subject.contact.ID) {
+			nodes, isMatchedByName = []*models.AgentNode{named}, true
+		}
 	}
 	sort.SliceStable(nodes, func(left, right int) bool {
 		isLeftPerson, isRightPerson := nodes[left].Kind == models.NodePerson, nodes[right].Kind == models.NodePerson
@@ -878,7 +911,7 @@ func (self *graph) readPersonCardMemory(ctx context.Context, subject *personCard
 	for _, node := range nodes[:min(len(nodes), itemLimit)] {
 		section.Pages = append(section.Pages, &PersonCardMemoryPage{
 			NodePath: node.Path, NodeName: firstNonEmpty(node.Name, node.Path), NodeKind: node.Kind,
-			Summary: snippetOf(node.Summary), UpdatedAt: node.ModifiedAt,
+			Summary: snippetOf(node.Summary), UpdatedAt: node.ModifiedAt, IsMatchedByName: isMatchedByName,
 		})
 	}
 	return section, nil

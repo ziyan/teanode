@@ -554,7 +554,8 @@ struct PersonCardCirclesView: View {
                         Label(circle.circleName, systemImage: "person.2")
                             .foregroundStyle(.primary)
                         Spacer(minLength: 8)
-                        if let kind = circle.knownCircleKind {
+                        // Left out when the name already says it ("Family").
+                        if let kind = circle.knownCircleKind, kind.title.lowercased() != circle.circleName.lowercased() {
                             Text(verbatim: kind.title)
                                 .foregroundStyle(.secondary)
                         }

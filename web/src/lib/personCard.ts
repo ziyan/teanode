@@ -91,6 +91,8 @@ export type PersonCardMemoryPage = {
   nodeKind: string
   summary: string
   updatedAt: string
+  /** Not tied to the contact: the person page with the contact's name. */
+  isMatchedByName: boolean
 }
 
 export type PersonCardMemorySection = {
@@ -163,7 +165,7 @@ export const READ_PERSON_CARD = `
       }
       memory {
         sectionState
-        pages { nodePath nodeName nodeKind summary updatedAt }
+        pages { nodePath nodeName nodeKind summary updatedAt isMatchedByName }
         hasMore
       }
     }

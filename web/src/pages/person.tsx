@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { graphql, isNotFound, openAgentConversation } from '../api'
@@ -206,11 +206,11 @@ function PersonCardView({
   const stateText = (state: PersonCardSectionState, notSharedText: string): React.ReactNode => {
     switch (state) {
       case 'notShared':
-        return <SettingsEmpty>{notSharedText}</SettingsEmpty>
+        return <PersonEmpty>{notSharedText}</PersonEmpty>
       case 'needsContact':
         return (
           <>
-            <SettingsEmpty>{t('person.needsContact', { name: displayName })}</SettingsEmpty>
+            <PersonEmpty>{t('person.needsContact', { name: displayName })}</PersonEmpty>
             {canLinkContact && (
               <div className="page-actions page-actions-end">
                 <button type="button" onClick={() => setLinkingContact(true)}>
@@ -221,7 +221,7 @@ function PersonCardView({
           </>
         )
       case 'failed':
-        return <SettingsEmpty>{t('person.sectionFailed')}</SettingsEmpty>
+        return <PersonEmpty>{t('person.sectionFailed')}</PersonEmpty>
       default:
         return null
     }
@@ -236,6 +236,11 @@ function PersonCardView({
   )
 
   const { location, health, photos, mail, recordings, memory } = card
+  // A circle's kind, unless its name already says it ("Family" of kind family).
+  const circleKindText = (circle: (typeof card.sharedCircles)[number]) => {
+    const kindText = CIRCLE_KIND_LABELS[circle.circleKind] ? t(CIRCLE_KIND_LABELS[circle.circleKind]) : circle.circleKind
+    return kindText.trim().toLowerCase() === circle.circleName.trim().toLowerCase() ? '' : kindText
+  }
   const todayDay = dayText(new Date())
   const locationView = location?.location ?? null
   const openVisit = locationView?.openVisit ?? null
@@ -324,12 +329,14 @@ function PersonCardView({
                 </span>
               </div>
               {locationView?.shareLevel === 'current' ? (
-                <SettingsEmpty>{t('location.personSharesNowOnly', { name: displayName })}</SettingsEmpty>
+                <PersonEmpty>{t('location.personSharesNowOnly', { name: displayName })}</PersonEmpty>
               ) : (
                 <>
-                  <h4 className="person-subheading">{t('person.visitsToday')}</h4>
+                  {otherVisits.length > 0 && <h4 className="person-subheading">{t('person.visitsToday')}</h4>}
                   {otherVisits.length === 0 ? (
-                    <SettingsEmpty>{t('person.noVisitsToday')}</SettingsEmpty>
+                    // The visit they are in, begun on an earlier day, is today's
+                    // whole story, and is the row above.
+                    !openVisit && <PersonEmpty>{t('person.noVisitsToday')}</PersonEmpty>
                   ) : (
                     otherVisits.map((visit) => (
                       <div className="person-row" key={visit.id}>
@@ -360,7 +367,7 @@ function PersonCardView({
           {health.sectionState === 'shown' ? (
             <>
               {health.healthTypes.length === 0 ? (
-                <SettingsEmpty>{t('person.noHealth', { name: displayName })}</SettingsEmpty>
+                <PersonEmpty>{t('person.noHealth', { name: displayName })}</PersonEmpty>
               ) : (
                 health.healthTypes.map((healthType) => {
                   const latest = healthType.latestDaySummary
@@ -410,7 +417,7 @@ function PersonCardView({
               <h4 className="person-subheading">{t('photos.accountPhotosOf', { name: displayName })}</h4>
               {photos.photosState === 'shown' ? (
                 photos.photos.length === 0 ? (
-                  <SettingsEmpty>{t('person.noPhotos', { name: displayName })}</SettingsEmpty>
+                  <PersonEmpty>{t('person.noPhotos', { name: displayName })}</PersonEmpty>
                 ) : (
                   <PersonPhotos photos={photos.photos} />
                 )
@@ -428,7 +435,7 @@ function PersonCardView({
               <h4 className="person-subheading">{t('person.albumsShared', { name: displayName })}</h4>
               {photos.albumsState === 'shown' ? (
                 photos.albums.length === 0 ? (
-                  <SettingsEmpty>{t('person.noAlbums', { name: displayName })}</SettingsEmpty>
+                  <PersonEmpty>{t('person.noAlbums', { name: displayName })}</PersonEmpty>
                 ) : (
                   photos.albums.map((album) => (
                     <Link className="person-row" key={album.id} to={`/photos/albums/${encodeURIComponent(album.id)}`}>
@@ -461,7 +468,7 @@ function PersonCardView({
           {mail.sectionState === 'shown' ? (
             <>
               {mail.mails.length === 0 ? (
-                <SettingsEmpty>{t('person.noMail', { name: displayName })}</SettingsEmpty>
+                <PersonEmpty>{t('person.noMail', { name: displayName })}</PersonEmpty>
               ) : (
                 mail.mails.map((item) => (
                   <button
@@ -505,7 +512,7 @@ function PersonCardView({
           <h3>{t('recordings.title')}</h3>
           {recordings.sectionState === 'shown' ? (
             recordings.recordings.length === 0 ? (
-              <SettingsEmpty>{t('person.noRecordings', { name: displayName })}</SettingsEmpty>
+              <PersonEmpty>{t('person.noRecordings', { name: displayName })}</PersonEmpty>
             ) : (
               recordings.recordings.map((recording) => (
                 <Link
@@ -545,7 +552,7 @@ function PersonCardView({
           <h3>{t('nav.knowledge')}</h3>
           {memory.sectionState === 'shown' ? (
             memory.pages.length === 0 ? (
-              <SettingsEmpty>{t('person.noMemory', { name: displayName })}</SettingsEmpty>
+              <PersonEmpty>{t('person.noMemory', { name: displayName })}</PersonEmpty>
             ) : (
               memory.pages.map((page) => (
                 <Link
@@ -556,6 +563,7 @@ function PersonCardView({
                   <span className="person-row-text">
                     <span className="person-row-title">{page.nodeName}</span>
                     {page.summary && <span className="person-row-detail muted">{page.summary}</span>}
+                    {page.isMatchedByName && <span className="person-row-detail muted">{t('person.matchedByName')}</span>}
                   </span>
                 </Link>
               ))
@@ -573,7 +581,7 @@ function PersonCardView({
           contact.emails.length === 0 &&
           contact.phones.length === 0 &&
           contact.addresses.length === 0 ? (
-            <SettingsEmpty>{t('person.noContactDetails')}</SettingsEmpty>
+            <PersonEmpty>{t('person.noContactDetails')}</PersonEmpty>
           ) : (
             <dl className="person-details">
               {contact.organization && (
@@ -616,9 +624,7 @@ function PersonCardView({
             <Link className="person-row" key={circle.circleId} to={`/circles/${encodeURIComponent(circle.circleId)}`}>
               <span className="person-row-text">
                 <span className="person-row-title">{circle.circleName}</span>
-                <span className="person-row-detail muted">
-                  {CIRCLE_KIND_LABELS[circle.circleKind] ? t(CIRCLE_KIND_LABELS[circle.circleKind]) : circle.circleKind}
-                </span>
+                {circleKindText(circle) && <span className="person-row-detail muted">{circleKindText(circle)}</span>}
               </span>
             </Link>
           ))}
@@ -739,4 +745,10 @@ function PersonPhotos({ photos }: { photos: Photo[] }) {
       ))}
     </div>
   )
+}
+
+/** PersonEmpty is a section with nothing in it, said in one quiet line: the
+ * card has many sections, and a box for each empty one would bury the rest. */
+function PersonEmpty({ children }: { children: ReactNode }) {
+  return <p className="person-empty muted">{children}</p>
 }

@@ -6511,6 +6511,7 @@ export const zh: Catalog = {
   'person.showAllAlbums': '查看全部相册',
   'person.today': '今天',
   'person.visitsToday': '今天去过的地方',
+  'person.matchedByName': '按名字找到',
   'person.noVisitsToday': '今天没有去过的地方。',
   'person.locationNotShared': '{name}没有分享所在位置。',
   'person.healthNotShared': '{name}没有分享健康数据。',

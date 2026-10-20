@@ -211,6 +211,7 @@ function sam(overrides: Partial<PersonCard> = {}): PersonCard {
           nodeKind: 'person',
           summary: 'Fixture summary of Sam.',
           updatedAt: '2030-03-06T05:06:07Z',
+          isMatchedByName: false,
         },
       ],
       hasMore: false,

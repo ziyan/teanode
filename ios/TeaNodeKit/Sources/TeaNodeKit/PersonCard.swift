@@ -236,6 +236,9 @@ public struct PersonCardMemoryPage: Decodable, Hashable, Sendable, Identifiable 
     /// The page's first lines, without Markdown marks.
     public let summary: String
     public let updatedAt: String
+    /// The page is not tied to the contact: it is the person page with the
+    /// contact's name. Nil from a server older than it.
+    public let isMatchedByName: Bool?
 
     public var id: String { nodePath }
 }
@@ -367,7 +370,7 @@ extension Documents {
             photos { photosState photos { \(photoFields) } hasMorePhotos albumsState albums { \(photoAlbumFields) } hasMoreAlbums }
             mail { sectionState mails { mailboxItemId mailboxId folderPath subject fromAddress fromName isFromPerson isUnread receivedAt snippet } hasMore }
             recordings { sectionState recordings { recordingId title recordedAt durationMS spokenPassageCount } hasMore }
-            memory { sectionState pages { nodePath nodeName nodeKind summary updatedAt } hasMore }
+            memory { sectionState pages { nodePath nodeName nodeKind summary updatedAt isMatchedByName } hasMore }
           }
         }
         """

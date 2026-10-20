@@ -19729,6 +19729,22 @@
         }
       }
     },
+    "Found by name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前で見つかりました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按名字找到"
+          }
+        }
+      }
+    },
     "Found by words alone, not by meaning.": {
       "localizations": {
         "ja": {

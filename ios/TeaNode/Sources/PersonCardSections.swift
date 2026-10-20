@@ -81,7 +81,8 @@ struct PersonCardLocationView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            ForEach(section.todayVisits) { visit in
+            // The visit they are in is the row above, so it is not listed again.
+            ForEach(otherVisits(of: section, location: location)) { visit in
                 LocationVisitRow(visit: visit)
             }
             if location.level == .history {
@@ -98,6 +99,11 @@ struct PersonCardLocationView: View {
             Text("No position yet")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func otherVisits(of section: PersonCardLocationSection, location: PersonLocation) -> [PlaceVisit] {
+        guard let openVisitId = location.openVisit?.id else { return section.todayVisits }
+        return section.todayVisits.filter { $0.id != openVisitId }
     }
 
     /// Opens Location with them chosen, and the map centered on them.
@@ -599,7 +605,15 @@ struct PersonCardMemoryView: View {
     }
 
     private func result(of page: PersonCardMemoryPage) -> SearchResult {
-        SearchResult(searchArea: SearchArea.memory.rawValue, targetId: page.nodePath, titleText: page.nodeName, detailText: page.summary)
+        SearchResult(searchArea: SearchArea.memory.rawValue, targetId: page.nodePath, titleText: page.nodeName, detailText: detailText(of: page))
+    }
+
+    /// The page's first lines, and for a page not tied to the contact that it
+    /// was found by the contact's name.
+    private func detailText(of page: PersonCardMemoryPage) -> String {
+        guard page.isMatchedByName == true else { return page.summary }
+        let matchedText = String(localized: "Found by name")
+        return page.summary.isEmpty ? matchedText : "\(page.summary) · \(matchedText)"
     }
 
     /// Opens Knowledge searched for their name.
