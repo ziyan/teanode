@@ -28,7 +28,7 @@ function answerWith(preview: LinkPreview) {
 function renderCard(text: string, isMarkdown = false, isOwn = false) {
   return render(
     <TranslationProvider>
-      <LinkPreviewCard text={text} isMarkdown={isMarkdown} isOwn={isOwn} />
+      <LinkPreviewCard conversationId="conversation-1" text={text} isMarkdown={isMarkdown} isOwn={isOwn} />
     </TranslationProvider>,
   )
 }
@@ -59,6 +59,7 @@ it('draws the page of the first link as one card that opens the clean link', asy
   expect(card.querySelector('.link-card-description')?.textContent).toBe('A chair for the garden.')
   expect(container.querySelectorAll('a.link-card')).toHaveLength(1)
   expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({
+    conversationId: 'conversation-1',
     urls: ['https://www.example.com/shop/chair/?gclid=abc&color=blue'],
   })
 })
@@ -106,4 +107,14 @@ it('sits on the right under the signed-in person’s own message', async () => {
   answerWith(AVAILABLE)
   const { container } = renderCard('https://example.com/mine', false, true)
   await waitFor(() => expect(container.querySelector('a.link-card.is-own')).not.toBeNull())
+})
+
+it('asks for nothing in a conversation that has no id yet', () => {
+  const { container } = render(
+    <TranslationProvider>
+      <LinkPreviewCard conversationId="" text="https://example.com/a" isMarkdown={false} />
+    </TranslationProvider>,
+  )
+  expect(container.firstChild).toBeNull()
+  expect(vi.mocked(graphql)).not.toHaveBeenCalled()
 })

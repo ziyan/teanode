@@ -1095,7 +1095,10 @@ it('shows a link short, opens it clean, and draws the page under the message as 
   // Asked for once, with the link as it was written.
   const asked = vi.mocked(graphql).mock.calls.filter(([document]) => document.includes('ReadLinkPreviews'))
   expect(asked).toHaveLength(1)
-  expect((asked[0][1] as { urls: string[] }).urls).toEqual(['https://www.example.com/shop/chair/?gclid=abc&color=blue'])
+  expect(asked[0][1]).toEqual({
+    conversationId: 'chat-conversation',
+    urls: ['https://www.example.com/shop/chair/?gclid=abc&color=blue'],
+  })
 })
 
 it('draws no card for a page that has no preview, and the link still opens', async () => {

@@ -12,16 +12,23 @@ import { firstLinkOf } from '../lib/linkText'
 // The picture is the server's copy of the page's, never the page's own: the
 // page's site is not told who is reading.
 export function LinkPreviewCard({
+  conversationId,
   text,
   isMarkdown,
   isOwn = false,
 }: {
+  /** The conversation the message is in: the server previews only a link written there. */
+  conversationId: string
   text: string
   isMarkdown: boolean
   /** The card sits under a message of the signed-in person's, on the right. */
   isOwn?: boolean
 }) {
-  const link = useMemo(() => firstLinkOf(text, isMarkdown), [text, isMarkdown])
+  // The link as the message has it, not cleaned: the server looks for its text.
+  const link = useMemo(
+    () => (conversationId ? firstLinkOf(text, isMarkdown) : null),
+    [conversationId, text, isMarkdown],
+  )
   const [preview, setPreview] = useState<LinkPreview | null>(null)
   // Whether the message has been near the screen. A long conversation holds
   // many links and only the ones that are read are worth the server's time.
@@ -44,13 +51,13 @@ export function LinkPreviewCard({
   useEffect(() => {
     if (!link || !isNear) return
     let isCancelled = false
-    void requestLinkPreview(link).then((found) => {
+    void requestLinkPreview(conversationId, link).then((found) => {
       if (!isCancelled) setPreview(found)
     })
     return () => {
       isCancelled = true
     }
-  }, [link, isNear])
+  }, [conversationId, link, isNear])
 
   if (!link) return null
   return (

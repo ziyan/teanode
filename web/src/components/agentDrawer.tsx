@@ -5278,7 +5278,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               {reactionsOn(line)}
             </SwipeableLine>
             {isEditing || line.isPending || line.isStreaming ? null : (
-              <LinkPreviewCard text={line.text} isMarkdown={line.authorKind === 'agent'} />
+              <LinkPreviewCard
+                conversationId={backgroundConversationId}
+                text={line.text}
+                isMarkdown={line.authorKind === 'agent'}
+              />
             )}
           </ChatLineFrame>
         )
@@ -5308,7 +5312,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 {reactionsOn(line)}
               </SwipeableLine>
             </Tooltip>
-            <LinkPreviewCard text={line.text} isMarkdown={false} isOwn />
+            <LinkPreviewCard conversationId={backgroundConversationId} text={line.text} isMarkdown={false} isOwn />
           </Fragment>
         )
       }
@@ -5351,7 +5355,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 {reactionsOn(line)}
               </SwipeableLine>
             </Tooltip>
-            {line.streaming ? null : <LinkPreviewCard text={suggestedRepliesOf(line.text).displayText} isMarkdown />}
+            {line.streaming ? null : (
+              <LinkPreviewCard
+                conversationId={backgroundConversationId}
+                text={suggestedRepliesOf(line.text).displayText}
+                isMarkdown
+              />
+            )}
           </Fragment>
         )
       case 'tool': {
