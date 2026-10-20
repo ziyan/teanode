@@ -928,8 +928,14 @@ func (self *graph) readPersonCardMemory(ctx context.Context, subject *personCard
 		if err != nil {
 			return nil, err
 		}
-		if named != nil && (named.ContactID == "" || named.ContactID == subject.contact.ID) {
-			nodes, isMatchedByName = []*models.AgentNode{named}, true
+		if named != nil {
+			isOtherContacts, err := self.isTiedToAnotherContact(ctx, subject, named)
+			if err != nil {
+				return nil, err
+			}
+			if !isOtherContacts {
+				nodes, isMatchedByName = []*models.AgentNode{named}, true
+			}
 		}
 	}
 	sort.SliceStable(nodes, func(left, right int) bool {
@@ -947,6 +953,30 @@ func (self *graph) readPersonCardMemory(ctx context.Context, subject *personCard
 		})
 	}
 	return section, nil
+}
+
+// isTiedToAnotherContact says a page is about another of the caller's
+// contacts. A tie to a contact that is gone (deleted, or an address book read
+// in again under new identifiers) ties it to nobody.
+func (self *graph) isTiedToAnotherContact(ctx context.Context, subject *personCardSubject, node *models.AgentNode) (bool, error) {
+	if node.ContactID == "" || node.ContactID == subject.contact.ID {
+		return false, nil
+	}
+	tx := self.transaction(ctx)
+	books, err := tx.ListAddressBooks(subject.caller.ID)
+	if err != nil {
+		return false, err
+	}
+	for _, book := range books {
+		other, err := tx.GetContact(book.ID, node.ContactID)
+		if err != nil {
+			return false, err
+		}
+		if other != nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // refusedPersonCardSection is the section a card shows for a part of the app
