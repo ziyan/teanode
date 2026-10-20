@@ -42,7 +42,7 @@ func newAgentWaitingCommand() *cli.Command {
 			},
 			{
 				Name:      "answer",
-				Usage:     "answer a question the agent asked",
+				Usage:     "answer a question the agent asked, or reply to its request to take your tab over",
 				ArgsUsage: "<interaction-id> <answer>",
 				Action:    runAgentWaitingAnswer,
 			},
@@ -138,7 +138,7 @@ func runAgentWaitingAnswer(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if interaction.InteractionKind != "question" {
+	if interaction.InteractionKind == "approval" {
 		return usage("that asks for approval; use 'teanode agent waiting approve' or 'deny'")
 	}
 	if _, err := client.AnswerAgentQuestion(ctx, connection, interaction.RunID, interaction.CallID, answer); err != nil {

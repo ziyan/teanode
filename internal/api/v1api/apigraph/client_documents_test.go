@@ -103,6 +103,8 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"RemoveAgentSourceType":           client.DocumentRemoveAgentSourceType,
 		"ListAgentKnowledgeSourceSecrets": client.DocumentListAgentKnowledgeSourceSecrets,
 		"SetAgentKnowledgeSourceSecret":   client.DocumentSetAgentKnowledgeSourceSecret,
+		"ReadAgentTab":                    client.DocumentReadAgentTab,
+		"HandBackAgentTab":                client.DocumentHandBackAgentTab,
 		"ClearAgentKnowledgeSourceSecret": client.DocumentClearAgentKnowledgeSourceSecret,
 		"SearchAgentDocuments":            client.DocumentSearchAgentDocuments,
 		"SearchAgentGraph":                client.DocumentSearchAgentGraph,
