@@ -66,7 +66,7 @@ func TestASearchNamesTheToolsTheModelHasAlready(t *testing.T) {
 func TestASearchDoesNotNameToolsItDidNotAskFor(t *testing.T) {
 	run := catalog()
 	content := search(t, run, "send a message to the team on a chat app")
-	if strings.Contains(content, "already") {
+	if strings.Contains(content, "alreadyAvailable") || strings.Contains(content, "you have") {
 		t.Errorf("a search for nothing held named tools held: %s", content)
 	}
 	content = search(t, run, "search tool for the mail")

@@ -10,8 +10,8 @@ enum LocationRoute: Hashable {
     case settings
 }
 
-/// LocationSegment is what the list under the map shows, chosen in the side
-/// menu as Finance's parts and Photos' collections are.
+/// LocationSegment is what the list under the map shows, chosen in the menu
+/// under the title as Finance's parts and Photos' collections are.
 enum LocationSegment: String, CaseIterable, Identifiable {
     case visits
     case places
@@ -72,8 +72,8 @@ struct OpenStreetMapCredit: View {
 
 /// LocationScreen is where the person is and where they have been: a map with
 /// their position, the visit in progress under it, and below that their
-/// visits by day and the places they were at. Which list shows is the side
-/// menu's choice.
+/// visits by day and the places they were at. Which list shows is chosen in
+/// the menu under the title.
 struct LocationScreen: View {
     @State private var model: LocationModel
     @Binding var segment: LocationSegment
@@ -119,8 +119,14 @@ struct LocationScreen: View {
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .withoutSwipeBack()
-            // A list chosen in the side menu is shown at once: over whatever
+            .toolbarTitleMenu {
+                Picker("Location", selection: $segment) {
+                    ForEach(LocationSegment.allCases) { choice in
+                        Label(choice.title, systemImage: choice.systemImage).tag(choice)
+                    }
+                }
+            }
+            // A list chosen in the title menu is shown at once: over whatever
             // was open on top of it, a person chosen on the map, or the setup
             // (whose rows say Places and Sharing are where those steps live).
             // People are chosen only under Visits, so going there keeps the
@@ -131,7 +137,7 @@ struct LocationScreen: View {
                 if model.isSetupShown { model.dismissSetup() }
             }
             .toolbar {
-                MenuButton()
+                MoreBackButton()
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         isCheckingIn = true
@@ -179,6 +185,13 @@ struct LocationScreen: View {
             app.openedLocationUserId = nil
             segment = .visits
             model.select(userId: userId)
+        }
+        // The words the Search tab's Show all in Places carries; the list is Places already.
+        .onChange(of: app.openedPartSearch, initial: true) { _, search in
+            guard let search, search.area == .places else { return }
+            app.openedPartSearch = nil
+            segment = .places
+            model.placeSearchText = search.words
         }
         .onChange(of: app.openedLocationDay, initial: true) { _, day in
             guard let day else { return }

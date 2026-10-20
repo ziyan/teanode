@@ -94,8 +94,8 @@ final class FinanceModel {
     }
 }
 
-/// FinancePart is one section of the dashboard's Finance page. The side
-/// menu lists them under Finance, so each is one tap away.
+/// FinancePart is one section of the dashboard's Finance page. The menu under
+/// the screen's title lists them, so each is one tap away.
 enum FinancePart: String, CaseIterable, Identifiable, Hashable {
     case spending, transactions, accounts, budgets, netWorth, savingsTargets, receipts, taxes, setup
     var id: String { rawValue }
@@ -130,20 +130,26 @@ enum FinancePart: String, CaseIterable, Identifiable, Hashable {
 }
 
 /// FinanceScreen is one section of the dashboard's Finance page, chosen in
-/// the side menu, with the button that opens the menu at its top left.
+/// the menu under its title.
 struct FinanceScreen: View {
     let finance: FinanceModel
-    let part: FinancePart
+    @Binding var part: FinancePart
     /// The pages opened on top of the part, emptied when another part is
-    /// chosen so the menu does not leave the last part's list in front.
+    /// chosen so the title menu does not leave the last part's list in front.
     @State private var path = NavigationPath()
+    /// What the transactions list opens narrowed to, and how many times that
+    /// has been set, which draws the list anew when the Search tab asks for
+    /// another search while it is open.
+    @State private var transactionFilter = FinanceTransactionFilter()
+    @State private var searchCount = 0
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         NavigationStack(path: $path) {
             Group {
                 switch part {
                 case .spending: SpendingView()
-                case .transactions: TransactionsView(filter: FinanceTransactionFilter())
+                case .transactions: TransactionsView(filter: transactionFilter)
                 case .accounts: AccountsView()
                 case .budgets: BudgetsView()
                 case .netWorth: NetWorthView()
@@ -153,9 +159,15 @@ struct FinanceScreen: View {
                 case .setup: FinanceSetupView()
                 }
             }
-            .id(part)
-            .toolbar { MenuButton() }
-            .withoutSwipeBack()
+            .id("\(part.rawValue)-\(searchCount)")
+            .toolbar { MoreBackButton() }
+            .toolbarTitleMenu {
+                Picker("Finance", selection: $part) {
+                    ForEach(FinancePart.allCases) { choice in
+                        Label(choice.title, systemImage: choice.systemImage).tag(choice)
+                    }
+                }
+            }
             .navigationDestination(for: TransactionLink.self) { link in
                 TransactionsView(filter: link.filter)
             }
@@ -166,15 +178,33 @@ struct FinanceScreen: View {
             }
         }
         .environment(finance)
-        .onChange(of: part) { path = NavigationPath() }
+        .onChange(of: part) {
+            path = NavigationPath()
+            // The words a search carried in are for that look at the
+            // transactions; choosing another part ends it.
+            if part != .transactions { transactionFilter = FinanceTransactionFilter() }
+        }
+        // The words the Search tab's Show all in Finance carries: the transactions, narrowed to them.
+        .onChange(of: app.openedPartSearch, initial: true) { _, search in
+            guard let search, search.area == .finance else { return }
+            app.openedPartSearch = nil
+            var filter = FinanceTransactionFilter()
+            filter.text = search.words
+            transactionFilter = filter
+            searchCount += 1
+            path = NavigationPath()
+            part = .transactions
+        }
         .task { if finance.isShown == nil { await finance.load() } }
         #if DEBUG
             .task {
                 // `-TeaNodeScreen finance-part-switch`: a transaction list is
-                // opened on Accounts, then the shell chooses Net worth.
+                // opened on Accounts, then Net worth is chosen in the title menu.
                 guard DemoServer.screen == "finance-part-switch" else { return }
                 try? await Task.sleep(for: .seconds(1))
                 path.append(TransactionLink(filter: FinanceTransactionFilter()))
+                try? await Task.sleep(for: .milliseconds(1500))
+                part = .netWorth
             }
         #endif
         .toast(done: Bindable(finance).doneText, problem: Bindable(finance).problemText)
@@ -490,7 +520,6 @@ struct SpendingView: View {
             .chartForegroundStyleScale(domain: [incomeWord, spendingWord], range: [incomeColor, spendingColor])
             .chartLegend(.hidden)
             .chartXSelection(value: $selectedCashFlowMonth)
-            .keepsSidePanelClosed()
             .chartXAxis {
                 AxisMarks { value in
                     AxisValueLabel {
@@ -565,7 +594,6 @@ struct SpendingView: View {
                 .chartLegend(.hidden)
                 .chartXScale(domain: keys)
                 .chartXSelection(value: $selectedDayKey)
-                .keepsSidePanelClosed()
                 .chartXAxis {
                     AxisMarks(values: ["1", "8", "15", "22", "29"].filter { keys.contains($0) }) { value in
                         AxisValueLabel {
@@ -676,7 +704,6 @@ struct SpendingView: View {
             .chartForegroundStyleScale(domain: [incomeWord, spendingWord], range: [incomeColor, spendingColor])
             .chartLegend(.hidden)
             .chartXSelection(value: $selectedYearKey)
-            .keepsSidePanelClosed()
             .chartXAxis {
                 // The years whole, never cut to "20…": at most five of them
                 // labelled, evenly spaced back from this one, so they fit

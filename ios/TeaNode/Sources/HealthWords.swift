@@ -9,7 +9,7 @@ import TeaNodeKit
 // back to the English name the server sends, the same as the dashboard.
 
 enum HealthWords {
-    /// The feature's name: the side menu, the screen and the setting.
+    /// The feature's name: the More list, the screen and the setting.
     static var title: String { String(localized: "health-title", defaultValue: "Health") }
 
     /// The choice of day, week or month a chart is drawn by. Its own key: the

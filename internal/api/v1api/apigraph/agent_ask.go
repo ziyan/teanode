@@ -607,7 +607,7 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 	// What the caller may have: the conversations with their agent while it
 	// is on and they may use it, and their chats while they may use circles.
 	// A person whose agent is off is listed their chats and nothing else.
-	hasAgent := principal.Permissions.Has(models.PermissionAgentUse) && found.Active()
+	hasAgent := canUseAgentConversations(principal, found)
 	hasChats := principal.Permissions.Has(models.PermissionCircleUse)
 	tx := self.transaction(ctx)
 
@@ -670,6 +670,13 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 	}
 	sortByLastMessage(rest)
 	return append(conversations, rest...), nil
+}
+
+// canUseAgentConversations says whether the caller has conversations with
+// their agent: they may use it and it is on. A person who can only chat has
+// their chats and nothing else.
+func canUseAgentConversations(principal *api.Principal, found *models.Agent) bool {
+	return principal.Permissions.Has(models.PermissionAgentUse) && found.Active()
 }
 
 // sortByLastMessage puts the conversation with the newest message first.

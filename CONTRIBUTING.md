@@ -182,6 +182,18 @@ person could do, no more and no less, without making them do it twice.
 - **The person's language is for the person.** The dashboard's language sets
   the language of conversations with the person, not of the runs nobody
   reads.
+- **What is in every request is the dearest place to say something.** The
+  conduct in `prompts/ask.txt` and the definitions and `Guidance` of the
+  core tools are sent with every request; they were about sixteen thousand
+  tokens when this was written. So an instruction goes in the cheapest place
+  that still reaches the model when it is needed: the description or
+  `Guidance` of the tool it is about, which is sent only with that tool; a
+  tool behind `tool_search` rather than a core one, unless most turns call
+  it or its guidance is what makes the model think of it; a skill or a
+  document read on demand for a procedure with a recognizable occasion; and
+  code, a limit or a check where the call is made, for anything mechanical.
+  A line added to the conduct, or a tool made core, pays for itself by
+  something taken out.
 - **Prompts stay short, and are tried.** A prompt says what the model cannot
   work out for itself, once, in the file under `internal/agent/prompts/`
   that owns it. A change to one is run against a real model before it

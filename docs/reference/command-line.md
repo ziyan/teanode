@@ -147,6 +147,7 @@ so one command serves a person and a script.
 | `layout` | the frames templates are rendered inside |
 | `photo` | your library of photos and videos: `list`, `read`, `describe`, `upload`, `download`, `favorite`, `set-date` (correct when a photo was taken), `search-places`, `set-location` and `remove-location` (where it was taken), `trash`, `restore`, `retry`, `save` (keep a photo of a shared album, or a file of a conversation), `delete`, `empty-trash`, `library`, `album` for named sets of photos, with sharing, and `people` and `faces` for the people found in them; see below |
 | `finance` | linked institutions, transactions, trades, net worth, budgets and savings targets; see below |
+| `search` | your words across chats, mail, contacts, photos, memory, documents, recordings, places and finance at once; see below |
 | `api` | everything else, straight from the schema |
 
 ### A mailbox from the shell
@@ -593,6 +594,25 @@ have made.
 Every command sends the shell's time zone and language with the request,
 the way the dashboard sends the browser's, so a person who lives in the
 terminal is placed as well as one who lives in the browser.
+
+### teanode search
+
+`teanode search WORDS [--area AREA]... [--limit N] [--json]` looks for the
+words in everything of yours at once: the same operation as the dashboard's
+search box and the agent's `search` tool (`SearchEverything`). It prints a
+group for each area that found something, in a fixed order (chats, mail,
+contacts, photos, memory, documents, recordings, places, finance), with each
+result's id, when it happened, title and detail. A group that has more says so
+and prints the command that searches that area by itself. An area that did not
+answer in three seconds is named after the groups, and an area you may not use
+is left out without a word.
+
+`--area` narrows the search to an area and can be given again for more;
+`--limit` is how many results from each area, 5 by default and 20 at most. The
+words are matched as the areas match them, by the words alone, so try a name or
+a distinctive word. `--json` prints `words`, `areas` (each with `searchArea`,
+`hasMore` and `results`) and `failedAreas`. How it works, and who may search
+what, is in `docs/subsystems/search.md`.
 
 ### teanode recording
 

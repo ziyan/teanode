@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Nothing has these words": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この言葉を含むものはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有内容包含这些词"
+          }
+        }
+      }
+    },
+    "Photos also finds pictures by what is in them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「写真」は写っている内容からも写真を見つけます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“照片”还能按画面内容找到图片。"
+          }
+        }
+      }
+    },
+    "Search Photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索照片"
+          }
+        }
+      }
+    },
     "Use the three-letter code, such as USD.": {
       "localizations": {
         "ja": {
@@ -13233,22 +13281,6 @@
         }
       }
     },
-    "Close the list": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "リストを閉じる"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭列表"
-          }
-        }
-      }
-    },
     "Close this message?": {
       "localizations": {
         "ja": {
@@ -24941,22 +24973,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "被提及于"
-          }
-        }
-      }
-    },
-    "Menu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニュー"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "菜单"
           }
         }
       }
@@ -62386,22 +62402,6 @@
         }
       }
     },
-    "Your chats are in the menu": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "チャットはメニューにあります"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的聊天在菜单里"
-          }
-        }
-      }
-    },
     "The account is made; adding it to the circle again": {
       "localizations": {
         "ja": {
@@ -62462,22 +62462,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "该助手的主人不在此聊天中。"
-          }
-        }
-      }
-    },
-    "Open the menu to read and write to the people you share a circle with.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メニューを開くと、サークルを共有している人とやり取りできます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开菜单，即可与和你同在一个圈子的人聊天。"
           }
         }
       }
@@ -76604,6 +76588,266 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除%@？"
+          }
+        }
+      }
+    },
+    "Search everything": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてを検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索所有内容"
+          }
+        }
+      }
+    },
+    "Find a name or a few words across your chats, mail, contacts, photos and more.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャット、メール、連絡先、写真などから、名前や言葉を探します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在对话、邮件、联系人、照片等所有内容中查找名字或几个词。"
+          }
+        }
+      }
+    },
+    "Show all in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のすべてを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示%@中的全部结果"
+          }
+        }
+      }
+    },
+    "Could not search %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を検索できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法搜索%@。"
+          }
+        }
+      }
+    },
+    "Documents": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドキュメント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文档"
+          }
+        }
+      }
+    },
+    "Plans": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "計画"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划"
+          }
+        }
+      }
+    },
+    "Your chats are in the list": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットは一覧にあります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的聊天都在列表里"
+          }
+        }
+      }
+    },
+    "Go back to the list to read and write to the people you share a circle with.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一覧に戻ると、サークルを共有している人とやり取りできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回列表，即可与和你同在一个圈子的人聊天。"
+          }
+        }
+      }
+    },
+    "Tab bar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブバー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签栏"
+          }
+        }
+      }
+    },
+    "In the tab bar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In the tab bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブバーに表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在标签栏中"
+          }
+        }
+      }
+    },
+    "In More": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In More"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「その他」に表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“更多”中"
+          }
+        }
+      }
+    },
+    "Up to three. More and Search are always there.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to three. More and Search are always there."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大3つまで。「その他」と「検索」は常に表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多三个。“更多”和“搜索”始终都在。"
+          }
+        }
+      }
+    },
+    "Edit the tab bar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit the tab bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブバーを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑标签栏"
+          }
+        }
+      }
+    },
+    "Puts it in the tab bar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puts it in the tab bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブバーに追加します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放到标签栏中"
           }
         }
       }

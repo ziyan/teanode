@@ -168,6 +168,8 @@ struct SubscriptionReader: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .toolbar { toolbar }
+        // The bar at the bottom is this screen's own, so the tab bar gives way to it.
+        .toolbarVisibility(.hidden, for: .tabBar)
     }
 
     private var items: [MailItem] { (thread?.entries ?? []).compactMap(\.item).filter { !$0.draft } }

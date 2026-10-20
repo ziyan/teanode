@@ -41,7 +41,7 @@ final class AppModel {
     /// what the Coding section is for.
     private(set) var hasCodingComputers = false
     /// How many of the person's coding sessions ask something, a question
-    /// or an approval: the number on the side menu's Coding row.
+    /// or an approval: the badge on the tab that holds Coding.
     private(set) var codingAskingCount = 0
 
     /// Connections to accounts not in use, made to answer their
@@ -144,6 +144,14 @@ final class AppModel {
 
     /// The finance section a page of the dashboard's Finance names.
     var openedFinancePart: FinancePart?
+
+    /// The words the Search tab asks a part of the app to search for, in the
+    /// part for the area. The part takes the words and clears them.
+    var openedPartSearch: PartSearch?
+
+    /// A photo the Search tab found: Photos searches the library for the
+    /// words and opens the viewer on the photo, and clears this.
+    var openedSearchedPhoto: SearchedPhoto?
 
     /// The open_page events already followed, by run and sequence, so a
     /// feed replayed after the screen comes back does not move the app again.
@@ -477,7 +485,7 @@ final class AppModel {
     private(set) var canChat = false
 
     /// How many messages wait in the chats that are not muted: the badge on
-    /// the entry to the conversations.
+    /// the Chats tab.
     private(set) var unreadChatCount = 0
 
     /// The person's own id, which of a chat's members they are; nil until

@@ -1,43 +1,88 @@
 import SwiftUI
 import TeaNodeKit
 
-/// MailScreen is the dashboard's mailbox on a phone: the folder being read,
-/// the folders in the side menu, a conversation a tap away.
+/// MailScreen is the dashboard's mailbox on a phone: the list of mailboxes'
+/// folders, each folder a tap away, and in it a conversation.
 struct MailScreen: View {
     let mail: MailModel
-    @Binding var place: MailPlace?
     @Binding var composing: ComposeStart?
     @Environment(AppModel.self) private var app
     @State private var path = NavigationPath()
 
     var body: some View {
         NavigationStack(path: $path) {
-            Group {
-                switch place {
-                case .subscriptions:
-                    SubscriptionsList(mail: mail)
-                case .some(let place):
-                    ThreadList(mail: mail, place: place, composing: $composing)
-                        .id(place)
-                case nil:
-                    if mail.isLoaded {
-                        ContentUnavailableView("No mailbox yet", systemImage: "tray", description: Text("A mailbox is made when an address is given to you on your server."))
-                    } else {
-                        ProgressView()
-                    }
+            MailboxesList(mail: mail, composing: $composing)
+                .navigationDestination(for: MailPlace.self) { place in
+                    MailPlaceScreen(mail: mail, place: place, composing: $composing)
                 }
-            }
-            .toolbar { MenuButton() }
-            .navigationDestination(for: OpenedThread.self) { opened in
-                MailThreadScreen(mail: mail, opened: opened, composing: $composing)
-            }
+                .navigationDestination(for: MailSearchStart.self) { start in
+                    MailSearchScreen(mail: mail, start: start, composing: $composing)
+                }
+                .navigationDestination(for: OpenedThread.self) { opened in
+                    MailThreadScreen(mail: mail, opened: opened, composing: $composing)
+                }
         }
-        .onChange(of: place) { path = NavigationPath() }
+        // Another mailbox has other folders, so what was open of the last gives way.
+        .onChange(of: mail.currentMailboxId) { path = NavigationPath() }
         .onChange(of: app.openedMailItemId, initial: true) { _, itemId in
             guard let itemId else { return }
             app.openedMailItemId = nil
             path = NavigationPath()
+            // Back from the conversation lands in the inbox, where mail is read.
+            if let inbox = mail.folder(kind: "inbox") { path.append(MailPlace.folder(inbox.id)) }
             path.append(OpenedThread(itemId: itemId, folderId: nil))
+        }
+        .onChange(of: app.openedPartSearch, initial: true) { _, search in
+            guard let search, search.area == .mail else { return }
+            app.openedPartSearch = nil
+            path = NavigationPath()
+            path.append(MailSearchStart(words: search.words))
+        }
+        #if DEBUG
+            // `-TeaNodeScreen mail-inbox`: the inbox is opened from the list of folders.
+            .task(id: mail.isLoaded) {
+                guard DemoServer.isRequested, DemoServer.screen == "mail-inbox", path.isEmpty, let inbox = mail.folder(kind: "inbox") else { return }
+                path.append(MailPlace.folder(inbox.id))
+            }
+        #endif
+    }
+}
+
+/// MailPlaceScreen is one place the list of mailboxes opens: a folder, Starred
+/// or Priority as the conversations in them, or the mailing lists.
+struct MailPlaceScreen: View {
+    let mail: MailModel
+    let place: MailPlace
+    @Binding var composing: ComposeStart?
+
+    var body: some View {
+        switch place {
+        case .subscriptions:
+            SubscriptionsList(mail: mail)
+        default:
+            ThreadList(mail: mail, place: place, composing: $composing)
+        }
+    }
+}
+
+/// MailSearchStart is a search of the mail in every folder, opened with its
+/// words typed, from the Search tab.
+struct MailSearchStart: Hashable {
+    let words: String
+}
+
+/// MailSearchScreen is the conversations in every folder that match the words
+/// the Search tab was given, as the folder lists show a search made there.
+struct MailSearchScreen: View {
+    let mail: MailModel
+    let start: MailSearchStart
+    @Binding var composing: ComposeStart?
+
+    var body: some View {
+        if let inbox = mail.folder(kind: "inbox") {
+            ThreadList(mail: mail, place: .folder(inbox.id), composing: $composing, searchedWords: start.words)
+        } else {
+            ProgressView()
         }
     }
 }
@@ -49,43 +94,27 @@ struct OpenedThread: Hashable {
     let folderId: String?
 }
 
-/// MailboxesList is the rail: the mailbox picker, the Inbox, Starred,
-/// Priority, the pinned folders, the rest of the tree and the lists.
+/// MailboxesList is the mail's first screen: the Inbox, Starred, Priority,
+/// the pinned folders, the rest of the tree and the lists, each opening its
+/// conversations, with the mailbox picker when there is more than one.
 struct MailboxesList: View {
     let mail: MailModel
-    let current: MailPlace?
     @Binding var composing: ComposeStart?
-    /// Rows shown above the folders, as the side menu puts its sections
-    /// there.
-    var leading: AnyView?
-    /// The id of the list's last row, which the side menu scrolls to so that
-    /// the folders are in view when it opens. Nil where nothing scrolls to it.
-    var lastRowId: String?
-    let onChoose: (MailPlace) -> Void
 
     var body: some View {
         List {
-            if let leading {
-                Section { leading }
-                    .listSectionSeparator(.hidden)
-            }
             if let entry = mail.current, let inbox = mail.folder(kind: "inbox") {
                 Section {
-                    FolderLink(place: .folder(inbox.id), name: String(localized: "Inbox"), systemImage: "tray", count: inbox.unread, current: current, onChoose: onChoose)
+                    FolderLink(place: .folder(inbox.id), name: String(localized: "Inbox"), systemImage: "tray", count: inbox.unread)
                     ForEach(childRows(of: inbox.id), id: \.folder.id) { row in
-                        FolderLink(place: .folder(row.folder.id), name: row.folder.name, systemImage: "folder", count: row.folder.unread, current: current, onChoose: onChoose)
+                        FolderLink(place: .folder(row.folder.id), name: row.folder.name, systemImage: "folder", count: row.folder.unread)
                             .padding(.leading, CGFloat(min(row.depth, 3)) * 16)
                     }
-                    FolderLink(place: .starred, name: String(localized: "Starred"), systemImage: "star", count: entry.starredUnread, current: current, onChoose: onChoose)
+                    FolderLink(place: .starred, name: String(localized: "Starred"), systemImage: "star", count: entry.starredUnread)
                     if mail.mailbox?.agent?.isSorting == true {
-                        FolderLink(place: .priority, name: String(localized: "Priority"), systemImage: "exclamationmark.circle", count: entry.priorityUnread, current: current, onChoose: onChoose)
+                        FolderLink(place: .priority, name: String(localized: "Priority"), systemImage: "exclamationmark.circle", count: entry.priorityUnread)
                     }
-                } header: {
-                    // In the side menu, the mail under the parts of TeaNode
-                    // is titled as Finance's sections are.
-                    if leading != nil { Text("Mail") }
                 }
-                .listSectionSeparator(.hidden)
                 let rows = mail.railRows
                 if !rows.pinned.isEmpty {
                     Section("Pinned") {
@@ -93,32 +122,29 @@ struct MailboxesList: View {
                             folderLink(row)
                         }
                     }
-                    .listSectionSeparator(.hidden)
                 }
                 Section("Folders") {
                     ForEach(rows.rest.filter { $0.folder.kind != "inbox" && !isUnderInbox($0.folder) }, id: \.folder.id) { row in
                         folderLink(row)
                     }
                 }
-                .listSectionSeparator(.hidden)
                 Section {
-                    FolderLink(place: .subscriptions, name: String(localized: "Subscriptions"), systemImage: "newspaper", count: 0, current: current, onChoose: onChoose, scrollId: lastRowId)
+                    FolderLink(place: .subscriptions, name: String(localized: "Subscriptions"), systemImage: "newspaper", count: 0)
                 }
-                .listSectionSeparator(.hidden)
             }
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Mail")
         .refreshable { await mail.load() }
         .overlay {
             if mail.isLoaded, mail.entries.isEmpty {
                 ContentUnavailableView("No mailbox yet", systemImage: "tray", description: Text("A mailbox is made when an address is given to you on your server."))
-            } else if !mail.isLoaded, leading == nil {
-                // Not in the side menu, whose parts are there while the
-                // folders are read, as the chats' list does.
+            } else if !mail.isLoaded {
                 ProgressView()
             }
         }
         .toolbar {
-            MenuBrand()
+            MoreBackButton()
             if mail.entries.count > 1 {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -146,7 +172,7 @@ struct MailboxesList: View {
     private func folderLink(_ row: (folder: MailFolder, depth: Int)) -> some View {
         FolderLink(
             place: .folder(row.folder.id), name: MailNames.folder(row.folder), systemImage: MailNames.symbol(row.folder),
-            count: row.folder.kind == "archive" ? 0 : row.folder.unread, current: current, onChoose: onChoose
+            count: row.folder.kind == "archive" ? 0 : row.folder.unread
         )
         .padding(.leading, CGFloat(min(row.depth, 3)) * 16)
     }
@@ -173,22 +199,16 @@ struct MailboxesList: View {
     }
 }
 
-/// FolderLink is a row of the rail: its name, its symbol and its unread
-/// count.
+/// FolderLink is a row of the list of folders: its name, its symbol and its
+/// unread count, opening the place.
 struct FolderLink: View {
     let place: MailPlace
     let name: String
     let systemImage: String
     let count: Int64
-    let current: MailPlace?
-    let onChoose: (MailPlace) -> Void
-    /// The id a scroll view can scroll to this row by, when something does.
-    var scrollId: String?
 
     var body: some View {
-        Button {
-            onChoose(place)
-        } label: {
+        NavigationLink(value: place) {
             LabeledContent {
                 if count > 0 {
                     Text(count, format: .number)
@@ -199,28 +219,6 @@ struct FolderLink: View {
                 Label(name, systemImage: systemImage)
                     .foregroundStyle(.primary)
             }
-            .contentShape(.rect)
-        }
-        .foregroundStyle(.primary)
-        // Before menuRow, so the row's hidden separator stays the outermost of
-        // its modifiers.
-        .modifier(OptionalScrollId(scrollId: scrollId))
-        .menuRow(isSelected: place == current)
-        .accessibilityAddTraits(place == current ? .isSelected : [])
-    }
-}
-
-/// OptionalScrollId gives a row an id to scroll to, when it has one: an id of
-/// nothing on every other row would make them all the same row.
-private struct OptionalScrollId: ViewModifier {
-    let scrollId: String?
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if let scrollId {
-            content.id(scrollId)
-        } else {
-            content
         }
     }
 }
@@ -358,11 +356,18 @@ struct ThreadList: View {
     @State private var isSorting = false
     @State private var isConfirmingEmpty = false
 
-    init(mail: MailModel, place: MailPlace, composing: Binding<ComposeStart?>) {
+    /// `searchedWords` opens the list already searching every folder for them,
+    /// as the Search tab's Show all in Mail does.
+    init(mail: MailModel, place: MailPlace, composing: Binding<ComposeStart?>, searchedWords: String? = nil) {
         self.mail = mail
         self.place = place
         _composing = composing
-        _list = State(initialValue: ThreadListModel(place: place))
+        let model = ThreadListModel(place: place)
+        if let searchedWords {
+            model.filter.searchText = searchedWords
+            model.filter.isEverywhere = true
+        }
+        _list = State(initialValue: model)
     }
 
     private var folder: MailFolder? {
@@ -446,6 +451,9 @@ struct ThreadList: View {
         .refreshable { await list.load(mail) }
         .overlay { emptyState }
         .toolbar { toolbar }
+        // The bar at the bottom is this list's own (New message, and the actions of Select),
+        // so the tab bar gives way to it.
+        .toolbarVisibility(.hidden, for: .tabBar)
         .sheet(isPresented: $isNarrowing) {
             NarrowSheet(filter: $list.filter) { reload() }
         }

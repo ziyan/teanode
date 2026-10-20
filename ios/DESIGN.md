@@ -117,7 +117,7 @@ its pull request is opened.
   words, so the button carries `.tint(.red)` for its symbol.
 - A symbol is the color of its words. Actions are green, or red, and grey
   while they cannot be pressed; a row that opens a page or shows something
-  has its symbol in the text color, as the side menu's parts do. A list row
+  has its symbol in the text color, as the More list's parts do. A list row
   greens its symbol whatever its words are, so in a form or list a button's
   label takes `.actionColor()` and any other label with a symbol
   `.foregroundStyle(.primary)` (`make check-button-colors` checks both).
@@ -125,30 +125,55 @@ its pull request is opened.
   summary: show them whole, in body text, one row each. A long list moves to
   a screen of its own behind a row, as iOS Settings does; it does not open in
   place with a disclosure arrow.
-- A swipe right anywhere on a screen opens the side menu, so rows have no
-  swipe-right actions there; what a left swipe does not hold goes in the
-  long-press menu. The iPad's column never slides, but the screens keep the
-  rule, since the same screen is the iPhone's.
-- In the side menu itself a swipe left closes it, so its rows have no swipe
-  actions at all: everything a row offers is in its long-press menu.
-- The swipe that opens the side menu never presses what it starts on: a row,
-  a photo or a person under the finger does not open as the menu does, and a
-  sideways strip scrolled away from its start scrolls back instead of opening
-  the menu (`SidePanelPan` in `CommonViews.swift`).
+- Screens are pushed on the tab's own stack, so the swipe back from the left
+  edge works everywhere. A part opened from More is shown over More's list
+  rather than pushed, and `MoreSwipeBack` gives its first screen the same
+  swipe from the left edge. A row's swipe actions are for the obvious things;
+  whatever they do not hold goes in the long-press menu.
+
+## Navigation
+
+- The app is a `TabView` (`.tabViewStyle(.sidebarAdaptable)`) of icons only:
+  three parts the person chooses (Chats, Mail and Photos at first; More's
+  Edit button changes them, kept on the device), More and Search
+  (`Tab(role: .search)`), five in all: a sixth makes iOS add a More of its
+  own over ours. On the iPad the sidebar is arranged with the system's own
+  customization (`TabViewCustomization`). A tab's name is its accessibility label, so no
+  title shows under an icon. The bar shrinks to a pill while a list scrolls
+  (`.tabBarMinimizeBehavior(.onScrollDown)`).
+- A tab with something waiting has a badge: unread chats on Chats, coding
+  sessions that ask on More (where Coding is).
+- Each part keeps its own navigation inside it, never in a side menu.
+  Chats opens on the list of conversations, and a conversation is pushed on it.
+  Mail opens on its Mailboxes list, which pushes a folder. Finance, Location and
+  Photos choose their list in the menu under the screen's title
+  (`toolbarTitleMenu`), the way Files names its place.
+- More is a grouped list: Every day (Calendar, Contacts, Location, Health), Work (Coding,
+  Knowledge, Recordings), Plans (Goals, Ideas), Money (Finance), then Settings. A part
+  the server does not offer is left out. A part opened from it shows a button at
+  the top left that goes back to the list (`MoreBackButton`).
+- A screen with a bar of its own at the bottom, such as a conversation with its
+  composer, a mail with its actions, or a list in Select mode, hides the tab
+  bar (`.toolbarVisibility(.hidden, for: .tabBar)`) while it is on screen.
+- Search finds the person's words across chats, mail, contacts, photos, memory,
+  documents, recordings, places and finance at once, a few results from each,
+  grouped by part. A row opens the item in its part; Show all opens the part
+  with the words in its own search.
 
 ## The iPad
 
 The same app runs on the iPad, and a screen is designed once for both. What
 differs is decided by the window's horizontal size class (`.regular` or
-`.compact`), never by the device, so Slide Over and a narrow Split View get
-the iPhone's layout.
+`.compact`), so Slide Over and a narrow Split View get the iPhone's layout.
+Only the tabs also ask whether the device is an iPad, as below.
 
-- At regular width the side menu is a 320 point column that stays open at the
-  left, in landscape and portrait, with a hairline between it and the screen.
-  It cannot be hidden, so no screen shows a menu button there: `MenuButton`
-  draws nothing when `isMenuPinned` is set, and a screen never opens the menu
-  itself. Nothing slides, so the swipe that opens the menu does not exist
-  there either.
+- At regular width on the iPad the tabs are the system's sidebar
+  (`.sidebarAdaptable`), with the names shown. The larger iPhones are of
+  regular width when turned sideways too, but their tab bar still holds five,
+  so the tabs are the iPhone's there. On the iPad, the parts that are under
+  More on the phone are tabs in the sidebar's groups (`TabSection`): Every
+  day, Work, Plans and Money. There is
+  no More tab there, so no screen shows `MoreBackButton`.
 - A screen is laid out for whatever width it is given, from about 400 to 1000
   points. Lists, forms and grids adapt by themselves. Text that is read in
   lines, such as a conversation or a mail, is kept to 720 points and
@@ -157,10 +182,9 @@ the iPhone's layout.
 - Anything that the system shows as a popover on the iPad (a share sheet, a
   confirmation) needs an anchor: attach a confirmation to its control, and give
   a share sheet presented from code a source view and rectangle.
-- The iPad turns every way, and the column is there in both: what decides
-  is the width of the window, not the way the iPad is held. CI photographs it
-  upright only, since an iPad app that turns every way follows how the
-  simulator is held and cannot turn itself.
+- The iPad turns every way: what decides is the width of the window, not the
+  way the iPad is held. CI photographs it upright only, since an iPad app that
+  turns every way follows how the simulator is held and cannot turn itself.
 
 ## Motion and feel
 

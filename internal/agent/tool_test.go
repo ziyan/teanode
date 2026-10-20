@@ -87,9 +87,9 @@ func TestSplitDefersBeyondTheThresholdAndSearchFinds(t *testing.T) {
 	if len(sent) != 3 || len(deferred) != len(offered)-3 {
 		t.Fatalf("sent %d deferred %d", len(sent), len(deferred))
 	}
-	found := Search(deferred, "check dns records", 5)
-	if len(found) == 0 || found[0].Name != "dns_check" {
-		t.Fatalf("search should find dns_check first: %v", found)
+	found := SearchTools(sent, deferred, "check dns records", 5)
+	if len(found.Loadable) != 1 || found.Loadable[0].Name != "dns_check" {
+		t.Fatalf("search should find dns_check alone: %v", found.Loadable)
 	}
 	sent, _ = Split(offered, map[string]bool{"dns_check": true}, false)
 	if len(sent) != 4 {
@@ -304,8 +304,12 @@ func TestTheCatalogStaysShort(t *testing.T) {
 	// its verbs and has no other tool's to join: a circle is a set of people,
 	// which nothing else is. 69 since health, a new thing with its own
 	// permission: the person's Health data, read only, whose verbs no other
-	// tool has.
-	if count := len(catalog.All()); count > 69 {
+	// tool has. 70 since search, which is not an area's verb but the one
+	// question across all of them (the person's words, looked for in nine
+	// places at once, a few results from each); each area's own tool finds
+	// more of its area, and this is the tool a model reaches for first when it
+	// does not know which that is.
+	if count := len(catalog.All()); count > 70 {
 		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
 	}
 

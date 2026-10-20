@@ -166,17 +166,17 @@ func TestTheNightIsOfferedThePersonsWholeToolKit(t *testing.T) {
 		t.Fatal("the night asked the model nothing")
 	}
 	// The computer's family is in the round itself, not waiting behind
-	// tool_search, and so is the graph the night has always filed to.
+	// tool_search, and so is the graph the night has always filed to and
+	// the sources it reads with: the two it is held to reading by name.
 	offered := toolsNamed(asked[0])
-	for _, wanted := range []string{"memory", "shell", "filesystem", "terminal"} {
+	for _, wanted := range []string{"memory", "knowledge", "shell", "filesystem", "terminal"} {
 		if !offered[wanted] {
 			t.Errorf("the night is offered %s: %v", wanted, asked[0])
 		}
 	}
 	// And it is not the pair any more. A short prompt still defers the
-	// tools nobody named -- knowledge among them, which tool_search
-	// loads -- so what says the filter is gone is the breadth of what is
-	// left rather than any one name.
+	// tools nobody named, which tool_search loads, so what says the filter
+	// is gone is the breadth of what is left rather than any one name.
 	for _, wanted := range []string{"web_search", "schedule", "share_file"} {
 		if !offered[wanted] {
 			t.Errorf("the night is no longer filtered to the lookup pair, so %s is offered too: %v", wanted, asked[0])

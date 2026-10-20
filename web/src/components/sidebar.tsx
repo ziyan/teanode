@@ -46,6 +46,7 @@ import { folderLabel, railRows, useMailboxes } from '../mailboxes'
 import { FolderKindIcon } from './folderIcon'
 import { MailboxFolder } from '../api'
 import { Select } from './select'
+import { SidebarSearch } from './sidebarSearch'
 import { Tooltip } from './tooltip'
 
 // permission is what a row needs, when it needs one: a domain permission held
@@ -190,6 +191,7 @@ export function Sidebar({
   collapsed,
   onToggle,
   open,
+  onOpen,
   onClose,
   account,
 }: {
@@ -200,6 +202,8 @@ export function Sidebar({
   // overlay that is opened and closed rather than narrowed.
   onToggle?: () => void
   open: boolean
+  // Opens the overlay a phone has for a rail, for the search key.
+  onOpen?: () => void
   onClose: () => void
   account?: React.ReactNode
 }) {
@@ -250,6 +254,7 @@ export function Sidebar({
       '/health',
       '/circles',
       '/browser',
+      '/search',
     ].some((path) => location.pathname === path || location.pathname.startsWith(path + '/')) ||
     location.pathname === '/mailbox' ||
     location.pathname.startsWith('/mailbox/') ||
@@ -330,6 +335,17 @@ export function Sidebar({
             </Tooltip>
           )}
         </div>
+
+        {/* Across everything the person has, above the rail's own rows. Only
+            for somebody the search can be for: the console has no chats,
+            mail or photos of its own to look through. */}
+        {session.userId && (
+          <SidebarSearch
+            isHidden={collapsed || (!onToggle && !open)}
+            onReveal={() => (collapsed ? onToggle?.() : onOpen?.())}
+            onSubmitted={onClose}
+          />
+        )}
 
         <nav onClick={onClose}>
           {/* The way back out. First, and on its own, because it is the one

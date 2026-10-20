@@ -73,7 +73,6 @@ struct HealthBarsChart: View {
         }
         .chartXScale(domain: plan.periodKeys)
         .chartXSelection(value: $selectedKey)
-        .keepsSidePanelClosed()
         .healthChartAxes(plan: plan)
         .frame(height: 200)
     }
@@ -109,7 +108,6 @@ struct HealthStagesChart: View {
             .chartLegend(.hidden)
             .chartXScale(domain: plan.periodKeys)
             .chartXSelection(value: $selectedKey)
-            .keepsSidePanelClosed()
             .healthChartAxes(plan: plan)
             .frame(height: 200)
         }
@@ -151,7 +149,6 @@ struct HealthLevelChart: View {
         }
         .chartXScale(domain: plan.periodKeys)
         .chartXSelection(value: $selectedKey)
-        .keepsSidePanelClosed()
         // Not from zero: a heart rate or a weight moves by a little of
         // itself, and from zero every line would look flat.
         .chartYScale(domain: .automatic(includesZero: false))

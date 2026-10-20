@@ -35,7 +35,6 @@ struct CalendarScreen: View {
             content
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(model.viewMode == .month ? .inline : .large)
-                .withoutSwipeBack()
                 .toolbar { toolbar }
                 .refreshable {
                     if model.viewMode == .reminders {
@@ -139,7 +138,7 @@ struct CalendarScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        MenuButton()
+        MoreBackButton()
         // Search and add at the top right, as Apple's Calendar has them.
         ToolbarItemGroup(placement: .topBarTrailing) {
             if model.viewMode != .reminders {

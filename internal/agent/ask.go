@@ -1174,6 +1174,18 @@ func (self *AskRun) turn() error {
 	for name := range calledIn(history) {
 		self.loaded[name] = true
 	}
+	// The tools a run with nobody present is held to reading by name are
+	// the ones it was given to look with: in the round from the start. Left
+	// behind tool_search, nearly every batch a dream read spent a round
+	// loading the knowledge tool its frame tells it to read with, three
+	// thousand searches in six weeks on one server.
+	if settings.Headless {
+		for name, isReadOnly := range settings.ReadOnlyTools {
+			if isReadOnly {
+				self.loaded[name] = true
+			}
+		}
+	}
 	// The skills an operator installed, which everybody is offered. They
 	// wait behind tool_search like the rest, each skill named on a line of
 	// its own in the prompt: loaded from the start they had grown to forty

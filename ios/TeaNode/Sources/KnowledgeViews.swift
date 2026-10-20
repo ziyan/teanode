@@ -112,6 +112,12 @@ struct KnowledgeFolder: View {
         .listSectionSpacing(.compact)
         .navigationTitle(folderPath.isEmpty ? String(localized: "Knowledge") : title)
         .searchable(text: $searchText, prompt: "Search pages and facts")
+        // The words the Search tab's Show all in Knowledge carries, for the first folder.
+        .onChange(of: app.openedPartSearch, initial: true) { _, search in
+            guard folderPath.isEmpty, let search, search.area == .memory else { return }
+            app.openedPartSearch = nil
+            searchText = search.words
+        }
         .task(id: searchText) {
             guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty else {
                 found = nil

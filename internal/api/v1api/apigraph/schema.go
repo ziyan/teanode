@@ -73,6 +73,7 @@ type Query interface {
 	PhotoPlaceQuery
 	RecordingPlaybackQuery
 	RecordingTranscriptQuery
+	SearchQuery
 	AgentVoiceQuery
 	AgentComputerQuery
 	AgentBackgroundQuery

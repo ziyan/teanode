@@ -106,6 +106,23 @@ it('opens no card unless a link names one', async () => {
   expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('GetContact'))).toBe(false)
 })
 
+it('asks the server for the words in the address and says so over the table, which takes them off', async () => {
+  answer()
+  show('/contacts?search=guest')
+  await screen.findByText('Fixture Guest')
+  const asked = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('ListContacts'))
+  expect(asked?.[1]).toMatchObject({ addressBookId: 'book-1', query: 'guest' })
+  fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+  await waitFor(() => expect(shownSearch).not.toContain('search='))
+  await waitFor(() => {
+    const lastAsked = vi
+      .mocked(graphql)
+      .mock.calls.filter(([document]) => document.includes('ListContacts'))
+      .pop()
+    expect(lastAsked?.[1]).toMatchObject({ query: null })
+  })
+})
+
 it('offers to remove the picture of a contact that has one, and only then', async () => {
   answer(false)
   show('/contacts?contact=card-2')
