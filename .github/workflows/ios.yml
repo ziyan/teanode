@@ -570,6 +570,20 @@ jobs:
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
           done
+          # A person's card (docs/planning/person-card-execplan.md), each in light, dark and the largest
+          # text: Sam's at half height and whole, Alex's with no contact linked, a bookshop's from the
+          # Contacts list, and the card over the Location map.
+          for person_card_screen in person-card person-card-full person-card-unlinked; do
+            shoot "$person_card_screen-light" light large -TeaNodeDemo -TeaNodeTab agent -TeaNodeScreen "$person_card_screen"
+            shoot "$person_card_screen-dark" dark large -TeaNodeDemo -TeaNodeTab agent -TeaNodeScreen "$person_card_screen"
+            shoot "$person_card_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab agent -TeaNodeScreen "$person_card_screen"
+          done
+          shoot person-card-contact-light light large -TeaNodeDemo -TeaNodeTab contacts -TeaNodeScreen person-card-contact
+          shoot person-card-contact-dark dark large -TeaNodeDemo -TeaNodeTab contacts -TeaNodeScreen person-card-contact
+          shoot person-card-contact-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab contacts -TeaNodeScreen person-card-contact
+          shoot location-person-card-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-card
+          shoot location-person-card-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-card
+          shoot location-person-card-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-person-card
           # The chats: a direct one, a circle's, its members sheet, and the menu of agents an @ offers
           # (the list of conversations is the Chats tab's, shot above).
           for chat_screen in chat-direct chat-group chat-members chat-mention; do

@@ -29,7 +29,10 @@
             }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if query.contains("SearchEverything") {
+            if let personCardAnswer = Self.personCardAnswering(query: query, body: request.httpBody) {
+                // First: its document names fields (photos, recordings, mail) that the operations below are looked for by.
+                answer = personCardAnswer
+            } else if query.contains("SearchEverything") {
                 answer = Self.searchEverything(answering: request.httpBody)
             } else if let financeEntryAnswer = Self.financeEntryAnswer(query: query) {
                 answer = financeEntryAnswer

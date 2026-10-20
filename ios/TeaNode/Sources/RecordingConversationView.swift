@@ -27,6 +27,11 @@ final class RecordingConversationModel {
     var memorySegment: RecordingTranscriptSegment?
     var selectedSegment: RecordingTranscriptSegment?
     var confirmedName = ""
+    /// The contact the person chose from the suggestions, and the name it was chosen under. The speaker is tied to it only
+    /// while the typed name is still that name.
+    var chosenContactAddressBookId = ""
+    var chosenContactId = ""
+    var chosenContactName = ""
     var correctionStartMS = ""
     var correctionEndMS = ""
     var isWholeGroup = false
@@ -61,6 +66,39 @@ final class RecordingConversationModel {
         transcriptRun = nil
         citation = nil
         isCapture = true
+    }
+
+    /// The contact the naming ties the speaker to: the one chosen from the suggestions, as long as the name is still the one
+    /// it was chosen under. Nil for a name that was typed.
+    var contactToTie: (addressBookId: String, contactId: String)? {
+        guard !chosenContactAddressBookId.isEmpty, !chosenContactId.isEmpty,
+            chosenContactName == confirmedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return nil }
+        return (chosenContactAddressBookId, chosenContactId)
+    }
+
+    /// The contact to send with a naming: none when the speaker is marked as the account's owner, who is not one of the contacts.
+    func contactToSend(isAccountOwner: Bool) -> (addressBookId: String, contactId: String)? {
+        guard !isAccountOwner else { return nil }
+        return contactToTie
+    }
+
+    /// Fills the name with a suggestion, and the contact with it when the suggestion is one.
+    func choose(_ suggestion: RecordingSpeakerNameSuggestion) {
+        confirmedName = suggestion.confirmedName
+        guard suggestion.hasContact else {
+            forgetChosenContact()
+            return
+        }
+        chosenContactAddressBookId = suggestion.addressBookId ?? ""
+        chosenContactId = suggestion.contactId ?? ""
+        chosenContactName = suggestion.confirmedName
+    }
+
+    private func forgetChosenContact() {
+        chosenContactAddressBookId = ""
+        chosenContactId = ""
+        chosenContactName = ""
     }
 
     var visibleSegments: [RecordingTranscriptSegment] { segments.filter { citation?.includes($0) ?? true } }
@@ -187,6 +225,7 @@ final class RecordingConversationModel {
             selectedSegment = segment
             speakerDraft = nil
             confirmedName = ""
+            forgetChosenContact()
             isWholeGroup = true
             isNaming = true
             return
@@ -195,6 +234,9 @@ final class RecordingConversationModel {
         selectedSegment = retained?.segment ?? segment
         speakerDraft = retained
         confirmedName = retained?.confirmedName ?? (startsBlank ? "" : segment.confirmedSpeakerName ?? "")
+        chosenContactAddressBookId = retained?.contactAddressBookId ?? ""
+        chosenContactId = retained?.contactId ?? ""
+        chosenContactName = chosenContactId.isEmpty ? "" : confirmedName.trimmingCharacters(in: .whitespacesAndNewlines)
         correctionStartMS = String(retained?.passageStartMS ?? segment.segmentStartMS)
         correctionEndMS = String(retained?.passageEndMS ?? segment.segmentEndMS)
         isWholeGroup = retained?.isWholeGroup ?? false
@@ -259,6 +301,7 @@ final class RecordingConversationModel {
         selectedSegment = retained?.segment ?? segment
         speakerDraft = retained
         confirmedName = ""
+        forgetChosenContact()
         isWholeGroup = true
         correctionStartMS = String(segment.segmentStartMS)
         correctionEndMS = String(segment.segmentEndMS)
@@ -271,12 +314,13 @@ final class RecordingConversationModel {
     /// Names a speaker of a capture under way: from then on every piece, and the pieces still to come, show the name.
     private func nameTemporarySpeaker(label: String, confirmedName: String, isAccountOwner: Bool) async {
         guard !isSaving else { return }
+        let contact = contactToSend(isAccountOwner: isAccountOwner)
         isSaving = true
         defer { isSaving = false }
         do {
             try await connection.nameRecordingTemporarySpeaker(
                 recordingId: recordingId, speakerLabel: label, confirmedName: confirmedName.trimmingCharacters(in: .whitespacesAndNewlines),
-                isAccountOwner: isAccountOwner)
+                isAccountOwner: isAccountOwner, contactAddressBookId: contact?.addressBookId, contactId: contact?.contactId)
             isNaming = false
             selectedSegment = nil
             await loadPage(isAdditional: false)
@@ -325,6 +369,9 @@ final class RecordingConversationModel {
                 else { throw TeaNodeError.refused(String(localized: "Choose a positive interval within this passage.")) }
                 draft.confirmedName = confirmedName.trimmingCharacters(in: .whitespacesAndNewlines)
                 draft.isAccountOwner = isAccountOwner ? true : nil
+                let contact = contactToSend(isAccountOwner: isAccountOwner)
+                draft.contactAddressBookId = contact?.addressBookId
+                draft.contactId = contact?.contactId
                 draft.isWholeGroup = isWholeGroup
                 draft.passageStartMS = passageStartMS
                 draft.passageEndMS = passageEndMS
@@ -337,7 +384,7 @@ final class RecordingConversationModel {
                 recordingId: draft.recordingId, expectedSourceGeneration: draft.expectedSourceGeneration,
                 clientCorrectionId: draft.clientCorrectionId, confirmedName: draft.confirmedName,
                 segment: draft.segment, isWholeGroup: draft.isWholeGroup, passageStartMS: draft.passageStartMS, passageEndMS: draft.passageEndMS,
-                isAccountOwner: draft.isAccountOwner)
+                isAccountOwner: draft.isAccountOwner, contactAddressBookId: draft.contactAddressBookId, contactId: draft.contactId)
             RecordingSpeakerDrafts.finish(draft)
             speakerDraft = nil
             isNaming = false
@@ -653,6 +700,9 @@ struct RecordingSpeakerNamingSheet: View {
                             "Off changes this passage only. Naming is free metadata. Suitable voice samples are selected automatically, and learned material is reconciled."
                         )
                     }
+                    if model.contactToTie != nil {
+                        Text("Linked to the contact with this name.")
+                    }
                 }
                 .disabled(model.speakerDraft?.hasSubmittedRequest == true)
                 // Names from the voices already named, the agent's memory
@@ -661,7 +711,7 @@ struct RecordingSpeakerNamingSheet: View {
                     Section("Suggestions") {
                         ForEach(suggestions) { suggestion in
                             Button {
-                                model.confirmedName = suggestion.confirmedName
+                                model.choose(suggestion)
                             } label: {
                                 Label(suggestion.confirmedName, systemImage: Self.symbolName(suggestion.speakerNameSource))
                                     .actionColor()

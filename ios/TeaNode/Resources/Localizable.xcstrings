@@ -305,6 +305,22 @@
         }
       }
     },
+    "%@ does not share where they are with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はあなたに現在地を共有していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@没有向你共享位置。"
+          }
+        }
+      }
+    },
     "%@ for %@": {
       "localizations": {
         "ja": {
@@ -13169,6 +13185,22 @@
         }
       }
     },
+    "Choose which contact is %@. Only you see this.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@にあたる連絡先を選んでください。あなただけに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择哪位联系人是%@。只有你能看到。"
+          }
+        }
+      }
+    },
     "Choose…": {
       "localizations": {
         "ja": {
@@ -23585,6 +23617,22 @@
         }
       }
     },
+    "Link a contact to see mail, photos, recordings and memory about %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先をリンクすると、%@に関するメール、写真、録音、メモリーが表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关联联系人后，即可查看与%@有关的邮件、照片、录音和记忆。"
+          }
+        }
+      }
+    },
     "Link confirmed": {
       "localizations": {
         "ja": {
@@ -23709,6 +23757,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已关联 %@"
+          }
+        }
+      }
+    },
+    "Linked to the contact with this name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じ名前の連絡先にリンクされます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将关联到同名联系人。"
           }
         }
       }
@@ -30065,6 +30129,22 @@
         }
       }
     },
+    "Opens their card": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カードを開きます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开其名片"
+          }
+        }
+      }
+    },
     "Optional": {
       "localizations": {
         "ja": {
@@ -31309,6 +31389,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "作用于现在和将来所有域名的权限"
+          }
+        }
+      }
+    },
+    "person-card-message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发信息"
           }
         }
       }
@@ -39005,6 +39107,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在说话…开口即可打断"
+          }
+        }
+      }
+    },
+    "Speaks in %lld passages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の発言があります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %lld 段内容中发言"
+          }
+        }
+      }
+    },
+    "Speaks in 1 passage": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 件の発言があります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 1 段内容中发言"
           }
         }
       }
@@ -60012,6 +60146,22 @@
         }
       }
     },
+    "Your %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的%@"
+          }
+        }
+      }
+    },
     "Group name": {
       "localizations": {
         "ja": {
@@ -65000,6 +65150,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "到访"
+          }
+        }
+      }
+    },
+    "Visits and places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訪問と場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到访和地点"
           }
         }
       }

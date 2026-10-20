@@ -103,6 +103,16 @@ final class AppModel {
     /// clears it; the app shell clears it when Photos cannot be shown.
     var openedPhotoPerson: OpenedPhotoPerson?
 
+    /// The person whose card is open as a sheet over whatever is on screen:
+    /// a chat's author, a row on the Location map, a member of a circle. Any
+    /// screen sets it; the app shell presents the card and clears it when the
+    /// card is closed.
+    var openedPerson: PersonCardTarget?
+
+    /// A collection of Photos to open on, such as the albums, from the person's
+    /// card. Photos takes it and clears it.
+    var openedPhotoSection: PhotoSection?
+
     /// An address to write to, from a contact: compose opens with it.
     var composingTo: String?
 
@@ -1142,6 +1152,9 @@ struct HealthLink: Equatable {
     let healthType: String?
     /// Whether to open the Health settings.
     let isSettings: Bool
+    /// The person sharing Health whose data to show, when it is not the
+    /// person's own: the card of that person asks for it.
+    var userId: String? = nil
 }
 
 /// LocationLink is what an address of the Location page asks for.

@@ -360,20 +360,21 @@ struct CircleDetailView: View {
         }
     }
 
-    /// A member's row. Somebody else's opens what they are to the person when
-    /// pressed, so saying "my father" does not wait on finding the swipe.
+    /// A member's row. Somebody else's opens their card when pressed, where
+    /// what they are to the person is said too; the swipe and the long press
+    /// keep the Relationship sheet one move away.
     @ViewBuilder
     private func memberRow(_ member: CircleMember, isCurrentUser: Bool) -> some View {
         if isCurrentUser {
             MemberRow(member: member, isCurrentUser: true)
         } else {
             Button {
-                relationshipMember = member
+                AppModel.shared.openedPerson = .account(userId: member.userId)
             } label: {
                 MemberRow(member: member, isCurrentUser: false)
             }
             .foregroundStyle(.primary)
-            .accessibilityHint("Says what they are to you")
+            .accessibilityHint("Opens their card")
         }
     }
 
@@ -891,7 +892,7 @@ private struct CircleForm: View {
 
 // MARK: - Words
 
-private extension CircleKind {
+extension CircleKind {
     /// How the screens name a circle's kind.
     var title: String {
         switch self {
