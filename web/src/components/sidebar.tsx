@@ -254,6 +254,7 @@ export function Sidebar({
       '/health',
       '/circles',
       '/browser',
+      '/people',
       '/search',
     ].some((path) => location.pathname === path || location.pathname.startsWith(path + '/')) ||
     location.pathname === '/mailbox' ||

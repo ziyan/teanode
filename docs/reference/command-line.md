@@ -301,6 +301,8 @@ people are named by username.
     teanode circle show <circle-id>                      # members, roles, and for an admin who is still being waited for
     teanode circle role <circle-id> personb admin        # or member
     teanode circle people                                # everybody you share a circle with, once each (the username where there is no name), and what each is to you
+    teanode circle person personb                        # personb's card: what they are to you, and a few items of everything of theirs you can see
+    teanode circle person --contact <address-book-id>/<contact-id>   # or one of your contacts; --limit sets the items of each part, 3 to 10
     teanode circle relate personb father                 # personb is your father; they are told and see you as their son or daughter
     teanode circle unrelate personb                      # take it away, for both of you
 
@@ -331,6 +333,17 @@ error names the circle and the `circle add` that finishes the job. Without
 `user:manage`, `circle add` says it needs that permission; it does not answer
 that the circle was not found.
 
+`person` prints a person's card, by username or account id, or by one of your
+contacts: your contact details for them, the circles you share, and a few items
+from each part of the app that concerns them. It prints where they are and
+their visits today, the health they share, photos of them and albums they
+shared, recent mail with them, recordings they speak in, and memory pages about
+them. A part says why it shows nothing: `not shared with you` when they have not
+shared it, or that no contact of yours is linked to them (`teanode contact link`
+links one), and a part you may not use is left out. Mail, photos of them,
+recordings and memory pages are found through your contact for them, so they
+need one. Somebody you share no circle with is not found, whoever they are.
+
 `relate` says what somebody you share a circle with is to you, so that "ask my
 father" or "where is my wife" reaches the right account. It prints what the two
 of you now are to each other: `Sam Lee is your father; they will see you as
@@ -355,7 +368,7 @@ name shares one otherwise.
 
 Who sees whom, and what a circle is for, is in `docs/subsystems/circles.md`.
 The agent does the same through its `circle` tool, with an action for each
-subcommand under the same word: `list`, `show`, `people`, `relate`, `unrelate`,
+subcommand under the same word: `list`, `show`, `people`, `person`, `relate`, `unrelate`,
 `create`, `rename`, `delete`, `invite`, `accept`, `decline`, `withdraw`, `role`,
 `remove` and `leave`, and for somebody who manages accounts `add`. Deleting a
 circle, removing a member and leaving are asked about as destructive, a role
@@ -630,6 +643,7 @@ takes `--json`.
 | `teanode recording temporary-speaker-name --recording-id ID --speaker-label "Speaker 1" --confirmed-name NAME` | name a speaker of a recording that is still being captured, by the label the timeline shows. The name applies to every piece heard so far and to the ones that follow, and a named speaker is recognized by voice in later recordings as any confirmed speaker is. It takes no generation, since the capture keeps going. `--me` says the speaker is you, and the name then defaults to your display name |
 | `teanode recording speaker-separate --recording-id ID --speaker-label "Speaker 9"` | give a label that was merged into an earlier speaker's voice back to itself: the label is the passage's `mergedTemporarySpeakerLabel`. Its passages read as its own label again, and the names that naming the earlier speaker wrote for it are taken off; naming the earlier speaker meanwhile named both. It takes no generation, since the capture keeps going |
 | `teanode recording speaker-confirm\|speaker-rename\|speaker-reset` | the same for a finished recording, by a passage or by a speaker of one transcription request; these check `--expected-source-generation` |
+| `teanode recording speaker-contact --recording-id ID --speaker-identity-id ID --expected-source-generation N (--contact BOOK-ID/CONTACT-ID \| --none)` | tie a confirmed speaker name to one of your contacts, so the contact's card lists the recordings that voice speaks in, or take it off its contact with `--none`. The contact has to be in one of your own address books (for your agent, one you gave it), and the name has to be on a passage of this recording. It changes nothing else: the name and its passages stay as they are. `speaker-confirm` and `temporary-speaker-name` take the same `--contact` to tie the name they give, replacing an earlier tie of that name; `speaker-names` shows `addressBookId` and `contactId` for a name that is a contact or is tied to one. Deleting the contact unties the name and keeps it |
 | `teanode recording speaker-undo` | takes a naming back whole, given any one of its corrections: every passage it named goes back to the speaker's label (`speaker-reset` takes back one passage); checks `--expected-source-generation` |
 
 ### teanode photo

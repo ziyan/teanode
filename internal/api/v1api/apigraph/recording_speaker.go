@@ -2,6 +2,8 @@ package apigraph
 
 import (
 	"context"
+	"strings"
+
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -23,6 +25,7 @@ type RecordingSpeakerMutation interface {
 	NameRecordingTemporarySpeaker(context.Context, NameRecordingTemporarySpeakerArguments) (bool, error)
 	SeparateRecordingTemporarySpeaker(context.Context, SeparateRecordingTemporarySpeakerArguments) (bool, error)
 	RenameRecordingSpeaker(context.Context, RenameRecordingSpeakerArguments) (*RecordingSpeakersView, error)
+	SetRecordingSpeakerContact(context.Context, SetRecordingSpeakerContactArguments) (*RecordingSpeakersView, error)
 	RemoveRecordingSpeakerCorrection(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)
 	UndoRecordingSpeakerNaming(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)
 	DeleteRecordingVoiceReference(context.Context, DeleteRecordingVoiceReferenceArguments) (*RecordingSpeakersView, error)
@@ -37,7 +40,10 @@ type RecordingSpeakersView struct {
 }
 
 // CorrectRecordingSpeakerArguments selects one request-local group or one passage.
-// Both passage bounds are -1 for the whole group.
+// Both passage bounds are -1 for the whole group. Given together, the contact
+// address book and contact ID tie the confirmed name to that contact of the
+// person's, replacing the contact the name was tied to before; left out, they
+// leave the name's tie as it is.
 type CorrectRecordingSpeakerArguments struct {
 	RecordingID                     string `json:"recordingId"`
 	ExpectedSourceGeneration        int64  `json:"expectedSourceGeneration"`
@@ -48,15 +54,22 @@ type CorrectRecordingSpeakerArguments struct {
 	LocalSpeakerID                  string `json:"localSpeakerId"`
 	PassageStartMS                  int64  `json:"passageStartMS"`
 	PassageEndMS                    int64  `json:"passageEndMS"`
+	ContactAddressBookID            string `json:"contactAddressBookId" graphapi:"nullable"`
+	ContactID                       string `json:"contactId" graphapi:"nullable"`
 }
 
 // NameRecordingTemporarySpeakerArguments names a speaker of a recording that is
 // still being captured by the label the timeline gives it, in every piece.
+// Given together, the contact address book and contact ID tie the confirmed
+// name to that contact of the person's, replacing the contact the name was
+// tied to before; left out, they leave the name's tie as it is.
 type NameRecordingTemporarySpeakerArguments struct {
-	RecordingID    string `json:"recordingId"`
-	SpeakerLabel   string `json:"speakerLabel"`
-	ConfirmedName  string `json:"confirmedName"`
-	IsAccountOwner bool   `json:"isAccountOwner" graphapi:"nullable"`
+	RecordingID          string `json:"recordingId"`
+	SpeakerLabel         string `json:"speakerLabel"`
+	ConfirmedName        string `json:"confirmedName"`
+	IsAccountOwner       bool   `json:"isAccountOwner" graphapi:"nullable"`
+	ContactAddressBookID string `json:"contactAddressBookId" graphapi:"nullable"`
+	ContactID            string `json:"contactId" graphapi:"nullable"`
 }
 
 // SeparateRecordingTemporarySpeakerArguments undoes the merge of a label of a
@@ -72,6 +85,18 @@ type RenameRecordingSpeakerArguments struct {
 	ExpectedSourceGeneration int64  `json:"expectedSourceGeneration"`
 	SpeakerIdentityID        string `json:"speakerIdentityId"`
 	ConfirmedName            string `json:"confirmedName"`
+}
+
+// SetRecordingSpeakerContactArguments ties a confirmed identity to one of the
+// person's contacts, so the contact's card lists the recordings that voice
+// speaks in. An empty address book and contact ID untie it. The recording is
+// one the identity is named in.
+type SetRecordingSpeakerContactArguments struct {
+	RecordingID              string `json:"recordingId"`
+	ExpectedSourceGeneration int64  `json:"expectedSourceGeneration"`
+	SpeakerIdentityID        string `json:"speakerIdentityId"`
+	AddressBookID            string `json:"addressBookId" graphapi:"nullable"`
+	ContactID                string `json:"contactId" graphapi:"nullable"`
 }
 
 // RemoveRecordingSpeakerCorrectionArguments revokes a confirmed interval.
@@ -120,14 +145,96 @@ func (self *graph) ReadRecordingSpeakers(ctx context.Context, arguments Recordin
 	if err != nil {
 		return nil, translateError(err)
 	}
+	grantedAddressBookIds, err := self.agentGrantedAddressBookIds(ctx, userId)
+	if err != nil {
+		return nil, err
+	}
+	for _, identity := range identities {
+		if grantedAddressBookIds != nil && !grantedAddressBookIds[identity.ContactAddressBookID] {
+			identity.ContactAddressBookID, identity.ContactID, identity.ContactName = "", "", ""
+		}
+	}
 	return &RecordingSpeakersView{SourceGeneration: source.SourceGeneration, SpeakerIdentities: identities, SpeakerCorrections: corrections, VoiceReferences: references}, nil
 }
+
+// agentGrantedAddressBookIds is the address books of the person's that the
+// caller may read for this: nil for the person themselves, who may read every
+// one, and for their agent the books they gave it. A speaker's contact and a
+// person's card both keep to it.
+func (self *graph) agentGrantedAddressBookIds(ctx context.Context, userId string) (map[string]bool, error) {
+	if db.PrincipalFromContext(ctx).ActorKind != models.AuditActorAgent {
+		return nil, nil
+	}
+	addressBooks, err := self.transaction(ctx).ListAddressBooks(userId)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	grantedAddressBookIds := map[string]bool{}
+	for _, addressBook := range addressBooks {
+		if addressBook.AgentGranted {
+			grantedAddressBookIds[addressBook.ID] = true
+		}
+	}
+	return grantedAddressBookIds, nil
+}
+
+// requireRecordingSpeakerContactBook refuses a contact in an address book the
+// caller may not use for this, as one that is not there: the agent may only
+// tie a speaker to a contact of a book the person gave it. Whether the book is
+// the person's at all is checked where the tie is written.
+func (self *graph) requireRecordingSpeakerContactBook(ctx context.Context, userId, addressBookId string) error {
+	if addressBookId == "" {
+		return nil
+	}
+	grantedAddressBookIds, err := self.agentGrantedAddressBookIds(ctx, userId)
+	if err != nil {
+		return err
+	}
+	if grantedAddressBookIds != nil && !grantedAddressBookIds[addressBookId] {
+		return api.ErrNotFound
+	}
+	return nil
+}
+
+// requireRecordingSpeakerTieKept refuses the agent a change to a speaker's
+// tie that it cannot see: a name tied to a contact in an address book the
+// person did not give it is not the agent's to untie or tie elsewhere. The
+// speaker is named by its identity, or by its confirmed name when that is all
+// the call has; a name not yet given is free.
+func (self *graph) requireRecordingSpeakerTieKept(ctx context.Context, userId, speakerIdentityId, confirmedName string) error {
+	grantedAddressBookIds, err := self.agentGrantedAddressBookIds(ctx, userId)
+	if err != nil || grantedAddressBookIds == nil {
+		return err
+	}
+	identities, err := self.transaction(ctx).ListRecordingSpeakerIdentities(userId)
+	if err != nil {
+		return translateError(err)
+	}
+	confirmedName = strings.TrimSpace(confirmedName)
+	for _, identity := range identities {
+		isNamed := identity.ID == speakerIdentityId || (speakerIdentityId == "" && confirmedName != "" && identity.ConfirmedName == confirmedName)
+		if isNamed && identity.ContactAddressBookID != "" && !grantedAddressBookIds[identity.ContactAddressBookID] {
+			return api.ErrNotFound
+		}
+	}
+	return nil
+}
+
 func (self *graph) CorrectRecordingSpeaker(ctx context.Context, arguments CorrectRecordingSpeakerArguments) (*RecordingSpeakersView, error) {
 	userId, err := self.recordingSpeakerOwner(ctx)
 	if err != nil {
 		return nil, err
 	}
-	_, err = self.transaction(ctx).CorrectRecordingSpeaker(userId, db.RecordingSpeakerCorrectionInput{RecordingID: arguments.RecordingID, ExpectedSourceGeneration: arguments.ExpectedSourceGeneration, ClientCorrectionID: arguments.ClientCorrectionID, ConfirmedName: arguments.ConfirmedName, IsAccountOwner: arguments.IsAccountOwner, RecordingTranscriptionAttemptID: arguments.RecordingTranscriptionAttemptID, LocalSpeakerID: arguments.LocalSpeakerID, PassageStartMS: arguments.PassageStartMS, PassageEndMS: arguments.PassageEndMS})
+	contactAddressBookId, contactId := strings.TrimSpace(arguments.ContactAddressBookID), strings.TrimSpace(arguments.ContactID)
+	if err := self.requireRecordingSpeakerContactBook(ctx, userId, contactAddressBookId); err != nil {
+		return nil, err
+	}
+	if contactId != "" {
+		if err := self.requireRecordingSpeakerTieKept(ctx, userId, "", arguments.ConfirmedName); err != nil {
+			return nil, err
+		}
+	}
+	_, err = self.transaction(ctx).CorrectRecordingSpeaker(userId, db.RecordingSpeakerCorrectionInput{ContactAddressBookID: contactAddressBookId, ContactID: contactId, RecordingID: arguments.RecordingID, ExpectedSourceGeneration: arguments.ExpectedSourceGeneration, ClientCorrectionID: arguments.ClientCorrectionID, ConfirmedName: arguments.ConfirmedName, IsAccountOwner: arguments.IsAccountOwner, RecordingTranscriptionAttemptID: arguments.RecordingTranscriptionAttemptID, LocalSpeakerID: arguments.LocalSpeakerID, PassageStartMS: arguments.PassageStartMS, PassageEndMS: arguments.PassageEndMS})
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -149,7 +256,16 @@ func (self *graph) NameRecordingTemporarySpeaker(ctx context.Context, arguments 
 	if err != nil {
 		return false, err
 	}
-	if err := self.transaction(ctx).NameRecordingTemporarySpeaker(userId, arguments.RecordingID, arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner); err != nil {
+	contactAddressBookId, contactId := strings.TrimSpace(arguments.ContactAddressBookID), strings.TrimSpace(arguments.ContactID)
+	if err := self.requireRecordingSpeakerContactBook(ctx, userId, contactAddressBookId); err != nil {
+		return false, err
+	}
+	if contactId != "" {
+		if err := self.requireRecordingSpeakerTieKept(ctx, userId, "", arguments.ConfirmedName); err != nil {
+			return false, err
+		}
+	}
+	if err := self.transaction(ctx).NameRecordingTemporarySpeakerAsContact(userId, arguments.RecordingID, arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner, contactAddressBookId, contactId); err != nil {
 		return false, translateError(err)
 	}
 	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
@@ -207,6 +323,27 @@ func (self *graph) RenameRecordingSpeaker(ctx context.Context, arguments RenameR
 			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
 		}
 	})
+	return self.ReadRecordingSpeakers(ctx, RecordingArguments{RecordingID: arguments.RecordingID})
+}
+
+// SetRecordingSpeakerContact ties a confirmed name to one of the person's
+// contacts, or unties it when no contact is given. Only the person's own
+// address books count, and for their agent only those they gave it.
+func (self *graph) SetRecordingSpeakerContact(ctx context.Context, arguments SetRecordingSpeakerContactArguments) (*RecordingSpeakersView, error) {
+	userId, err := self.recordingSpeakerOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	addressBookId, contactId := strings.TrimSpace(arguments.AddressBookID), strings.TrimSpace(arguments.ContactID)
+	if err := self.requireRecordingSpeakerContactBook(ctx, userId, addressBookId); err != nil {
+		return nil, err
+	}
+	if err := self.requireRecordingSpeakerTieKept(ctx, userId, arguments.SpeakerIdentityID, ""); err != nil {
+		return nil, err
+	}
+	if err := self.transaction(ctx).SetRecordingSpeakerContact(userId, arguments.RecordingID, arguments.SpeakerIdentityID, addressBookId, contactId, arguments.ExpectedSourceGeneration); err != nil {
+		return nil, translateError(err)
+	}
 	return self.ReadRecordingSpeakers(ctx, RecordingArguments{RecordingID: arguments.RecordingID})
 }
 func (self *graph) RemoveRecordingSpeakerCorrection(ctx context.Context, arguments RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error) {

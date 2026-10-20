@@ -171,6 +171,9 @@ const CirclesPage = lazyPage(async () => ({
 const CirclePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/circles')).CirclePage,
 }))
+const PersonPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/person')).PersonPage,
+}))
 const FinanceLinkPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/financeLink')).FinanceLinkPage,
 }))
@@ -637,6 +640,12 @@ export function App() {
                       from the account menu rather than the rail. */}
                       <Route path="/circles" element={<CirclesPage />} />
                       <Route path="/circles/:circleId" element={<CirclePage />} />
+                      {/* A person's card, opened from a chat's author, a row of
+                      Circles or Location and a contact: an account that
+                      shares a circle with this person, or one of their own
+                      contacts. */}
+                      <Route path="/people/contact/:addressBookId/:contactId" element={<PersonPage />} />
+                      <Route path="/people/:userId" element={<PersonPage />} />
                       <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                       <Route path="/settings/passkeys" element={<PasskeysPage />} />
                       <Route path="/settings/tokens" element={<TokensPage />} />

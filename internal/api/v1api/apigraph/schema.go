@@ -74,6 +74,7 @@ type Query interface {
 	RecordingPlaybackQuery
 	RecordingTranscriptQuery
 	SearchQuery
+	PersonCardQuery
 	AgentVoiceQuery
 	AgentComputerQuery
 	AgentBackgroundQuery

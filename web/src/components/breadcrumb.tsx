@@ -277,6 +277,12 @@ function useTrail(): { label: string; to?: string }[] {
     if (/^\/manage\/domains\/[^/]+(\/|$)/.test(location.pathname)) {
       return [...crumbs, { label: '' }]
     }
+    // A person's card is reached from wherever the person was seen, so its
+    // trail is the person's name alone. The name arrives with the data, so
+    // the heading is blank until then rather than missing.
+    if (location.pathname.startsWith('/people/')) {
+      return [{ label: '' }]
+    }
     return crumbs
   }, [location.pathname, location.search, desktop, detail, item, t])
 }

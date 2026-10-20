@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import { graphql } from '../api'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
 import { recordingOperation, type TranscriptSegment } from './processing'
@@ -9,6 +10,10 @@ import { type RecordingMedia } from './api'
 vi.mock('./processing', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./processing')>()),
   recordingOperation: vi.fn(),
+}))
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  graphql: vi.fn(),
 }))
 afterEach(() => {
   cleanup()
@@ -251,4 +256,109 @@ it('shows only the latest transcription, with no version list or timeline toggle
         ),
     ).toBe(true),
   )
+})
+
+// A speaker with a name, and the contact it is tied to when it is.
+function showSpeaker(contact: { contactAddressBookId: string; contactId: string; contactName: string } | null) {
+  showFixture([], {
+    ReadRecordingSpeakers: {
+      sourceGeneration: 4,
+      speakerIdentities: [{ id: 'speaker-one', confirmedName: 'Sam Fixture', ...(contact ?? {}) }],
+      speakerCorrections: [{ id: 'correction-one', speakerIdentityId: 'speaker-one', isRemoved: false }],
+      voiceReferences: [],
+    },
+    SetRecordingSpeakerContact: {
+      sourceGeneration: 5,
+      speakerIdentities: [],
+      speakerCorrections: [],
+      voiceReferences: [],
+    },
+  })
+}
+const contactCalls = () =>
+  vi.mocked(recordingOperation).mock.calls.filter(([operationName]) => operationName === 'SetRecordingSpeakerContact')
+
+it("shows the contact a speaker is tied to as a link to the contact's card, and unties it", async () => {
+  showSpeaker({ contactAddressBookId: 'book-one', contactId: 'contact-sam', contactName: 'Sam Contact' })
+  const link = await screen.findByRole('link', { name: 'Sam Contact' })
+  expect(link.getAttribute('href')).toBe('/people/contact/book-one/contact-sam')
+  fireEvent.click(screen.getByRole('button', { name: 'Untie from contact' }))
+  await waitFor(() => expect(contactCalls()).toHaveLength(1))
+  expect(contactCalls()[0][1]).toEqual({
+    recordingId: 'fixture-recording',
+    expectedSourceGeneration: 4,
+    speakerIdentityId: 'speaker-one',
+    addressBookId: '',
+    contactId: '',
+  })
+})
+
+it('says a speaker is not tied to a contact, and ties it to the one chosen from the contacts', async () => {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ListAddressBooks')) return { ListAddressBooks: [{ id: 'book-one' }] } as never
+    if (document.includes('ListContacts')) {
+      return { ListContacts: [{ id: 'contact-sam', name: 'Sam Contact', emails: [], accountUserId: null }] } as never
+    }
+    return {} as never
+  })
+  showSpeaker(null)
+  expect(await screen.findByText('Not tied to a contact')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Untie from contact' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Tie to a contact' }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.click(await within(dialog).findByRole('radio'))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(contactCalls()).toHaveLength(1))
+  expect(contactCalls()[0][1]).toMatchObject({
+    speakerIdentityId: 'speaker-one',
+    addressBookId: 'book-one',
+    contactId: 'contact-sam',
+  })
+})
+
+it('ties a new speaker name to the contact when the name is one offered from the contacts', async () => {
+  vi.mocked(recordingOperation).mockImplementation((async (operationName: string) =>
+    operationName === 'SuggestRecordingSpeakerNames'
+      ? [
+          {
+            confirmedName: 'Alex Contact',
+            speakerNameSource: 'contact',
+            addressBookId: 'book-one',
+            contactId: 'contact-alex',
+          },
+        ]
+      : {}) as never)
+  const { RecordingEditDialog } = await import('./editDialog')
+  const onSaved = vi.fn(async () => undefined)
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <RecordingEditDialog
+          dialog={{
+            operationName: 'CorrectRecordingSpeaker',
+            titleKey: 'nameSpeaker',
+            variables: { recordingId: 'fixture-recording', expectedSourceGeneration: 4 },
+            fields: [{ fieldName: 'confirmedName', labelKey: 'confirmedName', fieldValue: '' }],
+          }}
+          speakerNames={[]}
+          onSaved={onSaved}
+          onClose={() => undefined}
+        />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  const box = screen.getByRole('combobox')
+  fireEvent.change(box, { target: { value: 'alex contact' } })
+  expect(await screen.findByText('Also ties this speaker to the contact Alex Contact.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(recordingOperation)
+        .mock.calls.find(([operationName]) => operationName === 'CorrectRecordingSpeaker')?.[1],
+    ).toMatchObject({ confirmedName: 'alex contact', contactAddressBookId: 'book-one', contactId: 'contact-alex' }),
+  )
+  // A name that is nobody's in the contacts ties nothing.
+  fireEvent.change(box, { target: { value: 'Somebody Else' } })
+  expect(screen.queryByText(/Also ties this speaker/)).toBeNull()
 })

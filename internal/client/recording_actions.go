@@ -37,6 +37,13 @@ type RecordingActionArguments struct {
 	PassageEndMS                        *int64  `json:"passage_end_ms"`
 	SegmentOffset                       int     `json:"segment_offset"`
 	PageSize                            int     `json:"page_size"`
+	// AddressBookID and ContactID name one of the person's contacts: the one a
+	// speaker-contact ties the speaker to, and optionally the one speaker-confirm
+	// and temporary-speaker-name tie the name they give to.
+	AddressBookID string `json:"address_book_id"`
+	ContactID     string `json:"contact_id"`
+	// ShouldUntieContact has speaker-contact take the speaker off its contact.
+	ShouldUntieContact bool `json:"should_untie_contact"`
 	// SearchText narrows a list of recordings, or the names offered for a
 	// speaker, to those containing it.
 	SearchText string `json:"search_text"`
@@ -55,6 +62,10 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		return nil
 	}
 	operationName := ""
+	// A contact is named by its address book and its own ID together.
+	if (strings.TrimSpace(arguments.AddressBookID) == "") != (strings.TrimSpace(arguments.ContactID) == "") {
+		return "", nil, fmt.Errorf("give address_book_id and contact_id together, as contact_book lists them")
+	}
 	switch arguments.Operation {
 	case "read-playback", "prepare-playback":
 		operationName = "ReadRecordingPlayback"
@@ -218,6 +229,7 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 			return "", nil, fmt.Errorf("passage bounds must be -1/-1 or a positive interval")
 		}
 		variables["isAccountOwner"] = arguments.IsAccountOwner
+		setContact(variables, arguments)
 		variables["confirmedName"], variables["recordingTranscriptionAttemptId"], variables["localSpeakerId"] = arguments.ConfirmedName, arguments.RecordingTranscriptionAttemptID, arguments.LocalSpeakerID
 		variables["clientCorrectionId"], variables["passageStartMS"], variables["passageEndMS"] = arguments.ClientCorrectionID, *arguments.PassageStartMS, *arguments.PassageEndMS
 	case "temporary-speaker-name":
@@ -232,6 +244,7 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 			return "", nil, err
 		}
 		variables["speakerLabel"], variables["confirmedName"], variables["isAccountOwner"] = arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner
+		setContact(variables, arguments)
 	case "speaker-separate":
 		operationName = "SeparateRecordingTemporarySpeaker"
 		if err := require("speaker_label (the \"Speaker 9\" that was merged into an earlier one, from the passage's mergedTemporarySpeakerLabel)", arguments.SpeakerLabel); err != nil {
@@ -247,6 +260,16 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 			return "", nil, err
 		}
 		variables["speakerIdentityId"], variables["confirmedName"] = arguments.SpeakerIdentityID, arguments.ConfirmedName
+	case "speaker-contact":
+		operationName = "SetRecordingSpeakerContact"
+		if err := require("speaker_identity_id", arguments.SpeakerIdentityID); err != nil {
+			return "", nil, err
+		}
+		if arguments.ShouldUntieContact == (strings.TrimSpace(arguments.ContactID) != "") {
+			return "", nil, fmt.Errorf("give address_book_id and contact_id to tie the speaker to that contact, or should_untie_contact to take it off its contact")
+		}
+		variables["speakerIdentityId"] = arguments.SpeakerIdentityID
+		setContact(variables, arguments)
 	case "speaker-reset":
 		operationName = "RemoveRecordingSpeakerCorrection"
 		if err := require("speaker_correction_id", arguments.RecordingSpeakerCorrectionID); err != nil {
@@ -287,18 +310,33 @@ func RecordingAction(arguments RecordingActionArguments) (string, map[string]any
 		return "", nil, fmt.Errorf("unknown recording operation %q", arguments.Operation)
 	}
 	switch arguments.Operation {
-	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "temporary-speaker-name", "speaker-separate", "speaker-rename", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
+	case "versions", "speakers", "learning", "reference-invalidations", "text-corrections", "metadata", "speaker-confirm", "temporary-speaker-name", "speaker-separate", "speaker-rename", "speaker-contact", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if err := require("recording_id", arguments.RecordingID); err != nil {
 			return "", nil, err
 		}
 		variables["recordingId"] = arguments.RecordingID
 	}
 	switch arguments.Operation {
-	case "metadata", "speaker-confirm", "speaker-rename", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
+	case "metadata", "speaker-confirm", "speaker-rename", "speaker-contact", "speaker-reset", "speaker-undo", "reference-delete", "text-edit", "text-reset", "resume-learning":
 		if arguments.ExpectedSourceGeneration == nil || *arguments.ExpectedSourceGeneration < 0 {
 			return "", nil, fmt.Errorf("give expected_source_generation from the current recording view")
 		}
 		variables["expectedSourceGeneration"] = *arguments.ExpectedSourceGeneration
 	}
 	return operationName, variables, nil
+}
+
+// setContact puts the contact a speaker is tied to in the variables of an
+// operation. SetRecordingSpeakerContact calls its fields addressBookId and
+// contactId; the operations that name a speaker call them contactAddressBookId
+// and contactId, as they also carry the name's own fields.
+func setContact(variables map[string]any, arguments RecordingActionArguments) {
+	addressBookId, contactId := strings.TrimSpace(arguments.AddressBookID), strings.TrimSpace(arguments.ContactID)
+	if arguments.Operation == "speaker-contact" {
+		variables["addressBookId"], variables["contactId"] = addressBookId, contactId
+		return
+	}
+	if contactId != "" {
+		variables["contactAddressBookId"], variables["contactId"] = addressBookId, contactId
+	}
 }

@@ -928,7 +928,11 @@ Linking never creates a contact card. `remember_apply.go` explains why pages
 must not: it once created hundreds of empty cards. A link points at a card
 that exists, and the person's `SetAgentNodeContact` takes only a card from
 one of their own address books and writes the page's `contact_id` and a
-stated `is_contact` link together.
+stated `is_contact` link together. A page names its card by the card's ID
+alone, with no foreign key, so deleting a contact (or the address book it is
+in) takes both off every page that named it, and the account's own card with
+them, unless a card of that ID is still in another of the person's books.
+The page and what it remembers stay, and the dreams may tie it again.
 
 What the agent says about a link follows the same rule as a link between
 pages. It may *propose* one, and a proposal reads as a guess ("perhaps")

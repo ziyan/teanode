@@ -6,13 +6,14 @@ import TeaNodeKit
 // map, a row each under it, and, once one is chosen, their visits and places.
 
 /// LocationPeopleRows is a row for each person sharing, under the map, the
-/// person's own row first. A tap selects one (the map centers on them), and
-/// they stay chosen until another row is tapped: the own row is the way back
-/// to the person's own location. With more people than fit under the map, one
+/// person's own row first. A tap selects one (the map centers on them) and
+/// brings up their card over the map, and they stay chosen until another row
+/// is tapped: the own row is the way back to the person's own location. With more people than fit under the map, one
 /// row says how many and opens a screen of their own.
 struct LocationPeopleRows: View {
     let model: LocationModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(AppModel.self) private var app
 
     /// The most people given a row of their own under the map. At the
     /// accessibility text sizes a row is as tall as a third of the map, so
@@ -47,19 +48,14 @@ struct LocationPeopleRows: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Shows everyone who shares where they are with you")
-                    if let person = model.selectedPerson {
-                        LocationPeopleDivider()
-                        LocationChosenPersonCard(person: person, own: model.location)
-                    }
                 } else {
                     ForEach(model.people) { person in
                         LocationPeopleDivider()
-                        if person.userId == model.selectedUserId {
-                            LocationChosenPersonCard(person: person, own: model.location)
-                        } else {
-                            LocationPersonRow(person: person, own: model.location, isSelected: false, isHighlightedWhenChosen: true) {
-                                model.select(userId: person.userId)
-                            }
+                        LocationPersonRow(
+                            person: person, own: model.location, isSelected: person.userId == model.selectedUserId,
+                            isHighlightedWhenChosen: true
+                        ) {
+                            choose(person)
                         }
                     }
                 }
@@ -75,81 +71,12 @@ struct LocationPeopleRows: View {
             .fixedSize(horizontal: false, vertical: true)
         }
     }
-}
 
-/// LocationChosenPersonCard is the person shown on the map, opened up in
-/// place of their row as Find My does: where they are and how far, the
-/// address, how fresh the position is, and directions there. Tapping it
-/// again changes nothing: they stay chosen until another row is.
-struct LocationChosenPersonCard: View {
-    let person: PersonLocation
-    let own: PersonLocation?
-    @Environment(\.openURL) private var openURL
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                AvatarView(
-                    name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex,
-                    size: LocationPersonRow.avatarSize
-                )
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: person.displayName)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    if let placeText {
-                        Text(verbatim: placeText).font(.subheadline).foregroundStyle(.primary)
-                    }
-                    if let addressText {
-                        Text(verbatim: addressText).font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Text(verbatim: freshText).font(.subheadline).foregroundStyle(.tint)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isSelected)
-            if let point = person.latestPoint {
-                Button {
-                    if let url = URL(string: "https://maps.apple.com/?daddr=\(point.latitudeDegrees),\(point.longitudeDegrees)") {
-                        openURL(url)
-                    }
-                } label: {
-                    Label("Directions", systemImage: "car.fill").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .padding(.leading, LocationPersonRow.avatarSize + 12)
-            }
-        }
-        .padding(16)
-        .background(Color(.tertiarySystemFill))
-    }
-
-    /// "Home · Nearby": the place they are at and how far away, or either.
-    private var placeText: String? {
-        let placeName = person.openVisit?.place.shownName
-        let distanceText = LocationText.distanceText(from: own, to: person)
-        switch (placeName, distanceText) {
-        case let (placeName?, distanceText?): return String(localized: "\(placeName) · \(distanceText)")
-        case let (placeName?, nil): return placeName
-        case let (nil, distanceText?): return distanceText
-        case (nil, nil): return nil
-        }
-    }
-
-    /// The address of the place they are at, when it says more than its name.
-    private var addressText: String? {
-        guard let place = person.openVisit?.place else { return nil }
-        let addressText = place.addressText.trimmingCharacters(in: .whitespaces)
-        return addressText.isEmpty || addressText == place.shownName ? nil : addressText
-    }
-
-    /// "3 minutes ago", for their latest position.
-    private var freshText: String {
-        guard let measured = person.latestPoint?.measuredDate else { return String(localized: "No position yet") }
-        // A reading a moment ahead of this iPhone's clock is not in the future.
-        return min(measured, Date().addingTimeInterval(-1)).formatted(.relative(presentation: .named, unitsStyle: .wide))
+    /// Shows them on the map and brings up their card over it. Chosen again,
+    /// they stay chosen and the card comes up again.
+    private func choose(_ person: PersonLocation) {
+        model.select(userId: person.userId)
+        app.openedPerson = .account(userId: person.userId)
     }
 }
 
@@ -165,10 +92,11 @@ struct LocationPeopleDivider: View {
 }
 
 /// LocationPeopleScreen is everyone sharing their location with the person,
-/// a row each; choosing one shows them on the map.
+/// a row each; choosing one shows them on the map, with their card over it.
 struct LocationPeopleScreen: View {
     let model: LocationModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         List {
@@ -177,6 +105,7 @@ struct LocationPeopleScreen: View {
                 LocationPersonRow(person: person, own: model.location, isSelected: person.userId == model.selectedUserId) {
                     model.select(userId: person.userId)
                     dismiss()
+                    app.openedPerson = .account(userId: person.userId)
                 }
             }
         }
@@ -275,70 +204,5 @@ struct LocationPeopleRowLabel: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-/// LocationPersonPanel is what is under the map once somebody sharing is
-/// selected: at "Where I am and where I have been", their visits for a day
-/// with a way back a day, and their places, to read and not to change.
-struct LocationPersonPanel: View {
-    let model: LocationModel
-    let person: PersonLocation
-
-    var body: some View {
-        List {
-            // Only the person knows which of their contacts this is; nothing shows when none.
-            if model.linkedContactId(of: person.userId) != nil, AppModel.shared.isSectionAvailable(.photos) {
-                Section {
-                    Button {
-                        AppModel.shared.openedPhotoPerson = OpenedPhotoPerson(userId: person.userId, name: person.displayName)
-                    } label: {
-                        Label("Photos", systemImage: "photo.on.rectangle")
-                            .actionColor()
-                    }
-                }
-            }
-            if person.level == .history {
-                Section {
-                    Button("Previous day", systemImage: "chevron.left") { model.movePersonDay(by: -1) }
-                        .actionColor()
-                    if model.canMovePersonDayLater {
-                        Button("Next day", systemImage: "chevron.right") { model.movePersonDay(by: 1) }
-                            .actionColor()
-                    }
-                    if let problem = model.personProblemText {
-                        Text(verbatim: problem).foregroundStyle(.secondary)
-                    } else if model.personVisits.isEmpty {
-                        if model.isLoadingPerson {
-                            ProgressView().frame(maxWidth: .infinity)
-                        } else {
-                            Text("No visits this day").foregroundStyle(.secondary)
-                        }
-                    }
-                    ForEach(model.personVisits) { visit in
-                        LocationVisitRow(visit: visit)
-                    }
-                } header: {
-                    Text(verbatim: LocationText.dayTitle(model.personDay)).font(.headline).textCase(nil)
-                }
-                if !model.personPlaces.isEmpty {
-                    Section("Places") {
-                        ForEach(model.personPlaces) { place in
-                            LocationPlaceRow(place: place)
-                        }
-                    }
-                }
-                Section {
-                } footer: {
-                    OpenStreetMapCredit()
-                }
-            } else {
-                Section {
-                    Text("\(person.displayName) shares where they are now. Their visits and places are not shared with you.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .refreshable { await model.loadPerson() }
     }
 }
