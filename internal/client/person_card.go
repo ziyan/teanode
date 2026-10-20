@@ -129,6 +129,10 @@ type PersonCardMemoryPage struct {
 	NodeKind  string    `json:"nodeKind"`
 	Summary   string    `json:"summary"`
 	UpdatedAt time.Time `json:"updatedAt"`
+
+	// IsMatchedByName says the page is not tied to the contact: it is the
+	// person page with the contact's name.
+	IsMatchedByName bool `json:"isMatchedByName"`
 }
 
 const DocumentReadPersonCard = `query ($userId: String, $addressBookId: String, $contactId: String, $itemLimit: Int) {
@@ -171,7 +175,7 @@ const DocumentReadPersonCard = `query ($userId: String, $addressBookId: String, 
     }
     memory {
       sectionState hasMore
-      pages { nodePath nodeName nodeKind summary updatedAt }
+      pages { nodePath nodeName nodeKind summary updatedAt isMatchedByName }
     }
   }
 }`

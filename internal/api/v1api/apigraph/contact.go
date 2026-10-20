@@ -89,7 +89,12 @@ type AddressBookView struct {
 // one. A list leaves Card empty, because a page of whole cards is a great
 // deal of text nobody reads.
 type ContactView struct {
-	ID           string         `json:"id"`
+	ID string `json:"id"`
+
+	// AddressBookID is the book the contact is in: a contact is named by
+	// the two together.
+	AddressBookID string `json:"addressBookId"`
+
 	UID          string         `json:"uid"`
 	ETag         string         `json:"etag"`
 	Name         string         `json:"name,omitempty"`
@@ -500,7 +505,7 @@ func (self *graph) SaveAddressBook(ctx context.Context, arguments SaveAddressBoo
 
 func contactView(contact *models.Contact, withCard bool) *ContactView {
 	view := &ContactView{
-		ID: contact.ID, UID: contact.UID, ETag: contact.ETag,
+		ID: contact.ID, AddressBookID: contact.AddressBookID, UID: contact.UID, ETag: contact.ETag,
 		Name: contact.Name, Organization: contact.Organization,
 		Emails: contact.Emails, Phones: contact.Phones,
 	}

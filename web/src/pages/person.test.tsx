@@ -49,6 +49,7 @@ function sam(overrides: Partial<PersonCard> = {}): PersonCard {
     },
     contact: {
       id: 'contact-sam',
+      addressBookId: 'book-1',
       name: 'Sam Fixture',
       organization: 'Fixture Works',
       emails: ['sam@example.com', 'sam.second@example.com'],
@@ -211,6 +212,7 @@ function sam(overrides: Partial<PersonCard> = {}): PersonCard {
           nodeKind: 'person',
           summary: 'Fixture summary of Sam.',
           updatedAt: '2030-03-06T05:06:07Z',
+          isMatchedByName: false,
         },
       ],
       hasMore: false,

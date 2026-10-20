@@ -75,7 +75,7 @@ func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments S
 		return nil, translateError(err)
 	}
 	// Only the books the agent was given show it which contact a voice is.
-	grantedAddressBookIds, err := self.recordingSpeakerContactBooks(ctx, userId)
+	grantedAddressBookIds, err := self.agentGrantedAddressBookIds(ctx, userId)
 	if err != nil {
 		return nil, err
 	}

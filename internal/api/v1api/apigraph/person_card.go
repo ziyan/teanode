@@ -232,6 +232,10 @@ type PersonCardMemoryPage struct {
 	Summary string `json:"summary"`
 
 	UpdatedAt time.Time `json:"updatedAt"`
+
+	// IsMatchedByName says the page is not tied to the contact: it is the
+	// person page with the contact's name, shown while nothing is tied.
+	IsMatchedByName bool `json:"isMatchedByName"`
 }
 
 const (
@@ -269,6 +273,11 @@ type personCardSubject struct {
 	// that no contact means "link one" only to somebody who can.
 	contact         *models.Contact
 	isContactUsable bool
+
+	// isAgent says the person's agent is reading the card, which keeps to
+	// what the person gave it: the address books and mailboxes they granted
+	// it, and no health but the person's own.
+	isAgent bool
 }
 
 // personCardItemLimitOf is the number of items to keep in each section for the
@@ -463,7 +472,11 @@ func (self *graph) findPersonCardSubject(ctx context.Context, userId, addressBoo
 	caller := principal.User
 	tx := self.transaction(ctx)
 	card := &PersonCardView{SharedCircles: []*PersonCardCircleView{}}
-	subject := &personCardSubject{caller: caller, callerLocation: time.UTC}
+	subject := &personCardSubject{caller: caller, callerLocation: time.UTC, isAgent: db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent}
+	grantedAddressBookIds, err := self.agentGrantedAddressBookIds(ctx, caller.ID)
+	if err != nil {
+		return nil, nil, err
+	}
 	if caller.Timezone != "" {
 		if location, err := time.LoadLocation(caller.Timezone); err == nil {
 			subject.callerLocation = location
@@ -490,6 +503,10 @@ func (self *graph) findPersonCardSubject(ctx context.Context, userId, addressBoo
 			if subject.contact, err = tx.FindContactByAccount(caller.ID, userId); err != nil {
 				return nil, nil, err
 			}
+			// The agent reads a contact only in a book the person gave it.
+			if subject.contact != nil && grantedAddressBookIds != nil && !grantedAddressBookIds[subject.contact.AddressBookID] {
+				subject.contact = nil
+			}
 		} else if !isRefusedAsUnavailable(err) {
 			return nil, nil, err
 		}
@@ -497,6 +514,9 @@ func (self *graph) findPersonCardSubject(ctx context.Context, userId, addressBoo
 		book, err := self.requireOwnAddressBook(ctx, addressBookId)
 		if err != nil {
 			return nil, nil, err
+		}
+		if grantedAddressBookIds != nil && !grantedAddressBookIds[book.ID] {
+			return nil, nil, api.ErrNotFound
 		}
 		contact, err := tx.GetContact(book.ID, contactId)
 		if err != nil {
@@ -638,7 +658,9 @@ func (self *graph) readPersonCardLocation(ctx context.Context, subject *personCa
 // summary, as the Health page lists them, with the steps first.
 func (self *graph) readPersonCardHealth(ctx context.Context, subject *personCardSubject, itemLimit int) (*PersonCardHealthSection, error) {
 	section := newPersonCardHealthSection(PersonCardSectionStateUnavailable)
-	if subject.accountUserID == "" {
+	// The agent reads the person's own Health only, and only when they let
+	// it (canAgentReadHealth); what others share is for the person to see.
+	if subject.accountUserID == "" || subject.isAgent {
 		return section, nil
 	}
 	principal, err := self.requireHealthPerson(ctx)
@@ -739,7 +761,21 @@ func (self *graph) readPersonCardMail(ctx context.Context, subject *personCardSu
 		return section, nil
 	}
 	tx := self.transaction(ctx)
-	found, hasMore, err := tx.ListMailWithAddresses(principal.User.ID, subject.contact.Emails, itemLimit)
+	// The agent reads only the mailboxes the person granted it.
+	var mailboxIds []string
+	if subject.isAgent {
+		mailboxes, err := tx.ListMailboxes(principal.User.ID)
+		if err != nil {
+			return nil, err
+		}
+		mailboxIds = []string{}
+		for _, mailbox := range mailboxes {
+			if mailbox.Agent != nil && mailbox.Agent.Granted {
+				mailboxIds = append(mailboxIds, mailbox.ID)
+			}
+		}
+	}
+	found, hasMore, err := tx.ListMailWithAddresses(principal.User.ID, mailboxIds, subject.contact.Emails, itemLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -863,9 +899,38 @@ func (self *graph) readPersonCardMemory(ctx context.Context, subject *personCard
 			nodeIds = append(nodeIds, link.NodeID)
 		}
 	}
-	nodes, err := tx.GetAgentNodes(found.ID, nodeIds)
+	linkedNodes, err := tx.GetAgentNodes(found.ID, nodeIds)
 	if err != nil {
 		return nil, err
+	}
+	// The pages that say they are about the contact, and the pages that
+	// link to it, each once.
+	nodes, err := tx.ListAgentNodesOfContact(found.ID, subject.contact.ID, recordLinkPageMost)
+	if err != nil {
+		return nil, err
+	}
+	seenNodeIds = map[string]bool{}
+	for _, node := range nodes {
+		seenNodeIds[node.ID] = true
+	}
+	for _, node := range linkedNodes {
+		if !seenNodeIds[node.ID] {
+			seenNodeIds[node.ID] = true
+			nodes = append(nodes, node)
+		}
+	}
+	// Nothing tied to the contact yet (the dreams tie a person page to its
+	// contact when they come to it): the person page with the contact's own
+	// name, if it is not another contact's, marked as found by its name.
+	isMatchedByName := false
+	if len(nodes) == 0 {
+		named, err := tx.FindAgentNodeByName(found.ID, "people", models.NodePerson, subject.contact.Name)
+		if err != nil {
+			return nil, err
+		}
+		if named != nil && (named.ContactID == "" || named.ContactID == subject.contact.ID) {
+			nodes, isMatchedByName = []*models.AgentNode{named}, true
+		}
 	}
 	sort.SliceStable(nodes, func(left, right int) bool {
 		isLeftPerson, isRightPerson := nodes[left].Kind == models.NodePerson, nodes[right].Kind == models.NodePerson
@@ -878,7 +943,7 @@ func (self *graph) readPersonCardMemory(ctx context.Context, subject *personCard
 	for _, node := range nodes[:min(len(nodes), itemLimit)] {
 		section.Pages = append(section.Pages, &PersonCardMemoryPage{
 			NodePath: node.Path, NodeName: firstNonEmpty(node.Name, node.Path), NodeKind: node.Kind,
-			Summary: snippetOf(node.Summary), UpdatedAt: node.ModifiedAt,
+			Summary: snippetOf(node.Summary), UpdatedAt: node.ModifiedAt, IsMatchedByName: isMatchedByName,
 		})
 	}
 	return section, nil

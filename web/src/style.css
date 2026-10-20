@@ -20954,6 +20954,10 @@ label.checkbox.is-plain > span > .muted {
 .person-section > .person-subheading:first-of-type {
   margin-top: 0;
 }
+.person-empty {
+  margin: 0;
+  padding: var(--space-1) 0;
+}
 .person-section .page-actions {
   margin-top: var(--space-3);
 }

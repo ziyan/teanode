@@ -54,7 +54,7 @@ const personCardFields = `
   photos { photosState hasMorePhotos albumsState hasMoreAlbums photos { id } albums { id albumTitle ownerUsername } }
   mail { sectionState hasMore mails { mailboxItemId mailboxId folderPath subject fromAddress isFromPerson isUnread snippet } }
   recordings { sectionState hasMore recordings { recordingId } }
-  memory { sectionState hasMore pages { nodePath nodeKind summary } }`
+  memory { sectionState hasMore pages { nodePath nodeKind summary isMatchedByName } }`
 
 // readCard is a person's card as another reads it.
 func (self *personCardWorld) readCard(test *testing.T, viewer *models.User, arguments string) map[string]any {
@@ -566,6 +566,141 @@ func TestReadPersonCardMemoryPutsThePersonPageFirst(test *testing.T) {
 		pages[0].(map[string]any)["nodeKind"] != "person" || pages[0].(map[string]any)["summary"] != "Ada plays the cello" ||
 		pages[1].(map[string]any)["nodePath"] != "projects/choir" {
 		test.Errorf("the pages about her: %v", memory)
+	}
+}
+
+// A page that says it is about the contact (its contact_id) is hers without a
+// record link.
+func TestReadPersonCardMemoryReadsThePageTiedToTheContact(test *testing.T) {
+	world := newPersonCardWorld(test)
+	_, contactId := world.keepContact(test, world.ben, "Ada", []string{"ada@example.org"}, world.ada.ID)
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		agent := world.switchOnAgent(test, transaction, world.ben)
+		if _, err := transaction.PutAgentNode(&models.AgentNode{AgentID: agent.ID, Path: "people/ada-lovelace", Kind: models.NodePerson, Name: "Ada Lovelace", ContactID: contactId}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	pages := sectionOf(world.cardOf(test, world.ben, world.ada), "memory")["pages"].([]any)
+	if len(pages) != 1 || pages[0].(map[string]any)["nodePath"] != "people/ada-lovelace" || pages[0].(map[string]any)["isMatchedByName"] != false {
+		test.Errorf("the page tied to her contact: %v", pages)
+	}
+}
+
+// With nothing tied to the contact, the person page with the contact's own
+// name is shown, marked as found by its name, unless it is another contact's.
+func TestReadPersonCardMemoryFallsBackToThePageWithHerName(test *testing.T) {
+	world := newPersonCardWorld(test)
+	_, contactId := world.keepContact(test, world.ben, "Ada Lovelace", []string{"ada@example.org"}, world.ada.ID)
+	var agentId string
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		agentId = world.switchOnAgent(test, transaction, world.ben).ID
+		if _, err := transaction.PutAgentNode(&models.AgentNode{AgentID: agentId, Path: "people/ada-lovelace", Kind: models.NodePerson, Name: "Ada Lovelace"}); err != nil {
+			test.Fatal(err)
+		}
+		// Deeper down, a page with the same name is not the person page.
+		if _, err := transaction.PutAgentNode(&models.AgentNode{AgentID: agentId, Path: "projects/history/ada-lovelace", Kind: models.NodePerson, Name: "Ada Lovelace"}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	pages := sectionOf(world.cardOf(test, world.ben, world.ada), "memory")["pages"].([]any)
+	if len(pages) != 1 || pages[0].(map[string]any)["nodePath"] != "people/ada-lovelace" || pages[0].(map[string]any)["isMatchedByName"] != true {
+		test.Errorf("the page with her name: %v", pages)
+	}
+
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		node, err := transaction.FindAgentNodeByName(agentId, "people", models.NodePerson, "Ada Lovelace")
+		if err != nil || node == nil {
+			test.Fatal(node, err)
+		}
+		if err := transaction.SetAgentNodeContact(agentId, node.ID, contactId+"-another"); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if pages := sectionOf(world.cardOf(test, world.ben, world.ada), "memory")["pages"].([]any); len(pages) != 0 {
+		test.Errorf("a page tied to another contact is not hers: %v", pages)
+	}
+}
+
+// The agent reads a card as the person gave it things: a contact only in an
+// address book they granted it, mail only in a granted mailbox, and none of
+// the health somebody else shares with the person.
+func TestReadPersonCardAsTheAgentKeepsToWhatThePersonGaveIt(test *testing.T) {
+	world := newPersonCardWorld(test)
+	bookId, _ := world.keepContact(test, world.ben, "Ada", []string{"ada@example.org"}, world.ada.ID)
+	world.run(test, world.ada, reportHealthQuery, map[string]any{"daySummaries": []any{
+		daySummaryInput("stepCount", time.Now().UTC().Format("2006-01-02"), map[string]any{"quantityUnit": "count", "sumValue": 1234}),
+	}})
+	var mailboxId string
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		world.switchOnAgent(test, transaction, world.ben)
+		if _, err := transaction.SetHealthShare(world.ada.ID, &models.HealthShare{GranteeUserID: world.ben.ID, HealthCategories: []string{"activity"}}); err != nil {
+			test.Fatal(err)
+		}
+		mailbox, err := transaction.CreateMailbox(&models.Mailbox{UserID: world.ben.ID, Name: "Personal"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		mailboxId = mailbox.ID
+		folder, err := transaction.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
+		if err != nil || folder == nil {
+			test.Fatal(folder, err)
+		}
+		mail, err := transaction.CreateMail(&models.Mail{From: "ada@example.org", Sender: "ada@example.org", Recipients: []string{"ben@example.net"},
+			Subject: "hello", Kind: models.MailKindIncoming, MessageID: "<hello@example.net>", ReceivedAt: time.Now()}, nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.AddItem(folder.ID, mail.ID, "", models.MailboxItemFlags{}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	operations := &agentOperations{graph: world.graph, user: world.ben, permissions: &models.EffectivePermissions{Everywhere: []models.Permission{
+		models.PermissionLocationUse, models.PermissionContactsUse, models.PermissionMailRead, models.PermissionPhotosUse,
+		models.PermissionAgentUse, models.PermissionCircleUse, models.PermissionHealthUse,
+	}}}
+	ask := func() map[string]any {
+		var found struct {
+			ReadPersonCard map[string]any `json:"ReadPersonCard"`
+		}
+		if err := operations.Execute(test.Context(), fmt.Sprintf(`query { ReadPersonCard(userId: %q) {`+personCardFields+`} }`, world.ada.ID), nil, &found); err != nil {
+			test.Fatal(err)
+		}
+		return found.ReadPersonCard
+	}
+
+	if state := stateOf(world.cardOf(test, world.ben, world.ada), "health"); state != "shown" {
+		test.Fatalf("the person reads the health shared with them: %s", state)
+	}
+	card := ask()
+	if card["contact"] != nil || stateOf(card, "mail") != "needsContact" || stateOf(card, "health") != "unavailable" {
+		test.Errorf("a book not given to the agent, and health shared with the person: %v", card)
+	}
+
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		book, err := transaction.GetAddressBook(bookId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		book.AgentGranted = true
+		if _, err := transaction.UpdateAddressBook(book); err != nil {
+			test.Fatal(err)
+		}
+	})
+	card = ask()
+	if card["contact"] == nil || stateOf(card, "mail") != "shown" || len(sectionOf(card, "mail")["mails"].([]any)) != 0 {
+		test.Errorf("the book given, the mailbox not: %v", card)
+	}
+
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		if _, err := transaction.UpdateMailbox(mailboxId, func(mailbox *models.Mailbox) error {
+			mailbox.Agent = &models.AgentMailbox{Granted: true}
+			return nil
+		}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if mails := sectionOf(ask(), "mail")["mails"].([]any); len(mails) != 1 {
+		test.Errorf("the mailbox given: %v", mails)
 	}
 }
 

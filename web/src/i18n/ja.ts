@@ -6757,6 +6757,7 @@ export const ja: Catalog = {
   'person.showAllAlbums': 'すべてのアルバムを表示',
   'person.today': '今日',
   'person.visitsToday': '今日の訪問先',
+  'person.matchedByName': '名前で見つかりました',
   'person.noVisitsToday': '今日の訪問先はありません。',
   'person.locationNotShared': '{name}は現在地を共有していません。',
   'person.healthNotShared': '{name}はヘルスケアを共有していません。',

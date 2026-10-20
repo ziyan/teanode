@@ -81,7 +81,7 @@ func TestListMailWithAddressesMatchesWholeAddressesInEveryMailbox(t *testing.T) 
 		return subjects
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		found, hasMore, err := tx.ListMailWithAddresses(ownerId, []string{"Sam@Example.org", " sam.alt@example.org ", "", "sam@example.org"}, 10)
+		found, hasMore, err := tx.ListMailWithAddresses(ownerId, nil, []string{"Sam@Example.org", " sam.alt@example.org ", "", "sam@example.org"}, 10)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -95,7 +95,7 @@ func TestListMailWithAddressesMatchesWholeAddressesInEveryMailbox(t *testing.T) 
 			}
 		}
 
-		found, hasMore, err = tx.ListMailWithAddresses(ownerId, []string{"sam@example.org"}, 2)
+		found, hasMore, err = tx.ListMailWithAddresses(ownerId, nil, []string{"sam@example.org"}, 2)
 		if err != nil || !slices.Equal(subjectsOf(found), []string{"twice", "named"}) || !hasMore {
 			t.Errorf("two of them and more: %v %v %v", subjectsOf(found), hasMore, err)
 		}
@@ -111,7 +111,7 @@ func TestListMailWithAddressesMatchesWholeAddressesInEveryMailbox(t *testing.T) 
 			"a wildcard":     {ownerId, []string{"%"}},
 			"an underscore":  {ownerId, []string{"sa_@example.org"}},
 		} {
-			found, hasMore, err := tx.ListMailWithAddresses(arguments.userId, arguments.addresses, 10)
+			found, hasMore, err := tx.ListMailWithAddresses(arguments.userId, nil, arguments.addresses, 10)
 			if err != nil || len(found) != 0 || hasMore {
 				t.Errorf("%s: %v %v %v", name, subjectsOf(found), hasMore, err)
 			}

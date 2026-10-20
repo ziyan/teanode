@@ -153,7 +153,7 @@ func printPersonCardLocation(card *client.PersonCard) error {
 		if visit := section.Location.OpenVisit; visit != nil {
 			since := ""
 			if visit.ArrivedAt != nil {
-				since = fmt.Sprintf(", since %s", visit.ArrivedAt.In(time.Local).Format("15:04"))
+				since = fmt.Sprintf(", since %s", sinceText(*visit.ArrivedAt))
 			}
 			fields = append(fields, [2]string{"at", placeLine(visit.Place) + since})
 		}
@@ -276,11 +276,25 @@ func printPersonCardMemory(card *client.PersonCard) error {
 	}
 	rows := make([][]string, 0, len(section.Pages))
 	for _, page := range section.Pages {
-		rows = append(rows, []string{page.NodePath, page.NodeKind, forTerminal(page.Summary)})
+		kind := page.NodeKind
+		if page.IsMatchedByName {
+			kind += " (by name)"
+		}
+		rows = append(rows, []string{page.NodePath, kind, forTerminal(page.Summary)})
 	}
 	if err := printTable([]string{"page", "kind", "summary"}, rows); err != nil {
 		return err
 	}
 	personCardMore(section.HasMore, "pages")
 	return nil
+}
+
+// sinceText is when a visit began: the time on the day it began, with the
+// date before it on any other day.
+func sinceText(arrivedAt time.Time) string {
+	local, now := arrivedAt.In(time.Local), time.Now().In(time.Local)
+	if local.Year() == now.Year() && local.YearDay() == now.YearDay() {
+		return local.Format("15:04")
+	}
+	return local.Format("Jan 2 15:04")
 }
