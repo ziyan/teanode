@@ -202,6 +202,7 @@ type Transaction interface {
 	AuditOperation
 	SyncOperation
 	MailboxOperation
+	PersonCardOperation
 	SubscriptionQuery
 	BimiQuery
 	IdentityOperation

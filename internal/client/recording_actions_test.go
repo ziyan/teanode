@@ -42,6 +42,15 @@ func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 		{RecordingActionArguments{Operation: "speaker-separate", RecordingID: "fixture-recording"}, false, ""},
 		{RecordingActionArguments{Operation: "speaker-separate", SpeakerLabel: "Speaker 9"}, false, ""},
 		{RecordingActionArguments{Operation: "speaker-separate", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 9"}, true, "SeparateRecordingTemporarySpeaker"},
+		{RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", SpeakerIdentityID: "fixture-identity", AddressBookID: "fixture-book", ContactID: "fixture-contact", ExpectedSourceGeneration: &generation}, true, "SetRecordingSpeakerContact"},
+		{RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", SpeakerIdentityID: "fixture-identity", ShouldUntieContact: true, ExpectedSourceGeneration: &generation}, true, "SetRecordingSpeakerContact"},
+		{RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", SpeakerIdentityID: "fixture-identity", ExpectedSourceGeneration: &generation}, false, ""},
+		{RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", SpeakerIdentityID: "fixture-identity", AddressBookID: "fixture-book", ContactID: "fixture-contact", ShouldUntieContact: true, ExpectedSourceGeneration: &generation}, false, ""},
+		{RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", SpeakerIdentityID: "fixture-identity", AddressBookID: "fixture-book", ExpectedSourceGeneration: &generation}, false, ""},
+		{RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", AddressBookID: "fixture-book", ContactID: "fixture-contact", ExpectedSourceGeneration: &generation}, false, ""},
+		{RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", SpeakerIdentityID: "fixture-identity", AddressBookID: "fixture-book", ContactID: "fixture-contact"}, false, ""},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1", ConfirmedName: "Speaker Fixture", AddressBookID: "fixture-book"}, false, ""},
+		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1", ConfirmedName: "Speaker Fixture", AddressBookID: "fixture-book", ContactID: "fixture-contact"}, true, "NameRecordingTemporarySpeaker"},
 		{RecordingActionArguments{Operation: "text-edit", RecordingID: "fixture-recording", RecordingTranscriptSegmentID: "fixture-segment", CorrectedTranscriptText: "Exact user edit", ExpectedSourceGeneration: &generation}, false, ""},
 		{RecordingActionArguments{Operation: "text-edit", RecordingID: "fixture-recording", RecordingTranscriptSegmentID: "fixture-segment", CorrectedTranscriptText: "Exact user edit", ExpectedSourceGeneration: &generation, ClientCorrectionID: "stable-edit-key"}, true, "CorrectRecordingTranscriptText"},
 		{RecordingActionArguments{Operation: "activate-microphone"}, false, ""},
@@ -125,5 +134,28 @@ func TestSpeakerNamesAsksForNamesContainingTheSearch(test *testing.T) {
 	}
 	if !strings.Contains(RecordingDocuments["SuggestRecordingSpeakerNames"], "speakerNameSource") {
 		test.Fatal("the document does not ask where each name came from")
+	}
+}
+
+// Tying a speaker to a contact names the address book and the contact the way each mutation calls them,
+// and takes nothing when no contact is given.
+func TestRecordingActionTiesASpeakerToAContactByTheNamesEachMutationUses(test *testing.T) {
+	generation := int64(4)
+	groupBound := int64(-1)
+	_, variables, err := RecordingAction(RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", SpeakerIdentityID: "fixture-identity", AddressBookID: "fixture-book", ContactID: "fixture-contact", ExpectedSourceGeneration: &generation})
+	if err != nil || variables["addressBookId"] != "fixture-book" || variables["contactId"] != "fixture-contact" || variables["speakerIdentityId"] != "fixture-identity" {
+		test.Fatalf("tying a speaker: %v %v", variables, err)
+	}
+	_, variables, err = RecordingAction(RecordingActionArguments{Operation: "speaker-contact", RecordingID: "fixture-recording", SpeakerIdentityID: "fixture-identity", ShouldUntieContact: true, ExpectedSourceGeneration: &generation})
+	if err != nil || variables["addressBookId"] != "" || variables["contactId"] != "" {
+		test.Fatalf("untying a speaker: %v %v", variables, err)
+	}
+	_, variables, err = RecordingAction(RecordingActionArguments{Operation: "speaker-confirm", RecordingID: "fixture-recording", RecordingTranscriptionAttemptID: "fixture-attempt", LocalSpeakerID: "local-speaker", ConfirmedName: "Speaker Fixture", ClientCorrectionID: "stable-edit-key", ExpectedSourceGeneration: &generation, PassageStartMS: &groupBound, PassageEndMS: &groupBound, AddressBookID: "fixture-book", ContactID: "fixture-contact"})
+	if err != nil || variables["contactAddressBookId"] != "fixture-book" || variables["contactId"] != "fixture-contact" {
+		test.Fatalf("naming a speaker with a contact: %v %v", variables, err)
+	}
+	_, variables, err = RecordingAction(RecordingActionArguments{Operation: "speaker-confirm", RecordingID: "fixture-recording", RecordingTranscriptionAttemptID: "fixture-attempt", LocalSpeakerID: "local-speaker", ConfirmedName: "Speaker Fixture", ClientCorrectionID: "stable-edit-key", ExpectedSourceGeneration: &generation, PassageStartMS: &groupBound, PassageEndMS: &groupBound})
+	if _, hasAddressBook := variables["contactAddressBookId"]; err != nil || hasAddressBook {
+		test.Fatalf("naming a speaker without a contact sent one: %v %v", variables, err)
 	}
 }

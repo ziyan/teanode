@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { graphql, type AgentReference } from '../api'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
+import { personPath } from '../lib/circlePeople'
 import { Avatar } from './avatar'
 import { Tag } from './common'
 import { ConfirmDialog, FormDialog } from './dialog'
@@ -69,7 +70,7 @@ export const CHAT_FIELDS =
 
 const LIST_PEOPLE = `query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }`
 
-const OPEN_DIRECT_CHAT = `mutation ($userId: String!) { OpenDirectChat(userId: $userId) { id } }`
+export const OPEN_DIRECT_CHAT = `mutation ($userId: String!) { OpenDirectChat(userId: $userId) { id } }`
 const CREATE_GROUP_CHAT = `
   mutation ($title: String!, $userIds: [String!]!) {
     CreateGroupChat(title: $title, userIds: $userIds) { id }
@@ -729,11 +730,15 @@ export function ChatLineFrame({
   line,
   isRunStart,
   readers,
+  onLeaving,
   children,
 }: {
   line: ChatLine
   isRunStart: boolean
   readers: ChatMember[]
+  // Called when the picture or the name is followed to the person's card, so
+  // a drawer that is the whole screen puts itself away.
+  onLeaving?: () => void
   children: React.ReactNode
 }) {
   const { t } = useTranslation()
@@ -754,22 +759,36 @@ export function ChatLineFrame({
       : !line.authorUserId && line.authorName
         ? `${line.authorName} ${deleted}`
         : line.authorName
+  // A person's picture and name open their card. Not an agent's, and not a
+  // person whose account is gone, who has no id left to open.
+  const cardPath = line.authorKind === 'person' && line.authorUserId ? personPath(line.authorUserId) : null
+  const picture = (
+    <Avatar name={name || '?'} avatarUrl={line.authorAvatarUrl} colorIndex={line.authorAvatarColorIndex} size={28} />
+  )
   return (
     <div className={['agent-chat-turn', isRunStart ? 'starts-run' : ''].filter(Boolean).join(' ')}>
       <span className="agent-chat-avatar">
         {isRunStart ? (
-          <Avatar
-            name={name || '?'}
-            avatarUrl={line.authorAvatarUrl}
-            colorIndex={line.authorAvatarColorIndex}
-            size={28}
-          />
+          cardPath ? (
+            // The name beside it is the link a screen reader reads.
+            <Link to={cardPath} tabIndex={-1} aria-hidden="true" onClick={onLeaving}>
+              {picture}
+            </Link>
+          ) : (
+            picture
+          )
         ) : null}
       </span>
       <div className="agent-chat-body">
         {isRunStart ? (
           <div className="agent-chat-author">
-            <span>{name}</span>
+            {cardPath ? (
+              <Link to={cardPath} onClick={onLeaving}>
+                {name}
+              </Link>
+            ) : (
+              <span>{name}</span>
+            )}
             {line.authorKind === 'agent' ? <SparkIcon size={11} /> : null}
           </div>
         ) : null}

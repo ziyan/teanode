@@ -127,7 +127,7 @@ rather than meeting "taken".
 The agent can do what the person can with a circle, through the same
 operations and with the same refusals, as one `circle` tool
 (`internal/agent/tools/circle`) whose actions are named as the `teanode circle`
-subcommands are. Reading (`list`, `show`, `people`) is a read. `create`,
+subcommands are. Reading (`list`, `show`, `people`, `person`) is a read. `create`,
 `rename` and `withdraw` (taking back an invitation nobody has answered, which
 the admin can send again) are writes. `invite`, `add`, `accept`, `decline` and
 `role` are granting, in both directions of a role change, because each gives
@@ -224,6 +224,56 @@ takes it away with `unrelate`, only on the person's word; both are outward,
 since the other person is told, so the person sees a card first and a run
 nobody is present for cannot do either.
 
+## A person's card
+
+`ReadPersonCard` (`internal/api/v1api/apigraph/person_card.go`) answers
+everything the caller can see about one person in a single read: who they are
+to the caller, the circles the two share, and a few items from each part of
+the app that concerns them. The dashboard, the iPhone app, `teanode circle
+person` and the agent's `circle` tool (action `person`) all ask it.
+
+It is asked for one of two people. A `userId` is an account that shares a
+circle with the caller, and anybody else, including an account that does not
+exist, is not found (the caller's own account is refused in words, as
+`OpenDirectChat` refuses a chat with oneself). An `addressBookId` with a
+`contactId` is one of the caller's own contacts, which may or may not be linked
+to such an account; another person's contact is not found. A contact linked to
+an account the caller still shares a circle with is that account's card, and
+one that is not has no person, no circles and no chat, and leaves out what
+hangs on the account.
+
+The card is the person as `ListCirclePeople` shows them (with the relationship
+between the two and `linkedContactId`), the circles in common, the caller's own
+contact for them, and whether a chat can be opened. The rest is six sections,
+each read in a transaction of its own, side by side, under the same access
+check as the part of the app it stands for, so the card never shows more than
+that part would. A section that fails or takes longer than three seconds is
+answered as failed and the rest of the card still shows. Each section says
+`shown`, `notShared`, `needsContact`, `unavailable` or `failed`; a client
+leaves an `unavailable` section out.
+
+| Section | Found through | `notShared` when | `needsContact` when |
+| --- | --- | --- | --- |
+| Location: where they are, and today's visits at the history level | the account, `reachLocation` | no location share reaches the caller | never |
+| Health: the kinds they share that have a day summary | the account, `reachHealth` | no health category is shared | never |
+| Photos of them | the caller's contact and its face group | never | no contact is linked |
+| Albums they shared with the caller | the account | never | never |
+| Mail with them | the addresses on the caller's contact, across every mailbox | never | no contact is linked |
+| Recordings they speak in | a speaker the caller tied to the contact | never | no contact is linked |
+| Memory pages about them | the pages linked to the contact | never | no contact is linked |
+
+A section is `unavailable` when the caller may not use that part of the app (a
+missing permission, a service that is off, no agent that is on) and, for the
+sections that hang on the account, when the card is of a contact that is not an
+account. Mail is found by the contact's addresses only and never by the
+account's own address, which is private; an address matches only as a whole, in
+any case, so an address inside a longer one does not match, and the trash, junk
+and drafts folders and a phone's notes are left out.
+
+Each section keeps `itemLimit` items (3 by default, 10 at most) and says whether
+there are more. Health keeps at least four kinds, since a day's summary is a
+few words. "Today" is the caller's day in their own time zone.
+
 ## The circle chat
 
 Every circle has one chat (`chat.circle_id`, migration 0194), made with the
@@ -245,5 +295,6 @@ and read is in `conversations.md`.
 | The invitation note and phone notification | `internal/agent/circle_invitation.go` |
 | Command line | `internal/cmd/circle.go`, `internal/client/circle.go`; `--circle` on `teanode user create` is in `internal/cmd/user.go` |
 | The agent's tool | `internal/agent/tools/circle` |
+| A person's card | `internal/api/v1api/apigraph/person_card.go`, `internal/db/database_person_card.go` (the mail), `internal/client/person_card.go`, `internal/cmd/circle_person.go` |
 | Relationships and pronouns | `internal/models/relationship.go`, `internal/db/database_relationship.go`, `internal/api/v1api/apigraph/relationship.go`, the notes in `internal/agent/relationship_note.go` |
 | Dashboard and phone | `web/src/pages/circles.tsx`, `ios/TeaNode/Sources/CirclesView.swift` |

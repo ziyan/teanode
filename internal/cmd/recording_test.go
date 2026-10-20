@@ -189,3 +189,32 @@ func TestRecordingSpeakerConfirmOffersMeAndImportNeedsNoTitle(test *testing.T) {
 		}
 	}
 }
+
+func TestRecordingSpeakerContactCommandTiesOrUntiesAndNamingCommandsTakeAContact(test *testing.T) {
+	flagsOf := func(commandName string) map[string]bool {
+		for _, command := range recordingActionCommands() {
+			if command.Name != commandName {
+				continue
+			}
+			flagNames := map[string]bool{}
+			for _, flag := range command.Flags {
+				flagNames[flag.Names()[0]] = true
+			}
+			return flagNames
+		}
+		test.Fatalf("there is no %s command", commandName)
+		return nil
+	}
+	for commandName, expectedFlags := range map[string][]string{
+		"speaker-contact":        {"recording-id", "expected-source-generation", "speaker-identity-id", "contact", "none"},
+		"speaker-confirm":        {"contact"},
+		"temporary-speaker-name": {"contact"},
+	} {
+		flagNames := flagsOf(commandName)
+		for _, expected := range expectedFlags {
+			if !flagNames[expected] {
+				test.Errorf("%s has no --%s flag", commandName, expected)
+			}
+		}
+	}
+}

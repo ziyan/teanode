@@ -250,6 +250,14 @@ struct ChatLineFrame<Content: View>: View {
 
     private static var avatarSide: CGFloat { 30 }
 
+    /// The person to open the card of when their picture or name is tapped:
+    /// somebody else's account. Not the agent, not the person themselves, not
+    /// an account that is gone.
+    private var cardUserId: String? {
+        guard author.isPerson, !author.isMine, !author.authorUserId.isEmpty else { return nil }
+        return author.authorUserId
+    }
+
     var body: some View {
         if author.isOwnWords {
             VStack(alignment: .trailing, spacing: 4) {
@@ -260,22 +268,26 @@ struct ChatLineFrame<Content: View>: View {
         } else {
             HStack(alignment: .top, spacing: 8) {
                 if isRunStart {
-                    AvatarView(name: name, avatarUrl: author.authorAvatarUrl, colorIndex: author.authorAvatarColorIndex, size: Self.avatarSide)
+                    OpensPersonCard(userId: cardUserId) {
+                        AvatarView(name: name, avatarUrl: author.authorAvatarUrl, colorIndex: author.authorAvatarColorIndex, size: Self.avatarSide)
+                    }
                 } else {
                     Color.clear.frame(width: Self.avatarSide, height: 1)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     if isRunStart {
-                        HStack(spacing: 4) {
-                            Text(name)
-                            if author.isAgent {
-                                Image(systemName: "sparkles")
-                                    .accessibilityLabel("Agent")
+                        OpensPersonCard(userId: cardUserId) {
+                            HStack(spacing: 4) {
+                                Text(name)
+                                if author.isAgent {
+                                    Image(systemName: "sparkles")
+                                        .accessibilityLabel("Agent")
+                                }
                             }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 6)
                         }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 6)
                     }
                     content
                         // A continuation shows no name, so VoiceOver is told
@@ -299,6 +311,30 @@ struct ChatLineFrame<Content: View>: View {
     }
 }
 
+/// OpensPersonCard makes what it holds, a person's picture or name, open their
+/// card when tapped. With no person to open (the agent, the person's own
+/// words, an account that is gone) it is the content and nothing more.
+struct OpensPersonCard<Content: View>: View {
+    let userId: String?
+    @ViewBuilder let content: Content
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        if let userId {
+            Button {
+                app.openedPerson = .account(userId: userId)
+            } label: {
+                content
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens their card")
+        } else {
+            content
+        }
+    }
+}
+
 /// ChatMenu is what can be done about the chat on screen: who is in it, its
 /// name if it is a group, its sound, and leaving it. A circle's chat follows
 /// the circle, so it is neither renamed nor left from here.
@@ -306,12 +342,23 @@ struct ChatMenu: View {
     let model: ConversationModel
     @Environment(AppModel.self) private var app
     @State private var isShowingMembers = false
+    /// The member whose card a tap in the members sheet asked for, opened when
+    /// the sheet has closed.
+    @State private var pendingPersonUserId: String?
     @State private var isRenaming = false
     @State private var newTitle = ""
     @State private var isConfirmingLeave = false
 
     /// How long "mute for a while" lasts.
     private static let mutedForSeconds: TimeInterval = 8 * 60 * 60
+
+    /// Opens the card of the member tapped in the members sheet, now that the
+    /// sheet is gone.
+    private func openPendingPerson() {
+        guard let userId = pendingPersonUserId else { return }
+        pendingPersonUserId = nil
+        app.openedPerson = .account(userId: userId)
+    }
 
     var body: some View {
         if let chat = model.chat {
@@ -379,8 +426,8 @@ struct ChatMenu: View {
                     Task { await model.rename(to: title) }
                 }
             }
-            .sheet(isPresented: $isShowingMembers) {
-                ChatMembersSheet(model: model)
+            .sheet(isPresented: $isShowingMembers, onDismiss: openPendingPerson) {
+                ChatMembersSheet(model: model) { userId in pendingPersonUserId = userId }
             }
             #if DEBUG
                 // `-TeaNodeScreen chat-members`: the members sheet open over the chat.
@@ -399,6 +446,9 @@ struct ChatMenu: View {
 /// list.
 struct ChatMembersSheet: View {
     let model: ConversationModel
+    /// Asks for a member's card; the menu that shows this sheet opens it once
+    /// the sheet is gone.
+    let onOpenPerson: (String) -> Void
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var isAdding = false
@@ -504,6 +554,65 @@ struct ChatMembersSheet: View {
     }
 
     private func row(_ member: ChatMember, in chat: ChatSummary, canRemove: Bool) -> some View {
+        tappableRow(member, in: chat)
+        .swipeActions(edge: .trailing) {
+            if canRemove {
+                Button(role: .destructive) {
+                    removing = member
+                } label: {
+                    Label("Remove", systemImage: "person.badge.minus")
+                }
+                .tint(.red)
+            }
+        }
+        .contextMenu {
+            if canRemove {
+                Button(role: .destructive) {
+                    removing = member
+                } label: {
+                    Label("Remove", systemImage: "person.badge.minus")
+                }
+                .tint(.red)
+            }
+        }
+        .confirmationDialog(
+            "Remove this person?", isPresented: Binding(get: { removing?.id == member.id }, set: { if !$0 { removing = nil } }),
+            titleVisibility: .visible, presenting: removing
+        ) { person in
+            Button("Remove", role: .destructive) {
+                Task { problemText = await model.removeMember(person) }
+            }
+        } message: { person in
+            Text("\(ChatWords.name(of: person)) will not see new messages in this group. What was said stays.")
+        }
+    }
+
+    /// The row, opening the member's card when tapped; the person's own row,
+    /// and one whose account is gone, open nothing.
+    @ViewBuilder
+    private func tappableRow(_ member: ChatMember, in chat: ChatSummary) -> some View {
+        if member.userId.isEmpty || member.userId == model.ownUserId {
+            rowLabel(member, in: chat)
+        } else {
+            Button {
+                open(member)
+            } label: {
+                rowLabel(member, in: chat)
+            }
+            .foregroundStyle(.primary)
+            .accessibilityHint("Opens their card")
+        }
+    }
+
+    /// Opens their card once this sheet is closed: a card asked for while
+    /// this sheet is still up would not be shown.
+    private func open(_ member: ChatMember) {
+        guard !member.userId.isEmpty, member.userId != model.ownUserId else { return }
+        onOpenPerson(member.userId)
+        dismiss()
+    }
+
+    private func rowLabel(_ member: ChatMember, in chat: ChatSummary) -> some View {
         HStack(spacing: 12) {
             AvatarView(name: member.displayName, avatarUrl: member.avatarUrl, colorIndex: member.avatarColorIndex, size: 36)
             VStack(alignment: .leading, spacing: 2) {
@@ -536,36 +645,7 @@ struct ChatMembersSheet: View {
             }
             Spacer(minLength: 0)
         }
-        .swipeActions(edge: .trailing) {
-            if canRemove {
-                Button(role: .destructive) {
-                    removing = member
-                } label: {
-                    Label("Remove", systemImage: "person.badge.minus")
-                }
-                .tint(.red)
-            }
-        }
-        .contextMenu {
-            if canRemove {
-                Button(role: .destructive) {
-                    removing = member
-                } label: {
-                    Label("Remove", systemImage: "person.badge.minus")
-                }
-                .tint(.red)
-            }
-        }
-        .confirmationDialog(
-            "Remove this person?", isPresented: Binding(get: { removing?.id == member.id }, set: { if !$0 { removing = nil } }),
-            titleVisibility: .visible, presenting: removing
-        ) { person in
-            Button("Remove", role: .destructive) {
-                Task { problemText = await model.removeMember(person) }
-            }
-        } message: { person in
-            Text("\(ChatWords.name(of: person)) will not see new messages in this group. What was said stays.")
-        }
+        .contentShape(.rect)
     }
 }
 

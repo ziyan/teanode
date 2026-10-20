@@ -10,6 +10,14 @@ type RecordingSpeakerIdentity struct {
 	// IsAccountOwner marks the identity that is the person themselves, at most one per account.
 	IsAccountOwner bool      `json:"isAccountOwner"`
 	CreatedAt      time.Time `json:"createdAt"`
+	// ContactAddressBookID and ContactID name the contact of the person's
+	// address books that this name is, both empty for a name not tied to one.
+	// The person ties a name to a contact; it is never made silently.
+	ContactAddressBookID string `json:"contactAddressBookId" gorm:"column:contact_addressbook_id;default:null"`
+	ContactID            string `json:"contactId" gorm:"column:contact_id;default:null"`
+	// ContactName is that contact's name, read from the contact when the
+	// identities are listed and never stored; empty when the name is not tied.
+	ContactName string `json:"contactName" gorm:"-"`
 }
 
 // RecordingSpeakerCorrection preserves a confirmed time interval independently of generated versions.

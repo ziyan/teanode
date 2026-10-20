@@ -219,6 +219,7 @@ function renderAt(entry: string, options: { canUsePhotos?: boolean; earlierEntri
             <Routes>
               <Route path="/location" element={<LocationPage />} />
               <Route path="/photos" element={<p>The photos page</p>} />
+              <Route path="/people/:userId" element={<p>The card page</p>} />
               <Route path="/before" element={null} />
             </Routes>
             <AddressProbe />
@@ -1091,6 +1092,21 @@ it('offers no Photos for the person themselves, a person with no linked contact,
   renderAt('/location', { canUsePhotos: true })
   await screen.findByRole('heading', { name: 'Visits' })
   expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
+})
+
+it("opens the card of the person whose location is shown, and none for the person's own", async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location?person=person-b')
+  const profile = await screen.findByRole('link', { name: 'Profile' })
+  expect(profile.getAttribute('href')).toBe(`/people/${encodeURIComponent(PERSON_B_VIEW.userId)}`)
+  fireEvent.click(profile)
+  expect(await screen.findByText('The card page')).toBeTruthy()
+  cleanup()
+
+  answerWith({})
+  renderAt('/location')
+  await screen.findByRole('heading', { name: 'Visits' })
+  expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull()
 })
 
 const photoOf = (id: string) => ({ id, smallPreviewUrl: `/photos/${id}/small` })

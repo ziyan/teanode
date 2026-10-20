@@ -73,6 +73,13 @@ public struct RecordingSpeakerIdentity: Codable, Hashable, Sendable, Identifiabl
     public let id: String
     public let confirmedName: String
     public var isAccountOwner: Bool? = nil
+    /// The address book and the contact this speaker is tied to, and the contact's name. Empty or nil while the speaker is not
+    /// tied to a contact, and nil from a server that does not tie them.
+    public var contactAddressBookId: String? = nil
+    public var contactId: String? = nil
+    public var contactName: String? = nil
+    /// Whether the speaker is tied to a contact the person still has.
+    public var isTiedToContact: Bool { !(contactId ?? "").isEmpty && !(contactAddressBookId ?? "").isEmpty }
 }
 
 public struct RecordingSpeakerCorrection: Codable, Hashable, Sendable, Identifiable {
@@ -112,7 +119,7 @@ extension Documents {
         id recordingId recordingMediaId versionNumber recordingProcessingState providerModelName processingErrorMessage createdAt
         """
     static let recordingSpeakersFields = """
-        sourceGeneration speakerIdentities { id confirmedName isAccountOwner } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId
+        sourceGeneration speakerIdentities { id confirmedName isAccountOwner contactAddressBookId contactId contactName } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId
         speakerIdentityId clientCorrectionId localSpeakerId passageStartMS passageEndMS sourceGeneration isRemoved } voiceReferences {
         id speakerIdentityId recordingMediaId recordingTranscriptRunId passageStartMS passageEndMS sourceGeneration isRevoked }
         """
@@ -140,22 +147,25 @@ extension Documents {
         """
     public static let suggestRecordingSpeakerNames = """
         query ($searchText: String, $pageSize: Int) { SuggestRecordingSpeakerNames(searchText: $searchText, pageSize: $pageSize) {
-        confirmedName speakerNameSource } }
+        confirmedName speakerNameSource addressBookId contactId } }
         """
     public static let readRecordingSpeakers = """
         query ($recordingId: String!) { ReadRecordingSpeakers(recordingId: $recordingId) { \(recordingSpeakersFields) } }
         """
     public static let correctRecordingSpeaker = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $clientCorrectionId: String!, $confirmedName: String!,
-        $isAccountOwner: Boolean, $recordingTranscriptionAttemptId: String!, $localSpeakerId: String!, $passageStartMS: Int64!, $passageEndMS: Int64!) {
+        $isAccountOwner: Boolean, $contactAddressBookId: String, $contactId: String, $recordingTranscriptionAttemptId: String!, $localSpeakerId: String!,
+        $passageStartMS: Int64!, $passageEndMS: Int64!) {
         CorrectRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, clientCorrectionId:
-        $clientCorrectionId, confirmedName: $confirmedName, isAccountOwner: $isAccountOwner, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId,
+        $clientCorrectionId, confirmedName: $confirmedName, isAccountOwner: $isAccountOwner, contactAddressBookId: $contactAddressBookId,
+        contactId: $contactId, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId,
         localSpeakerId: $localSpeakerId, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS) { \(recordingSpeakersFields) } }
         """
     public static let nameRecordingTemporarySpeaker = """
-        mutation ($recordingId: String!, $speakerLabel: String!, $confirmedName: String!, $isAccountOwner: Boolean) {
+        mutation ($recordingId: String!, $speakerLabel: String!, $confirmedName: String!, $isAccountOwner: Boolean,
+        $contactAddressBookId: String, $contactId: String) {
         NameRecordingTemporarySpeaker(recordingId: $recordingId, speakerLabel: $speakerLabel, confirmedName: $confirmedName, isAccountOwner:
-        $isAccountOwner) }
+        $isAccountOwner, contactAddressBookId: $contactAddressBookId, contactId: $contactId) }
         """
     public static let separateRecordingTemporarySpeaker = """
         mutation ($recordingId: String!, $speakerLabel: String!) {
@@ -165,6 +175,12 @@ extension Documents {
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $speakerIdentityId: String!, $confirmedName: String!) {
         RenameRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, speakerIdentityId:
         $speakerIdentityId, confirmedName: $confirmedName) { \(recordingSpeakersFields) } }
+        """
+    public static let setRecordingSpeakerContact = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $speakerIdentityId: String!, $addressBookId: String!,
+        $contactId: String!) {
+        SetRecordingSpeakerContact(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, speakerIdentityId:
+        $speakerIdentityId, addressBookId: $addressBookId, contactId: $contactId) { \(recordingSpeakersFields) } }
         """
     public static let removeRecordingSpeakerCorrection = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingSpeakerCorrectionId: String!) {
@@ -239,7 +255,8 @@ extension Connection {
     }
     public func correctRecordingSpeaker(
         recordingId: String, expectedSourceGeneration: Int64, clientCorrectionId: String, confirmedName: String, segment: RecordingTranscriptSegment,
-        isWholeGroup: Bool, passageStartMS: Int64? = nil, passageEndMS: Int64? = nil, isAccountOwner: Bool? = nil
+        isWholeGroup: Bool, passageStartMS: Int64? = nil, passageEndMS: Int64? = nil, isAccountOwner: Bool? = nil,
+        contactAddressBookId: String? = nil, contactId: String? = nil
     ) async throws -> RecordingSpeakersView {
         struct Answer: Decodable, Sendable { let CorrectRecordingSpeaker: RecordingSpeakersView }
         let response = try await execute(
@@ -248,6 +265,8 @@ extension Connection {
                 "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
                 "clientCorrectionId": .string(clientCorrectionId), "confirmedName": .string(confirmedName),
                 "isAccountOwner": isAccountOwner.map { .bool($0) } ?? .null,
+                "contactAddressBookId": contactAddressBookId.map { .string($0) } ?? .null,
+                "contactId": contactId.map { .string($0) } ?? .null,
                 "recordingTranscriptionAttemptId": .string(segment.recordingTranscriptionAttemptId),
                 "localSpeakerId": .string(segment.localSpeakerId),
                 "passageStartMS": .number(Double(isWholeGroup ? -1 : passageStartMS ?? segment.segmentStartMS)),
@@ -264,14 +283,19 @@ extension Connection {
         return response
     }
     /// Names a speaker of a capture under way by the label the timeline shows, in every piece. An empty name with `isAccountOwner`
-    /// means the person who owns the account.
-    public func nameRecordingTemporarySpeaker(recordingId: String, speakerLabel: String, confirmedName: String, isAccountOwner: Bool) async throws {
+    /// means the person who owns the account. A contact ties the name to that contact.
+    public func nameRecordingTemporarySpeaker(
+        recordingId: String, speakerLabel: String, confirmedName: String, isAccountOwner: Bool, contactAddressBookId: String? = nil,
+        contactId: String? = nil
+    ) async throws {
         struct Answer: Decodable, Sendable { let NameRecordingTemporarySpeaker: Bool }
         let answer = try await execute(
             Documents.nameRecordingTemporarySpeaker,
             variables: [
                 "recordingId": .string(recordingId), "speakerLabel": .string(speakerLabel), "confirmedName": .string(confirmedName),
                 "isAccountOwner": isAccountOwner ? .bool(true) : .null,
+                "contactAddressBookId": contactAddressBookId.map { .string($0) } ?? .null,
+                "contactId": contactId.map { .string($0) } ?? .null,
             ], as: Answer.self
         ).NameRecordingTemporarySpeaker
         guard answer else { throw TeaNodeError.unreadableAnswer }
@@ -296,6 +320,19 @@ extension Connection {
                 "speakerIdentityId": .string(speakerIdentityId), "confirmedName": .string(confirmedName),
             ], as: Answer.self
         ).RenameRecordingSpeaker
+    }
+    /// Ties a speaker's name to one of the person's contacts, or unties it when the contact is empty.
+    public func setRecordingSpeakerContact(
+        recordingId: String, expectedSourceGeneration: Int64, speakerIdentityId: String, addressBookId: String, contactId: String
+    ) async throws -> RecordingSpeakersView {
+        struct Answer: Decodable, Sendable { let SetRecordingSpeakerContact: RecordingSpeakersView }
+        return try await execute(
+            Documents.setRecordingSpeakerContact,
+            variables: [
+                "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
+                "speakerIdentityId": .string(speakerIdentityId), "addressBookId": .string(addressBookId), "contactId": .string(contactId),
+            ], as: Answer.self
+        ).SetRecordingSpeakerContact
     }
     public func removeRecordingSpeakerCorrection(recordingId: String, expectedSourceGeneration: Int64, recordingSpeakerCorrectionId: String)
         async throws -> RecordingSpeakersView
@@ -340,5 +377,10 @@ extension Connection {
 public struct RecordingSpeakerNameSuggestion: Codable, Hashable, Sendable, Identifiable {
     public let confirmedName: String
     public let speakerNameSource: String
+    /// The contact a suggestion from the contacts is, or the one a speaker named before is tied to. Nil or empty otherwise.
+    public var addressBookId: String? = nil
+    public var contactId: String? = nil
     public var id: String { confirmedName }
+    /// Whether choosing this name also ties the speaker to a contact.
+    public var hasContact: Bool { !(contactId ?? "").isEmpty && !(addressBookId ?? "").isEmpty }
 }

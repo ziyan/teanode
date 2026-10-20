@@ -573,3 +573,73 @@ func TestRelateAndUnrelateAreOutwardAndNeedCircleUse(t *testing.T) {
 		t.Errorf("people did not ask what each is to the person: %v", people)
 	}
 }
+
+// A person's card is read with ReadPersonCard: by username, which is turned
+// into the account id from the people the person shares a circle with, by
+// account id, or by a contact; it is a read, and what it holds was written by
+// other people.
+func TestPersonReadsACardByUsernameAccountOrContact(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{
+		"ListCirclePeople": `{"ListCirclePeople":[{"userId":"user-one","username":"personx"},{"userId":"user-two","username":"persony"}]}`,
+		"ReadPersonCard":   `{"ReadPersonCard":{"person":{"userId":"user-two","username":"persony"},"canMessage":true}}`,
+	}}
+
+	result, err := callAs(t, operations, `{"action":"person","username":" PersonY ","item_limit":5}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "persony") {
+		t.Errorf("the card is untrusted words: %+v", result)
+	}
+	if _, err := callAs(t, operations, `{"action":"person","user_id":" user-one "}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := callAs(t, operations, `{"action":"person","address_book_id":"book-one","contact_id":"contact-one"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	cards := operations.sentWith("ReadPersonCard")
+	if len(cards) != 3 {
+		t.Fatalf("three cards were asked for: %v", operations.sent)
+	}
+	if cards[0].variables["userId"] != "user-two" || cards[0].variables["itemLimit"] != 5 || len(cards[0].variables) != 2 {
+		t.Errorf("by username sent %v", cards[0].variables)
+	}
+	if cards[1].variables["userId"] != "user-one" || len(cards[1].variables) != 1 {
+		t.Errorf("by account sent %v", cards[1].variables)
+	}
+	if cards[2].variables["addressBookId"] != "book-one" || cards[2].variables["contactId"] != "contact-one" || len(cards[2].variables) != 2 {
+		t.Errorf("by contact sent %v", cards[2].variables)
+	}
+
+	if risk := circleTool(t).RiskFor([]byte(`{"action":"person","username":"persony"}`)); risk != tools.RiskRead {
+		t.Errorf("a card is %v, not a read", risk)
+	}
+}
+
+// Somebody the person shares no circle with has no username to find, and
+// the card is never asked for.
+func TestPersonRefusesAUsernameNobodyInTheCirclesHas(t *testing.T) {
+	operations := &circleOperations{grants: aMember, answers: map[string]string{
+		"ListCirclePeople": `{"ListCirclePeople":[{"userId":"user-one","username":"personx"}]}`,
+	}}
+
+	if _, err := callAs(t, operations, `{"action":"person","username":"stranger"}`); err == nil || !strings.Contains(err.Error(), "shares a circle") {
+		t.Fatalf("a stranger has no card: %v", err)
+	}
+	if asked := operations.sentWith("ReadPersonCard"); len(asked) != 0 {
+		t.Errorf("a card was asked for: %v", asked)
+	}
+}
+
+// A person who may not use circles cannot read a card.
+func TestPersonNeedsTheRightToUseCircles(t *testing.T) {
+	operations := &circleOperations{grants: []models.Grant{{Permission: models.PermissionCalendarUse}}}
+
+	if _, err := callAs(t, operations, `{"action":"person","user_id":"user-one"}`); err == nil || !strings.Contains(err.Error(), "not something they may do") {
+		t.Fatalf("a card is refused: %v", err)
+	}
+	if len(operations.sent) != 0 {
+		t.Errorf("the API was asked: %v", operations.sent)
+	}
+}

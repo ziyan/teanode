@@ -5177,7 +5177,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         // A deleted message is a mark that it was, not a gap.
         if (line.isDeleted) {
           return (
-            <ChatLineFrame key={line.key} line={line} isRunStart={isRunStart} readers={readers}>
+            <ChatLineFrame key={line.key} line={line} isRunStart={isRunStart} readers={readers} onLeaving={leaving}>
               <div className="agent-line chat-deleted muted">{t('chat.deleted')}</div>
             </ChatLineFrame>
           )
@@ -5187,7 +5187,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         const canEdit = isOwnWords(line) && Boolean(line.messageId)
         const canDelete = Boolean(line.messageId) && (canEdit || isChatAdmin)
         return (
-          <ChatLineFrame key={line.key} line={line} isRunStart={isRunStart} readers={readers}>
+          <ChatLineFrame key={line.key} line={line} isRunStart={isRunStart} readers={readers} onLeaving={leaving}>
             {/* The time is in the toolbar, where it is read when the pointer
                 is on the bubble: a tooltip over the same bubble opened on top
                 of the toolbar and of the reactions picker. */}

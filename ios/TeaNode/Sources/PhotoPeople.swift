@@ -603,13 +603,20 @@ struct PhotoPersonScreen: View {
                 FacePictureView(facePictureUrl: current.facePictureUrl, name: PhotoPersonWords.name(of: current), connection: model.connection)
                     .frame(width: 96, height: 96)
                 if let account = current.account, current.isInCircles {
-                    HStack(spacing: 8) {
-                        AvatarView(name: account.displayName, avatarUrl: account.avatarUrl, colorIndex: account.avatarColorIndex, size: 24)
-                        Text("In your circles as \(account.displayName)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    // Opens their card, which has this person's photos among the rest.
+                    Button {
+                        app.openedPerson = .account(userId: account.userId)
+                    } label: {
+                        HStack(spacing: 8) {
+                            AvatarView(name: account.displayName, avatarUrl: account.avatarUrl, colorIndex: account.avatarColorIndex, size: 24)
+                            Text("In your circles as \(account.displayName)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
                     }
-                    .accessibilityElement(children: .combine)
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens their card")
                 }
                 if current.isHidden {
                     Label("Hidden from People", systemImage: "eye.slash")

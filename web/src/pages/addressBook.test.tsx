@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../api'
@@ -18,8 +18,11 @@ beforeEach(() => {
 afterEach(cleanup)
 
 let shownSearch = ''
+let shownPath = ''
 function SearchProbe() {
-  shownSearch = useLocation().search
+  const location = useLocation()
+  shownSearch = location.search
+  shownPath = location.pathname
   return null
 }
 
@@ -29,7 +32,10 @@ function answer(hasPhoto = false) {
       return { ListAddressBooks: [{ id: 'book-1', name: 'Mine', contacts: 1 }] } as never
     if (document.includes('ListContacts'))
       return {
-        ListContacts: [{ id: 'card-1', uid: 'u1', name: 'Fixture Guest', emails: ['guest@example.com'], phones: [] }],
+        ListContacts: [
+          { id: 'card-1', uid: 'u1', name: 'Fixture Guest', emails: ['guest@example.com'], phones: [] },
+          { id: 'card-2', uid: 'u2', name: 'Linked Guest', emails: ['linked@example.com'], phones: [] },
+        ],
       } as never
     if (document.includes('GetContact'))
       return {
@@ -78,7 +84,10 @@ function show(address: string) {
     <TranslationProvider>
       <ToastProvider>
         <MemoryRouter initialEntries={[address]}>
-          <AddressBookPage />
+          <Routes>
+            <Route path="/contacts" element={<AddressBookPage />} />
+            <Route path="*" element={null} />
+          </Routes>
           <SearchProbe />
         </MemoryRouter>
       </ToastProvider>
@@ -86,16 +95,32 @@ function show(address: string) {
   )
 }
 
-it('opens the card a link from memory names, with the pages it is in, and forgets the address when it closes', async () => {
+// The contact's form, opened by the pencil on its row.
+async function openEditor(name: string) {
+  show('/contacts')
+  fireEvent.click(await screen.findByRole('button', { name: `${name}: Edit` }))
+}
+
+it('sends a link that names a contact to the contact\'s card, in the same place', async () => {
   answer()
   show('/contacts?contact=card-2')
+  await waitFor(() => expect(shownPath).toBe('/people/contact/book-1/card-2'))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('opens a contact\'s card from its name, and its form from the pencil, with the pages it is in', async () => {
+  answer()
+  show('/contacts')
+  const name = await screen.findByRole('link', { name: 'Linked Guest' })
+  expect(name.getAttribute('href')).toBe('/people/contact/book-1/card-2')
+  fireEvent.click(screen.getByRole('button', { name: 'Linked Guest: Edit' }))
   const dialog = await screen.findByRole('dialog')
   expect((within(dialog).getAllByRole('textbox')[0] as HTMLInputElement).value).toBe('Linked Guest')
   expect(await within(dialog).findByRole('link', { name: 'Linked Guest Page' })).toBeTruthy()
   const askedAbout = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('ReadRecordMemoryLinks'))
   expect(askedAbout?.[1]).toMatchObject({ recordKind: 'contact', recordId: 'card-2' })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-  await waitFor(() => expect(shownSearch).not.toContain('contact='))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 })
 
 it('opens no card unless a link names one', async () => {
@@ -125,13 +150,13 @@ it('asks the server for the words in the address and says so over the table, whi
 
 it('offers to remove the picture of a contact that has one, and only then', async () => {
   answer(false)
-  show('/contacts?contact=card-2')
+  await openEditor('Linked Guest')
   const dialog = await screen.findByRole('dialog')
   expect(within(dialog).queryByRole('button', { name: 'Remove picture' })).toBeNull()
   cleanup()
 
   answer(true)
-  show('/contacts?contact=card-2')
+  await openEditor('Linked Guest')
   const withPicture = await screen.findByRole('dialog')
   const removedPicture = () =>
     vi
@@ -222,7 +247,7 @@ const setAccountCalls = () =>
 it('links a contact to a person in the circles from a picker, leaving out people another contact already is', async () => {
   answerWithCircles({ otherLinkedAccount: sam })
   window.localStorage.clear()
-  show('/contacts?contact=card-1')
+  await openEditor('Fixture Guest')
   const dialog = await screen.findByRole('dialog')
   fireEvent.click(await within(dialog).findByRole('button', { name: 'Is in your circles as…' }))
   const picker = (await screen.findAllByRole('dialog'))[1]
@@ -239,7 +264,7 @@ it('links a contact to a person in the circles from a picker, leaving out people
 
 it('shows who a contact is in the circles, with Change and Remove, and removing sends no account', async () => {
   answerWithCircles({ linkedAccount: sam })
-  show('/contacts?contact=card-1')
+  await openEditor('Fixture Guest')
   const dialog = await screen.findByRole('dialog')
   expect(await within(dialog).findByText('In your circles as Sam Example')).toBeTruthy()
   expect(within(dialog).queryByRole('button', { name: 'Is in your circles as…' })).toBeNull()
@@ -253,7 +278,7 @@ it('shows who a contact is in the circles, with Change and Remove, and removing 
 
 it('says a refused link in a toast and keeps the dialog open', async () => {
   answerWithCircles()
-  show('/contacts?contact=card-1')
+  await openEditor('Fixture Guest')
   const dialog = await screen.findByRole('dialog')
   fireEvent.click(await within(dialog).findByRole('button', { name: 'Is in your circles as…' }))
   const picker = (await screen.findAllByRole('dialog'))[1]

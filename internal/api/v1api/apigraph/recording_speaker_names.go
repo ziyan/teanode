@@ -18,9 +18,14 @@ type SuggestRecordingSpeakerNamesArguments struct {
 // RecordingSpeakerNameSuggestion is one name to offer, and where it came from:
 // speaker for a name already given to a voice, memory for a person page of the
 // agent's memory, contact for a card in the person's address books.
+// AddressBookID and ContactID say which contact it is: for a contact
+// suggestion, and for a speaker suggestion whose name is tied to one; empty
+// otherwise.
 type RecordingSpeakerNameSuggestion struct {
 	ConfirmedName     string `json:"confirmedName"`
 	SpeakerNameSource string `json:"speakerNameSource"`
+	AddressBookID     string `json:"addressBookId"`
+	ContactID         string `json:"contactId"`
 }
 
 const recordingSpeakerNameSuggestionLimit = 20
@@ -55,22 +60,31 @@ func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments S
 	}
 	suggestions := []*RecordingSpeakerNameSuggestion{}
 	isOffered := map[string]bool{}
-	offer := func(name, speakerNameSource string) {
+	offer := func(name, speakerNameSource, addressBookId, contactId string) {
 		name = strings.TrimSpace(name)
 		key := strings.ToLower(name)
 		if name == "" || len(name) > recordingSpeakerNameBytes || isOffered[key] || len(suggestions) >= pageSize || !matches(name) {
 			return
 		}
 		isOffered[key] = true
-		suggestions = append(suggestions, &RecordingSpeakerNameSuggestion{ConfirmedName: name, SpeakerNameSource: speakerNameSource})
+		suggestions = append(suggestions, &RecordingSpeakerNameSuggestion{ConfirmedName: name, SpeakerNameSource: speakerNameSource, AddressBookID: addressBookId, ContactID: contactId})
 	}
 	transaction := self.transaction(ctx)
 	identities, err := transaction.ListRecordingSpeakerIdentitiesInUse(userId)
 	if err != nil {
 		return nil, translateError(err)
 	}
+	// Only the books the agent was given show it which contact a voice is.
+	grantedAddressBookIds, err := self.recordingSpeakerContactBooks(ctx, userId)
+	if err != nil {
+		return nil, err
+	}
 	for _, identity := range identities {
-		offer(identity.ConfirmedName, "speaker")
+		if grantedAddressBookIds != nil && !grantedAddressBookIds[identity.ContactAddressBookID] {
+			offer(identity.ConfirmedName, "speaker", "", "")
+			continue
+		}
+		offer(identity.ConfirmedName, "speaker", identity.ContactAddressBookID, identity.ContactID)
 	}
 	assistant, err := transaction.GetAgentByUser(userId)
 	if err != nil {
@@ -82,7 +96,7 @@ func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments S
 			return nil, translateError(err)
 		}
 		for _, person := range people {
-			offer(person.Name, "memory")
+			offer(person.Name, "memory", "", "")
 		}
 	}
 	addressBooks, err := transaction.ListAddressBooks(userId)
@@ -101,7 +115,7 @@ func (self *graph) SuggestRecordingSpeakerNames(ctx context.Context, arguments S
 			return nil, translateError(err)
 		}
 		for _, contact := range contacts {
-			offer(contact.Name, "contact")
+			offer(contact.Name, "contact", addressBook.ID, contact.ID)
 		}
 	}
 	return suggestions, nil

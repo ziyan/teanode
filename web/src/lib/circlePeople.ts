@@ -28,3 +28,14 @@ export async function listCirclePeople(signal?: AbortSignal): Promise<CirclePers
 export function personPhotosAddress(userId: string): string {
   return `/photos?person=${encodeURIComponent(userId)}`
 }
+
+// The page of an account that shares a circle with the signed-in person.
+export function personPath(userId: string): string {
+  return `/people/${encodeURIComponent(userId)}`
+}
+
+// The page of one of the signed-in person's own contacts. A contact that is
+// linked to an account has the same sections as the account.
+export function contactPersonPath(addressBookId: string, contactId: string): string {
+  return `/people/contact/${encodeURIComponent(addressBookId)}/${encodeURIComponent(contactId)}`
+}
