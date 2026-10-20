@@ -1,31 +1,28 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
+import { contactPhotoAddress, SET_CONTACT_ACCOUNT, useContactEditor } from '../components/contactEditor'
 import { Column, DataTable } from '../components/dataTable'
-import { ConfirmDialog, FormDialog } from '../components/dialog'
+import { ConfirmDialog } from '../components/dialog'
 import { PencilIcon, TrashIcon, UserIcon, KeptPersonIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
 import { SenderLogo } from '../components/senderLogo'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
-import { CIRCLE_PERSON_FIELDS, listCirclePeople, type CirclePerson } from '../lib/circlePeople'
-import { InMemory } from '../memoryLinks'
-import { personLabel, personName } from '../components/personLabel'
+import { CIRCLE_PERSON_FIELDS, contactPersonPath, type CirclePerson } from '../lib/circlePeople'
+import { personName } from '../components/personLabel'
 
 // The address book: the people somebody chose to keep.
 //
 // It is the only list of people the server has. Nothing is learned from
 // traffic any more: this is what the composer completes from, what the
-// "sender is known" rule condition asks, and what the agent reads.
-//
-// A contact is a vCard. The form here fills in the handful of boxes most
-// contacts need, and the server applies them to the card it already holds, so
-// that a photograph or a birthday put there by a phone survives somebody
-// correcting a spelling in a browser.
+// "sender is known" rule condition asks, and what the agent reads. A name in
+// the list opens the person's card; the form that changes a contact is the
+// one in components/contactEditor.tsx, opened by the pencil.
 
 const BOOKS = `query { ListAddressBooks { id name description contacts } }`
 
@@ -37,31 +34,7 @@ const CONTACTS = `
     }
   }`
 
-const SAVE = `
-  mutation ($addressBookId: String!, $id: String, $name: String, $organization: String,
-            $emails: [String!], $phones: [String!], $note: String, $addresses: [AddressInput!]) {
-    SaveContact(addressBookId: $addressBookId, id: $id, name: $name, organization: $organization,
-                emails: $emails, phones: $phones, note: $note, addresses: $addresses) { id name }
-  }`
-
-const GET = `query ($id: String!) {
-  GetContact(id: $id) {
-    id name organization emails phones note hasPhoto
-    addresses { street locality region postalCode country }
-    accountUserId account { ${CIRCLE_PERSON_FIELDS} }
-  }
-}`
-
 const DELETE = `mutation ($id: String!) { DeleteContact(id: $id) }`
-
-// The link from a contact to a person in the owner's circles. Only the owner
-// sees it: nobody is told, and an empty account takes the link off.
-const SET_ACCOUNT = `
-  mutation ($addressBookId: String!, $contactId: String!, $accountUserId: String) {
-    SetContactAccount(addressBookId: $addressBookId, contactId: $contactId, accountUserId: $accountUserId) {
-      id accountUserId account { ${CIRCLE_PERSON_FIELDS} }
-    }
-  }`
 
 // Contacts whose address is the address of a person in the circles, offered
 // for the owner to confirm.
@@ -72,8 +45,6 @@ const SUGGESTIONS = `query {
     account { ${CIRCLE_PERSON_FIELDS} }
   }
 }`
-
-const REMOVE_PICTURE = `mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }`
 
 type AddressBook = { id: string; name: string; description?: string; contacts: number }
 type Address = {
@@ -127,62 +98,6 @@ function writeDismissedSuggestions(contactIds: string[]) {
   }
 }
 
-// A form's worth of one contact. Addresses and numbers are edited as one box
-// each, a line apiece, which is how somebody with three of them expects to
-// type them and avoids a row of controls for adding and removing lines.
-type Draft = {
-  id: string
-  name: string
-  organization: string
-  emails: string
-  phones: string
-  note: string
-  // The first postal address, in the components a card keeps it in. Any
-  // others the card carries are left alone.
-  street: string
-  locality: string
-  region: string
-  postalCode: string
-  country: string
-  addresses: Address[]
-  // Whether the card carries a picture, which can be taken off here.
-  hasPhoto: boolean
-  // The person in the circles this contact is, if the owner linked one.
-  account: CirclePerson | null
-}
-
-const empty: Draft = {
-  id: '',
-  name: '',
-  organization: '',
-  emails: '',
-  phones: '',
-  note: '',
-  street: '',
-  locality: '',
-  region: '',
-  postalCode: '',
-  country: '',
-  addresses: [],
-  hasPhoto: false,
-  account: null,
-}
-
-// Where a contact's picture is served from. It lives inside the card as
-// base64 -- a card with a photograph on it is several hundred kilobytes -- so
-// the listing says only whether there is one and the browser asks for it
-// separately, where it is cached against the card's own version.
-function photoAddress(id: string): string {
-  return `/api/v1/contacts/${encodeURIComponent(id)}/photo`
-}
-
-function lines(value: string): string[] {
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-}
-
 // Which contact is the person themselves. Kept on the account rather than
 // on the agent, because it is true of them whether or not they have one:
 // the composer and a CardDAV client can read it too. The agent's use of
@@ -201,8 +116,11 @@ export function AddressBookPage() {
   const bookId = book?.id ?? ''
   // The address can name a card ("?contact=") or words to look for
   // ("?search="), as the search across everything does: the words are asked of
-  // the server, and a chip over the table says so and takes them off.
+  // the server, and a chip over the table says so and takes them off. A card
+  // is opened as a person's card, which is where the memory, the search and
+  // the photos send somebody who only knows the contact's id.
   const [parameters, setParameters] = useSearchParams()
+  const navigate = useNavigate()
   const searchWords = (parameters.get('search') ?? '').trim()
   const contacts = useQuery(
     () =>
@@ -228,21 +146,31 @@ export function AddressBookPage() {
     refresh: false,
   })
   const [dismissedContactIds, setDismissedContactIds] = useState<string[]>(readDismissedSuggestions)
-  const [isChoosingAccount, setIsChoosingAccount] = useState(false)
 
-  const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<Contact | null>(null)
-  // Whether the picture of the contact being edited is being asked about.
-  const [isRemovingPicture, setIsRemovingPicture] = useState(false)
-  // A link from the agent's memory names the card in the address: the card
-  // opens, once, as if its row had been chosen.
-  const linkedContactId = parameters.get('contact') ?? ''
-  const openedLink = useRef('')
   const [busy, setBusy] = useState(false)
-  // Which contact's form is being fetched, so its row says so rather than
-  // appearing to do nothing.
-  const [opening, setOpening] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
+
+  // The accounts that a loaded contact of this book already is, left out of
+  // the editor's picker. The server is the guard: it refuses a second contact
+  // for the same account in a book, and that refusal is shown as a toast.
+  const rows = contacts.data?.ListContacts ?? []
+  const takenAccountIds = new Set(
+    rows.filter((contact) => contact.accountUserId).map((contact) => contact.accountUserId!),
+  )
+  const editor = useContactEditor({
+    addressBookId: bookId,
+    takenAccountIds,
+    onChanged: () => Promise.all([contacts.reload(), books.reload(), suggestions.reload()]),
+  })
+
+  // A link from the agent's memory, the search or the photos names the card in
+  // the address: the card's page opens in its place.
+  const linkedContactId = parameters.get('contact') ?? ''
+  useEffect(() => {
+    if (!linkedContactId || !bookId) return
+    void navigate(contactPersonPath(bookId, linkedContactId), { replace: true })
+  }, [linkedContactId, bookId, navigate])
 
   // Whether it worked, so a dialog closes only on success. What happened is
   // said in a toast either way; the dialog also shows the reason, because
@@ -262,67 +190,6 @@ export function AddressBookPage() {
     } finally {
       setBusy(false)
     }
-  }
-
-  // Editing reads the whole contact first, because the list does not carry
-  // the note and there is no sense sending every card to draw a table.
-  // Read the whole contact before showing the form, never alongside it.
-  // The form sends every box, and an empty box means "clear this", so a
-  // dialog opened before the note had arrived would delete the note of
-  // anybody quick enough to save -- or of anybody at all, if the read
-  // failed and left the box empty behind a toast nobody had to act on.
-  const edit = useCallback(
-    async (contact: Contact) => {
-      setProblem(null)
-      setOpening(contact.id)
-      try {
-        const answer = await graphql<{ GetContact: Contact & { note?: string } }>(GET, { id: contact.id })
-        const full = answer.GetContact
-        const kept = full.addresses ?? []
-        const first = kept[0] ?? {}
-        setDraft({
-          id: contact.id,
-          name: full.name ?? '',
-          organization: full.organization ?? '',
-          emails: (full.emails ?? []).join('\n'),
-          phones: (full.phones ?? []).join('\n'),
-          note: full.note ?? '',
-          street: first.street ?? '',
-          locality: first.locality ?? '',
-          region: first.region ?? '',
-          postalCode: first.postalCode ?? '',
-          country: first.country ?? '',
-          addresses: kept,
-          hasPhoto: full.hasPhoto ?? false,
-          account: full.account ?? null,
-        })
-      } catch (failure) {
-        toast.failure(failure, t('addressBook.failed'))
-      } finally {
-        setOpening('')
-      }
-    },
-    [toast, t],
-  )
-
-  useEffect(() => {
-    if (!linkedContactId || openedLink.current === linkedContactId) return
-    openedLink.current = linkedContactId
-    void edit({ id: linkedContactId, uid: '', emails: [], phones: [] })
-  }, [linkedContactId, edit])
-  const closeDraft = () => {
-    setDraft(null)
-    setIsRemovingPicture(false)
-    setIsChoosingAccount(false)
-    if (linkedContactId)
-      setParameters(
-        (previous) => {
-          const next = new URLSearchParams(previous)
-          next.delete('contact')
-          return next
-        },
-        { replace: true },
-      )
   }
 
   // Naming the contact that is the person themselves. One at a time:
@@ -371,11 +238,13 @@ export function AddressBookPage() {
           <span className="sender-row">
             <SenderLogo
               name={contact.name || contact.emails?.[0] || ''}
-              src={contact.hasPhoto ? photoAddress(contact.id) : undefined}
+              src={contact.hasPhoto ? contactPhotoAddress(contact.id) : undefined}
               size={24}
             />
             <span className="contact-name">
-              {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
+              <Link to={contactPersonPath(bookId, contact.id)}>
+                {contact.name || <span className="muted">{t('mailboxSettings.contactUnnamed')}</span>}
+              </Link>
               {/* The Email and Phone columns are dropped on a phone, so the
                   address and the number go under the name there. */}
               {(contact.emails ?? [])[0] || (contact.phones ?? [])[0] ? (
@@ -458,8 +327,8 @@ export function AddressBookPage() {
                 type="button"
                 className="icon-action"
                 aria-label={`${contact.name}: ${t('common.edit')}`}
-                disabled={busy || opening === contact.id}
-                onClick={() => void edit(contact)}
+                disabled={busy || editor.isBusy || editor.openingContactId === contact.id}
+                onClick={() => void editor.open(contact.id)}
               >
                 <PencilIcon size={16} />
               </button>
@@ -479,42 +348,22 @@ export function AddressBookPage() {
         ),
       },
     ],
-    [t, busy, opening, myContactId, edit, markAsMe, hasAddress],
+    [t, busy, editor, bookId, myContactId, markAsMe, hasAddress],
   )
 
-  const rows = contacts.data?.ListContacts ?? []
-
-  // Links are made one contact at a time, and a link that was just made or
-  // taken off changes both the suggestions and the picker's choices.
-  // account is null to take the link off.
-  const setAccount = async (
-    addressBookId: string,
-    contactId: string,
-    contactName: string,
-    account: CirclePerson | null,
-  ) => {
+  // A suggestion is answered one contact at a time. The editor makes the other
+  // links, from a contact's own form.
+  const linkSuggestion = async (suggestion: Suggestion, contactName: string) => {
     const isDone = await run(
-      () => graphql(SET_ACCOUNT, { addressBookId, contactId, accountUserId: account?.userId ?? null }),
-      account
-        ? t('addressBook.accountLinked', { name: contactName, account: personName(account) })
-        : t('addressBook.accountRemoved', { name: contactName }),
+      () =>
+        graphql(SET_CONTACT_ACCOUNT, {
+          addressBookId: suggestion.addressBookId,
+          contactId: suggestion.contact.id,
+          accountUserId: suggestion.account.userId,
+        }),
+      t('addressBook.accountLinked', { name: contactName, account: personName(suggestion.account) }),
     )
-    if (isDone) {
-      void suggestions.reload()
-      setDraft((previous) => (previous && previous.id === contactId ? { ...previous, account } : previous))
-    }
-    return isDone
-  }
-
-  // A refusal is shown as a toast, so the dialog's inline problem is cleared
-  // as the picker opens and closes: it is not shown twice, or left behind.
-  const openAccountPicker = () => {
-    setProblem(null)
-    setIsChoosingAccount(true)
-  }
-  const closeAccountPicker = () => {
-    setProblem(null)
-    setIsChoosingAccount(false)
+    if (isDone) void suggestions.reload()
   }
 
   const dismissSuggestion = (contactId: string) => {
@@ -527,28 +376,10 @@ export function AddressBookPage() {
   const offeredSuggestions = (suggestions.data?.ListContactAccountSuggestions ?? []).filter(
     (suggestion) => !dismissedContactIds.includes(suggestion.contact.id),
   )
-  // The accounts that another loaded contact of this book already is, left out
-  // of the picker. The server is the guard: it refuses a second contact for the
-  // same account in a book, and that refusal is shown as a toast.
-  const takenAccountIds = new Set(
-    rows
-      .filter((contact) => contact.id !== draft?.id && contact.accountUserId)
-      .map((contact) => contact.accountUserId!),
-  )
-  const editing = Boolean(draft?.id)
-
   return (
     <>
       <PageHeadingActions>
-        <button
-          className="primary"
-          type="button"
-          disabled={!bookId}
-          onClick={() => {
-            setProblem(null)
-            setDraft({ ...empty })
-          }}
-        >
+        <button className="primary" type="button" disabled={!bookId} onClick={editor.openNew}>
           {t('addressBook.new')}
         </button>
       </PageHeadingActions>
@@ -574,9 +405,7 @@ export function AddressBookPage() {
                     className="primary"
                     disabled={busy}
                     aria-label={t('addressBook.suggestionLinkFor', { name: contactName })}
-                    onClick={() =>
-                      void setAccount(suggestion.addressBookId, suggestion.contact.id, contactName, suggestion.account)
-                    }
+                    onClick={() => void linkSuggestion(suggestion, contactName)}
                   >
                     {t('addressBook.suggestionLink')}
                   </button>
@@ -623,217 +452,7 @@ export function AddressBookPage() {
         countLabel={(count) => plural(count, { one: 'contacts.countOne', other: 'contacts.count' }, { count })}
       />
 
-      {draft && (
-        <FormDialog
-          title={editing ? t('addressBook.edit') : t('addressBook.new')}
-          submitLabel={editing ? t('common.save') : t('common.create')}
-          busy={busy}
-          error={problem}
-          canSubmit={draft.name.trim().length > 0 || lines(draft.emails).length > 0}
-          // Escape and the scrim belong to the question while it is asked.
-          onClose={() => !isRemovingPicture && !isChoosingAccount && closeDraft()}
-          onSubmit={() =>
-            void run(
-              () =>
-                // Every box, including the empty ones. The server treats a
-                // field left out as "leave it alone" and a field given
-                // empty as "clear it", and this form shows all of them, so
-                // a box somebody emptied means to clear the field.
-                graphql(SAVE, {
-                  addressBookId: bookId,
-                  id: draft.id || null,
-                  name: draft.name.trim(),
-                  organization: draft.organization.trim(),
-                  emails: lines(draft.emails),
-                  phones: lines(draft.phones),
-                  note: draft.note.trim(),
-                  // The first address from the boxes, and any others the
-                  // card already carried, in order: a card may hold a home
-                  // and a work address, and this form shows one.
-                  addresses: [
-                    {
-                      street: draft.street.trim(),
-                      locality: draft.locality.trim(),
-                      region: draft.region.trim(),
-                      postalCode: draft.postalCode.trim(),
-                      country: draft.country.trim(),
-                    },
-                    ...draft.addresses.slice(1).map((address) => ({
-                      street: address.street ?? '',
-                      locality: address.locality ?? '',
-                      region: address.region ?? '',
-                      postalCode: address.postalCode ?? '',
-                      country: address.country ?? '',
-                    })),
-                  ],
-                }),
-              editing
-                ? t('addressBook.saidSaved', { name: draft.name.trim() || lines(draft.emails)[0] || '' })
-                : t('addressBook.saidAdded', { name: draft.name.trim() || lines(draft.emails)[0] || '' }),
-            ).then((done) => done && closeDraft())
-          }
-        >
-          <label>
-            {t('contacts.name')}
-            <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-          </label>
-          <label>
-            {t('addressBook.organization')}
-            <input
-              value={draft.organization}
-              onChange={(event) => setDraft({ ...draft, organization: event.target.value })}
-            />
-          </label>
-          <label>
-            {t('addressBook.emails')}
-            <textarea
-              rows={2}
-              value={draft.emails}
-              onChange={(event) => setDraft({ ...draft, emails: event.target.value })}
-            />
-            <span className="muted">{t('addressBook.onePerLine')}</span>
-          </label>
-          <label>
-            {t('addressBook.phones')}
-            <textarea
-              rows={2}
-              value={draft.phones}
-              onChange={(event) => setDraft({ ...draft, phones: event.target.value })}
-            />
-            <span className="muted">{t('addressBook.onePerLine')}</span>
-          </label>
-          <label>
-            {t('addressBook.street')}
-            <input value={draft.street} onChange={(event) => setDraft({ ...draft, street: event.target.value })} />
-          </label>
-          <div className="form-row">
-            <label>
-              {t('addressBook.locality')}
-              <input
-                value={draft.locality}
-                onChange={(event) => setDraft({ ...draft, locality: event.target.value })}
-              />
-            </label>
-            <label>
-              {t('addressBook.region')}
-              <input value={draft.region} onChange={(event) => setDraft({ ...draft, region: event.target.value })} />
-            </label>
-          </div>
-          <div className="form-row">
-            <label>
-              {t('addressBook.postalCode')}
-              <input
-                value={draft.postalCode}
-                onChange={(event) => setDraft({ ...draft, postalCode: event.target.value })}
-              />
-            </label>
-            <label>
-              {t('addressBook.country')}
-              <input value={draft.country} onChange={(event) => setDraft({ ...draft, country: event.target.value })} />
-            </label>
-          </div>
-          <label>
-            {t('addressBook.note')}
-            <textarea
-              rows={2}
-              value={draft.note}
-              onChange={(event) => setDraft({ ...draft, note: event.target.value })}
-            />
-          </label>
-          {editing && draft.hasPhoto ? (
-            <div className="form-row">
-              <SenderLogo name={draft.name || lines(draft.emails)[0] || ''} src={photoAddress(draft.id)} size={40} />
-              <button
-                type="button"
-                className="danger"
-                disabled={busy}
-                onClick={() => {
-                  setProblem(null)
-                  setIsRemovingPicture(true)
-                }}
-              >
-                {t('addressBook.removePicture')}
-              </button>
-            </div>
-          ) : null}
-          {editing && (
-            <div className="account-link">
-              {draft.account ? (
-                <>
-                  <Avatar
-                    name={personName(draft.account)}
-                    avatarUrl={draft.account.avatarUrl}
-                    colorIndex={draft.account.avatarColorIndex}
-                    size={28}
-                  />
-                  <span className="account-link-text">
-                    {t('addressBook.accountIs', { name: personName(draft.account) })}
-                  </span>
-                  <div className="account-link-actions">
-                    <button type="button" disabled={busy} onClick={openAccountPicker}>
-                      {t('addressBook.accountChange')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        void setAccount(bookId, draft.id, draft.name.trim() || lines(draft.emails)[0] || '', null)
-                      }
-                    >
-                      {t('addressBook.accountRemove')}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <button type="button" disabled={busy} onClick={openAccountPicker}>
-                  {t('addressBook.accountLink')}
-                </button>
-              )}
-            </div>
-          )}
-          {editing ? <InMemory recordKind="contact" recordId={draft.id} /> : null}
-        </FormDialog>
-      )}
-
-      {draft && isChoosingAccount && (
-        <AccountPickerDialog
-          contactName={draft.name.trim() || lines(draft.emails)[0] || ''}
-          currentUserId={draft.account?.userId ?? ''}
-          takenUserIds={takenAccountIds}
-          busy={busy}
-          error={problem}
-          onChoose={(account) =>
-            void setAccount(bookId, draft.id, draft.name.trim() || lines(draft.emails)[0] || '', account).then(
-              (isDone) => isDone && closeAccountPicker(),
-            )
-          }
-          onClose={closeAccountPicker}
-        />
-      )}
-
-      {draft && isRemovingPicture && (
-        <ConfirmDialog
-          title={t('addressBook.removePicture')}
-          body={t('addressBook.removePictureConfirm', {
-            name: draft.name.trim() || lines(draft.emails)[0] || '',
-          })}
-          confirmLabel={t('addressBook.removePicture')}
-          busy={busy}
-          error={problem}
-          onConfirm={() =>
-            void run(
-              () => graphql(REMOVE_PICTURE, { id: draft.id }),
-              t('addressBook.pictureRemoved', { name: draft.name.trim() || lines(draft.emails)[0] || '' }),
-            ).then((done) => {
-              if (done) {
-                setIsRemovingPicture(false)
-                setDraft((previous) => (previous ? { ...previous, hasPhoto: false } : previous))
-              }
-            })
-          }
-          onClose={() => setIsRemovingPicture(false)}
-        />
-      )}
+      {editor.dialogs}
 
       {deleting && (
         <ConfirmDialog
@@ -854,78 +473,5 @@ export function AddressBookPage() {
         />
       )}
     </>
-  )
-}
-
-// AccountPickerDialog chooses the person in the circles a contact is. People
-// another contact of the book already is are left out, since a book keeps one
-// contact for each person. The failures are toasts, from the page.
-function AccountPickerDialog({
-  contactName,
-  currentUserId,
-  takenUserIds,
-  busy,
-  error,
-  onChoose,
-  onClose,
-}: {
-  contactName: string
-  currentUserId: string
-  takenUserIds: ReadonlySet<string>
-  busy: boolean
-  error: string | null
-  onChoose: (account: CirclePerson) => void
-  onClose: () => void
-}) {
-  const { t } = useTranslation()
-  const toast = useToast()
-  const people = useQuery(() => listCirclePeople(), [], { refresh: false })
-  const [chosenUserId, setChosenUserId] = useState('')
-  useEffect(() => {
-    if (people.error) toast.failure(people.error, t('addressBook.failed'))
-    // Once for each failure.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [people.error])
-  const choices = (people.data ?? []).filter((person) => !takenUserIds.has(person.userId))
-  const chosen = choices.find((person) => person.userId === chosenUserId) ?? null
-  return (
-    <FormDialog
-      title={t('addressBook.accountPickerTitle', { name: contactName })}
-      submitLabel={t('addressBook.suggestionLink')}
-      busy={busy}
-      error={error}
-      canSubmit={chosen !== null && chosen.userId !== currentUserId}
-      onSubmit={() => chosen && onChoose(chosen)}
-      onClose={onClose}
-    >
-      <p className="muted">{t('addressBook.accountPickerHint')}</p>
-      <div className="contact-picker" role="radiogroup" aria-label={t('addressBook.accountPickerLabel')}>
-        {people.data && choices.length === 0 ? (
-          <p className="muted contact-picker-empty">{t('addressBook.accountPickerEmpty')}</p>
-        ) : null}
-        {choices.map((person) => (
-          <label
-            key={person.userId}
-            className={chosen?.userId === person.userId ? 'contact-picker-row is-chosen' : 'contact-picker-row'}
-          >
-            <input
-              type="radio"
-              name="circle-person"
-              checked={chosen?.userId === person.userId}
-              onChange={() => setChosenUserId(person.userId)}
-            />
-            <Avatar
-              name={personName(person)}
-              avatarUrl={person.avatarUrl}
-              colorIndex={person.avatarColorIndex}
-              size={28}
-            />
-            <span className="contact-picker-text">
-              <span className="contact-picker-name">{personLabel(person)}</span>
-            </span>
-          </label>
-        ))}
-      </div>
-    </FormDialog>
   )
 }

@@ -83,6 +83,20 @@ export interface TranscriptTimeline {
 export interface SpeakerIdentity {
   id: string
   confirmedName: string
+  // The contact this name is tied to and the contact's name; empty while the
+  // name is not tied to one.
+  contactAddressBookId?: string
+  contactId?: string
+  contactName?: string
+}
+// A name offered while a speaker is named. A name from the contacts, or one
+// a speaker was tied to a contact under, carries the contact: choosing it ties
+// the speaker to that contact too.
+export interface SpeakerNameSuggestion {
+  confirmedName: string
+  speakerNameSource: string
+  addressBookId?: string
+  contactId?: string
 }
 export interface SpeakerCorrection {
   id: string

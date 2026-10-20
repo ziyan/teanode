@@ -1,4 +1,4 @@
-import type { Key } from '../i18n/i18n'
+import type { Key, Values } from '../i18n/i18n'
 
 // What the server says about where people are and have been, and the words for
 // it that the Location page and its dialogs share. The names are the server's
@@ -123,6 +123,20 @@ export function placeSubtitle(place: NamedPlace, t: (key: Key) => string): strin
   if (place.isNamedByPerson && place.placeName.trim()) return ''
   if (!LABEL_KEYS[place.placeLabel] || title !== t(LABEL_KEYS[place.placeLabel])) return ''
   return (place.osmName ?? '').trim() || place.addressText.trim()
+}
+
+// visitDurationText is how long a visit lasted, or that it is going on.
+export function visitDurationText(
+  visit: Pick<PlaceVisit, 'durationSeconds' | 'departedAt'>,
+  t: (key: Key, values?: Values) => string,
+): string {
+  if (visit.durationSeconds === null || visit.durationSeconds === undefined) {
+    return visit.departedAt ? '' : t('location.hereNow')
+  }
+  const minutes = Math.max(1, Math.round(visit.durationSeconds / 60))
+  return minutes >= 60
+    ? t('location.durationHours', { hours: Math.floor(minutes / 60), minutes: minutes % 60 })
+    : t('location.durationMinutes', { minutes })
 }
 
 // dayKeyOf is the calendar day, as the person's own clock counts it, that a

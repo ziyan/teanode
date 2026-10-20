@@ -62,15 +62,9 @@ final class LocationModel {
 
     // MARK: The person selected on the map
 
-    /// Whose visits and places are shown under the map: somebody sharing, or
-    /// nobody for the person's own.
+    /// Who the map is centered on: somebody sharing, or nobody for the person's
+    /// own. Their card, with their visits today, comes up over the map.
     private(set) var selectedUserId: String?
-    /// The day of the selected person's visits shown.
-    private(set) var personDay = Calendar.current.startOfDay(for: Date())
-    private(set) var personVisits: [PlaceVisit] = []
-    private(set) var personPlaces: [LocationPlace] = []
-    private(set) var isLoadingPerson = false
-    private(set) var personProblemText: String?
 
     init(connection: Connection) {
         self.connection = connection
@@ -90,16 +84,6 @@ final class LocationModel {
 
     /// The selected person, once the server has said they share.
     var selectedPerson: PersonLocation? { people.first { $0.userId == selectedUserId } }
-
-    /// The person's own contact that is this person, when they linked one; nil
-    /// otherwise. Read from the circles, where the server says it for the
-    /// person only.
-    func linkedContactId(of userId: String) -> String? {
-        for circle in circles {
-            if let member = circle.member(userId), member.isLinkedToContact { return member.linkedContactId }
-        }
-        return nil
-    }
 
     /// How far setting Location up has got.
     var setup: LocationSetup {
@@ -188,7 +172,6 @@ final class LocationModel {
             loadFailedText = nil
         }
         finishSetupIfDone()
-        if selectedUserId != nil { await loadPerson() }
     }
 
     private func apply(
@@ -496,7 +479,6 @@ final class LocationModel {
                 return
             }
             people[index] = fresh
-            if selectedUserId == userId { await loadPerson() }
         } catch {
             // They may have stopped sharing; the list says so.
             await refreshPeople()
@@ -528,74 +510,24 @@ final class LocationModel {
     private func refreshEveryone() async {
         await refreshOwn()
         await refreshPeople()
-        if selectedUserId != nil { await loadPerson() }
     }
 
     // MARK: The selected person
 
-    /// Selects somebody sharing: the map centers on them and their visits
-    /// and places show under it. The person is in `people` once the server
-    /// has said so; until then the selection waits for it.
+    /// Selects somebody sharing: the map centers on them. The person is in
+    /// `people` once the server has said so; until then the selection waits
+    /// for it.
     func select(userId: String) {
         guard userId != ownUserId else {
             clearSelection()
             return
         }
         selectedUserId = userId
-        personDay = Calendar.current.startOfDay(for: Date())
-        personVisits = []
-        personPlaces = []
-        personProblemText = nil
-        Task { await loadPerson() }
     }
 
     /// Goes back to the person's own location.
     func clearSelection() {
         selectedUserId = nil
-        personVisits = []
-        personPlaces = []
-        personProblemText = nil
-    }
-
-    /// Whether the selected person's day can move later: not past today.
-    var canMovePersonDayLater: Bool { personDay < Calendar.current.startOfDay(for: Date()) }
-
-    func movePersonDay(by days: Int) {
-        let today = Calendar.current.startOfDay(for: Date())
-        guard let moved = Calendar.current.date(byAdding: .day, value: days, to: personDay) else { return }
-        personDay = min(Calendar.current.startOfDay(for: moved), today)
-        Task { await loadPerson() }
-    }
-
-    /// Reads the selected person's visits for the day shown and their places.
-    /// Only at "Where I am and where I have been" does the server give them.
-    func loadPerson() async {
-        guard let person = selectedPerson, person.level == .history else {
-            personVisits = []
-            personPlaces = []
-            return
-        }
-        let userId = person.userId
-        let day = personDay
-        let window = LocationDays.window(of: day)
-        isLoadingPerson = true
-        defer { isLoadingPerson = false }
-        let connection = self.connection
-        async let readVisits = attempt {
-            try await connection.locationVisits(userId: userId, from: window.from, until: window.until, limitCount: 200)
-        }
-        async let readPlaces = attempt { try await connection.locationPlaces(userId: userId, limitCount: LocationModel.placePageSize) }
-        let (visitsResult, placesResult) = await (readVisits, readPlaces)
-        // Another person or day was chosen while this was read.
-        guard selectedUserId == userId, personDay == day else { return }
-        switch (visitsResult, placesResult) {
-        case (.success(let visitPage), .success(let placePage)):
-            personVisits = visitPage.placeVisits
-            personPlaces = placePage.places
-            personProblemText = nil
-        case (.failure(let error), _), (_, .failure(let error)):
-            personProblemText = error.loadProblemText
-        }
     }
 
     // MARK: Sharing

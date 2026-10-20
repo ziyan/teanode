@@ -8,12 +8,25 @@ import { type RecordingMedia } from './api'
 import { RecordingSourceSchedule } from './sourceSchedule'
 import { RecordingEditDialog, type ProcessingDialog } from './editDialog'
 import { RecordingRowAction } from './rowAction'
-import { EraserIcon, MicrophoneIcon, PencilIcon, RefreshIcon, StopIcon, TrashIcon } from '../components/icons'
+import {
+  EraserIcon,
+  LinkIcon,
+  MicrophoneIcon,
+  PencilIcon,
+  RefreshIcon,
+  StopIcon,
+  TrashIcon,
+  UnlinkIcon,
+} from '../components/icons'
+import { contactPersonPath } from '../lib/circlePeople'
+import { useToast } from '../components/toast'
+import { SpeakerContactDialog } from './speakerContactDialog'
 import {
   passagePlaybackPath,
   recordingOperation,
   recordingSourceTitle,
   type RecordingLearning,
+  type SpeakerIdentity,
   type SpeakersView,
   type TextCorrection,
   type TranscriptRun,
@@ -49,6 +62,7 @@ export function RecordingProcessingPanel({
   onPlayPassage?: (mediaId: string, passageStartMS: number, passageEndMS: number) => void
 }) {
   const { t } = useTranslation()
+  const toast = useToast()
   const [isResumingReading, setIsResumingReading] = useState(false)
   const [resumeReadingError, setResumeReadingError] = useState<string | null>(null)
   const availability = useQuery(
@@ -76,6 +90,10 @@ export function RecordingProcessingPanel({
     [recordingId, userId],
   )
   const [dialog, setDialog] = useState<ProcessingDialog | null>(null)
+  // The speaker whose contact is being chosen, and what went wrong saving it.
+  const [contactSpeaker, setContactSpeaker] = useState<SpeakerIdentity | null>(null)
+  const [isSavingContact, setIsSavingContact] = useState(false)
+  const [contactError, setContactError] = useState<string | null>(null)
   const refresh = async () => {
     await Promise.all([
       versions.reload(),
@@ -96,6 +114,29 @@ export function RecordingProcessingPanel({
   }, [runs.map((run) => `${run.id}:${run.recordingProcessingState}`).join(','), recordingId, userId])
   const show = (nextDialog: ProcessingDialog) => setDialog(nextDialog)
   const generation = speakers.data?.sourceGeneration ?? owned?.recording.sourceGeneration
+  // Ties a speaker's name to a contact, or unties it when no contact is given.
+  const setSpeakerContact = async (speaker: SpeakerIdentity, addressBookId: string, contactId: string) => {
+    setIsSavingContact(true)
+    setContactError(null)
+    try {
+      await recordingOperation('SetRecordingSpeakerContact', {
+        recordingId,
+        expectedSourceGeneration: generation,
+        speakerIdentityId: speaker.id,
+        addressBookId,
+        contactId,
+      })
+      toast.done(t('recordingProcessing.saved'))
+      setContactSpeaker(null)
+      await refresh()
+      onChanged?.()
+    } catch (caught) {
+      setContactError(caughtText(caught))
+      toast.failure(caught, t('recordingProcessing.saved'))
+    } finally {
+      setIsSavingContact(false)
+    }
+  }
   const resumeReading = async () => {
     setIsResumingReading(true)
     setResumeReadingError(null)
@@ -267,21 +308,58 @@ export function RecordingProcessingPanel({
             <SettingsRow
               key={identity.id}
               title={identity.confirmedName}
+              subtitle={
+                identity.contactId && identity.contactAddressBookId ? (
+                  <span className="speaker-contact">
+                    <span>{t('recordingProcessing.speakerContactLabel')}</span>
+                    <Link to={contactPersonPath(identity.contactAddressBookId, identity.contactId)}>
+                      {identity.contactName || identity.confirmedName}
+                    </Link>
+                  </span>
+                ) : (
+                  t('recordingProcessing.speakerNoContact')
+                )
+              }
               actions={
-                <RecordingRowAction
-                  label={t('recordingProcessing.renameSpeaker')}
-                  icon={<PencilIcon size={16} />}
-                  onClick={() =>
-                    show({
-                      operationName: 'RenameRecordingSpeaker',
-                      titleKey: 'renameSpeaker',
-                      variables: { recordingId, expectedSourceGeneration: generation, speakerIdentityId: identity.id },
-                      fields: [
-                        { fieldName: 'confirmedName', labelKey: 'confirmedName', fieldValue: identity.confirmedName },
-                      ],
-                    })
-                  }
-                />
+                <div className="row-actions">
+                  <RecordingRowAction
+                    label={t('recordingProcessing.renameSpeaker')}
+                    icon={<PencilIcon size={16} />}
+                    onClick={() =>
+                      show({
+                        operationName: 'RenameRecordingSpeaker',
+                        titleKey: 'renameSpeaker',
+                        variables: {
+                          recordingId,
+                          expectedSourceGeneration: generation,
+                          speakerIdentityId: identity.id,
+                        },
+                        fields: [
+                          { fieldName: 'confirmedName', labelKey: 'confirmedName', fieldValue: identity.confirmedName },
+                        ],
+                      })
+                    }
+                  />
+                  <RecordingRowAction
+                    label={t(
+                      identity.contactId ? 'recordingProcessing.changeContact' : 'recordingProcessing.tieContact',
+                    )}
+                    icon={<LinkIcon size={16} />}
+                    disabled={isSavingContact}
+                    onClick={() => {
+                      setContactError(null)
+                      setContactSpeaker(identity)
+                    }}
+                  />
+                  {identity.contactId ? (
+                    <RecordingRowAction
+                      label={t('recordingProcessing.untieContact')}
+                      icon={<UnlinkIcon size={16} />}
+                      disabled={isSavingContact}
+                      onClick={() => void setSpeakerContact(identity, '', '')}
+                    />
+                  ) : null}
+                </div>
               }
             />
           ))}
@@ -511,6 +589,16 @@ export function RecordingProcessingPanel({
           </details>
         ))}
       </SettingsSection>
+      {contactSpeaker ? (
+        <SpeakerContactDialog
+          speakerName={contactSpeaker.confirmedName}
+          currentContactId={contactSpeaker.contactId ?? ''}
+          busy={isSavingContact}
+          error={contactError}
+          onChoose={(choice) => void setSpeakerContact(contactSpeaker, choice.addressBookId, choice.id)}
+          onClose={() => setContactSpeaker(null)}
+        />
+      ) : null}
       {dialog ? (
         <RecordingEditDialog
           dialog={dialog}

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { askAgentAbout } from '../../api'
 import { useBreadcrumbDetail, useBreadcrumbNote } from '../../components/breadcrumb'
 import { personName } from '../../components/personLabel'
-import { listCirclePeople } from '../../lib/circlePeople'
+import { contactPersonPath, listCirclePeople, personPath } from '../../lib/circlePeople'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import {
@@ -1278,6 +1278,18 @@ function AccountPhotosPage() {
               <button type="button" onClick={startNamingPerson}>
                 {t('photos.nameThisPerson')}
               </button>
+            )}
+            {shownPerson.contactId !== '' && shownPerson.contactAddressBookId !== '' && (
+              <Link
+                className="button"
+                to={
+                  shownPerson.accountUserId
+                    ? personPath(shownPerson.accountUserId)
+                    : contactPersonPath(shownPerson.contactAddressBookId, shownPerson.contactId)
+                }
+              >
+                {t('person.profile')}
+              </Link>
             )}
           </div>
         </div>

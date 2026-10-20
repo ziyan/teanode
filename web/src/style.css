@@ -20914,3 +20914,197 @@ label.checkbox.is-plain > span > .muted {
 .search-group .page-actions {
   margin-top: var(--space-3);
 }
+
+/* A person's card: the head with the picture, the name and what can be done,
+   then a panel for each part of the app that has something of theirs. A row in
+   a panel is a line of text, or a button or link that opens the thing it
+   names, as a search result is. Nothing is wider than the window: text wraps
+   and a title is cut to its line. */
+.person-page {
+  min-width: 0;
+}
+.person-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+}
+.person-head-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.person-head-who .avatar {
+  flex: none;
+}
+.person-head-body {
+  min-width: 0;
+}
+.person-head-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.person-head-name {
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.person-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.person-section h3 {
+  margin-bottom: var(--space-2);
+}
+.person-subheading {
+  margin: var(--space-3) 0 var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+.person-section > .person-subheading:first-of-type {
+  margin-top: 0;
+}
+.person-empty {
+  margin: 0;
+  padding: var(--space-1) 0;
+}
+.person-section .page-actions {
+  margin-top: var(--space-3);
+}
+.person-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-2);
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+.person-section h3 + .person-row,
+.person-section .person-subheading + .person-row {
+  border-top: 0;
+}
+a.person-row:hover:not(:disabled),
+button.person-row:hover:not(:disabled) {
+  background: var(--field);
+}
+a.person-row,
+button.person-row {
+  cursor: pointer;
+}
+a.person-row:focus-visible,
+button.person-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.person-row-icon {
+  display: flex;
+  flex: none;
+  color: var(--muted);
+}
+.person-row-cover {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: var(--radius-2);
+  background: var(--field);
+}
+.person-row-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.person-row-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.person-row-title {
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.person-row-detail {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--text-label);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.person-row-meta {
+  flex: none;
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+.person-photos {
+  grid-template-columns: repeat(auto-fill, minmax(88px, 120px));
+  gap: var(--space-1);
+}
+.person-details {
+  margin: 0;
+}
+.person-details > div,
+.person-details > dt,
+.person-details > dd {
+  margin: 0;
+}
+.person-details > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+}
+.person-details dt {
+  flex: 0 0 7rem;
+  color: var(--muted);
+}
+.person-details dd {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .person-head-actions {
+    width: 100%;
+  }
+  .person-head-actions .button,
+  .person-head-actions button {
+    flex: 1 1 8rem;
+    min-height: 44px;
+  }
+}
+
+/* The contact a speaker's name is tied to, under the name. */
+.speaker-contact {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+/* A person's name above a chat message opens their card, in the quiet
+   color of the name it replaces. */
+.agent-chat-author a {
+  color: inherit;
+  text-decoration: none;
+}
+.agent-chat-author a:hover {
+  text-decoration: underline;
+}
+.agent-chat-avatar a {
+  display: block;
+  line-height: 0;
+}

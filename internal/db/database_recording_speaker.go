@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"errors"
 	"strings"
 	"time"
@@ -33,6 +34,8 @@ type RecordingSpeakerOperation interface {
 	ListRecordingVoiceReferences(userId, recordingId string) ([]*models.RecordingVoiceReference, error)
 	CorrectRecordingSpeaker(userId string, correction RecordingSpeakerCorrectionInput) ([]*models.RecordingSpeakerCorrection, error)
 	RenameRecordingSpeaker(userId, recordingId, speakerIdentityId, confirmedName string, expectedSourceGeneration int64) error
+	SetRecordingSpeakerContact(userId, recordingId, speakerIdentityId, addressBookId, contactId string, expectedSourceGeneration int64) error
+	ListRecordingsSpokenByContact(userId string, addressBookId string, contactId string, limit int) ([]*RecordingSpokenByContact, bool, error)
 	RemoveRecordingSpeakerCorrection(userId, recordingId, correctionId string, expectedSourceGeneration int64) error
 	UndoRecordingSpeakerNaming(userId, recordingId, correctionId string, expectedSourceGeneration int64) (int, error)
 	RevokeRecordingVoiceReference(userId, recordingId, referenceId string, expectedSourceGeneration int64) error
@@ -47,7 +50,12 @@ type RecordingSpeakerCorrectionInput struct {
 	ConfirmedName                   string
 	// IsAccountOwner marks the confirmed speaker as the person; an empty
 	// ConfirmedName then defaults to the person's display name.
-	IsAccountOwner           bool
+	IsAccountOwner bool
+	// ContactAddressBookID and ContactID, both or neither, tie the confirmed
+	// name to a contact of the person: a name already tied to another contact
+	// is tied to this one instead. Neither leaves the name's tie as it is.
+	ContactAddressBookID     string
+	ContactID                string
 	ExpectedSourceGeneration int64
 	PassageStartMS           int64
 	PassageEndMS             int64
@@ -74,6 +82,9 @@ func (self *transaction) ListRecordingSpeakerIdentities(userId string) ([]*model
 	for _, row := range rows {
 		identities = append(identities, (*models.RecordingSpeakerIdentity)(row))
 	}
+	if err := self.fillRecordingSpeakerContactNames(identities); err != nil {
+		return nil, err
+	}
 	return identities, nil
 }
 
@@ -96,7 +107,35 @@ func (self *transaction) ListRecordingSpeakerIdentitiesInUse(userId string) ([]*
 	for _, row := range rows {
 		identities = append(identities, (*models.RecordingSpeakerIdentity)(row))
 	}
+	if err := self.fillRecordingSpeakerContactNames(identities); err != nil {
+		return nil, err
+	}
 	return identities, nil
+}
+
+// fillRecordingSpeakerContactNames reads the name of the contact each tied
+// identity is, so a listing never shows a name the contact no longer has.
+func (self *transaction) fillRecordingSpeakerContactNames(identities []*models.RecordingSpeakerIdentity) error {
+	contactIdsByAddressBook := map[string][]string{}
+	for _, identity := range identities {
+		if identity.ContactID != "" {
+			contactIdsByAddressBook[identity.ContactAddressBookID] = append(contactIdsByAddressBook[identity.ContactAddressBookID], identity.ContactID)
+		}
+	}
+	contactNames := map[[2]string]string{}
+	for addressBookId, contactIds := range contactIdsByAddressBook {
+		var rows []*contactModel
+		if err := self.tx.Select("addressbook_id", "id", "name").Where("addressbook_id = ? AND id IN ?", addressBookId, contactIds).Find(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			contactNames[[2]string{row.AddressBookID, row.ID}] = row.Name
+		}
+	}
+	for _, identity := range identities {
+		identity.ContactName = contactNames[[2]string{identity.ContactAddressBookID, identity.ContactID}]
+	}
+	return nil
 }
 
 func (self *transaction) ListRecordingSpeakerCorrections(userId, recordingId string) ([]*models.RecordingSpeakerCorrection, error) {
@@ -156,6 +195,9 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 	if !validConfirmedSpeakerName(correction.ConfirmedName) || correction.ClientCorrectionID == "" || len(correction.ClientCorrectionID) > 128 || correction.LocalSpeakerID == "" {
 		return nil, ErrInvalidArguments
 	}
+	if (correction.ContactAddressBookID == "") != (correction.ContactID == "") {
+		return nil, ErrInvalidArguments
+	}
 	if err := self.lockRecordingReferenceDependents(userId, correction.RecordingID); err != nil {
 		return nil, err
 	}
@@ -163,7 +205,18 @@ func (self *transaction) CorrectRecordingSpeaker(userId string, correction Recor
 	if err != nil {
 		return nil, err
 	}
-	return self.correctRecordingSpeakerLocked(userId, source, correction)
+	corrected, err := self.correctRecordingSpeakerLocked(userId, source, correction)
+	if err != nil {
+		return nil, err
+	}
+	// Also on a request repeated after an uncertain answer, so the tie the
+	// person asked for is there whichever of the two attempts got through.
+	if correction.ContactID != "" && len(corrected) > 0 {
+		if err := self.tieRecordingSpeakerToContact(userId, corrected[0].SpeakerIdentityID, correction.ContactAddressBookID, correction.ContactID); err != nil {
+			return nil, err
+		}
+	}
+	return corrected, nil
 }
 
 // correctRecordingSpeakerLocked is CorrectRecordingSpeaker once the account and
@@ -374,6 +427,141 @@ func (self *transaction) RenameRecordingSpeaker(userId, recordingId, speakerIden
 		}
 	}
 	return nil
+}
+
+// SetRecordingSpeakerContact ties a confirmed name to one of the person's
+// contacts, or unties it when addressBookId and contactId are empty. The name
+// is the person's own to tie, and the contact has to be in one of their own
+// address books, else it is not found. The recording is the one the person is
+// looking at: it has to have the name on a passage, and its generation is
+// checked so an edit made from an older view is refused. Tying leaves the
+// generation alone, as the name and what it labels do not change.
+func (self *transaction) SetRecordingSpeakerContact(userId, recordingId, speakerIdentityId, addressBookId, contactId string, expectedSourceGeneration int64) error {
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	if source.SourceGeneration != expectedSourceGeneration {
+		return ErrAlreadyExists
+	}
+	var identityCount int64
+	if err := self.tx.Model(&recordingSpeakerIdentityModel{}).Where("id = ? AND user_id = ?", speakerIdentityId, userId).Count(&identityCount).Error; err != nil {
+		return err
+	}
+	var correctionCount int64
+	if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).Where("recording_id = ? AND speaker_identity_id = ?", recordingId, speakerIdentityId).Count(&correctionCount).Error; err != nil {
+		return err
+	}
+	if identityCount == 0 || correctionCount == 0 {
+		return ErrNotFound
+	}
+	return self.tieRecordingSpeakerToContact(userId, speakerIdentityId, addressBookId, contactId)
+}
+
+// tieRecordingSpeakerToContact writes the tie of one of the person's names, the
+// contact checked to be in an address book of the person's. Both IDs empty
+// unties the name.
+func (self *transaction) tieRecordingSpeakerToContact(userId, speakerIdentityId, addressBookId, contactId string) error {
+	if (addressBookId == "") != (contactId == "") {
+		return ErrInvalidArguments
+	}
+	updates := map[string]any{"contact_addressbook_id": nil, "contact_id": nil}
+	if contactId != "" {
+		addressBook, err := self.GetAddressBook(addressBookId)
+		if err != nil {
+			return err
+		}
+		if addressBook == nil || addressBook.UserID != userId {
+			return ErrNotFound
+		}
+		contact, err := self.GetContact(addressBookId, contactId)
+		if err != nil {
+			return err
+		}
+		if contact == nil {
+			return ErrNotFound
+		}
+		updates = map[string]any{"contact_addressbook_id": addressBookId, "contact_id": contactId}
+	}
+	updated := self.tx.Model(&recordingSpeakerIdentityModel{}).Where("id = ? AND user_id = ?", speakerIdentityId, userId).Updates(updates)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RecordingSpokenByContact is a recording with how many of its passages a speaker
+// tied to the contact speaks.
+type RecordingSpokenByContact struct {
+	Recording          *models.Recording
+	SpokenPassageCount int
+}
+
+// ListRecordingsSpokenByContact is the person's recordings a speaker tied to the
+// contact speaks in, newest first by when they were recorded (by when they were
+// made, for one with no date), with how many passages that speaker has in each.
+// A passage counts while its naming stands: not one the person took the name off,
+// and not one a later naming of an overlapping passage replaced. The bool says
+// there are more than limit.
+func (self *transaction) ListRecordingsSpokenByContact(userId string, addressBookId string, contactId string, limit int) ([]*RecordingSpokenByContact, bool, error) {
+	if userId == "" || addressBookId == "" || contactId == "" {
+		return nil, false, ErrNotFound
+	}
+	if limit < 1 || limit > 100 {
+		return nil, false, ErrInvalidArguments
+	}
+	var counts []struct {
+		RecordingID        string
+		SpokenPassageCount int
+	}
+	if err := self.tx.Raw(`SELECT r.id AS recording_id, COUNT(*) AS spoken_passage_count
+		FROM recording r
+		JOIN recording_speaker_correction c ON c.recording_id = r.id
+		JOIN recording_speaker_identity i ON i.id = c.speaker_identity_id
+		WHERE r.user_id = @userId AND r.deleted_at IS NULL AND i.user_id = @userId
+			AND i.contact_addressbook_id = @addressBookId AND i.contact_id = @contactId
+			AND NOT c.is_removed
+			AND NOT EXISTS (SELECT 1 FROM recording_speaker_correction later
+				WHERE later.recording_media_id = c.recording_media_id AND later.source_generation > c.source_generation
+					AND later.passage_start_ms < c.passage_end_ms AND later.passage_end_ms > c.passage_start_ms)
+		GROUP BY r.id
+		ORDER BY COALESCE(r.recorded_at, r.created_at) DESC, r.id DESC
+		LIMIT @limit`,
+		sql.Named("userId", userId), sql.Named("addressBookId", addressBookId), sql.Named("contactId", contactId), sql.Named("limit", limit+1)).Scan(&counts).Error; err != nil {
+		return nil, false, err
+	}
+	hasMore := len(counts) > limit
+	if hasMore {
+		counts = counts[:limit]
+	}
+	recordingIds := make([]string, 0, len(counts))
+	for _, count := range counts {
+		recordingIds = append(recordingIds, count.RecordingID)
+	}
+	var rows []*recordingModel
+	if len(recordingIds) > 0 {
+		if err := self.tx.Where("id IN ?", recordingIds).Find(&rows).Error; err != nil {
+			return nil, false, err
+		}
+	}
+	recordingsByID := map[string]*models.Recording{}
+	for _, row := range rows {
+		recordingsByID[row.ID] = recordingFromModel(row)
+	}
+	spoken := make([]*RecordingSpokenByContact, 0, len(counts))
+	for _, count := range counts {
+		if recording := recordingsByID[count.RecordingID]; recording != nil {
+			spoken = append(spoken, &RecordingSpokenByContact{Recording: recording, SpokenPassageCount: count.SpokenPassageCount})
+		}
+	}
+	return spoken, hasMore, nil
 }
 
 func (self *transaction) RemoveRecordingSpeakerCorrection(userId, recordingId, correctionId string, expectedSourceGeneration int64) error {

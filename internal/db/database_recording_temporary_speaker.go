@@ -26,6 +26,7 @@ type RecordingTemporarySpeakerOperation interface {
 	ListRecordingTemporarySpeakers(userId, recordingId string) ([]*models.RecordingTemporarySpeaker, error)
 	CreateRecordingTemporarySpeaker(userId string, speaker *models.RecordingTemporarySpeaker, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingTemporarySpeaker, error)
 	NameRecordingTemporarySpeaker(userId, recordingId, speakerLabel, confirmedName string, isAccountOwner bool) error
+	NameRecordingTemporarySpeakerAsContact(userId, recordingId, speakerLabel, confirmedName string, isAccountOwner bool, addressBookId, contactId string) error
 	MergeRecordingTemporarySpeaker(userId, recordingId, speakerLabel, intoSpeakerLabel string) error
 	SeparateRecordingTemporarySpeaker(userId, recordingId, speakerLabel string) error
 	MarkRecordingTemporarySpeakerMergeChecked(userId, speakerId string) error
@@ -207,6 +208,17 @@ func (self *transaction) CreateRecordingTemporarySpeaker(userId string, speaker 
 // and links the speaker to the identity so later pieces are sent its sample
 // under the confirmed name.
 func (self *transaction) NameRecordingTemporarySpeaker(userId, recordingId, speakerLabel, confirmedName string, isAccountOwner bool) error {
+	return self.NameRecordingTemporarySpeakerAsContact(userId, recordingId, speakerLabel, confirmedName, isAccountOwner, "", "")
+}
+
+// NameRecordingTemporarySpeakerAsContact is NameRecordingTemporarySpeaker that
+// also ties the name to a contact of the person's, when addressBookId and
+// contactId are given: a name already tied to another contact is tied to this
+// one instead. Neither leaves the name's tie as it is.
+func (self *transaction) NameRecordingTemporarySpeakerAsContact(userId, recordingId, speakerLabel, confirmedName string, isAccountOwner bool, addressBookId, contactId string) error {
+	if (addressBookId == "") != (contactId == "") {
+		return ErrInvalidArguments
+	}
 	var owner userModel
 	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
 		return err
@@ -262,7 +274,13 @@ func (self *transaction) NameRecordingTemporarySpeaker(userId, recordingId, spea
 	if err := self.tx.Where("user_id = ? AND confirmed_name = ?", userId, confirmedName).Take(&identity).Error; err != nil {
 		return err
 	}
-	return self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ?", speaker.ID).Update("speaker_identity_id", identity.ID).Error
+	if err := self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ?", speaker.ID).Update("speaker_identity_id", identity.ID).Error; err != nil {
+		return err
+	}
+	if contactId == "" {
+		return nil
+	}
+	return self.tieRecordingSpeakerToContact(userId, identity.ID, addressBookId, contactId)
 }
 
 // recordingSpeakerAppearance is one piece a temporary speaker was heard in and

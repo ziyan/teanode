@@ -147,6 +147,9 @@ struct MainView: View {
             .sheet(isPresented: Bindable(app).isAddingAccount) {
                 ConnectView(isAdding: true)
             }
+            // A person's card, opened from a chat, the Location map, a circle
+            // or the contacts, over whatever was on screen.
+            .modifier(PersonCardPresenter(connection: connection))
             .alert(
                 "TeaNode",
                 isPresented: Bindable(app).isShowingOpenedLinkText,
@@ -222,6 +225,12 @@ struct MainView: View {
                 app.openedPhotoFilter = nil
                 photos.section = .library
                 photos.photoFilter = photoFilter
+                show(.photos)
+            }
+            .onChange(of: app.openedPhotoSection) { _, section in
+                guard let section else { return }
+                app.openedPhotoSection = nil
+                photos.section = section
                 show(.photos)
             }
             .onChange(of: app.openedFinancePart) { _, part in
@@ -731,6 +740,10 @@ struct MainView: View {
             if let screen = DemoServer.screen, ["location-places", "location-place", "location-address"].contains(screen) { locationSegment = .places }
             if DemoServer.screen == "location-sharing" { locationSegment = .sharing }
             if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
+            // A person's card opened for a screenshot (`-TeaNodeScreen person-card`, `person-card-full`,
+            // `person-card-unlinked`, `location-person-card`), or a contact's from the Contacts list (`person-card-contact`).
+            if let person = DemoServer.openedPerson { app.openedPerson = person }
+            if let contactId = DemoServer.openedPersonContactId { app.openedContactId = contactId }
             // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`, `chat-mention`),
             // or the main conversation (`conversation`, `conversation-long-message`).
             if let chat = DemoServer.openedChat {

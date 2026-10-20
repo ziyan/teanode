@@ -13,6 +13,10 @@ public struct RecordingSpeakerDraft: Codable, Hashable, Sendable {
     public var hasSubmittedRequest: Bool
     /// True when the person said the speaker is them; the name may then be empty and the server uses the account's own.
     public var isAccountOwner: Bool? = nil
+    /// The contact the name was chosen from, which the naming ties the speaker to. Nil for a name that was only typed, and for a
+    /// draft kept before names could be tied.
+    public var contactAddressBookId: String? = nil
+    public var contactId: String? = nil
 
     public init(accountKey: String, recordingId: String, segment: RecordingTranscriptSegment, expectedSourceGeneration: Int64) {
         self.accountKey = accountKey

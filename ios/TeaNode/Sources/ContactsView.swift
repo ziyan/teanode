@@ -76,6 +76,23 @@ final class ContactsModel {
         }
     }
 
+    /// The address book's id, for a contact opened before the list has read
+    /// it. Nothing is kept: the list's own read sets the book and which
+    /// contact is the person.
+    func readAddressBookId() async -> String? {
+        if let addressBook { return addressBook.id }
+        return (try? await connection.addressBooks())?.first?.id
+    }
+
+    /// Reads the address book and which contact is the person, without the
+    /// contacts: the card of a person edits and links one contact and needs
+    /// nothing more. Nothing is read twice.
+    func loadAddressBook() async {
+        guard addressBook == nil else { return }
+        addressBook = try? await connection.addressBooks().first
+        myContactId = try? await connection.myContactId()
+    }
+
     func load() async {
         do {
             if addressBook == nil {
@@ -177,7 +194,7 @@ struct ContactsScreen: View {
             .listStyle(.plain)
             .navigationTitle("Contacts")
             .navigationDestination(for: String.self) { contactId in
-                ContactDetailView(model: model, contactId: contactId)
+                ContactCardDestination(model: model, contactId: contactId)
             }
             .searchable(text: $model.searchText, prompt: "Name, address or phone")
             .task(id: model.searchText) {
@@ -405,203 +422,31 @@ enum Monogram {
     }
 }
 
-/// ContactDetailView is one contact whole: how to reach them, where they
-/// are, notes, and the ways to change them.
-struct ContactDetailView: View {
+/// ContactCardDestination is one contact whole, as the Contacts list opens it:
+/// the same card as anybody else's, with how to reach them, where they are,
+/// notes, and the ways to change them. It needs the address book the contact
+/// is in, which the list may not have read yet when a link opens a contact.
+struct ContactCardDestination: View {
     let model: ContactsModel
     let contactId: String
-    @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
-    @State private var contact: ContactDetail?
-    @State private var problemText: String?
-    @State private var isEditing = false
-    @State private var isConfirmingDelete = false
-    @State private var isConfirmingRemovePicture = false
-    @State private var isChoosingAccount = false
-    @State private var memory = InMemoryModel()
+    @State private var addressBookId: String?
+    @State private var hasFailed = false
 
     var body: some View {
         Group {
-            if let contact {
-                List {
-                    Section {
-                        VStack(spacing: 8) {
-                            ContactPicture(contactId: contact.id, name: contact.name ?? "", hasPhoto: contact.hasPhoto == true, size: 96)
-                            Text(contact.name.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "No name"))
-                                .font(.title2.weight(.semibold))
-                                .multilineTextAlignment(.center)
-                            if let organization = contact.organization, !organization.isEmpty {
-                                Text(organization).foregroundStyle(.secondary)
-                            }
-                            if contact.id == model.myContactId {
-                                Label("This is you", systemImage: "person.fill.checkmark")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .listRowBackground(Color.clear)
-                    }
-                    accountSection(of: contact)
-                    if let emails = contact.emails, !emails.isEmpty {
-                        Section("Email") {
-                            ForEach(emails, id: \.self) { email in
-                                // Written from TeaNode's own mail, as the
-                                // dashboard would.
-                                Button {
-                                    app.composingTo = email
-                                } label: {
-                                    Label(email, systemImage: "envelope")
-                                        .actionColor()
-                                }
-                                .contextMenu {
-                                    Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = email }
-                                }
-                            }
-                        }
-                    }
-                    if let phones = contact.phones, !phones.isEmpty {
-                        Section("Phone") {
-                            ForEach(phones, id: \.self) { phone in
-                                ReachRow(
-                                    text: phone, systemImage: "phone",
-                                    address: URL(string: "tel:\(phone.filter { $0.isNumber || $0 == "+" })"))
-                            }
-                        }
-                    }
-                    if let addresses = contact.addresses, !addresses.isEmpty {
-                        Section("Address") {
-                            ForEach(Array(addresses.enumerated()), id: \.offset) { _, address in
-                                let written = ContactWords.written(address)
-                                ReachRow(
-                                    text: written, systemImage: "mappin.and.ellipse",
-                                    address: written.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-                                        .flatMap { URL(string: "maps://?q=\($0)") })
-                            }
-                        }
-                    }
-                    if let note = contact.note, !note.isEmpty {
-                        Section("Notes") {
-                            Text(note).textSelection(.enabled)
-                        }
-                    }
-                    InMemorySection(model: memory)
-                    Section {
-                        if contact.id == model.myContactId {
-                            Button("This is not me") {
-                                Task { await model.setMine(nil) }
-                            }
-                        } else {
-                            Button("This is me") {
-                                Task { await model.setMine(contact.id) }
-                            }
-                        }
-                        if contact.hasPhoto == true {
-                            Button("Remove picture", role: .destructive) {
-                                isConfirmingRemovePicture = true
-                            }
-                            .confirmationDialog("Remove the picture of \(contact.name)?", isPresented: $isConfirmingRemovePicture, titleVisibility: .visible) {
-                                Button("Remove picture", role: .destructive) {
-                                    Task {
-                                        if await model.removePicture(of: contactId) { await read() }
-                                    }
-                                }
-                            } message: {
-                                Text("Devices synchronizing your address book lose it too.")
-                            }
-                        }
-                        Button("Delete contact", role: .destructive) {
-                            isConfirmingDelete = true
-                        }
-                        .confirmationDialog("Delete \(contact.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-                            Button("Delete contact", role: .destructive) {
-                                Task {
-                                    if await model.delete(contactId) { dismiss() }
-                                }
-                            }
-                        } message: {
-                            Text("It is removed from your address book and from every device that reads it.")
-                        }
-                    } footer: {
-                        Text("Your agent knows the contact marked as you is you.")
-                    }
-                }
-            } else if let problemText {
-                ContentUnavailableView("That contact could not be read", systemImage: "person.crop.circle.badge.exclamationmark", description: Text(problemText.asReasonSentence))
+            if let addressBookId {
+                PersonCardView(
+                    connection: model.connection, target: .contact(addressBookId: addressBookId, contactId: contactId), isInSheet: false,
+                    contacts: model)
+            } else if hasFailed {
+                ContentUnavailableView("That contact could not be read", systemImage: "person.crop.circle.badge.exclamationmark")
             } else {
                 ProgressView()
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Edit", systemImage: "pencil") { isEditing = true }
-                    .disabled(contact == nil)
-            }
-        }
-        .sheet(isPresented: $isEditing) {
-            if let contact {
-                ContactEditor(model: model, contact: contact) { _ in
-                    Task { await read() }
-                }
-            }
-        }
-        .sheet(isPresented: $isChoosingAccount) {
-            if let contact {
-                ContactAccountPicker(model: model, contact: contact) {
-                    Task { await read() }
-                }
-            }
-        }
-        .inMemory(memory, recordKind: "contact", recordId: contactId)
-        .task { await read() }
-    }
-
-    /// Which account in the person's circles this contact is, or the way to
-    /// say so. Only the person sees it: the account is not told.
-    @ViewBuilder
-    private func accountSection(of contact: ContactDetail) -> some View {
-        Section {
-            if let account = contact.account, contact.isLinkedToAccount {
-                HStack(spacing: 12) {
-                    AvatarView(name: account.displayName, avatarUrl: account.avatarUrl, colorIndex: account.avatarColorIndex, size: 36)
-                    Text("In your circles as \(account.displayName)")
-                }
-                .accessibilityElement(children: .combine)
-                Button {
-                    isChoosingAccount = true
-                } label: {
-                    Label("Change", systemImage: "person.2")
-                        .actionColor()
-                }
-                Button(role: .destructive) {
-                    Task {
-                        if await model.unlink(contactId: contactId) { await read() }
-                    }
-                } label: {
-                    Label("Remove", systemImage: "person.crop.circle.badge.minus")
-                }
-                .tint(.red)
-                .actionColor(isDestructive: true)
-            } else {
-                Button {
-                    isChoosingAccount = true
-                } label: {
-                    Label("Is in your circles as…", systemImage: "person.2")
-                        .actionColor()
-                }
-            }
-        } footer: {
-            Text("Only you see this. They are not told.")
-        }
-    }
-
-    private func read() async {
-        do {
-            contact = try await model.connection.contact(contactId)
-        } catch {
-            problemText = error.localizedDescription
+        .task {
+            addressBookId = await model.readAddressBookId()
+            hasFailed = addressBookId == nil
         }
     }
 }

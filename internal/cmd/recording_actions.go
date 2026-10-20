@@ -28,10 +28,11 @@ func recordingActionCommands() []*cli.Command {
 		{"retry", "resume this version when the server can safely continue its work", []string{"transcript-run-id"}},
 		{"speakers", "inspect confirmed identities, correction intervals and voice references", []string{"recording-id"}},
 		{"speaker-names", "offer names for a speaker: voices already named, then people in your agent's memory, then your contacts", []string{"search-text", "page-size"}},
-		{"speaker-confirm", "apply a name supplied by the user to a passage or request-local group; --me says the speaker is you", []string{"recording-id", "expected-source-generation", "client-correction-id", "confirmed-name", "me", "attempt-id", "local-speaker-id", "passage-start-ms", "passage-end-ms"}},
-		{"temporary-speaker-name", "name a speaker of a recording still being captured (label such as \"Speaker 1\" from the timeline) using the name supplied by the user; the name applies to every piece; --me says the speaker is you", []string{"recording-id", "speaker-label", "confirmed-name", "me"}},
+		{"speaker-confirm", "apply a name supplied by the user to a passage or request-local group; --me says the speaker is you", []string{"recording-id", "expected-source-generation", "client-correction-id", "confirmed-name", "me", "contact", "attempt-id", "local-speaker-id", "passage-start-ms", "passage-end-ms"}},
+		{"temporary-speaker-name", "name a speaker of a recording still being captured (label such as \"Speaker 1\" from the timeline) using the name supplied by the user; the name applies to every piece; --me says the speaker is you", []string{"recording-id", "speaker-label", "confirmed-name", "me", "contact"}},
 		{"speaker-separate", "give a label that was merged into an earlier speaker's voice back to itself (the label is the passage's mergedTemporarySpeakerLabel); anything naming the earlier speaker wrote for it is taken off", []string{"recording-id", "speaker-label"}},
 		{"speaker-rename", "rename an identity linked to this recording using the name supplied by the user", []string{"recording-id", "expected-source-generation", "speaker-identity-id", "confirmed-name"}},
+		{"speaker-contact", "tie a speaker name to one of your contacts, so the contact's card lists the recordings that voice speaks in (--contact <address-book-id>/<contact-id>), or take it off its contact (--none)", []string{"recording-id", "expected-source-generation", "speaker-identity-id", "contact", "none"}},
 		{"speaker-reset", "remove a manual speaker correction, one passage of a naming", []string{"recording-id", "expected-source-generation", "speaker-correction-id"}},
 		{"speaker-undo", "undo a naming whole: every passage it named goes back to the speaker's label, given any one of its corrections", []string{"recording-id", "expected-source-generation", "speaker-correction-id"}},
 		{"reference-delete", "revoke a curated voice reference without deleting the original", []string{"recording-id", "expected-source-generation", "voice-reference-id", "force"}},
@@ -54,6 +55,10 @@ func recordingActionCommands() []*cli.Command {
 				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "perform this explicit operation without asking first"})
 			case "unnamed-only":
 				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "only the passages whose speaker nobody has named yet; the offset and the count are of those"})
+			case "contact":
+				flags = append(flags, &cli.StringFlag{Name: flagName, Usage: "one of your contacts as <address-book-id>/<contact-id>, as the contacts list gives them; the name is tied to it, replacing an earlier tie"})
+			case "none":
+				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "take the speaker name off its contact"})
 			case "me":
 				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "this speaker is you; the name defaults to your display name and no other speaker stays marked as you"})
 			case "expected-source-generation", "passage-start-ms", "passage-end-ms":
@@ -83,6 +88,14 @@ func runRecordingAction(ctx context.Context, command *cli.Command) error {
 			inputFields[fieldName] = command.Int64(flagName)
 		case "me":
 			inputFields["is_account_owner"] = command.Bool(flagName)
+		case "none":
+			inputFields["should_untie_contact"] = command.Bool(flagName)
+		case "contact":
+			addressBookId, contactId, isSplit := strings.Cut(command.String(flagName), "/")
+			if !isSplit || addressBookId == "" || contactId == "" {
+				return usage("give --contact as <address-book-id>/<contact-id>")
+			}
+			inputFields["address_book_id"], inputFields["contact_id"] = addressBookId, contactId
 		case "unnamed-only":
 			inputFields["is_unnamed_only"] = command.Bool(flagName)
 		case "segment-offset", "page-size":
