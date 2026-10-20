@@ -6,6 +6,33 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.188.0] - 2026-10-20
+
+### Added
+
+- A card for each person: tap someone in a chat, on Location, in Circles or Contacts to see where they are, the health they share, photos, mail, recordings and memory about them, with buttons to message, call and mail. On the dashboard at /people, and `teanode circle person`. (#606)
+- A recording speaker can be tied to a contact, so their card lists the recordings they speak in. (#606)
+
+### Fixed
+
+- Deleting a contact no longer leaves memory pages naming it, and pages naming contacts already deleted are tied again by name or untied. (#606)
+
+## [0.187.1] - 2026-10-20
+
+### Changed
+
+- The agent loads the tools it needs by name, and only the closest matches of a search, so turns that reach for a less common tool carry fewer tool definitions and take fewer rounds. Dreams no longer spend a round finding the knowledge tool. (#609)
+
+## [0.187.0] - 2026-10-20
+
+### Added
+
+- One search across your chats, mail, contacts, photos, memory, documents, recordings, places and finance: Control-K on the dashboard, the Search tab in the iPhone app, and `teanode search`. (#605)
+
+### Changed
+
+- The iPhone app is reached through a tab bar of icons (Chats, Mail, Photos, More and Search) instead of the side menu. You choose the three parts in it from More's Edit button. (#605)
+
 ## [0.186.1] - 2026-10-20
 
 ### Fixed

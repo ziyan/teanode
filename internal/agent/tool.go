@@ -47,7 +47,7 @@ var (
 	ActionsOf         = tools.ActionsOf
 	NeedsConfirmation = tools.NeedsConfirmation
 	Split             = tools.Split
-	Search            = tools.Search
+	SearchTools       = tools.SearchTools
 	listed            = tools.Listed
 
 	// Location and the time helpers moved to the kit with the datetime tool.

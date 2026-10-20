@@ -82,6 +82,6 @@ action `get` and one of these paths reads the page and its facts, and
 {{end}}{{end}}{{if .Deferred}}
 ## More tools
 
-These are not loaded. Call `tool_search` with a few words to load the ones you need, and before saying you cannot do something:
+These are not loaded. Call `tool_search` with the names of the ones you need (`select:name,name`), or a few words when you do not know which, and before saying you cannot do something; never for a tool you have already:
 {{range .Deferred}}- {{.}}
 {{end}}{{end}}

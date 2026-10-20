@@ -87,9 +87,9 @@ func TestSplitDefersBeyondTheThresholdAndSearchFinds(t *testing.T) {
 	if len(sent) != 3 || len(deferred) != len(offered)-3 {
 		t.Fatalf("sent %d deferred %d", len(sent), len(deferred))
 	}
-	found := Search(deferred, "check dns records", 5)
-	if len(found) == 0 || found[0].Name != "dns_check" {
-		t.Fatalf("search should find dns_check first: %v", found)
+	found := SearchTools(sent, deferred, "check dns records", 5)
+	if len(found.Loadable) != 1 || found.Loadable[0].Name != "dns_check" {
+		t.Fatalf("search should find dns_check alone: %v", found.Loadable)
 	}
 	sent, _ = Split(offered, map[string]bool{"dns_check": true}, false)
 	if len(sent) != 4 {
