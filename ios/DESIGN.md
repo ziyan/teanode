@@ -98,7 +98,9 @@ its pull request is opened.
   accessibility actions so VoiceOver does not need a long press. Buttons stay
   on a card only when answering is its point: an approval, a question.
 - A link in a message is shown short (the host and the path, with the tracking
-  taken out), never as the long address, and opens without the tracking. Under
+  taken out), never as the long address, and opens without the tracking. In
+  the person's own bubble, on the accent's tint, a link is in the words' own
+  color and underlined, since an accent link there is too faint to read. Under
   the bubble of the message that holds one, its first link gets a card on the
   cards' surface: the page's picture, its site, its title in semibold and two
   lines about it. A tap anywhere on it opens the link, Copy link is in its

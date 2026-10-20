@@ -1213,6 +1213,23 @@ struct PersonBubble: View {
     private static let shownLineCount = 30
     private static let shownCharacterCount = 3000
 
+    /// The color of a link in the bubble: the accent on the gray of
+    /// somebody else's, the words' own color on the person's, whose accent
+    /// tint would make an accent link too faint to read.
+    private var linkColor: Color { isOthers ? Color.accentColor : Color.primary }
+
+    /// The bubble's words with their links followable; on the person's own
+    /// side a link is underlined too, as it is in the words' own color.
+    static func bubbleText(_ text: String, isOwn: Bool) -> AttributedString {
+        var linked = LinkText.linked(plain: text)
+        guard isOwn else { return linked }
+        let linkRanges = linked.runs.filter { run in run.link != nil }.map(\.range)
+        for linkRange in linkRanges {
+            linked[linkRange][AttributeScopes.SwiftUIAttributes.UnderlineStyleAttribute.self] = Text.LineStyle.single
+        }
+        return linked
+    }
+
     private var isTooLong: Bool {
         line.text.count > Self.shownCharacterCount || line.text.split(separator: "\n", omittingEmptySubsequences: false).count > Self.shownLineCount
     }
@@ -1269,7 +1286,8 @@ struct PersonBubble: View {
                             .buttonStyle(.bordered)
                             .buttonBorderShape(.capsule)
                     } else {
-                        Text(LinkText.linked(plain: line.text))
+                        Text(Self.bubbleText(line.text, isOwn: !isOthers))
+                            .tint(linkColor)
                     }
                 }
                 .padding(.horizontal, 14)
