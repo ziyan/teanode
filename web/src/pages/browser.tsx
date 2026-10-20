@@ -32,6 +32,10 @@ const REQUESTS_EVERY_MS = 10_000
 // agent's card asking for it: the API's to do, so not a socket message.
 const HAND_BACK = `mutation ($note: String) { HandBackAgentTab(note: $note) }`
 
+// Pasted text goes in pieces this long, well under what the socket takes in
+// one message.
+const TEXT_PIECE = 16_000
+
 // A socket that is open is told it is alive this often, as the extension's is.
 const PING_EVERY_MS = 20_000
 
@@ -426,7 +430,7 @@ export function BrowserPage() {
     if (!isControlling) return
     event.preventDefault()
     const text = event.clipboardData.getData('text')
-    if (text) send({ type: 'text', text })
+    for (let start = 0; start < text.length; start += TEXT_PIECE) send({ type: 'text', text: text.slice(start, start + TEXT_PIECE) })
   }
 
   // What the phone's keyboard types into the hidden field goes to the tab as
@@ -558,7 +562,11 @@ export function BrowserPage() {
             />
           ) : viewerState.watching != null ? (
             <Loading />
-          ) : null}
+          ) : (
+            // The stream ended (the person at the machine stopped Chrome's
+            // debugging, or the tab went): nothing is watched until chosen.
+            <p className="muted">{t('browser.chooseTab')}</p>
+          )}
           {isControlling ? (
             <textarea
               ref={keyboardRef}

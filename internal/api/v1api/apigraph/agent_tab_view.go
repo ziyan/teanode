@@ -22,9 +22,10 @@ import (
 // answers the agent's card asking for it, which is the API's to do. Only the person's own browser is ever shown:
 // the agent is found from whoever signed in.
 
-// tabViewerReadLimit bounds what a viewer may send at once: input and
-// notes, never pictures.
-const tabViewerReadLimit = 64 << 10
+// tabViewerReadLimit bounds what a viewer may send at once: input, and
+// pasted text, which the page sends in pieces well under this; never
+// pictures.
+const tabViewerReadLimit = 256 << 10
 
 // tabViewerQuiet is how long a viewer may say nothing: it pings every
 // twenty seconds.
@@ -39,10 +40,12 @@ type tabViewerSocket struct {
 	writeMutex sync.Mutex
 
 	// messages are the ones a viewer must not miss, in order; a viewer
-	// too far behind to take them is closed. frame is the newest picture
-	// not yet written, and ready says there is one.
+	// too far behind to take them is closed. state and frame are the
+	// newest state and picture not yet written, which replace older ones,
+	// and ready says there is one.
 	messages   chan []byte
 	frameMutex sync.Mutex
+	state      []byte
 	frame      []byte
 	ready      chan struct{}
 	closed     chan struct{}
@@ -74,39 +77,58 @@ func (self *tabViewerSocket) Send(message []byte) error {
 	}
 }
 
+// SendState keeps how things stand for the writer, replacing a state it
+// has not written yet.
+func (self *tabViewerSocket) SendState(message []byte) {
+	self.frameMutex.Lock()
+	self.state = message
+	self.frameMutex.Unlock()
+	self.wake()
+}
+
 // SendFrame keeps the picture for the writer, replacing one it has not
 // written yet.
 func (self *tabViewerSocket) SendFrame(message []byte) {
 	self.frameMutex.Lock()
 	self.frame = message
 	self.frameMutex.Unlock()
+	self.wake()
+}
+
+// wake tells the writer there is a state or a picture.
+func (self *tabViewerSocket) wake() {
 	select {
 	case self.ready <- struct{}{}:
 	default:
 	}
 }
 
-// write writes what is queued, messages before pictures, the newest
-// picture each time. A write that fails closes the socket, which ends the
+// write writes what is queued: messages, then the newest state, then the
+// newest picture. A write that fails closes the socket, which ends the
 // reader and with it the view.
 func (self *tabViewerSocket) write() {
 	for {
-		var message []byte
+		var batch [][]byte
 		select {
 		case <-self.closed:
 			return
-		case message = <-self.messages:
+		case message := <-self.messages:
+			batch = append(batch, message)
 		case <-self.ready:
 			self.frameMutex.Lock()
-			message, self.frame = self.frame, nil
+			state, frame := self.state, self.frame
+			self.state, self.frame = nil, nil
 			self.frameMutex.Unlock()
+			batch = append(batch, state, frame)
 		}
-		if message == nil {
-			continue
-		}
-		if err := self.writeNow(message); err != nil {
-			self.close()
-			return
+		for _, message := range batch {
+			if message == nil {
+				continue
+			}
+			if err := self.writeNow(message); err != nil {
+				self.close()
+				return
+			}
 		}
 	}
 }

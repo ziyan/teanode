@@ -68,14 +68,18 @@ type AgentTabQuery interface {
 // AgentTabMutation hands a tab the person took over back to the agent.
 type AgentTabMutation interface {
 	// Give the agent back the browser tab the person took over from the
-	// dashboard, with anything it should know, and answer the agent's
-	// cards asking for it. Needs agent:use.
+	// dashboard, with anything it should know, and answer the agent's card
+	// asking for it: the one named by run and call, or the newest. Needs
+	// agent:use.
 	HandBackAgentTab(ctx context.Context, arguments HandBackAgentTabArguments) (bool, error)
 }
 
-// HandBackAgentTabArguments carry the person's word to the agent.
+// HandBackAgentTabArguments carry the person's word to the agent, and
+// which card it answers: a run and a call, or, left out, the newest.
 type HandBackAgentTabArguments struct {
-	Note string `json:"note" graphapi:"nullable"`
+	Note   string `json:"note" graphapi:"nullable"`
+	RunID  string `json:"runId" graphapi:"nullable"`
+	CallID string `json:"callId" graphapi:"nullable"`
 }
 
 // AgentTabView is the attached tab, if any.
@@ -139,6 +143,9 @@ func (self *graph) HandBackAgentTab(ctx context.Context, arguments HandBackAgent
 	}
 	for _, interaction := range waiting {
 		if interaction.InteractionKind != models.InteractionTakeOver || interaction.ResolvedAt != nil {
+			continue
+		}
+		if arguments.CallID != "" && (interaction.CallID != arguments.CallID || interaction.RunID != arguments.RunID) {
 			continue
 		}
 		isAnswered, err := self.answerInteraction(ctx, found, worker, interaction.CallID, answer, agent.RunCommand{RunID: interaction.RunID, Action: agent.CommandAnswer, CallID: interaction.CallID, Answer: answer})

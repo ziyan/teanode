@@ -1484,6 +1484,7 @@ export const en = {
   'browser.tabOwn': 'Yours',
   'browser.tabCurrent': 'Your agent is here',
   'browser.agentControls': 'Your agent is using this tab',
+  'browser.chooseTab': 'Choose a tab above to watch it.',
   'browser.agentAsks': 'Your agent asks:',
   'browser.youControl': 'You have control',
   'browser.takeOver': 'Take over',

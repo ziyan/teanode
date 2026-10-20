@@ -553,6 +553,9 @@ async function letDebuggerGo(tabId) {
 }
 
 function letEveryDebuggerGo() {
+  // A stream whose attachment is still under way is forgotten too, so it
+  // stops at its next step rather than running on after the socket.
+  for (const tabId of [...casting.keys()]) forgetCast(tabId)
   for (const tabId of [...debugging.keys()]) void letDebuggerGo(tabId)
 }
 
@@ -619,10 +622,11 @@ async function startCast(tabId, options) {
     if (casting.has(tabId)) return
     await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
     await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {})
+    await releaseIfUnused(tabId)
   }
   try {
     await debuggerFor(tabId)
-    if (isOvertaken()) return
+    if (isOvertaken()) return void (await releaseIfUnused(tabId))
     await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true })
     await chrome.debugger.sendCommand({ tabId }, 'Page.startScreencast', {
       format: 'jpeg',
@@ -638,9 +642,21 @@ async function startCast(tabId, options) {
       if (Date.now() - cast.lastAt >= STILL_EVERY) void sendStill(tabId)
     }, STILL_EVERY)
   } catch (reason) {
-    if (!isOvertaken()) forgetCast(tabId)
     console.warn('[TeaNode] could not stream the tab:', reason)
+    if (isOvertaken()) return
+    // The server still thinks it streams, and the page waits for a
+    // picture: it is told the stream ended, as Chrome ending it would.
+    forgetCast(tabId)
+    await releaseIfUnused(tabId)
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'castEnded', tab: tabId }))
   }
+}
+
+// releaseIfUnused lets the debugger go when neither a stream nor the agent
+// needs it, and Chrome's bar with it.
+async function releaseIfUnused(tabId) {
+  const state = debugging.get(tabId)
+  if (state && !state.isAgentUsing && !casting.has(tabId)) await letDebuggerGo(tabId)
 }
 
 // forgetCast stops treating a tab as streamed, and its stills with it.
@@ -655,10 +671,12 @@ function forgetCast(tabId) {
 async function stopCast(tabId) {
   if (!forgetCast(tabId)) return
   await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
+  // A start that came in meanwhile owns the tab now, focus emulation and
+  // the debugger with it.
+  if (casting.has(tabId)) return
   await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {})
   // Attached only for the dashboard: let it go, and Chrome's bar with it.
-  const state = debugging.get(tabId)
-  if (state && !state.isAgentUsing && !casting.has(tabId)) await letDebuggerGo(tabId)
+  await releaseIfUnused(tabId)
 }
 
 // sendStill sends a screenshot of the tab as a picture, unless it is what
@@ -695,8 +713,6 @@ async function sendStill(tabId) {
 function sendFrame(tabId, params) {
   const sending = socket
   if (!sending || sending.readyState !== WebSocket.OPEN) return
-  const known = debugging.get(tabId)
-  if (known) known.until = Date.now() + DEBUGGER_IDLE
   const cast = casting.get(tabId)
   if (cast) {
     cast.lastAt = Date.now()
@@ -886,6 +902,9 @@ async function act(action, args) {
           state.events = []
           state.isAgentUsing = false
         }
+        // What the agent may have turned on to watch is turned off; the
+        // stream does not need it.
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Network.disable').catch(() => {})
         return { ok: true, data: { stopped: true } }
       }
       await letDebuggerGo(tab.id)

@@ -380,7 +380,8 @@ func askOnce(ctx context.Context, command *cli.Command, connection *client.Clien
 					if !isHandedBack {
 						continue
 					}
-					if _, err := client.HandBackAgentTab(ctx, connection, note); err != nil {
+					// This turn's card, not whichever is newest elsewhere.
+					if _, err := client.HandBackAgentTab(ctx, connection, note, turn.RunID, event.CallID); err != nil {
 						return describeError(command, err)
 					}
 					continue

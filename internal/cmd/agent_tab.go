@@ -82,7 +82,7 @@ func runAgentTabHandBack(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	isHandedBack, err := client.HandBackAgentTab(ctx, connection, note)
+	isHandedBack, err := client.HandBackAgentTab(ctx, connection, note, "", "")
 	if err != nil {
 		return describeError(command, err)
 	}

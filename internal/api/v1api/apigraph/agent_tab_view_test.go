@@ -3,6 +3,7 @@ package apigraph
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -98,5 +99,54 @@ func TestTheTabViewerSocketOpensOnlyForThePersonFromThisServer(t *testing.T) {
 	}
 	if said := open("http://"+host, true, true); said["type"] != "refused" || !strings.Contains(said["reason"].(string), "operator") {
 		t.Fatalf("an operator signed in as the person was told %v", said)
+	}
+}
+
+// A viewer is sent every message it must not miss, and of states and
+// pictures only the newest: a burst written faster than it reads ends on
+// the last of each, and nothing is sent once it has closed.
+func TestTheTabViewerSocketSendsTheNewestStateAndPicture(t *testing.T) {
+	sockets := make(chan *tabViewerSocket, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		conn, err := (&websocket.Upgrader{}).Upgrade(writer, request, nil)
+		if err != nil {
+			return
+		}
+		sockets <- newTabViewerSocket(conn)
+	}))
+	defer server.Close()
+	client, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("Dial: %s", err)
+	}
+	defer func() { _ = client.Close() }()
+	socket := <-sockets
+	for index := 1; index <= 50; index++ {
+		socket.SendState([]byte(`{"type":"state","number":` + strconv.Itoa(index) + `}`))
+		socket.SendFrame([]byte(`{"type":"frame","number":` + strconv.Itoa(index) + `}`))
+	}
+	if err := socket.Send([]byte(`{"type":"pong"}`)); err != nil {
+		t.Fatalf("Send: %s", err)
+	}
+	var lastState, lastFrame float64
+	isPonged := false
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for !isPonged || lastState != 50 || lastFrame != 50 {
+		var message map[string]any
+		if err := client.ReadJSON(&message); err != nil {
+			t.Fatalf("read (pong %v, state %v, frame %v): %s", isPonged, lastState, lastFrame, err)
+		}
+		switch message["type"] {
+		case "pong":
+			isPonged = true
+		case "state":
+			lastState = message["number"].(float64)
+		case "frame":
+			lastFrame = message["number"].(float64)
+		}
+	}
+	socket.close()
+	if err := socket.Send([]byte(`{"type":"pong"}`)); err == nil {
+		t.Fatal("a closed viewer took a message")
 	}
 }

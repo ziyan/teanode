@@ -40,16 +40,23 @@ func ReadAgentTab(ctx context.Context, connection *Client) (*AgentTab, error) {
 	return result.ReadAgentTab, nil
 }
 
-const DocumentHandBackAgentTab = `mutation ($note: String) { HandBackAgentTab(note: $note) }`
+const DocumentHandBackAgentTab = `mutation ($note: String, $runId: String, $callId: String) {
+	HandBackAgentTab(note: $note, runId: $runId, callId: $callId)
+}`
 
 // HandBackAgentTab gives the agent back the tab the person took over, with
-// a note for it, and answers its requests to take the tab over. It says
-// whether there was anything to hand back.
-func HandBackAgentTab(ctx context.Context, connection *Client, note string) (bool, error) {
+// a note for it, and answers its request to take the tab over: the one of
+// this run and call, or, with both empty, the newest. It says whether there
+// was anything to hand back.
+func HandBackAgentTab(ctx context.Context, connection *Client, note, runId, callId string) (bool, error) {
 	var result struct {
 		HandBackAgentTab bool `json:"HandBackAgentTab"`
 	}
-	if err := connection.Execute(ctx, DocumentHandBackAgentTab, map[string]any{"note": note}, &result); err != nil {
+	variables := map[string]any{"note": note}
+	if callId != "" {
+		variables["runId"], variables["callId"] = runId, callId
+	}
+	if err := connection.Execute(ctx, DocumentHandBackAgentTab, variables, &result); err != nil {
 		return false, err
 	}
 	return result.HandBackAgentTab, nil

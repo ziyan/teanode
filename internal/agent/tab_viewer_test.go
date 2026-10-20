@@ -52,6 +52,8 @@ func (self *recordingViewer) Send(message []byte) error {
 	return nil
 }
 
+func (self *recordingViewer) SendState(message []byte) { _ = self.Send(message) }
+
 func (self *recordingViewer) SendFrame(message []byte) {
 	var frame tabFrameMessage
 	_ = json.Unmarshal(message, &frame)

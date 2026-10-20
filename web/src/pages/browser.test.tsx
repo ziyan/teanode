@@ -119,7 +119,7 @@ it('says how to connect the extension, and opens no live view, while the browser
   expect(FakeWebSocket.instances).toHaveLength(0)
 })
 
-it('opens the viewer socket on the same origin and sends hello with the CSRF token', async () => {
+it('opens the viewer socket on the same origin and sends hello', async () => {
   const socket = await openSocket()
   expect(socket.url).toBe(`ws://${window.location.host}/api/v1/agent/tab/view`)
   expect(socket.sent[0]).toEqual({ type: 'hello' })

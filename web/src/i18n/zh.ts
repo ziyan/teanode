@@ -1432,6 +1432,7 @@ export const zh: Catalog = {
   'browser.tabOwn': '你的',
   'browser.tabCurrent': '你的助手在这里',
   'browser.agentControls': '你的助手正在使用这个标签页',
+  'browser.chooseTab': '在上方选择一个标签页来观看。',
   'browser.agentAsks': '你的助手请求：',
   'browser.youControl': '由你控制',
   'browser.takeOver': '接管',

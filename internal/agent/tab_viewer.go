@@ -20,9 +20,11 @@ import (
 
 // TabViewer is one live view of the person's browser: the dashboard page.
 type TabViewer interface {
-	// Send writes a message the viewer must not miss: what there is to
-	// watch, who holds it, a refusal.
+	// Send writes a message the viewer must not miss: a refusal, a reply.
 	Send(message []byte) error
+	// SendState writes how things stand. A state the viewer has not been
+	// sent yet is replaced by a newer one: only the latest matters.
+	SendState(message []byte)
 	// SendFrame writes a picture of the tab. A picture the viewer has not
 	// been sent yet is replaced by a newer one rather than queued behind
 	// it, so a slow viewer sees the tab as it is now, not as it was.
@@ -158,7 +160,7 @@ func (self *Agent) tellViewers(agentId string) {
 			state.Tabs = []TabListing{}
 		}
 		message, _ := json.Marshal(state)
-		_ = viewer.Send(message)
+		viewer.SendState(message)
 	}
 }
 
@@ -352,15 +354,10 @@ func (self *Agent) TabFrame(agentId string, connection TabConnection, tab, data 
 			watchers = append(watchers, viewer)
 		}
 	}
-	// A stream nobody asked for, left by a stop that crossed a start: it
-	// is stopped, once in a while rather than for every picture.
 	isStray := !room.casting[tab] && time.Since(room.strayStopAt[tab]) > 5*time.Second
-	if isStray {
-		room.strayStopAt[tab] = time.Now()
-	}
 	room.mutex.Unlock()
 	if isStray {
-		attached.sendCast(tab, false)
+		self.stopStray(room, attached, tab)
 	}
 	if len(watchers) == 0 {
 		return
@@ -368,6 +365,23 @@ func (self *Agent) TabFrame(agentId string, connection TabConnection, tab, data 
 	message, _ := json.Marshal(tabFrameMessage{Type: "frame", Tab: tab, Data: data, Width: width, Height: height})
 	for _, viewer := range watchers {
 		viewer.SendFrame(message)
+	}
+}
+
+// stopStray stops a stream nobody asked for, left by a stop that crossed a
+// start, once in a while rather than for every picture. It is decided again
+// under the cast lock, so a start that came in meanwhile is not undone.
+func (self *Agent) stopStray(room *tabRoom, attached *attachedTab, tab string) {
+	room.castMutex.Lock()
+	defer room.castMutex.Unlock()
+	room.mutex.Lock()
+	isStray := !room.casting[tab] && time.Since(room.strayStopAt[tab]) > 5*time.Second
+	if isStray {
+		room.strayStopAt[tab] = time.Now()
+	}
+	room.mutex.Unlock()
+	if isStray {
+		attached.sendCast(tab, false)
 	}
 }
 
