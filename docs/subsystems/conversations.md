@@ -134,6 +134,18 @@ with their pictures, a batch at a time, whenever a fetch happens. One account
 may have 60 pages fetched a minute; a question answered from what is kept
 costs nothing. `teanode link preview <url>...` prints the same answer.
 
+**On the iPhone.** The app shows the same card under a bubble (the picture,
+the site, the title, two lines), asked for when the message comes near the
+screen, ten links to a question (`LinkPreviewLoader` in TeaNodeKit). Every
+http or https link opened anywhere in the app comes up in an in-app Safari
+view that slides up from the bottom, through the environment's `openURL` set
+once at the root (`AppModel.followLink`). It is presented from the top of the
+window, as the lightbox is, because a link in a sheet has no root view free to
+present from while the sheet is up. `LinkOpening` in TeaNodeKit lists what the
+system keeps: `mailto:`, `tel:`, `sms:` and `teanode://`, the app's own
+universal links (`teanode.com/app/*`), Apple Maps links, and a configuration
+profile, which only Safari installs.
+
 ## Titles and summaries
 
 A background describer names conversations and writes the one line under them.

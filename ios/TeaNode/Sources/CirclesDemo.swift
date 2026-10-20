@@ -333,7 +333,7 @@
             switch conversationId {
             case "chat-sam"?:
                 conversation = directChatConversationJSON(unreadCount: 0)
-                messages = directChatMessages
+                messages = directChatMessages + (screen == "chat-link" ? linkChatMessages : [])
             case "chat-home"?:
                 conversation = groupChatConversationJSON(unreadCount: 0)
                 messages = groupChatMessages
@@ -344,11 +344,11 @@
                 #"{"data":{"ReadAgentConversation":{"conversation":\#(conversation),"todos":[],"messages":[\#(messages.joined(separator: ","))],"total":\#(messages.count)},"ListAgentInteractions":[]}}"#
         }
 
-        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-group`,
-        /// `chat-members` or `chat-mention`), or nil for any other screen.
+        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-link`,
+        /// `chat-group`, `chat-members` or `chat-mention`), or nil for any other screen.
         static var openedChat: AgentConversation? {
             switch screen ?? "" {
-            case "chat-direct": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
+            case "chat-direct", "chat-link": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
             case "chat-group", "chat-members", "chat-mention": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
             default: nil
             }

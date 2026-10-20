@@ -14113,6 +14113,22 @@
         }
       }
     },
+    "Copy link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制链接"
+          }
+        }
+      }
+    },
     "Copy password": {
       "localizations": {
         "ja": {
@@ -30125,6 +30141,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开它的对话"
+          }
+        }
+      }
+    },
+    "Opens the link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを開きます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开链接"
           }
         }
       }

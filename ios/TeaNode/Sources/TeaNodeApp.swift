@@ -42,7 +42,12 @@ struct TeaNodeApp: App {
             // After the choice is stored, so the windows' style is the last
             // thing set whichever way the change went.
             .onChange(of: appearance) { appearance.apply() }
+            // A web page asked for anywhere in the app comes up in the app's
+            // own browser, from the bottom. After the model is in the
+            // environment's reach, which the line below gives it.
+            .modifier(InAppBrowserPresenter())
             .environment(app)
+            .environment(\.openURL, OpenURLAction { address in app.followLink(address) })
             // Switches in TeaNode's green: they are the system's brighter
             // green otherwise, beside the accent on the same screen. Only
             // switches: a tint here would also turn every toolbar button green.
