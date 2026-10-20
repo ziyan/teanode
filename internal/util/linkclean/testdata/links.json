@@ -133,5 +133,15 @@
     "input": "https://example.com/p?utm=keep&utmsource=keep&utm_=drop",
     "cleaned": "https://example.com/p?utm=keep&utmsource=keep",
     "display": "example.com/p?utm=keep&utmsource=keep"
+  },
+  {
+    "input": "https://example.com/p?gclid=1#a\nb",
+    "cleaned": "https://example.com/p#a\nb",
+    "display": "example.com/p"
+  },
+  {
+    "input": "https://example.com/p?x=1\n&gclid=2",
+    "cleaned": "https://example.com/p?x=1\n",
+    "display": "example.com/p?x=1\n"
   }
 ]

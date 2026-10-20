@@ -42,7 +42,7 @@ const TRACKING_PARAMETERS = new Set([
 
 // The scheme, authority, path, query (question mark included) and fragment
 // (number sign included) of a web link.
-const LINK_PATTERN = /^(https?):\/\/([^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/i
+const LINK_PATTERN = /^(https?):\/\/([^/?#]*)([^?#]*)(\?[^#]*)?(#[\s\S]*)?$/i
 
 function isTrackingParameter(parameter: string): boolean {
   const name = parameter.split('=', 1)[0].toLowerCase()

@@ -43,7 +43,7 @@ var trackingParameters = map[string]bool{
 
 // linkPattern splits a web link into its scheme, authority, path, query
 // (question mark included) and fragment (number sign included).
-var linkPattern = regexp.MustCompile(`^(?i:(https?))://([^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$`)
+var linkPattern = regexp.MustCompile(`^(?i:(https?))://([^/?#]*)([^?#]*)(\?[^#]*)?(#(?s:.*))?$`)
 
 // Clean is raw without its tracking parameters. Every other parameter stays,
 // as written and in its order. Anything that is not an http or https link,
