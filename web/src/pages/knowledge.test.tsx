@@ -206,3 +206,30 @@ it("opens the record a fact's evidence names, at the passage, and says when it i
   expect(screen.queryByRole('link')).toBeNull()
   expect(screen.getByText(/memoryLinks\.unavailable/)).toBeTruthy()
 })
+
+it('searches at once for the words it was opened with', async () => {
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('ListAgentKnowledgeSources')) return { ListAgentKnowledgeSources: [] }
+    return {
+      SearchAgentDocuments: {
+        passages: [passage('document01', 1)],
+        definitions: [],
+        meaningful: true,
+        moreCount: 0,
+        isMoreCountLowerBound: false,
+        nextOffset: 0,
+      },
+    }
+  })
+  render(
+    <MemoryRouter>
+      <DocumentsDialog initialQuery="seed tray" onClose={() => {}} />
+    </MemoryRouter>,
+  )
+  expect(await screen.findByText('Passage 1 of document01')).toBeTruthy()
+  expect((screen.getByPlaceholderText('knowledge.documents.placeholder') as HTMLInputElement).value).toBe('seed tray')
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('SearchAgentDocuments'), {
+    query: 'seed tray',
+    first: 20,
+  })
+})

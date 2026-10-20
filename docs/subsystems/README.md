@@ -33,6 +33,7 @@ change with it.
 | `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
 | `photos.md` | The photo library: uploads, processing, descriptions, faces, albums, the iPhone's backup |
 | `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |
+| `search.md` | One search of a person's words across chats, mail, contacts, photos, memory, documents, recordings, places and finance: the areas, who may search what, time and failure |
 
 Two conventions hold throughout. *Rules* are the mailbox's rules and nothing
 else. The words for the agent's own text are fixed in `AGENTS.md`: the

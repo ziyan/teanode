@@ -869,7 +869,9 @@ func (self *transaction) ListAgentConversations(agentId string, kinds []models.A
 }
 
 func (self *transaction) SearchAgentConversations(agentId, query string, limit int) ([]*models.AgentConversation, error) {
-	pattern := "%" + strings.TrimSpace(query) + "%"
+	// Escaped, so that somebody searching for "50%" or "a_b" is looking for
+	// those characters rather than for LIKE's wildcards.
+	pattern := "%" + escapeLike(strings.TrimSpace(query)) + "%"
 	if limit <= 0 {
 		limit = 50
 	}

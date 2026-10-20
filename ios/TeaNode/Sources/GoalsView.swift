@@ -19,7 +19,6 @@ struct GoalsScreen: View {
                 section(String(localized: "Done"), goals.filter { !$0.isOpen })
             }
             .navigationTitle("Goals")
-            .withoutSwipeBack()
             .navigationDestination(for: AgentGoal.self) { goal in
                 GoalDetail(connection: connection, conversationId: goal.conversationId, doneText: $doneText, problemText: $problemText)
             }
@@ -31,7 +30,7 @@ struct GoalsScreen: View {
                 }
             }
             .toolbar {
-                MenuButton()
+                MoreBackButton()
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isStarting = true

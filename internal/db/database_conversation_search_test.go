@@ -65,3 +65,56 @@ func TestConversationSearchReadsOnlyTheAgentsOwnChats(test *testing.T) {
 		test.Errorf("only the side chat is found, not the run %s or the other agent's %s: %v", run.ID, theirs.ID, ids)
 	}
 }
+
+// The words of a search mean themselves: a percent sign or an underscore in
+// them is not a wildcard that matches every chat.
+func TestConversationSearchTakesPercentAndUnderscoreLiterally(test *testing.T) {
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+
+	var agentId string
+	var discount *models.AgentConversation
+	if err := database.Transaction(func(tx db.Transaction) error {
+		owner := dbtest.CreateUser(test, database, "wildcard-owner")
+		mine, err := tx.CreateAgent(&models.Agent{UserID: owner, Enabled: true, Name: "an agent"})
+		if err != nil {
+			return err
+		}
+		agentId = mine.ID
+		for _, said := range []string{"the harbor fee is 50% off in winter", "the harbor fee is 500 in winter", "a_b", "axb"} {
+			conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: mine.ID, Kind: models.AgentConversationNamed, Title: "a chat", LastAt: time.Now()})
+			if err != nil {
+				return err
+			}
+			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "user", Content: said}); err != nil {
+				return err
+			}
+			if said == "the harbor fee is 50% off in winter" {
+				discount = conversation
+			}
+		}
+		return nil
+	}); err != nil {
+		test.Fatalf("setting up: %s", err)
+	}
+
+	search := func(words string) []*models.AgentConversation {
+		var found []*models.AgentConversation
+		if err := database.Transaction(func(tx db.Transaction) (err error) {
+			found, err = tx.SearchAgentConversations(agentId, words, 50)
+			return err
+		}); err != nil {
+			test.Fatalf("SearchAgentConversations(%q): %s", words, err)
+		}
+		return found
+	}
+	if found := search("50% off"); len(found) != 1 || found[0].ID != discount.ID {
+		test.Errorf("a percent sign matched %d chats, want only the one that says 50%% off", len(found))
+	}
+	if found := search("%"); len(found) != 1 {
+		test.Errorf("a lone percent sign matched %d chats, want the one with a percent sign", len(found))
+	}
+	if found := search("a_b"); len(found) != 1 {
+		test.Errorf("an underscore matched %d chats, want only a_b", len(found))
+	}
+}

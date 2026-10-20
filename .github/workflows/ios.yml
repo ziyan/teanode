@@ -260,7 +260,7 @@ jobs:
           shoot connect-light light large
           shoot connect-dark dark large
           shoot connect-largest-text light accessibility-extra-extra-extra-large
-          shoot conversation-light light large -TeaNodeDemo
+          shoot conversation-light light large -TeaNodeDemo -TeaNodeScreen conversation
           if [ -f screenshots/conversation-light.png ] && build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
             echo "Recording content assertion accepted the conversation screen."
             exit 1
@@ -269,14 +269,35 @@ jobs:
             echo "Device setup assertion accepted the conversation screen."
             exit 1
           fi
-          shoot conversation-dark dark large -TeaNodeDemo
-          shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
+          shoot conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
+          shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen conversation
           shoot conversation-long-message-light light large -TeaNodeDemo -TeaNodeScreen conversation-long-message
           shoot conversation-long-message-dark dark large -TeaNodeDemo -TeaNodeScreen conversation-long-message
           shoot conversation-long-message-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen conversation-long-message
           shoot conversation-long-message-read-light light large -TeaNodeDemo -TeaNodeScreen conversation-long-message-read
+          # The tab bar of icons, and each tab's first screen: Chats' list of conversations, Mail's list
+          # of folders and the inbox pushed from it, then Photos and Calendar below, More, and Search.
+          shoot chats-light light large -TeaNodeDemo -TeaNodeTab agent
+          shoot chats-dark dark large -TeaNodeDemo -TeaNodeTab agent
+          shoot chats-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab agent
           shoot mail-light light large -TeaNodeDemo -TeaNodeTab mail
           shoot mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
+          shoot mail-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab mail
+          shoot mail-inbox-light light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
+          shoot mail-inbox-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
+          shoot mail-inbox-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
+          shoot more-light light large -TeaNodeDemo -TeaNodeTab more
+          # Choosing the tabs: the three in the bar, to move or take out, and the others to put in.
+          shoot tab-bar-edit-light light large -TeaNodeDemo -TeaNodeTab more -TeaNodeScreen tab-bar-edit
+          shoot tab-bar-edit-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab more -TeaNodeScreen tab-bar-edit
+          shoot more-dark dark large -TeaNodeDemo -TeaNodeTab more
+          shoot more-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab more
+          # Search: before anything is typed, and with the words typed, grouped by part.
+          shoot search-light light large -TeaNodeDemo -TeaNodeTab search
+          shoot search-dark dark large -TeaNodeDemo -TeaNodeTab search
+          shoot search-results-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
+          shoot search-results-dark dark large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
+          shoot search-results-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
           shoot calendar-light light large -TeaNodeDemo -TeaNodeTab calendar
           shoot calendar-dark dark large -TeaNodeDemo -TeaNodeTab calendar
           shoot calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
@@ -286,8 +307,6 @@ jobs:
           shoot location-light light large -TeaNodeDemo -TeaNodeTab location
           shoot location-dark dark large -TeaNodeDemo -TeaNodeTab location
           shoot location-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location
-          shoot location-menu-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeMenu
-          shoot location-menu-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeMenu
           shoot location-day-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
           shoot location-day-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
           shoot location-places-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
@@ -305,12 +324,11 @@ jobs:
             shoot "$location_screen-dark" dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
             shoot "$location_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
           done
-          # Health: the list of kinds of data, the side menu with its row, a steps chart, a night's stages, a heart rate line, a
+          # Health: the list of kinds of data, a steps chart, a night's stages, a heart rate line, a
           # workout's route, somebody sharing Health, the settings and the setup that comes before iOS asks.
           shoot health-light light large -TeaNodeDemo -TeaNodeTab health
           shoot health-dark dark large -TeaNodeDemo -TeaNodeTab health
           shoot health-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab health
-          shoot health-menu-light light large -TeaNodeDemo -TeaNodeTab health -TeaNodeMenu
           for health_screen in health-steps health-sleep health-heart health-route health-person; do
             shoot "$health_screen-light" light large -TeaNodeDemo -TeaNodeTab health -TeaNodeScreen "$health_screen"
             shoot "$health_screen-dark" dark large -TeaNodeDemo -TeaNodeTab health -TeaNodeScreen "$health_screen"
@@ -343,8 +361,6 @@ jobs:
           shoot coding-hooks-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-hooks
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
           shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
-          shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu
-          shoot menu-light light large -TeaNodeDemo -TeaNodeMenu
           shoot knowledge-dark dark large -TeaNodeDemo -TeaNodeTab knowledge
           # A page with the person's own records linked to it, asserted by what it shows.
           shoot knowledge-records-light light large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records
@@ -355,7 +371,6 @@ jobs:
           shoot knowledge-records-recording-dark dark large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records-recording
           shoot knowledge-records-recording-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records-recording
           shoot finance-light light large -TeaNodeDemo -TeaNodeTab finance
-          shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
           # The finance charts: the donut and its rows, a touched month, slice
           # and day, and the net worth line.
           shoot finance-dark dark large -TeaNodeDemo -TeaNodeTab finance
@@ -379,12 +394,8 @@ jobs:
           shoot finance-paystub-entry-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-paystub-entry
           shoot finance-tax-form-entry-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-tax-form-entry
           shoot finance-part-switch-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-part-switch
-          shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
-          # The side menu on Photos: the collections under the parts.
-          shoot photos-menu-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
-          shoot photos-menu-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
           # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its
           # first photo, the Trash, and a library with nothing in it.
           shoot photos-library-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
@@ -562,13 +573,8 @@ jobs:
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
           done
-          # The conversation list with two chats among the agent's, and the
-          # chats: a direct one, a circle's, its members sheet, and the menu of agents an @ offers.
-          shoot conversations-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
-          shoot conversations-dark dark large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
-          shoot conversations-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
-          # The same menu scrolled to its chats, then closed and opened again: it should look like the one above, not start at the top.
-          shoot conversations-restored-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations-restored
+          # The chats: a direct one, a circle's, its members sheet, and the menu of agents an @ offers
+          # (the list of conversations is the Chats tab's, shot above).
           for chat_screen in chat-direct chat-group chat-members chat-mention; do
             shoot "$chat_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
             shoot "$chat_screen-dark" dark large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
@@ -600,15 +606,15 @@ jobs:
           SHARD_COUNT=1 SHARD=0
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
           mkdir -p screenshots/store
-          shoot store/1-conversation light large -TeaNodeDemo
-          shoot store/2-mail light large -TeaNodeDemo -TeaNodeTab mail
+          shoot store/1-conversation light large -TeaNodeDemo -TeaNodeScreen conversation
+          shoot store/2-mail light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
           shoot store/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
           shoot store/4-goals light large -TeaNodeDemo -TeaNodeTab goals
-          shoot store/5-menu dark large -TeaNodeDemo -TeaNodeMenu
-          shoot store/6-conversation-dark dark large -TeaNodeDemo
+          shoot store/5-chats dark large -TeaNodeDemo -TeaNodeTab agent
+          shoot store/6-conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
 
-          # The iPad: the same app with the side menu as a column that stays
-          # open beside the screen, upright. The phone is shut down
+          # The iPad: the same tabs, as the sidebar's tab bar with the parts that are under More
+          # on the phone in groups, upright. The phone is shut down
           # first, so two simulators are not up at once, and the iPad has its
           # own appearance and text size to set.
           xcrun simctl shutdown "$device"
@@ -617,17 +623,22 @@ jobs:
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
-          shoot ipad-conversation-light light large -TeaNodeDemo
-          shoot ipad-conversation-dark dark large -TeaNodeDemo
-          shoot ipad-mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
+          shoot ipad-chats-light light large -TeaNodeDemo -TeaNodeTab agent
+          shoot ipad-chats-dark dark large -TeaNodeDemo -TeaNodeTab agent
+          shoot ipad-conversation-light light large -TeaNodeDemo -TeaNodeScreen conversation
+          shoot ipad-conversation-dark dark large -TeaNodeDemo -TeaNodeScreen conversation
+          shoot ipad-mail-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
+          shoot ipad-contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
+          shoot ipad-search-results-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
+          shoot ipad-search-results-dark dark large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
           shoot ipad-photos-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot ipad-location-light light large -TeaNodeDemo -TeaNodeTab location
           shoot ipad-calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
           # The App Store's iPad set, upright, with the same status bar.
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
           mkdir -p screenshots/store-ipad
-          shoot store-ipad/1-conversation light large -TeaNodeDemo
-          shoot store-ipad/2-mail light large -TeaNodeDemo -TeaNodeTab mail
+          shoot store-ipad/1-conversation light large -TeaNodeDemo -TeaNodeScreen conversation
+          shoot store-ipad/2-mail light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
           shoot store-ipad/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
           shoot store-ipad/4-goals light large -TeaNodeDemo -TeaNodeTab goals
 

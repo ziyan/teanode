@@ -2500,7 +2500,6 @@ struct AgentUsageView: View {
                 }
             }
             .chartXSelection(value: $selectedKeyLabel)
-            .keepsSidePanelClosed()
             .chartYAxis {
                 AxisMarks { axisValue in
                     AxisGridLine()

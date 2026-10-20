@@ -65,6 +65,8 @@ struct ConversationView: View {
             // The bar is see-through: the messages run under it, and only
             // its buttons and the name float above them.
             .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+            // The composer is the conversation's own bar at the bottom, so the tab bar gives way to it.
+            .toolbarVisibility(.hidden, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {

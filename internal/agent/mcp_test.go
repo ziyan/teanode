@@ -88,6 +88,11 @@ func TestConnectedServerToolsAreOfferedWithTheirRisk(t *testing.T) {
 	configuration.Agent.Providers = []config.AgentProvider{{Name: "fake", Kind: "openai", BaseURL: model.URL, APIKey: "k"}}
 	configuration.Agent.Models.Default = "fake:thinker"
 	configuration.Agent.MCP.Servers = []config.AgentMCPServer{{Name: "tracker", URL: remote.URL, ReadOnly: []string{"track"}}}
+	// A person with only mail:read is offered exactly as many tools as are
+	// sent whole (tools.DeferralThreshold); one more and the connected
+	// server's wait behind tool_search, which this test is not about. The
+	// search tool is the one this test does not need.
+	configuration.Agent.Tools.Disabled = []string{"search"}
 	registry, err := llm.Open(&configuration.Agent)
 	if err != nil {
 		t.Fatalf("llm.Open: %s", err)

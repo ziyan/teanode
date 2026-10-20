@@ -529,7 +529,6 @@ struct NetWorthView: View {
             }
         }
         .chartXSelection(value: $selectedDate)
-        .keepsSidePanelClosed()
         // Not from zero: a net worth moves by a little of itself, and from
         // zero every line would look flat.
         .chartYScale(domain: .automatic(includesZero: false))

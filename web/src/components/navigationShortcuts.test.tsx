@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import { TranslationProvider } from '../i18n/i18n'
+import { FOCUS_SEARCH_EVENT } from '../searchEverything'
 import { SessionProvider } from '../session'
 import { Shortcut, useShortcuts } from '../shortcuts'
 import { NavigationShortcuts } from './navigationShortcuts'
@@ -82,4 +83,70 @@ it('lists the page keys first, then where g goes, on ?', () => {
   expect(headings).toEqual(['On this page', 'Go to', 'Anywhere'])
   expect(screen.getByText('Reply')).toBeTruthy()
   expect(screen.getByText('Recordings')).toBeTruthy()
+})
+
+// Counts the times the rail's search box is asked to take focus.
+function listenForSearch() {
+  const asked = vi.fn()
+  window.addEventListener(FOCUS_SEARCH_EVENT, asked)
+  return { asked, stop: () => window.removeEventListener(FOCUS_SEARCH_EVENT, asked) }
+}
+
+it.each([
+  ['Control', { ctrlKey: true }],
+  ['Command', { metaKey: true }],
+])('focuses the search with %s-K, even from a box', (_name, modifier) => {
+  const search = listenForSearch()
+  renderAt('/page')
+  fireEvent.keyDown(screen.getByLabelText('Find'), { key: 'k', ...modifier })
+  expect(search.asked).toHaveBeenCalledTimes(1)
+  fireEvent.keyDown(document.body, { key: 'K', ...modifier })
+  expect(search.asked).toHaveBeenCalledTimes(2)
+  search.stop()
+})
+
+it('leaves other chords with K to the browser', () => {
+  const search = listenForSearch()
+  renderAt('/page')
+  fireEvent.keyDown(document.body, { key: 'k', ctrlKey: true, shiftKey: true })
+  fireEvent.keyDown(document.body, { key: 'k', ctrlKey: true, altKey: true })
+  fireEvent.keyDown(document.body, { key: 'k' })
+  expect(search.asked).not.toHaveBeenCalled()
+  search.stop()
+})
+
+it('does not take Control-K from a dialog that is asking something', () => {
+  const search = listenForSearch()
+  renderAt('/page')
+  const scrim = document.createElement('div')
+  scrim.className = 'dialog-scrim'
+  document.body.appendChild(scrim)
+  fireEvent.keyDown(document.body, { key: 'k', ctrlKey: true })
+  scrim.remove()
+  expect(search.asked).not.toHaveBeenCalled()
+  search.stop()
+})
+
+it('searches the page on /, and everything through the rail when the page has no box', () => {
+  const search = listenForSearch()
+  // jsdom has no layout, so a box counts as visible once it says it has a
+  // parent to be laid out in.
+  const offsetParent = vi.spyOn(HTMLElement.prototype, 'offsetParent', 'get').mockImplementation(() => document.body)
+  renderAt('/page')
+  fireEvent.keyDown(document.body, { key: '/' })
+  expect(document.activeElement).toBe(screen.getByLabelText('Find'))
+  expect(search.asked).not.toHaveBeenCalled()
+  offsetParent.mockRestore()
+
+  // No box that can be seen: the rail's takes the key.
+  ;(document.activeElement as HTMLElement).blur()
+  fireEvent.keyDown(document.body, { key: '/' })
+  expect(search.asked).toHaveBeenCalledTimes(1)
+  search.stop()
+})
+
+it('lists the search key under anywhere', () => {
+  renderAt('/page')
+  fireEvent.keyDown(document.body, { key: '?', shift: true, shiftKey: true })
+  expect(screen.getByText('Search everything')).toBeTruthy()
 })

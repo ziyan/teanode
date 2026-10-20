@@ -176,7 +176,6 @@ struct ContactsScreen: View {
             }
             .listStyle(.plain)
             .navigationTitle("Contacts")
-            .withoutSwipeBack()
             .navigationDestination(for: String.self) { contactId in
                 ContactDetailView(model: model, contactId: contactId)
             }
@@ -206,7 +205,7 @@ struct ContactsScreen: View {
                 }
             }
             .toolbar {
-                MenuButton()
+                MoreBackButton()
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isAdding = true
@@ -236,6 +235,13 @@ struct ContactsScreen: View {
             app.openedContactId = nil
             path = NavigationPath()
             path.append(contactId)
+        }
+        // The words the Search tab's Show all in Contacts carries.
+        .onChange(of: app.openedPartSearch, initial: true) { _, search in
+            guard let search, search.area == .contacts else { return }
+            app.openedPartSearch = nil
+            path = NavigationPath()
+            model.searchText = search.words
         }
         .sheet(isPresented: $isAdding) {
             ContactEditor(model: model, contact: nil) { _ in }

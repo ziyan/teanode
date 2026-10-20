@@ -106,6 +106,9 @@ const AgentPage = lazyPage(async () => ({
 const AgentConversationsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/agentConversations')).AgentConversationsPage,
 }))
+const SearchPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/search')).SearchPage,
+}))
 const RecordingsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "recordings" */ './pages/recordings')).RecordingsPage,
 }))
@@ -426,6 +429,7 @@ export function App() {
               collapsed={desktop && collapsed}
               onToggle={desktop ? toggleSidebar : undefined}
               open={!desktop && drawerOpen}
+              onOpen={() => setDrawerOpen(true)}
               onClose={() => setDrawerOpen(false)}
               account={
                 session.username ? (
@@ -517,6 +521,9 @@ export function App() {
                       and links the server and the phone still make use it. */}
                       <Route path="/chat" element={<AgentConversationsPage />} />
                       <Route path="/agent" element={<RedirectKeepingQuery to="/chat" />} />
+                      {/* What the search box at the top of the rail found: the words
+                      are in the address (?q=). */}
+                      <Route path="/search" element={<SearchPage />} />
 
                       {/* The operator's pages, all under /manage: /settings is
                       the signed-in person's own, and /manage configures the
