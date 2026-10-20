@@ -58,6 +58,11 @@ const FeatureHerdrFiles = "herdr_files"
 // predates it would open a workspace of its own.
 const FeatureHerdrOpenBeside = "herdr_open_beside"
 
+// FeatureHerdrSubagents is the agents a session started, as a tree: the
+// herdr_subagents action. A program that predates it would not know the
+// action.
+const FeatureHerdrSubagents = "herdr_subagents"
+
 // The states of a herdr session, as this program decides them.
 const (
 	HerdrSessionStateIdle    = "idle"
@@ -946,6 +951,8 @@ func RunHerdr(ctx context.Context, herdr *Herdr, action string, arguments *Herdr
 		return sessions, nil
 	case "herdr_read":
 		return herdr.read(ctx, arguments)
+	case "herdr_subagents":
+		return herdr.subagents(ctx, arguments)
 	case "herdr_screen":
 		return herdr.screen(ctx, arguments)
 	case "herdr_send":
@@ -993,6 +1000,26 @@ func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrR
 		}
 	}
 	return &HerdrReadResult{HerdrSession: session, Turns: turns, IsTruncated: isTruncated}, nil
+}
+
+// subagents is the agents a Claude Code session started for its current
+// request. A Codex session starts none that its history shows, and a session
+// without a history file has started none yet, so both answer with an empty
+// tree rather than a refusal.
+func (self *Herdr) subagents(ctx context.Context, arguments *HerdrArguments) (*HerdrSubagentsResult, error) {
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	if session.CodingAgentKind != CodingAgentKindClaude || session.TranscriptPath == "" {
+		return &HerdrSubagentsResult{HerdrSession: session, Subagents: []*HerdrSubagent{}}, nil
+	}
+	result, err := readSubagents(session.TranscriptPath, session.HerdrSessionState, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the agents of %s: %w", session.named(), err)
+	}
+	result.HerdrSession = session
+	return result, nil
 }
 
 func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*HerdrScreenResult, error) {

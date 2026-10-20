@@ -90,6 +90,35 @@ export interface HerdrTurn {
   hasToolDetail?: boolean
 }
 
+export type HerdrSubagentState = 'running' | 'done' | 'stopped'
+
+// HerdrSubagent is one agent a session started, or one an agent started.
+export interface HerdrSubagent {
+  subagentId: string
+  // Empty when the session itself started it.
+  parentSubagentId?: string | null
+  subagentType: string
+  subagentName?: string | null
+  taskText: string
+  modelName: string
+  subagentState: HerdrSubagentState
+  spawnDepth: number
+  startedAt?: string | null
+  endedAt?: string | null
+  // Most used first.
+  toolNames: string[]
+  toolCallCount: number
+}
+
+// HerdrSubagentsRead is the agents of a session's current request.
+export interface HerdrSubagentsRead {
+  herdrSession: HerdrSession
+  sessionModelName: string
+  requestStartedAt?: string | null
+  isTruncated: boolean
+  subagents: HerdrSubagent[]
+}
+
 // The fields of a session, the same as the command line's
 // client.HerdrSessionFields.
 const SESSION_FIELDS = `computer paneId paneName codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched workspaceId workspaceLabel workspaceNumber tabId tabLabel tabNumber isTabFocused
@@ -106,6 +135,12 @@ export const HERDR_DOCUMENTS = {
   }`,
   ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
     ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount, shouldKeepColor: $shouldKeepColor) { herdrSession { ${SESSION_FIELDS} } screenText }
+  }`,
+  ReadAgentHerdrSubagents: `query ($computer: String!, $paneId: String!) {
+    ReadAgentHerdrSubagents(computer: $computer, paneId: $paneId) {
+      herdrSession { ${SESSION_FIELDS} } sessionModelName requestStartedAt isTruncated
+      subagents { subagentId parentSubagentId subagentType subagentName taskText modelName subagentState spawnDepth startedAt endedAt toolNames toolCallCount }
+    }
   }`,
   SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String, $attachmentIds: [String!]) {
     SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, attachmentIds: $attachmentIds) { ${SESSION_FIELDS} }

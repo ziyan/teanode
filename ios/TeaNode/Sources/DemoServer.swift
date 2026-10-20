@@ -200,6 +200,53 @@
             ]
         }
 
+        /// One invented agent a coding session started, started and ended
+        /// the given number of seconds before now.
+        private static func herdrSubagent(
+            subagentId: String, parentSubagentId: String? = nil, subagentType: String, taskText: String, modelName: String, subagentState: String,
+            spawnDepth: Int, startedSecondsAgo: Int, endedSecondsAgo: Int? = nil, toolNames: [String], toolCallCount: Int
+        ) -> String {
+            let formatter = ISO8601DateFormatter()
+            let startedAt = formatter.string(from: Date().addingTimeInterval(-Double(startedSecondsAgo)))
+            let endedAt = endedSecondsAgo.map { "\"" + formatter.string(from: Date().addingTimeInterval(-Double($0))) + "\"" } ?? "null"
+            let parentText = parentSubagentId.map { "\"\($0)\"" } ?? "null"
+            let toolText = toolNames.map { "\"\($0)\"" }.joined(separator: ",")
+            return #"{"subagentId":"\#(subagentId)","parentSubagentId":\#(parentText),"subagentType":"\#(subagentType)","subagentName":null,"taskText":"\#(taskText)","modelName":"\#(modelName)","subagentState":"\#(subagentState)","spawnDepth":\#(spawnDepth),"startedAt":"\#(startedAt)","endedAt":\#(endedAt),"toolNames":[\#(toolText)],"toolCallCount":\#(toolCallCount)}"#
+        }
+
+        /// Seven invented agents of a session building a pricing page: a
+        /// researcher with two agents under it (one done, one running), a
+        /// writer (done) and a coder with a tester (stopped) and a reviewer
+        /// (running) under it.
+        private static var herdrSubagentList: [String] {
+            [
+                herdrSubagent(
+                    subagentId: "researcher", subagentType: "general-purpose", taskText: "Compare how three similar sites lay out their pricing tiers",
+                    modelName: "claude-sonnet-5-5", subagentState: "running", spawnDepth: 1, startedSecondsAgo: 300, toolNames: ["WebFetch", "Read"], toolCallCount: 14),
+                herdrSubagent(
+                    subagentId: "finder", parentSubagentId: "researcher", subagentType: "Explore", taskText: "Find the pricing table component in the repository",
+                    modelName: "claude-haiku-5-0", subagentState: "done", spawnDepth: 2, startedSecondsAgo: 290, endedSecondsAgo: 200, toolNames: ["Grep", "Read", "Glob"],
+                    toolCallCount: 9),
+                herdrSubagent(
+                    subagentId: "lister", parentSubagentId: "researcher", subagentType: "Explore", taskText: "List the plan names and monthly prices the page must show",
+                    modelName: "claude-haiku-5-0", subagentState: "running", spawnDepth: 2, startedSecondsAgo: 150, toolNames: ["Read"], toolCallCount: 3),
+                herdrSubagent(
+                    subagentId: "writer", subagentType: "technical-writer", taskText: "Draft the headline and a one-line description for each plan",
+                    modelName: "claude-sonnet-5-5", subagentState: "done", spawnDepth: 1, startedSecondsAgo: 280, endedSecondsAgo: 120, toolNames: ["Read", "Write"],
+                    toolCallCount: 6),
+                herdrSubagent(
+                    subagentId: "coder", subagentType: "general-purpose", taskText: "Build the pricing page component with three plan cards",
+                    modelName: "claude-sonnet-5-5", subagentState: "running", spawnDepth: 1, startedSecondsAgo: 100, toolNames: ["Edit", "Write", "Bash"], toolCallCount: 21),
+                herdrSubagent(
+                    subagentId: "tester", parentSubagentId: "coder", subagentType: "test-runner", taskText: "Run the pricing page tests and report what fails",
+                    modelName: "claude-haiku-5-0", subagentState: "stopped", spawnDepth: 2, startedSecondsAgo: 70, endedSecondsAgo: 40, toolNames: ["Bash", "Read"],
+                    toolCallCount: 5),
+                herdrSubagent(
+                    subagentId: "reviewer", parentSubagentId: "coder", subagentType: "code-reviewer", taskText: "Review the new component for accessibility problems",
+                    modelName: "claude-sonnet-5-5", subagentState: "running", spawnDepth: 2, startedSecondsAgo: 30, toolNames: ["Read", "Grep"], toolCallCount: 4),
+            ]
+        }
+
         /// The coding sessions, their transcripts and the actions on them;
         /// nil for any other query.
         static func herdrAnswer(query: String, body: Data?) -> String? {
@@ -211,7 +258,13 @@
             let sessions = herdrSessionList
             let paneId = variables["paneId"] as? String ?? "p2"
             let named = sessions.first { $0.contains(#""paneId":"\#(paneId)""#) } ?? sessions[1]
-            if query.contains("ListAgentHerdrSessions") {
+            if query.contains("ReadAgentHerdrSubagents") {
+                let requestStartedAt = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-320))
+                let subagentsText = herdrSubagentList.joined(separator: ",")
+                let head = #"{"data":{"ReadAgentHerdrSubagents":{"herdrSession":"# + named
+                let middle = #","sessionModelName":"claude-opus-5-0","requestStartedAt":"\#(requestStartedAt)","isTruncated":false,"subagents":["#
+                return head + middle + subagentsText + "]}}}"
+            } else if query.contains("ListAgentHerdrSessions") {
                 return #"{"data":{"ListAgentHerdrSessions":{"computerNames":["laptop","desk"],"failedComputerNames":[],"sessions":["# + sessions.joined(separator: ",") + "]}}}"
             } else if query.contains("ReadAgentHerdrSession") {
                 return #"{"data":{"ReadAgentHerdrSession":{"herdrSession":"# + named + #","turns":[{"herdrTurnRole":"person","turnText":"Add a Contact link to the footer, after About.","turnAt":null},{"herdrTurnRole":"agent","turnText":"I will look at the footer component first.","turnAt":null},{"herdrTurnRole":"tool","turnText":"Read src/Footer.tsx","turnAt":null,"toolInputText":"{\n  \"file_path\": \"src/Footer.tsx\"\n}","toolResultText":"export const footerLinks = [\"About\", \"Privacy\"]"},{"herdrTurnRole":"agent","turnText":"The footer lists its links from one array, so the new link is one more entry.\n\n| File | Change |\n|---|---|\n| `src/Footer.tsx` | Contact after About |\n| `src/Footer.test.tsx` | Snapshot updated |\n\n- The tests pass.\n- Nothing else uses the array.","turnAt":null}],"isTruncated":false}}}"#

@@ -225,6 +225,30 @@ func (self *Agent) ReadHerdrSession(ctx context.Context, agentId, computerName, 
 	return &HerdrRead{ComputerName: attached.name, HerdrReadResult: result}, nil
 }
 
+// HerdrSubagents is the agents a session started for its current request.
+type HerdrSubagents struct {
+	ComputerName string
+	*computer.HerdrSubagentsResult
+}
+
+// ReadHerdrSubagents is the agents a session started, as the program on its
+// computer reads them from the files Claude Code keeps beside the session's
+// history.
+func (self *Agent) ReadHerdrSubagents(ctx context.Context, agentId, computerName, paneId string) (*HerdrSubagents, error) {
+	attached, err := self.herdrComputer(agentId, computerName)
+	if err != nil {
+		return nil, err
+	}
+	if !attached.HasFeature(computer.FeatureHerdrSubagents) {
+		return nil, fmt.Errorf("the program on %s is too old to show a session's agents; update teanode there and restart it", attached.name)
+	}
+	result, err := askHerdr[computer.HerdrSubagentsResult](ctx, attached, "herdr_subagents", &computer.HerdrArguments{PaneID: paneId}, herdrActionWait)
+	if err != nil {
+		return nil, err
+	}
+	return &HerdrSubagents{ComputerName: attached.name, HerdrSubagentsResult: result}, nil
+}
+
 // HerdrScreen is a session's screen.
 type HerdrScreen struct {
 	ComputerName string

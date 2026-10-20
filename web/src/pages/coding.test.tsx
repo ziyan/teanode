@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
 import { graphql } from '../api'
-import { HERDR_DOCUMENTS, type HerdrSession } from '../components/herdrSessions'
+import { HERDR_DOCUMENTS, type HerdrSession, type HerdrSubagent } from '../components/herdrSessions'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
 import { CAPTURE_CODING_SESSION, CodingPage, groupSessions } from './coding'
@@ -78,6 +78,34 @@ const sessions: HerdrSession[] = [
 
 const list = { computerNames: ['laptop', 'desk'], failedComputerNames: [], sessions }
 
+// An agent the session started, and one that agent started.
+const subagents: HerdrSubagent[] = [
+  {
+    subagentId: 'agent-two',
+    parentSubagentId: 'agent-one',
+    subagentType: 'checker',
+    taskText: 'check the footer links',
+    modelName: 'model-small',
+    subagentState: 'running',
+    spawnDepth: 2,
+    startedAt: '2026-01-01T10:00:30Z',
+    toolNames: ['Read'],
+    toolCallCount: 2,
+  },
+  {
+    subagentId: 'agent-one',
+    subagentType: 'researcher',
+    taskText: 'list the pages of the site',
+    modelName: 'model-large',
+    subagentState: 'done',
+    spawnDepth: 1,
+    startedAt: '2026-01-01T10:00:00Z',
+    endedAt: '2026-01-01T10:00:45Z',
+    toolNames: ['Grep', 'Read'],
+    toolCallCount: 7,
+  },
+]
+
 function find(computer: string, paneId: string): HerdrSession {
   return sessions.find((each) => each.computer === computer && each.paneId === paneId) ?? sessions[0]
 }
@@ -114,6 +142,15 @@ beforeEach(() => {
             herdrSession: target,
             turns: [{ herdrTurnRole: 'person', turnText: `hello ${target.paneId}` }],
             isTruncated: false,
+          },
+        }
+      case HERDR_DOCUMENTS.ReadAgentHerdrSubagents:
+        return {
+          ReadAgentHerdrSubagents: {
+            herdrSession: target,
+            sessionModelName: 'model-session',
+            isTruncated: false,
+            subagents,
           },
         }
       case HERDR_DOCUMENTS.FocusAgentHerdrSession:
@@ -373,12 +410,91 @@ it('folds a computer away and keeps it folded in the address', async () => {
   expect(screen.getByTestId('where').textContent).toContain('closed=desk%2Claptop')
 })
 
-it('switches between the turns and the screen with one floating button', async () => {
+it('switches between the turns, the agents and the screen with one floating switch', async () => {
   renderAt('/coding?computer=laptop&pane=w1%3Ap1')
   await screen.findByText('hello w1:p1')
+  const turnsButton = screen.getByRole('button', { name: 'Show the turns' })
+  expect(turnsButton.getAttribute('aria-pressed')).toBe('true')
   fireEvent.click(screen.getByRole('button', { name: 'Show the screen' }))
   expect(screen.getByTestId('where').textContent).toContain('view=screen')
-  expect(screen.getByRole('button', { name: 'Show the turns' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Show the screen' }).getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: 'Show the agents' }))
+  expect(screen.getByTestId('where').textContent).toContain('view=agents')
+  expect(screen.getByRole('button', { name: 'Show the agents' }).getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: 'Show the turns' }))
+  expect(screen.getByTestId('where').textContent).toBe('?computer=laptop&pane=w1%3Ap1')
+})
+
+it('opens on the agents when the address asks, and reads them for the selected session', async () => {
+  renderAt('/coding?computer=laptop&pane=w1%3Ap1&view=agents')
+  expect(await screen.findByText('2 agents · 1 running')).toBeTruthy()
+  expect(execute).toHaveBeenCalledWith(HERDR_DOCUMENTS.ReadAgentHerdrSubagents, { computer: 'laptop', paneId: 'w1:p1' })
+  expect(execute).not.toHaveBeenCalledWith(HERDR_DOCUMENTS.ReadAgentHerdrSession, expect.anything())
+  expect(screen.getByText('researcher')).toBeTruthy()
+  // The agent that another started is under it.
+  const researcher = screen.getByText('researcher').closest('li') as HTMLElement
+  expect(within(researcher).getByText('checker')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Show the agents' }).getAttribute('aria-pressed')).toBe('true')
+})
+
+it('keeps the agents view in the address when another tab is chosen', async () => {
+  renderAt('/coding?computer=laptop&pane=w1%3Ap1&view=agents')
+  await screen.findByText('2 agents · 1 running')
+  fireEvent.click(screen.getByRole('tab', { name: /review/ }))
+  expect(screen.getByTestId('where').textContent).toBe('?computer=laptop&pane=w1%3Ap2&view=agents')
+  await waitFor(() =>
+    expect(execute).toHaveBeenCalledWith(HERDR_DOCUMENTS.ReadAgentHerdrSubagents, {
+      computer: 'laptop',
+      paneId: 'w1:p2',
+    }),
+  )
+})
+
+it('says Needs you on the session card of a session that asks', async () => {
+  const asking = sessionOf({
+    computer: 'laptop',
+    paneId: 'w8:p1',
+    herdrSessionState: 'asking',
+    workspaceId: 'w8',
+    workspaceLabel: 'docs',
+  })
+  list.sessions.push(asking)
+  try {
+    renderAt('/coding?computer=laptop&pane=w8%3Ap1&view=agents')
+    await screen.findByText('2 agents · 1 running')
+    const sessionCard = document.querySelector('.agent-card-session') as HTMLElement
+    expect(within(sessionCard).getByText('Needs you')).toBeTruthy()
+    expect(screen.getAllByText('Needs you')).toHaveLength(1)
+  } finally {
+    list.sessions.pop()
+  }
+})
+
+it('says a session has started no agents', async () => {
+  execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) =>
+    document === HERDR_DOCUMENTS.ListAgentHerdrSessions
+      ? { ListAgentHerdrSessions: list }
+      : {
+          ReadAgentHerdrSubagents: {
+            herdrSession: find('laptop', String(variables?.paneId)),
+            sessionModelName: '',
+            isTruncated: false,
+            subagents: [],
+          },
+        },
+  )
+  renderAt('/coding?computer=laptop&pane=w1%3Ap2&view=agents')
+  expect(await screen.findByText('This session has not started any agents for this request.')).toBeTruthy()
+})
+
+it("says in a toast that the computer's program is too old to show agents", async () => {
+  execute.mockImplementation(async (document: string) => {
+    if (document === HERDR_DOCUMENTS.ListAgentHerdrSessions) return { ListAgentHerdrSessions: list }
+    throw new Error("the program on laptop is too old to show a session's agents; update teanode there and restart it")
+  })
+  renderAt('/coding?computer=laptop&pane=w1%3Ap1&view=agents')
+  expect(await screen.findByText(/too old to show a session's agents/)).toBeTruthy()
+  expect(screen.queryByText(/agents ·/)).toBeNull()
 })
 
 it("reads a computer's new sessions for each coding tool it has sessions of", async () => {
