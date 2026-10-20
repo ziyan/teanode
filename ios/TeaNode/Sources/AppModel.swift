@@ -381,14 +381,15 @@ final class AppModel {
     /// server it was read from.
     private var linkPreviewLoaders: [ObjectIdentifier: LinkPreviewLoader] = [:]
 
-    /// The preview of a link of a message, read through the connection in use;
-    /// nil when there is none to show.
-    func linkPreview(for link: String) async -> LinkPreview? {
+    /// The preview of a link written in a conversation, read through the
+    /// connection in use; nil when there is none to show. The link is the text
+    /// of the message's, not the cleaned one: the server looks for it there.
+    func linkPreview(for link: String, inConversation conversationId: String) async -> LinkPreview? {
         guard let connection else { return nil }
         let key = ObjectIdentifier(connection)
-        let loader = linkPreviewLoaders[key] ?? LinkPreviewLoader { urls in try await connection.linkPreviews(urls: urls) }
+        let loader = linkPreviewLoaders[key] ?? LinkPreviewLoader { conversationId, urls in try await connection.linkPreviews(conversationId: conversationId, urls: urls) }
         linkPreviewLoaders[key] = loader
-        return await loader.preview(for: link)
+        return await loader.preview(conversationId: conversationId, for: link)
     }
 
     /// A file being shown in Quick Look: pictures with pinch to zoom, and

@@ -75,8 +75,8 @@ public struct LinkPreview: Decodable, Hashable, Sendable, Identifiable {
 
 extension Documents {
     public static let readLinkPreviews = """
-        query ($urls: [String!]!) {
-          ReadLinkPreviews(urls: $urls) {
+        query ($conversationId: String!, $urls: [String!]!) {
+          ReadLinkPreviews(conversationId: $conversationId, urls: $urls) {
             url cleanedUrl displayText isAvailable title description siteName imageUrl imageWidthPixels imageHeightPixels
           }
         }
@@ -85,27 +85,36 @@ extension Documents {
 
 extension Connection {
     /// The preview of each link, in the order given, at most
-    /// `LinkPreview.mostURLs` of them.
-    public func linkPreviews(urls: [String]) async throws -> [LinkPreview] {
+    /// `LinkPreview.mostURLs` of them, for links in the words of a
+    /// conversation. The server previews a link only if its exact text is in a
+    /// message of that conversation that the agent did not write, so the links
+    /// are sent as they stand in the messages, never cleaned.
+    public func linkPreviews(conversationId: String, urls: [String]) async throws -> [LinkPreview] {
         struct Answer: Decodable, Sendable { let ReadLinkPreviews: [LinkPreview] }
-        let variables: [String: JSONValue] = ["urls": .array(urls.map { .string($0) })]
+        let variables: [String: JSONValue] = ["conversationId": .string(conversationId), "urls": .array(urls.map { .string($0) })]
         return try await execute(Documents.readLinkPreviews, variables: variables, as: Answer.self).ReadLinkPreviews
     }
 }
 
 /// LinkPreviewLoader asks for the previews of the links of a screenful in one
-/// question, ten at a time, and never asks again for a link it has asked for
-/// (until a question that failed has waited out `failedFor`). The server keeps
-/// what it read, but a conversation holds many links, and one question a link
-/// would be one trip each.
+/// question for each conversation, ten at a time, and never asks again for a
+/// link in a conversation it has asked for (until a question that failed has
+/// waited out `failedFor`). The server keeps what it read, but a conversation
+/// holds many links, and one question a link would be one trip each.
 public actor LinkPreviewLoader {
-    public typealias Load = @Sendable ([String]) async throws -> [LinkPreview]
+    public typealias Load = @Sendable (_ conversationId: String, _ urls: [String]) async throws -> [LinkPreview]
+
+    private struct Waiting {
+        let conversationId: String
+        let url: String
+        let settle: CheckedContinuation<LinkPreview?, Never>
+    }
 
     private let load: Load
     private let collectingFor: Duration
     private let failedFor: Duration
     private var known: [String: Task<LinkPreview?, Never>] = [:]
-    private var waiting: [(url: String, settle: CheckedContinuation<LinkPreview?, Never>)] = []
+    private var waiting: [Waiting] = []
     private var isCollecting = false
 
     public init(collectingFor: Duration = .milliseconds(60), failedFor: Duration = .seconds(60), load: @escaping Load) {
@@ -114,18 +123,22 @@ public actor LinkPreviewLoader {
         self.load = load
     }
 
-    /// The preview of a link, or nil when there is none to show.
-    public func preview(for url: String) async -> LinkPreview? {
-        if let asked = known[url] { return await asked.value }
-        let asked = Task<LinkPreview?, Never> { await self.answer(for: url) }
-        known[url] = asked
+    private static func key(_ conversationId: String, _ url: String) -> String { conversationId + "\n" + url }
+
+    /// The preview of a link written in a conversation, or nil when there is
+    /// none to show.
+    public func preview(conversationId: String, for url: String) async -> LinkPreview? {
+        let key = Self.key(conversationId, url)
+        if let asked = known[key] { return await asked.value }
+        let asked = Task<LinkPreview?, Never> { await self.answer(conversationId: conversationId, for: url) }
+        known[key] = asked
         return await asked.value
     }
 
     /// Waits for the question the link goes out in to be answered.
-    private func answer(for url: String) async -> LinkPreview? {
+    private func answer(conversationId: String, for url: String) async -> LinkPreview? {
         await withCheckedContinuation { settle in
-            waiting.append((url, settle))
+            waiting.append(Waiting(conversationId: conversationId, url: url, settle: settle))
             guard !isCollecting else { return }
             isCollecting = true
             Task { await self.sendWaiting() }
@@ -134,24 +147,31 @@ public actor LinkPreviewLoader {
 
     private func sendWaiting() async {
         try? await Task.sleep(for: collectingFor)
-        while !waiting.isEmpty {
-            let batch = Array(waiting.prefix(LinkPreview.mostURLs))
-            waiting.removeFirst(batch.count)
-            let previews = try? await load(batch.map(\.url))
+        while let first = waiting.first {
+            // The oldest question's conversation goes first, with as many of
+            // its links as one question takes.
+            let batch = Array(waiting.filter { $0.conversationId == first.conversationId }.prefix(LinkPreview.mostURLs))
+            var taken = batch.count
+            waiting.removeAll { each in
+                guard taken > 0, each.conversationId == first.conversationId else { return false }
+                taken -= 1
+                return true
+            }
+            let previews = try? await load(first.conversationId, batch.map(\.url))
             for (index, asked) in batch.enumerated() {
                 let found = previews.flatMap { index < $0.count ? $0[index] : nil }
                 asked.settle.resume(returning: found)
-                if previews == nil { forgetLater(asked.url) }
+                if previews == nil { forgetLater(Self.key(asked.conversationId, asked.url)) }
             }
         }
         isCollecting = false
     }
 
     /// A question that failed is asked again after a while, not at once.
-    private func forgetLater(_ url: String) {
+    private func forgetLater(_ key: String) {
         Task {
             try? await Task.sleep(for: failedFor)
-            known[url] = nil
+            known[key] = nil
         }
     }
 }

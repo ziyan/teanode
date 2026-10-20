@@ -62,6 +62,10 @@ struct InAppBrowserPresenter: ViewModifier {
 /// is drawn until it is there, so the message does not make room for a card
 /// that does not come.
 struct LinkPreviewBelow: ViewModifier {
+    /// The conversation the message is in, nil until it has been read: the
+    /// server previews only a link written there by somebody other than the
+    /// agent.
+    let conversationId: String?
     let text: String
     let isMarkdown: Bool
     let alignment: HorizontalAlignment
@@ -73,8 +77,9 @@ struct LinkPreviewBelow: ViewModifier {
     @Environment(AppModel.self) private var app: AppModel?
     @State private var preview: LinkPreview?
 
+    /// The first link as the message writes it, not cleaned.
     private var link: String? {
-        isReady ? LinkText.firstLink(in: text, isMarkdown: isMarkdown) : nil
+        conversationId != nil && isReady ? LinkText.firstLink(in: text, isMarkdown: isMarkdown) : nil
     }
 
     func body(content: Content) -> some View {
@@ -85,19 +90,21 @@ struct LinkPreviewBelow: ViewModifier {
             }
         }
         .task(id: link) {
-            guard let link else {
+            guard let link, let conversationId else {
                 preview = nil
                 return
             }
-            preview = await app?.linkPreview(for: link)
+            preview = await app?.linkPreview(for: link, inConversation: conversationId)
         }
     }
 }
 
 extension View {
-    /// The card of the first link in `text`, under this view.
-    func linkPreviewBelow(text: String, isMarkdown: Bool, alignment: HorizontalAlignment, isReady: Bool = true) -> some View {
-        modifier(LinkPreviewBelow(text: text, isMarkdown: isMarkdown, alignment: alignment, isReady: isReady))
+    /// The card of the first link in `text`, a message of the conversation, under this view.
+    func linkPreviewBelow(
+        conversationId: String?, text: String, isMarkdown: Bool, alignment: HorizontalAlignment, isReady: Bool = true
+    ) -> some View {
+        modifier(LinkPreviewBelow(conversationId: conversationId, text: text, isMarkdown: isMarkdown, alignment: alignment, isReady: isReady))
     }
 }
 

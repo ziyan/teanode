@@ -55,12 +55,13 @@ final class LinkPreviewTests: XCTestCase {
 
     func testTheLinksAreSentAsTheyWereWritten() async throws {
         let (connection, fake) = try connection(answering: #"{"data":{"ReadLinkPreviews":[\#(availableJSON),\#(unavailableJSON)]}}"#)
-        let previews = try await connection.linkPreviews(urls: ["https://www.example.com/shop/chair?gclid=abc&color=blue", "https://example.net/gone"])
+        let previews = try await connection.linkPreviews(conversationId: "conversation-1", urls: ["https://www.example.com/shop/chair?gclid=abc&color=blue", "https://example.net/gone"])
         XCTAssertEqual(previews.map(\.isAvailable), [true, false])
         let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any])
         let query = try XCTUnwrap(sent["query"] as? String)
-        XCTAssertTrue(query.contains("ReadLinkPreviews(urls: $urls)"))
+        XCTAssertTrue(query.contains("ReadLinkPreviews(conversationId: $conversationId, urls: $urls)"))
         let variables = try XCTUnwrap(sent["variables"] as? [String: Any])
+        XCTAssertEqual(variables["conversationId"] as? String, "conversation-1")
         XCTAssertEqual(
             variables["urls"] as? [String], ["https://www.example.com/shop/chair?gclid=abc&color=blue", "https://example.net/gone"])
     }
@@ -69,72 +70,91 @@ final class LinkPreviewTests: XCTestCase {
 
     private final class Recorder: @unchecked Sendable {
         private let lock = NSLock()
-        private var questions: [[String]] = []
-        var asked: [[String]] {
+        private var questions: [(conversationId: String, urls: [String])] = []
+        var asked: [(conversationId: String, urls: [String])] {
             lock.lock()
             defer { lock.unlock() }
             return questions
         }
-        func record(_ urls: [String]) {
+        func record(_ conversationId: String, _ urls: [String]) {
             lock.lock()
             defer { lock.unlock() }
-            questions.append(urls)
+            questions.append((conversationId, urls))
         }
     }
 
-    private func preview(of url: String) -> LinkPreview {
-        LinkPreview(url: url, cleanedUrl: url, displayText: url, isAvailable: true, title: "Title of \(url)")
+    private static func found(_ urls: [String]) -> [LinkPreview] {
+        urls.map { LinkPreview(url: $0, cleanedUrl: $0, displayText: $0, isAvailable: true, title: "Title of \($0)") }
     }
 
     func testTheLinksOfAScreenfulAreAskedForInOneQuestionTenAtATime() async {
         let recorder = Recorder()
-        let loader = LinkPreviewLoader(collectingFor: .milliseconds(50)) { urls in
-            recorder.record(urls)
-            return urls.map { LinkPreview(url: $0, cleanedUrl: $0, displayText: $0, isAvailable: true, title: "Title of \($0)") }
+        let loader = LinkPreviewLoader(collectingFor: .milliseconds(50)) { conversationId, urls in
+            recorder.record(conversationId, urls)
+            return Self.found(urls)
         }
         let addresses = (0..<12).map { "https://example.com/page-\($0)" }
         let found = await withTaskGroup(of: (Int, LinkPreview?).self) { group -> [LinkPreview?] in
             for (index, address) in addresses.enumerated() {
-                group.addTask { (index, await loader.preview(for: address)) }
+                group.addTask { (index, await loader.preview(conversationId: "conversation-1", for: address)) }
             }
             var all = [LinkPreview?](repeating: nil, count: addresses.count)
             for await (index, preview) in group { all[index] = preview }
             return all
         }
         XCTAssertEqual(found.map { $0?.url }, addresses)
-        XCTAssertEqual(recorder.asked.map(\.count).reduce(0, +), 12)
-        XCTAssertTrue(recorder.asked.allSatisfy { $0.count <= LinkPreview.mostURLs })
+        XCTAssertEqual(recorder.asked.map(\.urls.count).reduce(0, +), 12)
+        XCTAssertTrue(recorder.asked.allSatisfy { $0.urls.count <= LinkPreview.mostURLs && $0.conversationId == "conversation-1" })
         XCTAssertLessThanOrEqual(recorder.asked.count, 3)
     }
 
-    func testALinkAskedForAgainIsNotAskedForAgain() async {
+    func testEachConversationIsAskedInAQuestionOfItsOwnWithTheLinksAsWritten() async {
         let recorder = Recorder()
-        let loader = LinkPreviewLoader(collectingFor: .milliseconds(10)) { urls in
-            recorder.record(urls)
-            return urls.map { LinkPreview(url: $0, cleanedUrl: $0, displayText: $0, isAvailable: true, title: "T") }
+        let loader = LinkPreviewLoader(collectingFor: .milliseconds(50)) { conversationId, urls in
+            recorder.record(conversationId, urls)
+            return Self.found(urls)
         }
-        let first = await loader.preview(for: "https://example.com/once")
-        let second = await loader.preview(for: "https://example.com/once")
-        XCTAssertEqual(first?.title, "T")
-        XCTAssertEqual(second?.title, "T")
+        let tracked = "https://example.com/page?gclid=abc&color=blue"
+        async let first = loader.preview(conversationId: "conversation-1", for: tracked)
+        async let other = loader.preview(conversationId: "conversation-2", for: "https://example.com/other")
+        async let second = loader.preview(conversationId: "conversation-1", for: "https://example.com/second")
+        _ = await (first, other, second)
+        let byConversation = Dictionary(uniqueKeysWithValues: recorder.asked.map { ($0.conversationId, $0.urls) })
+        XCTAssertEqual(recorder.asked.count, 2)
+        XCTAssertEqual(Set(byConversation["conversation-1"] ?? []), [tracked, "https://example.com/second"])
+        XCTAssertEqual(byConversation["conversation-2"], ["https://example.com/other"])
+    }
+
+    func testALinkAskedForAgainIsNotAskedForAgainUnlessItIsInAnotherConversation() async {
+        let recorder = Recorder()
+        let loader = LinkPreviewLoader(collectingFor: .milliseconds(10)) { conversationId, urls in
+            recorder.record(conversationId, urls)
+            return Self.found(urls)
+        }
+        let first = await loader.preview(conversationId: "conversation-1", for: "https://example.com/once")
+        let second = await loader.preview(conversationId: "conversation-1", for: "https://example.com/once")
+        XCTAssertEqual(first?.title, "Title of https://example.com/once")
+        XCTAssertEqual(second?.title, "Title of https://example.com/once")
         XCTAssertEqual(recorder.asked.count, 1)
+        _ = await loader.preview(conversationId: "conversation-2", for: "https://example.com/once")
+        XCTAssertEqual(recorder.asked.count, 2)
     }
 
     func testAQuestionThatFailsHasNoPreviewAndIsAskedAgainAfterAWhile() async {
         let recorder = Recorder()
-        let loader = LinkPreviewLoader(collectingFor: .milliseconds(10), failedFor: .milliseconds(100)) { urls in
-            recorder.record(urls)
+        let loader = LinkPreviewLoader(collectingFor: .milliseconds(10), failedFor: .milliseconds(100)) { conversationId, urls in
+            recorder.record(conversationId, urls)
             if recorder.asked.count == 1 { throw TeaNodeError.refused("down") }
-            return urls.map { LinkPreview(url: $0, cleanedUrl: $0, displayText: $0, isAvailable: true, title: "T") }
+            return Self.found(urls)
         }
-        let failed = await loader.preview(for: "https://example.com/later")
+        let failed = await loader.preview(conversationId: "conversation-1", for: "https://example.com/later")
         XCTAssertNil(failed)
-        let soon = await loader.preview(for: "https://example.com/later")
+        let soon = await loader.preview(conversationId: "conversation-1", for: "https://example.com/later")
         XCTAssertNil(soon)
         XCTAssertEqual(recorder.asked.count, 1)
         try? await Task.sleep(for: .milliseconds(300))
-        let later = await loader.preview(for: "https://example.com/later")
-        XCTAssertEqual(later?.title, "T")
+        let later = await loader.preview(conversationId: "conversation-1", for: "https://example.com/later")
+        XCTAssertEqual(later?.isAvailable, true)
         XCTAssertEqual(recorder.asked.count, 2)
     }
 }

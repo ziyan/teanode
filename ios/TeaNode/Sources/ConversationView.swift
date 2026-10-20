@@ -694,15 +694,17 @@ struct ConversationItemView: View {
                                 if line.messageId != nil { MessageActionsPresenter.present(line: line, model: model, app: app) }
                             }
                             .linkPreviewBelow(
-                                text: line.text, isMarkdown: false, alignment: author.isOwnWords ? .trailing : .leading,
-                                isReady: !line.isBeingSent && !line.isDeleted)
+                                conversationId: model.conversationId, text: line.text, isMarkdown: false,
+                                alignment: author.isOwnWords ? .trailing : .leading, isReady: !line.isBeingSent && !line.isDeleted)
                     }
                 } else {
                     PersonBubble(line: line) { model.readingText = line.text }
                         .onLongPressGesture(minimumDuration: 0.35) {
                             MessageActionsPresenter.present(line: line, model: model, app: app)
                         }
-                        .linkPreviewBelow(text: line.text, isMarkdown: false, alignment: .trailing, isReady: !line.isBeingSent)
+                        .linkPreviewBelow(
+                            conversationId: model.conversationId, text: line.text, isMarkdown: false, alignment: .trailing,
+                            isReady: !line.isBeingSent)
                 }
             case .answer where line.author != nil:
                 // An agent's words said in a chat: under its name, in front of
@@ -721,7 +723,9 @@ struct ConversationItemView: View {
                             .onLongPressGesture(minimumDuration: 0.35) {
                                 MessageActionsPresenter.present(line: line, model: model, app: app)
                             }
-                            .linkPreviewBelow(text: line.text, isMarkdown: true, alignment: .leading, isReady: !line.isStreaming)
+                            .linkPreviewBelow(
+                                conversationId: model.conversationId, text: line.text, isMarkdown: true, alignment: .leading,
+                                isReady: !line.isStreaming)
                         }
                     }
                 }
@@ -733,7 +737,9 @@ struct ConversationItemView: View {
                     .onLongPressGesture(minimumDuration: 0.35) {
                         MessageActionsPresenter.present(line: line, model: model, app: app)
                     }
-                    .linkPreviewBelow(text: line.text, isMarkdown: true, alignment: .leading, isReady: !line.isStreaming)
+                    .linkPreviewBelow(
+                        conversationId: model.conversationId, text: line.text, isMarkdown: true, alignment: .leading,
+                        isReady: !line.isStreaming)
                     if isShowingUsage, let usage = line.usage {
                         Text(UsageWords.turn(usage))
                             .font(.caption2)
