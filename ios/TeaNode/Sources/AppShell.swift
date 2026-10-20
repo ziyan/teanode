@@ -62,6 +62,12 @@ struct MainView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var tab = MainTab.section(.agent)
+    /// The parts the person keeps in the iPhone's tab bar (TabBarChoice).
+    @AppStorage(TabBarChoice.storageKey) private var tabBarText = TabBarChoice.defaultText
+    /// How the person arranged the iPad's sidebar, kept on this device.
+    @AppStorage("sidebarCustomization") private var sidebarCustomization: TabViewCustomization
+
+    private var tabBarSections: [AppSection] { TabBarChoice.sections(from: tabBarText) }
     /// The part open under the More tab; nil is the list of parts.
     @State private var moreSection: AppSection?
     /// A part a link asked for in a wide window, before it was known whether
@@ -236,7 +242,14 @@ struct MainView: View {
             .onChange(of: horizontalSizeClass) {
                 adaptToSizeClass()
             }
+            .onChange(of: tabBarText) {
+                // A part taken out of the bar while it is open stays open,
+                // under More.
+                adaptToSizeClass()
+            }
             .onAppear {
+                // Chats may not be in the bar the person chose.
+                adaptToSizeClass()
                 if let kept = app.keptSection {
                     show(kept)
                     app.keptSection = nil
@@ -284,13 +297,16 @@ struct MainView: View {
                     Image(systemName: "ellipsis")
                         .accessibilityLabel("More")
                 }
-                .badge(app.codingAskingCount)
+                .badge(moreBadgeCount)
+                .customizationID("tab.more")
             }
             Tab(value: MainTab.search, role: .search) {
                 SearchTabScreen(connection: connection, onOpen: openSearchResult, onShowAll: showAllInPart)
             }
+            .customizationID("tab.search")
         }
         .tabViewStyle(.sidebarAdaptable)
+        .tabViewCustomization($sidebarCustomization)
         // On the iPad the tabs are the sidebar from the start, as the side
         // menu was pinned, rather than a bar of tabs along the top.
         .defaultAdaptableTabBarPlacement(.sidebar)
@@ -305,6 +321,7 @@ struct MainView: View {
             sectionTabLabel(section)
         }
         .badge(badgeCount(of: section))
+        .customizationID("tab.\(section.rawValue)")
     }
 
     @ViewBuilder
@@ -315,6 +332,11 @@ struct MainView: View {
             Image(systemName: section.systemImage)
                 .accessibilityLabel(section.title)
         }
+    }
+
+    /// What waits in the parts under More, for the More tab's badge.
+    private var moreBadgeCount: Int {
+        AppSection.allCases.filter { !tabBarSections.contains($0) }.reduce(0) { $0 + badgeCount(of: $1) }
     }
 
     /// What waits in a part: the unread chats, and the coding sessions that
@@ -347,16 +369,18 @@ struct MainView: View {
     /// services it runs, the tabs of the phone are all there and say that
     /// they are loading, rather than coming one by one.
     private func isTabShown(_ section: AppSection) -> Bool {
-        if app.services == nil { return AppSection.tabBarSections.contains(section) || section == .settings }
+        if app.services == nil { return tabBarSections.contains(section) || section == .settings }
         return app.isSectionAvailable(section)
     }
 
     private var shownBarSections: [AppSection] {
-        AppSection.tabBarSections.filter { isTabShown($0) }
+        tabBarSections.filter { isTabShown($0) }
     }
 
+    /// The parts of a group the sidebar lists under it: those the server
+    /// offers, and not already a tab above the groups.
     private func shownSections(in group: AppSectionGroup) -> [AppSection] {
-        group.sections.filter { app.isSectionAvailable($0) }
+        group.sections.filter { app.isSectionAvailable($0) && !tabBarSections.contains($0) }
     }
 
     private var shownGroups: [AppSectionGroup] {
@@ -374,7 +398,7 @@ struct MainView: View {
             } else {
                 app.openedLinkText = String(localized: "\(section.title) is off")
             }
-        } else if AppSection.tabBarSections.contains(section), isTabShown(section) {
+        } else if tabBarSections.contains(section), isTabShown(section) {
             tab = .section(section)
         } else {
             moreSection = section
@@ -415,7 +439,7 @@ struct MainView: View {
             guard tab == MainTab.more else { return }
             let reopened = moreSection ?? AppSection.agent
             tab = .section(isTabShown(reopened) ? reopened : AppSection.agent)
-        } else if case .section(let selected) = tab, !AppSection.tabBarSections.contains(selected) {
+        } else if case .section(let selected) = tab, !tabBarSections.contains(selected) {
             moreSection = selected
             tab = .more
         }

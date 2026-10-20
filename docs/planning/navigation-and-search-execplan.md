@@ -50,6 +50,7 @@ To see it working: open the iPhone app; the side menu button is gone and the tab
 - Decision: the agent's `search` tool is a read (`Core`, no permission of its own; the areas decide), calls `SearchEverything` through the operations like the other tools, marks what it found untrusted, and names for each area the tool that finds more of it. Date: 2026-10-19.
 - Decision: documents are a document once however many passages matched (three times the limit in passages are read, then deduplicated), and memory is pages first and then facts, a page once. Date: 2026-10-19.
 - Decision: calendar events, reminders and todos are not searched in this version; they have no text search to reuse, and calendar events live in CalDAV objects. Date: 2026-10-19.
+- Decision: the person asked to choose what goes in the tab bar. More's Edit button opens a list of the three parts in the bar (moved or taken out) and the others (put in while there is room); the choice is kept on the device (`@AppStorage`), since a phone and an iPad have different room. Every part is in a More group, and More lists the ones not in the bar. The iPad's sidebar uses `TabViewCustomization`, also kept on the device. Date: 2026-10-19.
 
 ## Outcomes & Retrospective
 

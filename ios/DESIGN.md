@@ -132,7 +132,7 @@ its pull request is opened.
 ## Navigation
 
 - The app is a `TabView` (`.tabViewStyle(.sidebarAdaptable)`) of icons only:
-  Chats, Mail, Photos and More, with Search as the bar's search tab (five in all: a sixth makes iOS add a More of its own over ours; Calendar is under More's Every day)
+  three parts the person chooses (Chats, Mail and Photos at first; More's Edit button changes them, kept on the device), More and Search, five in all: a sixth makes iOS add a More of its own over ours. On the iPad the sidebar is arranged with the system's own customization
   (`Tab(role: .search)`). A tab's name is its accessibility label, so no
   title shows under an icon. The bar shrinks to a pill while a list scrolls
   (`.tabBarMinimizeBehavior(.onScrollDown)`).
