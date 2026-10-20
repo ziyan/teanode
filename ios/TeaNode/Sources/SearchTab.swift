@@ -88,10 +88,19 @@ struct SearchTabScreen: View {
                 "Search everything", systemImage: "magnifyingglass",
                 description: Text("Find a name or a few words across your chats, mail, contacts, photos and more."))
         } else if let found {
-            if found.isEmpty, found.failedAreas.isEmpty {
+            if found.isEmpty, found.failedAreas.isEmpty, isPhotosOffered {
+                // Nothing has the words, but a picture may show them.
+                ContentUnavailableView {
+                    Label("Nothing has these words", systemImage: "magnifyingglass")
+                } description: {
+                    Text(SearchPhotosRow.explanation)
+                } actions: {
+                    Button("Search Photos") { onShowAll(.photos, found.words) }
+                }
+            } else if found.isEmpty, found.failedAreas.isEmpty {
                 ContentUnavailableView.search(text: typedText)
             } else {
-                SearchResultsList(found: found, onOpen: onOpen, onShowAll: onShowAll)
+                SearchResultsList(found: found, isPhotosOffered: isPhotosOffered, onOpen: onOpen, onShowAll: onShowAll)
             }
         } else if let failedText {
             LoadFailedView(problemText: failedText) { await run() }
@@ -99,6 +108,10 @@ struct SearchTabScreen: View {
             ProgressView()
         }
     }
+
+    /// Whether the search can go on in Photos, which also finds pictures by
+    /// what is in them.
+    private var isPhotosOffered: Bool { app.isSectionAvailable(.photos) }
 
     /// Asks a moment after the last key, as the other searches do.
     private func search() async {
@@ -131,6 +144,7 @@ struct SearchTabScreen: View {
 /// results, and a line saying which parts could not be searched.
 struct SearchResultsList: View {
     let found: SearchEverythingResults
+    let isPhotosOffered: Bool
     let onOpen: (SearchResult, String) -> Void
     let onShowAll: (SearchArea, String) -> Void
 
@@ -141,6 +155,9 @@ struct SearchResultsList: View {
                     SearchAreaSection(area: area, areaResults: areaResults, words: found.words, onOpen: onOpen, onShowAll: onShowAll)
                 }
             }
+            if isPhotosOffered, !isPhotosShowAllShown {
+                SearchPhotosRow(words: found.words, onShowAll: onShowAll)
+            }
             if !found.failedAreas.isEmpty {
                 Section {
                     Label(String(localized: "Could not search \(failedNames)."), systemImage: "exclamationmark.triangle")
@@ -150,9 +167,37 @@ struct SearchResultsList: View {
         }
     }
 
+    /// Whether the Photos section already ends in Show all, which opens the
+    /// same search in Photos.
+    private var isPhotosShowAllShown: Bool {
+        found.areas.contains { $0.area == .photos && $0.hasMore && !$0.results.isEmpty }
+    }
+
     /// The parts that did not answer, by name.
     private var failedNames: String {
         found.failedAreas.map { name in SearchArea(rawValue: name)?.title ?? name }.joined(separator: ", ")
+    }
+}
+
+/// SearchPhotosRow carries the words on to Photos' own search, which also
+/// finds pictures by what is in them: the search here reads words only.
+struct SearchPhotosRow: View {
+    let words: String
+    let onShowAll: (SearchArea, String) -> Void
+
+    static let explanation = String(localized: "Photos also finds pictures by what is in them.")
+
+    var body: some View {
+        Section {
+            Button {
+                onShowAll(.photos, words)
+            } label: {
+                Label("Search Photos", systemImage: "photo.on.rectangle")
+                    .actionColor()
+            }
+        } footer: {
+            Text(Self.explanation)
+        }
     }
 }
 
