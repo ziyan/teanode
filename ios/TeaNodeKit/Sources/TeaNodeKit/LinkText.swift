@@ -108,7 +108,7 @@ public enum LinkText {
             let start = result.index(result.startIndex, offsetByCharacters: offset)
             let end = result.index(start, offsetByCharacters: length)
             let covered = result[start..<end]
-            guard !isLinked(covered), !isProtected(covered), let address = URL(string: LinkClean.cleaned(span.link)) else { continue }
+            guard !hasOwnWords(covered, notWrittenAs: span.link), !isProtected(covered), let address = URL(string: LinkClean.cleaned(span.link)) else { continue }
             var replacement = AttributedString(LinkClean.displayText(span.link))
             if let first = covered.runs.first { replacement.mergeAttributes(first.attributes) }
             replacement.link = address
@@ -117,9 +117,16 @@ public enum LinkText {
         return result
     }
 
-    /// Whether any of the text is already a link.
-    private static func isLinked(_ text: AttributedSubstring) -> Bool {
-        text.runs.contains { $0.link != nil }
+    /// Whether the text is a link that has words of its own: it opens somewhere
+    /// other than the address it is written as. A link whose words are its own
+    /// address (the platform's Markdown reading may make one of a bare
+    /// address) has none, and is shown short like any other.
+    private static func hasOwnWords(_ text: AttributedSubstring, notWrittenAs link: String) -> Bool {
+        let written = LinkClean.cleaned(link)
+        return text.runs.contains { run in
+            guard let address = run.link else { return false }
+            return LinkClean.cleaned(address.absoluteString) != written
+        }
     }
 
     /// Plain words (a person's message, typed) made followable.

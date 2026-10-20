@@ -82,6 +82,14 @@ final class LinkTextTests: XCTestCase {
         XCTAssertEqual(linked.runs.compactMap(\.link).map(\.absoluteString), ["https://example.com/opened"])
     }
 
+    func testALinkTheMarkdownReadingMadeOfABareAddressIsShownShort() throws {
+        var words = AttributedString("https://www.example.com/a?gclid=1")
+        words.link = URL(string: "https://www.example.com/a?gclid=1")
+        let linked = LinkText.linked(words)
+        XCTAssertEqual(String(linked.characters), "example.com/a")
+        XCTAssertEqual(linked.runs.compactMap(\.link).map(\.absoluteString), ["https://www.example.com/a"])
+    }
+
     func testTextTheScreenProtectsIsLeftAlone() throws {
         let words = AttributedString("Run curl https://example.com/in-code now, or https://example.com/outside")
         let linked = LinkText.linked(words) { covered in String(covered.characters).hasSuffix("in-code") }
