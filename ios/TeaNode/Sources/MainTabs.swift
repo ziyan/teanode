@@ -1,5 +1,6 @@
 import SwiftUI
 import TeaNodeKit
+import UIKit
 
 /// AppSectionGroup is a heading in the More tab and in the iPad's sidebar,
 /// with the parts of TeaNode that belong under it.
@@ -356,6 +357,133 @@ struct TabBarPartLabel: View {
         } else {
             Label(section.title, systemImage: section.systemImage)
                 .foregroundStyle(Color.primary)
+        }
+    }
+}
+
+/// MoreSwipeBack is the swipe back from the first screen of a part opened
+/// under More to More's list. More shows the part in place of its list rather
+/// than pushing it (every part has a stack of its own, and stacks are not
+/// nested), so the system's swipe has nothing to go back to there; this one
+/// does it instead, following the finger as the system's does. It starts at
+/// the left edge, as the system's first did: further in, a sideways drag picks
+/// a day on a chart or moves a map. And only where the stack under the finger
+/// is on its first screen, so on a screen pushed inside the part the system's
+/// own swipe goes back within the part; never over a sheet, or on a sideways
+/// list that can still scroll back.
+struct MoreSwipeBack: UIViewRepresentable {
+    /// How far the part has been swiped toward the back, in points.
+    let onSwipe: (CGFloat) -> Void
+    /// Whether the swipe went far or fast enough to go back.
+    let onEnd: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeUIView(context: Context) -> InstallingView {
+        let view = InstallingView()
+        view.isUserInteractionEnabled = false
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ view: InstallingView, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    static func dismantleUIView(_ view: InstallingView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    /// InstallingView puts the swipe on the window while the part is on
+    /// screen, and takes it off when the part leaves the window, as it does
+    /// when another tab is chosen.
+    final class InstallingView: UIView {
+        weak var coordinator: Coordinator?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            coordinator?.install(on: window)
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: MoreSwipeBack
+        private var recognizer: UIPanGestureRecognizer?
+
+        init(parent: MoreSwipeBack) {
+            self.parent = parent
+        }
+
+        func install(on window: UIWindow?) {
+            uninstall()
+            guard let window else { return }
+            let recognizer = UIPanGestureRecognizer(target: self, action: #selector(swiped(_:)))
+            recognizer.delegate = self
+            recognizer.maximumNumberOfTouches = 1
+            window.addGestureRecognizer(recognizer)
+            self.recognizer = recognizer
+        }
+
+        func uninstall() {
+            if let recognizer { recognizer.view?.removeGestureRecognizer(recognizer) }
+            recognizer = nil
+        }
+
+        /// How far in from the left edge a swipe back may start, in points.
+        private let edgeWidth: CGFloat = 44
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let window = pan.view as? UIWindow else { return false }
+            // Not while a sheet or an alert is over the part.
+            if window.rootViewController?.presentedViewController != nil { return false }
+            // From the left edge, mostly sideways and to the right.
+            let location = pan.location(in: window)
+            let startX = location.x - pan.translation(in: window).x
+            guard startX <= edgeWidth else { return false }
+            let velocity = pan.velocity(in: window)
+            guard velocity.x > 0, velocity.x > abs(velocity.y) * 1.5 else { return false }
+            guard let touched = window.hitTest(location, with: nil) else { return false }
+            // Not on a sideways list that can still scroll back.
+            var view: UIView? = touched
+            while let current = view {
+                if let scrollView = current as? UIScrollView, scrollView.contentSize.width > scrollView.bounds.width + 1,
+                    scrollView.contentOffset.x > -scrollView.adjustedContentInset.left + 1
+                {
+                    return false
+                }
+                view = current.superview
+            }
+            // Only where the stack under the finger is on its first screen.
+            var responder: UIResponder? = touched
+            while let current = responder {
+                if let navigation = current as? UINavigationController {
+                    return navigation.viewControllers.count <= 1
+                }
+                responder = current.next
+            }
+            return false
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            // A list under the finger scrolls up and down as it did; the
+            // swipe only reads how far the finger went sideways.
+            other.view is UIScrollView
+        }
+
+        @objc private func swiped(_ pan: UIPanGestureRecognizer) {
+            guard let view = pan.view else { return }
+            let distance = max(0, pan.translation(in: view).x)
+            switch pan.state {
+            case .began, .changed:
+                parent.onSwipe(distance)
+            case .ended:
+                parent.onEnd(distance > view.bounds.width / 3 || pan.velocity(in: view).x > 600)
+            case .cancelled, .failed:
+                parent.onEnd(false)
+            default:
+                break
+            }
         }
     }
 }

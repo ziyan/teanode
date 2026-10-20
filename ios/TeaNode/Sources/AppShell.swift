@@ -71,6 +71,10 @@ struct MainView: View {
     private var tabBarSections: [AppSection] { TabBarChoice.sections(from: tabBarText) }
     /// The part open under the More tab; nil is the list of parts.
     @State private var moreSection: AppSection?
+    /// How far a swipe has moved the part under More toward the back, and the
+    /// More tab's width, which a swipe that goes back moves it all the way.
+    @State private var moreSwipeDistance: CGFloat = 0
+    @State private var moreWidth: CGFloat = 0
     /// A part a link asked for in a wide window, before it was known whether
     /// the sidebar has it; it is opened once that is known.
     @State private var pendingSection: AppSection?
@@ -371,20 +375,53 @@ struct MainView: View {
         }
     }
 
-    /// The More tab: the list of the other parts, or the part chosen in it,
-    /// which has a button back to the list.
+    /// The More tab: the list of the other parts, and the part chosen in it
+    /// over the list, which slides in as a pushed screen does and goes back by
+    /// its button or by a swipe (MoreSwipeBack).
     private var moreTab: some View {
         ZStack {
+            // Kept under the part, so a swipe back shows it.
+            MoreList { opened in moreSection = opened }
+                .allowsHitTesting(moreSection == nil)
+                .accessibilityHidden(moreSection != nil)
             if let moreSection {
                 sectionScreen(moreSection)
                     .environment(\.leavePart, LeavePart { self.moreSection = nil })
-                    .transition(.opacity)
-            } else {
-                MoreList { opened in moreSection = opened }
-                    .transition(.opacity)
+                    .background(Color(uiColor: .systemBackground))
+                    .shadow(color: .black.opacity(moreSwipeDistance > 0 ? 0.15 : 0), radius: 8)
+                    .offset(x: moreSwipeDistance)
+                    .background {
+                        MoreSwipeBack { distance in
+                            if tab == .more { moreSwipeDistance = distance }
+                        } onEnd: { isGoingBack in
+                            finishMoreSwipe(isGoingBack: isGoingBack && tab == .more)
+                        }
+                    }
+                    .transition(.move(edge: .trailing))
             }
         }
+        .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.width } action: { width in moreWidth = width }
         .animation(.default, value: moreSection)
+    }
+
+    /// Ends a swipe back from a part under More: on to More's list, or back
+    /// to where the part was.
+    private func finishMoreSwipe(isGoingBack: Bool) {
+        guard isGoingBack else {
+            withAnimation(.spring(duration: 0.25)) { moreSwipeDistance = 0 }
+            return
+        }
+        withAnimation(.easeOut(duration: 0.2)) {
+            moreSwipeDistance = moreWidth
+        } completion: {
+            // Already off the screen, so it goes without a second slide.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                moreSection = nil
+                moreSwipeDistance = 0
+            }
+        }
     }
 
     /// Whether a part has a tab of its own. Until the server has said which

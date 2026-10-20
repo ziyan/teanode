@@ -126,7 +126,9 @@ its pull request is opened.
   a screen of its own behind a row, as iOS Settings does; it does not open in
   place with a disclosure arrow.
 - Screens are pushed on the tab's own stack, so the swipe back from the left
-  edge works everywhere. A row's swipe actions are for the obvious things;
+  edge works everywhere. A part opened from More is shown over More's list
+  rather than pushed, and `MoreSwipeBack` gives its first screen the same
+  swipe from the left edge. A row's swipe actions are for the obvious things;
   whatever they do not hold goes in the long-press menu.
 
 ## Navigation
