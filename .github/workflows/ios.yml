@@ -287,6 +287,9 @@ jobs:
           shoot mail-inbox-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
           shoot mail-inbox-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab mail -TeaNodeScreen mail-inbox
           shoot more-light light large -TeaNodeDemo -TeaNodeTab more
+          # Choosing the tabs: the three in the bar, to move or take out, and the others to put in.
+          shoot tab-bar-edit-light light large -TeaNodeDemo -TeaNodeTab more -TeaNodeScreen tab-bar-edit
+          shoot tab-bar-edit-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab more -TeaNodeScreen tab-bar-edit
           shoot more-dark dark large -TeaNodeDemo -TeaNodeTab more
           shoot more-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab more
           # Search: before anything is typed, and with the words typed, grouped by part.

@@ -20,7 +20,7 @@ enum AppSectionGroup: String, CaseIterable, Identifiable, Hashable {
     /// The parts under the heading, in the order they are listed.
     var sections: [AppSection] {
         switch self {
-        case .everyDay: [.contacts, .location, .health]
+        case .everyDay: [.agent, .mail, .photos, .calendar, .contacts, .location, .health]
         case .work: [.coding, .knowledge, .recordings]
         case .plans: [.goals, .ideas]
         case .money: [.finance]
@@ -28,10 +28,31 @@ enum AppSectionGroup: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-extension AppSection {
-    /// The parts that are tabs of their own on the iPhone. Every other part is
-    /// under the More tab, and Settings is the last row of it.
-    static let tabBarSections: [AppSection] = [.agent, .mail, .photos, .calendar]
+/// TabBarChoice is which parts the person keeps in the iPhone's tab bar, in
+/// their order, kept on this device. Every other part is under the More tab,
+/// and Settings is the last row of it. Three at most, as the iPhone's tab bar
+/// holds five and More and Search are two: a sixth tab makes iOS put the last
+/// ones under a More of its own.
+enum TabBarChoice {
+    static let storageKey = "tabBarSections"
+    static let defaultSections: [AppSection] = [.agent, .mail, .photos]
+    static var defaultText: String { text(of: defaultSections) }
+    static let mostCount = 3
+
+    /// The parts written in text, as `text(of:)` writes them: known ones,
+    /// each once, Settings never, three at most.
+    static func sections(from text: String) -> [AppSection] {
+        var chosen: [AppSection] = []
+        for name in text.split(separator: ",") {
+            guard let section = AppSection(rawValue: String(name)), section != .settings, !chosen.contains(section) else { continue }
+            chosen.append(section)
+        }
+        return Array(chosen.prefix(mostCount))
+    }
+
+    static func text(of sections: [AppSection]) -> String {
+        sections.map(\.rawValue).joined(separator: ",")
+    }
 }
 
 /// MainTab is what the tab bar has chosen: a part, the More tab, or Search.
@@ -99,6 +120,8 @@ struct MoreBackButton: ToolbarContent {
 struct MoreList: View {
     let onOpen: (AppSection) -> Void
     @Environment(AppModel.self) private var app
+    @AppStorage(TabBarChoice.storageKey) private var tabBarText = TabBarChoice.defaultText
+    @State private var isEditingTabBar = MoreList.isEditingAtFirst
 
     var body: some View {
         NavigationStack {
@@ -106,7 +129,7 @@ struct MoreList: View {
                 ForEach(groups) { group in
                     Section(group.title) {
                         ForEach(sections(in: group)) { section in
-                            MoreRow(section: section, waitingCount: section == .coding ? app.codingAskingCount : 0) {
+                            MoreRow(section: section, waitingCount: waitingCount(of: section)) {
                                 onOpen(section)
                             }
                         }
@@ -119,11 +142,43 @@ struct MoreList: View {
                 }
             }
             .navigationTitle("More")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Edit") { isEditingTabBar = true }
+                        .accessibilityLabel(Text("Edit the tab bar"))
+                }
+            }
+            .sheet(isPresented: $isEditingTabBar) {
+                TabBarEditor(tabBarText: $tabBarText)
+                    .environment(app)
+            }
         }
     }
 
+    /// The demo's `-TeaNodeScreen tab-bar-edit` opens on the editor.
+    private static var isEditingAtFirst: Bool {
+        #if DEBUG
+            DemoServer.isRequested && DemoServer.screen == "tab-bar-edit"
+        #else
+            false
+        #endif
+    }
+
+    /// What waits in a part: unread chats, when Chats is under More, and the
+    /// coding sessions that ask something.
+    private func waitingCount(of section: AppSection) -> Int {
+        switch section {
+        case .agent: app.unreadChatCount
+        case .coding: app.codingAskingCount
+        default: 0
+        }
+    }
+
+    /// The parts of a group that are not in the tab bar, and that the server
+    /// offers.
     private func sections(in group: AppSectionGroup) -> [AppSection] {
-        group.sections.filter { app.isSectionAvailable($0) }
+        let tabBarSections = TabBarChoice.sections(from: tabBarText)
+        return group.sections.filter { app.isSectionAvailable($0) && !tabBarSections.contains($0) }
     }
 
     private var groups: [AppSectionGroup] {
@@ -143,8 +198,10 @@ struct MoreRow: View {
             onOpen()
         } label: {
             HStack {
+                // A place to go, in the text's color: inside a button the
+                // primary style is the button's green, a color is not.
                 Label(section.title, systemImage: section.systemImage)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                 Spacer(minLength: 8)
                 if waitingCount > 0 {
                     Text(waitingCount, format: .number)
@@ -188,6 +245,117 @@ struct ChatPlaceScreen: View {
             AgentOffView()
         } else {
             ConversationView(model: ConversationModel(conversation: place.conversation, app: app, connection: connection))
+        }
+    }
+}
+
+/// TabBarEditor is where the person chooses the parts in the tab bar, as the
+/// iPhone's Music app chooses its tabs: the ones in the bar, in their order,
+/// which can be moved or taken out, and under them the others, any of which
+/// can be put in while there is room.
+struct TabBarEditor: View {
+    @Binding var tabBarText: String
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+
+    /// The parts in the bar. One the server turned off has no tab, so it
+    /// holds no place in the bar while it is off.
+    private var chosen: [AppSection] {
+        let sections = TabBarChoice.sections(from: tabBarText)
+        return app.services == nil ? sections : sections.filter { app.isSectionAvailable($0) }
+    }
+
+    /// The parts that could be put in the bar: offered by the server, not in
+    /// it, in the order More lists them.
+    private var others: [AppSection] {
+        AppSectionGroup.allCases.flatMap(\.sections).filter { app.isSectionAvailable($0) && !chosen.contains($0) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(chosen) { section in
+                        TabBarPartLabel(section: section)
+                    }
+                    .onMove { offsets, destination in
+                        var moved = chosen
+                        moved.move(fromOffsets: offsets, toOffset: destination)
+                        tabBarText = TabBarChoice.text(of: moved)
+                    }
+                    .onDelete { offsets in
+                        var kept = chosen
+                        kept.remove(atOffsets: offsets)
+                        tabBarText = TabBarChoice.text(of: kept)
+                    }
+                } header: {
+                    Text("In the tab bar")
+                } footer: {
+                    Text("Up to three. More and Search are always there.")
+                }
+                Section("In More") {
+                    ForEach(others) { section in
+                        TabBarAddRow(section: section, isFull: chosen.count >= TabBarChoice.mostCount) {
+                            tabBarText = TabBarChoice.text(of: chosen + [section])
+                        }
+                    }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Tab bar")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+/// TabBarAddRow puts a part in the tab bar. Its green plus is the action,
+/// across from the red minus of the parts in the bar, and turns grey while
+/// the bar is full; the name stays in the text's color so it can be read.
+struct TabBarAddRow: View {
+    let section: AppSection
+    let isFull: Bool
+    let onAdd: () -> Void
+
+    var body: some View {
+        Button {
+            onAdd()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.white, isFull ? Color.secondary : Color.green)
+                    .accessibilityHidden(true)
+                TabBarPartLabel(section: section)
+            }
+            .contentShape(.rect)
+        }
+        .disabled(isFull)
+        .accessibilityHint(Text("Puts it in the tab bar"))
+    }
+}
+
+/// TabBarPartLabel is a part's symbol and name in the tab bar editor. At the
+/// accessibility text sizes it is the name alone: beside the editing controls
+/// the symbol leaves too little room for a whole word.
+struct TabBarPartLabel: View {
+    let section: AppSection
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text(section.title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .foregroundStyle(Color.primary)
+        } else {
+            Label(section.title, systemImage: section.systemImage)
+                .foregroundStyle(Color.primary)
         }
     }
 }

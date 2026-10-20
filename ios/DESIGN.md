@@ -132,8 +132,11 @@ its pull request is opened.
 ## Navigation
 
 - The app is a `TabView` (`.tabViewStyle(.sidebarAdaptable)`) of icons only:
-  Chats, Mail, Photos, Calendar and More, with Search as the bar's search tab
-  (`Tab(role: .search)`). A tab's name is its accessibility label, so no
+  three parts the person chooses (Chats, Mail and Photos at first; More's
+  Edit button changes them, kept on the device), More and Search
+  (`Tab(role: .search)`), five in all: a sixth makes iOS add a More of its
+  own over ours. On the iPad the sidebar is arranged with the system's own
+  customization (`TabViewCustomization`). A tab's name is its accessibility label, so no
   title shows under an icon. The bar shrinks to a pill while a list scrolls
   (`.tabBarMinimizeBehavior(.onScrollDown)`).
 - A tab with something waiting has a badge: unread chats on Chats, coding
@@ -143,7 +146,7 @@ its pull request is opened.
   Mail opens on its Mailboxes list, which pushes a folder. Finance, Location and
   Photos choose their list in the menu under the screen's title
   (`toolbarTitleMenu`), the way Files names its place.
-- More is a grouped list: Every day (Contacts, Location, Health), Work (Coding,
+- More is a grouped list: Every day (Calendar, Contacts, Location, Health), Work (Coding,
   Knowledge, Recordings), Plans (Goals, Ideas), Money (Finance), then Settings. A part
   the server does not offer is left out. A part opened from it shows a button at
   the top left that goes back to the list (`MoreBackButton`).
@@ -159,12 +162,15 @@ its pull request is opened.
 
 The same app runs on the iPad, and a screen is designed once for both. What
 differs is decided by the window's horizontal size class (`.regular` or
-`.compact`), never by the device, so Slide Over and a narrow Split View get
-the iPhone's layout.
+`.compact`), so Slide Over and a narrow Split View get the iPhone's layout.
+Only the tabs also ask whether the device is an iPad, as below.
 
-- At regular width the tabs are the system's sidebar (`.sidebarAdaptable`),
-  with the names shown, and the parts that are under More on the phone are
-  tabs in its groups (`TabSection`): Every day, Work, Plans and Money. There is
+- At regular width on the iPad the tabs are the system's sidebar
+  (`.sidebarAdaptable`), with the names shown. The larger iPhones are of
+  regular width when turned sideways too, but their tab bar still holds five,
+  so the tabs are the iPhone's there. On the iPad, the parts that are under
+  More on the phone are tabs in the sidebar's groups (`TabSection`): Every
+  day, Work, Plans and Money. There is
   no More tab there, so no screen shows `MoreBackButton`.
 - A screen is laid out for whatever width it is given, from about 400 to 1000
   points. Lists, forms and grids adapt by themselves. Text that is read in

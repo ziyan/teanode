@@ -108,6 +108,11 @@ type SearchResultView struct {
 // snippetLength is how many characters of a longer text a result shows.
 const snippetLength = 200
 
+// maximumWordsLength is the longest words, in bytes, that are searched for.
+// It is the longest any area's own search takes, so longer words are refused
+// once here rather than failing in that area alone.
+const maximumWordsLength = 200
+
 // SearchEverything is the operation. It is one of isModelBackedQuery, though it
 // asks no model: it holds no transaction of its own across its work, because
 // every area reads in a transaction of its own, side by side, and a
@@ -118,6 +123,9 @@ func (self *graph) SearchEverything(ctx context.Context, arguments SearchEveryth
 		return err
 	}); err != nil {
 		return nil, err
+	}
+	if len(strings.TrimSpace(arguments.Words)) > maximumWordsLength {
+		return nil, fmt.Errorf("%w: the words to search for are longer than %d bytes", api.ErrInvalidArguments, maximumWordsLength)
 	}
 	wanted := map[string]bool{}
 	for _, name := range arguments.Areas {

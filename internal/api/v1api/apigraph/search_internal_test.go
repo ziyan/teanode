@@ -282,6 +282,9 @@ func TestSearchRefusesWhatItCannotRun(test *testing.T) {
 	if results, text := world.search("", "lanternfish", 0); results != nil {
 		test.Errorf("an anonymous caller searched: %s", text)
 	}
+	if results, text := world.search("search-refusals", strings.Repeat("lanternfish ", 20), 0); results != nil || !strings.Contains(text, "longer than 200 bytes") {
+		test.Errorf("words longer than any area takes were searched: %s", text)
+	}
 }
 
 // The agent's tools run the same document as the person, held to the agent's
