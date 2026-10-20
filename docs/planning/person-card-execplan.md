@@ -21,6 +21,7 @@ To see it working: open a chat with Sam, tap Sam's picture on a message, and the
 
 - (2026-10-20, research before the plan) There is no query for one person: the only view of another account is `CircleMember` (`internal/api/v1api/apigraph/circle.go:131`), reached through `ListCirclePeople` or `ReadCircle`. It carries the name, username, picture, relationship and `linkedContactId`, and on purpose not the email or pronoun (`docs/subsystems/circles.md`, "Who sees whom").
 - (2026-10-20) Most sections hang on the viewer's contact linked to the person (`Contact.AccountUserID`, migration 0246), not on the account: mail is found by the contact's addresses, photos of them by the face group named by the contact (`ListPhotos(accountUserId)`), memory pages by `ReadRecordMemoryLinks(recordKind: "contact")`. Location, health, shared albums and the chat hang on the account and its shares.
+- (2026-10-20, deployed) 530 of the 532 memory pages tied to a contact on the deployed server named contacts that no longer existed: `agent_node.contact_id` has no foreign key, nothing took it off when a contact was deleted, and the address book had been read in again under new IDs. The dreams leave a page that names a contact alone, so none was tied again.
 - (2026-10-20) Mail can only be filtered by one `from` or `to` string within one mailbox (`ListMailboxThreads`, `apigraph/mailbox.go:496`); the card needs a search over all the viewer's mailboxes for any of the contact's addresses, done on the server in one query.
 - (2026-10-20) A recording's speaker is a name owned by the viewer (`RecordingSpeakerIdentity`, `internal/models/recording_speaker.go:6`) with no link to a contact or an account, and `ListRecordings` filters only by words. See the open decision below.
 
@@ -63,6 +64,9 @@ To see it working: open a chat with Sam, tap Sam's picture on a message, and the
   Date/Author: 2026-10-20, Claude.
 - Decision: the memory section reads pages tied to the contact (`agent_node.contact_id`) and pages that link to it; with neither, the person page directly under `people` with the contact's name, marked found by name, unless it is another contact's.
   Rationale: on the deployed server a person's own page was tied to nothing, so the section was empty.
+  Date/Author: 2026-10-20, Claude.
+- Decision: deleting a contact or an address book unties the pages, `is_contact` links and the account's own card that named a contact now in none of the person's books (`untieContactsGone`, `internal/db/database_contact.go`), and migration 0248 repairs the ties made before: a page is tied again to the one contact with exactly its name in the books the agent was given, when no other page has that name or names that contact, and the rest are untied.
+  Rationale: a foreign key would need the address book beside every page's contact ID, through record links, the mutation, the CLI and the dashboard; untying where contacts are deleted keeps the ID alone. On the deployed server a dry run tied 34 pages again and untied 496.
   Date/Author: 2026-10-20, Claude.
 - Decision: the mail search is a scan of the person's mail by the contact's addresses, with no new index for now. Deployed, a card answered in under a second over a mailbox of several gigabytes; an index on the lowercased sender and recipients can follow if a section ever fails on time.
   Date/Author: 2026-10-20, Claude.

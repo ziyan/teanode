@@ -101,7 +101,13 @@ struct LocationScreen: View {
                     if isShowingPeople {
                         LocationPeopleRows(model: model)
                     }
-                    if model.isSetupShown {
+                    if isShowingPeople, let person = model.selectedPerson {
+                        // A new list for each person chosen, so one person's
+                        // day and visits never show under another's name.
+                        LocationChosenPersonVisits(connection: model.connection, person: person)
+                            .id(person.userId)
+                            .contentMargins(.top, 8, for: .scrollContent)
+                    } else if model.isSetupShown {
                         LocationSetupList(model: model, recorder: recorder, allowLocation: allowLocation)
                     } else {
                         // The list starts close to what is above it, not
@@ -222,9 +228,9 @@ struct LocationScreen: View {
     }
 
     /// The list on screen, as Finance names its part; Location while the
-    /// setup fills the screen instead.
+    /// setup or a chosen person's visits fill the screen instead.
     private var title: String {
-        model.isSetupShown ? String(localized: "Location") : segment.title
+        model.isSetupShown || (isShowingPeople && model.selectedPerson != nil) ? String(localized: "Location") : segment.title
     }
 
     @ViewBuilder
