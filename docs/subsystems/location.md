@@ -48,6 +48,28 @@ contains it), or at the place a region event watched, or at a new place made for
 it. A new place is named after its nearest city from a table built into the
 server and is named properly right after the report is stored (see below).
 
+iOS reports a visit it noticed again with its departure, and with a position it
+has made more exact; the phone's key is made from the position, so the departure
+can come under a key the server has not seen. A visit from iOS visit monitoring
+under an unknown key whose arrival is in the same second as a stored one is that
+visit, and completes it, instead of becoming a second visit whose arrival ends
+the first the moment it began.
+
+### Pass-bys
+
+iOS tells of crossing a watched place's circle the moment it happens, with no
+least stay, so driving past a place the person labeled would otherwise be a
+visit to it. A **pass-by** is a visit from a circle (`region`) shorter than
+three minutes, with a position within two minutes of it at 4 m/s or faster and
+none during it at 0.5 m/s or slower. Once the positions and visits of a report
+are stored, the pass-bys that ended around its times are deleted, and the
+visits around them put in order again. A short stop, such as letting somebody
+out at a school, has a slow position in it and stays a visit; so does a short
+visit with no fast position near it. The positions that tell are usually sent
+with the visit; a slow one that comes in a later report, after the visit was
+deleted, does not bring it back. Visits iOS noticed are not judged this way:
+iOS reports one only after a stay.
+
 Two visits to one place less than ten minutes apart are one visit: a phone that
 loses the signal at the front door and finds it again does not make two. Which
 visit the surviving row carries does not matter to the phone, because every key
@@ -224,6 +246,12 @@ share was made, so a phone that was offline for a day does not tell the family
 about yesterday; the same arrival is told once to one receiver in ten minutes;
 and only to receivers who may use Location and whose account is enabled. A
 notification needs no agent: it goes through the same carrier chats use.
+
+An arrival at a place's circle is told three minutes after it, once the visit
+can no longer be a pass-by, and only if the visit is still there; a departure
+before then is told a second after the arrival, so the two come in order. A
+notice that waits lives in the server's memory, so a restart in those three
+minutes loses it.
 
 ## What erasing deletes
 

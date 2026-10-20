@@ -178,3 +178,28 @@ func TestHerdrOpenBesideIsRefusedByAProgramTooOldForIt(t *testing.T) {
 		t.Errorf("asked %q", attached.asked)
 	}
 }
+
+func TestHerdrSubagentsIsAReadAndIsRefusedByAProgramTooOldForIt(t *testing.T) {
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	herdr := find(t, "herdr")
+	if risk := herdr.RiskOf(json.RawMessage(`{"action":"subagents","pane":"w1:p1"}`)); risk != tools.RiskRead {
+		t.Errorf("subagents is %v", risk)
+	}
+
+	attached := &herdrComputer{fakeComputer: fakeComputer{answers: map[string]string{"herdr_subagents": `{"subagents":[]}`}}, features: []string{deviceComputer.FeatureHerdrSubagents}}
+	ctx := tools.WithRun(context.Background(), &fakeRun{computer: attached, config: configuration})
+	if _, err := herdr.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"subagents","pane":"w1:p1"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(attached.asked) != 1 || attached.asked[0] != `herdr_subagents {"paneId":"w1:p1"}` {
+		t.Errorf("asked %q", attached.asked)
+	}
+
+	old := &herdrComputer{fakeComputer: fakeComputer{answers: map[string]string{"herdr_subagents": `{"subagents":[]}`}}}
+	ctx = tools.WithRun(context.Background(), &fakeRun{computer: old, config: configuration})
+	_, err := herdr.Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"action":"subagents","pane":"w1:p1"}`)})
+	if err == nil || !strings.Contains(err.Error(), "too old") || len(old.asked) != 0 {
+		t.Errorf("an old program was asked for the agents: %v, asked %q", err, old.asked)
+	}
+}
