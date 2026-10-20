@@ -1,0 +1,137 @@
+[
+  {
+    "input": "https://www.example.com/shop/item-1/?gclid=abc&color=red",
+    "cleaned": "https://www.example.com/shop/item-1/?color=red",
+    "display": "example.com/shop/item-1/?color=red"
+  },
+  {
+    "input": "https://example.com/",
+    "cleaned": "https://example.com/",
+    "display": "example.com"
+  },
+  {
+    "input": "https://example.com",
+    "cleaned": "https://example.com",
+    "display": "example.com"
+  },
+  {
+    "input": "https://example.com/path",
+    "cleaned": "https://example.com/path",
+    "display": "example.com/path"
+  },
+  {
+    "input": "https://example.com/p?utm_source=news&utm_medium=mail&id=7",
+    "cleaned": "https://example.com/p?id=7",
+    "display": "example.com/p?id=7"
+  },
+  {
+    "input": "https://example.com/p?UTM_Campaign=x&Id=7",
+    "cleaned": "https://example.com/p?Id=7",
+    "display": "example.com/p?Id=7"
+  },
+  {
+    "input": "https://example.com/p?gclid=1&gbraid=2&wbraid=3&_gl=4",
+    "cleaned": "https://example.com/p",
+    "display": "example.com/p"
+  },
+  {
+    "input": "https://example.com/?fbclid=1",
+    "cleaned": "https://example.com/",
+    "display": "example.com"
+  },
+  {
+    "input": "https://example.com?fbclid=1",
+    "cleaned": "https://example.com",
+    "display": "example.com"
+  },
+  {
+    "input": "https://example.com/p?a=1&&b=2",
+    "cleaned": "https://example.com/p?a=1&&b=2",
+    "display": "example.com/p?a=1&&b=2"
+  },
+  {
+    "input": "https://example.com/p?a=1&&gclid=2&b=2",
+    "cleaned": "https://example.com/p?a=1&b=2",
+    "display": "example.com/p?a=1&b=2"
+  },
+  {
+    "input": "https://example.com/p?",
+    "cleaned": "https://example.com/p?",
+    "display": "example.com/p?"
+  },
+  {
+    "input": "https://example.com/p?msclkid=1#section-2",
+    "cleaned": "https://example.com/p#section-2",
+    "display": "example.com/p"
+  },
+  {
+    "input": "https://example.com/p?b=2&a=1#top",
+    "cleaned": "https://example.com/p?b=2&a=1#top",
+    "display": "example.com/p?b=2&a=1"
+  },
+  {
+    "input": "https://user:secret@www.example.com:8443/p",
+    "cleaned": "https://user:secret@www.example.com:8443/p",
+    "display": "example.com:8443/p"
+  },
+  {
+    "input": "HTTPS://WWW.Example.COM/Path",
+    "cleaned": "HTTPS://WWW.Example.COM/Path",
+    "display": "example.com/Path"
+  },
+  {
+    "input": "http://example.com/a%20b",
+    "cleaned": "http://example.com/a%20b",
+    "display": "example.com/a b"
+  },
+  {
+    "input": "https://example.com/%E5%95%86%E5%93%81/1",
+    "cleaned": "https://example.com/%E5%95%86%E5%93%81/1",
+    "display": "example.com/商品/1"
+  },
+  {
+    "input": "https://example.com/%E0%A4%A",
+    "cleaned": "https://example.com/%E0%A4%A",
+    "display": "example.com/%E0%A4%A"
+  },
+  {
+    "input": "https://example.com/search?q=a+long+search+phrase+with+many+words&page=2",
+    "cleaned": "https://example.com/search?q=a+long+search+phrase+with+many+words&page=2",
+    "display": "example.com/search"
+  },
+  {
+    "input": "https://example.com/search?q=short&mc_eid=9",
+    "cleaned": "https://example.com/search?q=short",
+    "display": "example.com/search?q=short"
+  },
+  {
+    "input": "https://www.example.com/a/very/long/path/that/keeps/going/and/going/until/it/must/be/cut/page.html",
+    "cleaned": "https://www.example.com/a/very/long/path/that/keeps/going/and/going/until/it/must/be/cut/page.html",
+    "display": "example.com/a/very/long/…t/must/be/cut/page.html"
+  },
+  {
+    "input": "mailto:someone@example.com",
+    "cleaned": "mailto:someone@example.com",
+    "display": "mailto:someone@example.com"
+  },
+  {
+    "input": "not a link",
+    "cleaned": "not a link",
+    "display": "not a link"
+  },
+  {
+    "input": "ftp://example.com/file?gclid=1",
+    "cleaned": "ftp://example.com/file?gclid=1",
+    "display": "ftp://example.com/file?gclid=1"
+  },
+  {
+    "input": "https://example.com/p?ref_src=twsrc&s_cid=1&oly_enc_id=2&vero_id=3&rb_clickid=4&_hsmi=5&_hsenc=6&mkt_tok=7&oly_anon_id=8&igshid=9&li_fat_id=a&ttclid=b&twclid=c&yclid=d&dclid=e&gclsrc=f&_ga=g&mc_cid=h&item=1",
+    "cleaned": "https://example.com/p?item=1",
+    "display": "example.com/p?item=1"
+  },
+  {
+    "input": "https://example.com/p?utm=keep&utmsource=keep&utm_=drop",
+    "cleaned": "https://example.com/p?utm=keep&utmsource=keep",
+    "display": "example.com/p?utm=keep&utmsource=keep"
+  }
+]
