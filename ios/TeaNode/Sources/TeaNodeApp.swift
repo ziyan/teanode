@@ -194,6 +194,7 @@ struct ConversationsList: View {
                 } while !Task.isCancelled
             }
             .toolbar {
+                MoreBackButton()
                 ToolbarItem(placement: .topBarTrailing) {
                     newMenu
                 }

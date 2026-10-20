@@ -1257,6 +1257,7 @@ struct PhotosScreen: View {
                     onEnd: endSelection)
             }
         } else {
+            MoreBackButton()
             // The collections are in the menu under the title; the bar has the filter, Select and what is
             // particular to a collection.
             if model.section == .albums {

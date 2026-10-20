@@ -155,8 +155,6 @@ struct MoreList: View {
         }
     }
 
-    /// What waits in a part: unread chats, when Chats is under More, and the
-    /// coding sessions that ask something.
     /// The demo's `-TeaNodeScreen tab-bar-edit` opens on the editor.
     private static var isEditingAtFirst: Bool {
         #if DEBUG
@@ -166,6 +164,8 @@ struct MoreList: View {
         #endif
     }
 
+    /// What waits in a part: unread chats, when Chats is under More, and the
+    /// coding sessions that ask something.
     private func waitingCount(of section: AppSection) -> Int {
         switch section {
         case .agent: app.unreadChatCount
@@ -258,7 +258,12 @@ struct TabBarEditor: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
 
-    private var chosen: [AppSection] { TabBarChoice.sections(from: tabBarText) }
+    /// The parts in the bar. One the server turned off has no tab, so it
+    /// holds no place in the bar while it is off.
+    private var chosen: [AppSection] {
+        let sections = TabBarChoice.sections(from: tabBarText)
+        return app.services == nil ? sections : sections.filter { app.isSectionAvailable($0) }
+    }
 
     /// The parts that could be put in the bar: offered by the server, not in
     /// it, in the order More lists them.

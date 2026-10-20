@@ -178,7 +178,12 @@ struct FinanceScreen: View {
             }
         }
         .environment(finance)
-        .onChange(of: part) { path = NavigationPath() }
+        .onChange(of: part) {
+            path = NavigationPath()
+            // The words a search carried in are for that look at the
+            // transactions; choosing another part ends it.
+            if part != .transactions { transactionFilter = FinanceTransactionFilter() }
+        }
         // The words the Search tab's Show all in Finance carries: the transactions, narrowed to them.
         .onChange(of: app.openedPartSearch, initial: true) { _, search in
             guard let search, search.area == .finance else { return }

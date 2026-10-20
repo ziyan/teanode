@@ -144,6 +144,7 @@ struct MailboxesList: View {
             }
         }
         .toolbar {
+            MoreBackButton()
             if mail.entries.count > 1 {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {

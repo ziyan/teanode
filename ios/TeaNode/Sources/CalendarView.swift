@@ -138,6 +138,7 @@ struct CalendarScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        MoreBackButton()
         // Search and add at the top right, as Apple's Calendar has them.
         ToolbarItemGroup(placement: .topBarTrailing) {
             if model.viewMode != .reminders {
