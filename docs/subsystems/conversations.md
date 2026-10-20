@@ -100,6 +100,16 @@ than on a parsed URL, because each language's URL parser normalizes
 differently. The shared cases in `internal/util/linkclean/testdata/links.json`
 are read by the tests of all three, so a change to one is a change to all.
 
+**Which links get a card.** Only a link whose exact text is in a message of the
+conversation that the agent did not write: a person's message, or what a tool
+answered. `ReadLinkPreviews` takes the conversation and checks the link as the
+client sent it, or its cleaned form, as a substring of those messages (never a
+host or a path prefix), and answers any other link with `isAvailable` false
+without fetching it, even when a row is cached. The reason is that a reply can
+be made to carry what the agent read in a link's query, and drawing the card
+would send that to the link's site with no click. It is the rule agent pictures
+follow (`agent_picture.go`: only an address a tool showed the agent is fetched).
+
 **Previews.** Each message shows one card, for its first link, under the
 bubble: the page's picture, its site, its title and two lines about it. The
 dashboard and the app ask `ReadLinkPreviews(urls)` (at most 10 links) for the
@@ -118,7 +128,8 @@ this order: Open Graph (`og:title`, `og:description`, `og:site_name`,
 meta tag.
 
 The page's picture is fetched by the server too, if it is a PNG, JPEG, GIF or
-WebP of at most 2 MB. It is scaled to at most 600 pixels wide, written again
+WebP of at most 2 MB whose header claims at most 16 million pixels (a decoded
+picture takes four bytes a pixel, and a small file can claim a huge one). It is scaled to at most 600 pixels wide, written again
 as a JPEG (so none of the original's metadata survives), and kept in the file
 store. It is served from `/api/v1/link-preview/image/{name}` to a signed-in
 reader, so the page and the app never load anything from the linked site. The
