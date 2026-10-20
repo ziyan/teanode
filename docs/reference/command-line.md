@@ -148,6 +148,7 @@ so one command serves a person and a script.
 | `photo` | your library of photos and videos: `list`, `read`, `describe`, `upload`, `download`, `favorite`, `set-date` (correct when a photo was taken), `search-places`, `set-location` and `remove-location` (where it was taken), `trash`, `restore`, `retry`, `save` (keep a photo of a shared album, or a file of a conversation), `delete`, `empty-trash`, `library`, `album` for named sets of photos, with sharing, and `people` and `faces` for the people found in them; see below |
 | `finance` | linked institutions, transactions, trades, net worth, budgets and savings targets; see below |
 | `search` | your words across chats, mail, contacts, photos, memory, documents, recordings, places and finance at once; see below |
+| `link` | web links as the dashboard and the app show them: `link preview <url>...`; see below |
 | `api` | everything else, straight from the schema |
 
 ### A mailbox from the shell
@@ -625,6 +626,20 @@ words are matched as the areas match them, by the words alone, so try a name or
 a distinctive word. `--json` prints `words`, `areas` (each with `searchArea`,
 `hasMore` and `results`) and `failedAreas`. How it works, and who may search
 what, is in `docs/subsystems/search.md`.
+
+### teanode link
+
+`teanode link preview URL... [--json]` prints, for each link (at most 10), the
+link with its tracking parameters taken off, and what the page behind it says
+about itself: its site, its title and its description. It is the card under a
+message in the dashboard and the iPhone app (`ReadLinkPreviews`). A page the
+server could not read, or a link that is not a web address, prints `preview:
+none`. The server fetches the page and keeps what it read for a day, or for an
+hour when the page could not be read, so asking again is cheap. `--json` prints
+the answer as it came: `url`, `cleanedUrl`, `displayText`, `isAvailable`,
+`title`, `description`, `siteName`, `imageUrl` and the picture's size in pixels
+(`imageWidthPixels`, `imageHeightPixels`). How it works is in
+`docs/subsystems/conversations.md`.
 
 ### teanode recording
 
