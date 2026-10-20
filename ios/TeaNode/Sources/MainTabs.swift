@@ -271,8 +271,7 @@ struct TabBarEditor: View {
             List {
                 Section {
                     ForEach(chosen) { section in
-                        Label(section.title, systemImage: section.systemImage)
-                            .foregroundStyle(Color.primary)
+                        TabBarPartLabel(section: section)
                     }
                     .onMove { offsets, destination in
                         var moved = chosen
@@ -309,8 +308,9 @@ struct TabBarEditor: View {
     }
 }
 
-/// TabBarAddRow puts a part in the tab bar: an action, so green, and grey
-/// while the bar is full.
+/// TabBarAddRow puts a part in the tab bar. Its green plus is the action,
+/// across from the red minus of the parts in the bar, and turns grey while
+/// the bar is full; the name stays in the text's color so it can be read.
 struct TabBarAddRow: View {
     let section: AppSection
     let isFull: Bool
@@ -320,10 +320,37 @@ struct TabBarAddRow: View {
         Button {
             onAdd()
         } label: {
-            Label(section.title, systemImage: section.systemImage)
-                .actionColor()
+            HStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.white, isFull ? Color.secondary : Color.green)
+                    .accessibilityHidden(true)
+                TabBarPartLabel(section: section)
+            }
+            .contentShape(.rect)
         }
         .disabled(isFull)
         .accessibilityHint(Text("Puts it in the tab bar"))
+    }
+}
+
+/// TabBarPartLabel is a part's symbol and name in the tab bar editor. At the
+/// accessibility text sizes it is the name alone: beside the editing controls
+/// the symbol leaves too little room for a whole word.
+struct TabBarPartLabel: View {
+    let section: AppSection
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text(section.title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .foregroundStyle(Color.primary)
+        } else {
+            Label(section.title, systemImage: section.systemImage)
+                .foregroundStyle(Color.primary)
+        }
     }
 }
