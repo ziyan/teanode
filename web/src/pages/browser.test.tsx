@@ -47,13 +47,21 @@ class FakeWebSocket {
   }
 }
 
-function isConnected(isBrowserConnected: boolean) {
+function isConnected(isBrowserConnected: boolean, request = '') {
   execute.mockResolvedValue({
     ReadAgentTab: {
       connected: isBrowserConnected,
       attached: isBrowserConnected,
       title: 'Orders',
       url: 'https://shop.example.com/orders',
+    },
+    ReadAgentWaiting: {
+      interactions: request
+        ? [
+            { interactionKind: 'question', interactionText: 'Which color?' },
+            { interactionKind: 'take_over', interactionText: request },
+          ]
+        : [],
     },
   })
 }
@@ -92,12 +100,10 @@ beforeEach(() => {
   execute.mockReset()
   FakeWebSocket.instances = []
   vi.stubGlobal('WebSocket', FakeWebSocket)
-  document.cookie = 'csrftoken=token-one'
 })
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
-  document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
 })
 
 it('says how to connect the extension, and opens no live view, while the browser is not connected', async () => {
@@ -116,7 +122,7 @@ it('says how to connect the extension, and opens no live view, while the browser
 it('opens the viewer socket on the same origin and sends hello with the CSRF token', async () => {
   const socket = await openSocket()
   expect(socket.url).toBe(`ws://${window.location.host}/api/v1/agent/tab/view`)
-  expect(socket.sent[0]).toEqual({ type: 'hello', csrf: 'token-one' })
+  expect(socket.sent[0]).toEqual({ type: 'hello' })
   expect(screen.getByText('Connecting…')).toBeTruthy()
   socket.deliver(stateOf())
   expect(screen.queryByText('Connecting…')).toBeNull()
@@ -280,5 +286,23 @@ it('reconnects after the socket drops, and says it is connecting meanwhile', asy
   expect(screen.getByText('Connecting…')).toBeTruthy()
   await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2), { timeout: 2500 })
   FakeWebSocket.instances[1].open()
-  expect(FakeWebSocket.instances[1].sent[0]).toEqual({ type: 'hello', csrf: 'token-one' })
+  expect(FakeWebSocket.instances[1].sent[0]).toEqual({ type: 'hello' })
+})
+
+it("shows the agent's request to take the tab over above the picture, and no Take over for an old extension", async () => {
+  isConnected(true, 'Sign in with the code sent to your phone')
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <BrowserPage />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
+  const socket = FakeWebSocket.instances[0]
+  socket.open()
+  socket.deliver(stateOf({ canCast: false }))
+  expect(await screen.findByText('Sign in with the code sent to your phone')).toBeTruthy()
+  expect(screen.queryByText('Which color?')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Take over' })).toBeNull()
 })

@@ -128,7 +128,7 @@ func TestTabViewerStreamsOnlyWhatIsWatched(t *testing.T) {
 	worker.WatchTab("a1", first, "11")
 	worker.WatchTab("a1", second, "11")
 	casts := browser.sentOfType("cast")
-	if len(casts) != 1 || casts[0]["tab"] != float64(11) || casts[0]["on"] != true {
+	if len(casts) != 1 || casts[0]["tab"] != float64(11) || casts[0]["isOn"] != true {
 		t.Fatalf("two viewers of one tab asked for one stream: %v", casts)
 	}
 	worker.TabFrame("a1", browser, "11", "picture", 1280, 800)
@@ -140,14 +140,25 @@ func TestTabViewerStreamsOnlyWhatIsWatched(t *testing.T) {
 		t.Fatalf("frame %+v", frame)
 	}
 	worker.RemoveTabViewer("a1", first)
-	if casts := browser.sentOfType("cast"); len(casts) != 1 {
+	if casts := castsOfTab(browser, 11); len(casts) != 1 {
 		t.Fatalf("a stream was stopped while somebody still watched: %v", casts)
 	}
 	worker.RemoveTabViewer("a1", second)
-	casts = browser.sentOfType("cast")
-	if len(casts) != 2 || casts[1]["on"] != false {
+	casts = castsOfTab(browser, 11)
+	if len(casts) != 2 || casts[1]["isOn"] != false {
 		t.Fatalf("the last viewer leaving should stop the stream: %v", casts)
 	}
+}
+
+// castsOfTab is what the extension was asked to stream or stop, for one tab.
+func castsOfTab(browser *recordingBrowser, tab float64) []map[string]any {
+	var found []map[string]any
+	for _, cast := range browser.sentOfType("cast") {
+		if cast["tab"] == tab {
+			found = append(found, cast)
+		}
+	}
+	return found
 }
 
 func TestTabFrameFromAReplacedConnectionReachesNobody(t *testing.T) {
@@ -164,7 +175,7 @@ func TestTabFrameFromAReplacedConnectionReachesNobody(t *testing.T) {
 		t.Fatal("a picture from the replaced connection was shown")
 	}
 	// The new connection is asked for the stream the viewer still wants.
-	if casts := replacement.sentOfType("cast"); len(casts) != 1 || casts[0]["on"] != true {
+	if casts := replacement.sentOfType("cast"); len(casts) != 1 || casts[0]["isOn"] != true {
 		t.Fatalf("the new connection was not asked to stream: %v", casts)
 	}
 }
@@ -233,7 +244,7 @@ func TestTabListDropsAViewOfATabThatWent(t *testing.T) {
 	if viewer.lastState().Watching != "" {
 		t.Fatalf("still watching %q", viewer.lastState().Watching)
 	}
-	if casts := browser.sentOfType("cast"); len(casts) != 2 || casts[1]["on"] != false {
+	if casts := browser.sentOfType("cast"); len(casts) != 2 || casts[1]["isOn"] != false {
 		t.Fatalf("the gone tab's stream was not stopped: %v", casts)
 	}
 }
@@ -248,4 +259,70 @@ func TestTabViewerIsToldWhenTheBrowserGoes(t *testing.T) {
 	if tabs := viewer.lastState().Tabs; len(tabs) != 0 {
 		t.Fatalf("a gone browser still listed %v", tabs)
 	}
+}
+
+func TestTabCannotBeTakenOverWithoutAStreamingExtension(t *testing.T) {
+	worker := &Agent{}
+	old := &recordingBrowser{}
+	worker.ConnectBrowser("a1", old, "Shop", "https://shop.example/", true)
+	if worker.TakeOverTab("a1") || worker.IsTabTakenOver("a1") {
+		t.Fatal("a tab was taken over through an extension that cannot take input")
+	}
+}
+
+func TestTabStreamThatEndedOnItsOwnLeavesItsViewsWatchingNothing(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	viewer := &recordingViewer{}
+	worker.AddTabViewer("a1", viewer)
+	worker.WatchTab("a1", viewer, "11")
+	worker.CastEnded("a1", browser, "11")
+	if viewer.lastState().Watching != "" {
+		t.Fatalf("still watching %q after the stream ended", viewer.lastState().Watching)
+	}
+	// Watching it again asks for the stream again.
+	worker.WatchTab("a1", viewer, "11")
+	if casts := browser.sentOfType("cast"); len(casts) != 2 || casts[1]["isOn"] != true {
+		t.Fatalf("watching again did not ask again: %v", casts)
+	}
+}
+
+func TestTabFramesNobodyAskedForStopTheirStream(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	worker.TabFrame("a1", browser, "12", "stray", 1280, 800)
+	worker.TabFrame("a1", browser, "12", "stray again", 1280, 800)
+	casts := browser.sentOfType("cast")
+	if len(casts) != 1 || casts[0]["isOn"] != false || casts[0]["tab"] != float64(12) {
+		t.Fatalf("a stray stream should be stopped once: %v", casts)
+	}
+}
+
+// Viewers coming and going while the extension reports its tabs and the
+// person takes over and hands back: the race detector is the check.
+func TestTabRoomHoldsUpUnderConcurrentUse(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	var group sync.WaitGroup
+	for index := 0; index < 8; index++ {
+		group.Add(1)
+		go func(index int) {
+			defer group.Done()
+			viewer := &recordingViewer{}
+			for round := 0; round < 50; round++ {
+				worker.AddTabViewer("a1", viewer)
+				worker.WatchTab("a1", viewer, []string{"11", "12"}[round%2])
+				worker.TabFrame("a1", browser, "11", "picture", 1280, 800)
+				if index%2 == 0 {
+					worker.TakeOverTab("a1")
+					worker.TabInput("a1", viewer, TabInputMessage{Type: "text", Text: "a"})
+				} else {
+					worker.HandBackTab("a1")
+					worker.UpdateTabList("a1", []TabListing{{Tab: "11", IsOwn: true}, {Tab: "12"}})
+				}
+				worker.RemoveTabViewer("a1", viewer)
+			}
+		}(index)
+	}
+	group.Wait()
 }

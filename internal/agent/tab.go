@@ -181,6 +181,12 @@ func (self *attachedTab) HasTab() bool {
 	return self.hasTab.Load()
 }
 
+// IsWatchable says whether the browser can stream a tab to the dashboard
+// and take the person's input there: an extension of protocol 4.
+func (self *attachedTab) IsWatchable() bool {
+	return self.canCast.Load()
+}
+
 // IsTakenOver says whether the person has taken their tab over from the
 // dashboard: the agent may read it but not act in it.
 func (self *attachedTab) IsTakenOver() bool {

@@ -30,6 +30,7 @@ func browserOnATab(t *testing.T, surface string) (*tools.Tool, *Agent, *fakeTab,
 		return true, `{"title":"Sign in","url":"https://bank.example.org/sign-in"}`
 	}}
 	worker.ConnectBrowser("a1", browser, "Sign in", "https://bank.example.org/sign-in", true)
+	worker.SetBrowserCanCast("a1", browser, true)
 	run := &AskRun{agent: worker, settings: &AskSettings{Agent: &models.Agent{ID: "a1"}, Surface: surface}, ctx: context.Background()}
 	return tool, worker, browser, run
 }
@@ -102,6 +103,7 @@ func TestATakeOverHandedBackLateCarriesOnInANewTurn(t *testing.T) {
 	worker, run := digestSplitWorld(t, database, provider.URL)
 	browser := &fakeTab{agent: worker, agentId: run.Agent.ID, answers: func(string, json.RawMessage) (bool, string) { return true, `{}` }}
 	worker.ConnectBrowser(run.Agent.ID, browser, "Sign in", "https://bank.example.org/sign-in", true)
+	worker.SetBrowserCanCast(run.Agent.ID, browser, true)
 
 	var conversation *models.AgentConversation
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -145,4 +147,14 @@ func TestATakeOverHandedBackLateCarriesOnInANewTurn(t *testing.T) {
 			t.Fatalf("a new turn carries the request and the hand-back on: %+v", messages)
 		}
 	})
+}
+
+// An extension too old to stream the tab cannot be handed over, and the
+// agent is told so rather than left waiting on a card nobody can act on.
+func TestAskingToTakeOverAnOldExtensionsTabIsRefused(t *testing.T) {
+	tool, worker, browser, run := browserOnATab(t, "drawer")
+	worker.SetBrowserCanCast("a1", browser, false)
+	if _, err := callBrowser(tool, run, `{"action":"ask_to_take_over","text":"Sign in to the bank"}`); err == nil || !strings.Contains(err.Error(), "too old") {
+		t.Fatalf("asking with an old extension: %v", err)
+	}
 }

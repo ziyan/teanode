@@ -52,6 +52,9 @@ type Tab interface {
 	// IsTakenOver says the person has taken the tab over from the
 	// dashboard: it may be read, not acted in, until they hand it back.
 	IsTakenOver() bool
+	// IsWatchable says the person can watch and take the tab over from the
+	// dashboard: their extension is new enough.
+	IsWatchable() bool
 }
 
 // TakeOverAsker is a turn that can ask the person to take their browser tab

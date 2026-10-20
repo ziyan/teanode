@@ -14,9 +14,9 @@ import (
 )
 
 // The dashboard's browser page: a live view of the person's own browser
-// tab, and taking it over. The page says who it is in its first message,
-// as the extension does, with a token or with the CSRF token of the
-// dashboard session it runs in. Then it says which tab to watch and is
+// tab, and taking it over. Who it is comes from its first message: a token,
+// or nothing, and then the dashboard session whose cookie came with the
+// upgrade, from a page of this server only, as the GraphQL socket takes it. Then it says which tab to watch and is
 // sent its pictures; it may take the tab over and send what the person
 // does in it. Handing back is HandBackAgentTab, a mutation, since it also
 // answers the agent's card asking for it, which is the API's to do. Only the person's own browser is ever shown:
@@ -30,13 +30,18 @@ const tabViewerReadLimit = 64 << 10
 // twenty seconds.
 const tabViewerQuiet = 90 * time.Second
 
-// tabViewerSocket is the page's websocket as the relay writes to it.
+// tabViewerSocket is the page's websocket as the relay writes to it. One
+// goroutine writes; the relay only queues, so a viewer on a slow network
+// never holds up the extension's socket, a turn, or a hand-back.
 type tabViewerSocket struct {
-	conn  *websocket.Conn
-	mutex sync.Mutex
+	conn *websocket.Conn
+	// writeMutex keeps the writer and a refusal from writing at once.
+	writeMutex sync.Mutex
 
-	// frame is the newest picture not yet written, and ready says there
-	// is one; closed ends the writer.
+	// messages are the ones a viewer must not miss, in order; a viewer
+	// too far behind to take them is closed. frame is the newest picture
+	// not yet written, and ready says there is one.
+	messages   chan []byte
 	frameMutex sync.Mutex
 	frame      []byte
 	ready      chan struct{}
@@ -44,21 +49,29 @@ type tabViewerSocket struct {
 	closeOnce  sync.Once
 }
 
+// tabViewerBacklog is how many messages may wait for a viewer.
+const tabViewerBacklog = 64
+
 func newTabViewerSocket(conn *websocket.Conn) *tabViewerSocket {
-	return &tabViewerSocket{conn: conn, ready: make(chan struct{}, 1), closed: make(chan struct{})}
+	socket := &tabViewerSocket{conn: conn, messages: make(chan []byte, tabViewerBacklog), ready: make(chan struct{}, 1), closed: make(chan struct{})}
+	go socket.write()
+	return socket
 }
 
-// Send writes a message now. A write that fails closes the socket, which
-// ends the reader and with it the view.
+// Send queues a message for the writer.
 func (self *tabViewerSocket) Send(message []byte) error {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	_ = self.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	if err := self.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-		self.close()
-		return err
+	select {
+	case <-self.closed:
+		return websocket.ErrCloseSent
+	default:
 	}
-	return nil
+	select {
+	case self.messages <- message:
+		return nil
+	default:
+		self.close()
+		return websocket.ErrCloseSent
+	}
 }
 
 // SendFrame keeps the picture for the writer, replacing one it has not
@@ -73,23 +86,44 @@ func (self *tabViewerSocket) SendFrame(message []byte) {
 	}
 }
 
-// writeFrames writes pictures as fast as the viewer takes them, the newest
-// each time.
-func (self *tabViewerSocket) writeFrames() {
+// write writes what is queued, messages before pictures, the newest
+// picture each time. A write that fails closes the socket, which ends the
+// reader and with it the view.
+func (self *tabViewerSocket) write() {
 	for {
+		var message []byte
 		select {
 		case <-self.closed:
 			return
+		case message = <-self.messages:
 		case <-self.ready:
+			self.frameMutex.Lock()
+			message, self.frame = self.frame, nil
+			self.frameMutex.Unlock()
 		}
-		self.frameMutex.Lock()
-		frame := self.frame
-		self.frame = nil
-		self.frameMutex.Unlock()
-		if frame != nil && self.Send(frame) != nil {
+		if message == nil {
+			continue
+		}
+		if err := self.writeNow(message); err != nil {
+			self.close()
 			return
 		}
 	}
+}
+
+// writeNow writes one message, waiting up to ten seconds.
+func (self *tabViewerSocket) writeNow(message []byte) error {
+	self.writeMutex.Lock()
+	defer self.writeMutex.Unlock()
+	_ = self.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	return self.conn.WriteMessage(websocket.TextMessage, message)
+}
+
+// refuse says why the view is not opened, written before the socket is
+// closed behind it.
+func (self *tabViewerSocket) refuse(reason string) {
+	refused, _ := json.Marshal(map[string]any{"type": "refused", "reason": reason})
+	_ = self.writeNow(refused)
 }
 
 func (self *tabViewerSocket) close() {
@@ -104,7 +138,6 @@ func (self *tabViewerSocket) close() {
 type tabViewerMessage struct {
 	Type  string          `json:"type"`
 	Token string          `json:"token"`
-	CSRF  string          `json:"csrf"`
 	Tab   json.RawMessage `json:"tab"`
 	agent.TabInputMessage
 }
@@ -132,10 +165,6 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 		return
 	}
 	sessionUsername := api.UsernameFromRequest(request)
-	csrfCookie := ""
-	if cookie, _ := request.Cookie("csrftoken"); cookie != nil {
-		csrfCookie = cookie.Value
-	}
 	upgrader := websocket.Upgrader{CheckOrigin: func(request *http.Request) bool { return true }}
 	conn, err := upgrader.Upgrade(response, request, nil)
 	if err != nil {
@@ -144,10 +173,7 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 	conn.SetReadLimit(tabViewerReadLimit)
 	socket := newTabViewerSocket(conn)
 	defer socket.close()
-	refuse := func(reason string) {
-		refused, _ := json.Marshal(map[string]any{"type": "refused", "reason": reason})
-		_ = socket.Send(refused)
-	}
+	refuse := socket.refuse
 	var found *models.Agent
 	username := ""
 	defer func() {
@@ -181,7 +207,14 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 					refuse("the token is not one this server takes; sign in again")
 					return
 				}
-			case csrfCookie != "" && message.CSRF == csrfCookie:
+			case sessionUsername != "" && request.Header.Get("Origin") != "" && fromThisServer(request):
+				// A cookie the browser attached by itself: only a page of
+				// this server may open the view with it. An operator signed
+				// in as somebody does not watch or work their browser.
+				if api.ImpersonatorUsernameFromRequest(request) != "" {
+					refuse("an operator signed in as somebody cannot watch their browser")
+					return
+				}
 				username = sessionUsername
 			default:
 				refuse("sign in first")
@@ -192,7 +225,6 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 				refuse(err.Error())
 				return
 			}
-			go socket.writeFrames()
 			worker.AddTabViewer(found.ID, socket)
 			continue
 		}
@@ -200,8 +232,9 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 		case "watch":
 			worker.WatchTab(found.ID, socket, tabNameOf(message.Tab))
 		case "take_over":
-			worker.TakeOverTab(found.ID)
-			log.Noticef("%s took over their browser tab from the dashboard", username)
+			if worker.TakeOverTab(found.ID) {
+				log.Noticef("%s took over their browser tab from the dashboard", username)
+			}
 		case "pointer", "wheel", "key", "text":
 			// The type is read into the outer message; the input carries it on.
 			input := message.TabInputMessage

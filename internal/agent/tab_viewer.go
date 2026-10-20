@@ -59,6 +59,12 @@ const (
 
 // tabRoom is one person's viewers and who holds their tab.
 type tabRoom struct {
+	// tellMutex keeps the viewers' state messages in the order they were
+	// made, and castMutex the extension's cast requests: each is held
+	// from reading what to say to having said it, which never blocks.
+	tellMutex sync.Mutex
+	castMutex sync.Mutex
+
 	mutex sync.Mutex
 	// viewers are the open views, each with the tab it watches.
 	viewers map[TabViewer]string
@@ -72,10 +78,13 @@ type tabRoom struct {
 	lapseAfter time.Duration
 	// casting are the tabs the extension was asked to stream.
 	casting map[string]bool
+	// strayStopAt is when the extension was last told to stop a stream
+	// nobody asked for, by tab, so a burst of its pictures asks once.
+	strayStopAt map[string]time.Time
 }
 
 func newTabRoom() *tabRoom {
-	return &tabRoom{viewers: map[TabViewer]string{}, controller: TabControllerAgent, lapseAfter: takeOverLapse, casting: map[string]bool{}}
+	return &tabRoom{viewers: map[TabViewer]string{}, controller: TabControllerAgent, lapseAfter: takeOverLapse, casting: map[string]bool{}, strayStopAt: map[string]time.Time{}}
 }
 
 // roomFor is the agent's room, made on first use.
@@ -120,12 +129,14 @@ type tabViewerState struct {
 }
 
 // tellViewers sends every viewer how things stand. Called without the
-// room's lock.
+// room's lock; a viewer's Send only queues, so this never waits on one.
 func (self *Agent) tellViewers(agentId string) {
 	room := self.existingRoom(agentId)
 	if room == nil {
 		return
 	}
+	room.tellMutex.Lock()
+	defer room.tellMutex.Unlock()
 	tab := self.tabFor(agentId)
 	room.mutex.Lock()
 	tabs := append([]TabListing{}, room.tabs...)
@@ -176,8 +187,15 @@ func (self *Agent) RemoveTabViewer(agentId string, viewer TabViewer) {
 	room.mutex.Lock()
 	delete(room.viewers, viewer)
 	if len(room.viewers) == 0 && room.controller == TabControllerPerson && room.lapse == nil {
-		room.lapse = time.AfterFunc(room.lapseAfter, func() {
+		var lapse *time.Timer
+		lapse = time.AfterFunc(room.lapseAfter, func() {
 			room.mutex.Lock()
+			// A timer stopped while this waited for the lock, or replaced
+			// by a newer one, does nothing.
+			if room.lapse != lapse {
+				room.mutex.Unlock()
+				return
+			}
 			isLapsed := len(room.viewers) == 0 && room.controller == TabControllerPerson
 			if isLapsed {
 				room.controller = TabControllerAgent
@@ -188,6 +206,7 @@ func (self *Agent) RemoveTabViewer(agentId string, viewer TabViewer) {
 				log.Noticef("a taken over tab went back to the agent: nobody was watching it")
 			}
 		})
+		room.lapse = lapse
 	}
 	room.mutex.Unlock()
 	self.recast(agentId)
@@ -226,6 +245,8 @@ func (self *Agent) recast(agentId string) {
 	if room == nil {
 		return
 	}
+	room.castMutex.Lock()
+	defer room.castMutex.Unlock()
 	tab := self.castingTab(agentId)
 	room.mutex.Lock()
 	wanted := map[string]bool{}
@@ -269,9 +290,11 @@ func (self *Agent) castAgain(agentId string) {
 	if room == nil {
 		return
 	}
+	room.castMutex.Lock()
 	room.mutex.Lock()
 	room.casting = map[string]bool{}
 	room.mutex.Unlock()
+	room.castMutex.Unlock()
 	self.recast(agentId)
 	self.tellViewers(agentId)
 }
@@ -280,7 +303,7 @@ func (self *Agent) castAgain(agentId string) {
 type tabCastMessage struct {
 	Type      string `json:"type"`
 	Tab       int64  `json:"tab"`
-	On        bool   `json:"on"`
+	IsOn      bool   `json:"isOn"`
 	MaxWidth  int    `json:"maxWidth,omitempty"`
 	MaxHeight int    `json:"maxHeight,omitempty"`
 	Quality   int    `json:"quality,omitempty"`
@@ -293,7 +316,7 @@ func (self *attachedTab) sendCast(tab string, isOn bool) {
 	if err != nil {
 		return
 	}
-	message := tabCastMessage{Type: "cast", Tab: number, On: isOn}
+	message := tabCastMessage{Type: "cast", Tab: number, IsOn: isOn}
 	if isOn {
 		message.MaxWidth, message.MaxHeight, message.Quality = castMaximumSide, castMaximumSide, castQuality
 	}
@@ -329,7 +352,16 @@ func (self *Agent) TabFrame(agentId string, connection TabConnection, tab, data 
 			watchers = append(watchers, viewer)
 		}
 	}
+	// A stream nobody asked for, left by a stop that crossed a start: it
+	// is stopped, once in a while rather than for every picture.
+	isStray := !room.casting[tab] && time.Since(room.strayStopAt[tab]) > 5*time.Second
+	if isStray {
+		room.strayStopAt[tab] = time.Now()
+	}
 	room.mutex.Unlock()
+	if isStray {
+		attached.sendCast(tab, false)
+	}
 	if len(watchers) == 0 {
 		return
 	}
@@ -374,16 +406,48 @@ func (self *Agent) TabList(agentId string) []TabListing {
 }
 
 // TakeOverTab gives the person control of their tab: the agent's acting
-// calls are refused until they hand it back.
-func (self *Agent) TakeOverTab(agentId string) {
+// calls are refused until they hand it back. A browser that cannot stream
+// a tab cannot take their input either, so it is not taken over; it says
+// whether it was.
+func (self *Agent) TakeOverTab(agentId string) bool {
+	if self.castingTab(agentId) == nil {
+		return false
+	}
 	room := self.roomFor(agentId)
 	room.mutex.Lock()
-	isTaken := room.controller != TabControllerPerson
+	isNewlyHeld := room.controller != TabControllerPerson
 	room.controller = TabControllerPerson
 	room.mutex.Unlock()
-	if isTaken {
+	if isNewlyHeld {
 		log.Noticef("the person took over their browser tab")
 	}
+	self.tellViewers(agentId)
+	return true
+}
+
+// CastEnded is the extension saying a stream ended on its own: Chrome let
+// the debugger go, because the person at the machine cancelled it or
+// opened the developer tools there. The views of that tab watch nothing
+// rather than freeze on the last picture; watching it again asks again.
+func (self *Agent) CastEnded(agentId string, connection TabConnection, tab string) {
+	attached := self.tabFor(agentId)
+	if attached == nil || (connection != nil && attached.connection != connection) {
+		return
+	}
+	room := self.existingRoom(agentId)
+	if room == nil {
+		return
+	}
+	room.castMutex.Lock()
+	room.mutex.Lock()
+	delete(room.casting, tab)
+	for viewer, watching := range room.viewers {
+		if watching == tab {
+			room.viewers[viewer] = ""
+		}
+	}
+	room.mutex.Unlock()
+	room.castMutex.Unlock()
 	self.tellViewers(agentId)
 }
 

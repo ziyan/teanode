@@ -125,8 +125,10 @@ func (self *graph) HandBackAgentTab(ctx context.Context, arguments HandBackAgent
 		return false, agent.ErrUnavailable
 	}
 	wasHeld := worker.HandBackTab(found.ID)
-	// Every open card asking for the tab is answered: the agent asked
-	// for it once per wait, and the person handed it back once.
+	// The newest open card asking for the tab is answered, and only that
+	// one: an older one, in another conversation or left from days ago,
+	// asked for something else, and answering it would start that work
+	// again in the person's browser.
 	waiting, _, err := self.transaction(ctx).ListAgentWaitingInteractions(found.ID, 50)
 	if err != nil {
 		return false, err
@@ -135,16 +137,17 @@ func (self *graph) HandBackAgentTab(ctx context.Context, arguments HandBackAgent
 	if note := strings.TrimSpace(arguments.Note); note != "" {
 		answer += "\n" + note
 	}
-	isAnswered := false
 	for _, interaction := range waiting {
 		if interaction.InteractionKind != models.InteractionTakeOver || interaction.ResolvedAt != nil {
 			continue
 		}
-		if ok, err := self.answerInteraction(ctx, found, worker, interaction.CallID, answer, agent.RunCommand{RunID: interaction.RunID, Action: agent.CommandAnswer, CallID: interaction.CallID, Answer: answer}); err == nil && ok {
-			isAnswered = true
+		isAnswered, err := self.answerInteraction(ctx, found, worker, interaction.CallID, answer, agent.RunCommand{RunID: interaction.RunID, Action: agent.CommandAnswer, CallID: interaction.CallID, Answer: answer})
+		if err != nil {
+			log.Warningf("cannot answer the take-over card %s with a hand-back: %s", interaction.ID, err)
 		}
+		return wasHeld || isAnswered, nil
 	}
-	return wasHeld || isAnswered, nil
+	return wasHeld, nil
 }
 
 // tabView is the extension's websocket.
@@ -254,6 +257,9 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			hasTab := message.HasTab == nil || *message.HasTab
 			worker.ConnectBrowser(found.ID, socket, message.Title, message.URL, hasTab)
 			worker.SetBrowserCanCast(found.ID, socket, message.Protocol >= 4)
+			// Signed in, it may send pictures of a tab, which are larger
+			// than anything said before the hello.
+			conn.SetReadLimit(tabFrameReadLimit)
 			if message.Tabs != nil {
 				worker.UpdateTabList(found.ID, tabListingsOf(*message.Tabs))
 			}
@@ -274,6 +280,10 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 				if message.Tabs != nil {
 					worker.UpdateTabList(found.ID, tabListingsOf(*message.Tabs))
 				}
+			}
+		case "castEnded":
+			if attached {
+				worker.CastEnded(found.ID, socket, strconv.FormatInt(message.Tab, 10))
 			}
 		case "frame":
 			// The picture comes as base64 text in data, which the results
@@ -314,6 +324,11 @@ func tabListingsOf(listed []extensionTabListing) []agent.TabListing {
 	}
 	return tabs
 }
+
+// tabFrameReadLimit bounds a message from a signed-in extension: a picture
+// of a tab is a JPEG of at most 1280 pixels a side, in base64, which the
+// extension keeps under three megabytes.
+const tabFrameReadLimit = 4 << 20
 
 // helloWait is how long a socket has to say who it is.
 const helloWait = 15 * time.Second

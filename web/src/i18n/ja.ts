@@ -1480,6 +1480,7 @@ export const ja: Catalog = {
   'browser.tabOwn': '自分のタブ',
   'browser.tabCurrent': 'エージェントが使用中',
   'browser.agentControls': 'エージェントがこのタブを使っています',
+  'browser.agentAsks': 'エージェントからの依頼：',
   'browser.youControl': '操作権はあなたにあります',
   'browser.takeOver': '操作を引き継ぐ',
   'browser.handBack': 'エージェントに返す',

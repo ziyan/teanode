@@ -20,11 +20,12 @@ The iPhone app gets its own native viewer later, once this one has been used and
 
 - [x] (2026-10-20) Measured that Chrome sends screencast frames for a tab behind another tab and in a minimized window when focus emulation is on (see Surprises & Discoveries).
 - [x] (2026-10-20) Wrote this plan.
-- [ ] Milestone 1: the extension streams a tab's picture and takes input; the server relays both to a viewer socket, and holds who controls the tab.
-- [ ] Milestone 2: the dashboard page `/browser` shows the tabs live, with Take over and Hand back.
-- [ ] Milestone 3: the agent asks to be helped (`ask_to_take_over`), is refused while the person holds the tab, and carries on when they hand back.
-- [ ] Milestone 4: the same for the server's headless Chrome.
-- [ ] Milestone 5: documentation, the command line, review, and a run against a real Chrome.
+- [x] (2026-10-20) Milestone 1: the extension streams a tab's picture and takes input; the server relays both to a viewer socket, and holds who controls the tab.
+- [x] (2026-10-20) Milestone 2: the dashboard page `/browser` shows the tabs live, with Take over and Hand back.
+- [x] (2026-10-20) Milestone 3: the agent asks to be helped (`ask_to_take_over`), is refused while the person holds the tab, and carries on when they hand back.
+- [ ] Milestone 4: the same for the server's headless Chrome. Deferred to its own change (see Decision Log).
+- [x] (2026-10-20) Milestone 5: documentation, the command line (`teanode agent tab`, `tab hand-back`, and a take-over prompt in `agent ask`), and a run against a real Chrome with the extension (see Outcomes).
+- [ ] Review rounds until one finds nothing.
 
 ## Surprises & Discoveries
 
@@ -39,7 +40,13 @@ The iPhone app gets its own native viewer later, once this one has been used and
       focus emulation, behind and minimized   frames in 3s: 180
       two screenshots 0.3s apart while behind different (live)
 
-  Not measured: a locked screen or a sleeping display on a real machine, and a machine with a GPU. Milestone 5 checks them on a real Chrome; if frames stop there, the view falls back to screenshots (see Interfaces).
+  Not measured: a locked screen or a sleeping display on a real machine, and a machine with a GPU.
+
+- Observation: focus emulation is not enough on its own. Chrome sends a screencast frame only when the tab repaints, so a page that does not change sends nothing once the stream has started, and a stream started on a still page behind another tab sent no frame at all in two of three runs. The animated test page above hid this. The extension now sends a screenshot (`Page.captureScreenshot`, live in every case measured) as the first picture, and again whenever the stream has been quiet for two seconds, skipping one identical to the last picture sent, so a still page costs one picture.
+  Evidence: the end-to-end run below, with the extension instrumented: one `cast` on, the debugger attached, zero frames in fifteen seconds, before the change; a picture within a second, every run, after.
+
+- Observation: the extension socket's CSRF sign-in, which the plan copied for the viewer socket, never works: nothing in TeaNode sets a `csrftoken` cookie (the GraphQL socket's own comment says so, and signs a session in by checking that the page's Origin is this server). The viewer socket now does what the GraphQL socket does: a token in the hello, or the session cookie from a page of this server (`fromThisServer`).
+  Evidence: the page stayed at "Connecting..." in the end-to-end run while a hello with a token was answered at once.
 
 ## Decision Log
 
@@ -75,13 +82,42 @@ The iPhone app gets its own native viewer later, once this one has been used and
   Rationale: a phone that locks or loses its network must not leave the agent refused forever. Thirty seconds rides out a reconnect.
   Date/Author: 2026-10-20, agent.
 
+- Decision: handing back is the GraphQL mutation `HandBackAgentTab(note)`, not a viewer socket message.
+  Rationale: handing back also answers the agent's open take-over cards, which goes through the API's own answering (it crosses instances and resumes a turn that ended), and that needs the signed-in person's API context, which the resolvers have and a raw websocket does not. The command line needs the same mutation anyway.
+  Date/Author: 2026-10-20, agent.
+
+- Decision: the server's headless Chrome (Milestone 4) is left for its own change.
+  Rationale: a headless page belongs to one turn and is closed when the turn ends, so a hand-off that outlives the turn needs the page's ownership changed, which is a change of its own; the person narrowed this round to intervening in their tab. The viewer, the room and the lock are written so a second source of pictures can be added beside the extension.
+  Date/Author: 2026-10-20, agent.
+
+- Decision: the command line's `agent ask` shows a take-over request as such and hands back on Enter (with anything typed as the note) through `HandBackAgentTab`; with no terminal to read, it waits for the hand-back on the dashboard instead of answering with nothing.
+  Rationale: found in the end-to-end run, where it printed the request as a question and, reading nothing, answered it with an empty reply.
+  Date/Author: 2026-10-20, agent.
+
 - Decision: the hand-off card is a stored interaction, like `ask_user`, so it survives the turn ending, resumes the work in a new turn when answered late, reaches the phone as a notification and chat apps as a question, and shows on the iPhone (which does not know the kind) as a question card.
   Rationale: all of that exists for questions (`docs/planning/durable-interactions-execplan.md`); a new kind reuses it rather than building a second path.
   Date/Author: 2026-10-20, agent.
 
 ## Outcomes & Retrospective
 
-Nothing yet.
+Milestones 1, 2, 3 and 5 are built. Checked end to end on 2026-10-20 against a dev server built from the branch, with Chrome 154 (headless, a throwaway profile, the extension loaded unpacked over a debugging pipe since branded Chrome no longer takes `--load-extension`), a scripted model, and the Browser page open in a second tab of the same window, so the attached tab was behind it the whole time:
+
+    - picture shown: 1280x813
+    - page says: Test form Yours Your agent is here Your agent is using this tab Take over
+    - taken over
+    - a click in the picture focused the form field in the real tab
+    - keys typed in the picture reached the real tab: "482"
+    - the picture changed after typing, with the form behind the Browser page
+    teanode agent tab: you have taken the tab over: your agent can read it but not act in it until you hand it back
+    the agent's click: "the person has taken over their tab from the dashboard, so click is not done; ..."
+    - handed back from the page
+    teanode agent tab: your agent holds the tab
+    agent ask "please sign in again": The agent needs you in your browser tab: Sign in to the test page, then hand the tab back
+    teanode agent waiting: take_over  Sign in to the test page, then hand the tab back
+    teanode agent tab hand-back Typed the code: handed back
+    the tool's answer: {"isHandedBack":true,"next":"The page has changed: take a snapshot before you act.","note":"Typed the code"}
+
+The run found the two problems in Surprises & Discoveries and the command line's empty answer; all three are fixed. Left: the headless browser (Milestone 4), the iPhone's native viewer, a zoom for the picture on a phone (a 1280-pixel tab is drawn small at 390 pixels), and the locked-screen case on a real machine.
 
 ## Context and Orientation
 
@@ -111,7 +147,7 @@ In `internal/api/v1api/apigraph/agent_tab.go`, take protocol 4 (`tabProtocol = 4
 
 In `internal/agent/tab.go`, give `attachedTab` its viewers and its controller. A viewer is a value with a `Send` method and a buffer of one frame: a new frame replaces an unsent one, so a slow viewer sees the latest picture rather than a queue. `AddTabViewer(agentId, viewer, watchedTab)` registers a viewer and, if it is the first watching that tab, sends the extension `cast` on; `RemoveTabViewer` unregisters, sending `cast` off when the last watcher of a tab goes. `TakeOverTab(agentId, viewer)` makes the person the controller; `HandBackTab(agentId)` makes the agent the controller again; a controller who is a person and has no viewer left for thirty seconds is turned back into the agent by a timer. `TabInput(agentId, viewer, input)` forwards input to the extension only when that viewer's person holds control, and drops it otherwise. Every change of controller and of the tab list is sent to every viewer as a `state` message. `IsTabTakenOver()` on `attachedTab` (and on `tools.Tab`, the interface the browser tool sees) says whether the person holds it.
 
-A new websocket, `api.PathAgentTabView` (`/api/v1/agent/tab/view`), served by `tabViewerView` in a new file `internal/api/v1api/apigraph/agent_tab_view.go`. It authenticates exactly as `tabView` does: a `hello` with a token, or a dashboard session whose CSRF token matches the cookie, then `agentOfPerson`. It is refused when attaching tabs is off, as `tabView` is. Then it relays: `watch`, `take_over`, `hand_back`, and input from the viewer; `state`, `frame` and `refused` to it. The read limit is 64 KiB (a viewer sends small messages); the write side is the viewer's one-frame buffer, written by one goroutine per viewer with a ten-second deadline.
+A new websocket, `api.PathAgentTabView` (`/api/v1/agent/tab/view`), served by `tabViewerView` in a new file `internal/api/v1api/apigraph/agent_tab_view.go`. It authenticates as the GraphQL socket does: a `hello` with a token, or a dashboard session whose cookie came with the upgrade from a page of this server (`fromThisServer`), then `agentOfPerson`. It is refused when attaching tabs is off, as `tabView` is. Then it relays: `watch`, `take_over` and input from the viewer (handing back is the mutation `HandBackAgentTab`, see Milestone 3); `state`, `frame` and `refused` to it. The read limit is 64 KiB (a viewer sends small messages); the write side is the viewer's one-frame buffer, written by one goroutine per viewer with a ten-second deadline.
 
 Proof: Go tests in `internal/agent/tab_viewer_test.go` with a fake extension connection and fake viewers: a frame reaches every viewer of its tab and none of another; a second frame replaces an unsent first; the first viewer sends `cast` on and the last one off; input is dropped unless the sender's person holds control; control returns to the agent thirty seconds after the last viewer goes (the timer is a field the test can shorten); a frame from a replaced connection reaches nobody. Then a test of `tabViewerView` with `httptest` and a real websocket client: a hello without a token is refused, a good one gets `state`.
 
@@ -123,19 +159,19 @@ A new page `web/src/pages/browser.tsx`, routed at `/browser` in `web/src/app.tsx
 
 The drawer's tab menu (`TabMenu` in `web/src/components/agentDrawer.tsx`) gains a row **Watch the tab** that opens `/browser`. The sidebar does not get an entry: the page is reached from the tab menu and from the card, where a tab exists.
 
-Proof: vitest for `browserInput.ts` (a click at the middle of a 640-pixel-wide picture of a 1280-CSS-pixel page lands at x 640; Enter and Backspace carry their key codes; a printable key carries its text) and for the page with a fake socket (frames are drawn; Take over sends `take_over`; input is sent only after `state` says the person has control; Hand back sends `hand_back` with the note). Then the page in Chrome at 390 pixels and at desktop width, light and dark, against a dev server with the extension attached.
+Proof: vitest for `browserInput.ts` (a click at the middle of a 640-pixel-wide picture of a 1280-CSS-pixel page lands at x 640; Enter and Backspace carry their key codes; a printable key carries its text) and for the page with a fake socket (frames are drawn; Take over sends `take_over`; input is sent only after `state` says the person has control; Hand back calls `HandBackAgentTab` with the note). Then the page in Chrome at 390 pixels and at desktop width, light and dark, against a dev server with the extension attached.
 
 ### Milestone 3: the agent asks, and waits its turn
 
 At the end of this milestone the agent can ask the person to take over, is refused while they hold the tab, and goes on when they hand back.
 
-Add `InteractionTakeOver InteractionKind = "take_over"` in `internal/models/insight.go`. Add an action `ask_to_take_over` to the browser tool, with `text` saying what the person should do; it is not in `browserWritingActions` (it acts in nothing). It needs somebody who can answer: in a run that cannot ask (`run.CanAsk()` false, or a mail, schedule or research surface), it fails with "nobody is present to take over the tab; say in your answer what they need to do there". Otherwise it calls a new `AskToTakeOver(ctx, callId, text, target)` on the run (added to the run interface in `internal/agent/tools`, implemented by `AskRun` in `internal/agent/ask.go` and refused by `directRun` in `internal/agent/direct.go`). `AskToTakeOver` raises a `take_over` interaction with `ToolName` "browser" and the text, emits `EventQuestion` with the kind on the event so the drawer can draw the right card, and waits as `Ask` does. It is answered by the person handing back (the viewer socket's `hand_back` answers the agent's open `take_over` card for that browser with "handed back" and the note) or by a typed reply on any surface (`AnswerAgentQuestion`, which already answers any open card by run and call). The tool returns `{"isHandedBack": true, "note": "...", "next": "Take a snapshot before you act: the page has changed."}`, or, if the turn ended first, the same left-open note `ask_user` gives. `ResumeInteraction` gains the `take_over` case: the new turn's message is the request and what the person said, with the line "They took over the tab and handed it back after your turn ended. Take a snapshot before acting."
+Add `InteractionTakeOver InteractionKind = "take_over"` in `internal/models/insight.go`. Add an action `ask_to_take_over` to the browser tool, with `text` saying what the person should do; it is not in `browserWritingActions` (it acts in nothing). It needs somebody who can answer: in a run that cannot ask (`run.CanAsk()` false, or a mail, schedule or research surface), it fails with "nobody is present to take over the tab; say in your answer what they need to do there". Otherwise it calls a new `AskToTakeOver(ctx, callId, text, target)` on the run (added to the run interface in `internal/agent/tools`, implemented by `AskRun` in `internal/agent/ask.go` and refused by `directRun` in `internal/agent/direct.go`). `AskToTakeOver` raises a `take_over` interaction with `ToolName` "browser" and the text, emits `EventQuestion` with the kind on the event so the drawer can draw the right card, and waits as `Ask` does. It is answered by the person handing back (the mutation `HandBackAgentTab` gives the tab back and answers every open `take_over` card of theirs with `models.InteractionHandedBack` and the note) or by a typed reply on any surface (`AnswerAgentQuestion`, which already answers any open card by run and call). The tool returns `{"isHandedBack": true, "note": "...", "next": "Take a snapshot before you act: the page has changed."}`, or, if the turn ended first, the same left-open note `ask_user` gives. `ResumeInteraction` gains the `take_over` case: the new turn's message is the request and what the person said, with the line "They took over the tab and handed it back after your turn ended. Take a snapshot before acting."
 
 In `runBrowserOnTab`, an action in `browserWritingActions` while `tab.IsTakenOver()` fails with "The person has taken over this tab. Wait for them to hand it back (ask_to_take_over waits for that) or do something else; reading the page still works." Reading actions go ahead.
 
 In the drawer, a `take_over` card shows the agent's text and a button **Take over the tab** that opens `/browser`; it can still be answered by typing, like a question. Its interaction type in the drawer's TypeScript becomes `'question' | 'approval' | 'take_over'`. The phone notification for it is titled "Your agent needs you" with the text as the body and the Reply button; chat apps already relay open questions and get the text plus "Open /browser on the dashboard to take over." The iPhone draws it as a question card, unchanged.
 
-Proof: Go tests: a writing browser action is refused while the tab is taken over and a snapshot is not; `ask_to_take_over` in a run that cannot ask fails with the words above; `hand_back` answers the open card and the tool returns `isHandedBack`; a late hand-back resumes a turn whose message carries the request and the note (beside the existing resume tests in `internal/agent/resume_test.go`). vitest: the drawer draws a `take_over` card with its button.
+Proof: Go tests: a writing browser action is refused while the tab is taken over and a snapshot is not; `ask_to_take_over` in a run that cannot ask fails with the words above; a hand-back answers the open card and the tool returns `isHandedBack`; a late hand-back resumes a turn whose message carries the request and the note (beside the existing resume tests in `internal/agent/resume_test.go`). vitest: the drawer draws a `take_over` card with its button.
 
 ### Milestone 4: the server's headless Chrome
 
@@ -153,7 +189,7 @@ Then review the whole diff, fix what is found, and review again until a round fi
 
 ## Concrete Steps
 
-All commands run from the repository root of a clone (not the main checkout), for example `~/.cache/claude-tmp/teanode-followup`.
+All commands run from the repository root.
 
 Go tests for the touched packages:
 
@@ -190,10 +226,10 @@ Nothing is stored except the interaction rows the card already uses; no migratio
 
 No new dependencies. Messages, all JSON text frames.
 
-Viewer to server: `{"type":"hello","token":"…"}` or `{"type":"hello","csrf":"…"}`; `{"type":"watch","tab":N}` (N from `state`; the headless browser is the string `"server"`); `{"type":"take_over"}`; `{"type":"hand_back","note":"…"}`; `{"type":"pointer","event":"down|move|up","x":X,"y":Y,"button":"left|right|middle|none","clickCount":C,"modifiers":M}`; `{"type":"wheel","x":X,"y":Y,"deltaX":DX,"deltaY":DY}`; `{"type":"key","event":"down|up","key":"Enter","code":"Enter","keyCode":13,"text":"","modifiers":M}`; `{"type":"text","text":"…"}`; `{"type":"ping"}`. X and Y are CSS pixels in the tab's viewport; M is the DevTools modifier bit field (Alt 1, Control 2, Meta 4, Shift 8).
+Viewer to server: `{"type":"hello","token":"…"}`, or `{"type":"hello"}` from a dashboard page, whose session cookie came with the upgrade; `{"type":"watch","tab":"N"}` (N from `state`, as text); `{"type":"take_over"}`; handing back is the mutation `HandBackAgentTab(note: String)`; `{"type":"pointer","event":"down|move|up","x":X,"y":Y,"button":"left|right|middle|none","clickCount":C,"modifiers":M}`; `{"type":"wheel","x":X,"y":Y,"deltaX":DX,"deltaY":DY}`; `{"type":"key","event":"down|up","key":"Enter","code":"Enter","keyCode":13,"text":"","modifiers":M}`; `{"type":"text","text":"…"}`; `{"type":"ping"}`. X and Y are CSS pixels in the tab's viewport; M is the DevTools modifier bit field (Alt 1, Control 2, Meta 4, Shift 8).
 
-Server to viewer: `{"type":"state","isConnected":true,"canCast":true,"tabs":[{"tab":N,"title":"…","url":"…","isOwn":true,"isCurrent":true}],"watching":N,"controller":"agent|person"}`; `{"type":"frame","tab":N,"data":"<base64 jpeg>","width":W,"height":H}` where W and H are the page's CSS size from the frame metadata; `{"type":"refused","reason":"…"}`; `{"type":"pong"}`.
+Server to viewer: `{"type":"state","isConnected":true,"canCast":true,"tabs":[{"tab":"N","title":"…","url":"…","isOwn":true,"isCurrent":true}],"watching":"N","controller":"agent|person"}`, with `watching` left out while nothing is watched; `{"type":"frame","tab":"N","data":"<base64 jpeg>","width":W,"height":H}` where W and H are the page's CSS size from the frame metadata; `{"type":"refused","reason":"…"}`; `{"type":"pong"}`.
 
-Server to extension (protocol 4): `{"type":"cast","tab":N,"on":true,"maxWidth":1280,"maxHeight":1280,"quality":60}` and the `pointer`, `wheel`, `key` and `text` messages above with a `tab` field added. Extension to server: `{"type":"frame","tab":N,"data":"…","metadata":{"deviceWidth":W,"deviceHeight":H,"pageScaleFactor":S,"offsetTop":T,"timestamp":…}}`, and `update` with `tabs`.
+Server to extension (protocol 4): `{"type":"cast","tab":N,"on":true,"maxWidth":1280,"maxHeight":1280,"quality":60}` and the `pointer`, `wheel`, `key` and `text` messages above with a `tab` field added. Extension to server: `{"type":"frame","tab":N,"data":"…","metadata":{"deviceWidth":W,"deviceHeight":H,…}}`, from a screencast frame or a screenshot still (whose metadata carries only the two sizes, from `Page.getLayoutMetrics`), and `update` and `hello` with `tabs` (`[{"tab":N,"title","url","own","current"}]`).
 
-Go, in `internal/agent`: `func (self *Agent) AddTabViewer(agentId string, viewer TabViewer, watched string) error`, `RemoveTabViewer(agentId string, viewer TabViewer)`, `TakeOverTab(agentId string, viewer TabViewer) error`, `HandBackTab(agentId, note string) error`, `TabInput(agentId string, viewer TabViewer, input json.RawMessage)`, `TabFrame(agentId string, connection TabConnection, tab string, data string, width, height float64)`, `UpdateTabList(agentId string, tabs []TabListing)`; `type TabViewer interface { Send(message []byte) error }`. In `internal/agent/tools`: `Tab.IsTakenOver() bool`, and on the run, `AskToTakeOver(ctx context.Context, callId, text string) (string, error)`.
+Go, in `internal/agent` (`tab_viewer.go`): `AddTabViewer(agentId string, viewer TabViewer)`, `RemoveTabViewer(agentId string, viewer TabViewer)`, `WatchTab(agentId string, viewer TabViewer, tab string)`, `TakeOverTab(agentId string)`, `HandBackTab(agentId string) bool`, `IsTabTakenOver(agentId string) bool`, `TabInput(agentId string, viewer TabViewer, input TabInputMessage)`, `TabFrame(agentId string, connection TabConnection, tab, data string, width, height float64)`, `UpdateTabList(agentId string, tabs []TabListing)`, `TabList(agentId string) []TabListing`, `SetBrowserCanCast(agentId string, connection TabConnection, canCast bool)`; `type TabViewer interface { Send(message []byte) error; SendFrame(message []byte) }`. In `internal/agent/tools`: `Tab.IsTakenOver() bool`, and `TakeOverAsker`, an optional interface of a run with `AskToTakeOver(ctx context.Context, callId, request string) (string, error)`, which `AskRun` implements. In `internal/models`: `InteractionTakeOver` and `InteractionHandedBack`. GraphQL: `ReadAgentTab` gains `tabs` and `isTakenOver`; `HandBackAgentTab(note)`.

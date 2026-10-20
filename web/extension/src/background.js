@@ -299,7 +299,7 @@ function connect(origin, secret) {
       return
     }
     if (message.type === 'cast') {
-      if (message.on) void startCast(message.tab, message)
+      if (message.isOn) void startCast(message.tab, message)
       else void stopCast(message.tab)
       return
     }
@@ -453,8 +453,9 @@ async function agentTabs() {
 // let go when the tab goes, the socket closes, or nothing has used it for
 // a while.
 const debugging = new Map() // tabId -> { events: [], until }
-// casting are the tabs streamed to the dashboard's browser page.
-const casting = new Set()
+// casting are the tabs streamed to the dashboard's browser page, each
+// with the timer that sends a still picture while the stream is quiet.
+const casting = new Map()
 const DEBUGGER_PROTOCOL = '1.3'
 const EVENTS_KEPT = 500
 const DEBUGGER_IDLE = 10 * 60 * 1000
@@ -518,20 +519,35 @@ function cdpRefusal(method) {
   return `${asked} is not one of the methods an attached tab answers: driving it (Input.), reading it (DOM., Runtime., CSS., Accessibility.), watching what it fetches (Network.enable, Network.getResponseBody) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser, which attaching one tab does not allow`
 }
 
+// attaching are the attachments under way, so that two callers at once,
+// the agent and the dashboard's stream, share one rather than the second
+// failing with Chrome's "another debugger is already attached".
+const attaching = new Map()
+
 async function debuggerFor(tabId) {
   const known = debugging.get(tabId)
   if (known) {
     known.until = Date.now() + DEBUGGER_IDLE
     return known
   }
-  await chrome.debugger.attach({ tabId }, DEBUGGER_PROTOCOL)
-  const state = { events: [], until: Date.now() + DEBUGGER_IDLE }
-  debugging.set(tabId, state)
-  return state
+  if (!attaching.has(tabId)) {
+    attaching.set(
+      tabId,
+      chrome.debugger
+        .attach({ tabId }, DEBUGGER_PROTOCOL)
+        .then(() => {
+          const state = { events: [], until: Date.now() + DEBUGGER_IDLE, isAgentUsing: false }
+          debugging.set(tabId, state)
+          return state
+        })
+        .finally(() => attaching.delete(tabId)),
+    )
+  }
+  return attaching.get(tabId)
 }
 
 async function letDebuggerGo(tabId) {
-  casting.delete(tabId)
+  forgetCast(tabId)
   if (!debugging.delete(tabId)) return
   await chrome.debugger.detach({ tabId }).catch(() => {})
 }
@@ -558,7 +574,12 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 chrome.debugger.onDetach.addListener((source) => {
   if (source.tabId !== undefined) {
     debugging.delete(source.tabId)
-    casting.delete(source.tabId)
+    // Chrome let it go by itself (the person cancelled the bar, or opened
+    // the developer tools on the tab): the dashboard is told rather than
+    // left showing the last picture.
+    if (forgetCast(source.tabId) && socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'castEnded', tab: source.tabId }))
+    }
   }
 })
 
@@ -572,31 +593,103 @@ chrome.debugger.onDetach.addListener((source) => {
 // picture is acknowledged: Chrome sends the next only after that, so a slow
 // connection slows the stream instead of filling this worker's memory.
 const FRAME_BACKLOG = 512 * 1024
+// Chrome sends a screencast frame only when the tab repaints, so a still
+// page sends nothing once the stream has started, and nothing at all when
+// it started on a page that was not being painted. A screenshot is live
+// whatever the tab's state, so one is sent as the first picture and again
+// whenever the stream has been quiet this long; one that is the same as
+// the last picture sent is not sent again.
+const STILL_EVERY = 2000
+// FRAME_LARGEST is the most a picture may be, as base64, under the
+// server's limit for one message with room to spare; a larger one is not
+// sent, rather than closing the connection the agent's actions use too.
+const FRAME_LARGEST = 3 * 1024 * 1024
 
+// startCast streams a tab. Every wait is a chance for a stop, or another
+// start, to have come in meanwhile: each step checks this start is still
+// the tab's before going on, and one that was overtaken undoes what it
+// began unless a newer start has the tab.
 async function startCast(tabId, options) {
   if (!isListed(tabId)) return
+  forgetCast(tabId)
+  const cast = { quality: options.quality || 60, maxSide: options.maxWidth || 1280, lastAt: 0, lastData: '', timer: null }
+  casting.set(tabId, cast)
+  const isOvertaken = () => casting.get(tabId) !== cast
+  const undo = async () => {
+    if (casting.has(tabId)) return
+    await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
+    await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {})
+  }
   try {
-    if (casting.has(tabId)) await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
     await debuggerFor(tabId)
-    casting.add(tabId)
+    if (isOvertaken()) return
     await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true })
     await chrome.debugger.sendCommand({ tabId }, 'Page.startScreencast', {
       format: 'jpeg',
-      quality: options.quality || 60,
-      maxWidth: options.maxWidth || 1280,
+      quality: cast.quality,
+      maxWidth: cast.maxSide,
       maxHeight: options.maxHeight || 1280,
       everyNthFrame: 2,
     })
+    if (isOvertaken()) return void (await undo())
+    await sendStill(tabId)
+    if (isOvertaken()) return void (await undo())
+    cast.timer = setInterval(() => {
+      if (Date.now() - cast.lastAt >= STILL_EVERY) void sendStill(tabId)
+    }, STILL_EVERY)
   } catch (reason) {
-    casting.delete(tabId)
+    if (!isOvertaken()) forgetCast(tabId)
     console.warn('[TeaNode] could not stream the tab:', reason)
   }
 }
 
+// forgetCast stops treating a tab as streamed, and its stills with it.
+function forgetCast(tabId) {
+  const cast = casting.get(tabId)
+  if (!cast) return false
+  clearInterval(cast.timer)
+  casting.delete(tabId)
+  return true
+}
+
 async function stopCast(tabId) {
-  if (!casting.delete(tabId)) return
+  if (!forgetCast(tabId)) return
   await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
   await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {})
+  // Attached only for the dashboard: let it go, and Chrome's bar with it.
+  const state = debugging.get(tabId)
+  if (state && !state.isAgentUsing && !casting.has(tabId)) await letDebuggerGo(tabId)
+}
+
+// sendStill sends a screenshot of the tab as a picture, unless it is what
+// was sent last or the socket is backed up.
+async function sendStill(tabId) {
+  const cast = casting.get(tabId)
+  const sending = socket
+  if (!cast || !sending || sending.readyState !== WebSocket.OPEN || sending.bufferedAmount > FRAME_BACKLOG) return
+  try {
+    // The viewport in CSS pixels, and the picture scaled so its longer
+    // side is no more than the stream's: a screenshot is taken in device
+    // pixels, which on a large high-density screen is several times that.
+    const metrics = await chrome.debugger.sendCommand({ tabId }, 'Page.getLayoutMetrics')
+    const viewport = (metrics && metrics.cssVisualViewport) || {}
+    const width = viewport.clientWidth || 0
+    const height = viewport.clientHeight || 0
+    if (!width || !height) return
+    const density = metrics.visualViewport && metrics.visualViewport.clientWidth ? metrics.visualViewport.clientWidth / width : 1
+    const scale = Math.min(1, cast.maxSide / (Math.max(width, height) * Math.max(density, 1)))
+    const shot = await chrome.debugger.sendCommand({ tabId }, 'Page.captureScreenshot', {
+      format: 'jpeg',
+      quality: cast.quality,
+      clip: { x: viewport.pageX || 0, y: viewport.pageY || 0, width, height, scale },
+    })
+    cast.lastAt = Date.now()
+    if (!shot || shot.data === cast.lastData || casting.get(tabId) !== cast || shot.data.length > FRAME_LARGEST) return
+    cast.lastData = shot.data
+    sending.send(JSON.stringify({ type: 'frame', tab: tabId, data: shot.data, metadata: { deviceWidth: width, deviceHeight: height } }))
+  } catch (reason) {
+    console.warn('[TeaNode] could not photograph the tab:', reason)
+  }
 }
 
 function sendFrame(tabId, params) {
@@ -604,7 +697,14 @@ function sendFrame(tabId, params) {
   if (!sending || sending.readyState !== WebSocket.OPEN) return
   const known = debugging.get(tabId)
   if (known) known.until = Date.now() + DEBUGGER_IDLE
-  sending.send(JSON.stringify({ type: 'frame', tab: tabId, data: params.data, metadata: params.metadata }))
+  const cast = casting.get(tabId)
+  if (cast) {
+    cast.lastAt = Date.now()
+    cast.lastData = ''
+  }
+  if (params.data.length <= FRAME_LARGEST) {
+    sending.send(JSON.stringify({ type: 'frame', tab: tabId, data: params.data, metadata: params.metadata }))
+  }
   const acknowledge = () => {
     if (!casting.has(tabId)) return
     if (sending.readyState === WebSocket.OPEN && sending.bufferedAmount > FRAME_BACKLOG) {
@@ -761,7 +861,8 @@ async function act(action, args) {
       if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
       const refusal = cdpRefusal(args.method)
       if (refusal) return { ok: false, error: refusal }
-      await debuggerFor(tab.id)
+      const state = await debuggerFor(tab.id)
+      state.isAgentUsing = true
       const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
       return { ok: true, data: { result: answer === undefined ? null : answer } }
     }
@@ -781,7 +882,10 @@ async function act(action, args) {
       // protocol: what the agent kept is let go, the attachment is not.
       if (casting.has(tab.id)) {
         const state = debugging.get(tab.id)
-        if (state) state.events = []
+        if (state) {
+          state.events = []
+          state.isAgentUsing = false
+        }
         return { ok: true, data: { stopped: true } }
       }
       await letDebuggerGo(tab.id)
@@ -1064,7 +1168,7 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 })
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  casting.delete(tabId)
+  forgetCast(tabId)
   if (opened.has(tabId)) tellSoon()
   if (opened.delete(tabId)) rememberOpened()
   // Their own tab, closed: it is detached, and the connection stays.

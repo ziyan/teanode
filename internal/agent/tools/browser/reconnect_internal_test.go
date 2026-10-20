@@ -40,6 +40,7 @@ func (self *fakeLink) Title() string     { return "A shop" }
 func (self *fakeLink) URL() string       { return "https://shop.example.org/" }
 func (self *fakeLink) HasTab() bool      { return true }
 func (self *fakeLink) IsTakenOver() bool { return false }
+func (self *fakeLink) IsWatchable() bool { return true }
 
 func (self *fakeLink) actionsAsked() []string {
 	self.mutex.Lock()

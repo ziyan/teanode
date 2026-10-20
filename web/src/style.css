@@ -20880,6 +20880,10 @@ label.checkbox.is-plain > span > .muted {
 
 /* One row: who controls the tab, then what can be done about it. The hand
    back form takes the whole row on a phone, under the words. */
+.browser-request {
+  margin: 0 0 var(--space-2);
+}
+
 .browser-control {
   display: flex;
   flex-wrap: wrap;

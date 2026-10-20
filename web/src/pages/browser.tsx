@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { csrfToken, graphql } from '../api'
+import { graphql } from '../api'
 import { Loading } from '../components/common'
 import { CloseIcon, KeyboardIcon } from '../components/icons'
 import { SettingsEmpty } from '../components/settingsList'
@@ -19,6 +19,14 @@ import { buttonOf, clickCountOf, keyMessage, modifiersOf, pointToTab, type Click
 // READ_AGENT_TAB says whether the person's browser is connected through the
 // extension. The socket is opened only once it is.
 const READ_AGENT_TAB = `query { ReadAgentTab { connected attached title url } }`
+
+// READ_REQUESTS reads what waits for the person, for the agent's newest
+// request to take the tab over: on a phone the card that opened this page
+// is gone once it has, and the request is what they came to do.
+const READ_REQUESTS = `query { ReadAgentWaiting(first: 20) { interactions { interactionKind interactionText } } }`
+
+// How often the request is read again while the page is shown.
+const REQUESTS_EVERY_MS = 10_000
 
 // HAND_BACK gives the tab back, with the person's note, and answers the
 // agent's card asking for it: the API's to do, so not a socket message.
@@ -99,7 +107,9 @@ function useViewerSocket(
       socketRef.current = current
       current.onopen = () => {
         handlersRef.current.onOpen()
-        current.send(JSON.stringify({ type: 'hello', csrf: csrfToken() }))
+        // The session's cookie came with the upgrade, from a page of this
+        // server, which is how the server knows who this is.
+        current.send(JSON.stringify({ type: 'hello' }))
         pingTimer = window.setInterval(() => current.send(JSON.stringify({ type: 'ping' })), PING_EVERY_MS)
       }
       current.onmessage = (event) => {
@@ -173,6 +183,8 @@ export function BrowserPage() {
   const [viewerState, setViewerState] = useState<ViewerState | null>(null)
   const [frame, setFrame] = useState<ViewerFrame | null>(null)
   const [isHandingBack, setHandingBack] = useState(false)
+  // The agent's newest request to take the tab over, or none.
+  const [request, setRequest] = useState('')
   const [handBackNote, setHandBackNote] = useState('')
   // The tab whose frames are drawn: what the server last said is watched, or
   // what was just chosen, so a frame of the tab left behind is dropped.
@@ -214,6 +226,30 @@ export function BrowserPage() {
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [toast, t])
+
+  useEffect(() => {
+    if (!isBrowserConnected) return
+    let isStopped = false
+    const read = async () => {
+      if (document.visibilityState === 'hidden') return
+      try {
+        const response = await graphql<{
+          ReadAgentWaiting: { interactions: { interactionKind: string; interactionText: string }[] }
+        }>(READ_REQUESTS)
+        const asked = response.ReadAgentWaiting.interactions.find((interaction) => interaction.interactionKind === 'take_over')
+        if (!isStopped) setRequest(asked?.interactionText ?? '')
+      } catch {
+        // The picture is what matters here; a request not read is shown
+        // on the next look.
+      }
+    }
+    void read()
+    const every = window.setInterval(() => void read(), REQUESTS_EVERY_MS)
+    return () => {
+      isStopped = true
+      window.clearInterval(every)
+    }
+  }, [isBrowserConnected])
 
   const { isLinked, send } = useViewerSocket(isBrowserConnected === true, {
     onOpen: () => {
@@ -306,6 +342,7 @@ export function BrowserPage() {
       await graphql(HAND_BACK, { note: handBackNote.trim() })
       setHandingBack(false)
       setHandBackNote('')
+      setRequest('')
     } catch (caught) {
       toast.failure(caught, t('browser.handBackFailed'))
     }
@@ -442,6 +479,11 @@ export function BrowserPage() {
       ) : null}
       {viewerState && tabs.length > 0 ? (
         <section className="card browser-stage">
+          {request ? (
+            <p className="browser-request">
+              <strong>{t('browser.agentAsks')}</strong> {request}
+            </p>
+          ) : null}
           <div className="browser-control">
             <p>{isControlling ? t('browser.youControl') : t('browser.agentControls')}</p>
             {isControlling ? (
@@ -487,11 +529,11 @@ export function BrowserPage() {
               <button type="button" onClick={() => setHandingBack(true)}>
                 {t('browser.handBack')}
               </button>
-            ) : (
+            ) : viewerState.canCast ? (
               <button type="button" disabled={!isLinked} onClick={() => send({ type: 'take_over' })}>
                 {t('browser.takeOver')}
               </button>
-            )}
+            ) : null}
           </div>
           {!viewerState.canCast ? (
             <SettingsEmpty>{t('browser.updateExtension')}</SettingsEmpty>
