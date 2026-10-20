@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -14,8 +15,10 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/linkpreview"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 const linkPreviewFields = `url cleanedUrl displayText isAvailable title description siteName imageUrl imageWidthPixels imageHeightPixels`
@@ -309,5 +312,42 @@ func TestOldLinkPreviewsAreRemovedWithTheirPictures(t *testing.T) {
 	}
 	if _, err := world.files.GetFile(t.Context(), imageFileId); err == nil {
 		t.Errorf("the picture of a removed row is still in the store")
+	}
+}
+
+// The command line asks with a document of its own and the links as a
+// variable, as the dashboard and the iPhone app do; the server takes it.
+func TestTheDocumentTheClientsSendIsAcceptedWithTheLinksAsAVariable(t *testing.T) {
+	world := newAvatarWorld(t)
+	site := newLinkPreviewSite(t)
+	world.useLinkPreviewSite(site)
+
+	body, err := json.Marshal(graphRequest{Query: client.DocumentReadLinkPreviews, Variables: map[string]any{"urls": []string{site.URL + "/page?gclid=1"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(api.AuthenticatedUsernameHeader, world.person.Username)
+	request.Header.Set(api.CredentialKindHeader, string(models.CredentialSession))
+	response := httptest.NewRecorder()
+	world.graph.graphView(response, request)
+
+	var answer struct {
+		Data struct {
+			ReadLinkPreviews []client.LinkPreview `json:"ReadLinkPreviews"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &answer); err != nil || len(answer.Errors) > 0 {
+		t.Fatalf("the answer is %s (%v)", response.Body.String(), err)
+	}
+	if len(answer.Data.ReadLinkPreviews) != 1 || !answer.Data.ReadLinkPreviews[0].IsAvailable || answer.Data.ReadLinkPreviews[0].Title != "Garden Chair" {
+		t.Errorf("the previews are %+v", answer.Data.ReadLinkPreviews)
+	}
+	if answer.Data.ReadLinkPreviews[0].ImageWidthPixels == nil || *answer.Data.ReadLinkPreviews[0].ImageWidthPixels != 600 {
+		t.Errorf("the picture's width is %v", answer.Data.ReadLinkPreviews[0].ImageWidthPixels)
 	}
 }
