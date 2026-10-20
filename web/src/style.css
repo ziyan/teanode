@@ -20847,6 +20847,13 @@ button.person-row:focus-visible {
   border-color: var(--border-strong);
 }
 
+/* In a chat the bubble and what is under it sit two pixels apart, which is
+   too close for a card. */
+.agent-chat-body > .link-card,
+.agent-chat-turn.mine > .link-card {
+  margin-top: 4px;
+}
+
 .link-card.is-own {
   align-self: flex-end;
 }
