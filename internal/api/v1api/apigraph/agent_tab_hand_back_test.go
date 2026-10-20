@@ -82,7 +82,14 @@ func TestHandingBackAnswersOnlyTheNewestRequestOrTheOneNamed(t *testing.T) {
 		Database: database, Storage: store, Registry: registry,
 		Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour,
 	})
-	resolver := &graph{database: database, config: config.NewMemoryStore(configuration), settings: &api.Settings{Agent: worker}}
+	// The turns the answers resume finish before the database goes.
+	defer worker.Wait()
+	// The schema, for the API calls those turns make.
+	component, err := New(nil, nil, nil, nil, nil, nil, nil, nil, nil, &api.Settings{})
+	if err != nil {
+		t.Fatalf("the schema does not build: %s", err)
+	}
+	resolver := &graph{database: database, config: config.NewMemoryStore(configuration), settings: &api.Settings{Agent: worker}, schema: component.(*graph).schema}
 	principal := &api.Principal{User: person, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}
 	handBack := func(arguments HandBackAgentTabArguments) bool {
 		var isHandedBack bool
