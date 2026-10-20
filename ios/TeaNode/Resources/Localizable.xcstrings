@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Nothing has these words": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この言葉を含むものはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有内容包含这些词"
+          }
+        }
+      }
+    },
+    "Photos also finds pictures by what is in them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「写真」は写っている内容からも写真を見つけます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“照片”还能按画面内容找到图片。"
+          }
+        }
+      }
+    },
+    "Search Photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索照片"
+          }
+        }
+      }
+    },
     "Use the three-letter code, such as USD.": {
       "localizations": {
         "ja": {

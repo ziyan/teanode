@@ -1052,9 +1052,7 @@ struct PhotosScreen: View {
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if isBottomBarShown {
-                        PhotoScaleBar(scale: $scale, isSearchOffered: model.section == .library) {
-                            isSearchPresented = true
-                        }
+                        PhotoScaleBar(scale: $scale)
                         .padding(.horizontal)
                         .padding(.bottom, 8)
                     }
@@ -1446,14 +1444,14 @@ extension PhotosScreen {
 private struct LibrarySearch: ViewModifier {
     let isActive: Bool
     @Binding var text: String
-    /// Whether the field is out. The Search button at the bottom of the library
-    /// brings it up; until then the field is put away above the title.
+    /// Whether the field is out. The Search tab's Search Photos brings it up
+    /// with the words; until then there is no field.
     @Binding var isPresented: Bool
 
     func body(content: Content) -> some View {
         // Only while it is out or holds a search: attached all the time, the
-        // system shows the field above the grid, and the Search button at the
-        // bottom is then a second way to the same thing.
+        // system shows the field above the grid, a second way to what the
+        // Search tab does.
         if isActive && (isPresented || !text.isEmpty) {
             // The field is narrow: it says "Search photos", as the dashboard's
             // does, and VoiceOver reads what it looks through.

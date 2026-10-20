@@ -3,14 +3,11 @@ import TeaNodeKit
 import UIKit
 
 /// PhotoScaleBar floats over the bottom of the library: the switch of Years,
-/// Months and All in one capsule, and a round Search button beside it. Glass,
-/// because it floats over the photos.
+/// Months and All in one capsule. Glass, because it floats over the photos.
+/// The library is searched from the Search tab, whose button is in the tab bar
+/// just below, so the bar has no search of its own.
 struct PhotoScaleBar: View {
     @Binding var scale: PhotoScale
-    /// Whether the Search button is beside the switch: the library is searched,
-    /// the favorites are not.
-    let isSearchOffered: Bool
-    let onSearch: () -> Void
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
 
     private var switchAnimation: Animation? {
@@ -30,17 +27,6 @@ struct PhotoScaleBar: View {
                 .padding(4)
                 .glassEffect(.regular, in: .capsule)
                 .animation(switchAnimation, value: scale)
-                if isSearchOffered {
-                    Button(action: onSearch) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.title3)
-                            .frame(width: 52, height: 52)
-                            .glassEffect(.regular.interactive(), in: .circle)
-                            .contentShape(.circle)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Search photos")
-                }
             }
         }
     }
@@ -170,12 +156,12 @@ struct PhotoOverviewTile: View {
 
 #if DEBUG
     #Preview("Scale bar, light") {
-        PhotoScaleBar(scale: .constant(.months), isSearchOffered: true) {}
+        PhotoScaleBar(scale: .constant(.months))
             .padding()
             .preferredColorScheme(.light)
     }
     #Preview("Scale bar, dark") {
-        PhotoScaleBar(scale: .constant(.all), isSearchOffered: false) {}
+        PhotoScaleBar(scale: .constant(.all))
             .padding()
             .preferredColorScheme(.dark)
     }
