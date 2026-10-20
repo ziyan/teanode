@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.186.0] - 2026-10-20
+
+### Added
+
+- A coding session open on the Coding page or in the iPhone app shows the agents it started for the current request, under the agent that started each one, with whether each runs, is done or was stopped. The computer's TeaNode program must be updated for it. (#602)
+
 ## [0.185.4] - 2026-10-19
 
 ### Fixed

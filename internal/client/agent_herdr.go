@@ -72,6 +72,32 @@ type AgentHerdrRead struct {
 	IsTruncated  bool               `json:"isTruncated"`
 }
 
+// AgentHerdrSubagent is one agent a session started, or one an agent
+// started.
+type AgentHerdrSubagent struct {
+	SubagentID       string     `json:"subagentId"`
+	ParentSubagentID string     `json:"parentSubagentId"`
+	SubagentType     string     `json:"subagentType"`
+	SubagentName     string     `json:"subagentName"`
+	TaskText         string     `json:"taskText"`
+	ModelName        string     `json:"modelName"`
+	SubagentState    string     `json:"subagentState"`
+	SpawnDepth       int        `json:"spawnDepth"`
+	StartedAt        *time.Time `json:"startedAt"`
+	EndedAt          *time.Time `json:"endedAt"`
+	ToolNames        []string   `json:"toolNames"`
+	ToolCallCount    int        `json:"toolCallCount"`
+}
+
+// AgentHerdrSubagents is the agents of a session's current request.
+type AgentHerdrSubagents struct {
+	HerdrSession     *AgentHerdrSession    `json:"herdrSession"`
+	SessionModelName string                `json:"sessionModelName"`
+	RequestStartedAt *time.Time            `json:"requestStartedAt"`
+	Subagents        []*AgentHerdrSubagent `json:"subagents"`
+	IsTruncated      bool                  `json:"isTruncated"`
+}
+
 // AgentHerdrScreen is a session's screen.
 type AgentHerdrScreen struct {
 	HerdrSession *AgentHerdrSession `json:"herdrSession"`
@@ -115,6 +141,12 @@ const (
 	DocumentReadAgentHerdrSession = `query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
 		ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
 			herdrSession { ` + HerdrSessionFields + ` } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated
+		}
+	}`
+	DocumentReadAgentHerdrSubagents = `query ($computer: String, $paneId: String!) {
+		ReadAgentHerdrSubagents(computer: $computer, paneId: $paneId) {
+			herdrSession { ` + HerdrSessionFields + ` } sessionModelName requestStartedAt isTruncated
+			subagents { subagentId parentSubagentId subagentType subagentName taskText modelName subagentState spawnDepth startedAt endedAt toolNames toolCallCount }
 		}
 	}`
 	DocumentReadAgentHerdrScreen = `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
@@ -191,6 +223,18 @@ func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, pa
 		return nil, err
 	}
 	return result.ReadAgentHerdrSession, nil
+}
+
+// ReadAgentHerdrSubagents is the agents a session started for its current
+// request, each with the agent that started it named.
+func ReadAgentHerdrSubagents(ctx context.Context, connection *Client, computer, paneId string) (*AgentHerdrSubagents, error) {
+	var result struct {
+		ReadAgentHerdrSubagents *AgentHerdrSubagents `json:"ReadAgentHerdrSubagents"`
+	}
+	if err := connection.Execute(ctx, DocumentReadAgentHerdrSubagents, herdrVariables(computer, map[string]any{"paneId": paneId}), &result); err != nil {
+		return nil, err
+	}
+	return result.ReadAgentHerdrSubagents, nil
 }
 
 // ReadAgentHerdrScreen is a session's screen, or its last lineCount lines,

@@ -66,5 +66,25 @@ linked chat app; the answer is pressed only after the screen is read again.
 The decision is
 `docs/decisions/20261008-the-agent-works-in-the-persons-herdr-sessions.md`.
 
+A Claude Code session also hands parts of a request to agents of its own, and
+an agent can start agents under it. The `subagents` action (the herdr tool's,
+`ReadAgentHerdrSubagents`, `teanode computer herdr subagents`) shows them as a
+tree: each agent's kind, one-line task, model, whether it runs, is done or was
+stopped, how long it ran, and the tools it used, with the agent that started
+it named. The program reads them from the files Claude Code writes beside the
+session's history (`<session id>/subagents/`), so it needs no hook and sees
+agents started before it looked. They are those started for the person's last
+request, plus any still running from before it, the newest 100. Older versions
+of Claude Code never write that an agent finished, so one without that mark is
+done when its last reply ended its turn, and running while it is still being
+written, for 30 minutes after a reply that called a tool (nothing is written
+while a build or a test suite runs), or while the session works or asks; it is
+stopped otherwise. An agent interrupted mid-tool by a version that writes no
+stop mark shows as running for up to 30 minutes, or while the session works on
+the same request; one started for an earlier request runs only by its own
+signs. Anything the person types to the session, even while it works, starts a
+new request. A Codex session has none and
+answers with an empty tree.
+
 The three are independent. Hooks need no herdr, herdr needs no hooks, and
 without a transcript source the hooks still show what was filed before.

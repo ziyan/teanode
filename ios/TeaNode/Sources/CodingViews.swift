@@ -253,12 +253,13 @@ struct CodingScreen: View {
             #if DEBUG
                 // A screenshot of a session with its transcript, asking
                 // (`-TeaNodeScreen coding-session`) or working
-                // (`-TeaNodeScreen coding-session-working`).
+                // (`-TeaNodeScreen coding-session-working`), or its agents
+                // (`-TeaNodeScreen coding-session-agents`).
                 .task {
                     guard DemoServer.isRequested, path.isEmpty else { return }
                     if DemoServer.screen == "coding-session" {
                         path.append(CodingTarget(computer: "laptop", paneId: "p2"))
-                    } else if DemoServer.screen == "coding-session-working" {
+                    } else if DemoServer.screen == "coding-session-working" || DemoServer.screen == "coding-session-agents" {
                         path.append(CodingTarget(computer: "laptop", paneId: "p1"))
                     }
                 }
@@ -434,15 +435,34 @@ struct CodingStateLabel: View {
     }
 }
 
-/// CodingPart is what a session shows: what was said, or its screen.
+/// CodingPart is what a session shows: what was said, the agents it started,
+/// or its screen.
 enum CodingPart: String, CaseIterable, Identifiable {
-    case turns, screen
+    case turns, agents, screen
 
     var id: String { rawValue }
+
+    /// The agents a session started have a key of their own: "Agents" alone
+    /// is the person's assistants elsewhere, which Chinese words otherwise.
+    var title: String {
+        switch self {
+        case .turns: String(localized: "Turns")
+        case .agents: String(localized: "coding-part-agents", defaultValue: "Agents")
+        case .screen: String(localized: "Screen")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .turns: "text.bubble"
+        case .agents: "point.3.connected.trianglepath.dotted"
+        case .screen: "terminal"
+        }
+    }
 }
 
-/// CodingSessionView is one coding session: what was
-/// said in it or its screen, the question it asks, and a field to type into
+/// CodingSessionView is one coding session: what was said in it, the agents
+/// it started or its screen, the question it asks, and a field to type into
 /// it. It reads again while it is on screen.
 struct CodingSessionView: View {
     let model: CodingModel
@@ -458,6 +478,8 @@ struct CodingSessionView: View {
     @State private var isTruncated = false
     @State private var turnCount = CodingSessionView.initialTurnCount
     @State private var screenText = ""
+    /// The agents the session started, once read for the Agents part.
+    @State private var agentsRead: HerdrSubagents?
     @State private var isRead = false
     // What has been typed into each session's box and not sent, by session,
     // kept while the person looks at the workspace's other tabs.
@@ -489,6 +511,13 @@ struct CodingSessionView: View {
         _doneText = doneText
         _problemText = problemText
         _selectedId = State(initialValue: initialId)
+        #if DEBUG
+            // A screenshot of the agents a session started
+            // (`-TeaNodeScreen coding-session-agents`).
+            if DemoServer.isRequested, DemoServer.screen == "coding-session-agents" {
+                _part = State(initialValue: .agents)
+            }
+        #endif
     }
 
     private var connection: Connection { model.connection }
@@ -530,18 +559,22 @@ struct CodingSessionView: View {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 await refresh()
-                let isBusy = session?.isWorking == true || session?.isAsking == true
+                // The Agents part changes while the session works, and is
+                // read every few seconds whatever the session says.
+                let isBusy = session?.isWorking == true || session?.isAsking == true || part == .agents
                 do { try await Task.sleep(for: .seconds(isBusy ? 3 : 15)) } catch { return }
             }
         }
         .onChange(of: part) {
             // The other part has not been read yet: a spinner until it is.
             screenText = ""
+            agentsRead = nil
             isRead = false
         }
         .onChange(of: selectedId) {
             turns = []
             screenText = ""
+            agentsRead = nil
             isRead = false
             isTruncated = false
             turnCount = Self.initialTurnCount
@@ -556,28 +589,18 @@ struct CodingSessionView: View {
         // No strip of the workspace's tabs: the list a step back holds them,
         // and a new tab beside this one is in the actions menu.
         VStack(spacing: 0) {
-            // Turns or the screen, by one round button floating over the
-            // top right of what is shown, rather than a row of its own.
+            // Turns, agents or the screen, by one round button floating
+            // over the top right of what is shown, rather than a row of its
+            // own.
             Group {
                 switch part {
                 case .turns: transcript(session)
+                case .agents: CodingAgentsList(session: session, read: agentsRead, isRead: isRead)
                 case .screen: screen(session)
                 }
             }
             .overlay(alignment: .topTrailing) {
-                Button {
-                    part = part == .turns ? .screen : .turns
-                } label: {
-                    Image(systemName: part == .turns ? "terminal" : "text.bubble")
-                        .font(.body.weight(.medium))
-                        .frame(width: 44, height: 44)
-                        .contentShape(.circle)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(part == .turns ? Text("Show the screen") : Text("Show the turns"))
-                .padding(.trailing)
-                .padding(.top, 4)
+                partMenu
             }
         }
         // Nothing can be sent while the session asks, and its question takes
@@ -589,6 +612,32 @@ struct CodingSessionView: View {
         }
         // The box is the session's own bottom bar, so the tab bar gives way to it.
         .toolbarVisibility(.hidden, for: .tabBar)
+    }
+
+    /// The round glass button that chooses what the session shows.
+    private var partMenu: some View {
+        Menu {
+            Picker("View", selection: $part) {
+                ForEach(CodingPart.allCases) { option in
+                    Label(option.title, systemImage: option.systemImage).tag(option)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            // The circle stays 44 points, so the symbol stops growing at the
+            // largest sizes rather than spilling out of it.
+            Image(systemName: part.systemImage)
+                .font(.body.weight(.medium))
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .frame(width: 44, height: 44)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .contentShape(.circle)
+        }
+        .menuIndicator(.hidden)
+        .accessibilityLabel(Text("Choose what to show"))
+        .accessibilityValue(Text(verbatim: part.title))
+        .padding(.trailing)
+        .padding(.top, 4)
     }
 
     private func transcript(_ session: HerdrSession) -> some View {
@@ -799,6 +848,11 @@ struct CodingSessionView: View {
                 guard isCurrent() else { return }
                 turns = read.turns
                 isTruncated = read.isTruncated
+                model.upsert(read.herdrSession)
+            case .agents:
+                let read = try await connection.readHerdrSubagents(computer: session.computer, paneId: session.paneId)
+                guard isCurrent() else { return }
+                agentsRead = read
                 model.upsert(read.herdrSession)
             case .screen:
                 let read = try await connection.readHerdrScreen(computer: session.computer, paneId: session.paneId)
