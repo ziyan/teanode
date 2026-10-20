@@ -15,6 +15,8 @@ struct LocationSetupList: View {
     let isShowingPeople: Bool
     /// Starts the permission flow: When In Use, then Always.
     let allowLocation: () -> Void
+    /// Opens the screen of everyone sharing.
+    let showPeople: () -> Void
     @State private var isWorking = false
     @State private var isTypingAddress = false
 
@@ -22,7 +24,7 @@ struct LocationSetupList: View {
         let setup = model.setup
         List {
             if isShowingPeople {
-                LocationPeopleSection(model: model)
+                LocationPeopleSection(model: model, showPeople: showPeople)
             }
             Section {
                 LocationSetupRow(

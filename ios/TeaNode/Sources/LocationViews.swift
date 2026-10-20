@@ -95,23 +95,34 @@ struct LocationScreen: View {
     var body: some View {
         NavigationStack(path: $path) {
             GeometryReader { proxy in
-                let drawerHeight = drawerDetent.height(availableHeight: proxy.size.height, headerHeight: drawerHeaderHeight)
-                ZStack(alignment: .bottom) {
-                    LocationMapHeader(model: model, recorder: recorder, isShowingPeople: isShowingPeople)
-                        // Pictures on a map stay map-sized, as in Maps.
-                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                        // The map fills the screen, under the bars and the
-                        // drawer, and keeps what it centers on, its controls
-                        // and its logo in the part left showing.
-                        .safeAreaPadding(.top, proxy.safeAreaInsets.top)
-                        .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom + drawerHeight)
-                        .ignoresSafeArea()
-                    LocationDrawer(detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height) {
-                        drawerHeader
-                    } content: {
-                        drawerContent
+                // The map keeps its middle above the drawer up to half the
+                // screen; over that the map is covered, and a smaller part
+                // left showing would only move it.
+                let mapCoveredHeight = min(
+                    drawerDetent.height(availableHeight: proxy.size.height, headerHeight: drawerHeaderHeight),
+                    LocationDrawerDetent.half.height(availableHeight: proxy.size.height, headerHeight: drawerHeaderHeight))
+                // The drawer sits on the bottom of the screen and the map
+                // behind it; neither one's size moves the other.
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .bottom) {
+                        LocationDrawer(detent: $drawerDetent, headerHeight: $drawerHeaderHeight, availableHeight: proxy.size.height) {
+                            drawerHeader
+                        } content: {
+                            drawerContent
+                        }
                     }
-                }
+                    .background {
+                        LocationMapHeader(model: model, recorder: recorder, isShowingPeople: isShowingPeople)
+                            // Pictures on a map stay map-sized, as in Maps.
+                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                            // The map fills the screen, under the bars and the
+                            // drawer, and keeps what it centers on, its
+                            // controls and its logo in the part left showing.
+                            .safeAreaPadding(.top, proxy.safeAreaInsets.top)
+                            .safeAreaPadding(.bottom, proxy.safeAreaInsets.bottom + mapCoveredHeight)
+                            .ignoresSafeArea()
+                    }
             }
             // The name a pushed screen's back button carries; over the map,
             // as in Find My, the drawer says what is shown.
@@ -213,6 +224,11 @@ struct LocationScreen: View {
         }
     }
 
+    /// Opens the screen of everyone sharing, from the row that says how many.
+    private func showPeople() {
+        path.append(.people)
+    }
+
     /// The top of the drawer: the lists to choose between, or, while a person
     /// sharing is chosen, who they are and the way back to everyone.
     @ViewBuilder
@@ -241,7 +257,8 @@ struct LocationScreen: View {
                 .id(person.userId)
                 .contentMargins(.top, 0, for: .scrollContent)
         } else if model.isSetupShown {
-            LocationSetupList(model: model, recorder: recorder, isShowingPeople: isShowingPeople, allowLocation: allowLocation)
+            LocationSetupList(
+                model: model, recorder: recorder, isShowingPeople: isShowingPeople, allowLocation: allowLocation, showPeople: showPeople)
                 .contentMargins(.top, 0, for: .scrollContent)
         } else {
             content.contentMargins(.top, 0, for: .scrollContent)
@@ -256,7 +273,7 @@ struct LocationScreen: View {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             switch segment {
-            case .visits: LocationVisitsList(model: model, recorder: recorder)
+            case .visits: LocationVisitsList(model: model, recorder: recorder, showPeople: showPeople)
             case .places: LocationPlacesList(model: model)
             case .sharing: LocationSharingList(model: model)
             }
@@ -415,11 +432,12 @@ struct LocationMapHeader: View {
 struct LocationVisitsList: View {
     let model: LocationModel
     let recorder: LocationRecorder
+    let showPeople: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         List {
-            LocationPeopleSection(model: model)
+            LocationPeopleSection(model: model, showPeople: showPeople)
             if model.days.isEmpty {
                 // Under the people, not over them as an overlay would be.
                 Section {

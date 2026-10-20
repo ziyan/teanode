@@ -77,7 +77,13 @@ struct LocationDrawer<Header: View, Content: View>: View {
                 grabber
                 header()
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
+            // Always its own height, whatever the drawer's: measured inside a
+            // drawer of that same height, a header that gave way would measure
+            // shorter each time and never settle.
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                if abs(height - headerHeight) >= 0.5 { headerHeight = height }
+            }
             .contentShape(.rect)
             .gesture(drag)
             content()
@@ -179,5 +185,8 @@ struct LocationChosenPersonHeader: View {
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
+        // Past the first accessibility size the text stops growing, as in the
+        // people's rows, so where they are still fits beside the picture.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 }

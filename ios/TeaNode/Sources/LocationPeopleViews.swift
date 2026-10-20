@@ -12,6 +12,10 @@ import TeaNodeKit
 /// row says how many and opens a screen of their own.
 struct LocationPeopleRows: View {
     let model: LocationModel
+    /// Opens the screen of everyone sharing. A button, not a navigation link:
+    /// a list makes a link inside a row a row of its own, with a second
+    /// chevron and the list's text size.
+    let showPeople: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(AppModel.self) private var app
 
@@ -28,7 +32,7 @@ struct LocationPeopleRows: View {
                 LocationOwnRow(model: model, isHighlightedWhenChosen: true)
                 if model.people.count > mostRows {
                     LocationPeopleDivider()
-                    NavigationLink(value: LocationRoute.people) {
+                    Button(action: showPeople) {
                         HStack(spacing: 12) {
                             Image(systemName: "person.2")
                                 .font(.title3)
@@ -81,11 +85,12 @@ struct LocationPeopleRows: View {
 /// in the drawer, so it scrolls with the visits under it.
 struct LocationPeopleSection: View {
     let model: LocationModel
+    let showPeople: () -> Void
 
     var body: some View {
         if model.location != nil || !model.people.isEmpty {
             Section {
-                LocationPeopleRows(model: model)
+                LocationPeopleRows(model: model, showPeople: showPeople)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
