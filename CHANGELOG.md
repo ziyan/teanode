@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.187.1] - 2026-10-20
+
+### Changed
+
+- The agent loads the tools it needs by name, and only the closest matches of a search, so turns that reach for a less common tool carry fewer tool definitions and take fewer rounds. Dreams no longer spend a round finding the knowledge tool. (#609)
+
 ## [0.187.0] - 2026-10-20
 
 ### Added
