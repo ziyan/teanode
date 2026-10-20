@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.187.0] - 2026-10-20
+
+### Added
+
+- One search across your chats, mail, contacts, photos, memory, documents, recordings, places and finance: Control-K on the dashboard, the Search tab in the iPhone app, and `teanode search`. (#605)
+
+### Changed
+
+- The iPhone app is reached through a tab bar of icons (Chats, Mail, Photos, More and Search) instead of the side menu. You choose the three parts in it from More's Edit button. (#605)
+
 ## [0.186.1] - 2026-10-20
 
 ### Fixed
