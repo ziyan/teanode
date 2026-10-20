@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/db"
@@ -1537,6 +1539,23 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 			return nil, locationFailure(err)
 		}
 	}
+	// Crossing a place's circle on the way somewhere else is not a visit, and
+	// nobody is told of it.
+	if from, until, hasTimes := reportRange(arguments); hasTimes {
+		deletedIds, err := tx.DeletePassByVisits(user.ID, from, until)
+		if err != nil {
+			return nil, locationFailure(err)
+		}
+		if len(deletedIds) > 0 {
+			isChanged = true
+			notices = slices.DeleteFunc(notices, func(notice visitNotice) bool { return slices.Contains(deletedIds, notice.Visit.ID) })
+			// A pass-by ended or split the visits around it at its arrival;
+			// without it, those at one place close together are one again.
+			if err := tx.NormalizePlaceVisits(user.ID, from, until); err != nil {
+				return nil, locationFailure(err)
+			}
+		}
+	}
 	self.takeNewPlacesAfterCommit(tx, user.ID, len(madePlaces))
 	// A batch the server already had changes nothing, so the people watching
 	// the map are not told to read the same position again.
@@ -1564,6 +1583,21 @@ func reportedVisitRange(reported []ReportedVisit) (time.Time, time.Time) {
 		}
 	}
 	return from, until
+}
+
+// reportRange is the earliest and the latest time the positions and the
+// visits of a report give, and whether it gives any.
+func reportRange(arguments ReportLocationArguments) (time.Time, time.Time, bool) {
+	from, until := reportedVisitRange(arguments.Visits)
+	for _, point := range arguments.Points {
+		if from.IsZero() || point.MeasuredAt.Before(from) {
+			from = point.MeasuredAt
+		}
+		if until.IsZero() || point.MeasuredAt.After(until) {
+			until = point.MeasuredAt
+		}
+	}
+	return from, until, !from.IsZero()
 }
 
 // visitNotice is an arrival or a departure the people a location is shared
@@ -1594,10 +1628,53 @@ func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, u
 		if notifier == nil {
 			return
 		}
+		now := time.Now()
 		for _, notice := range notices {
-			notifier.NotifyPlaceVisitAt(detached, userId, notice.Visit, notice.IsArrival, notice.HappenedAt)
+			dueAt := visitNoticeDueAt(notice)
+			if !dueAt.After(now) {
+				notifier.NotifyPlaceVisitAt(detached, userId, notice.Visit, notice.IsArrival, notice.HappenedAt)
+				continue
+			}
+			time.AfterFunc(dueAt.Sub(now), func() { self.tellVisitNoticeIfKept(detached, notifier, userId, notice) })
 		}
 	})
+}
+
+// visitNoticeDueAt is when a notice may be told, the zero time for at once. A
+// visit from a place's circle may still be a pass-by, which a later report
+// deletes, until it has lasted db.PassByDurationMost: its arrival is told
+// then, and a departure before then a second later, so the two are told in
+// order. A notice that waits is lost if the server restarts before it is
+// told.
+func visitNoticeDueAt(notice visitNotice) time.Time {
+	visit := notice.Visit
+	if visit == nil || visit.VisitSource != models.VisitSourceRegion {
+		return time.Time{}
+	}
+	if notice.IsArrival {
+		return notice.HappenedAt.Add(db.PassByDurationMost)
+	}
+	if visit.ArrivedAt == nil {
+		return time.Time{}
+	}
+	return visit.ArrivedAt.Add(db.PassByDurationMost + time.Second)
+}
+
+// tellVisitNoticeIfKept tells a notice that waited, unless its visit was
+// deleted as a pass-by meanwhile.
+func (self *graph) tellVisitNoticeIfKept(ctx context.Context, notifier *agent.PhoneNotifier, userId string, notice visitNotice) {
+	var visit *models.PlaceVisit
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		visit, err = tx.GetPlaceVisitByClientKey(userId, notice.Visit.ClientVisitKey)
+		return err
+	}); err != nil {
+		log.Warningf("cannot read a visit to tell of it: %s", err)
+		return
+	}
+	if visit == nil {
+		return
+	}
+	notifier.NotifyPlaceVisitAt(ctx, userId, visit, notice.IsArrival, notice.HappenedAt)
 }
 
 // storedVisit is what storing one reported visit did.
@@ -1637,6 +1714,16 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 	known, err := tx.GetPlaceVisitByClientKey(userId, key)
 	if err != nil {
 		return nil, err
+	}
+	// The departure of a visit iOS reported comes with the position made more
+	// exact, so under another key: it is the visit that arrived in that second.
+	if known == nil && visit.VisitSource == models.VisitSourceVisit && reported.ArrivedAt != nil {
+		if known, err = tx.GetPlaceVisitByArrival(userId, *reported.ArrivedAt); err != nil {
+			return nil, err
+		}
+		if known != nil {
+			visit.ClientVisitKey = known.ClientVisitKey
+		}
 	}
 	switch {
 	case known != nil:

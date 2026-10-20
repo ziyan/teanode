@@ -701,6 +701,8 @@ func TestANewClosedVisitIsToldAsALeaving(t *testing.T) {
 	if notice := reported(&arrivedAt, &departedAt); notice == nil || notice.IsArrival || !notice.HappenedAt.Equal(departedAt) {
 		t.Errorf("a closed visit is a leaving: %+v", notice)
 	}
+	// Another visit: one arriving in the same second would be the same visit.
+	arrivedAt = arrivedAt.Add(time.Minute)
 	if notice := reported(&arrivedAt, nil); notice == nil || !notice.IsArrival || !notice.HappenedAt.Equal(arrivedAt) {
 		t.Errorf("an open visit is an arrival: %+v", notice)
 	}

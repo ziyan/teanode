@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Visits can reach the server in any order: a phone that was offline sends a
@@ -221,4 +223,56 @@ func (self *transaction) splitVisitAt(visit *placeVisitModel, at time.Time) (boo
 	}
 	visit.DepartedAt, visit.UpdatedAt = &endedAt, now
 	return true, nil
+}
+
+func (self *transaction) GetPlaceVisitByArrival(userId string, arrivedAt time.Time) (*models.PlaceVisit, error) {
+	var found []placeVisitModel
+	if err := self.tx.Raw(`SELECT visit.* FROM "place_visit" visit
+		WHERE visit.user_id = @user AND visit.visit_source = @source
+		  AND visit.arrived_at >= @start AND visit.arrived_at < @end
+		ORDER BY visit.created_at ASC, visit.id ASC
+		LIMIT 1`,
+		sql.Named("user", userId), sql.Named("source", string(models.VisitSourceVisit)),
+		sql.Named("start", arrivedAt.Truncate(time.Second)), sql.Named("end", arrivedAt.Truncate(time.Second).Add(time.Second))).
+		Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return found[0].toModel(), nil
+}
+
+func (self *transaction) DeletePassByVisits(userId string, from, until time.Time) ([]string, error) {
+	if userId == "" || until.Before(from) {
+		return nil, ErrInvalidArguments
+	}
+	// The range is widened by how far from a visit a position still tells of
+	// it, so a report of positions alone judges the visits they are near.
+	// A visit joined from several is one visit, judged by its own times; the
+	// keys it was joined from go with it.
+	from, until = from.Add(-passByPositionWindow), until.Add(passByPositionWindow+PassByDurationMost)
+	var deletedIds []string
+	if err := self.tx.Raw(`DELETE FROM "place_visit" visit
+		WHERE visit.user_id = @user AND visit.visit_source = @source
+		  AND visit.arrived_at IS NOT NULL AND visit.departed_at >= @from AND visit.departed_at <= @until
+		  AND visit.departed_at - visit.arrived_at < @durationSeconds * interval '1 second'
+		  AND EXISTS (SELECT 1 FROM "location_point" point
+		      WHERE point.user_id = visit.user_id
+		        AND point.measured_at >= visit.arrived_at - @windowSeconds * interval '1 second'
+		        AND point.measured_at <= visit.departed_at + @windowSeconds * interval '1 second'
+		        AND point.speed_meters_per_second >= @movingSpeed)
+		  AND NOT EXISTS (SELECT 1 FROM "location_point" point
+		      WHERE point.user_id = visit.user_id
+		        AND point.measured_at >= visit.arrived_at AND point.measured_at <= visit.departed_at
+		        AND point.speed_meters_per_second <= @stoppedSpeed)
+		RETURNING visit.id`,
+		sql.Named("user", userId), sql.Named("source", string(models.VisitSourceRegion)),
+		sql.Named("from", from), sql.Named("until", until),
+		sql.Named("durationSeconds", PassByDurationMost.Seconds()), sql.Named("windowSeconds", passByPositionWindow.Seconds()),
+		sql.Named("movingSpeed", PassBySpeedMetersPerSecondLeast), sql.Named("stoppedSpeed", PassByStoppedSpeedMetersPerSecondMost)).
+		Scan(&deletedIds).Error; err != nil {
+		return nil, err
+	}
+	return deletedIds, nil
 }
