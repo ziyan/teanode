@@ -63,7 +63,7 @@ too much memory before it reads a pixel.
 **`internal/linkpreview`**: what the page behind a link says about itself, for
 the card under a message. It reads the page's Open Graph, Twitter and title
 tags from at most 512 KB of HTML in 5 seconds, and makes a stored picture from
-its image: at most 2 MB, scaled to 600 pixels wide and encoded again as a JPEG.
+its image: at most 2 MB and 16 million pixels by its header, scaled to 600 pixels wide and encoded again as a JPEG.
 Every fetch goes through `util/safefetch`, so an address inside the network is
 refused; `util/linkclean` is the other half, taking tracking parameters out of
 a link and shortening it for display. What is read is cached in the

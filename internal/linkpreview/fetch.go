@@ -34,6 +34,14 @@ const (
 	// to. A card is shown at a fraction of this, even on a phone.
 	ImageMaximumWidthPixels = 600
 
+	// ImageMaximumPixels is the most pixels a picture may claim to have, read
+	// from its header before any is decoded. A small file can declare a huge
+	// picture, and a decoded one takes four bytes a pixel: picture.Decode
+	// allows 64 million pixels, about 256 MB, and two decodes run at once on
+	// pictures a stranger chose. A card shows 600 pixels across, so 16 million
+	// (about 64 MB) is more than any page's preview picture needs.
+	ImageMaximumPixels = 16_000_000
+
 	imageJPEGQuality = 82
 
 	// concurrentImageDecodes is how many pictures are decoded at once. A
@@ -131,6 +139,13 @@ func (self *Fetcher) FetchImage(ctx context.Context, address string) (*Image, er
 		defer func() { <-imageDecodes }()
 	case <-timed.Done():
 		return nil, timed.Err()
+	}
+	widthPixels, heightPixels, err := picture.ReadSize(body)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrNotPicture, err)
+	}
+	if widthPixels*heightPixels > ImageMaximumPixels {
+		return nil, fmt.Errorf("%w: %d by %d pixels is more than %d", ErrNotPicture, widthPixels, heightPixels, ImageMaximumPixels)
 	}
 	decoded, err := picture.Decode(body)
 	if err != nil {

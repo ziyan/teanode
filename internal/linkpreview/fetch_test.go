@@ -3,7 +3,9 @@ package linkpreview_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -149,6 +151,46 @@ func TestFetchImageRefusesWhatItWillNotKeep(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 				response.Header().Set("Content-Type", found.contentType)
 				_, _ = response.Write(found.body())
+			}))
+			defer server.Close()
+			if _, err := linkpreview.NewFetcherWith(server.Client()).FetchImage(context.Background(), server.URL); !errors.Is(err, linkpreview.ErrNotPicture) {
+				t.Errorf("FetchImage = %v, want ErrNotPicture", err)
+			}
+		})
+	}
+}
+
+// aPNGClaiming is a few dozen bytes that say they are a picture of the size:
+// a header and no pixels, which is all a decoder reads to learn the size.
+func aPNGClaiming(widthPixels, heightPixels uint32) []byte {
+	header := make([]byte, 13)
+	binary.BigEndian.PutUint32(header[0:], widthPixels)
+	binary.BigEndian.PutUint32(header[4:], heightPixels)
+	header[8], header[9] = 8, 2 // eight bits a channel, truecolor
+	chunk := make([]byte, 8, 25)
+	binary.BigEndian.PutUint32(chunk, uint32(len(header)))
+	copy(chunk[4:], "IHDR")
+	chunk = append(chunk, header...)
+	chunk = binary.BigEndian.AppendUint32(chunk, crc32.ChecksumIEEE(chunk[4:]))
+	return append([]byte("\x89PNG\r\n\x1a\n"), chunk...)
+}
+
+// A picture is refused for the size its header claims before any of it is
+// decoded: a decoded picture takes four bytes a pixel, whatever the file's size.
+func TestFetchImageRefusesAPictureThatClaimsToBeTooLarge(t *testing.T) {
+	cases := map[string][2]uint32{
+		"over the pixel limit":         {5000, 4000},
+		"over the limit of the reader": {100000, 100000},
+	}
+	for name, size := range cases {
+		t.Run(name, func(t *testing.T) {
+			claimed := aPNGClaiming(size[0], size[1])
+			if len(claimed) > 100 {
+				t.Fatalf("the test picture is %d bytes, so the size limit is not what refuses it", len(claimed))
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				response.Header().Set("Content-Type", "image/png")
+				_, _ = response.Write(claimed)
 			}))
 			defer server.Close()
 			if _, err := linkpreview.NewFetcherWith(server.Client()).FetchImage(context.Background(), server.URL); !errors.Is(err, linkpreview.ErrNotPicture) {
