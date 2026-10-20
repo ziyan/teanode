@@ -291,6 +291,9 @@ struct MainView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        // On the iPad the tabs are the sidebar from the start, as the side
+        // menu was pinned, rather than a bar of tabs along the top.
+        .defaultAdaptableTabBarPlacement(.sidebar)
         .tabBarMinimizeBehavior(.onScrollDown)
         .environment(\.symbolVariants, .none)
     }

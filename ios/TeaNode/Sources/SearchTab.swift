@@ -197,20 +197,22 @@ struct SearchResultRow: View {
     let result: SearchResult
 
     var body: some View {
+        // In the text's colors, which a button would otherwise draw green: a
+        // result is a place to go, not an action (ios/DESIGN.md).
         VStack(alignment: .leading, spacing: 2) {
             Text(result.titleText.isEmpty ? result.detailText : result.titleText)
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.primary)
                 .lineLimit(2)
             if !result.titleText.isEmpty, !result.detailText.isEmpty {
                 Text(result.detailText)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.secondary)
                     .lineLimit(2)
             }
             if let happenedDate = result.happenedDate {
                 Text(happenedDate, format: .relative(presentation: .named))
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

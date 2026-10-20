@@ -20,7 +20,7 @@ enum AppSectionGroup: String, CaseIterable, Identifiable, Hashable {
     /// The parts under the heading, in the order they are listed.
     var sections: [AppSection] {
         switch self {
-        case .everyDay: [.contacts, .location, .health]
+        case .everyDay: [.calendar, .contacts, .location, .health]
         case .work: [.coding, .knowledge, .recordings]
         case .plans: [.goals, .ideas]
         case .money: [.finance]
@@ -30,8 +30,10 @@ enum AppSectionGroup: String, CaseIterable, Identifiable, Hashable {
 
 extension AppSection {
     /// The parts that are tabs of their own on the iPhone. Every other part is
-    /// under the More tab, and Settings is the last row of it.
-    static let tabBarSections: [AppSection] = [.agent, .mail, .photos, .calendar]
+    /// under the More tab, and Settings is the last row of it. Three, as the
+    /// iPhone's tab bar holds five and More and Search are two: a sixth tab
+    /// makes iOS put the last ones under a More of its own.
+    static let tabBarSections: [AppSection] = [.agent, .mail, .photos]
 }
 
 /// MainTab is what the tab bar has chosen: a part, the More tab, or Search.
@@ -143,8 +145,10 @@ struct MoreRow: View {
             onOpen()
         } label: {
             HStack {
+                // A place to go, in the text's color: inside a button the
+                // primary style is the button's green, a color is not.
                 Label(section.title, systemImage: section.systemImage)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                 Spacer(minLength: 8)
                 if waitingCount > 0 {
                     Text(waitingCount, format: .number)

@@ -132,7 +132,7 @@ its pull request is opened.
 ## Navigation
 
 - The app is a `TabView` (`.tabViewStyle(.sidebarAdaptable)`) of icons only:
-  Chats, Mail, Photos, Calendar and More, with Search as the bar's search tab
+  Chats, Mail, Photos and More, with Search as the bar's search tab (five in all: a sixth makes iOS add a More of its own over ours; Calendar is under More's Every day)
   (`Tab(role: .search)`). A tab's name is its accessibility label, so no
   title shows under an icon. The bar shrinks to a pill while a list scrolls
   (`.tabBarMinimizeBehavior(.onScrollDown)`).
