@@ -123,6 +123,24 @@ func NewCircleCommand() *cli.Command {
 				Action: runCirclePeople,
 			},
 			{
+				Name:      "person",
+				Usage:     "show a person's card: who they are to you and a few items of everything of theirs you can see",
+				ArgsUsage: "<username|user-id>",
+				Description: "Somebody you share a circle with, by username or account id, or one of your own\n" +
+					"contacts with --contact. The card holds your contact details for them, the circles\n" +
+					"you share and a few items from each part of the app that concerns them: where they\n" +
+					"are and their visits today, the health they share, photos of them and albums they\n" +
+					"shared, recent mail with them, recordings they speak in, and memory pages about\n" +
+					"them. A part says why it shows nothing: they have not shared it, or no contact of\n" +
+					"yours is linked to them. Somebody you share no circle with is not found.",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "contact", Usage: "one of your contacts instead of a username, <address-book-id>/<contact-id>"},
+					&cli.IntFlag{Name: "limit", Usage: "how many items to show of each part, 3 by default, at most 10"},
+					JSONFlag(),
+				},
+				Action: runCirclePerson,
+			},
+			{
 				Name:      "relate",
 				Usage:     "say what somebody you share a circle with is to you: father, wife, friend",
 				ArgsUsage: "<username> <relationship>",

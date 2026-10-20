@@ -102,15 +102,17 @@ struct LocationScreen: View {
                         LocationPeopleRows(model: model)
                     }
                     if isShowingPeople, let person = model.selectedPerson {
-                        LocationPersonPanel(model: model, person: person)
+                        // A new list for each person chosen, so one person's
+                        // day and visits never show under another's name.
+                        LocationChosenPersonVisits(connection: model.connection, person: person)
+                            .id(person.userId)
+                            .contentMargins(.top, 8, for: .scrollContent)
+                    } else if model.isSetupShown {
+                        LocationSetupList(model: model, recorder: recorder, allowLocation: allowLocation)
                     } else {
-                        if model.isSetupShown {
-                            LocationSetupList(model: model, recorder: recorder, allowLocation: allowLocation)
-                        } else {
-                            // The list starts close to what is above it, not
-                            // a grouped list's usual top gap away.
-                            content.contentMargins(.top, 8, for: .scrollContent)
-                        }
+                        // The list starts close to what is above it, not
+                        // a grouped list's usual top gap away.
+                        content.contentMargins(.top, 8, for: .scrollContent)
                     }
                 }
                 // The grouped gray of the lists, so the card of people stands
@@ -226,9 +228,9 @@ struct LocationScreen: View {
     }
 
     /// The list on screen, as Finance names its part; Location while the
-    /// setup or a chosen person's own visits fill the screen instead.
+    /// setup or a chosen person's visits fill the screen instead.
     private var title: String {
-        model.isSetupShown || model.selectedPerson != nil ? String(localized: "Location") : segment.title
+        model.isSetupShown || (isShowingPeople && model.selectedPerson != nil) ? String(localized: "Location") : segment.title
     }
 
     @ViewBuilder
@@ -249,7 +251,9 @@ struct LocationScreen: View {
     #if DEBUG
         /// The screens a screenshot names: `-TeaNodeScreen location-day`,
         /// `location-places`, `location-place`, `location-settings`,
-        /// `location-sharing`, `location-person`, `location-people` (more
+        /// `location-sharing`, `location-person`, `location-person-card` (the
+        /// same with the person's card over the map, which the app shell
+        /// brings up), `location-people` (more
         /// people than fit under the map), `location-checkin` (the check-in
         /// sheet), `location-address` (the address search of a place);
         /// `location-setup` is the server having no position yet. MainView
@@ -259,7 +263,7 @@ struct LocationScreen: View {
             guard DemoServer.isRequested, path.isEmpty else { return }
             switch DemoServer.screen {
             case "location-day": path = [.day(Date())]
-            case "location-person": model.select(userId: LocationDemo.historyPersonId)
+            case "location-person", "location-person-card": model.select(userId: LocationDemo.historyPersonId)
             case "location-people": path = [.people]
             case "location-checkin": isCheckingIn = true
             case "location-place", "location-address":
@@ -335,8 +339,9 @@ struct LocationMapHeader: View {
                 if let coordinate = person.coordinate {
                     Annotation(person.displayName, coordinate: coordinate) {
                         Button {
-                            // Chosen again, they stay chosen: the own picture or row is the way back.
+                            // Chosen again, they stay chosen and their card comes up again: the own picture or row is the way back.
                             if person.userId != model.selectedUserId { model.select(userId: person.userId) }
+                            app.openedPerson = .account(userId: person.userId)
                         } label: {
                             AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36)
                                 .overlay(

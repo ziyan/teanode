@@ -154,12 +154,15 @@ struct RecordingTranscriptScreen: View {
 struct RecordingSpeakersScreen: View {
     let connection: Connection
     let recording: Recording
+    @Environment(AppModel.self) private var app
     @State private var speakers: RecordingSpeakersView
     @State private var problemText: String?
     @State private var playbackMedia: RecordingMedia?
     @State private var referenceStartMS: Int64 = 0
     @State private var referenceEndMS: Int64?
     @State private var renamedIdentity: RecordingSpeakerIdentity?
+    /// The speaker a contact is being chosen for.
+    @State private var contactIdentity: RecordingSpeakerIdentity?
     @State private var confirmedName = ""
     @State private var isRenaming = false
     @State private var isSaving = false
@@ -176,14 +179,7 @@ struct RecordingSpeakersScreen: View {
                 ForEach(
                     speakers.speakerIdentities.filter { identity in speakers.speakerCorrections.contains { $0.speakerIdentityId == identity.id } }
                 ) { identity in
-                    Button {
-                        renamedIdentity = identity
-                        confirmedName = identity.confirmedName
-                        isRenaming = true
-                    } label: {
-                        Label(identity.confirmedName, systemImage: "person.crop.circle")
-                            .actionColor()
-                    }
+                    speakerRows(identity)
                 }
             }
             Section("Confirmed passages") {
@@ -239,12 +235,78 @@ struct RecordingSpeakersScreen: View {
         .sheet(item: $playbackMedia) { media in
             RecordingPlaybackScreen(connection: connection, media: media, passageStartMS: referenceStartMS, passageEndMS: referenceEndMS)
         }
+        .sheet(item: $contactIdentity) { identity in
+            RecordingSpeakerContactPicker(connection: connection, currentContactId: identity.contactId ?? "") { addressBookId, contactId in
+                contactIdentity = nil
+                Task { await setContact(identity, addressBookId: addressBookId, contactId: contactId) }
+            }
+        }
         .alert("Rename speaker", isPresented: $isRenaming) {
             TextField("Confirmed name", text: $confirmedName)
             Button("Save") { Task { await rename() } }
             Button("Cancel", role: .cancel) {}
         }
         .disabled(isSaving)
+    }
+
+    /// A confirmed speaker: a menu to rename them and to link, change or unlink their contact, and under it the contact's name
+    /// when they are linked, which opens the contact's card.
+    @ViewBuilder
+    private func speakerRows(_ identity: RecordingSpeakerIdentity) -> some View {
+        Menu {
+            Button("Rename", systemImage: "pencil") {
+                renamedIdentity = identity
+                confirmedName = identity.confirmedName
+                isRenaming = true
+            }
+            Button(
+                identity.isTiedToContact ? LocalizedStringKey("Change contact") : LocalizedStringKey("Link a contact"),
+                systemImage: "person.crop.circle.badge.plus"
+            ) {
+                contactIdentity = identity
+            }
+            if identity.isTiedToContact {
+                Button("Unlink contact", systemImage: "person.crop.circle.badge.minus", role: .destructive) {
+                    Task { await setContact(identity, addressBookId: "", contactId: "") }
+                }
+                .tint(.red)
+            }
+        } label: {
+            Label(identity.confirmedName, systemImage: "person.crop.circle")
+                .actionColor()
+        }
+        .listRowSeparator(identity.isTiedToContact ? .hidden : .automatic, edges: .bottom)
+        if identity.isTiedToContact {
+            Button {
+                app.openedPerson = .contact(addressBookId: identity.contactAddressBookId ?? "", contactId: identity.contactId ?? "")
+            } label: {
+                Label(linkedContactName(identity), systemImage: "person.crop.circle.badge.checkmark")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+            }
+            .buttonStyle(.plain)
+            .listRowSeparator(.hidden, edges: .top)
+        }
+    }
+
+    private func linkedContactName(_ identity: RecordingSpeakerIdentity) -> String {
+        let name = identity.contactName ?? ""
+        return name.isEmpty ? identity.confirmedName : name
+    }
+
+    private func setContact(_ identity: RecordingSpeakerIdentity, addressBookId: String, contactId: String) async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            speakers = try await connection.setRecordingSpeakerContact(
+                recordingId: recording.id, expectedSourceGeneration: speakers.sourceGeneration, speakerIdentityId: identity.id,
+                addressBookId: addressBookId, contactId: contactId)
+            problemText = nil
+        } catch {
+            problemText = error.localizedDescription
+            speakers = (try? await connection.recordingSpeakers(recordingId: recording.id)) ?? speakers
+        }
     }
 
     private func rename() async {
@@ -304,6 +366,84 @@ enum RecordingWords {
         case "uncertain": String(localized: "Provider outcome unknown")
         case "canceled": String(localized: "Canceled")
         default: String(localized: "Unknown")
+        }
+    }
+}
+
+/// RecordingSpeakerContactPicker chooses the contact a speaker is, from the cards in the person's own address books. It never
+/// makes a card.
+struct RecordingSpeakerContactPicker: View {
+    /// One contact and the address book it is in, which the server needs to find it.
+    private struct Choice: Identifiable {
+        let addressBookId: String
+        let contact: ContactSummary
+        var id: String { addressBookId + "/" + contact.id }
+    }
+
+    let connection: Connection
+    let currentContactId: String
+    /// Called with the address book and the contact chosen, or with two empty strings to unlink.
+    let onChoose: (String, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var choices: [Choice] = []
+    @State private var isLoaded = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !currentContactId.isEmpty {
+                    Button("Unlink contact", systemImage: "person.crop.circle.badge.minus", role: .destructive) { onChoose("", "") }
+                        .tint(.red)
+                        .actionColor(isDestructive: true)
+                }
+                ForEach(choices) { choice in
+                    Button {
+                        onChoose(choice.addressBookId, choice.contact.id)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(choice.contact.shownName)
+                                if let email = choice.contact.emails?.first, email != choice.contact.shownName {
+                                    Text(email).font(.footnote).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if choice.contact.id == currentContactId {
+                                Image(systemName: "checkmark").foregroundStyle(.tint)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .overlay {
+                if !isLoaded {
+                    ProgressView()
+                } else if choices.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                }
+            }
+            .searchable(text: $searchText, prompt: "Name, address or phone")
+            .navigationTitle("Link a contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .task(id: searchText) {
+                if !searchText.isEmpty {
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard !Task.isCancelled else { return }
+                }
+                let books = (try? await connection.addressBooks()) ?? []
+                var found: [Choice] = []
+                for book in books {
+                    let contacts = (try? await connection.contacts(addressBookId: book.id, matching: searchText, first: 30)) ?? []
+                    found += contacts.map { Choice(addressBookId: book.id, contact: $0) }
+                }
+                choices = found
+                isLoaded = true
+            }
         }
     }
 }

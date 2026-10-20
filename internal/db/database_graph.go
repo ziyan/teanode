@@ -100,6 +100,10 @@ type GraphOperation interface {
 	// a second one.
 	FindAgentNodeByName(agentId, parent string, kind models.AgentNodeKind, name string) (*models.AgentNode, error)
 
+	// ListAgentNodesOfContact is the pages that say they are about the
+	// contact (their contact_id), the most recently changed first.
+	ListAgentNodesOfContact(agentId, contactId string, limit int) ([]*models.AgentNode, error)
+
 	// AddAgentFact puts a sentence on a page, taking the next number.
 	AddAgentFact(fact *models.AgentFact) (*models.AgentFact, error)
 
@@ -974,6 +978,16 @@ func (self *transaction) ListAgentNodesUnder(agentId, path string, limit int) ([
 		query = query.Where(`("path" = ? OR "path" LIKE ?)`, path, likeEscaped(path)+"/%")
 	}
 	return self.nodesFrom(query.Order(`"path" ASC`).Limit(limit))
+}
+
+func (self *transaction) ListAgentNodesOfContact(agentId, contactId string, limit int) ([]*models.AgentNode, error) {
+	if agentId == "" || contactId == "" {
+		return []*models.AgentNode{}, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	return self.nodesFrom(self.tx.Where(`"agent_id" = ? AND "contact_id" = ?`, agentId, contactId).Order(`"modified_at" DESC`).Limit(limit))
 }
 
 // FindAgentNodeByName finds a direct child of a parent by what it is

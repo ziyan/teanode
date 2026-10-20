@@ -69,17 +69,7 @@ struct ConversationView: View {
             .toolbarVisibility(.hidden, for: .tabBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    HStack(spacing: 8) {
-                        if let chat = model.chat {
-                            ChatAvatarsView(chat: chat, ownUserId: model.ownUserId, size: 22)
-                        }
-                        Text(model.title)
-                            .font(.headline)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .glassEffect(in: .capsule)
+                    titleCapsule
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     // What the agent is doing is no part of a chat of people.
@@ -104,6 +94,44 @@ struct ConversationView: View {
             .sheet(item: Binding(get: { model.editingLine }, set: { model.editingLine = $0 })) { line in
                 EditMessageSheet(line: line, model: model)
             }
+    }
+
+    /// The name in the bar, with the people's pictures. In a chat with one
+    /// other person it opens that person's card.
+    @ViewBuilder
+    private var titleCapsule: some View {
+        if let userId = directChatPersonUserId {
+            Button {
+                app.openedPerson = .account(userId: userId)
+            } label: {
+                titleLabel
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens their card")
+        } else {
+            titleLabel
+        }
+    }
+
+    private var titleLabel: some View {
+        HStack(spacing: 8) {
+            if let chat = model.chat {
+                ChatAvatarsView(chat: chat, ownUserId: model.ownUserId, size: 22)
+            }
+            Text(model.title)
+                .font(.headline)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .glassEffect(in: .capsule)
+    }
+
+    /// The other person of a direct chat, when they have an account.
+    private var directChatPersonUserId: String? {
+        guard let chat = model.chat, !chat.isGroup else { return nil }
+        let userId = chat.otherMembers(ownUserId: model.ownUserId).first?.userId ?? ""
+        return userId.isEmpty ? nil : userId
     }
 
     /// The messages, scrolling, with the jump to the end.

@@ -179,10 +179,13 @@ func (self *transaction) DeleteAddressBook(addressBookId string) error {
 	if err != nil || before == nil {
 		return err
 	}
-	return self.applyMutation(models.AuditResourceAddressBook, addressBookId, models.AuditActionDelete,
+	if err := self.applyMutation(models.AuditResourceAddressBook, addressBookId, models.AuditActionDelete,
 		before, nil, func(tx *gorm.DB) error {
 			return tx.Where("\"id\" = ?", addressBookId).Delete(&addressBookModel{}).Error
-		})
+		}); err != nil {
+		return err
+	}
+	return self.untieContactsGone(before.UserID, nil)
 }
 
 // ContactsPerBook is how many contacts one address book may hold.
@@ -379,8 +382,64 @@ func (self *transaction) PutContact(contact *models.Contact) (*models.Contact, e
 }
 
 func (self *transaction) DeleteContact(addressBookId, contactId string) error {
-	return self.tx.Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
-		Delete(&contactModel{}).Error
+	book, err := self.GetAddressBook(addressBookId)
+	if err != nil {
+		return err
+	}
+	if err := self.tx.Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
+		Delete(&contactModel{}).Error; err != nil {
+		return err
+	}
+	if book == nil {
+		return nil
+	}
+	return self.untieContactsGone(book.UserID, []string{contactId})
+}
+
+// contactGoneSQL holds when the contact ID in the column it is formatted with
+// is in none of the person's address books: a contact is only unique inside
+// its book, so the same ID in another of them is still that person's.
+const contactGoneSQL = `NOT EXISTS (SELECT 1 FROM "contact" JOIN "addressbook" ON "addressbook"."id" = "contact"."addressbook_id"
+	WHERE "addressbook"."user_id" = ? AND "contact"."id" = %s)`
+
+// untieContactsGone takes off what named a contact that is in none of the
+// person's address books any more: the memory page about them, the link that
+// said the page is them, and the account's own card. The page and what it
+// remembers stay. Nothing holds these by foreign key, as a page names a
+// contact by its ID alone, so a deleted contact would otherwise go on being
+// named, and the dreams leave a page that names a contact alone. Empty
+// contactIds looks at every tie the person has, for an address book deleted
+// whole.
+func (self *transaction) untieContactsGone(userId string, contactIds []string) error {
+	if userId == "" {
+		return nil
+	}
+	agents := `SELECT "id" FROM "agent" WHERE "user_id" = ?`
+	pages := self.tx.Model(&agentNodeModel{}).
+		Where(`"agent_id" IN (`+agents+`) AND "contact_id" IS NOT NULL`, userId).
+		Where(fmt.Sprintf(contactGoneSQL, `"agent_node"."contact_id"`), userId)
+	links := self.tx.Where(`"agent_id" IN (`+agents+`) AND "record_kind" = ? AND "record_relation" = ?`,
+		userId, string(models.RecordContact), string(models.RecordRelationIsContact)).
+		Where(fmt.Sprintf(contactGoneSQL, `"agent_record_link"."record_id"`), userId)
+	account := self.tx.Model(&userModel{}).Where(`"id" = ? AND "contact_id" IS NOT NULL`, userId).
+		Where(fmt.Sprintf(contactGoneSQL, `"user"."contact_id"`), userId)
+	if len(contactIds) > 0 {
+		pages = pages.Where(`"contact_id" IN ?`, contactIds)
+		links = links.Where(`"record_id" IN ?`, contactIds)
+		account = account.Where(`"contact_id" IN ?`, contactIds)
+	}
+	if err := pages.Update("contact_id", nil).Error; err != nil {
+		return err
+	}
+	var removed []agentRecordLinkModel
+	if err := links.Clauses(clause.Returning{}).Delete(&removed).Error; err != nil {
+		return err
+	}
+	for index := range removed {
+		self.note(removed[index].AgentID, removed[index].NodeID, models.RevisionUnlinked,
+			map[string]any{"path": models.FormatRecordReference(models.RecordContact, removed[index].RecordID, 0, 0), "relation": removed[index].RecordRelation}, nil, "")
+	}
+	return account.Update("contact_id", nil).Error
 }
 
 // CountContacts is how many a book holds, for a list that says so without

@@ -105,6 +105,10 @@ struct HealthScreen: View {
         .onChange(of: app.openedHealthLink, initial: true) { _, link in
             guard let link else { return }
             app.openedHealthLink = nil
+            // The card of somebody sharing Health asks for their data.
+            if let userId = link.userId {
+                Task { await model.select(userId: userId) }
+            }
             if link.isSettings {
                 path = [.settings]
             } else if let healthType = link.healthType {
