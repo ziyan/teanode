@@ -147,6 +147,8 @@ func TestALinkIsAllowedOnlyWhereSomebodyOtherThanTheAgentWroteIt(t *testing.T) {
 			{ConversationID: conversation.ID, Role: "user", Content: "Is https://example.com/shop/chair?color=blue good?"},
 			{ConversationID: conversation.ID, Role: "tool", Name: "web_search", ToolCallID: "call_1", Content: `[{"url":"https://example.org/guide?id=7"}]`},
 			{ConversationID: other.ID, Role: "user", Content: "https://example.com/collect?data=secret"},
+			// A turn the agent took on its own opens in the person's shape.
+			{ConversationID: conversation.ID, Role: "user", Content: models.ScheduleMarker + " Read https://example.net/report?data=secret"},
 		} {
 			if _, err := tx.AppendAgentMessage(message); err != nil {
 				t.Fatalf("AppendAgentMessage: %s", err)
@@ -169,6 +171,8 @@ func TestALinkIsAllowedOnlyWhereSomebodyOtherThanTheAgentWroteIt(t *testing.T) {
 		check(conversation, false, "https://example.com/shop/chair?color=blue&data=secret")
 		check(conversation, false, "https://example.org/guide?id=7&data=secret")
 		check(conversation, false, "")
+		// The message opening the agent's own turn is not the person's.
+		check(conversation, false, "https://example.net/report?data=secret")
 		// Another conversation's messages are not this one's.
 		check(conversation, false, "https://example.com/collect?data=secret")
 		check(other, true, "https://example.com/collect?data=secret")

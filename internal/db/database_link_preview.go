@@ -18,8 +18,10 @@ type LinkPreviewOperation interface {
 
 	// HasLinkNotWrittenByAgent says whether any of the texts appears, exactly
 	// and anywhere in the text, in a message of the conversation that its agent
-	// did not write: a person's, or what a tool answered. For a chat that is its messages by a person and not deleted;
-	// for any other conversation, its user and tool messages. It is the rule
+	// did not write: a person's, or what a tool answered. For a chat that is
+	// its messages by a person and not deleted; for any other conversation,
+	// its user and tool messages, less those opening a turn the agent took on
+	// its own. It is the rule
 	// that decides which links the server may fetch for a card: a reply can be
 	// made to carry what the agent read in a link's query, and fetching it
 	// would send that to whoever runs the site.
@@ -139,8 +141,15 @@ func (self *transaction) DeleteLinkPreviews(urls []string) error {
 }
 
 func (self *transaction) HasLinkNotWrittenByAgent(conversation *models.AgentConversation, texts ...string) (bool, error) {
-	query := `SELECT EXISTS (SELECT 1 FROM "agent_message" WHERE "conversation_id" = ? AND "role" IN ('user', 'tool') AND strpos("content", ?) > 0)`
+	// A turn the agent took on its own opens with a message in the person's
+	// shape, which the agent or the code wrote: it is not the person's.
+	ownTurns := ""
 	arguments := []any{conversation.ID}
+	for _, marker := range models.OwnTurnMarkers {
+		ownTurns += ` AND NOT ("role" = 'user' AND "content" LIKE ?)`
+		arguments = append(arguments, escapeLike(marker)+"%")
+	}
+	query := `SELECT EXISTS (SELECT 1 FROM "agent_message" WHERE "conversation_id" = ? AND "role" IN ('user', 'tool')` + ownTurns + ` AND strpos("content", ?) > 0)`
 	if conversation.IsChat() {
 		query = `SELECT EXISTS (SELECT 1 FROM "chat_message" WHERE "chat_id" = ? AND "deleted_at" IS NULL
 			AND "author_kind" <> 'agent' AND ("author_agent_id" IS NULL OR "author_agent_id" = '') AND strpos("body", ?) > 0)`

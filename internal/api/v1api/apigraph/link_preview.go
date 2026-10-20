@@ -224,10 +224,16 @@ func (self *graph) ReadLinkPreviews(ctx context.Context, arguments ReadLinkPrevi
 		}
 		limitKey = principal.User.ID
 		// Only a link somebody other than the agent wrote is looked up or
-		// fetched; the rest are answered as having no preview.
+		// fetched; the rest are answered as having no preview. A run's
+		// messages are all the agent's or the code's, its opening message
+		// too, so a run has none.
 		keys = keys[:0]
 		for _, each := range asked {
 			if each.key == "" {
+				continue
+			}
+			if conversation.Kind == models.AgentConversationRun {
+				each.key = ""
 				continue
 			}
 			isAllowed, err := tx.HasLinkNotWrittenByAgent(conversation, each.written, each.cleaned)
