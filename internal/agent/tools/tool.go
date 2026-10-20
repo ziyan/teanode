@@ -561,43 +561,6 @@ func Split(offered []*Tool, loaded map[string]bool, compact bool) (sent, deferre
 	return sent, deferred
 }
 
-// Search is the deferred tools matching the words, for tool_search.
-func Search(deferred []*Tool, query string, limit int) []*Tool {
-	words := strings.Fields(strings.ToLower(query))
-	type scored struct {
-		tool  *Tool
-		score int
-	}
-	var matches []scored
-	for _, tool := range deferred {
-		haystack := strings.ToLower(tool.Name + " " + string(tool.Family) + " " + tool.Description)
-		score := 0
-		for _, word := range words {
-			if strings.Contains(haystack, word) {
-				score++
-				if strings.Contains(strings.ToLower(tool.Name), word) {
-					score++
-				}
-			}
-		}
-		if score > 0 || len(words) == 0 {
-			matches = append(matches, scored{tool, score})
-		}
-	}
-	sort.SliceStable(matches, func(left, right int) bool { return matches[left].score > matches[right].score })
-	if limit <= 0 {
-		limit = 10
-	}
-	tools := make([]*Tool, 0, limit)
-	for _, match := range matches {
-		if len(tools) >= limit {
-			break
-		}
-		tools = append(tools, match.tool)
-	}
-	return tools
-}
-
 // Schema helpers, so a tool's parameters read as what they are.
 // Exported: every tool package builds its parameters with them.
 

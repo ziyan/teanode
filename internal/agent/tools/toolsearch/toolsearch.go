@@ -19,47 +19,16 @@ func init() {
 				Family: tools.FamilyGeneral,
 				Core:   true,
 				Risk:   tools.RiskRead,
-				Description: "Load tools that are listed but not loaded. Give a few words about what you want to do (\"move mail\", \"domain dns\"); the matching tools become available for the rest of the turn. " +
-					"This finds tools, not facts: to look something up, use web_search.",
+				Description: "Load tools that are listed but not loaded. Name the tools you want from the list (\"select:calendar_agenda,contact_book\", or just their names), or give a few words about what you want to do (\"move mail\", \"domain dns\"); the closest matches become available for the rest of the turn. " +
+					"Never search for a tool you have already: call it. This finds tools, not facts: to look something up, use web_search.",
 				Parameters: tools.Object(map[string]any{
-					"query": tools.StringProperty("a few words: what you want to do, not what you want to know"),
-					"limit": tools.IntegerProperty("how many to load, 10 by default"),
+					"query": tools.StringProperty("tool names from the list, or a few words: what you want to do, not what you want to know"),
+					"limit": tools.IntegerProperty("the most to load, 5 by default and 10 at most"),
 				}, "query"),
 				Run: runToolSearch,
 			},
 		}
 	})
-}
-
-// alreadyAvailableLimit is how many of the tools the model already has
-// a search names, besides what it loads.
-const alreadyAvailableLimit = 3
-
-// isNamedBy says whether a query names a tool the model holds: a word of
-// it, of three letters or more, is the tool's name or a word of the name.
-// Search matches a word anywhere in a description, so "a" or "the" would
-// match every tool held. tool_search itself is never named: told to call
-// it, the model would only search again.
-func isNamedBy(tool *tools.Tool, query string) bool {
-	if tool.Name == "tool_search" {
-		return false
-	}
-	name := strings.ToLower(tool.Name)
-	nameWords := append(strings.FieldsFunc(name, func(character rune) bool {
-		return character == '_' || character == '-' || character == '.'
-	}), name)
-	for _, word := range strings.Fields(strings.ToLower(query)) {
-		word = strings.Trim(word, ".,;:!?\"'()")
-		if len(word) < 3 {
-			continue
-		}
-		for _, nameWord := range nameWords {
-			if word == nameWord {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 type toolSearchArguments struct {
@@ -80,19 +49,21 @@ func runToolSearch(ctx context.Context, call *tools.Call) (*tools.Result, error)
 	if len(deferred) == 0 {
 		sent, deferred = tools.Split(run.Offered(), run.Loaded(), true)
 	}
-	// The tools the model has already that match: a model that searched
-	// for a tool it holds searched again and again, each search a round.
-	alreadyAvailableNames := []string{}
-	for _, tool := range tools.Search(sent, arguments.Query, len(sent)) {
-		if len(alreadyAvailableNames) < alreadyAvailableLimit && isNamedBy(tool, arguments.Query) {
-			alreadyAvailableNames = append(alreadyAvailableNames, tool.Name)
-		}
+	found := tools.SearchTools(sent, deferred, arguments.Query, arguments.Limit)
+	// The tools the model has already that the query names: a model that
+	// searched for a tool it holds searched again and again, each search a
+	// round.
+	alreadyAvailableNames := make([]string, 0, len(found.Held))
+	for _, tool := range found.Held {
+		alreadyAvailableNames = append(alreadyAvailableNames, tool.Name)
 	}
-	found := tools.Search(deferred, arguments.Query, arguments.Limit)
-	loaded := make([]map[string]any, 0, len(found))
-	for _, tool := range found {
+	// What a loaded tool is for, in a line: its whole definition is in the
+	// next request, and repeating it here kept a second copy of every
+	// schema in the history for the rest of the conversation.
+	loaded := make([]map[string]any, 0, len(found.Loadable))
+	for _, tool := range found.Loadable {
 		run.Load(tool.Name)
-		loaded = append(loaded, map[string]any{"name": tool.Name, "family": tool.Family, "risk": tool.Risk, "description": tool.Description, "parameters": tool.Parameters})
+		loaded = append(loaded, map[string]any{"name": tool.Name, "family": tool.Family, "risk": tool.Risk, "description": firstSentence(tool.Description)})
 	}
 	if len(loaded) == 0 {
 		if len(alreadyAvailableNames) > 0 {
@@ -100,10 +71,10 @@ func runToolSearch(ctx context.Context, call *tools.Call) (*tools.Result, error)
 		}
 		return tools.TextResult("no tool matches %q; the tools already loaded are all there is for that. tool_search finds tools by what they do, not information: to look something up, use web_search", arguments.Query), nil
 	}
-	answer := map[string]any{"loaded": loaded, "note": "these tools are available from the next call on"}
+	answer := map[string]any{"loaded": loaded, "note": "these tools are available from the next call on, with their full definitions"}
 	if len(alreadyAvailableNames) > 0 {
 		answer["alreadyAvailable"] = alreadyAvailableNames
-		answer["note"] = "these tools are available from the next call on; the ones in alreadyAvailable you have already and can call now"
+		answer["note"] = "these tools are available from the next call on, with their full definitions; the ones in alreadyAvailable you have already and can call now"
 	}
 	result, err := tools.JSONResult(answer)
 	if err != nil {
@@ -111,4 +82,14 @@ func runToolSearch(ctx context.Context, call *tools.Call) (*tools.Result, error)
 	}
 	result.Note = fmt.Sprintf("loaded %d tool(s)", len(loaded))
 	return result, nil
+}
+
+// firstSentence is what a tool is for: the first sentence of its
+// description.
+func firstSentence(text string) string {
+	text = strings.TrimSpace(text)
+	if index := strings.Index(text, ". "); index > 0 {
+		return text[:index+1]
+	}
+	return text
 }

@@ -77,6 +77,17 @@ by `settings.MaxRounds`. Each round:
    tool deferral.
 4. **Which tools are sent**, via `Split` — core and already-loaded tools go in
    the request, the rest are named in the prompt for `tool_search` to load.
+   A run with nobody present has the tools it is held to reading by name
+   (`ReadOnlyTools`: memory and knowledge, for a dream) from the start.
+   `tool_search` ranks the catalog with `SearchTools`
+   (`internal/agent/tools/tool_rank.go`): a word counts by how rare it is in
+   the catalog and by where in a tool it is (name, family, description), a
+   query naming a tool by its whole name or every word of it puts that tool
+   first, `select:a,b` loads exactly those, and only the matches close to the
+   best one load, measured against a tool the model holds when that is the
+   best match, since every tool loaded rides in every later request of the
+   turn. Its answer names each loaded tool in a line, as the definitions
+   follow in the next request.
 5. **The system prompt**, rebuilt each round (`context.md`).
 6. **Recall**, once per turn, after the prompt has said which memories it
    already carries (`memory.md`).
