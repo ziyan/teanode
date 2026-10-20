@@ -19452,6 +19452,19 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: var(--space-3);
 }
 
+/* The label's own gap under it would lift the field above the button beside
+   it, which lines up with the field's bottom edge. */
+.location-day-picker label {
+  margin-bottom: 0;
+}
+
+/* An empty date field has no text to be as wide as once its native look is
+   off, and Safari draws it as a sliver: as wide as a date, as the usage
+   card's range is. */
+.location-day-picker input[type='date'] {
+  min-width: 9.5rem;
+}
+
 /* A day's name, and at its end the button that draws the day's path on the
    map, as the iPhone's day heading does. */
 .location-day-head {
