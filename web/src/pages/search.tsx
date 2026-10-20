@@ -132,7 +132,9 @@ export function SearchPage() {
       )}
       {words === '' ? (
         <SettingsEmpty>{t('search.hint')}</SettingsEmpty>
-      ) : found.loading && !found.data ? (
+      ) : found.loading && answer?.words !== words ? (
+        // The answer kept from the words before is not shown under new ones,
+        // whose Show all and documents rows would open the new words.
         <Loading />
       ) : found.error ? (
         <ErrorMessage error={found.error} />
