@@ -49,6 +49,7 @@ function sam(overrides: Partial<PersonCard> = {}): PersonCard {
     },
     contact: {
       id: 'contact-sam',
+      addressBookId: 'book-1',
       name: 'Sam Fixture',
       organization: 'Fixture Works',
       emails: ['sam@example.com', 'sam.second@example.com'],

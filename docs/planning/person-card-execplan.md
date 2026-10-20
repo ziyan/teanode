@@ -58,6 +58,15 @@ To see it working: open a chat with Sam, tap Sam's picture on a message, and the
 - Decision: the card keeps what #573 settled for relationships: the dashboard saves only the pronoun when only the pronoun changed (`isTermChanged`), the iPhone's `PersonRelationshipDraft.isTermChanged` guard and the pronoun footer stay, the relationship shows only between the two and only while they share a circle, and the demo screen `circle-relationship` still shows the relationship picker.
   Date/Author: 2026-10-20, Claude, from the session that built relationships.
 
+- Decision: when the agent reads a card (the circle tool's `person` action), it keeps to what the person gave it: a contact only in an address book granted to it, mail only in granted mailboxes, and no health somebody else shares with the person (its health tool reads the person's own only). It cannot untie or move a speaker's tie to a contact in a book it was not given.
+  Rationale: found in review; the card must not be a way around the agent's grants.
+  Date/Author: 2026-10-20, Claude.
+- Decision: the memory section reads pages tied to the contact (`agent_node.contact_id`) and pages that link to it; with neither, the person page directly under `people` with the contact's name, marked found by name, unless it is another contact's.
+  Rationale: on the deployed server a person's own page was tied to nothing, so the section was empty.
+  Date/Author: 2026-10-20, Claude.
+- Decision: the mail search is a scan of the person's mail by the contact's addresses, with no new index for now. Deployed, a card answered in under a second over a mailbox of several gigabytes; an index on the lowercased sender and recipients can follow if a section ever fails on time.
+  Date/Author: 2026-10-20, Claude.
+
 ## Outcomes & Retrospective
 
 (Filled in at the end.)

@@ -621,6 +621,89 @@ func TestReadPersonCardMemoryFallsBackToThePageWithHerName(test *testing.T) {
 	}
 }
 
+// The agent reads a card as the person gave it things: a contact only in an
+// address book they granted it, mail only in a granted mailbox, and none of
+// the health somebody else shares with the person.
+func TestReadPersonCardAsTheAgentKeepsToWhatThePersonGaveIt(test *testing.T) {
+	world := newPersonCardWorld(test)
+	bookId, _ := world.keepContact(test, world.ben, "Ada", []string{"ada@example.org"}, world.ada.ID)
+	world.run(test, world.ada, reportHealthQuery, map[string]any{"daySummaries": []any{
+		daySummaryInput("stepCount", time.Now().UTC().Format("2006-01-02"), map[string]any{"quantityUnit": "count", "sumValue": 1234}),
+	}})
+	var mailboxId string
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		world.switchOnAgent(test, transaction, world.ben)
+		if _, err := transaction.SetHealthShare(world.ada.ID, &models.HealthShare{GranteeUserID: world.ben.ID, HealthCategories: []string{"activity"}}); err != nil {
+			test.Fatal(err)
+		}
+		mailbox, err := transaction.CreateMailbox(&models.Mailbox{UserID: world.ben.ID, Name: "Personal"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		mailboxId = mailbox.ID
+		folder, err := transaction.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
+		if err != nil || folder == nil {
+			test.Fatal(folder, err)
+		}
+		mail, err := transaction.CreateMail(&models.Mail{From: "ada@example.org", Sender: "ada@example.org", Recipients: []string{"ben@example.net"},
+			Subject: "hello", Kind: models.MailKindIncoming, MessageID: "<hello@example.net>", ReceivedAt: time.Now()}, nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.AddItem(folder.ID, mail.ID, "", models.MailboxItemFlags{}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	operations := &agentOperations{graph: world.graph, user: world.ben, permissions: &models.EffectivePermissions{Everywhere: []models.Permission{
+		models.PermissionLocationUse, models.PermissionContactsUse, models.PermissionMailRead, models.PermissionPhotosUse,
+		models.PermissionAgentUse, models.PermissionCircleUse, models.PermissionHealthUse,
+	}}}
+	ask := func() map[string]any {
+		var found struct {
+			ReadPersonCard map[string]any `json:"ReadPersonCard"`
+		}
+		if err := operations.Execute(test.Context(), fmt.Sprintf(`query { ReadPersonCard(userId: %q) {`+personCardFields+`} }`, world.ada.ID), nil, &found); err != nil {
+			test.Fatal(err)
+		}
+		return found.ReadPersonCard
+	}
+
+	if state := stateOf(world.cardOf(test, world.ben, world.ada), "health"); state != "shown" {
+		test.Fatalf("the person reads the health shared with them: %s", state)
+	}
+	card := ask()
+	if card["contact"] != nil || stateOf(card, "mail") != "needsContact" || stateOf(card, "health") != "unavailable" {
+		test.Errorf("a book not given to the agent, and health shared with the person: %v", card)
+	}
+
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		book, err := transaction.GetAddressBook(bookId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		book.AgentGranted = true
+		if _, err := transaction.UpdateAddressBook(book); err != nil {
+			test.Fatal(err)
+		}
+	})
+	card = ask()
+	if card["contact"] == nil || stateOf(card, "mail") != "shown" || len(sectionOf(card, "mail")["mails"].([]any)) != 0 {
+		test.Errorf("the book given, the mailbox not: %v", card)
+	}
+
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		if _, err := transaction.UpdateMailbox(mailboxId, func(mailbox *models.Mailbox) error {
+			mailbox.Agent = &models.AgentMailbox{Granted: true}
+			return nil
+		}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if mails := sectionOf(ask(), "mail")["mails"].([]any); len(mails) != 1 {
+		test.Errorf("the mailbox given: %v", mails)
+	}
+}
+
 // The item limit is 3 by default, at most 10, and the card says when a section
 // has more.
 func TestPersonCardItemLimit(test *testing.T) {

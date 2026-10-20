@@ -15,6 +15,8 @@ export type PersonCardSectionState = 'shown' | 'notShared' | 'needsContact' | 'u
 
 export type PersonCardContact = {
   id: string
+  /** The book the contact is in. */
+  addressBookId: string
   name?: string
   organization?: string
   emails: string[]
@@ -115,7 +117,7 @@ export type PersonCard = {
   memory: PersonCardMemorySection | null
 }
 
-const CONTACT_FIELDS = 'id name organization emails phones hasPhoto accountUserId addresses { written }'
+const CONTACT_FIELDS = 'id addressBookId name organization emails phones hasPhoto accountUserId addresses { written }'
 const MEMBER_FIELDS =
   'userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord linkedContactId'
 const HEALTH_DAY_FIELDS = 'summaryDay sumValue averageValue minimumValue maximumValue sampleCount durationSeconds'

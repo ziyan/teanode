@@ -16,8 +16,9 @@ type PersonCardOperation interface {
 	// any case: an address inside a longer one is another address. The trash,
 	// the junk folder, drafts and a phone's notes are left out, and so are
 	// the copies of one mail that a sender made by writing to each of the
-	// person's addresses separately.
-	ListMailWithAddresses(userId string, addresses []string, limit int) ([]*PersonCardMail, bool, error)
+	// person's addresses separately. mailboxIds, when not nil, keeps to
+	// those of the person's mailboxes (none, when empty).
+	ListMailWithAddresses(userId string, mailboxIds []string, addresses []string, limit int) ([]*PersonCardMail, bool, error)
 }
 
 // PersonCardMail is one mail with one of the addresses: the item, with its
@@ -80,7 +81,7 @@ func isAddressIn(text string, addresses []string) bool {
 	return false
 }
 
-func (self *transaction) ListMailWithAddresses(userId string, addresses []string, limit int) ([]*PersonCardMail, bool, error) {
+func (self *transaction) ListMailWithAddresses(userId string, mailboxIds []string, addresses []string, limit int) ([]*PersonCardMail, bool, error) {
 	wanted := make([]string, 0, len(addresses))
 	for _, address := range addresses {
 		address = strings.ToLower(strings.TrimSpace(address))
@@ -95,7 +96,7 @@ func (self *transaction) ListMailWithAddresses(userId string, addresses []string
 			wanted = append(wanted, address)
 		}
 	}
-	if userId == "" || len(wanted) == 0 || limit < 1 {
+	if userId == "" || len(wanted) == 0 || limit < 1 || (mailboxIds != nil && len(mailboxIds) == 0) {
 		return []*PersonCardMail{}, false, nil
 	}
 
@@ -112,6 +113,10 @@ func (self *transaction) ListMailWithAddresses(userId string, addresses []string
 		` AND "mail"."kind" NOT IN (?, ?)` +
 		` AND (` + fromMatch + ` OR ` + senderMatch +
 		` OR EXISTS (SELECT 1 FROM unnest("mail"."recipients") AS recipient WHERE lower(recipient) IN ?))`
+	if mailboxIds != nil {
+		condition += ` AND "mailbox"."id" IN ?`
+		arguments = append(arguments, mailboxIds)
+	}
 
 	pageSize := max(limit*4, 20)
 	kept := []*PersonCardMail{}

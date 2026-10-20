@@ -100,6 +100,9 @@ struct PersonCardSheet: View {
         }
         .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(.visible)
+        // At half height what is under it stays in use, as in Find My: the
+        // map can still be moved, the chat still read.
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
     }
 
     /// Half the screen; a screenshot of the card whole (`-TeaNodeScreen
@@ -232,9 +235,19 @@ struct PersonCardView: View {
         PersonCardDetailsView(card: card, isInSheet: isInSheet)
         PersonCardCirclesView(card: card)
         PersonCardRelationshipView(card: card, isPreparing: isPreparingRelationship) { openRelationship(of: $0) }
-        PersonCardManageView(
-            card: card, contacts: contacts, isInSheet: isInSheet, isChoosingAccount: $isChoosingAccount,
-            didChange: { Task { await model.load() } })
+        if isContactInLoadedBook {
+            PersonCardManageView(
+                card: card, contacts: contacts, isInSheet: isInSheet, isChoosingAccount: $isChoosingAccount,
+                didChange: { Task { await model.load() } })
+        }
+    }
+
+    /// The contact is in the address book this screen edits: the app keeps
+    /// one, and a contact of another book is shown but not changed here.
+    private var isContactInLoadedBook: Bool {
+        guard let bookId = contacts.addressBook?.id else { return false }
+        guard let contactBookId = model.card?.contact?.addressBookId else { return true }
+        return contactBookId == bookId
     }
 
     private func isMine(_ card: PersonCard) -> Bool {
@@ -254,7 +267,7 @@ struct PersonCardView: View {
         ToolbarItem(placement: .topBarTrailing) {
             if model.card?.hasContact == true {
                 Button("Edit") { isEditing = true }
-                    .disabled(contacts.addressBook == nil)
+                    .disabled(!isContactInLoadedBook)
             }
         }
     }
@@ -365,7 +378,7 @@ struct PersonCardHeader: View {
     @State private var isOpeningChat = false
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             picture
             titles
             if hasButtons {
@@ -380,9 +393,9 @@ struct PersonCardHeader: View {
     @ViewBuilder
     private var picture: some View {
         if let person = card.person {
-            AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 88)
+            AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 64)
         } else if let contact = card.contact {
-            ContactPicture(contactId: contact.id, name: contact.name ?? "", hasPhoto: contact.hasPhoto == true, size: 88)
+            ContactPicture(contactId: contact.id, name: contact.name ?? "", hasPhoto: contact.hasPhoto == true, size: 64)
         }
     }
 
@@ -528,9 +541,12 @@ struct PersonCardActionButton: View {
     }
 
     private var symbol: some View {
+        // One height for every symbol, so the words under them line up
+        // (an envelope is shorter than a phone).
         Image(systemName: systemImage)
             .font(.title3)
             .symbolRenderingMode(.hierarchical)
+            .frame(height: 24)
             .accessibilityHidden(true)
     }
 

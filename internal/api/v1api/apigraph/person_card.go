@@ -273,6 +273,11 @@ type personCardSubject struct {
 	// that no contact means "link one" only to somebody who can.
 	contact         *models.Contact
 	isContactUsable bool
+
+	// isAgent says the person's agent is reading the card, which keeps to
+	// what the person gave it: the address books and mailboxes they granted
+	// it, and no health but the person's own.
+	isAgent bool
 }
 
 // personCardItemLimitOf is the number of items to keep in each section for the
@@ -467,7 +472,11 @@ func (self *graph) findPersonCardSubject(ctx context.Context, userId, addressBoo
 	caller := principal.User
 	tx := self.transaction(ctx)
 	card := &PersonCardView{SharedCircles: []*PersonCardCircleView{}}
-	subject := &personCardSubject{caller: caller, callerLocation: time.UTC}
+	subject := &personCardSubject{caller: caller, callerLocation: time.UTC, isAgent: db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent}
+	grantedAddressBookIds, err := self.agentGrantedAddressBookIds(ctx, caller.ID)
+	if err != nil {
+		return nil, nil, err
+	}
 	if caller.Timezone != "" {
 		if location, err := time.LoadLocation(caller.Timezone); err == nil {
 			subject.callerLocation = location
@@ -494,6 +503,10 @@ func (self *graph) findPersonCardSubject(ctx context.Context, userId, addressBoo
 			if subject.contact, err = tx.FindContactByAccount(caller.ID, userId); err != nil {
 				return nil, nil, err
 			}
+			// The agent reads a contact only in a book the person gave it.
+			if subject.contact != nil && grantedAddressBookIds != nil && !grantedAddressBookIds[subject.contact.AddressBookID] {
+				subject.contact = nil
+			}
 		} else if !isRefusedAsUnavailable(err) {
 			return nil, nil, err
 		}
@@ -501,6 +514,9 @@ func (self *graph) findPersonCardSubject(ctx context.Context, userId, addressBoo
 		book, err := self.requireOwnAddressBook(ctx, addressBookId)
 		if err != nil {
 			return nil, nil, err
+		}
+		if grantedAddressBookIds != nil && !grantedAddressBookIds[book.ID] {
+			return nil, nil, api.ErrNotFound
 		}
 		contact, err := tx.GetContact(book.ID, contactId)
 		if err != nil {
@@ -642,7 +658,9 @@ func (self *graph) readPersonCardLocation(ctx context.Context, subject *personCa
 // summary, as the Health page lists them, with the steps first.
 func (self *graph) readPersonCardHealth(ctx context.Context, subject *personCardSubject, itemLimit int) (*PersonCardHealthSection, error) {
 	section := newPersonCardHealthSection(PersonCardSectionStateUnavailable)
-	if subject.accountUserID == "" {
+	// The agent reads the person's own Health only, and only when they let
+	// it (canAgentReadHealth); what others share is for the person to see.
+	if subject.accountUserID == "" || subject.isAgent {
 		return section, nil
 	}
 	principal, err := self.requireHealthPerson(ctx)
@@ -743,7 +761,21 @@ func (self *graph) readPersonCardMail(ctx context.Context, subject *personCardSu
 		return section, nil
 	}
 	tx := self.transaction(ctx)
-	found, hasMore, err := tx.ListMailWithAddresses(principal.User.ID, subject.contact.Emails, itemLimit)
+	// The agent reads only the mailboxes the person granted it.
+	var mailboxIds []string
+	if subject.isAgent {
+		mailboxes, err := tx.ListMailboxes(principal.User.ID)
+		if err != nil {
+			return nil, err
+		}
+		mailboxIds = []string{}
+		for _, mailbox := range mailboxes {
+			if mailbox.Agent != nil && mailbox.Agent.Granted {
+				mailboxIds = append(mailboxIds, mailbox.ID)
+			}
+		}
+	}
+	found, hasMore, err := tx.ListMailWithAddresses(principal.User.ID, mailboxIds, subject.contact.Emails, itemLimit)
 	if err != nil {
 		return nil, err
 	}

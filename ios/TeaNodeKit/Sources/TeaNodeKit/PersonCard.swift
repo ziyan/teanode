@@ -359,7 +359,7 @@ extension Documents {
           ReadPersonCard(userId: $userId, addressBookId: $addressBookId, contactId: $contactId, itemLimit: $itemLimit) {
             person { userId username name avatarUrl avatarColorIndex memberRole joinedAt relationshipKind relationshipTermGender relationshipWord linkedContactId }
             contact {
-              id name organization emails phones note hasPhoto
+              id addressBookId name organization emails phones note hasPhoto
               addresses { street locality region postalCode country }
               accountUserId account { userId username name avatarUrl avatarColorIndex }
             }

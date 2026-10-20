@@ -137,7 +137,9 @@ function PersonCardView({
   const firstEmail = contact?.emails[0] ?? ''
   const isOwnCard = person !== null && person.userId === session.userId
 
-  const editor = useContactEditor({ addressBookId: addressBookId || undefined, onChanged: reload })
+  // The book the contact is in, which on an account's card is whichever of
+  // the person's books holds the contact linked to it.
+  const editor = useContactEditor({ addressBookId: contact?.addressBookId || addressBookId || undefined, onChanged: reload })
   const { act, isBusy, problem, clearProblem } = useAct(reload)
 
   const timeFormat = useMemo(

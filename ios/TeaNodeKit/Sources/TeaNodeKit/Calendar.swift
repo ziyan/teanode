@@ -392,6 +392,8 @@ public struct ContactAddress: Codable, Hashable, Sendable {
 /// is sent back, since an empty one clears what is there.
 public struct ContactDetail: Codable, Hashable, Sendable {
     public let id: String
+    /// The address book it is in; nil where it was not asked for.
+    public let addressBookId: String?
     public let name: String?
     public let organization: String?
     public let emails: [String]?

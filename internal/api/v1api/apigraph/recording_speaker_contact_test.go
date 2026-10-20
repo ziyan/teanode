@@ -224,7 +224,21 @@ func TestSettingASpeakerContactIsTheOwnersAndTheAgentsGrantedBooksOnly(test *tes
 		if identity := view.SpeakerIdentities[0]; identity.ContactID != "" || identity.ContactAddressBookID != "" || identity.ContactName != "" {
 			test.Errorf("the agent was shown a tie to a book it was not given: %+v", identity)
 		}
-		view, err = set(ctx, world.grantedBook, world.grantedCard)
+		// Nor may it take that tie off or move it to another contact.
+		if _, err := set(ctx, world.grantedBook, world.grantedCard); !errors.Is(err, api.ErrNotFound) {
+			test.Errorf("the agent moved a tie it cannot see: %v", err)
+		}
+		if _, err := set(ctx, "", ""); !errors.Is(err, api.ErrNotFound) {
+			test.Errorf("the agent took off a tie it cannot see: %v", err)
+		}
+	})
+	world.run(test, false, func(ctx context.Context, transaction db.Transaction) {
+		if _, err := set(ctx, "", ""); err != nil {
+			test.Fatal(err)
+		}
+	})
+	world.run(test, true, func(ctx context.Context, transaction db.Transaction) {
+		view, err := set(ctx, world.grantedBook, world.grantedCard)
 		if err != nil {
 			test.Fatal(err)
 		}
