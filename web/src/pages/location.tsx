@@ -24,6 +24,7 @@ import {
   placeSubtitle,
   placeTitle,
   VISIT_FIELDS,
+  visitDurationText,
 } from '../components/locationData'
 import { LocationMap, MapPerson, MapPlace } from '../components/locationMap'
 import { LocationSetup } from '../components/locationSetup'
@@ -39,7 +40,7 @@ import { Tabs, TabItem } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
-import { personPhotosAddress } from '../lib/circlePeople'
+import { personPath, personPhotosAddress } from '../lib/circlePeople'
 import { hasPermission, useSession } from '../session'
 
 // Where the person is and has been, and who shares it with them: a map, the
@@ -126,19 +127,6 @@ const PLACE_VISITS_SHOWN_COUNT = 10
 type Answered<Answer> = { requestKey: string; answer: Answer }
 function answeredFor<Answer>(data: Answered<Answer> | null, requestKey: string): Answer | null {
   return data && data.requestKey === requestKey ? data.answer : null
-}
-
-type Translate = ReturnType<typeof useTranslation>['t']
-
-// visitDurationText is how long a visit lasted, or that it is going on.
-function visitDurationText(visit: PlaceVisit, t: Translate): string {
-  if (visit.durationSeconds === null || visit.durationSeconds === undefined) {
-    return visit.departedAt ? '' : t('location.hereNow')
-  }
-  const minutes = Math.max(1, Math.round(visit.durationSeconds / 60))
-  return minutes >= 60
-    ? t('location.durationHours', { hours: Math.floor(minutes / 60), minutes: minutes % 60 })
-    : t('location.durationMinutes', { minutes })
 }
 
 // LabelFilter is the choice of one label, or all of them.
@@ -763,6 +751,11 @@ function LocationContent({ userId }: { userId: string }) {
   return (
     <>
       <PageHeadingActions>
+        {viewedPerson && (
+          <Link className="button" to={personPath(viewedPerson.userId)}>
+            {t('person.profile')}
+          </Link>
+        )}
         {viewedPerson && isViewedPersonLinked && (
           <Link className="button" to={personPhotosAddress(viewedPerson.userId)}>
             {t('photos.accountPhotosOf', { name: viewedName })}

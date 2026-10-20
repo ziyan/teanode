@@ -201,7 +201,7 @@ export type PhotoListKind = 'library' | 'favorites' | 'trash'
 // How many photos a page of the timeline holds.
 export const PHOTOS_PER_PAGE = 200
 
-const PHOTO_FIELDS =
+export const PHOTO_FIELDS =
   'id clientPhotoId photoKind photoSource createdAt takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl isOwnedByCaller ownerName userId'
 
 const PHOTO_DETAIL_FIELDS = `${PHOTO_FIELDS} photoDescription descriptionVisibleText describedAt isDescriptionRequested`
@@ -209,7 +209,7 @@ const PHOTO_DETAIL_FIELDS = `${PHOTO_FIELDS} photoDescription descriptionVisible
 const PHOTO_FACE_FIELDS =
   'id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName isOwnContact facePictureUrl'
 
-const PHOTO_ALBUM_FIELDS =
+export const PHOTO_ALBUM_FIELDS =
   'id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl ownerUserId circleId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex circleName isOwnedByCaller shareLevel canCallerContribute canCallerManage isLocationIncluded'
 
 const PHOTO_ALBUM_SHARE_FIELDS =

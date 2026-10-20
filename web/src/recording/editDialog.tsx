@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { FormDialog } from '../components/dialog'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
-import { recordingOperation } from './processing'
+import { recordingOperation, type SpeakerNameSuggestion } from './processing'
 import { type RECORDING_PROCESSING_DOCUMENTS } from './processingDocuments'
 
 export type DialogField = {
@@ -52,6 +52,12 @@ export function RecordingEditDialog({
     for (const field of fields)
       variables[field.fieldName] = field.inputType === 'number' ? Number(field.fieldValue) : field.fieldValue
     if (dialog.operationName === 'UpdateRecordingMetadata') variables.recordedAt = variables.recordedAt || null
+    // Naming a speaker with a name that is a contact's ties the speaker to that
+    // contact too.
+    if (tiedContact) {
+      variables.contactAddressBookId = tiedContact.addressBookId
+      variables.contactId = tiedContact.contactId
+    }
     try {
       await recordingOperation(dialog.operationName, variables)
       toast.done(t('recordingProcessing.saved'))
@@ -66,14 +72,16 @@ export function RecordingEditDialog({
   // A speaker's name is offered from the voices already named, the people in
   // the agent's memory and the person's contacts, narrowed as it is typed.
   const typedName = fields.find((field) => field.fieldName === 'confirmedName')?.fieldValue
-  const [suggestedNames, setSuggestedNames] = useState<string[]>(speakerNames)
+  const [suggestions, setSuggestions] = useState<SpeakerNameSuggestion[]>(() =>
+    speakerNames.map((confirmedName) => ({ confirmedName, speakerNameSource: 'speaker' })),
+  )
   useEffect(() => {
     if (typedName === undefined) return
     let isCurrent = true
     const timer = window.setTimeout(() => {
-      recordingOperation<{ confirmedName: string }[]>('SuggestRecordingSpeakerNames', { searchText: typedName.trim() })
-        .then((suggestions) => {
-          if (isCurrent) setSuggestedNames(suggestions.map((suggestion) => suggestion.confirmedName))
+      recordingOperation<SpeakerNameSuggestion[]>('SuggestRecordingSpeakerNames', { searchText: typedName.trim() })
+        .then((offered) => {
+          if (isCurrent) setSuggestions(offered)
         })
         .catch(() => {})
     }, 200)
@@ -82,6 +90,21 @@ export function RecordingEditDialog({
       window.clearTimeout(timer)
     }
   }, [typedName])
+  // The contact the typed name is, when it is a name offered from one. Only a
+  // new name for a voice ties it: a rename keeps the contact it has.
+  const isNaming =
+    dialog.operationName === 'CorrectRecordingSpeaker' || dialog.operationName === 'NameRecordingTemporarySpeaker'
+  const tiedSuggestion = isNaming
+    ? suggestions.find(
+        (suggestion) =>
+          suggestion.addressBookId &&
+          suggestion.contactId &&
+          suggestion.confirmedName.toLowerCase() === (typedName ?? '').trim().toLowerCase(),
+      )
+    : undefined
+  const tiedContact = tiedSuggestion
+    ? { addressBookId: tiedSuggestion.addressBookId!, contactId: tiedSuggestion.contactId! }
+    : null
   const changeField = (fieldIndex: number, fieldValue: string) =>
     setFields((previous) => previous.map((field, index) => (index === fieldIndex ? { ...field, fieldValue } : field)))
   return (
@@ -119,9 +142,12 @@ export function RecordingEditDialog({
           )}
         </label>
       ))}
+      {tiedSuggestion ? (
+        <p className="muted">{t('recordingProcessing.nameTiesContact', { name: tiedSuggestion.confirmedName })}</p>
+      ) : null}
       <datalist id={speakerNamesListId}>
-        {suggestedNames.map((speakerName) => (
-          <option key={speakerName} value={speakerName} />
+        {suggestions.map((suggestion) => (
+          <option key={suggestion.confirmedName} value={suggestion.confirmedName} />
         ))}
       </datalist>
     </FormDialog>

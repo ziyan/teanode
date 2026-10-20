@@ -141,6 +141,7 @@ function renderAt(entry: string, options: { isOperator?: boolean; canUsePhotos?:
               <Route path="/circles" element={<CirclesPage />} />
               <Route path="/circles/:circleId" element={<CirclePage />} />
               <Route path="/photos" element={<p>The photos page</p>} />
+              <Route path="/people/:userId" element={<p>The card page</p>} />
             </Routes>
             <Where />
           </MemoryRouter>
@@ -162,6 +163,19 @@ it('lists the circles with their kind and how many people are in them', async ()
   expect(card.getAttribute('href')).toBe('/circles/circle-one')
   expect(within(card).getByText('Family')).toBeTruthy()
   expect(within(card).getByText('2 people')).toBeTruthy()
+})
+
+it("opens another member's card from their name, and not the signed-in person's own", async () => {
+  answerWith({ read: circle() })
+  renderAt('/circles/circle-one')
+
+  const name = await screen.findByRole('link', { name: 'Person B' })
+  expect(name.getAttribute('href')).toBe('/people/person-b')
+  // The caller's own name opens nothing, and the menu beside the other stays.
+  expect(screen.queryByRole('link', { name: 'Person A' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Person B: Actions' })).toBeTruthy()
+  fireEvent.click(name)
+  await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/people/person-b'))
 })
 
 it('says so when the person is in no circle', async () => {

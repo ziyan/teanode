@@ -16,7 +16,7 @@ import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
-import { personPhotosAddress } from '../lib/circlePeople'
+import { personPath, personPhotosAddress } from '../lib/circlePeople'
 import {
   PRONOUNS,
   PRONOUN_LABELS,
@@ -153,7 +153,7 @@ const SET_PERSON_RELATIONSHIP = `
     }
   }`
 const REMOVE_PERSON_RELATIONSHIP = `mutation ($userId: String!) { RemovePersonRelationship(userId: $userId) }`
-const GET_CURRENT_PRONOUN = `query { GetCurrentUser { id pronoun } }`
+export const GET_CURRENT_PRONOUN = `query { GetCurrentUser { id pronoun } }`
 const UPDATE_PRONOUN = `mutation ($userId: String!, $pronoun: String!) { UpdateUser(userId: $userId, pronoun: $pronoun) { id pronoun } }`
 
 // Sharing where the person is with a whole circle: offered, with the calendar,
@@ -184,14 +184,14 @@ type CalendarOfCircle = {
 // The most pictures a card draws before the count says the rest.
 const MOST_AVATARS = 5
 
-function nameOf(member: Pick<CircleMember, 'name' | 'username'>): string {
+export function nameOf(member: Pick<CircleMember, 'name' | 'username'>): string {
   return member.name?.trim() || member.username
 }
 
 // useAct runs one change to circles the same way everywhere: it says what
 // happened in a toast, and keeps the failure for a dialog that is open to show
 // in its own words, so that the dialog stays up with what was typed in it.
-function useAct(reload: () => Promise<unknown>) {
+export function useAct(reload: () => Promise<unknown>) {
   const { t } = useTranslation()
   const toast = useToast()
   const [isBusy, setBusy] = useState(false)
@@ -227,7 +227,7 @@ function useAct(reload: () => Promise<unknown>) {
 // the person has not said how they are described and the opposite word has a
 // gendered form; the answer is saved to their profile first, so that the
 // relationship is worded for them from the start.
-function RelationshipDialog({
+export function RelationshipDialog({
   member,
   ownPronoun,
   ownUserId,
@@ -825,7 +825,9 @@ function CircleDetail() {
               avatar={nameOf(member)}
               avatarUrl={member.avatarUrl}
               avatarColorIndex={member.avatarColorIndex}
-              title={nameOf(member)}
+              // A name opens the person's card; the menu beside it keeps what
+              // is done to the member in this circle.
+              title={isYou ? nameOf(member) : <Link to={personPath(member.userId)}>{nameOf(member)}</Link>}
               badge={member.memberRole === 'admin' ? <Tag value={t('circles.admin')} tone="good" /> : undefined}
               // The username only where it says something the title did not:
               // somebody without a name is titled by their username already.

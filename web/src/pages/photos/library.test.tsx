@@ -1511,6 +1511,44 @@ it('leaves the person behind in the address when another person is picked from P
   )
 })
 
+it("opens the card of the person whose page it is, as the account when they are one of the person's circles", async () => {
+  const group = {
+    id: 'group-1',
+    createdAt: '',
+    updatedAt: '',
+    contactId: 'contact-1',
+    contactAddressBookId: 'book-1',
+    contactName: 'Robin Example',
+    isOwnContact: false,
+    faceCount: 1,
+    photoCount: 3,
+    facePictureUrl: '',
+    coverPhotoFaceId: '',
+    isHidden: false,
+  }
+  extraAnswer = (document) => (document.includes('ReadPhotoFaceGroup') ? { ReadPhotoFaceGroup: group } : undefined)
+  show('/photos/people/group-1')
+  const profile = await screen.findByRole('link', { name: 'Profile' })
+  expect(profile.getAttribute('href')).toBe('/people/contact/book-1/contact-1')
+  cleanup()
+
+  extraAnswer = (document) =>
+    document.includes('ReadPhotoFaceGroup')
+      ? { ReadPhotoFaceGroup: { ...group, accountUserId: 'user-sam', account: circlePerson } }
+      : undefined
+  show('/photos/people/group-1')
+  expect((await screen.findByRole('link', { name: 'Profile' })).getAttribute('href')).toBe('/people/user-sam')
+  cleanup()
+
+  extraAnswer = (document) =>
+    document.includes('ReadPhotoFaceGroup')
+      ? { ReadPhotoFaceGroup: { ...group, contactId: '', contactAddressBookId: '', contactName: '' } }
+      : undefined
+  show('/photos/people/group-1')
+  await screen.findAllByRole('button', { name: 'Name this person' })
+  expect(screen.queryByRole('link', { name: 'Profile' })).toBeNull()
+})
+
 it('takes a person who is not among the people in the circles out of the address, says so, and lists nothing meanwhile', async () => {
   answerCirclePeople([])
   show('/photos?person=user-gone')
