@@ -612,7 +612,21 @@ func TestReadPersonCardMemoryFallsBackToThePageWithHerName(test *testing.T) {
 		if err != nil || node == nil {
 			test.Fatal(node, err)
 		}
-		if err := transaction.SetAgentNodeContact(agentId, node.ID, contactId+"-another"); err != nil {
+		if err := transaction.SetAgentNodeContact(agentId, node.ID, contactId+"-gone"); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if pages := sectionOf(world.cardOf(test, world.ben, world.ada), "memory")["pages"].([]any); len(pages) != 1 {
+		test.Errorf("a page tied to a contact that is gone is still hers by name: %v", pages)
+	}
+
+	_, otherContactId := world.keepContact(test, world.ben, "Another Ada", []string{"another@example.org"}, "")
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		node, err := transaction.FindAgentNodeByName(agentId, "people", models.NodePerson, "Ada Lovelace")
+		if err != nil || node == nil {
+			test.Fatal(node, err)
+		}
+		if err := transaction.SetAgentNodeContact(agentId, node.ID, otherContactId); err != nil {
 			test.Fatal(err)
 		}
 	})
