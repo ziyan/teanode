@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { buttonOf, clickCountOf, keyMessage, modifiersOf, piecesOf, pointToTab } from './browserInput'
+import { buttonOf, clampView, clickCountOf, keyMessage, modifiersOf, MOST_ZOOM, panView, piecesOf, pinchView, pointToTab, UNZOOMED } from './browserInput'
 
 const noModifiers = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }
 
@@ -133,4 +133,23 @@ it('cuts pasted text into pieces without splitting an emoji', () => {
   expect(pieces).toEqual(['abc', '\u{1F600}de', 'f'])
   expect(pieces.join('')).toBe('abc\u{1F600}def')
   expect(piecesOf('', 4)).toEqual([])
+})
+
+it('keeps the zoomed picture covering its box', () => {
+  expect(clampView({ scale: 0.5, x: 10, y: 10 }, 400, 300)).toEqual({ scale: 1, x: 0, y: 0 })
+  expect(clampView({ scale: 9, x: 0, y: 0 }, 400, 300).scale).toBe(MOST_ZOOM)
+  // Zoomed twice, it may move up to its box's size to the left and up.
+  expect(clampView({ scale: 2, x: -900, y: 50 }, 400, 300)).toEqual({ scale: 2, x: -400, y: 0 })
+})
+
+it('zooms around the point between two fingers', () => {
+  // Fingers 100 apart around (200, 150) spread to 200 apart around the
+  // same point: twice the zoom, and that point stays where it was.
+  const view = pinchView(UNZOOMED, [{ x: 150, y: 150 }, { x: 250, y: 150 }], [{ x: 100, y: 150 }, { x: 300, y: 150 }], 400, 300)
+  expect(view.scale).toBe(2)
+  expect(view.x).toBe(-200)
+  expect(view.y).toBe(-150)
+  // Moved together, they move the picture with them.
+  const moved = panView(view, 50, 0, 400, 300)
+  expect(moved.x).toBe(-150)
 })

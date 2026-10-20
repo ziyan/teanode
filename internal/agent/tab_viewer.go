@@ -83,6 +83,17 @@ type tabRoom struct {
 	// strayStopAt is when the extension was last told to stop a stream
 	// nobody asked for, by tab, so a burst of its pictures asks once.
 	strayStopAt map[string]time.Time
+	// emulation is the phone the person holds the tab from, which the tab
+	// is laid out at the size of; nil while it is laid out as it is.
+	emulation *tabEmulation
+}
+
+// tabEmulation is a tab laid out at the size of the phone holding it.
+type tabEmulation struct {
+	viewer TabViewer
+	tab    string
+	width  float64
+	height float64
 }
 
 func newTabRoom() *tabRoom {
@@ -206,11 +217,13 @@ func (self *Agent) RemoveTabViewer(agentId string, viewer TabViewer) {
 			room.mutex.Unlock()
 			if isLapsed {
 				log.Noticef("a taken over tab went back to the agent: nobody was watching it")
+				self.endEmulation(agentId, nil)
 			}
 		})
 		room.lapse = lapse
 	}
 	room.mutex.Unlock()
+	self.endEmulation(agentId, viewer)
 	self.recast(agentId)
 }
 
@@ -233,10 +246,14 @@ func (self *Agent) WatchTab(agentId string, viewer TabViewer, tab string) {
 			break
 		}
 	}
+	isMoved := isListed && room.viewers[viewer] != tab
 	if isListed {
 		room.viewers[viewer] = tab
 	}
 	room.mutex.Unlock()
+	if isMoved {
+		self.endEmulation(agentId, viewer)
+	}
 	self.recast(agentId)
 	self.tellViewers(agentId)
 }
@@ -276,9 +293,15 @@ func (self *Agent) recast(agentId string) {
 		return
 	}
 	room.casting = wanted
+	emulation := room.emulation
 	room.mutex.Unlock()
 	for _, watching := range starting {
 		tab.sendCast(watching, true)
+		// A stream started again is laid out again: the new one starts as
+		// the tab is.
+		if emulation != nil && emulation.tab == watching {
+			tab.sendEmulate(watching, emulation)
+		}
 	}
 	for _, watching := range stopping {
 		tab.sendCast(watching, false)
@@ -309,6 +332,31 @@ type tabCastMessage struct {
 	MaxWidth  int    `json:"maxWidth,omitempty"`
 	MaxHeight int    `json:"maxHeight,omitempty"`
 	Quality   int    `json:"quality,omitempty"`
+}
+
+// tabEmulateMessage asks the extension to lay a tab out at a phone's size,
+// or as it is.
+type tabEmulateMessage struct {
+	Type   string  `json:"type"`
+	Tab    int64   `json:"tab"`
+	IsOn   bool    `json:"isOn"`
+	Width  float64 `json:"width,omitempty"`
+	Height float64 `json:"height,omitempty"`
+}
+
+// sendEmulate asks the extension to lay a tab out at a phone's size, or as
+// it is.
+func (self *attachedTab) sendEmulate(tab string, emulation *tabEmulation) {
+	number, err := strconv.ParseInt(tab, 10, 64)
+	if err != nil {
+		return
+	}
+	message := tabEmulateMessage{Type: "emulate", Tab: number}
+	if emulation != nil {
+		message.IsOn, message.Width, message.Height = true, emulation.width, emulation.height
+	}
+	encoded, _ := json.Marshal(message)
+	_ = self.connection.Send(encoded)
 }
 
 // sendCast asks the extension to stream a tab or to stop. The extension
@@ -408,6 +456,67 @@ func (self *Agent) UpdateTabList(agentId string, tabs []TabListing) {
 	self.tellViewers(agentId)
 }
 
+// mobileWidthMost is the widest view taken for a phone's: wider, the tab is
+// laid out as it is.
+const mobileWidthMost = 700
+
+// SetTabViewport is the view that holds the tab saying how big it is: one
+// as narrow as a phone's lays the tab out at its size, so the picture is
+// readable there; a width of nothing, or a wide one, lays it out as it is.
+// Only while the person holds the tab, and only for the tab this view
+// watches.
+func (self *Agent) SetTabViewport(agentId string, viewer TabViewer, width, height float64) {
+	room := self.existingRoom(agentId)
+	tab := self.castingTab(agentId)
+	if room == nil || tab == nil {
+		return
+	}
+	room.castMutex.Lock()
+	defer room.castMutex.Unlock()
+	room.mutex.Lock()
+	watching, isOpen := room.viewers[viewer]
+	previous := room.emulation
+	var next *tabEmulation
+	if isOpen && watching != "" && room.controller == TabControllerPerson && width > 0 && width <= mobileWidthMost && height > 0 {
+		next = &tabEmulation{viewer: viewer, tab: watching, width: width, height: height}
+	}
+	// Another view's phone is not this one's to undo.
+	if next == nil && previous != nil && previous.viewer != viewer {
+		room.mutex.Unlock()
+		return
+	}
+	room.emulation = next
+	room.mutex.Unlock()
+	if previous != nil && (next == nil || previous.tab != next.tab) {
+		tab.sendEmulate(previous.tab, nil)
+	}
+	if next != nil && (previous == nil || *previous != *next) {
+		tab.sendEmulate(next.tab, next)
+	}
+}
+
+// endEmulation lays the tab back out as it is, when the phone that held it
+// let go, went, or stopped watching it; viewer nil ends it whoever set it.
+func (self *Agent) endEmulation(agentId string, viewer TabViewer) {
+	room := self.existingRoom(agentId)
+	if room == nil {
+		return
+	}
+	room.castMutex.Lock()
+	defer room.castMutex.Unlock()
+	room.mutex.Lock()
+	ended := room.emulation
+	if ended == nil || (viewer != nil && ended.viewer != viewer) {
+		room.mutex.Unlock()
+		return
+	}
+	room.emulation = nil
+	room.mutex.Unlock()
+	if tab := self.castingTab(agentId); tab != nil {
+		tab.sendEmulate(ended.tab, nil)
+	}
+}
+
 // TabList is the tabs the extension last listed.
 func (self *Agent) TabList(agentId string) []TabListing {
 	room := self.existingRoom(agentId)
@@ -455,6 +564,10 @@ func (self *Agent) CastEnded(agentId string, connection TabConnection, tab strin
 	room.castMutex.Lock()
 	room.mutex.Lock()
 	delete(room.casting, tab)
+	// Chrome put the layout back with the debugger.
+	if room.emulation != nil && room.emulation.tab == tab {
+		room.emulation = nil
+	}
 	for viewer, watching := range room.viewers {
 		if watching == tab {
 			room.viewers[viewer] = ""
@@ -483,6 +596,7 @@ func (self *Agent) HandBackTab(agentId string) bool {
 	if wasHeld {
 		log.Noticef("the person handed their browser tab back")
 	}
+	self.endEmulation(agentId, nil)
 	self.tellViewers(agentId)
 	return wasHeld
 }

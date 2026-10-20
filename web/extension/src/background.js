@@ -303,6 +303,10 @@ function connect(origin, secret) {
       else void stopCast(message.tab)
       return
     }
+    if (message.type === 'emulate') {
+      void emulate(message)
+      return
+    }
     if (INPUT_TYPES.has(message.type)) {
       void dispatchInput(message)
       return
@@ -621,7 +625,7 @@ const FRAME_LARGEST = 3 * 1024 * 1024
 async function startCast(tabId, options) {
   if (!isListed(tabId)) return
   forgetCast(tabId)
-  const cast = { quality: options.quality || 60, maxSide: options.maxWidth || 1280, lastAt: 0, lastData: '', timer: null }
+  const cast = { quality: options.quality || 60, maxSide: options.maxWidth || 1280, lastAt: 0, lastData: '', timer: null, isEmulating: false }
   casting.set(tabId, cast)
   const isOvertaken = () => casting.get(tabId) !== cast
   const undo = async () => {
@@ -665,6 +669,33 @@ async function releaseIfUnused(tabId) {
   if (debugging.has(tabId) && !agentUsing.has(tabId) && !casting.has(tabId)) await letDebuggerGo(tabId)
 }
 
+// emulate lays a streamed tab out at the size of the phone the person
+// holds it from, so the picture is readable there, or puts it back. It is
+// for as long as they hold it from that phone: handing back, the view
+// closing and the stream ending all put the tab back, and Chrome puts it
+// back by itself when the debugger goes.
+async function emulate(message) {
+  const tabId = message.tab
+  const cast = casting.get(tabId)
+  if (!cast || !isListed(tabId)) return
+  try {
+    if (message.isOn && message.width > 0 && message.height > 0) {
+      await chrome.debugger.sendCommand({ tabId }, 'Emulation.setDeviceMetricsOverride', {
+        width: Math.round(message.width),
+        height: Math.round(message.height),
+        deviceScaleFactor: 0,
+        mobile: true,
+      })
+      cast.isEmulating = true
+    } else if (cast.isEmulating) {
+      await chrome.debugger.sendCommand({ tabId }, 'Emulation.clearDeviceMetricsOverride')
+      cast.isEmulating = false
+    }
+  } catch (reason) {
+    console.warn('[TeaNode] could not lay the tab out for the phone:', reason)
+  }
+}
+
 // forgetCast stops treating a tab as streamed, and its stills with it.
 function forgetCast(tabId) {
   const cast = casting.get(tabId)
@@ -675,8 +706,10 @@ function forgetCast(tabId) {
 }
 
 async function stopCast(tabId) {
+  const cast = casting.get(tabId)
   if (!forgetCast(tabId)) return
   await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
+  if (cast.isEmulating) await chrome.debugger.sendCommand({ tabId }, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
   // A start that came in meanwhile owns the tab now, focus emulation and
   // the debugger with it.
   if (casting.has(tabId)) return

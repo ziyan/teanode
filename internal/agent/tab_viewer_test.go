@@ -328,3 +328,71 @@ func TestTabRoomHoldsUpUnderConcurrentUse(t *testing.T) {
 	}
 	group.Wait()
 }
+
+// A tab held from a phone is laid out at the phone's size while it is
+// held, and as it is again when it is handed back or the phone goes; a
+// wide view, or a tab nobody holds, changes nothing.
+func TestTabHeldFromAPhoneIsLaidOutAtItsSize(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	phone := &recordingViewer{}
+	worker.AddTabViewer("a1", phone)
+	worker.WatchTab("a1", phone, "11")
+
+	worker.SetTabViewport("a1", phone, 390, 700)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 0 {
+		t.Fatalf("a tab nobody held was laid out for a phone: %v", emulations)
+	}
+	worker.TakeOverTab("a1")
+	worker.SetTabViewport("a1", phone, 1280, 800)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 0 {
+		t.Fatalf("a wide view laid the tab out: %v", emulations)
+	}
+	worker.SetTabViewport("a1", phone, 390, 700)
+	emulations := browser.sentOfType("emulate")
+	if len(emulations) != 1 || emulations[0]["isOn"] != true || emulations[0]["width"] != float64(390) || emulations[0]["tab"] != float64(11) {
+		t.Fatalf("the phone's size was not asked for: %v", emulations)
+	}
+	// The same size again asks nothing more.
+	worker.SetTabViewport("a1", phone, 390, 700)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 1 {
+		t.Fatalf("the same size was asked for twice: %v", emulations)
+	}
+
+	// A browser that reconnects starts its stream as the tab is: the size
+	// is asked for again.
+	replacement := &recordingBrowser{}
+	worker.ConnectBrowser("a1", replacement, "Shop", "https://shop.example/", true)
+	worker.SetBrowserCanCast("a1", replacement, true)
+	if emulations := replacement.sentOfType("emulate"); len(emulations) != 1 || emulations[0]["isOn"] != true {
+		t.Fatalf("the reconnected browser was not laid out again: %v", emulations)
+	}
+
+	worker.HandBackTab("a1")
+	emulations = replacement.sentOfType("emulate")
+	if len(emulations) != 2 || emulations[1]["isOn"] != false {
+		t.Fatalf("handing back did not lay the tab out as it is: %v", emulations)
+	}
+}
+
+func TestTabLaidOutForAPhoneGoesBackWhenThePhoneGoes(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	laptop, phone := &recordingViewer{}, &recordingViewer{}
+	worker.AddTabViewer("a1", laptop)
+	worker.AddTabViewer("a1", phone)
+	worker.WatchTab("a1", laptop, "11")
+	worker.WatchTab("a1", phone, "11")
+	worker.TakeOverTab("a1")
+	worker.SetTabViewport("a1", phone, 390, 700)
+	// The laptop's wide view does not undo the phone's.
+	worker.SetTabViewport("a1", laptop, 0, 0)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 1 {
+		t.Fatalf("another view undid the phone's layout: %v", emulations)
+	}
+	worker.RemoveTabViewer("a1", phone)
+	emulations := browser.sentOfType("emulate")
+	if len(emulations) != 2 || emulations[1]["isOn"] != false {
+		t.Fatalf("the phone going did not lay the tab out as it is: %v", emulations)
+	}
+}

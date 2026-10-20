@@ -7,7 +7,19 @@ import { SettingsEmpty } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
 import { useTranslation } from '../i18n/i18n'
-import { buttonOf, clickCountOf, keyMessage, modifiersOf, piecesOf, pointToTab, type ClickRecord } from './browserInput'
+import {
+  buttonOf,
+  clickCountOf,
+  keyMessage,
+  modifiersOf,
+  panView,
+  piecesOf,
+  pinchView,
+  pointToTab,
+  UNZOOMED,
+  type ClickRecord,
+  type PictureView,
+} from './browserInput'
 
 // The Browser page: the person's browser tab live, with Take over and Hand
 // back. The picture and the input travel over a websocket of their own,
@@ -35,6 +47,15 @@ const HAND_BACK = `mutation ($note: String) { HandBackAgentTab(note: $note) }`
 // Pasted text goes in pieces this long, well under what the socket takes in
 // one message.
 const TEXT_PIECE = 16_000
+
+// A view this narrow is a phone's: holding the tab from it lays the tab out
+// at its size, so the picture is readable there.
+const PHONE_WIDE = '(max-width: 700px)'
+
+// A finger that moves less than this far, in pixels, and lifts within
+// TAP_MS is a tap, which clicks; farther, it drags.
+const TAP_DISTANCE = 8
+const TAP_MS = 500
 
 // A socket that is open is told it is alive this often, as the extension's is.
 const PING_EVERY_MS = 20_000
@@ -197,6 +218,25 @@ export function BrowserPage() {
   // server that never confirms one is asked once and not on every state.
   const hasAutoWatched = useRef(false)
   const pictureRef = useRef<HTMLImageElement>(null)
+  // The box the picture is zoomed and moved in, and how it is: pinched and
+  // dragged with fingers, the tab's own page left as it is.
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const [view, setView] = useState<PictureView>(UNZOOMED)
+  const viewRef = useRef(view)
+  viewRef.current = view
+  // The fingers on the picture, and what they are doing: one, which taps or
+  // drags, or two, which pinch.
+  const touches = useRef(new Map<number, { x: number; y: number }>())
+  const gesture = useRef<{
+    fingers: 1 | 2
+    startView: PictureView
+    startPoints: [{ x: number; y: number }, { x: number; y: number }]
+    startAt: number
+    last: { x: number; y: number }
+    isDragged: boolean
+  } | null>(null)
+  // Whether this page has said its size for the tab to be laid out at.
+  const isViewportSaid = useRef(false)
   const keyboardRef = useRef<HTMLTextAreaElement>(null)
   // The press in progress: its button and click count, kept until it is
   // released, and the one before it for counting a double click.
@@ -240,7 +280,9 @@ export function BrowserPage() {
         const response = await graphql<{
           ReadAgentWaiting: { interactions: { interactionKind: string; interactionText: string }[] }
         }>(READ_REQUESTS)
-        const asked = response.ReadAgentWaiting.interactions.find((interaction) => interaction.interactionKind === 'take_over')
+        const asked = response.ReadAgentWaiting.interactions.find(
+          (interaction) => interaction.interactionKind === 'take_over',
+        )
         if (!isStopped) setRequest(asked?.interactionText ?? '')
       } catch {
         // The picture is what matters here; a request not read is shown
@@ -334,6 +376,141 @@ export function BrowserPage() {
     return () => picture.removeEventListener('wheel', onWheel)
   }, [isControlling, isPictureShown, pointOf, send])
 
+  // Another tab, or the tab laid out at another size, starts unzoomed.
+  useEffect(() => {
+    setView(UNZOOMED)
+  }, [viewerState?.watching, drawnFrame?.width])
+
+  // Held from a phone, the tab is laid out at the size of the picture's box
+  // here; widened, or let go, it is laid out as it is again.
+  useEffect(() => {
+    if (!isLinked) {
+      isViewportSaid.current = false
+      return
+    }
+    // A browser that cannot answer the question is taken for a wide one.
+    const narrow = typeof window.matchMedia === 'function' ? window.matchMedia(PHONE_WIDE) : null
+    const say = () => {
+      const box = viewportRef.current
+      if (isControlling && narrow?.matches && box && viewerState?.watching) {
+        const width = Math.round(box.clientWidth)
+        const height = Math.max(320, Math.round(window.innerHeight - box.getBoundingClientRect().top - 16))
+        send({ type: 'viewport', width, height })
+        isViewportSaid.current = true
+      } else if (isViewportSaid.current) {
+        send({ type: 'viewport', width: 0, height: 0 })
+        isViewportSaid.current = false
+      }
+    }
+    say()
+    window.addEventListener('resize', say)
+    narrow?.addEventListener('change', say)
+    return () => {
+      window.removeEventListener('resize', say)
+      narrow?.removeEventListener('change', say)
+    }
+  }, [isControlling, isLinked, isPictureShown, viewerState?.watching, send])
+
+  // Fingers on the picture. Two pinch to zoom and move it. One taps to
+  // click, while the tab is held; drags the picture about while it is
+  // zoomed, and scrolls the tab's page while it is held and not zoomed.
+  const pointInBox = (event: React.PointerEvent) => {
+    const box = viewportRef.current?.getBoundingClientRect()
+    return { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) }
+  }
+  const boxSize = () => ({
+    width: viewportRef.current?.clientWidth ?? 0,
+    height: viewportRef.current?.clientHeight ?? 0,
+  })
+  const onTouchDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'touch') return
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    touches.current.set(event.pointerId, pointInBox(event))
+    const points = [...touches.current.values()]
+    if (points.length === 1) {
+      gesture.current = {
+        fingers: 1,
+        startView: viewRef.current,
+        startPoints: [points[0], points[0]],
+        startAt: event.timeStamp,
+        last: points[0],
+        isDragged: false,
+      }
+    } else if (points.length === 2) {
+      gesture.current = {
+        fingers: 2,
+        startView: viewRef.current,
+        startPoints: [points[0], points[1]],
+        startAt: event.timeStamp,
+        last: points[0],
+        isDragged: true,
+      }
+    }
+  }
+  const onTouchMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'touch' || !touches.current.has(event.pointerId)) return
+    const point = pointInBox(event)
+    touches.current.set(event.pointerId, point)
+    const current = gesture.current
+    if (!current) return
+    const { width, height } = boxSize()
+    if (current.fingers === 2) {
+      const points = [...touches.current.values()]
+      if (points.length >= 2)
+        setView(pinchView(current.startView, current.startPoints, [points[0], points[1]], width, height))
+      return
+    }
+    const start = current.startPoints[0]
+    if (!current.isDragged && Math.hypot(point.x - start.x, point.y - start.y) > TAP_DISTANCE) current.isDragged = true
+    if (!current.isDragged) return
+    if (current.startView.scale > 1) {
+      setView(panView(current.startView, point.x - start.x, point.y - start.y, width, height))
+    } else if (isControlling) {
+      const inTab = pointOf(event.clientX, event.clientY)
+      if (inTab)
+        send({
+          type: 'wheel',
+          x: inTab.x,
+          y: inTab.y,
+          deltaX: current.last.x - point.x,
+          deltaY: current.last.y - point.y,
+        })
+    }
+    current.last = point
+  }
+  const onTouchUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'touch' || !touches.current.has(event.pointerId)) return
+    touches.current.delete(event.pointerId)
+    const current = gesture.current
+    if (
+      current &&
+      current.fingers === 1 &&
+      !current.isDragged &&
+      event.timeStamp - current.startAt < TAP_MS &&
+      isControlling &&
+      event.type === 'pointerup'
+    ) {
+      const inTab = pointOf(event.clientX, event.clientY)
+      if (inTab) {
+        send({ type: 'pointer', event: 'down', x: inTab.x, y: inTab.y, button: 'left', clickCount: 1, modifiers: 0 })
+        send({ type: 'pointer', event: 'up', x: inTab.x, y: inTab.y, button: 'left', clickCount: 1, modifiers: 0 })
+      }
+    }
+    // A finger left of two goes on as a drag, never a tap.
+    const left = [...touches.current.values()]
+    gesture.current =
+      left.length === 1
+        ? {
+            fingers: 1,
+            startView: viewRef.current,
+            startPoints: [left[0], left[0]],
+            startAt: event.timeStamp,
+            last: left[0],
+            isDragged: true,
+          }
+        : null
+  }
+
   const chooseTab = (tab: ViewerTab) => {
     if (tab.tab === viewerState?.watching) return
     watchedTab.current = tab.tab
@@ -353,7 +530,8 @@ export function BrowserPage() {
   }
 
   const onPointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
-    if (!isControlling) return
+    // Fingers are the picture's box's (onTouchDown and the rest).
+    if (!isControlling || event.pointerType === 'touch') return
     const point = pointOf(event.clientX, event.clientY)
     if (!point) return
     event.preventDefault()
@@ -378,7 +556,8 @@ export function BrowserPage() {
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
-    if (!isControlling) return
+    // Fingers are the picture's box's (onTouchDown and the rest).
+    if (!isControlling || event.pointerType === 'touch') return
     const point = pointOf(event.clientX, event.clientY)
     if (!point) return
     pendingMove.current = {
@@ -401,7 +580,7 @@ export function BrowserPage() {
 
   const onPointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
     const held = heldPress.current
-    if (!isControlling || !held) return
+    if (!isControlling || !held || event.pointerType === 'touch') return
     const point = pointOf(event.clientX, event.clientY)
     if (!point) return
     event.preventDefault()
@@ -542,24 +721,36 @@ export function BrowserPage() {
           {!viewerState.canCast ? (
             <SettingsEmpty>{t('browser.updateExtension')}</SettingsEmpty>
           ) : drawnFrame ? (
-            <img
-              ref={pictureRef}
-              className={isControlling ? 'browser-picture is-controlling' : 'browser-picture'}
-              src={`data:image/jpeg;base64,${drawnFrame.data}`}
-              alt={t('browser.pictureLabel')}
-              tabIndex={0}
-              draggable={false}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-              onContextMenu={(event) => {
-                if (isControlling) event.preventDefault()
-              }}
-              onKeyDown={(event) => onKey(event, 'down')}
-              onKeyUp={(event) => onKey(event, 'up')}
-              onPaste={onPaste}
-            />
+            <div
+              ref={viewportRef}
+              className={isControlling || view.scale > 1 ? 'browser-viewport is-gesturing' : 'browser-viewport'}
+              onPointerDown={onTouchDown}
+              onPointerMove={onTouchMove}
+              onPointerUp={onTouchUp}
+              onPointerCancel={onTouchUp}
+            >
+              <img
+                ref={pictureRef}
+                className={isControlling ? 'browser-picture is-controlling' : 'browser-picture'}
+                src={`data:image/jpeg;base64,${drawnFrame.data}`}
+                alt={t('browser.pictureLabel')}
+                tabIndex={0}
+                draggable={false}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+                onContextMenu={(event) => {
+                  if (isControlling) event.preventDefault()
+                }}
+                onKeyDown={(event) => onKey(event, 'down')}
+                onKeyUp={(event) => onKey(event, 'up')}
+                onPaste={onPaste}
+                style={
+                  view.scale > 1 ? { transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` } : undefined
+                }
+              />
+            </div>
           ) : viewerState.watching != null ? (
             <Loading />
           ) : (
