@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,9 +28,11 @@ import (
 // is with a token in the hello and always comes with a tab attached; 3
 // connects whenever the extension is signed in and says with hasTab whether
 // there is a tab to act in, so the agent can open one in the person's
-// browser when none is attached. An extension still speaking 2 is welcomed
-// in 2.
-const tabProtocol = 3
+// browser when none is attached; 4 also streams a tab's picture and takes
+// the person's input, for the dashboard's browser page, and lists its tabs
+// with each update. An extension still speaking 2 or 3 is welcomed in its
+// own, and only cannot be watched.
+const tabProtocol = 4
 
 // tabProtocolOldest is the oldest version still taken.
 const tabProtocolOldest = 2
@@ -61,6 +65,23 @@ type AgentTabQuery interface {
 	ReadAgentTab(ctx context.Context) (*AgentTabView, error)
 }
 
+// AgentTabMutation hands a tab the person took over back to the agent.
+type AgentTabMutation interface {
+	// Give the agent back the browser tab the person took over from the
+	// dashboard, with anything it should know, and answer the agent's card
+	// asking for it: the one named by run and call, or the newest. Needs
+	// agent:use.
+	HandBackAgentTab(ctx context.Context, arguments HandBackAgentTabArguments) (bool, error)
+}
+
+// HandBackAgentTabArguments carry the person's word to the agent, and
+// which card it answers: a run and a call, or, left out, the newest.
+type HandBackAgentTabArguments struct {
+	Note   string `json:"note" graphapi:"nullable"`
+	RunID  string `json:"runId" graphapi:"nullable"`
+	CallID string `json:"callId" graphapi:"nullable"`
+}
+
 // AgentTabView is the attached tab, if any.
 type AgentTabView struct {
 	// Connected says the person's browser is connected through the
@@ -70,6 +91,12 @@ type AgentTabView struct {
 	Title     string `json:"title,omitempty"`
 	URL       string `json:"url,omitempty"`
 	Allowed   bool   `json:"allowed"`
+	// Tabs are the tabs the agent may act in, as the extension last
+	// listed them: the person's own and the ones it opened.
+	Tabs []agent.TabListing `json:"tabs"`
+	// IsTakenOver says the person holds the tab: the agent may read it,
+	// not act in it, until it is handed back.
+	IsTakenOver bool `json:"isTakenOver"`
 }
 
 func (self *graph) ReadAgentTab(ctx context.Context) (*AgentTabView, error) {
@@ -80,11 +107,55 @@ func (self *graph) ReadAgentTab(ctx context.Context) (*AgentTabView, error) {
 	configuration := self.config.Current()
 	allowed := configuration.Agent.Browser.AttachTabs == nil || *configuration.Agent.Browser.AttachTabs
 	view := &AgentTabView{Allowed: allowed && agent.FeatureAllowed(configuration, "browser")}
+	view.Tabs = []agent.TabListing{}
 	if worker := self.agentWorker(); worker != nil {
 		view.Attached, view.Title, view.URL = worker.TabAttached(found.ID)
 		view.Connected = worker.BrowserConnected(found.ID)
+		if view.Connected {
+			view.Tabs = worker.TabList(found.ID)
+		}
+		view.IsTakenOver = worker.IsTabTakenOver(found.ID)
 	}
 	return view, nil
+}
+
+func (self *graph) HandBackAgentTab(ctx context.Context, arguments HandBackAgentTabArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return false, agent.ErrUnavailable
+	}
+	wasHeld := worker.HandBackTab(found.ID)
+	// The newest open card asking for the tab is answered, and only that
+	// one: an older one, in another conversation or left from days ago,
+	// asked for something else, and answering it would start that work
+	// again in the person's browser.
+	waiting, _, err := self.transaction(ctx).ListAgentWaitingInteractions(found.ID, 50)
+	if err != nil {
+		return false, err
+	}
+	answer := models.InteractionHandedBack
+	if note := strings.TrimSpace(arguments.Note); note != "" {
+		answer += "\n" + note
+	}
+	for _, interaction := range waiting {
+		if interaction.InteractionKind != models.InteractionTakeOver || interaction.ResolvedAt != nil {
+			continue
+		}
+		// Each id given narrows it: a run alone, a call alone, or both.
+		if (arguments.RunID != "" && interaction.RunID != arguments.RunID) || (arguments.CallID != "" && interaction.CallID != arguments.CallID) {
+			continue
+		}
+		isAnswered, err := self.answerInteraction(ctx, found, worker, interaction.CallID, answer, agent.RunCommand{RunID: interaction.RunID, Action: agent.CommandAnswer, CallID: interaction.CallID, Answer: answer})
+		if err != nil {
+			log.Warningf("cannot answer the take-over card %s with a hand-back: %s", interaction.ID, err)
+		}
+		return wasHeld || isAnswered, nil
+	}
+	return wasHeld, nil
 }
 
 // tabView is the extension's websocket.
@@ -150,6 +221,14 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			OK       bool            `json:"ok"`
 			Data     json.RawMessage `json:"data"`
 			Error    string          `json:"error"`
+			// What protocol 4 adds: the tabs with an update, and a
+			// picture of a streamed tab with the page's size.
+			Tabs     *[]extensionTabListing `json:"tabs"`
+			Tab      int64                  `json:"tab"`
+			Metadata struct {
+				DeviceWidth  float64 `json:"deviceWidth"`
+				DeviceHeight float64 `json:"deviceHeight"`
+			} `json:"metadata"`
 		}
 		if err := json.Unmarshal(data, &message); err != nil {
 			continue
@@ -185,6 +264,13 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			// Protocol 2 connects only with a tab attached.
 			hasTab := message.HasTab == nil || *message.HasTab
 			worker.ConnectBrowser(found.ID, socket, message.Title, message.URL, hasTab)
+			worker.SetBrowserCanCast(found.ID, socket, message.Protocol >= 4)
+			// Signed in, it may send pictures of a tab, which are larger
+			// than anything said before the hello.
+			conn.SetReadLimit(tabFrameReadLimit)
+			if message.Tabs != nil {
+				worker.UpdateTabList(found.ID, tabListingsOf(*message.Tabs))
+			}
 			attached = true
 			welcome, _ := json.Marshal(map[string]any{"type": "welcome", "protocol": message.Protocol})
 			_ = socket.Send(welcome)
@@ -199,6 +285,20 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 				if message.HasTab != nil {
 					worker.SetTabHeld(found.ID, *message.HasTab)
 				}
+				if message.Tabs != nil {
+					worker.UpdateTabList(found.ID, tabListingsOf(*message.Tabs))
+				}
+			}
+		case "castEnded":
+			if attached {
+				worker.CastEnded(found.ID, socket, strconv.FormatInt(message.Tab, 10))
+			}
+		case "frame":
+			// The picture comes as base64 text in data, which the results
+			// use for any JSON.
+			var picture string
+			if attached && json.Unmarshal(message.Data, &picture) == nil && picture != "" {
+				worker.TabFrame(found.ID, socket, strconv.FormatInt(message.Tab, 10), picture, message.Metadata.DeviceWidth, message.Metadata.DeviceHeight)
 			}
 		case "ping":
 			// What keeps the extension's worker, and this socket, alive
@@ -214,6 +314,29 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 		}
 	}
 }
+
+// extensionTabListing is one tab as the extension lists it, numbered.
+type extensionTabListing struct {
+	Tab     int64  `json:"tab"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Own     bool   `json:"own"`
+	Current bool   `json:"current"`
+}
+
+// tabListingsOf names the extension's tabs as the viewers do.
+func tabListingsOf(listed []extensionTabListing) []agent.TabListing {
+	tabs := make([]agent.TabListing, 0, len(listed))
+	for _, tab := range listed {
+		tabs = append(tabs, agent.TabListing{Tab: strconv.FormatInt(tab.Tab, 10), Title: tab.Title, URL: tab.URL, IsOwn: tab.Own, IsCurrent: tab.Current})
+	}
+	return tabs
+}
+
+// tabFrameReadLimit bounds a message from a signed-in extension: a picture
+// of a tab is a JPEG of at most 1280 pixels a side, in base64, which the
+// extension keeps under three megabytes.
+const tabFrameReadLimit = 4 << 20
 
 // helloWait is how long a socket has to say who it is.
 const helloWait = 15 * time.Second

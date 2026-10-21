@@ -1,7 +1,9 @@
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { APIError, graphql } from '../api'
-import { citationsIn, readConversationSnapshot, sharedFilesOf, toolWords } from './agentDrawer'
+import { TranslationProvider } from '../i18n/i18n'
+import { QuestionCard, cardsOf, citationsIn, readConversationSnapshot, sharedFilesOf, toolWords } from './agentDrawer'
 import { hasSharedCitation, linkSharedCitations } from './dashboardPath'
 
 // The drawer asks the window about the screen when it loads, which jsdom
@@ -112,4 +114,33 @@ it('links a shared citation to its owner’s page when the owner is known, and o
   const linked = '[people/a-grandparent#3 (shared by Ada Example)](memory:people/a-grandparent#3@ada)'
   expect(linkSharedCitations(linked, usernameOf)).toBe(linked)
   expect(linkSharedCitations('people/a#1 (shared by A]da)', () => 'ada')).toBe('people/a#1 (shared by A]da)')
+})
+
+// A request to take the browser tab over is drawn as a question card, with
+// a button that opens the Browser page; it can still be answered in words.
+it('draws a kept take-over request as a card that opens the Browser page', () => {
+  const [line] = cardsOf([
+    {
+      runId: 'run-1',
+      callId: 'call-1',
+      interactionKind: 'take_over',
+      toolName: 'browser',
+      interactionText: 'Sign in to the bank with the code sent to your phone',
+      interactionChoices: null as unknown as string[],
+      toolRisk: '',
+      createdAt: '2026-10-20T12:00:00Z',
+    },
+  ])
+  expect(line).toMatchObject({ kind: 'question', isTakeOver: true, choices: [], key: 'run-1-call-1-card' })
+  if (line.kind !== 'question') throw new Error('not a question card')
+  const onTakeOver = vi.fn()
+  render(
+    <TranslationProvider>
+      <QuestionCard line={line} onAnswer={() => {}} onChat={() => {}} onTakeOver={onTakeOver} />
+    </TranslationProvider>,
+  )
+  expect(screen.getByText('Sign in to the bank with the code sent to your phone')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Take over the tab' }))
+  expect(onTakeOver).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('button', { name: 'Chat about it' })).toBeTruthy()
 })

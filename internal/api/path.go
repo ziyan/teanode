@@ -21,6 +21,10 @@ const (
 	// through, for the person's agent.
 	PathAgentTab = Prefix + "/agent/tab"
 
+	// PathAgentTabView is the websocket the dashboard's browser page
+	// watches the person's tab through, and takes it over.
+	PathAgentTabView = Prefix + "/agent/tab/view"
+
 	// PathAgentVoice is the websocket the drawer streams the microphone
 	// over, for the server to have transcribed.
 	PathAgentVoice = Prefix + "/agent/voice"
@@ -334,7 +338,7 @@ const ()
 // login endpoints have to live outside GraphQL.
 func PublicPaths() []string {
 	return []string{
-		PathGraphQL, PathAgentTab, PathAgentComputer, PathAgentVoice,
+		PathGraphQL, PathAgentTab, PathAgentTabView, PathAgentComputer, PathAgentVoice,
 		// A phone uploads photos with a device password in an HTTP Basic
 		// header, which the authenticator does not know; the handler checks
 		// it, and refuses a caller who has neither that nor a session.

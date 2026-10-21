@@ -161,6 +161,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// The Model Context Protocol, for a harness using the person's tools.
 	router.Path(api.PathAgentMCP).Methods(http.MethodPost).HandlerFunc(self.mcpView)
 	router.Path(api.PathAgentTab).Methods(http.MethodGet).HandlerFunc(self.tabView)
+	router.Path(api.PathAgentTabView).Methods(http.MethodGet).HandlerFunc(self.tabViewerView)
 	router.Path(api.PathAgentVoice).Methods(http.MethodGet).HandlerFunc(self.voiceView)
 	router.Path(api.PathAgentVoiceSample).Methods(http.MethodGet).HandlerFunc(self.voiceSampleView)
 	router.Path(api.PathAgentComputer).Methods(http.MethodGet).HandlerFunc(self.computerView)

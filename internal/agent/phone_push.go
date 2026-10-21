@@ -191,6 +191,9 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 		ThreadID:       interaction.ConversationID,
 	}
 	notificationKind := models.NotificationQuestion
+	if interaction.InteractionKind == models.InteractionTakeOver {
+		content.Title = "Your agent needs you"
+	}
 	if interaction.InteractionKind == models.InteractionApproval {
 		notificationKind = models.NotificationApproval
 		content.Title = "Approve?"

@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.189.0] - 2026-10-21
+
+### Added
+
+- Watch your browser tab live from the dashboard's Browser page, on any device, take it over to click and type in it yourself, and hand it back to your agent. Your agent can ask you to when a step is yours to do. Update the TeaNode extension to use it. (#612)
+- `teanode agent tab` shows your browser's tabs and who holds them; `teanode agent tab hand-back` gives the tab back. (#612)
+
 ## [0.188.0] - 2026-10-20
 
 ### Added

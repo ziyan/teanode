@@ -181,6 +181,9 @@ type Agent struct {
 	// tabsConnected is closed, and made anew, each time a browser
 	// connects, for whoever waits on one coming back.
 	tabsConnected chan struct{}
+	// tabRooms are the people watching their browser from the dashboard,
+	// and who holds each person's tab (tab_viewer.go).
+	tabRooms map[string]*tabRoom
 
 	// computersBusy is which source each attached computer is reading
 	// for right now, by computer name. One at a time: two big scans at

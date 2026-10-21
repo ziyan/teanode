@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TeaNode agent tab",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Your TeaNode agent on any page: talk to it, let it open tabs in your browser, or attach the tab you are looking at so it can act there with your session while you watch.",
   "permissions": [
     "debugger",

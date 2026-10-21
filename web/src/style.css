@@ -21202,3 +21202,141 @@ button.person-row:focus-visible {
   overflow: hidden;
   pointer-events: none;
 }
+
+/* --- the Browser page ------------------------------------------------------
+   The person's tab live: a strip of the tabs there are, then one panel with
+   who controls the tab above the picture. The picture is as wide as the panel
+   and keeps its shape; the strip scrolls sideways on a phone rather than
+   wrapping, so the picture stays near the top. */
+.browser-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.browser-page > .muted,
+.browser-page > .settings-empty {
+  margin: 0;
+}
+
+.browser-tabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+}
+
+/* Every tab has the same border, and the chosen one only darkens it, so
+   choosing one moves nothing. */
+.browser-tab {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  max-width: 240px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.browser-tab:hover {
+  background: var(--field);
+}
+
+.browser-tab.active {
+  border-color: var(--text);
+  background: var(--sidebar-hover);
+}
+
+.browser-tab strong,
+.browser-tab .muted {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-tab .muted {
+  font-size: var(--text-label);
+}
+
+.browser-tab-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.browser-stage {
+  margin-bottom: 0;
+}
+
+/* One row: who controls the tab, then what can be done about it. The hand
+   back form takes the whole row on a phone, under the words. */
+.browser-request {
+  margin: 0 0 var(--space-2);
+}
+
+.browser-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.browser-control > p {
+  flex: 1 1 auto;
+  margin: 0;
+  font-weight: 550;
+}
+
+.browser-hand-back {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.browser-hand-back input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The phone's keyboard opens from this button, which a wide screen has no use
+   for: it has a keyboard. */
+.browser-keyboard {
+  display: none;
+}
+
+.browser-picture {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+  /* The picture is not a thing to drag away or select. */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* While the person controls the tab, a finger on the picture is the tab's
+   pointer and not the page's scrolling. */
+.browser-picture.is-controlling {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+@media (max-width: 600px) {
+  .browser-keyboard {
+    display: flex;
+  }
+}

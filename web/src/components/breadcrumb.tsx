@@ -43,6 +43,8 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // Reached from the account menu, so the trail starts at the page. A circle
   // adds its own name below.
   { prefix: '/circles', trail: [{ label: 'circles.title', to: '/circles' }] },
+  // Reached from the agent drawer's tab menu, so the trail starts at the page.
+  { prefix: '/browser', trail: [{ label: 'browser.title', to: '/browser' }] },
   // Reached from the search box at the top of the rail, so the trail starts
   // at the page.
   { prefix: '/search', trail: [{ label: 'search.title', to: '/search' }] },

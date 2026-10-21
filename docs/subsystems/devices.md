@@ -337,6 +337,59 @@ logs each such drop with the action, how long it waited, and whether it was
 sent again. The tab the actions go to is kept in the extension's session
 storage beside the person's own, so a restarted worker still knows it.
 
+### Taking over the tab
+
+The person can watch their browser from the dashboard's Browser page
+(`/browser`), from any device, and take the tab over: what they click and
+type there goes to the tab, and the agent can still read the tab but not
+act in it until they hand it back. The page has a websocket of its own,
+`/api/v1/agent/tab/view` (`agent_tab_view.go`), signed in as the GraphQL
+socket is: a token in the first message, or the dashboard session whose
+cookie came with the upgrade from a page of this server. An operator signed
+in as somebody is refused: watching and working a person's signed-in browser
+is theirs alone.
+
+While somebody watches a tab, the extension streams it: the DevTools
+protocol's screencast sends a JPEG of the tab whenever it changes, with the
+page's size in CSS pixels, and the next only after the last was taken, so a
+slow phone gets fewer pictures rather than a backlog. The extension keeps at
+most half a megabyte waiting on its socket, the server keeps one picture per
+viewer and replaces it with a newer one, and a viewer's messages are queued
+for a writer of its own, so a slow phone holds up nothing else. A tab that
+is not painted sends no pictures: one behind another tab, or in a minimized
+window. The extension turns on focus emulation for a watched tab, which
+keeps it painting, so the person's own screen never changes for them to see
+it from elsewhere. A screencast also sends nothing while the page does not
+change, so the extension sends a screenshot as the first picture and again
+whenever the stream has been quiet for two seconds, unless it is the same as
+the last; pictures are at most 1280 pixels a side and three megabytes. The
+stream stops, and the debugger is let go when only the stream needed it,
+when the last viewer of the tab goes. If Chrome lets the debugger go by
+itself (the person at the machine cancelled its bar, or opened the developer
+tools), the extension says so and the views watch nothing until asked again.
+
+Watching changes nothing. Take over makes the person the tab's holder
+(`tab_viewer.go`, a room per person beside the tabs, kept when the browser
+reconnects); their input is passed to the tab only while they hold it, field
+by field, never as whatever the page sent. The browser tool refuses every
+call but snapshot, screenshot, tabs, wait and cdp_events while they hold it,
+saying so. A browser whose extension cannot stream cannot be taken over.
+Hand back is a mutation, `HandBackAgentTab`, with a note for the agent. A holder whose last view closed without handing back gives the tab
+back to the agent thirty seconds later, so a phone that locks does not leave
+the agent refused for good.
+
+The agent can ask for this. `ask_to_take_over` with `text` saying what the
+person should do raises a card of the kind `take_over`, kept like a
+question's: it reaches the conversation, the phone ("Your agent needs you")
+and the chat apps, and the dashboard's card opens the Browser page, which shows the request above
+the picture. Handing the tab back answers the newest open take-over card, and
+only that one, with `models.InteractionHandedBack` and the note: an older one,
+in another conversation or left for days, asked for something else. A reply
+typed anywhere answers a card in words, and Chat about it does as a
+question's does. The tool then tells the model to take a snapshot before acting. A
+card answered after its turn ended starts a new turn carrying the request and
+what the person said. A run nobody is present for cannot ask.
+
 ## The headless browser
 
 When the operator configures one, the server drives a Chrome beside it over the
@@ -378,6 +431,15 @@ disabled or confirm lists, and a person can add either to their own.
   shell. Aliases and shell startup files do not apply.
 - **Moving a file is a rename**, so it fails across filesystems.
 - **A tab is attached per person**, so any conversation of theirs can drive it.
+- **The Browser page and Hand back must reach the instance holding the
+  extension's socket**, like the tools; behind a load balancer that is
+  session affinity for the dashboard, which it wants anyway.
+- **A view left open keeps the tab taken over** for as long as it is open:
+  the thirty seconds start only when the last view closes.
+- **Watching needs extension protocol 4.** An older extension still works for
+  the agent; the page says to update it.
+- **A locked screen or a sleeping display** has not been measured: if Chrome
+  stops painting there, the picture freezes until the screen wakes.
 - **Reading local storage reads the current tab**, which after the agent opened
   one is a tab the agent chose rather than the one the person attached.
 - A computer's fifth concurrent request fails rather than waits, so one long

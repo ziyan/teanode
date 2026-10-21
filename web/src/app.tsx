@@ -115,6 +115,9 @@ const RecordingsPage = lazyPage(async () => ({
 const CodingPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "coding" */ './pages/coding')).CodingPage,
 }))
+const BrowserPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "browser" */ './pages/browser')).BrowserPage,
+}))
 const PhotosLayout = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "photos" */ './pages/photos/layout')).PhotosLayout,
 }))
@@ -625,6 +628,9 @@ export function App() {
                       <Route path="/recordings" element={<RecordingsPage />} />
                       <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
                       <Route path="/coding" element={<CodingPage />} />
+                      {/* The person's browser tab live, reached from the
+                      agent drawer's tab menu: no row in the rail. */}
+                      <Route path="/browser" element={<BrowserPage />} />
                       {/* What the linked institutions report, a page of its own
                       in the account's rail after Knowledge; linking them is
                       the agent page's Finance tab. */}
