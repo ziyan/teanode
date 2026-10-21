@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.192.1] - 2026-10-21
+
+### Fixed
+
+- iPhone: choosing a person on Location shows their visits without also opening their card; tap their name at the top of the drawer for the card. (#618)
+- Location map: people at the same spot are drawn as one group with the chosen person in front, instead of hiding each other; press it to choose one. (#618)
+- Dashboard: while another person's location is shown, Location offers no Photos button, Check in or Sharing tab, and choosing someone from Sharing opens their visits. (#618)
+- iPhone: the accounts in Settings are no longer green. (#618)
+- Dashboard: the time a person arrived is short enough to stay on one line on a phone. (#618)
+
 ## [0.192.0] - 2026-10-21
 
 ### Added
