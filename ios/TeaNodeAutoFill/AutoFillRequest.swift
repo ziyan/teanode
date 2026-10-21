@@ -70,6 +70,14 @@ struct AutoFillProblem: Equatable {
     let message: String
 }
 
+/// AutoFillSiteQuestion is the question asked before a login is filled into a
+/// site it is not saved for: the row the person chose, and the words to ask with.
+struct AutoFillSiteQuestion: Equatable {
+    let row: AutoFillRow
+    let title: String
+    let message: String
+}
+
 /// AutoFillSignedAssertion is a passkey sign-in, ready for the system.
 struct AutoFillSignedAssertion {
     let userHandle: Data

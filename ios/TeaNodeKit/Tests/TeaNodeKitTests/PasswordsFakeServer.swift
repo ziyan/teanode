@@ -38,6 +38,20 @@ actor FakePasswordsServer {
     /// When true, every call fails the way a missing connection does.
     var isOffline = false
     private(set) var listCalls: [Int64?] = []
+    /// When set, the next re-key calls are refused with this sentence (until cleared).
+    var rekeyRefusal: String?
+    private(set) var rekeyCallCount = 0
+
+    func setRekeyRefusal(_ refusal: String?) {
+        rekeyRefusal = refusal
+    }
+
+    /// Changes an item's sealed fields as another device's save would (a new revision, the same key).
+    func touch(itemId: String) {
+        guard var changed = items[itemId] else { return }
+        changed.revision = nextRevision()
+        items[itemId] = changed
+    }
 
     func addPerson(userId: String, name: String) {
         people[userId] = Person(userId: userId, name: name, username: name.lowercased())
@@ -366,6 +380,39 @@ actor FakePasswordsServer {
         return view(item, for: userId)!
     }
 
+    func rekey(userId: String, input: PasswordItemRekeyInput) throws -> PasswordItemView {
+        try requireOnline()
+        rekeyCallCount += 1
+        if let rekeyRefusal { throw TeaNodeError.refused(rekeyRefusal) }
+        var item = try ownedItem(input.id, userId: userId)
+        guard item.deletedAt == nil else { throw TeaNodeError.refused("api: not found") }
+        guard input.baseRevision == item.revision else {
+            throw TeaNodeError.refused("This item changed on another device. Open it again.")
+        }
+        let reachedUserIds = Set(reached(item))
+        var newKeys: [String: (itemKeyByRecipientKey: String, recipientPublicKey: String)] = [:]
+        for key in input.shareKeys {
+            guard key.itemId == item.id, reachedUserIds.contains(key.recipientUserId) else { throw TeaNodeError.refused("api: not found") }
+            guard people[key.recipientUserId]?.setup?.publicKey == key.recipientPublicKey else {
+                throw TeaNodeError.refused("api: invalid arguments: That person's key changed since it was read. Read their key again and seal the item for it.")
+            }
+            newKeys[key.recipientUserId] = (key.itemKeyByRecipientKey, key.recipientPublicKey)
+        }
+        if let agentCopy = input.itemKeyByAgentKey {
+            guard item.isUsableByAgent else { throw TeaNodeError.refused("api: invalid arguments: The agent cannot use this item.") }
+            item.itemKeyByAgentKey = agentCopy
+        } else {
+            item.isUsableByAgent = false
+            item.itemKeyByAgentKey = nil
+        }
+        item.encryptedFields = input.encryptedFields
+        item.itemKeyByAccountKey = input.itemKey
+        item.keys = newKeys
+        item.revision = nextRevision()
+        items[item.id] = item
+        return view(item, for: userId)!
+    }
+
     func readAgentKey() throws -> String {
         try requireOnline()
         return agentKeyPair.publicKey.base64EncodedString()
@@ -414,6 +461,9 @@ struct FakePasswordsAPI: PasswordsAPI {
     }
     func addPasswordShareKeys(_ keys: [PasswordItemShareKeyInput]) async throws -> Int {
         try await server.addShareKeys(userId: userId, keys: keys)
+    }
+    func rekeyPasswordItem(_ input: PasswordItemRekeyInput) async throws -> PasswordItemView {
+        try await server.rekey(userId: userId, input: input)
     }
     func setPasswordItemUsableByAgent(itemId: String, isUsableByAgent: Bool, itemKeyByAgentKey: String?) async throws -> PasswordItemView {
         try await server.setUsableByAgent(

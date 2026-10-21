@@ -209,6 +209,10 @@ struct PasswordsShareScreen: View {
                 model.doneText = String(localized: "Sharing saved.")
             }
             dismiss()
+        } catch PasswordsError.itemNeedsNewKey(let itemIdWithoutNewKey) {
+            // The removal went through; the item's screen says it has no new key yet and offers a retry.
+            model.report(PasswordsError.itemNeedsNewKey(itemId: itemIdWithoutNewKey), orSay: "")
+            dismiss()
         } catch {
             model.report(error, orSay: String(localized: "Sharing could not be saved."))
         }
@@ -217,7 +221,7 @@ struct PasswordsShareScreen: View {
 
 extension PasswordRecipient {
     /// Whether the owner has to confirm this key before it is sealed for: a key
-    /// this iPhone has not seen or that changed, for somebody the item has no key for yet.
+    /// the owner has not confirmed on this iPhone or that changed, for somebody the item has no key for yet.
     var needsConfirmation: Bool {
         !hasKey && publicKey != nil && (keyTrust == .new || keyTrust == .changed)
     }

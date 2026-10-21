@@ -304,6 +304,7 @@ struct PasswordsEditorScreen: View {
         Section {
             TextField("Note", text: $draft.text, axis: .vertical)
                 .lineLimit(5...15)
+                .autocorrectionDisabled()
         } header: {
             Text("Note")
         }
@@ -313,6 +314,7 @@ struct PasswordsEditorScreen: View {
         Section {
             TextField("Notes", text: $draft.notes, axis: .vertical)
                 .lineLimit(2...8)
+                .autocorrectionDisabled()
         } header: {
             Text("Notes")
         }

@@ -19,7 +19,24 @@ struct AutoFillRootView: View {
         .alert(
             Text(model.problemMessage?.title ?? ""), isPresented: isShowingProblem,
             actions: { Button("OK", role: .cancel) {} },
-            message: { Text(model.problemMessage?.message ?? "") })
+            message: { Text(model.problemMessage?.message ?? "") }
+        )
+        .confirmationDialog(
+            Text(model.siteQuestion?.title ?? ""), isPresented: isAskingAboutSite, titleVisibility: .visible,
+            presenting: model.siteQuestion,
+            actions: { question in
+                Button("Fill") { model.confirmSiteQuestion(question) }
+                Button("Cancel", role: .cancel) {}
+            },
+            message: { question in Text(question.message) })
+    }
+
+    private var isAskingAboutSite: Binding<Bool> {
+        Binding(
+            get: { model.siteQuestion != nil },
+            set: { isShowing in
+                if !isShowing { model.siteQuestion = nil }
+            })
     }
 
     private var isShowingProblem: Binding<Bool> {

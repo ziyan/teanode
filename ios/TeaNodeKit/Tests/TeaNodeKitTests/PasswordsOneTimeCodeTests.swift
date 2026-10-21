@@ -97,4 +97,62 @@ final class PasswordsOneTimeCodeTests: XCTestCase {
         XCTAssertEqual(failure("otpauth://totp/a?secret=JBSWY3DPEHPK3PXP&digits=7"), .unsupportedDigitCount)
         XCTAssertEqual(failure("otpauth://totp/a?secret=JBSWY3DPEHPK3PXP&period=0"), .invalidPeriod)
     }
+
+    // MARK: The shared cases
+
+    private struct SharedOneTimeCodeCases: Decodable {
+        struct Case: Decodable {
+            let name: String
+            let address: String
+            let isValid: Bool
+            let secretHex: String?
+            let algorithm: String?
+            let digitCount: Int?
+            let periodSeconds: Int?
+            let issuer: String?
+            let accountName: String?
+            let expectedCodes: [String]?
+        }
+        let unixSeconds: [Int]
+        let cases: [Case]
+    }
+
+    /// internal/passwords/testdata/onetimecode.json, which the Go package and the dashboard read too:
+    /// all three must read every address the same way and give the same codes.
+    func testTheSharedOneTimeCodeCases() throws {
+        // This file is ios/TeaNodeKit/Tests/TeaNodeKitTests/PasswordsOneTimeCodeTests.swift.
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<5 { url.deleteLastPathComponent() }
+        url.appendPathComponent("internal/passwords/testdata/onetimecode.json")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip(
+                "onetimecode.json is not at \(url.path); run the tests with the whole repository mounted (Docker: -v <repo>:/repo -w /repo/ios/TeaNodeKit)"
+            )
+        }
+        let shared = try JSONDecoder().decode(SharedOneTimeCodeCases.self, from: Data(contentsOf: url))
+        XCTAssertFalse(shared.cases.isEmpty)
+        XCTAssertFalse(shared.unixSeconds.isEmpty)
+        for each in shared.cases {
+            let label = "\(each.name): \(each.address.debugDescription)"
+            guard each.isValid else {
+                XCTAssertThrowsError(try PasswordsOneTimeCode.parse(uri: each.address), label)
+                continue
+            }
+            let settings: PasswordsOneTimeCodeSettings
+            do {
+                settings = try PasswordsOneTimeCode.parse(uri: each.address)
+            } catch {
+                XCTFail("\(label) should be read, but threw \(error)")
+                continue
+            }
+            XCTAssertEqual(settings.secret.map { String(format: "%02x", $0) }.joined(), each.secretHex, label)
+            XCTAssertEqual(settings.algorithm.rawValue, each.algorithm, label)
+            XCTAssertEqual(settings.digitCount, each.digitCount, label)
+            XCTAssertEqual(settings.periodSeconds, each.periodSeconds, label)
+            XCTAssertEqual(settings.issuer, each.issuer, label)
+            XCTAssertEqual(settings.accountName, each.accountName, label)
+            let codes = shared.unixSeconds.map { PasswordsOneTimeCode.code(settings: settings, unixSeconds: $0) }
+            XCTAssertEqual(codes, each.expectedCodes, label)
+        }
+    }
 }

@@ -202,6 +202,7 @@ struct PasswordsItemScreen: View {
             }
         } else {
             if item.itemKind != .card { agentSection(item) }
+            if model.itemIdsNeedingNewKey.contains(item.id) { newKeySection(item) }
             shareSection(item)
             deleteSection(item)
         }
@@ -229,6 +230,17 @@ struct PasswordsItemScreen: View {
             } else {
                 Text("The agent signs in with this login on its sites and never sees the password.")
             }
+        }
+    }
+
+    /// Shown when somebody was removed from the item but it could not be given a new key yet.
+    private func newKeySection(_ item: PasswordItem) -> some View {
+        Section {
+            Text("Removed. The item could not be given a new key.")
+                .foregroundStyle(.primary)
+            Button("Try again", systemImage: "arrow.clockwise") { Task { await giveNewKey(item) } }
+                .actionColor()
+                .disabled(isWorking)
         }
     }
 
@@ -281,6 +293,12 @@ struct PasswordsItemScreen: View {
         } catch {
             model.report(error, orSay: String(localized: "The agent setting could not be changed."))
         }
+    }
+
+    private func giveNewKey(_ item: PasswordItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        await model.giveNewKey(item)
     }
 
     private func delete(_ item: PasswordItem) async {

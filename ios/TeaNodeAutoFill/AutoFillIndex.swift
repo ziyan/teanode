@@ -192,6 +192,24 @@ enum AutoFillIndex {
         return sections
     }
 
+    /// The site the system named for the page or app asking, as a host; nil when it named none that is a site.
+    static func requestedSiteText(listing: AutoFillListing) -> String? {
+        listing.requestedSites.lazy.compactMap { PasswordsSiteMatch.normalizedHost(of: $0.address) }.first
+    }
+
+    /// Whether the login is saved for no site that fits the one asking, by the rules of the
+    /// sections above (an exact host, or a related one). Never when the system named no site
+    /// (an app is not a site), so there is nothing to compare.
+    static func isSiteMismatch(login: AutoFillLoginSummary, listing: AutoFillListing) -> Bool {
+        guard requestedSiteText(listing: listing) != nil else { return false }
+        return bestLevel(of: login, listing: listing) == .none
+    }
+
+    /// The hosts a login is saved for, for the question asked before filling it elsewhere.
+    static func savedSitesText(login: AutoFillLoginSummary) -> String {
+        login.sites.compactMap { PasswordsSiteMatch.normalizedHost(of: $0) }.joined(separator: ", ")
+    }
+
     /// How well the login's sites fit the best of the sites the system named.
     private static func bestLevel(of login: AutoFillLoginSummary, listing: AutoFillListing) -> PasswordsSiteMatchLevel {
         listing.requestedSites.filter { isUsable(site: $0.address) }.map {

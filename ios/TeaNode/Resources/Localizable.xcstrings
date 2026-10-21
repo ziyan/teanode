@@ -74516,6 +74516,118 @@
         }
       }
     },
+    "Fill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填充"
+          }
+        }
+      }
+    },
+    "Fill %@ into %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を%@に入力しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要将%@填充到%@吗？"
+          }
+        }
+      }
+    },
+    "It is saved for %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@用に保存されています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它保存的网站是%@。"
+          }
+        }
+      }
+    },
+    "It is not saved for any site.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どのサイトにも保存されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它没有保存给任何网站。"
+          }
+        }
+      }
+    },
+    "Removed. The item could not be given a new key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除しました。項目に新しいキーを設定できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除。无法为该项目生成新密钥。"
+          }
+        }
+      }
+    },
+    "The item was given a new key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目に新しいキーを設定しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已为该项目生成新密钥。"
+          }
+        }
+      }
+    },
+    "The item could not be given a new key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目に新しいキーを設定できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法为该项目生成新密钥。"
+          }
+        }
+      }
+    },
     "Erase %@": {
       "localizations": {
         "ja": {

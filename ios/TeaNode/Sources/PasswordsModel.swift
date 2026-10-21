@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import TeaNodeKit
+import UIKit
 
 /// PasswordsPhase is where Passwords is for the person on this iPhone.
 enum PasswordsPhase: Equatable {
@@ -46,9 +47,12 @@ final class PasswordsModel {
     /// The people who shared items with this person whose key is not the one this
     /// iPhone knew: their items stay closed until the person trusts the new key.
     private(set) var ownerKeyChanges: [PasswordsOwnerKeyChange] = []
-    /// Waiting recipients of the person's items whose key this iPhone has not seen
-    /// or that changed: nothing is sealed for them until the person confirms the key.
+    /// Waiting recipients of the person's items whose key the person has not confirmed
+    /// on this iPhone (a key only seen on an incoming item counts as not confirmed) or that changed: nothing is sealed for them until the person confirms the key.
     private(set) var waitingConfirmations: [PasswordWaitingShare] = []
+    /// Items somebody was removed from whose new item key could not be made yet: the item's
+    /// screen says so and offers a retry.
+    private(set) var itemIdsNeedingNewKey: [String] = []
     private(set) var isSyncing = false
     /// Whether the account key waits behind Face ID on this iPhone.
     private(set) var hasFaceIDKey = false
@@ -84,6 +88,13 @@ final class PasswordsModel {
             iterationCount = PasswordsCrypto.passphraseIterationCount
         }
         isDemo = isDemoRequested
+        // The lock time comes from the server, so it cannot be the only thing that locks Passwords:
+        // when the phone itself locks, Passwords closes, whatever the lock time says.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.lockBecausePhoneLocked() }
+        }
     }
 
     // MARK: Facts the screens ask
@@ -310,6 +321,12 @@ final class PasswordsModel {
         if phase == .unlocked { phase = .locked }
     }
 
+    /// The phone locked: lock Passwords now, even when the lock time has not passed.
+    private func lockBecausePhoneLocked() async {
+        guard phase == .unlocked else { return }
+        await lock()
+    }
+
     /// Locks when the lock time has passed since Passwords was last used.
     func lockIfAskRequired() async {
         guard phase == .unlocked, let session else { return }
@@ -352,6 +369,7 @@ final class PasswordsModel {
             lockAfterMinutes = await session.lockAfterMinutes
             await reload()
             await giveWaitingRecipientsTheirKeys()
+            await retryNewKeys()
         } catch {
             await handleSyncFailure(error)
         }
@@ -362,10 +380,12 @@ final class PasswordsModel {
             switch passwordsError {
             case .notSetUp:
                 await forgetKeptKey()
+                await forgetSuggestions()
                 markClosed(to: .notSetUp)
                 return
             case .needsPassphrase:
                 await forgetKeptKey()
+                await forgetSuggestions()
                 markClosed(to: .locked)
                 problemText = PasswordsWords.problemText(passwordsError, orSay: "")
                 return
@@ -375,6 +395,12 @@ final class PasswordsModel {
         }
         problemText = PasswordsWords.problemText(
             error, orSay: String(localized: "Passwords could not be brought up to date. What this iPhone has is shown."))
+    }
+
+    /// Takes the logins and passkeys out of the system's credential store (the suggestions above the
+    /// keyboard), which would otherwise keep offering what this iPhone just forgot.
+    private func forgetSuggestions() async {
+        if !isDemo { await PasswordsIdentityStore.removeAll() }
     }
 
     private func markClosed(to closedPhase: PasswordsPhase) {
@@ -396,6 +422,7 @@ final class PasswordsModel {
             deletedItems = opened.items.filter { $0.isDeleted }.sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
             unreadableItemCount = opened.unreadableReasons.values.filter { $0 == .cannotOpen }.count
             ownerKeyChanges = await session.ownerKeyChanges()
+            itemIdsNeedingNewKey = await session.itemIdsNeedingNewKey
         } catch {
             report(error, orSay: String(localized: "Your items could not be opened."))
             return
@@ -405,8 +432,8 @@ final class PasswordsModel {
     }
 
     /// The people who set up Passwords after an item was shared with them get
-    /// the item's key now, when this iPhone already knows their key. A key it
-    /// has not seen, or one that changed, is listed in `waitingConfirmations`
+    /// the item's key now, when the person already confirmed their key on this
+    /// iPhone. Any other key, or one that changed, is listed in `waitingConfirmations`
     /// for the person to confirm first.
     private func giveWaitingRecipientsTheirKeys() async {
         guard let session, !isDemo else { return }
@@ -471,6 +498,28 @@ final class PasswordsModel {
         await reload()
     }
 
+    /// Tries again to give an item a new key, after a removal whose re-key failed.
+    func giveNewKey(_ item: PasswordItem) async {
+        guard let session else { return }
+        do {
+            _ = try await session.giveNewKey(itemId: item.id)
+            doneText = String(localized: "The item was given a new key.")
+            await reload()
+        } catch {
+            report(error, orSay: String(localized: "The item could not be given a new key."))
+        }
+    }
+
+    /// Quietly retries the items still waiting for a new key, each time Passwords is brought up to date.
+    private func retryNewKeys() async {
+        guard let session, !isDemo else { return }
+        var isChanged = false
+        for itemId in await session.itemIdsNeedingNewKey {
+            if (try? await session.giveNewKey(itemId: itemId)) != nil { isChanged = true }
+        }
+        if isChanged { await reload() }
+    }
+
     // MARK: Sharing
 
     func recipients(for target: ShareTarget) async throws -> [PasswordRecipient] {
@@ -490,8 +539,14 @@ final class PasswordsModel {
         of item: PasswordItem, grantees: [PasswordShareGranteeInput], recipients: [PasswordRecipient], confirmedUserIds: [String]
     ) async throws {
         let session = try requireSession()
-        _ = try await session.setShares(
-            itemId: item.id, grantees: grantees, recipients: recipients, confirmedUserIds: confirmedUserIds)
+        do {
+            _ = try await session.setShares(
+                itemId: item.id, grantees: grantees, recipients: recipients, confirmedUserIds: confirmedUserIds)
+        } catch {
+            // A removal that went through but could not be given a new key still changed the item.
+            await reload()
+            throw error
+        }
         await reload()
     }
 
@@ -569,7 +624,7 @@ final class PasswordsModel {
         let session = try requireSession()
         try await session.erase()
         await forgetKeptKey()
-        if !isDemo { await PasswordsIdentityStore.removeAll() }
+        await forgetSuggestions()
         markClosed(to: .notSetUp)
         doneText = String(localized: "Passwords was erased.")
     }

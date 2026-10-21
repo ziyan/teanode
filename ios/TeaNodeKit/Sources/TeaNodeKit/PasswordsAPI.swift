@@ -282,6 +282,34 @@ public struct PasswordItemShareKeyInput: Codable, Hashable, Sendable {
     }
 }
 
+/// PasswordItemRekeyInput gives an item a new item key when access narrows (the agent
+/// stops using it, or somebody is removed from its shares): the fields sealed with the
+/// new key, the new key sealed for the owner, for each recipient who keeps access, and for
+/// the agent if it still may use the item. The server drops every old share key.
+public struct PasswordItemRekeyInput: Codable, Equatable, Sendable {
+    public var id: String
+    /// The revision the device read; a newer one is refused as "changed on another device".
+    public var baseRevision: Int64
+    public var encryptedFields: String
+    /// The new item key sealed with the account key.
+    public var itemKey: String
+    public var shareKeys: [PasswordItemShareKeyInput]
+    /// The new item key sealed for the agent key; nil when the agent is not to use the item.
+    public var itemKeyByAgentKey: String?
+
+    public init(
+        id: String, baseRevision: Int64, encryptedFields: String, itemKey: String, shareKeys: [PasswordItemShareKeyInput],
+        itemKeyByAgentKey: String?
+    ) {
+        self.id = id
+        self.baseRevision = baseRevision
+        self.encryptedFields = encryptedFields
+        self.itemKey = itemKey
+        self.shareKeys = shareKeys
+        self.itemKeyByAgentKey = itemKeyByAgentKey
+    }
+}
+
 // MARK: The API
 
 /// PasswordsAPI is the server's side of Passwords as calls. `Connection` is
@@ -310,6 +338,8 @@ public protocol PasswordsAPI: Sendable {
         -> PasswordItemView
     func addPasswordShareKeys(_ keys: [PasswordItemShareKeyInput]) async throws -> Int
     func setPasswordItemUsableByAgent(itemId: String, isUsableByAgent: Bool, itemKeyByAgentKey: String?) async throws -> PasswordItemView
+    /// Gives the item a new item key (`RekeyPasswordItem`).
+    func rekeyPasswordItem(_ input: PasswordItemRekeyInput) async throws -> PasswordItemView
 }
 
 // MARK: Documents
@@ -406,6 +436,11 @@ extension Documents {
           SetPasswordItemUsableByAgent(input: { itemId: $itemId, isUsableByAgent: $isUsableByAgent, itemKeyByAgentKey: $itemKeyByAgentKey }) { \(passwordItemFields) }
         }
         """
+    public static let rekeyPasswordItem = """
+        mutation ($id: String!, $baseRevision: Int!, $encryptedFields: String!, $itemKey: String!, $shareKeys: [PasswordItemShareKeyInput!]!, $itemKeyByAgentKey: String) {
+          RekeyPasswordItem(input: { id: $id, baseRevision: $baseRevision, encryptedFields: $encryptedFields, itemKey: $itemKey, shareKeys: $shareKeys, itemKeyByAgentKey: $itemKeyByAgentKey }) { \(passwordItemFields) }
+        }
+        """
 
     /// The Passwords documents, for the server's schema check.
     public static let passwordsDocuments: [String: String] = [
@@ -415,7 +450,7 @@ extension Documents {
         "passwordRecipients": passwordRecipients, "waitingPasswordShares": waitingPasswordShares, "passwordsAgentKey": passwordsAgentKey,
         "savePasswordItem": savePasswordItem, "deletePasswordItem": deletePasswordItem, "restorePasswordItem": restorePasswordItem,
         "setPasswordItemShares": setPasswordItemShares, "addPasswordShareKeys": addPasswordShareKeys,
-        "setPasswordItemUsableByAgent": setPasswordItemUsableByAgent,
+        "setPasswordItemUsableByAgent": setPasswordItemUsableByAgent, "rekeyPasswordItem": rekeyPasswordItem,
     ]
 }
 
@@ -544,5 +579,10 @@ extension Connection: PasswordsAPI {
         if let itemKeyByAgentKey { variables["itemKeyByAgentKey"] = .string(itemKeyByAgentKey) }
         return try await execute(Documents.setPasswordItemUsableByAgent, variables: variables, as: Answer.self)
             .SetPasswordItemUsableByAgent
+    }
+
+    public func rekeyPasswordItem(_ input: PasswordItemRekeyInput) async throws -> PasswordItemView {
+        struct Answer: Decodable, Sendable { let RekeyPasswordItem: PasswordItemView }
+        return try await execute(Documents.rekeyPasswordItem, variables: PasswordsJSON.variables(input), as: Answer.self).RekeyPasswordItem
     }
 }

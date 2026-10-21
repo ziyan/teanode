@@ -59,25 +59,73 @@ public struct PasswordsOneTimeCodeSettings: Equatable, Sendable {
 
 /// PasswordsOneTimeCode reads `otpauth://` links and works out the codes.
 public enum PasswordsOneTimeCode {
-    /// Reads an `otpauth://totp/...` link.
+    /// The longest period read: far longer than any site uses, and a number every language here holds exactly.
+    public static let maximumPeriodSeconds = 2_147_483_647
+
+    /// Reads an `otpauth://totp/...` link. The reading is strict, and the same as the Go package and the
+    /// dashboard's (the cases in internal/passwords/testdata/onetimecode.json): only ASCII white space is
+    /// trimmed from the ends; a control character anywhere is refused; the host is exactly `totp` (no
+    /// user name, no port); a malformed percent escape or a semicolon in the query is refused; the
+    /// secret is base32 letters with spaces and hyphens ignored and `=` only at the end; the digit
+    /// count and the period are plain ASCII digits, the period at most `maximumPeriodSeconds`.
+    /// Written by hand rather than with URLComponents, whose answers differ from platform to platform.
     public static func parse(uri: String) throws -> PasswordsOneTimeCodeSettings {
-        guard let components = URLComponents(string: uri.trimmingCharacters(in: .whitespacesAndNewlines)),
-            components.scheme?.lowercased() == "otpauth", components.host?.lowercased() == "totp"
+        let asciiWhiteSpace: Set<Unicode.Scalar> = [" ", "\t", "\n", "\r", "\u{0C}", "\u{0B}"]
+        var scalars = Array(uri.unicodeScalars)
+        while let first = scalars.first, asciiWhiteSpace.contains(first) { scalars.removeFirst() }
+        while let last = scalars.last, asciiWhiteSpace.contains(last) { scalars.removeLast() }
+        guard !scalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) else {
+            throw PasswordsOneTimeCodeError.notTimeBasedLink
+        }
+        var rest = String(String.UnicodeScalarView(scalars))
+        // A fragment is not part of what the link says.
+        if let fragmentStart = rest.firstIndex(of: "#") { rest = String(rest[rest.startIndex..<fragmentStart]) }
+
+        guard let schemeEnd = rest.firstIndex(of: ":"), rest[rest.startIndex..<schemeEnd].lowercased() == "otpauth",
+            rest[rest.index(after: schemeEnd)...].hasPrefix("//")
         else { throw PasswordsOneTimeCodeError.notTimeBasedLink }
+        rest = String(rest[rest.index(rest.index(after: schemeEnd), offsetBy: 2)...])
+
+        var queryText = ""
+        if let queryStart = rest.firstIndex(of: "?") {
+            queryText = String(rest[rest.index(after: queryStart)...])
+            rest = String(rest[rest.startIndex..<queryStart])
+        }
+        var host = rest
+        var pathText = ""
+        if let pathStart = rest.firstIndex(of: "/") {
+            host = String(rest[rest.startIndex..<pathStart])
+            pathText = String(rest[pathStart...])
+        }
+        guard host.lowercased() == "totp" else { throw PasswordsOneTimeCodeError.notTimeBasedLink }
 
         var parameters: [String: String] = [:]
-        for item in components.queryItems ?? [] {
-            if let value = item.value, parameters[item.name.lowercased()] == nil {
-                parameters[item.name.lowercased()] = value
+        guard !queryText.contains(";") else { throw PasswordsOneTimeCodeError.notTimeBasedLink }
+        for pair in queryText.split(separator: "&", omittingEmptySubsequences: true) {
+            let name: Substring
+            let value: Substring
+            if let equals = pair.firstIndex(of: "=") {
+                name = pair[pair.startIndex..<equals]
+                value = pair[pair.index(after: equals)...]
+            } else {
+                name = pair
+                value = ""
             }
+            guard let decodedName = percentDecoded(String(name), isPlusSpace: true),
+                let decodedValue = percentDecoded(String(value), isPlusSpace: true)
+            else { throw PasswordsOneTimeCodeError.notTimeBasedLink }
+            // The first of a repeated name is the one read.
+            if parameters[decodedName] == nil { parameters[decodedName] = decodedValue }
         }
 
-        guard let secretText = parameters["secret"], let secret = PasswordsBase32.decode(secretText.filter { $0 != "-" }),
-            !secret.isEmpty
-        else { throw PasswordsOneTimeCodeError.invalidSecret }
+        let secretText = (parameters["secret"] ?? "").filter { $0 != " " && $0 != "-" }
+        let trimmedSecretText = String(secretText.reversed().drop(while: { $0 == "=" }).reversed())
+        guard !trimmedSecretText.isEmpty, let secret = lenientBase32(trimmedSecretText), !secret.isEmpty else {
+            throw PasswordsOneTimeCodeError.invalidSecret
+        }
 
         var algorithm = PasswordsOneTimeCodeAlgorithm.sha1
-        if let algorithmText = parameters["algorithm"] {
+        if let algorithmText = parameters["algorithm"], !algorithmText.isEmpty {
             guard let parsed = PasswordsOneTimeCodeAlgorithm(rawValue: algorithmText.uppercased()) else {
                 throw PasswordsOneTimeCodeError.unsupportedAlgorithm
             }
@@ -85,33 +133,99 @@ public enum PasswordsOneTimeCode {
         }
 
         var digitCount = 6
-        if let digitText = parameters["digits"] {
-            guard let parsed = Int(digitText), parsed == 6 || parsed == 8 else {
+        if let digitText = parameters["digits"], !digitText.isEmpty {
+            guard let parsed = asciiNumber(digitText), parsed == 6 || parsed == 8 else {
                 throw PasswordsOneTimeCodeError.unsupportedDigitCount
             }
             digitCount = parsed
         }
 
         var periodSeconds = 30
-        if let periodText = parameters["period"] {
-            guard let parsed = Int(periodText), parsed > 0 else { throw PasswordsOneTimeCodeError.invalidPeriod }
+        if let periodText = parameters["period"], !periodText.isEmpty {
+            guard let parsed = asciiNumber(periodText), parsed >= 1, parsed <= maximumPeriodSeconds else {
+                throw PasswordsOneTimeCodeError.invalidPeriod
+            }
             periodSeconds = parsed
         }
 
         // The label is the path without its leading slash: "Issuer:account" or "account".
-        var label = components.path
+        guard var label = percentDecoded(pathText, isPlusSpace: false) else { throw PasswordsOneTimeCodeError.notTimeBasedLink }
         if label.hasPrefix("/") { label.removeFirst() }
         var issuer = parameters["issuer"] ?? ""
-        var accountName = label
+        var accountName = label.trimmingCharacters(in: .whitespacesAndNewlines)
         if let separator = label.firstIndex(of: ":") {
-            let labelIssuer = String(label[label.startIndex..<separator]).trimmingCharacters(in: .whitespaces)
-            accountName = String(label[label.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+            let labelIssuer = String(label[label.startIndex..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+            accountName = String(label[label.index(after: separator)...]).trimmingCharacters(in: .whitespacesAndNewlines)
             if issuer.isEmpty { issuer = labelIssuer }
         }
 
         return PasswordsOneTimeCodeSettings(
             secret: secret, algorithm: algorithm, digitCount: digitCount, periodSeconds: periodSeconds, issuer: issuer,
             accountName: accountName)
+    }
+
+    /// Text with its `%XX` escapes read (and `+` as a space in a query); nil for an escape that is not two hex digits.
+    private static func percentDecoded(_ text: String, isPlusSpace: Bool) -> String? {
+        var bytes: [UInt8] = []
+        let source = Array(text.utf8)
+        var index = 0
+        while index < source.count {
+            let byte = source[index]
+            if byte == UInt8(ascii: "%") {
+                guard index + 2 < source.count, let high = hexValue(source[index + 1]), let low = hexValue(source[index + 2]) else {
+                    return nil
+                }
+                bytes.append(UInt8(high * 16 + low))
+                index += 3
+            } else if byte == UInt8(ascii: "+") && isPlusSpace {
+                bytes.append(UInt8(ascii: " "))
+                index += 1
+            } else {
+                bytes.append(byte)
+                index += 1
+            }
+        }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    private static func hexValue(_ byte: UInt8) -> Int? {
+        switch byte {
+        case UInt8(ascii: "0")...UInt8(ascii: "9"): return Int(byte - UInt8(ascii: "0"))
+        case UInt8(ascii: "a")...UInt8(ascii: "f"): return Int(byte - UInt8(ascii: "a")) + 10
+        case UInt8(ascii: "A")...UInt8(ascii: "F"): return Int(byte - UInt8(ascii: "A")) + 10
+        default: return nil
+        }
+    }
+
+    /// A whole number made only of ASCII digits (no sign, no space); nil when it is anything else or too large.
+    private static func asciiNumber(_ text: String) -> Int? {
+        guard !text.isEmpty, text.utf8.allSatisfy({ $0 >= UInt8(ascii: "0") && $0 <= UInt8(ascii: "9") }) else { return nil }
+        return Int(text)
+    }
+
+    /// Base32 letters (any case, 2 to 7) read to bytes; the bits left over after the last whole byte are
+    /// dropped, as the Go package and the dashboard do. Nil for any other character.
+    private static func lenientBase32(_ text: String) -> Data? {
+        var bytes = Data()
+        var buffer = 0
+        var bitCount = 0
+        for byte in text.utf8 {
+            let value: Int
+            switch byte {
+            case UInt8(ascii: "A")...UInt8(ascii: "Z"): value = Int(byte - UInt8(ascii: "A"))
+            case UInt8(ascii: "a")...UInt8(ascii: "z"): value = Int(byte - UInt8(ascii: "a"))
+            case UInt8(ascii: "2")...UInt8(ascii: "7"): value = Int(byte - UInt8(ascii: "2")) + 26
+            default: return nil
+            }
+            buffer = (buffer << 5) | value
+            bitCount += 5
+            if bitCount >= 8 {
+                bitCount -= 8
+                bytes.append(UInt8((buffer >> bitCount) & 0xFF))
+                buffer &= (1 << bitCount) - 1
+            }
+        }
+        return bytes
     }
 
     /// The code at a time, as digits with leading zeros kept.

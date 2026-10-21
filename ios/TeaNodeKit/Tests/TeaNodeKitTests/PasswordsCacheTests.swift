@@ -73,25 +73,69 @@ final class PasswordsCacheTests: XCTestCase {
         XCTAssertNoThrow(try cache.erase())
     }
 
-    func testKnownPublicKeysRoundTripAndAnOlderFileWithoutThemReadsAsNoneKnown() throws {
+    func testPinnedKeysRoundTripThroughTheirOwnFileAndAnOlderFileReadsItsKeysAsSeenOnly() throws {
         let url = temporaryFile()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let cache = PasswordsCache(fileURL: url)
         var stored = contents(items: [view("one", revision: 1, isSharedWithMe: true)], revision: 1)
-        stored.knownPublicKeys = ["user-grace": "grace-key"]
+        stored.seenPublicKeys = ["user-grace": "grace-key"]
+        stored.confirmedPublicKeys = ["user-linus": "linus-key"]
         try cache.save(stored)
-        XCTAssertEqual(try cache.load()?.knownPublicKeys, ["user-grace": "grace-key"])
+        XCTAssertEqual(try cache.load(), stored)
+        // The cache file holds no pins; they are in the pins file beside it.
+        let text = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        XCTAssertFalse(text.contains("grace-key"))
+        XCTAssertFalse(text.contains("linus-key"))
+        XCTAssertTrue(try String(contentsOf: cache.pinsFileURL, encoding: .utf8).contains("grace-key"))
 
-        // The same file as an older build wrote it: no knownPublicKeys, and no ownerPublicKey on the item.
+        // The same file as an earlier build wrote it: pinned keys under knownPublicKeys, no pins file.
+        try FileManager.default.removeItem(at: cache.pinsFileURL)
         var object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        object["knownPublicKeys"] = ["user-grace": "grace-key"]
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+        let earlier = try XCTUnwrap(try cache.load())
+        XCTAssertEqual(earlier.seenPublicKeys, ["user-grace": "grace-key"])
+        XCTAssertEqual(earlier.confirmedPublicKeys, [:])
+
+        // A file with neither, and no ownerPublicKey on the item, reads as no key known.
         object["knownPublicKeys"] = nil
         var items = try XCTUnwrap(object["items"] as? [[String: Any]])
         items[0]["ownerPublicKey"] = nil
         object["items"] = items
         try JSONSerialization.data(withJSONObject: object).write(to: url)
-        let older = try XCTUnwrap(try cache.load())
-        XCTAssertEqual(older.knownPublicKeys, [:])
-        XCTAssertEqual(older.items.first?.ownerPublicKey, "")
+        let oldest = try XCTUnwrap(try cache.load())
+        XCTAssertEqual(oldest.seenPublicKeys, [:])
+        XCTAssertEqual(oldest.items.first?.ownerPublicKey, "")
+    }
+
+    func testErasingKeepingPinsLeavesThePinsFileAndErasingRemovesBoth() throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let cache = PasswordsCache(fileURL: url)
+        var stored = contents(items: [], revision: 0)
+        stored.seenPublicKeys = ["user-grace": "grace-key"]
+        try cache.save(stored)
+        try cache.eraseKeepingPins()
+        XCTAssertNil(try cache.load())
+        XCTAssertEqual(cache.loadPins(userId: "user-ada").seenPublicKeys, ["user-grace": "grace-key"])
+        // Another person's pins are never read as this person's.
+        XCTAssertEqual(cache.loadPins(userId: "user-other"), PasswordsPins(userId: "user-other"))
+        try cache.erase()
+        XCTAssertEqual(cache.loadPins(userId: "user-ada"), PasswordsPins(userId: "user-ada"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.pinsFileURL.path))
+        XCTAssertNoThrow(try cache.erase())
+    }
+
+    func testRemovingTheCopyOfASignInRemovesThePinsFileToo() throws {
+        let container = FileManager.default.temporaryDirectory.appendingPathComponent("passwords-location-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: container) }
+        let cache = PasswordsCache(fileURL: PasswordsLocation.fileURL(groupContainer: container, signInAccountKey: "demo.example.com|ada"))
+        var stored = contents(items: [], revision: 0)
+        stored.confirmedPublicKeys = ["user-grace": "grace-key"]
+        try cache.save(stored)
+        PasswordsLocation.removeCopy(groupContainer: container, signInAccountKey: "demo.example.com|ada")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.fileURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.pinsFileURL.path))
     }
 
     func testADamagedFileAndANewerFormatAreTyped() throws {

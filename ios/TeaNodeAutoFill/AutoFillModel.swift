@@ -35,6 +35,8 @@ final class AutoFillModel: ObservableObject {
     /// Whether the app has made a copy of Passwords on this phone, for the configuration screen.
     @Published private(set) var hasSetUpPasswords = false
     @Published private(set) var logins: [AutoFillLoginSummary] = []
+    /// Set when the person chose a login saved for another site than the one asking: nothing is filled until they say yes.
+    @Published var siteQuestion: AutoFillSiteQuestion?
 
     var autoFillCompletion = AutoFillCompletion.ignoring
 
@@ -60,6 +62,7 @@ final class AutoFillModel: ObservableObject {
         forgetOpenedPasswords()
         searchText = ""
         problemMessage = nil
+        siteQuestion = nil
         lockedProblemText = nil
         isWorking = false
         request = newRequest
@@ -117,6 +120,7 @@ final class AutoFillModel: ObservableObject {
     /// summaries, and ends every request still waiting on an `await`.
     private func forgetOpenedPasswords() {
         requestGeneration += 1
+        siteQuestion = nil
         opener = nil
         accountKey = nil
         cacheContents = nil
@@ -294,9 +298,45 @@ final class AutoFillModel: ObservableObject {
             : String(localized: "Logins you save in TeaNode Passwords show up here.")
     }
 
-    /// The person chose a row.
+    /// The person chose a row. A password or a one-time code of a login that is not saved for the
+    /// site asking (it can only be chosen from "All logins" or a search) is filled only after they confirm.
     func select(_ row: AutoFillRow) {
         guard !isWorking else { return }
+        if let question = question(askedBeforeFilling: row) {
+            siteQuestion = question
+            return
+        }
+        fillChosen(row)
+    }
+
+    /// The person said yes to filling the login into the site that asked.
+    func confirmSiteQuestion(_ question: AutoFillSiteQuestion) {
+        siteQuestion = nil
+        guard !isWorking else { return }
+        fillChosen(question.row)
+    }
+
+    private func question(askedBeforeFilling row: AutoFillRow) -> AutoFillSiteQuestion? {
+        switch row.rowKind {
+        case .passkey:
+            // A passkey row is already for the website that asked.
+            return nil
+        case .password, .oneTimeCode:
+            break
+        }
+        guard let login = logins.first(where: { $0.id == row.itemId }),
+            AutoFillIndex.isSiteMismatch(login: login, listing: autoFillListing),
+            let requestedSite = AutoFillIndex.requestedSiteText(listing: autoFillListing)
+        else { return nil }
+        let savedSites = AutoFillIndex.savedSitesText(login: login)
+        let message =
+            savedSites.isEmpty
+            ? String(localized: "It is not saved for any site.") : String(localized: "It is saved for \(savedSites).")
+        return AutoFillSiteQuestion(
+            row: row, title: String(localized: "Fill \(login.displayName) into \(requestedSite)?"), message: message)
+    }
+
+    private func fillChosen(_ row: AutoFillRow) {
         isWorking = true
         Task {
             do {

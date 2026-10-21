@@ -84,6 +84,7 @@ enum PasswordsWords {
         case .invalidServerAnswer: String(localized: "The server sent something this app cannot read.")
         case .ownerKeyChanged: String(localized: "The key of the person who shared this changed. Compare the safety codes with them, then trust the new key.")
         case .ownerKeyUnknown: String(localized: "This iPhone has not seen the key of the person who shared this yet. Open Passwords and pull to refresh.")
+        case .itemNeedsNewKey: String(localized: "Removed. The item could not be given a new key.")
         }
     }
 
