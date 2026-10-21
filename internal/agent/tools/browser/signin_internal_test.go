@@ -202,8 +202,9 @@ type fakeTab struct {
 	fillAnswer string
 	// tabID is the number of the tab the actions go to, as the server last
 	// heard it.
-	tabID  string
-	filled devtools.FilledValues
+	tabID    string
+	filled   devtools.FilledValues
+	requests tools.RequestLedger
 
 	mutex sync.Mutex
 	asked []askedOfTab
@@ -241,6 +242,9 @@ func (self *fakeTab) CurrentTabID() string           { return self.tabID }
 func (self *fakeTab) NoteCurrentTab(tab string)      { self.tabID = tab }
 func (self *fakeTab) ServerHost() string             { return "" }
 func (self *fakeTab) ListedTabs() []tools.TabAddress { return nil }
+func (self *fakeTab) WatchedRequests() *tools.RequestLedger {
+	return &self.requests
+}
 
 func (self *fakeTab) actions() []askedOfTab {
 	self.mutex.Lock()

@@ -347,7 +347,18 @@ frame's own world, once. The protocol is also kept from what reads through
 frames: no `pierce`, no execution context or frame named in a call, no
 `DOMSnapshot`, `Page.captureSnapshot` or `Page.getFrameTree`, and what the tab
 watched leaves out every request to the server's host, whose Authorization
-header would otherwise show. A `fetch` is held to the same addresses as a tab.
+header would otherwise show. A network event is shown only for a request whose
+creation was seen (`Network.requestWillBeSent`, `Network.webSocketCreated`) with
+an address that is not the server's, an extension's or unreadable. The extension
+keeps that record for the life of the tab's debugging session, apart from the
+500 events it holds, and the server keeps its own per browser connection from
+every answer; each drops an event of a request it never saw created, because a
+page that makes enough requests pushes a connection's first events out of the
+window while its later frames, which carry the header, keep arriving.
+`Network.getResponseBody` and `Network.getRequestPostData` are answered only
+for a request that passes the same test. The server asks the extension for the
+whole window and chooses the `method` and `limit` itself after judging it. A
+`fetch` is held to the same addresses as a tab.
 
 It is the person's own session, so the agent acts as them: it can fill in a
 password or a card number, because an assistant that cannot is not much of

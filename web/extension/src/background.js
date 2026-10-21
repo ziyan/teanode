@@ -46,19 +46,22 @@ import { inPage } from './inPage'
 import {
   OWN_PAGES_REFUSAL,
   PANEL_ELEMENT_REFUSAL,
+  REQUEST_BODY_REFUSAL,
   addressRefusal,
   cdpParametersRefusal,
   cdpRefusal,
   fetchRefusal,
   handOverToken,
-  hiddenRequestIds,
   isOwnPage,
   isPanelFrame,
+  isRequestShown,
+  networkEventsShown,
+  newRequestRecord,
+  noteRequestEvent,
   pageRefusal,
   panelProbe,
   panelRefusal,
   serverHostname,
-  withoutServerRequests,
 } from './reach.js'
 
 const PROTOCOL = 5
@@ -522,7 +525,7 @@ async function agentTabs() {
 // the person's sign that it is happening. It is attached on first use and
 // let go when the tab goes, the socket closes, or nothing has used it for
 // a while.
-const debugging = new Map() // tabId -> { events: [], until }
+const debugging = new Map() // tabId -> { events: [], requests, session, until }
 // casting are the tabs streamed to the dashboard's browser page, each
 // with the timer that sends a still picture while the stream is quiet.
 const casting = new Map()
@@ -569,6 +572,20 @@ const agentUsing = new Set()
 // failing with Chrome's "another debugger is already attached".
 const attaching = new Map()
 
+// newDebuggingSession is the state of a tab's debugging session: what the
+// page did, the record of the requests it made (which lasts as long as the
+// session, not as long as the events do), and a key that tells the server
+// this is not the session it saw before, since request ids may come round
+// again in a new one.
+function newDebuggingSession(tabId) {
+  return {
+    events: [],
+    requests: newRequestRecord(),
+    session: `${tabId}.${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`,
+    until: Date.now() + DEBUGGER_IDLE,
+  }
+}
+
 async function debuggerFor(tabId) {
   const known = debugging.get(tabId)
   if (known) {
@@ -581,7 +598,7 @@ async function debuggerFor(tabId) {
       chrome.debugger
         .attach({ tabId }, DEBUGGER_PROTOCOL)
         .then(() => {
-          const state = { events: [], until: Date.now() + DEBUGGER_IDLE }
+          const state = newDebuggingSession(tabId)
           debugging.set(tabId, state)
           return state
         })
@@ -621,6 +638,8 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   // request's body in any.
   if (documents.isShowingFilledDocument(source.tabId)) return
   state.events.push({ at: Date.now(), method, params: withoutRequestBodies(params) })
+  // Learned as it arrives, not from the window: see networkEventsShown.
+  noteRequestEvent(state.requests, method, params)
   if (state.events.length > EVENTS_KEPT) state.events.splice(0, state.events.length - EVENTS_KEPT)
 })
 
@@ -1122,11 +1141,12 @@ async function act(action, args) {
         const lockedRefusal = lockedMethodRefusal(args.method, args.params)
         if (lockedRefusal) return { ok: false, error: lockedRefusal }
       }
-      // A request to the server is not shown, so nor is its body.
-      if (args.method === 'Network.getResponseBody') {
+      // Only a request that may be shown has its body read: not one to the
+      // server, and not one whose creation was never seen.
+      if (args.method === 'Network.getResponseBody' || args.method === 'Network.getRequestPostData') {
         const watched = debugging.get(tab.id)
-        if (watched && hiddenRequestIds(watched.events, origin).has(args.params && args.params.requestId)) {
-          return { ok: false, error: OWN_PAGES_REFUSAL }
+        if (!watched || !isRequestShown(watched.requests, args.params && args.params.requestId, origin)) {
+          return { ok: false, error: REQUEST_BODY_REFUSAL }
         }
       }
       // Page.navigate is the navigate action by another name.
@@ -1159,20 +1179,21 @@ async function act(action, args) {
       if (!state) return { ok: false, error: 'nothing is being watched on this tab; send a cdp command such as Network.enable first' }
       state.until = Date.now() + DEBUGGER_IDLE
       const wanted = String(args.method || '').trim()
-      // Requests to the server are not shown: see withoutServerRequests.
-      const visible = withoutServerRequests(state.events, origin)
+      // Requests to the server, and ones never seen created, are not shown:
+      // see networkEventsShown.
+      const visible = networkEventsShown(state.requests, state.events, origin)
       const kept = wanted ? visible.filter((event) => event.method.startsWith(wanted)) : visible
       const most = Number(args.limit) > 0 ? Number(args.limit) : 100
       const shown = kept.slice(-most)
       if (args.forget) state.events = []
-      return { ok: true, data: { events: shown, kept: state.events.length } }
+      return { ok: true, data: { events: shown, kept: state.events.length, session: state.session } }
     }
     if (action === 'cdp_stop') {
       // Somebody is watching the tab on the dashboard, which needs the
       // protocol: what the agent kept is let go, the attachment is not.
       if (casting.has(tab.id)) {
         const state = debugging.get(tab.id)
-        if (state) state.events = []
+        if (state) Object.assign(state, newDebuggingSession(tab.id))
         agentUsing.delete(tab.id)
         // What the agent may have turned on to watch is turned off; the
         // stream does not need it.

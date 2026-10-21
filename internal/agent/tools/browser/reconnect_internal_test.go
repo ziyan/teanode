@@ -31,17 +31,33 @@ type fakeLink struct {
 	answer     string
 	serverHost string
 	listed     []tools.TabAddress
+	// sequence is what it says to the first actions, one each, the last
+	// one again from then on.
+	sequence []string
 
 	mutex sync.Mutex
 	asked []string
+
+	// requests are what its events have shown.
+	requests tools.RequestLedger
 }
 
 func (self *fakeLink) Ask(_ context.Context, action string, _ any) (json.RawMessage, error) {
 	self.mutex.Lock()
 	self.asked = append(self.asked, action)
+	var next string
+	if len(self.sequence) > 0 {
+		next = self.sequence[0]
+		if len(self.sequence) > 1 {
+			self.sequence = self.sequence[1:]
+		}
+	}
 	self.mutex.Unlock()
 	if self.isDropped {
 		return nil, fmt.Errorf("the person's browser: %w", tools.ErrDeviceDetached)
+	}
+	if next != "" {
+		return json.RawMessage(next), nil
 	}
 	if self.answer != "" {
 		return json.RawMessage(self.answer), nil
@@ -58,6 +74,9 @@ func (self *fakeLink) CurrentTabID() string           { return "" }
 func (self *fakeLink) NoteCurrentTab(string)          {}
 func (self *fakeLink) ServerHost() string             { return self.serverHost }
 func (self *fakeLink) ListedTabs() []tools.TabAddress { return self.listed }
+func (self *fakeLink) WatchedRequests() *tools.RequestLedger {
+	return &self.requests
+}
 func (self *fakeLink) URL() string {
 	if self.address != "" {
 		return self.address

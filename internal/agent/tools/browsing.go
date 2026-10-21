@@ -75,6 +75,10 @@ type Tab interface {
 	// ListedTabs are the tabs the person's browser last listed as ones the
 	// agent may act in, each with the address it shows.
 	ListedTabs() []TabAddress
+	// WatchedRequests is what this connection has shown the server of the
+	// requests the person's tab made: the agent is shown only the requests
+	// it saw created.
+	WatchedRequests() *RequestLedger
 }
 
 // TabAddress is one tab the person's browser listed: its number, as the

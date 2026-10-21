@@ -39,7 +39,9 @@ beforeAll(async () => {
   vi.stubGlobal('chrome', {
     storage: {
       session: { get: async () => ({ tabId: 7, ownTabId: 7 }), set: async () => {}, remove: async () => {} },
-      sync: { get: async () => ({}) },
+      // The server the agent works for: without its name no request can be told
+      // from a request to it, and none is shown.
+      sync: { get: async () => ({ server: 'https://mail.example.com' }) },
       local: {
         get: async (key: string) => (key in storedLocal ? { [key]: storedLocal[key] } : {}),
         set: async (values: Record<string, unknown>) => void Object.assign(storedLocal, values),
