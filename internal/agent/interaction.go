@@ -126,6 +126,11 @@ func (self *Agent) ResumeInteraction(settings *ResumeSettings, chatAboutIt strin
 			return nil, nil
 		}
 		message = AnsweringMarker + " " + interaction.InteractionText + "\n\n" + strings.TrimSpace(settings.Answer)
+	case models.InteractionTakeOver:
+		if strings.TrimSpace(settings.Answer) == chatAboutIt {
+			return nil, nil
+		}
+		message = AnsweringMarker + " " + interaction.InteractionText + "\n\n" + takeOverAnswerLine(settings.Answer, true)
 	case models.InteractionApproval:
 		if settings.Answer == models.InteractionApproved {
 			message = fmt.Sprintf("%s %s\n\nThey approved this after your turn had ended. Make exactly this call now, and it runs without asking again: %s with %s", ApprovedMarker, interaction.InteractionText, interaction.ToolName, interaction.ToolArguments)
@@ -140,4 +145,23 @@ func (self *Agent) ResumeInteraction(settings *ResumeSettings, chatAboutIt strin
 		Agent: settings.Agent, Owner: settings.Owner, Operations: settings.Operations,
 		Conversation: settings.Conversation, Message: message, Surface: "drawer", PreApproved: preApproved,
 	})
+}
+
+// takeOverAnswerLine is how the answer to a take-over card reads to the
+// model: the person handed the tab back, with what they said, or typed a
+// reply instead. isLate says the turn that asked had ended.
+func takeOverAnswerLine(answer string, isLate bool) string {
+	note, isHandedBack := strings.CutPrefix(strings.TrimSpace(answer), models.InteractionHandedBack)
+	note = strings.TrimSpace(note)
+	if !isHandedBack {
+		return "They replied instead of taking the tab over: " + strings.TrimSpace(answer)
+	}
+	line := "They took the tab over and handed it back."
+	if isLate {
+		line = "They took the tab over and handed it back after your turn had ended."
+	}
+	if note != "" {
+		line += " They said: " + note
+	}
+	return line + " The page has changed: take a snapshot before you act."
 }

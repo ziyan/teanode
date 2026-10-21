@@ -46,6 +46,7 @@ import {
   CloseIcon,
   ComposeIcon,
   ComputerIcon,
+  EyeIcon,
   GlobeIcon,
   InboxIcon,
   ListIcon,
@@ -674,6 +675,9 @@ type Line =
       // When the card was raised: typing in the box answers only a card
       // that is fresh, never one ignored days ago.
       raisedAt?: string
+      // isTakeOver says the agent asks the person to take their browser tab
+      // over on the Browser page and hand it back, rather than to answer.
+      isTakeOver?: boolean
     }
   // detail is what a compaction's line opens to: the note itself.
   // isPending marks the line of a compaction still being written.
@@ -1707,14 +1711,18 @@ function TodoLine({ todo }: { todo: Todo }) {
 // back for an answer the choices do not hold. Anything else is typed in
 // the chat box below, which answers the card while it is fresh; a second
 // box on the card only made two places to type.
-function QuestionCard({
+export function QuestionCard({
   line,
   onAnswer,
   onChat,
+  onTakeOver,
 }: {
   line: Extract<Line, { kind: 'question' }>
   onAnswer: (text: string) => void
   onChat: () => void
+  // Opens the Browser page, for a card asking the person to take their tab
+  // over: handing it back there answers the card.
+  onTakeOver: () => void
 }) {
   const { t } = useTranslation()
   const [chosen, setChosen] = useState('')
@@ -1745,6 +1753,11 @@ function QuestionCard({
             <button type="button" onClick={onChat}>
               {t('agentDrawer.chatAboutIt')}
             </button>
+            {line.isTakeOver ? (
+              <button type="button" className="primary" onClick={onTakeOver}>
+                {t('agentDrawer.takeOverTab')}
+              </button>
+            ) : null}
             {line.choices.length > 0 ? (
               <button type="button" className="primary" disabled={!chosen} onClick={() => onAnswer(chosen)}>
                 {t('agentDrawer.submit')}
@@ -2183,8 +2196,17 @@ function ComputersMenu({ computers, onClose }: { computers: AttachedComputer[]; 
   )
 }
 
-// TabMenu is the attached tab, a line: its title, and the site it is on.
-function TabMenu({ tab, onClose }: { tab: { title?: string; url?: string }; onClose: () => void }) {
+// TabMenu is the attached tab, a line: its title, and the site it is on, and
+// the way to the page that shows it live.
+function TabMenu({
+  tab,
+  onWatch,
+  onClose,
+}: {
+  tab: { title?: string; url?: string }
+  onWatch: () => void
+  onClose: () => void
+}) {
   const { t } = useTranslation()
   const site = siteOf(tab.url)
   return (
@@ -2194,6 +2216,10 @@ function TabMenu({ tab, onClose }: { tab: { title?: string; url?: string }; onCl
         <span className="head-menu-row-name">{tab.title || site}</span>
         <span className="head-menu-row-detail muted">{site}</span>
       </div>
+      <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={onWatch}>
+        <EyeIcon size={14} />
+        <span className="head-menu-row-name">{t('agentDrawer.watchTab')}</span>
+      </button>
     </HeadMenu>
   )
 }
@@ -2694,7 +2720,7 @@ function BackgroundMark({
 interface OpenInteraction {
   runId: string
   callId: string
-  interactionKind: 'question' | 'approval'
+  interactionKind: 'question' | 'approval' | 'take_over'
   toolName: string
   interactionText: string
   interactionChoices: string[]
@@ -2746,18 +2772,19 @@ export function toolWords(tool: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-function cardsOf(interactions: OpenInteraction[]): Line[] {
+export function cardsOf(interactions: OpenInteraction[]): Line[] {
   return interactions.map((interaction): Line => {
     const key = `${interaction.runId}-${interaction.callId}-card`
-    if (interaction.interactionKind === 'question') {
+    if (interaction.interactionKind === 'question' || interaction.interactionKind === 'take_over') {
       return {
         kind: 'question',
         key,
         runId: interaction.runId,
         callId: interaction.callId,
         question: interaction.interactionText,
-        choices: interaction.interactionChoices,
+        choices: interaction.interactionChoices ?? [],
         raisedAt: interaction.createdAt,
+        isTakeOver: interaction.interactionKind === 'take_over',
       }
     }
     return {
@@ -4093,6 +4120,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             question: event.note ?? '',
             choices: (event.text ?? '').split('\n').filter(Boolean),
             raisedAt: event.at,
+            // The browser asks for the tab; ask_user asks a question.
+            isTakeOver: event.tool === 'browser',
           })
           return next
         case 'note': {
@@ -5392,6 +5421,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               void answer(line, CHAT_ABOUT_IT)
               setTimeout(() => input.current?.focus(), 50)
             }}
+            onTakeOver={() => {
+              leaving()
+              navigate('/browser')
+            }}
           />
         )
       case 'checkin':
@@ -5737,7 +5770,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             />
           )}
           {headMenu === 'computers' && <ComputersMenu computers={computers} onClose={() => setHeadMenu(null)} />}
-          {headMenu === 'tab' && tab?.attached && <TabMenu tab={tab} onClose={() => setHeadMenu(null)} />}
+          {headMenu === 'tab' && tab?.attached && (
+            <TabMenu
+              tab={tab}
+              onWatch={() => {
+                setHeadMenu(null)
+                leaving()
+                navigate('/browser')
+              }}
+              onClose={() => setHeadMenu(null)}
+            />
+          )}
           {headMenu === 'usage' && available && !isInChat && (
             <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />
           )}

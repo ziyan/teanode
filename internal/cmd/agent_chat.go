@@ -373,6 +373,19 @@ func askOnce(ctx context.Context, command *cli.Command, connection *client.Clien
 					return describeError(command, err)
 				}
 			case "question":
+				if event.Tool == "browser" {
+					// A request to take the browser tab over, which is done
+					// on the dashboard; Enter here hands it back.
+					note, isHandedBack := askTakeOver(command, event.Note)
+					if !isHandedBack {
+						continue
+					}
+					// This turn's card, not whichever is newest elsewhere.
+					if _, err := client.HandBackAgentTab(ctx, connection, note, turn.RunID, event.CallID); err != nil {
+						return describeError(command, err)
+					}
+					continue
+				}
 				answer, err := askQuestion(command, event.Note, event.Text)
 				if err != nil {
 					return err
@@ -409,6 +422,23 @@ func askQuestion(command *cli.Command, question, choices string) (string, error)
 		return "", nil
 	}
 	return strings.TrimSpace(line), nil
+}
+
+// askTakeOver puts the agent's request to take the browser tab over on the
+// terminal and waits for Enter, with anything typed before it as a note.
+// It says false when there is no terminal to read: the tab is then handed
+// back on the dashboard, which answers the request there.
+func askTakeOver(command *cli.Command, request string) (string, bool) {
+	_, _ = fmt.Fprintf(command.Writer, "\nThe agent needs you in your browser tab: %s\n", request)
+	_, _ = fmt.Fprintln(command.Writer, "Take it over on the dashboard's Browser page. Press Enter here when you are done to hand it back; a line typed first is a note for the agent.")
+	_, _ = fmt.Fprint(command.Writer, "> ")
+	reader := readerOf(command.Reader)
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		_, _ = fmt.Fprintln(command.Writer, "\n(waiting for it to be handed back on the dashboard)")
+		return "", false
+	}
+	return strings.TrimSpace(line), true
 }
 
 // askConfirmation puts the card on the terminal and reads y or n.

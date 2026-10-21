@@ -16,8 +16,14 @@
 // password already filled in on the page is not read back into the
 // conversation, and the DevTools relay refuses the handful of methods that
 // reach past a tab into the whole browser.
+//
+// The person can also watch those tabs from the dashboard's browser page,
+// on any device, and take one over: the tab is streamed to the server as
+// pictures while somebody watches it, and what the person does in the
+// picture comes back here as input, while they hold it. Their screen does
+// not change for it.
 
-const PROTOCOL = 3
+const PROTOCOL = 4
 
 let socket = null
 // attached is the tab the actions go to and the person's own tab, either of
@@ -194,10 +200,44 @@ function disconnect() {
   tellPanels()
 }
 
-// tellServer says which tab the actions go to, and whether there is one.
+// tellServer says which tab the actions go to, whether there is one, and
+// which tabs there are to watch.
 function tellServer() {
   if (!socket || socket.readyState !== WebSocket.OPEN) return
-  socket.send(JSON.stringify({ type: 'update', title: attached.title, url: attached.url, hasTab: attached.tabId !== null }))
+  const sending = socket
+  const update = { type: 'update', title: attached.title, url: attached.url, hasTab: attached.tabId !== null }
+  void listTabs()
+    .catch(() => undefined)
+    .then((tabs) => {
+      if (sending.readyState === WebSocket.OPEN) sending.send(JSON.stringify({ ...update, ...(tabs ? { tabs } : {}) }))
+    })
+}
+
+// tellSoon says so once a burst of tab changes settles: a page loading
+// changes its title and address several times over.
+let tellTimer = null
+function tellSoon() {
+  clearTimeout(tellTimer)
+  tellTimer = setTimeout(() => {
+    tellTimer = null
+    tellServer()
+  }, 300)
+}
+
+// isListed says a tab is one the agent may act in: the person's own, or one
+// it opened.
+const isListed = (tabId) => tabId === attached.ownTabId || opened.has(tabId)
+
+// listTabs is the person's own tab, then the ones the agent opened, each
+// saying whether the actions go to it.
+async function listTabs() {
+  const own = attached.ownTabId === null ? null : await chrome.tabs.get(attached.ownTabId).catch(() => null)
+  const listed = []
+  if (own) listed.push({ tab: own.id, title: own.title || '', url: own.url || '', own: true, current: own.id === attached.tabId })
+  for (const mine of await agentTabs()) {
+    listed.push({ tab: mine.id, title: mine.title || '', url: mine.url || '', own: false, current: mine.id === attached.tabId })
+  }
+  return listed
 }
 
 // connect opens the socket and puts it back when it drops, for as long as
@@ -224,7 +264,8 @@ function connect(origin, secret) {
         await useTab(null)
       }
     }
-    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null }))
+    const tabs = await listTabs().catch(() => [])
+    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null, tabs }))
     // A word every so often keeps this worker, and the socket, alive
     // while nothing else is said.
     clearInterval(pings)
@@ -255,6 +296,15 @@ function connect(origin, secret) {
       setBadge('!', '#c33')
       // A token the server no longer takes: sign in again.
       if (/token|sign in/i.test(message.reason || '')) chrome.runtime.openOptionsPage()
+      return
+    }
+    if (message.type === 'cast') {
+      if (message.isOn) void startCast(message.tab, message)
+      else void stopCast(message.tab)
+      return
+    }
+    if (INPUT_TYPES.has(message.type)) {
+      void dispatchInput(message)
       return
     }
     if (message.type === 'act') {
@@ -403,6 +453,9 @@ async function agentTabs() {
 // let go when the tab goes, the socket closes, or nothing has used it for
 // a while.
 const debugging = new Map() // tabId -> { events: [], until }
+// casting are the tabs streamed to the dashboard's browser page, each
+// with the timer that sends a still picture while the stream is quiet.
+const casting = new Map()
 const DEBUGGER_PROTOCOL = '1.3'
 const EVENTS_KEPT = 500
 const DEBUGGER_IDLE = 10 * 60 * 1000
@@ -466,30 +519,61 @@ function cdpRefusal(method) {
   return `${asked} is not one of the methods an attached tab answers: driving it (Input.), reading it (DOM., Runtime., CSS., Accessibility.), watching what it fetches (Network.enable, Network.getResponseBody) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser, which attaching one tab does not allow`
 }
 
+// agentUsing are the tabs whose debugger the agent's cdp action uses,
+// marked before it waits for the attachment, so a stream's start or stop
+// meanwhile never lets the debugger go from under it.
+const agentUsing = new Set()
+
+// attaching are the attachments under way, so that two callers at once,
+// the agent and the dashboard's stream, share one rather than the second
+// failing with Chrome's "another debugger is already attached".
+const attaching = new Map()
+
 async function debuggerFor(tabId) {
   const known = debugging.get(tabId)
   if (known) {
     known.until = Date.now() + DEBUGGER_IDLE
     return known
   }
-  await chrome.debugger.attach({ tabId }, DEBUGGER_PROTOCOL)
-  const state = { events: [], until: Date.now() + DEBUGGER_IDLE }
-  debugging.set(tabId, state)
-  return state
+  if (!attaching.has(tabId)) {
+    attaching.set(
+      tabId,
+      chrome.debugger
+        .attach({ tabId }, DEBUGGER_PROTOCOL)
+        .then(() => {
+          const state = { events: [], until: Date.now() + DEBUGGER_IDLE }
+          debugging.set(tabId, state)
+          return state
+        })
+        .finally(() => attaching.delete(tabId)),
+    )
+  }
+  return attaching.get(tabId)
 }
 
 async function letDebuggerGo(tabId) {
+  forgetCast(tabId)
+  agentUsing.delete(tabId)
   if (!debugging.delete(tabId)) return
   await chrome.debugger.detach({ tabId }).catch(() => {})
 }
 
 function letEveryDebuggerGo() {
+  // A stream whose attachment is still under way is forgotten too, so it
+  // stops at its next step rather than running on after the socket.
+  for (const tabId of [...casting.keys()]) forgetCast(tabId)
   for (const tabId of [...debugging.keys()]) void letDebuggerGo(tabId)
 }
 
 // What a page did, kept until it is asked for. The newest are kept: a
 // page that makes a thousand requests should not push the worker over.
 chrome.debugger.onEvent.addListener((source, method, params) => {
+  // A picture for the dashboard is passed on, never kept with the page's
+  // events.
+  if (method === 'Page.screencastFrame') {
+    if (casting.has(source.tabId)) sendFrame(source.tabId, params)
+    return
+  }
   const state = source.tabId !== undefined && debugging.get(source.tabId)
   if (!state) return
   state.events.push({ at: Date.now(), method, params })
@@ -497,8 +581,221 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 })
 
 chrome.debugger.onDetach.addListener((source) => {
-  if (source.tabId !== undefined) debugging.delete(source.tabId)
+  if (source.tabId !== undefined) {
+    debugging.delete(source.tabId)
+    // Chrome let it go by itself (the person cancelled the bar, or opened
+    // the developer tools on the tab): the dashboard is told rather than
+    // left showing the last picture.
+    if (forgetCast(source.tabId) && socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'castEnded', tab: source.tabId }))
+    }
+  }
 })
+
+// Streaming a tab to the dashboard's browser page, while somebody watches
+// it there. Focus emulation keeps the tab painting when it is behind
+// another tab or its window is minimized, which would otherwise stop the
+// pictures: the person watching from elsewhere never has to change what
+// this screen shows. The tabs being streamed are casting, beside
+// debugging.
+// FRAME_BACKLOG is how much may wait to go out on the socket before a
+// picture is acknowledged: Chrome sends the next only after that, so a slow
+// connection slows the stream instead of filling this worker's memory.
+const FRAME_BACKLOG = 512 * 1024
+// Chrome sends a screencast frame only when the tab repaints, so a still
+// page sends nothing once the stream has started, and nothing at all when
+// it started on a page that was not being painted. A screenshot is live
+// whatever the tab's state, so one is sent as the first picture and again
+// whenever the stream has been quiet this long; one that is the same as
+// the last picture sent is not sent again.
+const STILL_EVERY = 2000
+// FRAME_LARGEST is the most a picture may be, as base64, under the
+// server's limit for one message with room to spare; a larger one is not
+// sent, rather than closing the connection the agent's actions use too.
+const FRAME_LARGEST = 3 * 1024 * 1024
+
+// startCast streams a tab. Every wait is a chance for a stop, or another
+// start, to have come in meanwhile: each step checks this start is still
+// the tab's before going on, and one that was overtaken undoes what it
+// began unless a newer start has the tab.
+async function startCast(tabId, options) {
+  if (!isListed(tabId)) return
+  forgetCast(tabId)
+  const cast = { quality: options.quality || 60, maxSide: options.maxWidth || 1280, lastAt: 0, lastData: '', timer: null }
+  casting.set(tabId, cast)
+  const isOvertaken = () => casting.get(tabId) !== cast
+  const undo = async () => {
+    if (casting.has(tabId)) return
+    await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
+    await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {})
+    await releaseIfUnused(tabId)
+  }
+  try {
+    await debuggerFor(tabId)
+    if (isOvertaken()) return void (await releaseIfUnused(tabId))
+    await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: true })
+    await chrome.debugger.sendCommand({ tabId }, 'Page.startScreencast', {
+      format: 'jpeg',
+      quality: cast.quality,
+      maxWidth: cast.maxSide,
+      maxHeight: options.maxHeight || 1280,
+      everyNthFrame: 2,
+    })
+    if (isOvertaken()) return void (await undo())
+    await sendStill(tabId)
+    if (isOvertaken()) return void (await undo())
+    cast.timer = setInterval(() => {
+      if (Date.now() - cast.lastAt >= STILL_EVERY) void sendStill(tabId)
+    }, STILL_EVERY)
+  } catch (reason) {
+    console.warn('[TeaNode] could not stream the tab:', reason)
+    if (isOvertaken()) return
+    // The server still thinks it streams, and the page waits for a
+    // picture: it is told the stream ended, as Chrome ending it would,
+    // before anything else can start one again.
+    forgetCast(tabId)
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'castEnded', tab: tabId }))
+    await releaseIfUnused(tabId)
+  }
+}
+
+// releaseIfUnused lets the debugger go when neither a stream nor the agent
+// needs it, and Chrome's bar with it.
+async function releaseIfUnused(tabId) {
+  if (debugging.has(tabId) && !agentUsing.has(tabId) && !casting.has(tabId)) await letDebuggerGo(tabId)
+}
+
+// forgetCast stops treating a tab as streamed, and its stills with it.
+function forgetCast(tabId) {
+  const cast = casting.get(tabId)
+  if (!cast) return false
+  clearInterval(cast.timer)
+  casting.delete(tabId)
+  return true
+}
+
+async function stopCast(tabId) {
+  if (!forgetCast(tabId)) return
+  await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
+  // A start that came in meanwhile owns the tab now, focus emulation and
+  // the debugger with it.
+  if (casting.has(tabId)) return
+  await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {})
+  // Attached only for the dashboard: let it go, and Chrome's bar with it.
+  await releaseIfUnused(tabId)
+}
+
+// sendStill sends a screenshot of the tab as a picture, unless it is what
+// was sent last or the socket is backed up.
+async function sendStill(tabId) {
+  const cast = casting.get(tabId)
+  const sending = socket
+  if (!cast || !sending || sending.readyState !== WebSocket.OPEN || sending.bufferedAmount > FRAME_BACKLOG) return
+  try {
+    // The viewport in CSS pixels, and the picture scaled so its longer
+    // side is no more than the stream's: a screenshot is taken in device
+    // pixels, which on a large high-density screen is several times that.
+    const metrics = await chrome.debugger.sendCommand({ tabId }, 'Page.getLayoutMetrics')
+    const viewport = (metrics && metrics.cssVisualViewport) || {}
+    const width = viewport.clientWidth || 0
+    const height = viewport.clientHeight || 0
+    if (!width || !height) return
+    const density = metrics.visualViewport && metrics.visualViewport.clientWidth ? metrics.visualViewport.clientWidth / width : 1
+    const scale = Math.min(1, cast.maxSide / (Math.max(width, height) * Math.max(density, 1)))
+    const shot = await chrome.debugger.sendCommand({ tabId }, 'Page.captureScreenshot', {
+      format: 'jpeg',
+      quality: cast.quality,
+      clip: { x: viewport.pageX || 0, y: viewport.pageY || 0, width, height, scale },
+    })
+    cast.lastAt = Date.now()
+    if (!shot || shot.data === cast.lastData || casting.get(tabId) !== cast || shot.data.length > FRAME_LARGEST) return
+    cast.lastData = shot.data
+    sending.send(JSON.stringify({ type: 'frame', tab: tabId, data: shot.data, metadata: { deviceWidth: width, deviceHeight: height } }))
+  } catch (reason) {
+    console.warn('[TeaNode] could not photograph the tab:', reason)
+  }
+}
+
+function sendFrame(tabId, params) {
+  const sending = socket
+  if (!sending || sending.readyState !== WebSocket.OPEN) return
+  const cast = casting.get(tabId)
+  if (cast) {
+    cast.lastAt = Date.now()
+    cast.lastData = ''
+  }
+  if (params.data.length <= FRAME_LARGEST) {
+    sending.send(JSON.stringify({ type: 'frame', tab: tabId, data: params.data, metadata: params.metadata }))
+  }
+  const acknowledge = () => {
+    if (!casting.has(tabId)) return
+    if (sending.readyState === WebSocket.OPEN && sending.bufferedAmount > FRAME_BACKLOG) {
+      setTimeout(acknowledge, 50)
+      return
+    }
+    chrome.debugger.sendCommand({ tabId }, 'Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {})
+  }
+  acknowledge()
+}
+
+// What the person does in the picture of a tab they took over, as the
+// DevTools protocol takes it: the server passes it on only while they hold
+// the tab, and only for a tab being watched.
+const INPUT_TYPES = new Set(['pointer', 'wheel', 'key', 'text'])
+const POINTER_EVENTS = { down: 'mousePressed', up: 'mouseReleased', move: 'mouseMoved' }
+const BUTTONS_HELD = { left: 1, right: 2, middle: 4 }
+
+async function dispatchInput(message) {
+  const tabId = message.tab
+  if (!casting.has(tabId) || !isListed(tabId)) return
+  const target = { tabId }
+  const modifiers = Number(message.modifiers) || 0
+  try {
+    if (message.type === 'pointer') {
+      const type = POINTER_EVENTS[message.event]
+      if (!type) return
+      const button = BUTTONS_HELD[message.button] ? message.button : 'none'
+      await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+        type,
+        x: Number(message.x) || 0,
+        y: Number(message.y) || 0,
+        button,
+        buttons: BUTTONS_HELD[button] || 0,
+        clickCount: type === 'mouseMoved' ? 0 : Number(message.clickCount) || 1,
+        modifiers,
+      })
+    } else if (message.type === 'wheel') {
+      await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+        type: 'mouseWheel',
+        x: Number(message.x) || 0,
+        y: Number(message.y) || 0,
+        deltaX: Number(message.deltaX) || 0,
+        deltaY: Number(message.deltaY) || 0,
+        modifiers,
+      })
+    } else if (message.type === 'key') {
+      const text = typeof message.text === 'string' ? message.text : ''
+      const keyCode = Number(message.keyCode) || 0
+      await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+        // A key that types something goes down as keyDown with its text;
+        // one that does not (an arrow, Backspace) as rawKeyDown.
+        type: message.event === 'up' ? 'keyUp' : text ? 'keyDown' : 'rawKeyDown',
+        key: String(message.key || ''),
+        code: String(message.code || ''),
+        windowsVirtualKeyCode: keyCode,
+        nativeVirtualKeyCode: keyCode,
+        text: message.event === 'up' ? '' : text,
+        unmodifiedText: message.event === 'up' ? '' : text,
+        modifiers,
+      })
+    } else if (message.type === 'text') {
+      const text = typeof message.text === 'string' ? message.text : ''
+      if (text) await chrome.debugger.sendCommand(target, 'Input.insertText', { text })
+    }
+  } catch (reason) {
+    console.warn('[TeaNode] could not pass the input on:', reason)
+  }
+}
 
 // act does one action in the attached tab: navigation here, everything
 // else in the page through the content script; fetch through the tab's
@@ -525,13 +822,7 @@ async function act(action, args) {
       return { ok: true, data: await current() }
     }
     if (action === 'tabs') {
-      const own = attached.ownTabId === null ? null : await chrome.tabs.get(attached.ownTabId).catch(() => null)
-      const listed = []
-      if (own) listed.push({ tab: own.id, title: own.title || '', url: own.url || '', own: true, current: own.id === attached.tabId })
-      for (const opened of await agentTabs()) {
-        listed.push({ tab: opened.id, title: opened.title || '', url: opened.url || '', own: false, current: opened.id === attached.tabId })
-      }
-      return { ok: true, data: { tabs: listed } }
+      return { ok: true, data: { tabs: await listTabs() } }
     }
     if (attached.tabId === null) return { ok: false, error: 'no tab is open for you in this browser yet; open one first' }
     const tab = await chrome.tabs.get(attached.tabId)
@@ -592,6 +883,7 @@ async function act(action, args) {
       if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
       const refusal = cdpRefusal(args.method)
       if (refusal) return { ok: false, error: refusal }
+      agentUsing.add(tab.id)
       await debuggerFor(tab.id)
       const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
       return { ok: true, data: { result: answer === undefined ? null : answer } }
@@ -608,6 +900,17 @@ async function act(action, args) {
       return { ok: true, data: { events: shown, kept: state.events.length } }
     }
     if (action === 'cdp_stop') {
+      // Somebody is watching the tab on the dashboard, which needs the
+      // protocol: what the agent kept is let go, the attachment is not.
+      if (casting.has(tab.id)) {
+        const state = debugging.get(tab.id)
+        if (state) state.events = []
+        agentUsing.delete(tab.id)
+        // What the agent may have turned on to watch is turned off; the
+        // stream does not need it.
+        await chrome.debugger.sendCommand({ tabId: tab.id }, 'Network.disable').catch(() => {})
+        return { ok: true, data: { stopped: true } }
+      }
       await letDebuggerGo(tab.id)
       return { ok: true, data: { stopped: true } }
     }
@@ -881,10 +1184,15 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
     attached.title = tab.title || ''
     attached.url = tab.url || ''
     tellServer()
+  } else if (isListed(tabId) && (info.title !== undefined || info.url !== undefined || info.status === 'complete')) {
+    // The dashboard's list of tabs to watch names each by its title.
+    tellSoon()
   }
 })
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  forgetCast(tabId)
+  if (opened.has(tabId)) tellSoon()
   if (opened.delete(tabId)) rememberOpened()
   // Their own tab, closed: it is detached, and the connection stays.
   if (attached.ownTabId === tabId) {

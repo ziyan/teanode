@@ -173,7 +173,10 @@ func mcpCollect(ctx context.Context, events <-chan agent.Event, personName, conv
 					"it is waiting in their dashboard."
 			case agent.EventQuestion:
 				waitingFor = "The agent has a question for " + personName +
-					", waiting in their dashboard: " + strings.TrimSpace(event.Text)
+					", waiting in their dashboard: " + strings.TrimSpace(event.Note)
+				if event.Tool == "browser" {
+					waitingFor = "The agent needs " + personName + " to take over their browser tab on the dashboard's Browser page: " + strings.TrimSpace(event.Note)
+				}
 			case agent.EventError:
 				failed = strings.TrimSpace(event.Error)
 			case agent.EventDone:

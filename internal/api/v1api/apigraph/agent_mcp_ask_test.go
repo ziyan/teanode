@@ -66,14 +66,27 @@ func TestATurnWaitingForThePersonSaysSo(test *testing.T) {
 	}
 }
 
+// A question event carries the question in Note and its choices in Text,
+// as the turn emits it.
 func TestAQuestionForThePersonCarriesTheQuestion(test *testing.T) {
 	said := mcpCollect(context.Background(), feed(
-		agent.Event{Kind: agent.EventQuestion, Text: "Which of the two addresses?"},
+		agent.Event{Kind: agent.EventQuestion, Tool: "ask_user", Note: "Which of the two addresses?", Text: "Home\nWork"},
 		agent.Event{Kind: agent.EventDone},
 	), "Robin", "conversation-1")
 
 	if !strings.Contains(said, "Which of the two addresses?") {
 		test.Fatalf("the question was lost: %q", said)
+	}
+}
+
+func TestARequestToTakeTheTabOverSaysWhereToDoIt(test *testing.T) {
+	said := mcpCollect(context.Background(), feed(
+		agent.Event{Kind: agent.EventQuestion, Tool: "browser", Note: "Enter the code sent to your phone"},
+		agent.Event{Kind: agent.EventDone},
+	), "Robin", "conversation-1")
+
+	if !strings.Contains(said, "Enter the code sent to your phone") || !strings.Contains(said, "Browser page") {
+		test.Fatalf("the request or where to do it was lost: %q", said)
 	}
 }
 

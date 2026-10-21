@@ -30,6 +30,14 @@ type attachedTab struct {
 	title string
 	url   string
 
+	// agent and agentId find the person's room, which says whether they
+	// have taken the tab over.
+	agent   *Agent
+	agentId string
+	// canCast says the extension can stream a tab's picture and take the
+	// person's input (protocol 4).
+	canCast atomic.Bool
+
 	// hasTab says there is a tab the actions go to: the person's own,
 	// attached, or one the agent opened. Read by the tool while the socket
 	// says otherwise.
@@ -55,13 +63,26 @@ func (self *Agent) ConnectBrowser(agentId string, connection TabConnection, titl
 	if previous := self.tabs[agentId]; previous != nil {
 		previous.drop()
 	}
-	connected := &attachedTab{deviceLink: newDeviceLink("the person's browser", connection), title: title, url: url}
+	connected := &attachedTab{deviceLink: newDeviceLink("the person's browser", connection), title: title, url: url, agent: self, agentId: agentId}
 	connected.hasTab.Store(hasTab)
 	self.tabs[agentId] = connected
 	if self.tabsConnected != nil {
 		close(self.tabsConnected)
 	}
 	self.tabsConnected = make(chan struct{})
+	// Whoever watches is told the browser is back, after the lock.
+	go self.tellViewers(agentId)
+}
+
+// SetBrowserCanCast is the browser on this connection saying it can stream
+// a tab's picture; the viewers' streams are asked of it again.
+func (self *Agent) SetBrowserCanCast(agentId string, connection TabConnection, canCast bool) {
+	tab := self.tabFor(agentId)
+	if tab == nil || (connection != nil && tab.connection != connection) {
+		return
+	}
+	tab.canCast.Store(canCast)
+	self.castAgain(agentId)
 }
 
 // reconnectedTab waits up to wait for a person's browser to be connected
@@ -117,6 +138,7 @@ func (self *Agent) DetachTab(agentId string, connection TabConnection) {
 	if tab := self.tabs[agentId]; tab != nil && (connection == nil || tab.connection == connection) {
 		tab.drop()
 		delete(self.tabs, agentId)
+		go self.tellViewers(agentId)
 	}
 }
 
@@ -157,4 +179,16 @@ func (self *attachedTab) URL() string   { return self.url }
 // HasTab says whether there is a tab the actions go to.
 func (self *attachedTab) HasTab() bool {
 	return self.hasTab.Load()
+}
+
+// IsWatchable says whether the browser can stream a tab to the dashboard
+// and take the person's input there: an extension of protocol 4.
+func (self *attachedTab) IsWatchable() bool {
+	return self.canCast.Load()
+}
+
+// IsTakenOver says whether the person has taken their tab over from the
+// dashboard: the agent may read it but not act in it.
+func (self *attachedTab) IsTakenOver() bool {
+	return self.agent != nil && self.agent.IsTabTakenOver(self.agentId)
 }
