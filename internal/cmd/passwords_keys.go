@@ -65,21 +65,31 @@ type passwordsKnownKey struct {
 
 // passwordsKnownItem is what this computer remembers of one item the person
 // owns, so that a server cannot turn the item's sharing back, or widen it, by
-// showing an older or a made up state. It is written only from an item whose
-// access record was signed by the owner's devices (see passwords.VerifyAccess).
+// showing an older or a made up state. Everything here comes from what this
+// computer saw signed by the owner's devices or did itself. Nothing is copied
+// from the server's list of who holds a key or whether the agent has a copy: a
+// computer that has never seen an item before cannot tell an old signed record
+// from the newest one, so it never acts on its own on the strength of one.
 type passwordsKnownItem struct {
 	// HighestRecordVersion is the highest recordVersion of the access record
-	// this computer has seen with a valid signature. A record with a lower
-	// version is an old one the server showed again.
-	HighestRecordVersion int `json:"highestRecordVersion,omitempty"`
+	// this computer has seen with a valid signature, and HighestRecordMac the
+	// signature of that record (base64). A record with a lower version is an old
+	// one the server showed again, and so is one with the same version and
+	// another signature. Only a record seen on an item that was not marked as
+	// needing a new key and not deleted is written here, or one this computer
+	// signed itself.
+	HighestRecordVersion int    `json:"highestRecordVersion,omitempty"`
+	HighestRecordMac     string `json:"highestRecordMac,omitempty"`
 
-	// KeyHolderUserIDs are the people this computer last saw holding a key for
-	// the item, or sealed one for. A re-key nobody asked for seals only for them.
-	KeyHolderUserIDs []string `json:"keyHolderUserIds,omitempty"`
+	// SealedForUserIDs are the people this computer itself gave the item key to,
+	// or shared the item with at the person's command while they had no key yet.
+	// A re-key nobody asked for, and sharing with those who were waiting, seal
+	// only for them.
+	SealedForUserIDs []string `json:"sealedForUserIds,omitempty"`
 
-	// HasAgentCopy is whether the item had a copy for the agent when this
-	// computer last saw it. A re-key nobody asked for makes one only if it had.
-	HasAgentCopy bool `json:"hasAgentCopy,omitempty"`
+	// HasMadeAgentCopy is whether this computer itself made the agent's copy of
+	// the item key. A re-key nobody asked for makes one only if it did.
+	HasMadeAgentCopy bool `json:"hasMadeAgentCopy,omitempty"`
 
 	// LastAutomaticRekeyAt is when this computer last gave the item a new key
 	// nobody asked for, for the wait between two of them.
@@ -282,7 +292,7 @@ func (self *passwordsKnownKeys) markCompared(userID, username, name, publicKey s
 func (self *passwordsKnownKeys) item(itemID string) passwordsKnownItem {
 	if known := self.file.Items[self.server][itemID]; known != nil {
 		copied := *known
-		copied.KeyHolderUserIDs = slices.Clone(known.KeyHolderUserIDs)
+		copied.SealedForUserIDs = slices.Clone(known.SealedForUserIDs)
 		return copied
 	}
 	return passwordsKnownItem{}
@@ -374,9 +384,15 @@ func decodePublicKey(text string) ([]byte, error) {
 	return publicKey, nil
 }
 
-// keyNoticeOutput is where the line about a first or a changed key is printed:
-// the error output, so that --json stays JSON. A test replaces it.
+// keyNoticeOutput is where the lines about keys are printed (a first or a
+// changed key, a circle member who got an item, something left for the person
+// to do): the error output, so that --json stays JSON. A test replaces it.
 var keyNoticeOutput io.Writer = os.Stderr
+
+// keyNoticeLine prints one such line.
+func keyNoticeLine(line string) {
+	_, _ = fmt.Fprintln(keyNoticeOutput, line)
+}
 
 // keyNotice is the one line printed when a key is recorded for the first time
 // or has changed, nothing for a key already used. userName is what to call the
@@ -458,7 +474,13 @@ func (self *passwordsSession) checkedOwnerKey(view *client.PasswordItemView) ([]
 	decide := func() *ownerKeyDecision {
 		known, err := self.knownKeys()
 		if err != nil {
-			return &ownerKeyDecision{err: err}
+			// Without the file the key cannot be written down, and a change of
+			// it would not be noticed, but the item still opens with the key
+			// the server gives. Sealing for anybody still refuses (see
+			// sealItemKeyFor).
+			keyNoticeLine(fmt.Sprintf("note: the file of known keys cannot be used, so the key of %s is not written down and a change of it would not be noticed; fix the file to have it written down: %s",
+				forTerminal(textFromServer(view.OwnerName)), forTerminal(err.Error())))
+			return &ownerKeyDecision{}
 		}
 		if known.knownKey(view.OwnerUserID) == view.OwnerPublicKey {
 			return &ownerKeyDecision{}
@@ -598,8 +620,9 @@ func runPasswordsTrust(ctx context.Context, command *cli.Command) error {
 	}
 	actualCode := passwords.SafetyCode(publicKey)
 	if actualCode != givenSafetyCode {
-		return fmt.Errorf("that is not the safety code of the key the server gives for %q; nothing was recorded. "+
-			"Ask them to read you the code on their own screen again, from Passwords settings: if it still differs from what you typed, do not share", typed)
+		return fmt.Errorf("the codes do not match: the key the server gives for %q is not the one they read you; nothing was recorded. "+
+			"Ask them to read you the code on their own screen again, from Passwords settings, and tell them; "+
+			"do not rely on this item's sharing until you know why", typed)
 	}
 	known, err := loadPasswordsKnownKeys(command)
 	if err != nil {

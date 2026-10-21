@@ -227,7 +227,7 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 			}
 		}
 	}
-	isTapOperation := map[string]bool{"PurgePasswordItem": true, "SetUpPasswords": true, "ChangePasswordsPassphrase": true, "ReplacePasswordsRecoveryKey": true, "ErasePasswords": true}
+	isTapOperation := map[string]bool{"PurgePasswordItem": true, "RestorePasswordItem": true, "SetUpPasswords": true, "ChangePasswordsPassphrase": true, "ReplacePasswordsRecoveryKey": true, "ErasePasswords": true}
 	if isTapOperation[operation] && self.isTapRefused {
 		return nil, api.TapRequiredPhrase + ": setting up is done on the dashboard"
 	}

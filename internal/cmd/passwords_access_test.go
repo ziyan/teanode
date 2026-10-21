@@ -438,7 +438,7 @@ func TestPasswordsAChangedKeyIsAcceptedAndSaidOnce(test *testing.T) {
 // narrowing still happens, the people the item is still shared with wait, and
 // the message says how to fix the mode.
 func TestPasswordsBadKeysFileDoesNotBlockNarrowing(test *testing.T) {
-	fake, _, _ := agentFake(test)
+	fake, _, notices := agentFake(test)
 	fake.addCora()
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "secret-example")
@@ -459,8 +459,8 @@ func TestPasswordsBadKeysFileDoesNotBlockNarrowing(test *testing.T) {
 	if item.isUsableByAgent || item.itemKeyByAgentKey != "" {
 		test.Fatal("the agent still has a copy after agent off")
 	}
-	if !strings.Contains(output, "cannot open it until they have the new key") || item.keys["user-ben"] != nil || item.keys["user-cora"] != nil {
-		test.Errorf("the people still shared with should wait:\n%s\nkeys: %v", output, item.keys)
+	if item.keys["user-ben"] != nil || item.keys["user-cora"] != nil || !strings.Contains(notices.text.String(), "needs you: teanode passwords rekey "+item.id) {
+		test.Errorf("the people still shared with should wait for the person:\n%s\n%s\nkeys: %v", output, notices.text.String(), item.keys)
 	}
 
 	fake.mustRun(testToken, "", "unshare", "example.com", "ben")

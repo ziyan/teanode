@@ -101,12 +101,14 @@ const automaticRekeyLimit = 20
 // asked); the ones with no key yet wait, and are given back so that the command
 // can say so. A person the server lists
 // but the record does not reach is given no key. Unless the person ran rekey,
-// the new key reaches only the people this computer last saw holding a key for
-// the item, and the agent only if the record says it may use the item, the
-// server agrees, and it held a copy when this computer last saw the item: a
-// re-key the person did not ask for never widens who can open the item. When
-// the item moved on since it was read the item is read again and the new key is
-// made once more. The item is updated in place to the new key and revision.
+// the new key reaches only the people this computer itself sealed the item for
+// before, and the agent only if the record says it may use the item, the
+// server agrees, and this computer itself made the agent's copy: a re-key the
+// person did not ask for never widens who can open the item. Whoever is left
+// out is told in one line that names the command (rekey) that gives them the
+// key. When the item moved on since it was read the item is read again and the
+// new key is made once more. The item is updated in place to the new key and
+// revision.
 func (self *passwordsSession) rekeyItem(item *passwordsItem, changeAccess func(*passwords.PasswordAccess) *passwords.PasswordAccess, kind rekeyKind) ([]*client.PasswordRecipientView, error) {
 	if changeAccess == nil {
 		if err := item.refuseWithoutVerifiedAccess("cannot give the item a new key"); err != nil {
@@ -114,6 +116,12 @@ func (self *passwordsSession) rekeyItem(item *passwordsItem, changeAccess func(*
 		}
 	}
 	if kind == rekeyAutomatic {
+		// A computer that has never seen the item before, or never acted on it,
+		// cannot tell the newest record from an old one the server shows again,
+		// so it leaves the re-key to the person.
+		if !item.IsRemembered {
+			return nil, fmt.Errorf("%w: teanode passwords rekey %s (this computer has not seen this item before, so it does not give it a new key on its own)", errPasswordsNeedsYou, item.View.ID)
+		}
 		if err := self.refuseTooManyAutomaticRekeys(item); err != nil {
 			return nil, err
 		}
@@ -182,20 +190,20 @@ func (self *passwordsSession) rekeyItemOnce(item *passwordsItem, changeAccess fu
 	// where the server says no is left as it is: a device never cuts the
 	// record on the server's word. Unless the person ran rekey, the agent also
 	// needs to have held a copy when this computer last saw the item.
-	isAgentKept := signed.IsUsableByAgent && item.View.IsUsableByAgent && (kind == rekeyByPerson || item.HadAgentCopyBefore)
+	isAgentWanted := signed.IsUsableByAgent && item.View.IsUsableByAgent
+	isAgentKept := isAgentWanted && (kind == rekeyByPerson || item.HasMadeAgentCopy)
 	previousAccess := item.Access()
 	item.setAccess(signed)
-	waiting, err := self.rekeyItemWithAccess(item, isAgentKept, kind)
+	waiting, err := self.rekeyItemWithAccess(item, isAgentWanted, isAgentKept, kind)
 	if err != nil {
 		item.setAccess(previousAccess)
 		return waiting, err
 	}
 	self.recordAccessWritten(item, signed)
-	self.afterAccessChange(item)
 	return waiting, nil
 }
 
-func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKept bool, kind rekeyKind) ([]*client.PasswordRecipientView, error) {
+func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentWanted, isAgentKept bool, kind rekeyKind) ([]*client.PasswordRecipientView, error) {
 	// The known keys are where the key of each person is recorded. When their
 	// file cannot be read (a bad mode, say) nobody can be sealed for: the
 	// narrowing still happens, the people the item is still shared with wait for
@@ -205,7 +213,8 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKe
 		fmt.Fprintf(os.Stderr, "note: the file of known keys cannot be used, so nobody is given the new key until it is fixed: %s\n", forTerminal(knownErr.Error()))
 	}
 	circleIDs := circleIDsOfRecipients(item.View.Shares)
-	var reached, waiting []*client.PasswordRecipientView
+	var reached, waiting, notSealedFor []*client.PasswordRecipientView
+	listedUserIDs := []string{}
 	seen := map[string]bool{}
 	for _, recipient := range existingRecipients(item.View) {
 		if seen[recipient.UserID] {
@@ -216,16 +225,17 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKe
 		case !item.isReachedBySealedAccess(recipient, circleIDs):
 			fmt.Fprintf(os.Stderr, "note: the server lists %s as having this item, but you did not share it with them, so they are not given the new key\n",
 				forTerminal(textFromServer(recipient.Username)))
+			continue
 		case recipient.PublicKey == "":
 			waiting = append(waiting, recipient)
-		case kind != rekeyByPerson && !slices.Contains(item.PreviousKeyHolderUserIDs, recipient.UserID):
-			// Somebody this computer did not see holding a key is not given
-			// one here, and is not asked about either: the person gives them
-			// the item with share --waiting.
-			waiting = append(waiting, recipient)
+		case kind != rekeyByPerson && !slices.Contains(item.SealedForUserIDs, recipient.UserID):
+			// Somebody this computer never gave the item key to is not given
+			// one here: the person gives it to them with rekey.
+			notSealedFor = append(notSealedFor, recipient)
 		default:
 			reached = append(reached, recipient)
 		}
+		listedUserIDs = append(listedUserIDs, recipient.UserID)
 	}
 
 	newItemKey, err := passwords.NewKey()
@@ -233,6 +243,7 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKe
 		return nil, err
 	}
 	shareKeys := []*client.PasswordItemShareKeyInput{}
+	var sealedFor []*client.PasswordRecipientView
 	for _, recipient := range reached {
 		// The key the server gives is recorded first, as in sharing. When the
 		// file of known keys cannot be used, or the key is not a key, the
@@ -251,6 +262,7 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKe
 			return nil, err
 		}
 		shareKeys = append(shareKeys, shareKey)
+		sealedFor = append(sealedFor, recipient)
 	}
 	encryptedFields, err := sealFields(item.View.ID, item.Kind, item.Fields(), newItemKey)
 	if err != nil {
@@ -280,6 +292,30 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKe
 	}
 	item.View = view
 	item.ItemKey = newItemKey
+	// What this computer now did itself: the people it sealed the new key for
+	// (and the ones it sealed for before who are still listed), and the agent's
+	// copy.
+	circleNotices := item.circleMemberLines(item.Access(), sealedFor, circleIDs, circleNamesOfShares(item.View.Shares))
+	var sealedUserIDs []string
+	for _, recipient := range sealedFor {
+		sealedUserIDs = append(sealedUserIDs, recipient.UserID)
+	}
+	for _, userID := range item.SealedForUserIDs {
+		if slices.Contains(listedUserIDs, userID) {
+			sealedUserIDs = append(sealedUserIDs, userID)
+		}
+	}
+	self.setSealedFor(item, sealedUserIDs)
+	self.rememberAgentCopy(item, isAgentKept)
+	for _, line := range circleNotices {
+		keyNoticeLine(line)
+	}
+	if len(notSealedFor) > 0 {
+		keyNoticeLine(needsYouWords(item.View.ID, namesOf(notSealedFor)+" did not get the new key, because this computer never gave them this item's key"))
+	}
+	if isAgentWanted && !isAgentKept {
+		keyNoticeLine(needsYouWords(item.View.ID, "the agent did not get a copy of the new key, because this computer did not make its earlier copy"))
+	}
 	return waiting, nil
 }
 

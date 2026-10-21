@@ -296,31 +296,33 @@ func TestPasswordsAutomaticRekeyNeverWidens(test *testing.T) {
 		test.Fatalf("a computer that remembers them: keys %d, agent %v, output %q", fake.lastRekeyKeyCount, item.isUsableByAgent, output)
 	}
 
-	// The same item on a computer that remembers nothing of it: the record
-	// reaches Ben, his key is confirmed here, but this computer never saw him
-	// hold a key, so he waits, and the agent gets no copy.
+	// The same item on a computer that remembers nothing of it: the server marks
+	// it as needing a new key, and this computer cannot tell the newest record
+	// from an old one, so it does not re-key on its own. Nobody is sealed for and
+	// the agent gets no copy; the command says what the person runs.
 	forgetRememberedItems(test)
 	item.needsNewKey = true
-	output = fake.mustRun(testToken, "", "edit", "example.com", "--user-name", "ada again")
-	if fake.lastRekeyKeyCount != 0 || !strings.Contains(output, "Ben (ben) cannot open it until they have the new key") {
-		test.Errorf("a computer that remembers nothing sealed for Ben: keys %d\n%s", fake.lastRekeyKeyCount, output)
+	rekeysBefore := fake.rekeyCount
+	agentCopyBefore := item.itemKeyByAgentKey
+	_, err := fake.run(testToken, "", "edit", "example.com", "--user-name", "ada again")
+	if err == nil || !strings.Contains(err.Error(), "needs you: teanode passwords rekey "+itemID) {
+		test.Errorf("a computer that remembers nothing: %v", err)
 	}
-	if item.isUsableByAgent || item.itemKeyByAgentKey != "" {
-		test.Error("a computer that remembers nothing made an agent copy")
+	if fake.rekeyCount != rekeysBefore || item.itemKeyByAgentKey != agentCopyBefore {
+		test.Error("a computer that remembers nothing gave the item a new key or the agent a copy")
 	}
 	// The record still says the agent may use it: only the person narrows it.
 	if access := fake.openedItemAccess(testToken, testPassphrase, itemID); !access.IsUsableByAgent || len(access.Grantees) != 1 {
 		test.Errorf("the record was cut: %+v", access)
 	}
 
-	// share --waiting is what gives him the key, after the person confirms him.
-	if output := fake.mustRun(testToken, "", "share", "--waiting"); !strings.Contains(output, "sealed 1 item") || item.keys["user-ben"] == nil {
-		test.Errorf("share --waiting: %q", output)
-	}
-
 	// rekey, which the person runs on purpose, seals for everybody the record
 	// reaches whose key is confirmed, and for the agent when the record and the
-	// server agree.
+	// server agree. It works on a computer that remembers nothing of the item.
+	fake.mustRun(testToken, "", "rekey", "example.com")
+	if fake.lastRekeyKeyCount != 1 || !item.isUsableByAgent || item.itemKeyByAgentKey == "" || item.needsNewKey {
+		test.Errorf("rekey on a computer that remembers nothing: keys %d agent %v", fake.lastRekeyKeyCount, item.isUsableByAgent)
+	}
 	forgetRememberedItems(test)
 	fake.mustRun(testToken, "", "agent", "on", "example.com", "--force")
 	forgetRememberedItems(test)
@@ -332,9 +334,8 @@ func TestPasswordsAutomaticRekeyNeverWidens(test *testing.T) {
 
 // The rollback of the audit: a record that listed somebody the owner later
 // took off, shown again to a computer that never saw the newer record. The
-// signature is valid and the person's key is confirmed here, but the person was
-// never seen holding a key by this computer, so an automatic re-key leaves
-// them waiting.
+// signature is valid, but this computer has no memory of the item and never
+// sealed it for the person, so it does not re-key on its own.
 func TestPasswordsRolledBackRecordDoesNotGiveANewKeyToThePersonTakenOff(test *testing.T) {
 	original := automaticRekeyWait
 	automaticRekeyWait = 0
@@ -359,9 +360,11 @@ func TestPasswordsRolledBackRecordDoesNotGiveANewKeyToThePersonTakenOff(test *te
 	forgetRememberedItems(test)
 
 	rekeysBefore := fake.rekeyCount
-	fake.mustRun(testToken, "", "edit", "example.com", "--user-name", "ada")
-	if fake.rekeyCount != rekeysBefore+1 || item.keys["user-cora"] != nil || item.keys["user-ben"] != nil || fake.lastRekeyKeyCount != 0 {
-		test.Fatalf("the new key was sealed for somebody this computer never saw holding one: %v", item.keys)
+	if _, err := fake.run(testToken, "", "edit", "example.com", "--user-name", "ada"); err == nil || !strings.Contains(err.Error(), "needs you") {
+		test.Errorf("a computer that remembers nothing of the item re-keyed it on its own: %v", err)
+	}
+	if fake.rekeyCount != rekeysBefore || item.keys["user-cora"] != nil {
+		test.Fatalf("the new key was sealed for somebody this computer never sealed for: %v", item.keys)
 	}
 }
 
@@ -420,8 +423,9 @@ func forgetRememberedItems(test *testing.T) {
 	}
 }
 
-// What a computer remembers of an item is written when it is first opened, and
-// the version only goes up.
+// What a computer remembers of an item is the version and signature of its
+// record, the people it sealed for itself and whether it made the agent's copy.
+// The version only goes up.
 func TestPasswordsRemembersTheHighestRecordVersion(test *testing.T) {
 	fake, _, _ := agentFake(test)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
@@ -442,19 +446,19 @@ func TestPasswordsRemembersTheHighestRecordVersion(test *testing.T) {
 		test.Fatalf("after add: %+v", got)
 	}
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
-	if got := remembered(); got.HighestRecordVersion != 2 || !slices.Equal(got.KeyHolderUserIDs, []string{"user-ben"}) {
+	if got := remembered(); got.HighestRecordVersion != 2 || !slices.Equal(got.SealedForUserIDs, []string{"user-ben"}) || got.HighestRecordMac == "" {
 		test.Fatalf("after share: %+v", got)
 	}
 	fake.mustRun(testToken, "", "agent", "on", "example.com", "--force")
-	if got := remembered(); got.HighestRecordVersion != 3 || !got.HasAgentCopy {
+	if got := remembered(); got.HighestRecordVersion != 3 || !got.HasMadeAgentCopy {
 		test.Fatalf("after agent on: %+v", got)
 	}
 	fake.mustRun(testToken, "", "unshare", "example.com", "ben")
-	if got := remembered(); got.HighestRecordVersion != 4 || len(got.KeyHolderUserIDs) != 0 || !got.HasAgentCopy {
+	if got := remembered(); got.HighestRecordVersion != 4 || len(got.SealedForUserIDs) != 0 || !got.HasMadeAgentCopy {
 		test.Fatalf("after unshare: %+v", got)
 	}
 	fake.mustRun(testToken, "", "agent", "off", "example.com")
-	if got := remembered(); got.HighestRecordVersion != 5 || got.HasAgentCopy {
+	if got := remembered(); got.HighestRecordVersion != 5 || got.HasMadeAgentCopy {
 		test.Fatalf("after agent off: %+v", got)
 	}
 	// Edits and reads leave the record as it is.

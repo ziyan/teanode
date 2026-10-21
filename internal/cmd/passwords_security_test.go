@@ -377,29 +377,32 @@ func TestPasswordsUnshareGivesTheItemANewKey(test *testing.T) {
 	}
 }
 
-// A remaining person this computer did not see holding a key for the item is
-// not given the new key by a re-key nobody asked for. They wait, the command
-// says so, and share --waiting seals for them.
-func TestPasswordsRekeyLeavesAPersonNotSeenHoldingAKeyWaiting(test *testing.T) {
+// A remaining person this computer never sealed the item for is not given the
+// new key by a re-key nobody asked for. The command says so in one line that
+// names rekey, share --waiting leaves them too, and rekey, which the person
+// runs on purpose, gives them the key.
+func TestPasswordsRekeyLeavesAPersonThisComputerNeverSealedForToThePerson(test *testing.T) {
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
 	fake.addCora()
-	recordKeyNotices(test)
+	notices := recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
 	fake.mustRun(testToken, "", "share", "example.com", "cora")
+	itemID := firstItemID(fake)
 
-	// Forget that Ben was ever seen holding a key.
+	// Forget that this computer ever sealed anything.
 	if err := os.Remove(knownKeysFile(test)); err != nil {
 		test.Fatal(err)
 	}
 	fake.unlockAs(testToken)
-	output := fake.mustRun(testToken, "", "unshare", "example.com", "cora")
-	if !strings.Contains(output, "ben") || !strings.Contains(output, "cannot open it until") {
-		test.Errorf("unshare did not say Ben waits:\n%s", output)
+	notices.forget()
+	fake.mustRun(testToken, "", "unshare", "example.com", "cora")
+	if !strings.Contains(notices.text.String(), "needs you: teanode passwords rekey "+itemID) || !strings.Contains(notices.text.String(), "Ben") {
+		test.Errorf("unshare did not say Ben is left to the person:\n%s", notices.text.String())
 	}
 	if fake.rekeyCount != 1 || fake.lastRekeyKeyCount != 0 {
 		test.Fatalf("%d re-keys carrying %d recipient keys, want 1 and 0", fake.rekeyCount, fake.lastRekeyKeyCount)
@@ -409,11 +412,19 @@ func TestPasswordsRekeyLeavesAPersonNotSeenHoldingAKeyWaiting(test *testing.T) {
 		test.Fatal("Ben opens an item that was sealed for nobody")
 	}
 
+	// share --waiting does not give him the key either: the server's list of who
+	// waits is not enough.
 	fake.unlockAs(testToken)
+	notices.forget()
 	fake.mustRun(testToken, "", "share", "--waiting")
+	if fake.items[itemID].keys["user-ben"] != nil || !strings.Contains(notices.text.String(), "needs you: teanode passwords rekey "+itemID) {
+		test.Fatalf("share --waiting sealed for somebody this computer never sealed for:\n%s", notices.text.String())
+	}
+
+	fake.mustRun(testToken, "", "rekey", "example.com")
 	fake.unlockAs(benToken)
 	if output := strings.TrimSpace(fake.mustRun(benToken, "", "copy", "example.com")); output != "shared-secret-example" {
-		test.Errorf("Ben copies %q after the new key was sealed for him", output)
+		test.Errorf("Ben copies %q after rekey sealed the new key for him", output)
 	}
 }
 

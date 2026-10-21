@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -34,6 +35,7 @@ const (
 	passwordsNewRecoveryKeyTapSentence   = "Replacing the recovery key" + passwordsTapPlace + "."
 	passwordsEraseTapSentence            = "Erasing Passwords" + passwordsTapPlace + "."
 	passwordsPurgeTapSentence            = "Removing an item for good" + passwordsTapPlace + ", but moving it to recently deleted works here."
+	passwordsRestoreTapSentence          = "Bringing an item back from recently deleted" + passwordsTapPlace + "."
 	passwordsShareTapSentence            = "Sharing with someone new" + passwordsTapPlace + ", but taking someone away works here."
 )
 
@@ -1528,13 +1530,23 @@ func runPasswordsRestore(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	// Bringing an item back lets the people it was shared with wait for keys
+	// again, so the server wants the person's tap. Find that out before the
+	// passphrase is asked for.
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := refuseWithoutPasswordsTap(ctx, command, connection, passwordsRestoreTapSentence); err != nil {
+		return err
+	}
 	session, item, err := findOpenItem(ctx, command, typed, true)
 	if err != nil {
 		return err
 	}
 	view, err := client.RestorePasswordItem(ctx, session.connection, item.View.ID)
 	if err != nil {
-		return describeError(command, err)
+		return describeTapRequired(describeError(command, err), passwordsRestoreTapSentence)
 	}
 	item.View = view
 	if command.Bool("json") {
@@ -1612,13 +1624,19 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 	// Who is a member of which circle is the server's word, here for the
 	// circle being shared with too.
 	circleIDs := circleIDsOfRecipients(item.View.Shares)
+	circleNames := circleNamesOfShares(item.View.Shares)
+	targetUserIDs := map[string]bool{}
+	for _, recipient := range newRecipients {
+		targetUserIDs[recipient.UserID] = true
+	}
 	if granteeCircleID != "" {
+		circleNames[granteeCircleID] = described
 		for _, recipient := range newRecipients {
 			circleIDs[recipient.UserID] = append(circleIDs[recipient.UserID], granteeCircleID)
 		}
 	}
 	newAccess := withGrantee(item.VerifiedAccess, granteeUserID, granteeCircleID)
-	return setItemShares(ctx, command, session, item, newAccess, grantees, append(existingRecipients(item.View), newRecipients...), circleIDs, typedUserNames,
+	return setItemShares(ctx, command, session, item, newAccess, grantees, append(existingRecipients(item.View), newRecipients...), circleIDs, circleNames, targetUserIDs, typedUserNames,
 		"sharing "+forTerminal(item.Name())+" with "+forTerminal(described))
 }
 
@@ -1664,10 +1682,16 @@ func existingRecipients(view *client.PasswordItemView) []*client.PasswordRecipie
 // recipient who has Passwords set up and has no key for the item yet, and who
 // the new record reaches, for the public key this computer records for them
 // (nobody is asked about it). People who already have a key keep it: nothing is
-// sealed again for them.
+// sealed again for them. targetUserIDs are the people the person named, or the
+// members of the circle they named: a key is sealed for them, and for nobody
+// else this computer did not seal the item for before; the others are left to
+// rekey. The people sealed for, and the person named when they have no key
+// yet, are written down as the ones this computer acted for, and a circle
+// member who got the item for the first time is told in one line.
 func setItemShares(ctx context.Context, command *cli.Command, session *passwordsSession, item *passwordsItem, newAccess *passwords.PasswordAccess,
-	grantees []*client.PasswordShareGranteeInput, recipients []*client.PasswordRecipientView, circleIDs map[string][]string, typedUserNames map[string]string, doing string) error {
-	var newlyReached, waiting []*client.PasswordRecipientView
+	grantees []*client.PasswordShareGranteeInput, recipients []*client.PasswordRecipientView, circleIDs map[string][]string, circleNames map[string]string,
+	targetUserIDs map[string]bool, typedUserNames map[string]string, doing string) error {
+	var newlyReached, waiting, notSealedFor []*client.PasswordRecipientView
 	reachedCount := 0
 	seen := map[string]bool{}
 	for _, recipient := range recipients {
@@ -1684,6 +1708,8 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 		case recipient.HasKey:
 			// Already holds the item key; nothing is sealed for them again.
 			reachedCount++
+		case !targetUserIDs[recipient.UserID] && !slices.Contains(item.SealedForUserIDs, recipient.UserID):
+			notSealedFor = append(notSealedFor, recipient)
 		default:
 			newlyReached = append(newlyReached, recipient)
 		}
@@ -1709,7 +1735,26 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 		return describeTapRequired(describeError(command, err), passwordsShareTapSentence)
 	}
 	item.View = view
-	session.afterAccessChange(item)
+	circleNotices := item.circleMemberLines(newAccess, newlyReached, circleIDs, circleNames)
+	var actedForUserIDs []string
+	for _, recipient := range newlyReached {
+		actedForUserIDs = append(actedForUserIDs, recipient.UserID)
+	}
+	for _, recipient := range waiting {
+		// The person this command named, who has no key yet: the command is the
+		// person's own word that the item is for them, so share --waiting may
+		// give them the key later.
+		if _, isTyped := typedUserNames[recipient.UserID]; isTyped {
+			actedForUserIDs = append(actedForUserIDs, recipient.UserID)
+		}
+	}
+	session.rememberSealedFor(item, actedForUserIDs)
+	for _, line := range circleNotices {
+		keyNoticeLine(line)
+	}
+	if len(notSealedFor) > 0 {
+		keyNoticeLine(needsYouWords(item.View.ID, namesOf(notSealedFor)+" cannot open it yet, because this computer never gave them this item's key"))
+	}
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
@@ -1830,9 +1875,10 @@ func runPasswordsShareWaiting(ctx context.Context, command *cli.Command) error {
 	// reaches who can be are sealed the new key by the re-key, so the list of
 	// who is waiting is read again.
 	isRekeyed := false
+	leftForPerson := map[string]bool{}
 	for _, each := range waiting {
 		item := owned[each.ItemID]
-		if item == nil || !item.View.NeedsNewKey {
+		if item == nil || !item.View.NeedsNewKey || leftForPerson[item.View.ID] {
 			continue
 		}
 		if err := item.refuseWithoutVerifiedAccess("left alone"); err != nil {
@@ -1840,6 +1886,12 @@ func runPasswordsShareWaiting(ctx context.Context, command *cli.Command) error {
 			continue
 		}
 		if _, err := session.rekeyItem(item, nil, rekeyAutomatic); err != nil {
+			if errors.Is(err, errPasswordsNeedsYou) {
+				// Left for the person: nobody is given a key for this item here.
+				keyNoticeLine(forTerminal(err.Error()))
+				leftForPerson[item.View.ID] = true
+				continue
+			}
 			return fmt.Errorf("%s needed a new key first: %w", forTerminal(item.Name()), describeError(command, err))
 		}
 		isRekeyed = true
@@ -1857,14 +1909,25 @@ func runPasswordsShareWaiting(ctx context.Context, command *cli.Command) error {
 	var reachedWaiting []*client.PasswordWaitingShareView
 	var recipients []*client.PasswordRecipientView
 	seen := map[string]bool{}
+	isTold := map[string]bool{}
 	for _, each := range waiting {
 		item := owned[each.ItemID]
-		if item == nil || each.Recipient == nil || each.Recipient.PublicKey == "" {
+		if item == nil || each.Recipient == nil || each.Recipient.PublicKey == "" || leftForPerson[item.View.ID] {
 			continue
 		}
 		if !item.isReachedBySealedAccess(each.Recipient, circleIDsOfRecipients(item.View.Shares)) {
 			fmt.Fprintf(os.Stderr, "note: the server lists %s as waiting for %s, but you did not share it with them, so no key is sealed for them\n",
 				forTerminal(textFromServer(each.Recipient.Username)), forTerminal(item.Name()))
+			continue
+		}
+		// Only somebody this computer itself gave the item key to, or shared the
+		// item with at the person's command, is given a key here. Anyone else is
+		// left to rekey: the server's list of who waits is not enough.
+		if !slices.Contains(item.SealedForUserIDs, each.Recipient.UserID) {
+			if !isTold[item.View.ID+"\x00"+each.Recipient.UserID] {
+				isTold[item.View.ID+"\x00"+each.Recipient.UserID] = true
+				keyNoticeLine(needsYouWords(item.View.ID, namesOf([]*client.PasswordRecipientView{each.Recipient})+" is waiting for "+forTerminal(item.Name())+", but this computer never gave them this item's key"))
+			}
 			continue
 		}
 		reachedWaiting = append(reachedWaiting, each)
@@ -1966,7 +2029,7 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 		return describeTapRequired(describeError(command, err), passwordsAgentTapSentence)
 	}
 	item.View = view
-	session.afterAccessChange(item)
+	session.rememberAgentCopy(item, true)
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}

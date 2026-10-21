@@ -499,12 +499,15 @@ type passwordsItem struct {
 	// this computer has seen with a valid signature, which the next signed
 	// record counts up from.
 	HighestRecordVersionSeen int
-	// PreviousKeyHolderUserIDs and HadAgentCopyBefore are who held a key, and
-	// whether the agent held a copy, when this computer last saw the item
-	// before the command that opened it. A re-key nobody asked for never goes
-	// beyond them.
-	PreviousKeyHolderUserIDs []string
-	HadAgentCopyBefore       bool
+	// IsRemembered is whether this computer had written down a record of the item
+	// before the command that opened it: from an earlier session, or from its own
+	// earlier action. A re-key nobody asked for happens only for such an item.
+	IsRemembered bool
+	// SealedForUserIDs and HasMadeAgentCopy are what this computer itself did for
+	// the item before the command that opened it (see passwordsKnownItem). A
+	// re-key nobody asked for never goes beyond them.
+	SealedForUserIDs []string
+	HasMadeAgentCopy bool
 }
 
 // Name is the item's name.
@@ -872,7 +875,7 @@ func (self *passwordsSession) saveNewItem(kind passwords.ItemKind, fields any) (
 	if err != nil {
 		return nil, err
 	}
-	self.rememberRecordVersion(itemID, access.RecordVersion)
+	self.rememberRecord(itemID, access)
 	return view, nil
 }
 

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -218,25 +220,21 @@ func isSameAccess(first, second *passwords.PasswordAccess) bool {
 	return true
 }
 
-// keyHolderUserIDsOf are the people the server shows holding a key for the
-// item, sorted, without repeats.
-func keyHolderUserIDsOf(view *client.PasswordItemView) []string {
-	var userIDs []string
-	for _, recipient := range existingRecipients(view) {
-		if recipient.HasKey && !slices.Contains(userIDs, recipient.UserID) {
-			userIDs = append(userIDs, recipient.UserID)
-		}
-	}
-	slices.Sort(userIDs)
-	return userIDs
-}
-
 // checkSealedAccess decides what to believe of the access record sealed in the
 // fields of an item the person owns, and remembers what it saw. The record is
 // believed when the owner's devices signed it for this item (an account key is
-// needed to do that, which the server does not have) and when its version is
-// not lower than the highest this computer saw before. Otherwise nothing is
-// derived from it: nobody is reached by it and the agent gets no copy.
+// needed to do that, which the server does not have) and when it is not older
+// than the newest this computer saw before: a lower version, or the same
+// version with another signature, is an old record shown again. Otherwise
+// nothing is derived from it: nobody is reached by it and the agent gets no
+// copy.
+//
+// A computer that has never seen the item before cannot tell an old signed
+// record from the newest one, so it trusts the newest one the server shows it
+// when the person acts. What it writes down from a view is only the version and
+// signature, and only from an item that is not marked as needing a new key and
+// not deleted: the view of an item whose access narrowed or that was deleted is
+// where an old record is most likely to be shown.
 func (self *passwordsSession) checkSealedAccess(item *passwordsItem, plain []byte) {
 	var remembered passwordsKnownItem
 	if known, err := self.knownKeys(); err != nil {
@@ -244,21 +242,36 @@ func (self *passwordsSession) checkSealedAccess(item *passwordsItem, plain []byt
 	} else {
 		remembered = known.item(item.View.ID)
 	}
+	item.IsRemembered = remembered.HighestRecordVersion > 0
 	item.HighestRecordVersionSeen = remembered.HighestRecordVersion
-	item.PreviousKeyHolderUserIDs = remembered.KeyHolderUserIDs
-	item.HadAgentCopyBefore = remembered.HasAgentCopy
+	item.SealedForUserIDs = remembered.SealedForUserIDs
+	item.HasMadeAgentCopy = remembered.HasMadeAgentCopy
 	verified, err := passwords.VerifyAccess(self.keys.AccountKey, item.View.ID, item.Kind, plain)
 	switch {
 	case err != nil:
 		item.AccessCheck = accessCheckNotVerified
-	case verified.RecordVersion < remembered.HighestRecordVersion:
+	case isOlderRecord(verified, remembered):
 		item.AccessCheck = accessCheckReplayed
 	default:
 		item.AccessCheck = accessCheckVerified
 		item.VerifiedAccess = verified
 		item.HighestRecordVersionSeen = max(remembered.HighestRecordVersion, verified.RecordVersion)
-		self.rememberItem(item)
+		if item.View.DeletedAt == nil && !item.View.NeedsNewKey {
+			self.rememberRecord(item.View.ID, verified)
+		}
 	}
+}
+
+// isOlderRecord is whether a signed record is one this computer should not
+// believe because it saw a newer one: its version is lower, or it is the same
+// version with another signature (two records of one version cannot both be the
+// owner's). A computer that wrote down a version and no signature, as an earlier
+// version of this command did, accepts the same version.
+func isOlderRecord(record *passwords.PasswordAccess, remembered passwordsKnownItem) bool {
+	if record.RecordVersion != remembered.HighestRecordVersion {
+		return record.RecordVersion < remembered.HighestRecordVersion
+	}
+	return remembered.HighestRecordMac != "" && remembered.HighestRecordMac != base64.StdEncoding.EncodeToString(record.RecordMac)
 }
 
 // tellKnownKeysCannotBeUsed says once that the file this computer remembers
@@ -271,42 +284,64 @@ func (self *passwordsSession) tellKnownKeysCannotBeUsed(err error) {
 	fmt.Fprintf(os.Stderr, "note: the file of known keys cannot be used, so an old copy of an item's sharing would not be noticed: %s\n", forTerminal(err.Error()))
 }
 
-// rememberItem writes down what this computer now knows of an item whose access
-// record is signed: the highest record version, who holds a key and whether the
-// agent holds a copy. Failing to write it is told and does not stop the command.
-func (self *passwordsSession) rememberItem(item *passwordsItem) {
+// updateRemembered changes what is written down of an item, and tells the
+// person when it cannot be written. Failing to write it does not stop the
+// command.
+func (self *passwordsSession) updateRemembered(itemID string, change func(remembered *passwordsKnownItem)) {
 	known, err := self.knownKeys()
 	if err != nil {
 		return
 	}
-	holders := keyHolderUserIDsOf(item.View)
-	if err := known.updateItem(item.View.ID, func(remembered *passwordsKnownItem) {
-		remembered.HighestRecordVersion = max(remembered.HighestRecordVersion, item.HighestRecordVersionSeen)
-		remembered.KeyHolderUserIDs = holders
-		remembered.HasAgentCopy = item.View.IsUsableByAgent
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "note: could not write down what is known of %s: %s\n", forTerminal(item.View.ID), forTerminal(err.Error()))
-	}
-}
-
-// rememberRecordVersion writes down the version of the first record of a new
-// item.
-func (self *passwordsSession) rememberRecordVersion(itemID string, version int) {
-	known, err := self.knownKeys()
-	if err != nil {
-		return
-	}
-	if err := known.updateItem(itemID, func(remembered *passwordsKnownItem) {
-		remembered.HighestRecordVersion = max(remembered.HighestRecordVersion, version)
-	}); err != nil {
+	if err := known.updateItem(itemID, change); err != nil {
 		fmt.Fprintf(os.Stderr, "note: could not write down what is known of %s: %s\n", forTerminal(itemID), forTerminal(err.Error()))
 	}
 }
 
+// rememberRecord writes down the version and signature of a signed access
+// record, if it is newer than what is written down.
+func (self *passwordsSession) rememberRecord(itemID string, record *passwords.PasswordAccess) {
+	self.updateRemembered(itemID, func(remembered *passwordsKnownItem) {
+		if record.RecordVersion > remembered.HighestRecordVersion || remembered.HighestRecordMac == "" && record.RecordVersion == remembered.HighestRecordVersion {
+			remembered.HighestRecordVersion = record.RecordVersion
+			remembered.HighestRecordMac = base64.StdEncoding.EncodeToString(record.RecordMac)
+		}
+	})
+}
+
+// rememberSealedFor writes down that this computer gave the item key to these
+// people, or shared the item with them at the person's command (see
+// passwordsKnownItem), and keeps the item in step.
+func (self *passwordsSession) rememberSealedFor(item *passwordsItem, userIDs []string) {
+	for _, userID := range userIDs {
+		if !slices.Contains(item.SealedForUserIDs, userID) {
+			item.SealedForUserIDs = append(slices.Clone(item.SealedForUserIDs), userID)
+		}
+	}
+	self.setSealedFor(item, item.SealedForUserIDs)
+}
+
+// setSealedFor writes down exactly these people as the ones this computer
+// sealed the item for.
+func (self *passwordsSession) setSealedFor(item *passwordsItem, userIDs []string) {
+	userIDs = slices.Clone(userIDs)
+	slices.Sort(userIDs)
+	userIDs = slices.Compact(userIDs)
+	item.SealedForUserIDs = userIDs
+	self.updateRemembered(item.View.ID, func(remembered *passwordsKnownItem) { remembered.SealedForUserIDs = userIDs })
+}
+
+// rememberAgentCopy writes down whether this computer itself made the agent's
+// copy of the item key.
+func (self *passwordsSession) rememberAgentCopy(item *passwordsItem, hasMadeAgentCopy bool) {
+	item.HasMadeAgentCopy = hasMadeAgentCopy
+	self.updateRemembered(item.View.ID, func(remembered *passwordsKnownItem) { remembered.HasMadeAgentCopy = hasMadeAgentCopy })
+}
+
 // signedAccessFor is the record to seal for the item: the signed one it has when
 // it already says this, otherwise a new one signed with the owner's account key
-// at one version more than the highest this computer has seen. The version the
-// server showed is never counted from.
+// at one version more than the highest of what this computer remembers and the
+// verified record the server showed. The version of a record that could not be
+// believed is never counted from.
 func (self *passwordsSession) signedAccessFor(item *passwordsItem, access *passwords.PasswordAccess) (*passwords.PasswordAccess, error) {
 	if item.VerifiedAccess != nil && isSameAccess(item.VerifiedAccess, access) {
 		return item.VerifiedAccess, nil
@@ -315,21 +350,72 @@ func (self *passwordsSession) signedAccessFor(item *passwordsItem, access *passw
 }
 
 // recordAccessWritten notes that the server now has this signed record for the
-// item: it is the item's record, and its version the highest seen.
+// item: it is the item's record, and its version the highest seen. This
+// computer signed it, so it is written down whatever the item's view says.
 func (self *passwordsSession) recordAccessWritten(item *passwordsItem, signed *passwords.PasswordAccess) {
 	item.AccessCheck = accessCheckVerified
 	item.VerifiedAccess = signed
 	item.HighestRecordVersionSeen = max(item.HighestRecordVersionSeen, signed.RecordVersion)
-	self.rememberItem(item)
+	item.IsRemembered = true
+	self.rememberRecord(item.View.ID, signed)
 }
 
-// afterAccessChange makes what the server now shows of the item (who holds a
-// key, the agent's copy) what this computer last saw, once a command of the
-// person's own changed it.
-func (self *passwordsSession) afterAccessChange(item *passwordsItem) {
-	item.PreviousKeyHolderUserIDs = keyHolderUserIDsOf(item.View)
-	item.HadAgentCopyBefore = item.View.IsUsableByAgent
-	if item.AccessCheck == accessCheckVerified {
-		self.rememberItem(item)
+// errPasswordsNeedsYou marks what only the person's own command may do: the
+// item is left as it is.
+var errPasswordsNeedsYou = errors.New("needs you")
+
+// needsYouWords is the line that tells the person which command finishes what
+// was left alone, and why.
+func needsYouWords(itemID, because string) string {
+	return "needs you: teanode passwords rekey " + itemID + " (" + because + ")"
+}
+
+// namesOf are the names to show for people, joined for a line.
+func namesOf(recipients []*client.PasswordRecipientView) string {
+	names := make([]string, 0, len(recipients))
+	for _, recipient := range recipients {
+		name := recipient.Name
+		if name == "" {
+			name = recipient.Username
+		}
+		names = append(names, forTerminal(textFromServer(name)))
 	}
+	return strings.Join(names, ", ")
+}
+
+// circleNamesOfShares are the names of the circles the item is shared with, by
+// circle id.
+func circleNamesOfShares(shares []*client.PasswordShareView) map[string]string {
+	names := map[string]string{}
+	for _, share := range shares {
+		if share.GranteeCircleID != nil {
+			names[*share.GranteeCircleID] = share.GranteeName
+		}
+	}
+	return names
+}
+
+// circleMemberLines are the lines that say who is given the item through a
+// circle for the first time: a recipient the record reaches only as a member of
+// a circle, whom this computer never sealed the item for. Who is in a circle is
+// the server's word, so the person is told.
+func (self *passwordsItem) circleMemberLines(record *passwords.PasswordAccess, recipients []*client.PasswordRecipientView, circleIDs map[string][]string, circleNames map[string]string) []string {
+	var lines []string
+	for _, recipient := range recipients {
+		if slices.Contains(self.SealedForUserIDs, recipient.UserID) || passwords.IsReachedByAccess(record, recipient.UserID, nil) {
+			continue
+		}
+		for _, circleID := range circleIDs[recipient.UserID] {
+			if !passwords.IsReachedByAccess(record, recipient.UserID, []string{circleID}) {
+				continue
+			}
+			name := recipient.Name
+			if name == "" {
+				name = recipient.Username
+			}
+			lines = append(lines, fmt.Sprintf("%s got %s through %s", forTerminal(textFromServer(name)), forTerminal(self.Name()), forTerminal(textFromServer(circleNames[circleID]))))
+			break
+		}
+	}
+	return lines
 }
