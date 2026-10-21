@@ -42,13 +42,16 @@ func (permissions) Execute(context.Context, string, map[string]any, any) error {
 // fakeRun is a run of ada's agent with a database.
 type fakeRun struct {
 	tools.Run
-	database      db.Database
-	owner         *models.User
-	secret        string
-	surface       string
-	isHeadless    bool
-	hasNoGrant    bool
-	configuration *config.Configuration
+	database   db.Database
+	owner      *models.User
+	secret     string
+	surface    string
+	isHeadless bool
+	hasNoGrant bool
+	// isStartedByOthers is a run that content began (a mail, a webhook, a
+	// goal, a schedule the agent wrote) rather than the person.
+	isStartedByOthers bool
+	configuration     *config.Configuration
 }
 
 func (self *fakeRun) Owner() *models.User   { return self.owner }
@@ -56,6 +59,9 @@ func (self *fakeRun) Database() db.Database { return self.database }
 func (self *fakeRun) Surface() string       { return self.surface }
 func (self *fakeRun) Headless() bool        { return self.isHeadless }
 func (self *fakeRun) CanAsk() bool          { return !self.isHeadless }
+func (self *fakeRun) IsStartedByPerson() bool {
+	return !self.isStartedByOthers
+}
 func (self *fakeRun) Operations() tools.Operations {
 	if self.hasNoGrant {
 		return noPermissions{}
@@ -83,8 +89,8 @@ func (self chattingRun) IsAnsweringInChat() bool { return true }
 
 // world is ada, her agent's key and her items.
 type world struct {
-	database db.Database
-	ada, ben *models.User
+	database       db.Database
+	ada, ben, cora *models.User
 
 	grantedLogin, ungrantedLogin, grantedNote, card, othersNote string
 }
@@ -170,6 +176,12 @@ func newWorld(test *testing.T) *world {
 		}
 		if found.ben, err = tx.CreateUser(&models.User{Username: "ben", Name: "Ben Example"}); err != nil {
 			return err
+		}
+		if found.cora, err = tx.CreateUser(&models.User{Username: "cora", Name: "Cora Example"}); err != nil {
+			return err
+		}
+		for _, person := range []*models.User{found.ada, found.ben, found.cora} {
+			dbtest.GrantPermission(test, tx, person.ID, models.PermissionPasswordsUse)
 		}
 		for person, keyPair := range map[*models.User]*passwords.KeyPair{found.ada: keyPairs.ada, found.ben: keyPairs.ben} {
 			if _, err := tx.CreatePasswordsSetup(&models.PasswordSetup{
@@ -337,7 +349,7 @@ func TestListShowsOnlyGrantedItemsAndNoSecrets(test *testing.T) {
 // With nothing turned on, the answer says how to turn it on.
 func TestListWithNothingSaysHowToTurnItOn(test *testing.T) {
 	found := newWorld(test)
-	run := &fakeRun{database: found.database, owner: &models.User{ID: "a-person-with-nothing", Username: "cora"}, secret: serverSecret}
+	run := &fakeRun{database: found.database, owner: found.cora, secret: serverSecret}
 	content, _ := mustAct(test, run, "list", `{}`)
 	if !strings.Contains(content, "turn on \"Let the agent use this\"") || !strings.Contains(content, "open the item in Passwords") {
 		test.Fatalf("the words: %s", content)
@@ -430,9 +442,10 @@ func TestNothingIsReadWhereOthersWouldSeeIt(test *testing.T) {
 	}
 }
 
-// A run nobody is watching, a scheduled one for instance, may use the items:
-// signing in on a schedule is why the person turns them on.
-func TestAScheduledRunMayReadAGrantedNote(test *testing.T) {
+// A run nobody is watching may use the items when the person started it: a
+// schedule they wrote themselves, since signing in on a schedule is why the
+// person turns them on.
+func TestAScheduleThePersonWroteMayReadAGrantedNote(test *testing.T) {
 	found := newWorld(test)
 	run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: "schedule", isHeadless: true}
 	content, _ := mustAct(test, run, "read_note", fmt.Sprintf(`{"item_id":%q}`, found.grantedNote))
@@ -441,6 +454,76 @@ func TestAScheduledRunMayReadAGrantedNote(test *testing.T) {
 	}
 	if listed, _ := mustAct(test, run, "list", `{}`); !strings.Contains(listed, found.grantedLogin) {
 		test.Fatalf("a scheduled run lists: %s", listed)
+	}
+	if err := CheckSignInHere(run); err != nil {
+		test.Fatalf("a scheduled run signs in: %s", err)
+	}
+}
+
+// A run that content started (an inbound mail, a webhook, a chat app, a goal, a
+// dream, a schedule the agent wrote for itself) reads no note, lists no item
+// and signs in to nothing, and records no use.
+func TestARunThatContentStartedUsesNothing(test *testing.T) {
+	found := newWorld(test)
+	for _, surface := range []string{"research", "goal", "mail", "schedule", "background", "dream", "speak-first:overnight", ""} {
+		run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: surface, isHeadless: true, isStartedByOthers: true}
+		for _, action := range []string{"list", "read_note"} {
+			content, _ := mustAct(test, run, action, fmt.Sprintf(`{"item_id":%q}`, found.grantedNote))
+			if !strings.Contains(content, "not in a run that a mail, a message, a webhook, a goal, a dream or any other content started") {
+				test.Errorf("%q, %s: %s", surface, action, content)
+			}
+			if strings.Contains(content, "padlock") || strings.Contains(content, "Example shop") {
+				test.Errorf("%q, %s: %s", surface, action, content)
+			}
+		}
+		err := CheckSignInHere(run)
+		if err == nil || !strings.Contains(err.Error(), "content started") {
+			test.Errorf("%q signs in: %v", surface, err)
+		}
+	}
+	if found.lastUsedAt(test, found.grantedNote) {
+		test.Error("a refused read was recorded as a use")
+	}
+	// The same run, started by the person, may.
+	run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret}
+	if err := CheckSignInHere(run); err != nil {
+		test.Fatalf("the person's own run: %s", err)
+	}
+	// A run that cannot say who started it is not the person's.
+	if err := CheckSignInHere(runWithoutOrigin{found.runOf()}); err == nil {
+		test.Fatal("a run that cannot say who started it signed in")
+	}
+}
+
+// runWithoutOrigin hides the run's answer to who started it.
+type runWithoutOrigin struct{ tools.Run }
+
+// The person must still hold passwords:use when an item is used: a role that
+// lost it, or an account that was disabled, since the item was turned on, or
+// since the run began, ends the agent's use of every item.
+func TestTheOwnerMustStillHoldThePasswordsPermissionAtTheMomentOfUse(test *testing.T) {
+	found := newWorld(test)
+	run := found.runOf()
+	if content, _ := mustAct(test, run, "list", `{}`); !strings.Contains(content, found.grantedLogin) {
+		test.Fatalf("before: %s", content)
+	}
+	// The run was made while ada held the permission (its Operations say so);
+	// then her group is taken away.
+	dbtest.Exec(test, found.database, fmt.Sprintf(`DELETE FROM user_group WHERE user_id = '%s'`, found.ada.ID))
+	content, _ := mustAct(test, run, "list", `{}`)
+	if !strings.Contains(content, "not allowed to use Passwords") || strings.Contains(content, "Example shop") {
+		test.Fatalf("list: %s", content)
+	}
+	content, _ = mustAct(test, run, "read_note", fmt.Sprintf(`{"item_id":%q}`, found.grantedNote))
+	if !strings.Contains(content, "not allowed to use Passwords") || strings.Contains(content, "padlock") {
+		test.Fatalf("read_note: %s", content)
+	}
+	if found.lastUsedAt(test, found.grantedNote) {
+		test.Fatal("a refused read was recorded")
+	}
+	_, err := OpenLoginToSignIn(context.Background(), run, found.grantedLogin)
+	if err == nil || !strings.Contains(err.Error(), "not allowed to use Passwords") {
+		test.Fatalf("OpenLoginToSignIn: %v", err)
 	}
 }
 
@@ -467,6 +550,23 @@ func TestAWrongServerSecretOpensNothing(test *testing.T) {
 		if err == nil || strings.Contains(content, "padlock") {
 			test.Errorf("%s: %q, %v", action, content, err)
 		}
+	}
+}
+
+// A password made up in a subagent would come back to its parent as a tool
+// result: refused, with the words that say where it would go.
+func TestGenerateIsRefusedInASubagent(test *testing.T) {
+	found := newWorld(test)
+	run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: subagentSurface}
+	content, _ := mustAct(test, run, "generate", `{}`)
+	if strings.Contains(content, "generated_password") || !strings.Contains(content, "go to the model's provider") || !strings.Contains(content, "save it themselves") {
+		test.Fatalf("a subagent: %s", content)
+	}
+	// In a conversation with the person it still works, and says what it is.
+	merged := tools.Build().Get("passwords")
+	encoded, _ := json.Marshal(merged.Parameters)
+	if text := merged.Description + string(encoded); !strings.Contains(text, "goes to the model's provider") {
+		test.Fatalf("the tool does not say where the password goes: %s", text)
 	}
 }
 

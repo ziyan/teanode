@@ -29,60 +29,212 @@ func TestPageURLIsTheNavigationHistoryEntry(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	chrome.history = []string{"about:blank", "https://shop.example.test/sign-in"}
+	chrome.setHistory([]string{"about:blank", "https://shop.example.test/sign-in"}, nil, -1, "")
 	address, err := page.PageURL(context.Background())
 	if err != nil || address != "https://shop.example.test/sign-in" {
 		test.Fatalf("PageURL = %q, %v", address, err)
 	}
-	chrome.history = nil
+	chrome.setHistory(nil, nil, -1, "")
 	if _, err := page.PageURL(context.Background()); err == nil {
 		test.Fatal("a browser that does not say where the page is was believed")
 	}
 }
 
-// FillSecret needs a ref, a site and something to fill, and never repeats the
-// text in what it says.
-func TestFillSecretRefusesWhatItCannotFillAndNeverEchoesTheText(test *testing.T) {
+// startFake connects a browser to a fake Chrome and opens a page in it.
+func startFake(test *testing.T) (*fakeChrome, *Context, func()) {
+	test.Helper()
 	chrome := &fakeChrome{}
 	server := chrome.serve(test)
-	defer server.Close()
 	browser, err := Connect(context.Background(), &Settings{Endpoint: server.URL, ProxyListen: "127.0.0.1:0"})
 	if err != nil {
 		test.Fatal(err)
 	}
-	defer func() { _ = browser.Close() }()
 	page, err := browser.NewContext(context.Background())
 	if err != nil {
 		test.Fatal(err)
 	}
+	return chrome, page, func() { _ = browser.Close(); server.Close() }
+}
+
+func waitUntil(condition func() bool) bool {
+	deadline := time.Now().Add(5 * time.Second)
+	for !condition() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	return condition()
+}
+
+// FillSecret needs a ref, a site, a kind and something to fill, and never
+// repeats the text in what it says.
+func TestFillSecretRefusesWhatItCannotFillAndNeverEchoesTheText(test *testing.T) {
+	chrome, page, finish := startFake(test)
+	defer finish()
 	const secret = "an-invented-secret-value"
-	for name, arguments := range map[string]struct {
-		ref  int
-		host string
-		text string
-	}{"no ref": {0, "example.test", secret}, "no host": {1, "", secret}, "no text": {1, "example.test", ""}} {
-		if err := page.FillSecret(context.Background(), arguments.ref, arguments.host, arguments.text); err == nil {
+	for name, request := range map[string]FillRequest{
+		"no ref":                 {Ref: 0, Host: "example.test", Kind: FieldKindPassword, Text: secret},
+		"no host":                {Ref: 1, Host: "", Kind: FieldKindPassword, Text: secret},
+		"no text":                {Ref: 1, Host: "example.test", Kind: FieldKindPassword, Text: ""},
+		"no kind":                {Ref: 1, Host: "example.test", Text: secret},
+		"a kind that is not one": {Ref: 1, Host: "example.test", Kind: "everything", Text: secret},
+	} {
+		if err := page.FillSecret(context.Background(), request); err == nil {
 			test.Errorf("%s: filled", name)
 		}
 	}
-	if chrome.sent("Input.insertText") != 0 {
-		test.Fatal("text was inserted")
+	if chrome.sent("Runtime.evaluate") != 0 || chrome.sent("Input.insertText") != 0 {
+		test.Fatal("something was sent for a request that could not be made")
 	}
-	// The page says the field is not there: the text is not inserted.
+	// The page says why the field cannot be filled: the error says it and does
+	// not repeat the text.
 	chrome.evaluate = func(string) any {
-		return map[string]any{"isFocused": false, "problem": "no field has that ref; take a snapshot first"}
+		return map[string]any{"isFilled": false, "problem": "no field has that ref; take a snapshot first"}
 	}
-	err = page.FillSecret(context.Background(), 4, "example.test", secret)
-	if err == nil || !strings.Contains(err.Error(), "no field has that ref") || strings.Contains(err.Error(), secret) || chrome.sent("Input.insertText") != 0 {
+	err := page.FillSecret(context.Background(), FillRequest{Ref: 4, Host: "example.test", Port: 443, Kind: FieldKindPassword, Text: secret})
+	if err == nil || !strings.Contains(err.Error(), "no field has that ref") || strings.Contains(err.Error(), secret) {
 		test.Fatalf("a missing field: %v", err)
 	}
-	// The script carries the host to check, and not the text.
-	if script := chrome.paramsOf("Runtime.evaluate"); !strings.Contains(script, `\"example.test\"`) || strings.Contains(script, secret) {
-		test.Fatalf("the script: %s", script)
+}
+
+// The check and the value going in are one script: the host, the port, the
+// field and its kind are checked in the page where the value is set, and the
+// value is not inserted by a separate command.
+func TestFillSecretIsOneScriptThatChecksAndFills(test *testing.T) {
+	chrome, page, finish := startFake(test)
+	defer finish()
+	const secret = "an-invented-secret-value"
+	var script string
+	chrome.evaluate = func(expression string) any {
+		script = expression
+		return map[string]any{"isFilled": true, "problem": ""}
 	}
-	chrome.evaluate = func(string) any { return map[string]any{"isFocused": true, "problem": ""} }
-	if err := page.FillSecret(context.Background(), 4, "example.test", secret); err != nil || chrome.sent("Input.insertText") != 1 {
-		test.Fatalf("fill: %v", err)
+	if err := page.FillSecret(context.Background(), FillRequest{Ref: 4, Host: "example.test", Port: 8443, Kind: FieldKindPassword, Text: secret}); err != nil {
+		test.Fatal(err)
+	}
+	if chrome.sent("Runtime.evaluate") != 1 || chrome.sent("Input.insertText") != 0 || chrome.sent("Input.dispatchKeyEvent") != 0 {
+		test.Fatalf("a fill is one evaluation, not typing: %v", chrome.commands)
+	}
+	for _, wanted := range []string{`"example.test"`, `8443`, `"password"`, `"` + secret + `"`, "location.hostname", "location.port", "instanceof HTMLInputElement", "getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')", "new Event('input'", "new Event('change'", "__teanodeFilled", "true)"} {
+		if !strings.Contains(script, wanted) {
+			test.Errorf("the script lacks %s:\n%s", wanted, script)
+		}
+	}
+	// A user name is not noted as a secret.
+	if err := page.FillSecret(context.Background(), FillRequest{Ref: 3, Host: "example.test", Kind: FieldKindUserName, Text: "ada"}); err != nil {
+		test.Fatal(err)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(script), `"userName", "ada", false)`) {
+		test.Fatalf("the user name's arguments: %s", script[len(script)-80:])
+	}
+	// An error out of the page is not passed on: it could quote the script.
+	chrome.evaluate = func(string) any { return nil }
+	chrome.failEvaluate = "TypeError: " + secret
+	err := page.FillSecret(context.Background(), FillRequest{Ref: 4, Host: "example.test", Kind: FieldKindPassword, Text: secret})
+	if err == nil || strings.Contains(err.Error(), secret) {
+		test.Fatalf("the page threw: %v", err)
+	}
+}
+
+// Before a value goes in the browser stops keeping what the page asks of the
+// network, the page is locked, and the lock ends only when the main frame
+// commits a new document: not for a frame inside it, not for a change that
+// keeps the document, and not for a move back or forward through the history
+// (which locks again when it returns to the filled page).
+func TestPrepareToFillLocksThePageUntilItCommitsANewDocument(test *testing.T) {
+	chrome, page, finish := startFake(test)
+	defer finish()
+	signIn := "https://shop.example.test/sign-in"
+	chrome.setHistory([]string{"about:blank", signIn}, []int{1, 2}, -1, "loader-1")
+
+	page.Filled().Remember("a-password")
+	page.PrepareToFill(context.Background())
+	if chrome.sent("Network.disable") != 1 || chrome.sent("Page.getFrameTree") != 1 {
+		test.Fatalf("before the fill: %v", chrome.commands)
+	}
+	if !page.Filled().IsLocked("") {
+		test.Fatal("not locked")
+	}
+	navigated := func(loader, address string, parent string) {
+		frame := map[string]any{"id": "main", "loaderId": loader, "url": address}
+		if parent != "" {
+			frame["parentId"] = parent
+		}
+		chrome.emit("Page.frameNavigated", map[string]any{"frame": frame})
+	}
+	settle := func() { time.Sleep(150 * time.Millisecond) }
+
+	// A frame inside the page, a change of the address that keeps the
+	// document, and a fragment do not unlock it.
+	navigated("loader-frame", "https://ads.example.test/", "main")
+	chrome.emit("Page.navigatedWithinDocument", map[string]any{"frameId": "main", "url": signIn + "#next"})
+	settle()
+	if !page.Filled().IsLocked("") {
+		test.Fatal("something that is not a new document unlocked the page")
+	}
+
+	// A new page: a new history entry.
+	chrome.setHistory([]string{"about:blank", signIn, "https://shop.example.test/account"}, []int{1, 2, 3}, -1, "loader-2")
+	navigated("loader-2", "https://shop.example.test/account", "")
+	if !waitUntil(func() bool { return !page.Filled().IsLocked("") }) {
+		test.Fatal("a new page did not unlock")
+	}
+
+	// Back to a page that was not filled: still unlocked.
+	chrome.setHistory([]string{"about:blank", signIn, "https://shop.example.test/account"}, []int{1, 2, 3}, 0, "loader-3")
+	navigated("loader-3", "about:blank", "")
+	settle()
+	if page.Filled().IsLocked("") {
+		test.Fatal("going back locked the page")
+	}
+	// Forward to the page that was filled: locked again.
+	chrome.setHistory([]string{"about:blank", signIn, "https://shop.example.test/account"}, []int{1, 2, 3}, 1, "loader-4")
+	navigated("loader-4", signIn, "")
+	if !waitUntil(func() bool { return page.Filled().IsLocked("") }) {
+		test.Fatal("coming back to the filled page did not lock it")
+	}
+	// A reload is a new document at the same entry: unlocked.
+	navigated("loader-5", signIn, "")
+	if !waitUntil(func() bool { return !page.Filled().IsLocked("") }) {
+		test.Fatal("a reload did not unlock")
+	}
+
+	// A second fill locks the page again, in the document it is in now.
+	page.Filled().Remember("another")
+	page.PrepareToFill(context.Background())
+	if !page.Filled().IsLocked("") || chrome.sent("Network.disable") != 2 {
+		test.Fatal("a second fill")
+	}
+	// When the history cannot be read a commit is taken for a move through it.
+	page.historyWait = 200 * time.Millisecond
+	chrome.setHistory(nil, nil, -1, "loader-6")
+	navigated("loader-6", "https://shop.example.test/elsewhere", "")
+	settle()
+	if !page.Filled().IsLocked("") {
+		test.Fatal("a commit that could not be classified unlocked the page")
+	}
+	// What was filled stays hidden.
+	if page.Filled().Scrub("a-password another") != "[hidden] [hidden]" {
+		test.Fatal("values were forgotten")
+	}
+}
+
+// While a page swaps in, the browser answers that the page is not attached to
+// the history, and answers properly a moment later: the commit waits for it
+// rather than taking a new page for a move through the history.
+func TestACommitWaitsForTheHistoryWhileThePageSwapsIn(test *testing.T) {
+	chrome, page, finish := startFake(test)
+	defer finish()
+	signIn := "https://shop.example.test/sign-in"
+	chrome.setHistory([]string{"about:blank", signIn}, []int{1, 2}, -1, "loader-1")
+	page.Filled().Remember("a-password")
+	page.PrepareToFill(context.Background())
+
+	chrome.setHistory([]string{"about:blank", signIn, "https://shop.example.test/account"}, []int{1, 2, 3}, -1, "loader-2")
+	chrome.mutex.Lock()
+	chrome.historyFailures = 3
+	chrome.mutex.Unlock()
+	chrome.emit("Page.frameNavigated", map[string]any{"frame": map[string]any{"id": "main", "loaderId": "loader-2", "url": "https://shop.example.test/account"}})
+	if !waitUntil(func() bool { return !page.Filled().IsLocked("") }) {
+		test.Fatal("a new page that was committed while the history was not readable did not unlock")
 	}
 }
 
@@ -174,6 +326,10 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 		response.Header().Set("Content-Type", "text/html")
 		_, _ = fmt.Fprint(response, `<html><body><form>
 <input id="user" name="user" autocomplete="username"><input id="secret" name="secret" type="password"><input id="code" name="code" autocomplete="one-time-code">
+<textarea id="area" name="area"></textarea><div id="editable" contenteditable="true" role="textbox" aria-label="editable"></div><select id="choice" name="choice"><option value="a">a</option></select>
+<input id="agree" name="agree" type="checkbox"><input id="plain" name="plain">
+<button type="button" id="reveal" onclick="document.getElementById('secret').type='text'">Show</button>
+<button type="button" id="push" onclick="history.pushState({}, '', '/pushed')">Push</button>
 </form></body></html>`)
 	}))
 	defer site.Close()
@@ -216,28 +372,66 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 	}
 	passwordRef := refOf(`input(password) "secret"`)
 
-	// The wrong site fills nothing.
-	if err := page.FillSecret(ctx, passwordRef, "evil.test", secret); err == nil {
+	fill := func(ref int, host string, kind FieldKind, text string) error {
+		return page.FillSecret(ctx, FillRequest{Ref: ref, Host: host, Kind: kind, Text: text})
+	}
+	valueOf := func(id string) string {
+		value, _ := page.Evaluate(ctx, `document.getElementById('`+id+`').value`, 200)
+		return value
+	}
+	// The wrong site, and the wrong port, fill nothing.
+	if err := fill(passwordRef, "evil.test", FieldKindPassword, secret); err == nil {
 		test.Fatal("a page that is not the site was filled")
 	}
-	if value, _ := page.Evaluate(ctx, `document.getElementById('secret').value`, 100); value != `""` {
+	if err := page.FillSecret(ctx, FillRequest{Ref: passwordRef, Host: "localhost", Port: 1, Kind: FieldKindPassword, Text: secret}); err == nil {
+		test.Fatal("a page on another port was filled")
+	}
+	if value := valueOf("secret"); value != `""` {
 		test.Fatalf("the field holds %s", value)
 	}
-	if err := page.FillSecret(ctx, passwordRef, "localhost", secret); err != nil {
+	// Only a field of the kind takes the value: not a textarea, an editable
+	// region, a select, a checkbox, nor an input that is another kind.
+	for kind, refs := range map[FieldKind][]int{
+		FieldKindPassword:    {refOf(`textarea "area"`), refOf(`"editable"`), refOf(`select "choice"`), refOf(`input(checkbox) "agree"`), refOf(`input(text) "plain"`), refOf(`"user"`)},
+		FieldKindUserName:    {refOf(`textarea "area"`), refOf(`"editable"`), refOf(`select "choice"`), refOf(`input(checkbox) "agree"`), passwordRef},
+		FieldKindOneTimeCode: {refOf(`textarea "area"`), refOf(`"editable"`), refOf(`select "choice"`), refOf(`input(checkbox) "agree"`), passwordRef},
+	} {
+		for _, ref := range refs {
+			if err := fill(ref, "localhost", kind, secret); err == nil {
+				test.Fatalf("a %s went into ref %d", kind, ref)
+			}
+		}
+	}
+	for _, id := range []string{"area", "editable", "choice", "agree", "plain"} {
+		if value, _ := page.Evaluate(ctx, `document.getElementById('`+id+`').value || document.getElementById('`+id+`').textContent`, 200); strings.Contains(value, secret) || strings.Contains(value, "123456") {
+			test.Fatalf("%s holds %s", id, value)
+		}
+	}
+	// A user name goes into the field that says it takes one, and a code into
+	// a field that says it takes one.
+	if err := fill(refOf(`"user"`), "localhost", FieldKindUserName, "ada"); err != nil {
 		test.Fatal(err)
 	}
-	if value, _ := page.Evaluate(ctx, `document.getElementById('secret').value`, 100); value != `"`+secret+`"` {
+
+	if err := fill(passwordRef, "localhost", FieldKindPassword, secret); err != nil {
+		test.Fatal(err)
+	}
+	if value := valueOf("secret"); value != `"`+secret+`"` {
 		test.Fatalf("the field holds %s", value)
 	}
 	// Filled again, the field is replaced, not added to.
-	if err := page.FillSecret(ctx, passwordRef, "localhost", secret); err != nil {
+	if err := fill(passwordRef, "localhost", FieldKindPassword, secret); err != nil {
 		test.Fatal(err)
 	}
-	if value, _ := page.Evaluate(ctx, `document.getElementById('secret').value`, 100); value != `"`+secret+`"` {
+	if value := valueOf("secret"); value != `"`+secret+`"` {
 		test.Fatalf("the field holds %s after a second fill", value)
 	}
-	// A field with a code in it is not read back either.
-	if err := page.FillSecret(ctx, refOf(`"code"`), "localhost", "123456"); err != nil {
+	// The page sees its own input event, and the value is set the way its
+	// typing would.
+	if value, _ := page.Evaluate(ctx, `(function () { let seen = 0; const node = document.getElementById('secret'); node.addEventListener('input', () => seen++); return seen; })()`, 20); value != "0" {
+		test.Fatalf("listener: %s", value)
+	}
+	if err := fill(refOf(`"code"`), "localhost", FieldKindOneTimeCode, "123456"); err != nil {
 		test.Fatal(err)
 	}
 	for _, mode := range []string{"interactive", "text"} {
@@ -251,10 +445,97 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 		if mode == "interactive" && !strings.Contains(snapshot.Text, "(filled, value not shown)") {
 			test.Fatalf("the filled password is not marked: %s", snapshot.Text)
 		}
+		if mode == "interactive" && !strings.Contains(snapshot.Text, `value="ada"`) {
+			test.Fatalf("a user name is shown: %s", snapshot.Text)
+		}
 	}
 	name, _, err := page.Click(ctx, Target{Ref: passwordRef})
 	if err != nil || strings.Contains(name, secret) {
 		test.Fatalf("a click named the field %q (%v)", name, err)
+	}
+	// A show-password button makes the field a text input: it is still not
+	// shown, because the agent filled it.
+	if _, _, err := page.Click(ctx, Target{Ref: refOf(`"Show"`)}); err != nil {
+		test.Fatal(err)
+	}
+	if value, _ := page.Evaluate(ctx, `document.getElementById('secret').type`, 20); value != `"text"` {
+		test.Fatalf("the field is a %s", value)
+	}
+	snapshot, err := page.Snapshot(ctx, "interactive", 0)
+	if err != nil || strings.Contains(snapshot.Text, secret) || !strings.Contains(snapshot.Text, "(filled, value not shown)") {
+		test.Fatalf("after the field became text: %v %s", err, snapshot.Text)
+	}
+	name, _, err = page.Click(ctx, Target{Ref: passwordRef})
+	if err != nil || strings.Contains(name, secret) {
+		test.Fatalf("a click named the revealed field %q (%v)", name, err)
+	}
+	// A long value in a field the agent did not fill is not cut and shown:
+	// it is not shown.
+	if _, err := page.Evaluate(ctx, `document.getElementById('plain').value = 'q'.repeat(100); true`, 20); err != nil {
+		test.Fatal(err)
+	}
+	snapshot, err = page.Snapshot(ctx, "interactive", 0)
+	if err != nil || strings.Contains(snapshot.Text, "qqqqq") || !strings.Contains(snapshot.Text, "(long value, not shown)") {
+		test.Fatalf("a long value: %v %s", err, snapshot.Text)
+	}
+
+	// The lock: filling a password locks the page; a change that keeps the
+	// document (history.pushState, a fragment) does not unlock it, a new
+	// document does, and going back to the filled page locks it again.
+	page.Filled().Remember(secret)
+	page.PrepareToFill(ctx)
+	if !page.Filled().IsLocked("") {
+		test.Fatal("not locked after PrepareToFill")
+	}
+	if _, _, err := page.Click(ctx, Target{Ref: refOf(`"Push"`)}); err != nil {
+		test.Fatal(err)
+	}
+	if _, err := page.Evaluate(ctx, `location.hash = '#next'; true`, 20); err != nil {
+		test.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if !page.Filled().IsLocked("") {
+		test.Fatal("pushState or a fragment unlocked the page")
+	}
+	if _, err := page.Navigate(ctx, address+"/other"); err != nil {
+		test.Fatal(err)
+	}
+	if !waitUntil(func() bool { return !page.Filled().IsLocked("") }) {
+		test.Fatal("a new document did not unlock the page")
+	}
+	// Going back is not a new page: it does not unlock what it returns to.
+	// Filled again on a fresh load, then away, then back to the page that was
+	// filled: locked again.
+	if _, err := page.Navigate(ctx, address); err != nil {
+		test.Fatal(err)
+	}
+	page.Filled().Remember(secret)
+	page.PrepareToFill(ctx)
+	if !page.Filled().IsLocked("") {
+		test.Fatal("not locked after a second PrepareToFill")
+	}
+	if _, err := page.Navigate(ctx, address+"/other2"); err != nil {
+		test.Fatal(err)
+	}
+	if !waitUntil(func() bool { return !page.Filled().IsLocked("") }) {
+		test.Fatal("a new document did not unlock the page")
+	}
+	if _, err := page.Back(ctx); err != nil {
+		test.Fatal(err)
+	}
+	if !waitUntil(func() bool { return page.Filled().IsLocked("") }) {
+		test.Fatal("going back to the filled page did not lock it")
+	}
+	// Away to a page that is new: unlocked again.
+	if _, err := page.Navigate(ctx, address+"/other3"); err != nil {
+		test.Fatal(err)
+	}
+	if !waitUntil(func() bool { return !page.Filled().IsLocked("") }) {
+		test.Fatal("a new document did not unlock the page")
+	}
+	// What was filled is hidden for as long as the page lives.
+	if got := page.Filled().Scrub("p=" + secret); strings.Contains(got, secret) {
+		test.Fatalf("scrubbed %q", got)
 	}
 
 	// A passkey: the page asks for an assertion and the virtual authenticator

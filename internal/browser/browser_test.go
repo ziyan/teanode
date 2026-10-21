@@ -23,8 +23,64 @@ type fakeChrome struct {
 	commands   []string
 	parameters []string
 	evaluate   func(expression string) any
-	// history is the page's navigation history, oldest first.
-	history []string
+	// failEvaluate, when set, makes Runtime.evaluate throw with this text.
+	failEvaluate string
+	// history is the page's navigation history, oldest first. entryIDs are
+	// the ids of its entries (their positions plus one when not given), and
+	// currentIndex which one is current (the last when nil).
+	history      []string
+	entryIDs     []int
+	currentIndex *int
+	// loaderID is the id of the main frame's current document.
+	loaderID string
+	// historyFailures is how many reads of the history are answered "Not
+	// attached to an active page" before it answers.
+	historyFailures int
+
+	// socket and writeMutex are the connection a test pushes events down.
+	socket     *websocket.Conn
+	writeMutex sync.Mutex
+}
+
+// historySnapshot is the history the fake answers with, read under the lock a
+// test's setHistory writes it with.
+func (self *fakeChrome) historySnapshot() ([]string, []int, *int, string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return append([]string{}, self.history...), append([]int{}, self.entryIDs...), self.currentIndex, self.loaderID
+}
+
+// takeHistoryFailure says whether this read of the history is one that fails.
+func (self *fakeChrome) takeHistoryFailure() bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.historyFailures > 0 {
+		self.historyFailures--
+		return true
+	}
+	return false
+}
+
+// setHistory says where the page is: its entries, their ids, which is current
+// (an index, or -1 for the last) and the main frame's document.
+func (self *fakeChrome) setHistory(addresses []string, entryIDs []int, current int, loaderID string) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.history, self.entryIDs, self.loaderID = addresses, entryIDs, loaderID
+	self.currentIndex = nil
+	if current >= 0 {
+		self.currentIndex = &current
+	}
+}
+
+// emit sends the page an event, as the browser does.
+func (self *fakeChrome) emit(method string, params any) {
+	encoded, _ := json.Marshal(params)
+	self.writeMutex.Lock()
+	defer self.writeMutex.Unlock()
+	if self.socket != nil {
+		_ = self.socket.WriteJSON(map[string]any{"method": method, "params": json.RawMessage(encoded), "sessionId": "session-1"})
+	}
 }
 
 // paramsOf is what was sent with the first call of a command.
@@ -52,6 +108,9 @@ func (self *fakeChrome) serve(t *testing.T) *httptest.Server {
 			return
 		}
 		defer func() { _ = socket.Close() }()
+		self.writeMutex.Lock()
+		self.socket = socket
+		self.writeMutex.Unlock()
 		for {
 			var incoming message
 			if err := socket.ReadJSON(&incoming); err != nil {
@@ -81,19 +140,46 @@ func (self *fakeChrome) serve(t *testing.T) *httptest.Server {
 					value = self.evaluate(params.Expression)
 				}
 				result = map[string]any{"result": map[string]any{"type": "object", "value": value}}
-			case "Page.getNavigationHistory":
-				entries := []map[string]any{}
-				for _, address := range self.history {
-					entries = append(entries, map[string]any{"url": address})
+				if self.failEvaluate != "" {
+					result = map[string]any{"exceptionDetails": map[string]any{"text": self.failEvaluate, "exception": map[string]any{"description": self.failEvaluate}}}
 				}
-				result = map[string]any{"currentIndex": len(entries) - 1, "entries": entries}
+			case "Page.getNavigationHistory":
+				if self.takeHistoryFailure() {
+					self.writeMutex.Lock()
+					_ = socket.WriteJSON(map[string]any{"id": incoming.ID, "sessionId": incoming.SessionID, "error": map[string]any{"code": -32000, "message": "Not attached to an active page"}})
+					self.writeMutex.Unlock()
+					continue
+				}
+				history, entryIDs, currentIndex, _ := self.historySnapshot()
+				entries := []map[string]any{}
+				for index, address := range history {
+					identifier := index + 1
+					if index < len(entryIDs) {
+						identifier = entryIDs[index]
+					}
+					entries = append(entries, map[string]any{"id": identifier, "url": address})
+				}
+				current := len(entries) - 1
+				if currentIndex != nil {
+					current = *currentIndex
+				}
+				result = map[string]any{"currentIndex": current, "entries": entries}
+			case "Page.getFrameTree":
+				history, _, _, loaderID := self.historySnapshot()
+				address := ""
+				if len(history) > 0 {
+					address = history[len(history)-1]
+				}
+				result = map[string]any{"frameTree": map[string]any{"frame": map[string]any{"id": "main", "loaderId": loaderID, "url": address}}}
 			case "WebAuthn.addVirtualAuthenticator":
 				result = map[string]any{"authenticatorId": "authenticator-1"}
 			case "Page.captureScreenshot":
 				result = map[string]any{"data": "iVBORw0KGgo="}
 			}
 			encoded, _ := json.Marshal(result)
+			self.writeMutex.Lock()
 			_ = socket.WriteJSON(map[string]any{"id": incoming.ID, "sessionId": incoming.SessionID, "result": json.RawMessage(encoded)})
+			self.writeMutex.Unlock()
 		}
 	}))
 	return server

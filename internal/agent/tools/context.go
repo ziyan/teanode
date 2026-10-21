@@ -93,6 +93,22 @@ type ResultBudgeting interface {
 	ResultCharacters() int
 }
 
+// PersonStarting is a run that can say whether the person started it: they
+// typed or spoke the turn, or a schedule they wrote themselves woke it. A run
+// that something else started (an inbound mail, a chat app, a webhook, a goal,
+// a dream, a command left running, a schedule the agent wrote) is not theirs,
+// since what such a run does is steered by content the person did not write.
+type PersonStarting interface {
+	IsStartedByPerson() bool
+}
+
+// IsStartedByPerson says whether the person started the run. A run that cannot
+// say is taken not to be theirs.
+func IsStartedByPerson(run Run) bool {
+	starting, ok := run.(PersonStarting)
+	return ok && starting.IsStartedByPerson()
+}
+
 // ResultCharactersOf is how much of a tool's result a run keeps, in bytes,
 // as the run measures it.
 func ResultCharactersOf(run Run) int {

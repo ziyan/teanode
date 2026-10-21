@@ -981,3 +981,47 @@ func TestListingPasswordItemsNeverPassesAChangeInFlight(test *testing.T) {
 		test.Fatalf("the first listing answered %d, want %d", before.Revision, second.Revision)
 	}
 }
+
+// An owner who no longer holds passwords:use, or whose account was disabled,
+// has no item the agent can use, whatever is switched on; the item comes back
+// with the permission.
+func TestTheAgentUsesNothingOfAnOwnerWhoMayNotUsePasswords(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		world := newPasswordsWorld(test, tx)
+		eve, err := tx.CreateUser(&models.User{Username: "eve", Name: "Eve Example"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		setUpPasswordsFor(test, tx, eve)
+		login := savePasswordItemFor(test, tx, eve, 21, models.PasswordItemKindLogin)
+		if _, err := tx.SetPasswordItemUsableByAgent(eve.ID, login.ID, true, "sealed for the agent"); err != nil {
+			test.Fatal(err)
+		}
+		// Eve holds no role that gives her Passwords.
+		listed, err := tx.ListAgentUsablePasswordItems(eve.ID)
+		if err != nil || len(listed) != 0 {
+			test.Fatalf("without the permission: %+v %v", listed, err)
+		}
+		dbtest.GrantPermission(test, tx, eve.ID, models.PermissionPasswordsUse)
+		listed, err = tx.ListAgentUsablePasswordItems(eve.ID)
+		if err != nil || len(listed) != 1 || listed[0].ID != login.ID {
+			test.Fatalf("with the permission: %+v %v", listed, err)
+		}
+		// A disabled account has none either.
+		now := time.Now()
+		if _, err := tx.UpdateUser(eve.ID, func(user *models.User) error { user.DisabledAt = &now; return nil }); err != nil {
+			test.Fatal(err)
+		}
+		listed, err = tx.ListAgentUsablePasswordItems(eve.ID)
+		if err != nil || len(listed) != 0 {
+			test.Fatalf("a disabled account: %+v %v", listed, err)
+		}
+		// Others are not touched by it.
+		if listed, err := tx.ListAgentUsablePasswordItems(world.ada.ID); err != nil || listed == nil {
+			test.Fatalf("ada: %+v %v", listed, err)
+		}
+	})
+}

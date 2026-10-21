@@ -29,10 +29,17 @@
 // TypeScript with the dashboard's own encryption; see passwords/.
 import './passwords/background'
 import { fillLoginForAgent, fillOneTimeCodeForAgent } from './passwords/agentFill'
+// Which document each of the agent's tabs shows and which the agent filled a
+// password or code into: the server locks a filled tab until it commits a new
+// document, and is told when one does.
+import { TabDocuments, withoutRequestBodies } from './tabDocuments'
+// What the agent's actions do inside the page (snapshot, click, type ...).
+import { inPage } from './inPage'
 
 const PROTOCOL = 5
 
 let socket = null
+const documents = new TabDocuments()
 // attached is the tab the actions go to and the person's own tab, either of
 // which may be none: ownTabId is theirs, attached through the panel, and
 // tabId the one actions go to -- theirs, or one the agent opened.
@@ -212,11 +219,16 @@ function disconnect() {
 function tellServer() {
   if (!socket || socket.readyState !== WebSocket.OPEN) return
   const sending = socket
-  const update = { type: 'update', title: attached.title, url: attached.url, hasTab: attached.tabId !== null }
+  const update = { type: 'update', title: attached.title, url: attached.url, hasTab: attached.tabId !== null, currentTab: attached.tabId }
   void listTabs()
     .catch(() => undefined)
     .then((tabs) => {
-      if (sending.readyState === WebSocket.OPEN) sending.send(JSON.stringify({ ...update, ...(tabs ? { tabs } : {}) }))
+      if (sending.readyState !== WebSocket.OPEN) return
+      // The documents the agent's tabs committed since the last update ride
+      // along, taken only now that they are sent: one that could not be sent
+      // is sent with the next.
+      const commits = documents.takeReports()
+      sending.send(JSON.stringify({ ...update, ...(tabs ? { tabs } : {}), ...(commits.length > 0 ? { commits } : {}) }))
     })
 }
 
@@ -272,7 +284,7 @@ function connect(origin, secret) {
       }
     }
     const tabs = await listTabs().catch(() => [])
-    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null, tabs }))
+    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null, currentTab: attached.tabId, tabs }))
     // A word every so often keeps this worker, and the socket, alive
     // while nothing else is said.
     clearInterval(pings)
@@ -296,6 +308,8 @@ function connect(origin, secret) {
       attempt = 0
       showState()
       tellPanels()
+      // What the tabs committed while the server was away.
+      tellServer()
       return
     }
     if (message.type === 'refused') {
@@ -486,13 +500,15 @@ const DEBUGGER_IDLE = 10 * 60 * 1000
 const CDP_ALLOWED = [
   // Real input, which is what driving a page is.
   'Input.',
-  // Watching what the page asks the network for, and reading a body back.
-  // Not Network.setCookie and friends, which are every site's cookies, and
-  // not the clearBrowser* pair, which are the whole browser.
+  // Watching what the page asks the network for, and reading a response
+  // back. Not a request's body (Network.getRequestPostData, and the body is
+  // taken out of the events kept): a form's request is where a typed
+  // password travels, and nothing the agent does needs it. Not
+  // Network.setCookie and friends, which are every site's cookies, and not
+  // the clearBrowser* pair, which are the whole browser.
   'Network.enable',
   'Network.disable',
   'Network.getResponseBody',
-  'Network.getRequestPostData',
   'Network.setCacheDisabled',
   'Network.setExtraHTTPHeaders',
   // The page itself: what it is, what it looks like, where it is going.
@@ -523,7 +539,7 @@ function cdpRefusal(method) {
     const matches = allowed.endsWith('.') ? asked.startsWith(allowed) : asked === allowed
     if (matches) return ''
   }
-  return `${asked} is not one of the methods an attached tab answers: driving it (Input.), reading it (DOM., Runtime., CSS., Accessibility.), watching what it fetches (Network.enable, Network.getResponseBody) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser, which attaching one tab does not allow`
+  return `${asked} is not one of the methods an attached tab answers: driving it (Input.), reading it (DOM., Runtime., CSS., Accessibility.), watching what it fetches (Network.enable, Network.getResponseBody; never a request's body) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser, which attaching one tab does not allow`
 }
 
 // agentUsing are the tabs whose debugger the agent's cdp action uses,
@@ -583,7 +599,11 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   }
   const state = source.tabId !== undefined && debugging.get(source.tabId)
   if (!state) return
-  state.events.push({ at: Date.now(), method, params })
+  // Nothing is kept of a document the agent filled a password or a code into
+  // (a page logs, posts and echoes what it was given), and nothing of a
+  // request's body in any.
+  if (documents.isShowingFilledDocument(source.tabId)) return
+  state.events.push({ at: Date.now(), method, params: withoutRequestBodies(params) })
   if (state.events.length > EVENTS_KEPT) state.events.splice(0, state.events.length - EVENTS_KEPT)
 })
 
@@ -804,6 +824,16 @@ async function dispatchInput(message) {
   }
 }
 
+// stopWatchingNetwork turns off what the debugger keeps of the tab's network
+// events and forgets what it kept, before the agent fills a password or a code
+// into the tab.
+async function stopWatchingNetwork(tabId) {
+  const state = debugging.get(tabId)
+  if (!state) return
+  await chrome.debugger.sendCommand({ tabId }, 'Network.disable').catch(() => {})
+  state.events = []
+}
+
 // act does one action in the attached tab: navigation here, everything
 // else in the page through the content script; fetch through the tab's
 // own session.
@@ -833,6 +863,11 @@ async function act(action, args) {
     }
     if (attached.tabId === null) return { ok: false, error: 'no tab is open for you in this browser yet; open one first' }
     const tab = await chrome.tabs.get(attached.tabId)
+    // The server checked a lock on one tab before it sent this; if the actions
+    // go to another by now, it is not done there.
+    if (args.expectedTab !== undefined && args.expectedTab !== null && args.expectedTab !== '' && String(args.expectedTab) !== String(tab.id)) {
+      return { ok: false, error: 'the tab the actions go to has changed since this was asked for; call tabs to see which it is now' }
+    }
     if (action === 'navigate') {
       if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
       await chrome.tabs.update(tab.id, { url: args.url })
@@ -924,8 +959,17 @@ async function act(action, args) {
     // The server builds these arguments after checking the item is one the
     // person let the agent use and that the tab is on one of its sites; the
     // extension checks the tab's address again and never echoes a value.
-    if (action === 'fill_login') return await fillLoginForAgent(tab.id, args)
-    if (action === 'fill_one_time_code') return await fillOneTimeCodeForAgent(tab.id, args)
+    if (action === 'fill_login' || action === 'fill_one_time_code') {
+      // What the page asks of the network is not kept from here on, and what
+      // was kept before is let go: a form's request carries the password.
+      await stopWatchingNetwork(tab.id)
+      const answer = await (action === 'fill_login' ? fillLoginForAgent(tab.id, args) : fillOneTimeCodeForAgent(tab.id, args))
+      if (!answer.ok) return answer
+      // Which document it went into, and where the tab's commits stand, for
+      // the server's lock.
+      documents.markFilled(tab.id, answer.data.documentId)
+      return { ok: true, data: { ...answer.data, tab: tab.id, commitCount: documents.countOf(tab.id) } }
+    }
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: inPage,
@@ -958,211 +1002,6 @@ function waitForLoad(tabId) {
       resolve()
     }, 30000)
   })
-}
-
-// inPage runs inside the page. It is self-contained: nothing from this
-// file is in scope there.
-async function inPage(action, args) {
-  const refs = (window.__teanodeRefs = window.__teanodeRefs || new Map())
-  let next = window.__teanodeNextRef || 1
-  const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label'])
-  const find = () => {
-    // A ref comes back through a tool call, where it may be a string.
-    if (args.ref) return refs.get(Number(args.ref)) || refs.get(args.ref) || null
-    if (args.selector) return document.querySelector(args.selector)
-    return null
-  }
-  // Which fields hold a secret. It decides what a snapshot says, not what
-  // may be typed: a password the person has already filled in is not read
-  // back into the conversation, where it would be kept and sent onward.
-  // Typing into one is their agent's business and goes ahead.
-  const sensitive = (node) => {
-    const type = (node.type || '').toLowerCase()
-    const hint = ((node.autocomplete || '') + ' ' + (node.name || '') + ' ' + (node.id || '') + ' ' + (node.getAttribute('aria-label') || '')).toLowerCase()
-    return type === 'password' || /cc-|card|cvc|cvv|iban|account-?number|routing|ssn|passport/.test(hint)
-  }
-  // A field a password, or a code the page asked for as one, is typed into:
-  // its value is never read into a name or a snapshot, whoever put it there.
-  const isSecretField = (node) =>
-    node instanceof HTMLInputElement &&
-    ((node.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || ''))
-  const nameOf = (node) => {
-    const label = node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
-    if (label) return label.trim()
-    const value = isSecretField(node) || sensitive(node) ? '' : node.value
-    return ((node.innerText || value || node.textContent || '').trim().replace(/\s+/g, ' ')).slice(0, 120)
-  }
-  const refFor = (node) => {
-    for (const [ref, candidate] of refs) if (candidate === node) return ref
-    const ref = next++
-    refs.set(ref, node)
-    window.__teanodeNextRef = next
-    return ref
-  }
-  switch (action) {
-    case 'snapshot': {
-      const maximum = args.max_characters || 20000
-      if (args.mode === 'text') {
-        const text = document.body ? document.body.innerText : ''
-        return { ok: true, data: { title: document.title, url: location.href, text: text.slice(0, maximum), truncated: text.length > maximum } }
-      }
-      const lines = []
-      let total = 0
-      const walk = (node, depth) => {
-        if (total > maximum) return
-        if (node.nodeType === Node.TEXT_NODE) {
-          const text = node.textContent.trim().replace(/\s+/g, ' ')
-          if (text) {
-            lines.push('  '.repeat(depth) + text.slice(0, 200))
-            total += text.length
-          }
-          return
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE) return
-        const tag = node.tagName.toLowerCase()
-        if (['script', 'style', 'noscript', 'svg', 'template', 'head'].includes(tag)) return
-        const style = window.getComputedStyle(node)
-        if (style.display === 'none' || style.visibility === 'hidden') return
-        if (interactive.has(tag) || (node.getAttribute('role') && /button|link|checkbox|radio|textbox|combobox|tab|menuitem/.test(node.getAttribute('role')))) {
-          const ref = refFor(node)
-          let description = node.getAttribute('role') || tag
-          if (tag === 'input') description = 'input(' + (node.type || 'text') + ')'
-          let extra = ''
-          if (tag === 'a' && node.getAttribute('href')) extra = ' href=' + node.getAttribute('href')
-          if ((tag === 'input' || tag === 'textarea') && node.value && !sensitive(node)) extra = ' value=' + JSON.stringify(node.value.slice(0, 80))
-          if (isSecretField(node) && node.value) extra = ' (filled, value not shown)'
-          else if (sensitive(node)) extra = ' (holds a secret)'
-          lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + ' "' + nameOf(node) + '"' + extra)
-          total += 40
-          if (tag === 'select') {
-            for (const option of node.options) lines.push('  '.repeat(depth + 1) + '- option ' + JSON.stringify(option.text) + (option.selected ? ' (selected)' : ''))
-          }
-          if (['a', 'button', 'label', 'option', 'select'].includes(tag)) return
-        } else if (/^h[1-6]$/.test(tag)) {
-          lines.push('  '.repeat(depth) + tag + ': ' + (node.innerText || '').trim().slice(0, 200))
-          return
-        }
-        for (const child of node.childNodes) walk(child, depth + (['div', 'span', 'section', 'main', 'article', 'body', 'html', 'p'].includes(tag) ? 0 : 1))
-      }
-      walk(document.documentElement, 0)
-      return { ok: true, data: { title: document.title, url: location.href, text: lines.join('\n'), truncated: total > maximum } }
-    }
-    case 'click': {
-      const node = find()
-      if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
-      node.scrollIntoView({ block: 'center' })
-      node.click()
-      await new Promise((resolve) => setTimeout(resolve, 300))
-      return { ok: true, data: { clicked: nameOf(node), now: { url: location.href, title: document.title } } }
-    }
-    case 'hover': {
-      const node = find()
-      if (!node) return { ok: false, error: 'nothing matches' }
-      node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-      return { ok: true, data: { hovered: nameOf(node) } }
-    }
-    case 'type': {
-      const node = find()
-      if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
-      node.focus()
-      if (args.clear_first) node.value = ''
-      if ('value' in node) {
-        node.value = (node.value || '') + (args.text || '')
-        node.dispatchEvent(new Event('input', { bubbles: true }))
-        node.dispatchEvent(new Event('change', { bubbles: true }))
-      } else if (node.isContentEditable) {
-        document.execCommand('insertText', false, args.text || '')
-      }
-      if (args.submit && node.form) {
-        node.form.requestSubmit ? node.form.requestSubmit() : node.form.submit()
-      }
-      return { ok: true, data: { typed: (args.text || '').length } }
-    }
-    case 'select': {
-      const node = find()
-      if (!node || node.tagName.toLowerCase() !== 'select') return { ok: false, error: 'not a select' }
-      let picked = null
-      for (const option of node.options) if (option.value === args.value || option.text.trim() === args.value) picked = option
-      if (!picked && typeof args.index === 'number') picked = node.options[args.index]
-      if (!picked) return { ok: false, error: 'no such option' }
-      node.value = picked.value
-      node.dispatchEvent(new Event('change', { bubbles: true }))
-      return { ok: true, data: { selected: picked.text } }
-    }
-    case 'press': {
-      const active = document.activeElement || document.body
-      for (const kind of ['keydown', 'keypress', 'keyup']) active.dispatchEvent(new KeyboardEvent(kind, { key: args.key, bubbles: true }))
-      if (args.key === 'Enter' && active.form) active.form.requestSubmit ? active.form.requestSubmit() : active.form.submit()
-      return { ok: true, data: { pressed: args.key } }
-    }
-    case 'scroll': {
-      const node = find() || window
-      const height = (node === window ? window.innerHeight : node.clientHeight) * (args.amount || 1) * (args.direction === 'up' ? -1 : 1)
-      node.scrollBy({ top: height })
-      return { ok: true, data: { scrolled: args.direction || 'down' } }
-    }
-    case 'wait': {
-      const timeout = args.timeout_ms || 30000
-      const started = Date.now()
-      while (Date.now() - started < timeout) {
-        if (args.for === 'selector' && document.querySelector(args.selector)) return { ok: true, data: { ended_by: 'selector' } }
-        if ((args.for === 'navigation' || !args.for) && document.readyState === 'complete') return { ok: true, data: { ended_by: 'load' } }
-        if (args.for === 'timeout') {
-        // Waiting out the whole time is the point of asking for it.
-        await new Promise((resolve) => setTimeout(resolve, Math.min(250, timeout)))
-        continue
-      }
-        await new Promise((resolve) => setTimeout(resolve, 250))
-      }
-      return { ok: true, data: { ended_by: 'timeout' } }
-    }
-    case 'evaluate': {
-      try {
-        const value = await Promise.resolve(new Function('return (' + args.expression + ')')())
-        return { ok: true, data: JSON.parse(JSON.stringify(value === undefined ? null : value)) }
-      } catch (error) {
-        return { ok: false, error: String(error) }
-      }
-    }
-    case 'fetch': {
-      // With the tab's own session: the primitive for "download my
-      // statement". Same origin only, so a page cannot be used to reach
-      // another site the person is signed into.
-      try {
-        const target = new URL(args.url || '', location.href)
-        if (target.origin !== location.origin) return { ok: false, error: 'fetch is limited to the attached page’s own site' }
-        // Following a redirect would take the person's cookies off this
-      // site: any open redirect on it would otherwise read any site they
-      // are signed into.
-      const response = await fetch(target.toString(), { credentials: 'include', redirect: 'manual' })
-      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
-        return { ok: false, error: 'that address redirects off this site, which is not followed with the page\'s session' }
-      }
-        const type = response.headers.get('content-type') || ''
-        if (/^text\/|json|xml/.test(type)) {
-          const text = await response.text()
-          return { ok: true, data: { status: response.status, content_type: type, text: text.slice(0, args.max_characters || 20000) } }
-        }
-        const bytes = await response.arrayBuffer()
-        if (bytes.byteLength > 5 * 1024 * 1024) return { ok: false, error: 'the file is over five megabytes' }
-        let binary = ''
-        for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte)
-        return { ok: true, data: { status: response.status, content_type: type, base64: btoa(binary), bytes: bytes.byteLength } }
-      } catch (error) {
-        return { ok: false, error: String(error) }
-      }
-    }
-    case 'storage': {
-      // Only the attached site's own storage, and never another's.
-      const entries = {}
-      for (let index = 0; index < localStorage.length; index++) {
-        const key = localStorage.key(index)
-        entries[key] = (localStorage.getItem(key) || '').slice(0, 500)
-      }
-      return { ok: true, data: { origin: location.origin, localStorage: entries } }
-    }
-  }
-  return { ok: false, error: 'unknown action ' + action }
 }
 
 // The button opens the agent's panel on the page: the dashboard's own
@@ -1209,8 +1048,18 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   }
 })
 
+// A tab committing a document is what ends the server's lock on a tab the
+// agent filled a password into. Only the main frame counts, and not a change
+// that keeps the document (history.pushState, a fragment).
+if (chrome.webNavigation) {
+  chrome.webNavigation.onCommitted.addListener((details) => {
+    if (documents.committed(details, isListed(details.tabId))) tellServer()
+  })
+}
+
 chrome.tabs.onRemoved.addListener((tabId) => {
   forgetCast(tabId)
+  documents.forget(tabId)
   if (opened.has(tabId)) tellSoon()
   if (opened.delete(tabId)) rememberOpened()
   // Their own tab, closed: it is detached, and the connection stays.
@@ -1227,3 +1076,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     }).catch(() => {})
   }
 })
+
+// act is exported for the tests, which drive it as the socket does.
+export { act }

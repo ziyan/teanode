@@ -39,7 +39,12 @@ DevTools methods that reach past this tab into the whole browser, such as
 every site's cookies. One thing is kept out of the conversation rather
 than out of your hands: a password already filled in on the page is
 marked in a snapshot and its value left out, because a value read into
-the conversation is a value stored and sent onward.
+the conversation is a value stored and sent onward. A password or a
+one-time code that the agent signs in with from Passwords goes further: the
+tab is locked against scripts, pictures and the network log until it
+loads a new page, no request body is ever kept, and the extension tells the
+server when a tab the agent can act in loads a new page (the
+`webNavigation` permission), which is what ends the lock.
 
 The agent may open tabs at addresses of its choosing and read them with
 your session, the way you could; that is what attaching is for, and it

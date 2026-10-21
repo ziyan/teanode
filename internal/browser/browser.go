@@ -148,6 +148,14 @@ type Context struct {
 	filled      FilledValues
 	filledWatch chan struct{}
 	isWatching  bool
+	// commitCount numbers the main frame's commits since the watch began,
+	// and currentEntryID and knownEntryIDs are the navigation history's
+	// entries, by which a new page is told from a move back or forward.
+	commitCount    int64
+	currentEntryID int
+	knownEntryIDs  map[int]bool
+	// historyWait, when set, replaces historyAfterCommitWait. Tests only.
+	historyWait time.Duration
 
 	// heldPasskey is the virtual authenticator a passkey sign-in put in the
 	// page; nil when there is none.
@@ -434,7 +442,11 @@ func (self *Context) elementCenter(ctx context.Context, where Target) (float64, 
   if (!node) return {ok: false};
   node.scrollIntoView({block: 'center', inline: 'center'});
   const rect = node.getBoundingClientRect();
-  const isSecret = node instanceof HTMLInputElement && (node.type.toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || ''));
+  let isSecret = false;
+  if (node instanceof HTMLInputElement) {
+    try { isSecret = !!(window.__teanodeFilled && window.__teanodeFilled.has(node)); } catch (error) { isSecret = true; }
+    isSecret = isSecret || node.type.toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || '');
+  }
   const name = (node.getAttribute && (node.getAttribute('aria-label') || node.innerText || (isSecret ? '' : node.value) || node.textContent) || '').trim().slice(0, 80);
   return {ok: true, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, name: node.tagName.toLowerCase() + (name ? ' "' + name + '"' : '')};
 })()`, element, where.Ref, where.Selector)

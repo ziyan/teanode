@@ -184,7 +184,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 			return err
 		}
 	}
-	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: turnMessage, Surface: surface, Headless: true, UsageKind: string(models.AgentJobSchedule)})
+	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: turnMessage, Surface: surface, Headless: true, IsPersonsSchedule: models.KnownWriter(schedule.WrittenBy) != models.WrittenByAgent, UsageKind: string(models.AgentJobSchedule)})
 	if err != nil {
 		return err
 	}

@@ -29,6 +29,21 @@ const noItemsWords = "The person has not let you use any item in Passwords. " + 
 // Discord, or into a chat room with other members.
 const elsewhereWords = "Passwords is used only in the TeaNode app and on the dashboard, and in the person's own scheduled runs, never in a chat with other people."
 
+// notTheirsWords is the whole answer of an action that reads or uses an item
+// in a run the person did not start: one an inbound mail, a chat app, a
+// webhook, a goal, a dream, a command left running or a schedule the agent
+// wrote for itself began. What such a run does is steered by content the
+// person did not write, and a login is the last thing to hand to that.
+const notTheirsWords = "Passwords is used only in a conversation with the person or in a schedule the person wrote themselves, not in a run that a mail, a message, a webhook, a goal, a dream or any other content started."
+
+// notAllowedWords is the answer when the person's account no longer holds the
+// permission to use Passwords.
+const notAllowedWords = "The person's account is not allowed to use Passwords, so no item can be used."
+
+// generateInSubagentWords is the answer of generate in a subagent, where a
+// password made up would come back to its parent as a tool result.
+const generateInSubagentWords = "A password made up here would appear in the conversation and go to the model's provider. Ask for one in a conversation with the person instead, and suggest they make it with the generator in Passwords and save it themselves, which no model sees."
+
 // subagentSurface is a run whose answer comes back to its parent as a tool
 // result, which the filing of conversations into memory cannot tell from any
 // other. A note read there would be filed.
@@ -49,10 +64,10 @@ func isOutsideOwnConversation(run tools.Run) bool {
 	return false
 }
 
-// withGate runs an action only in a run whose answer the person alone reads.
-// It does not ask whether anybody is watching, as Health does: the plan lets
-// the agent use an item in any run of the person's own agent, a scheduled one
-// included.
+// withGate runs an action only in a run whose answer the person alone reads
+// and which the person started (a conversation with them, or a schedule they
+// wrote). It does not ask whether anybody is watching, as Health does: a
+// schedule the person wrote may sign in, which is why they turn an item on.
 func withGate(run func(ctx context.Context, call *tools.Call, current tools.Run) (*tools.Result, error)) func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		current, err := tools.RunFrom(ctx)
@@ -62,8 +77,23 @@ func withGate(run func(ctx context.Context, call *tools.Call, current tools.Run)
 		if isOutsideOwnConversation(current) {
 			return tools.TextResult("%s", elsewhereWords), nil
 		}
+		if !tools.IsStartedByPerson(current) {
+			return tools.TextResult("%s", notTheirsWords), nil
+		}
 		return run(ctx, call, current)
 	}
+}
+
+// ownerMayUse says whether the person still holds the permission to use
+// Passwords, asked at the moment of use: a person whose role lost it, or whose
+// account was disabled, since the run began no longer has an agent that can
+// open an item.
+func ownerMayUse(tx db.Transaction, run tools.Run) (bool, error) {
+	permissions, err := tx.EffectivePermissions(run.Owner().ID)
+	if err != nil {
+		return false, err
+	}
+	return permissions != nil && permissions.Has(models.PermissionPasswordsUse), nil
 }
 
 // ownerKeyOf reads the public key the person's device published when they set
@@ -128,7 +158,16 @@ const unreadableWords = "the server could not open this item; the person can tur
 
 var runList = withGate(func(ctx context.Context, call *tools.Call, run tools.Run) (*tools.Result, error) {
 	var listed []listedItem
+	isRefused := false
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		isAllowed, err := ownerMayUse(tx, run)
+		if err != nil {
+			return err
+		}
+		if !isAllowed {
+			isRefused = true
+			return nil
+		}
 		items, err := tx.ListAgentUsablePasswordItems(run.Owner().ID)
 		if err != nil || len(items) == 0 {
 			return err
@@ -148,6 +187,9 @@ var runList = withGate(func(ctx context.Context, call *tools.Call, run tools.Run
 	})
 	if err != nil {
 		return nil, err
+	}
+	if isRefused {
+		return tools.TextResult("%s", notAllowedWords), nil
 	}
 	if len(listed) == 0 {
 		return tools.TextResult("%s", noItemsWords), nil
@@ -209,6 +251,14 @@ var runReadNote = withGate(func(ctx context.Context, call *tools.Call, run tools
 	var note *passwords.NoteFields
 	var refusal string
 	err = run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		isAllowed, err := ownerMayUse(tx, run)
+		if err != nil {
+			return err
+		}
+		if !isAllowed {
+			refusal = notAllowedWords
+			return nil
+		}
 		items, err := tx.ListAgentUsablePasswordItems(run.Owner().ID)
 		if err != nil {
 			return err
@@ -273,7 +323,21 @@ type generateArguments struct {
 	ShouldAvoidLookAlikes *bool `json:"should_avoid_look_alikes"`
 }
 
-var runGenerate = withGate(func(ctx context.Context, call *tools.Call, run tools.Run) (*tools.Result, error) {
+// runGenerate makes up a password. It is not tied to who started the run (a
+// random string is nobody's secret), but it is not made for a chat with other
+// people, and not in a subagent, whose answer comes back to its parent as a
+// tool result that is kept like any other.
+func runGenerate(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if isOutsideOwnConversation(run) {
+		return tools.TextResult("%s", elsewhereWords), nil
+	}
+	if run.Surface() == subagentSurface {
+		return tools.TextResult("%s", generateInSubagentWords), nil
+	}
 	arguments, err := tools.DecodeArguments[generateArguments](call)
 	if err != nil {
 		return nil, err
@@ -299,4 +363,4 @@ var runGenerate = withGate(func(ctx context.Context, call *tools.Call, run tools
 		return nil, err
 	}
 	return tools.JSONResult(map[string]any{"generated_password": password, "length_count": len([]rune(password))})
-})
+}

@@ -11,6 +11,7 @@
     "storage",
     "tabs",
     "tabGroups",
+    "webNavigation",
     "identity",
     "contextMenus",
     "alarms",

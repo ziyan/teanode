@@ -21,9 +21,13 @@
 // the owner decides what reaches a model's provider, as for Health. It answers
 // only where the person alone reads the answer, not over Telegram or Discord
 // and not in a chat room with other people, since a note read there would
-// reach them. Unlike Health it also works in a run nobody is watching, a
-// scheduled one included: signing in on a schedule is the reason to let the
-// agent use an item. Every read is recorded on the item and in the audit log.
+// reach them. Unlike Health it also works in a run nobody is watching, but only
+// one the person started: a schedule they wrote themselves (signing in on a
+// schedule is the reason to let the agent use an item), not a run that an
+// inbound mail, a webhook, a goal, a dream or a schedule the agent wrote for
+// itself began, since content the person did not write steers such a run.
+// Every read is recorded on the item and in the audit log. The person must
+// still hold the permission to use Passwords when an item is opened.
 //
 // Memory: when conversations are filed into memory, what a turn that read a
 // note said is left out, and the conversation's title and summary are not
@@ -59,7 +63,8 @@ func init() {
 			{
 				Name: "passwords_generate", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: passwordsPermissions,
 				Description: "Make up a new random password, 20 characters of letters, digits and symbols unless asked otherwise. " +
-					"It is not stored anywhere and is not attached to any item: give it to the person only if they asked for one, and it is theirs to save in Passwords.",
+					"It is not stored anywhere and is not attached to any item: give it to the person only if they asked for one, and it is theirs to save in Passwords. " +
+					"The password appears in this conversation, so it goes to the model's provider; for a login the person will keep, suggest they make one with the generator in Passwords and save it themselves, which no model sees. It is refused in a subagent.",
 				Parameters: tools.Object(map[string]any{
 					"length_count":             tools.IntegerProperty("how many characters, 20 by default, from 1 to 128 (at least one for each kind of character asked for)"),
 					"should_include_letters":   tools.BooleanProperty("lower and upper case letters; true by default"),
@@ -83,8 +88,8 @@ func init() {
 					"generate makes up a new random password for the person without storing it. " +
 					"To sign in to a site with a login, take its item_id from list and use the browser tool: fill_login (item_id, user_name_ref, password_ref) puts the user name and password into the page's fields, fill_one_time_code (item_id, ref) puts in the current one-time code, and passkey_sign_in (item_id, in the headless browser only) makes the passkey ready so that you click the site's sign-in button; " +
 					"they work only on a page whose host is one of the item's sites, and you never see the values. " +
-					"It works in a conversation with the person in the TeaNode app or on the dashboard, and in a scheduled or other run nobody is watching, " +
-					"but never over Telegram or Discord nor in a chat with other people, since what you read would reach them. " +
+					"It works in a conversation with the person in the TeaNode app or on the dashboard, and in a schedule the person wrote themselves, " +
+					"but never over Telegram or Discord nor in a chat with other people, since what you read would reach them, and never in a run that a mail, a message, a webhook, a goal or other content started. " +
 					"If list shows nothing, tell the person to open the item in Passwords and turn on \"Let the agent use this\", then ask again.",
 				Guidance: "A note in Passwords is among the most private text the person has. Read one only when the person asked for it or it plainly answers what they asked, say plainly that you used it, " +
 					"and do not copy it into other tools, notes, memory or messages unless they ask. " +

@@ -85,3 +85,38 @@ func TestIsRelyingPartyOfHost(test *testing.T) {
 		}
 	}
 }
+
+// The agent's sign-in matches the origin: the port too.
+func TestIsOriginOfSitesMatchesThePortToo(test *testing.T) {
+	cases := []struct {
+		name  string
+		sites []string
+		page  string
+		want  bool
+	}{
+		{"same host, default port", []string{"example.com"}, "https://example.com/sign-in", true},
+		{"www is ignored", []string{"www.example.com"}, "https://example.com/", true},
+		{"a site without a port is not another port", []string{"example.com"}, "https://example.com:8443/", false},
+		{"a site with a port matches only that port", []string{"https://example.com:8443"}, "https://example.com:8443/x", true},
+		{"a site with a port is not the default port", []string{"https://example.com:8443"}, "https://example.com/", false},
+		{"a site with a port is not another port", []string{"https://example.com:8443"}, "https://example.com:9443/", false},
+		{"the default port may be written", []string{"https://example.com:443"}, "https://example.com/", true},
+		{"a written default port matches a page that writes it", []string{"example.com"}, "https://example.com:443/", true},
+		{"a loopback page on http needs a site saved as http", []string{"localhost:8080"}, "http://localhost:8080/", false},
+		{"a loopback page on http with its port", []string{"http://localhost:8080"}, "http://localhost:8080/", true},
+		{"a loopback page on http, another port", []string{"http://localhost:8080"}, "http://localhost:9090/", false},
+		{"a loopback page on http, no port named", []string{"http://localhost"}, "http://localhost:8080/", false},
+		{"a loopback page on http, default port", []string{"http://localhost"}, "http://localhost/", true},
+		{"an unreadable port matches nothing", []string{"https://example.com:99999"}, "https://example.com/", false},
+		{"another host", []string{"example.com"}, "https://example.com.evil.test/", false},
+		{"an address", []string{"[::1]:8443"}, "https://[::1]:8443/", true},
+	}
+	for _, each := range cases {
+		if got := IsOriginOfSites(each.sites, each.page); got != each.want {
+			test.Errorf("%s: IsOriginOfSites(%v, %q) = %v", each.name, each.sites, each.page, got)
+		}
+	}
+	if EffectivePort("https://example.com/") != 443 || EffectivePort("http://example.com/") != 80 || EffectivePort("https://example.com:8443/x") != 8443 {
+		test.Error("EffectivePort")
+	}
+}

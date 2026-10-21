@@ -17,10 +17,18 @@
     return !(rect.width === 0 && rect.height === 0 && element.childElementCount === 0);
   }
   // A field that holds a secret: a password, or a code the page asked for as
-  // one. Its value is never read into a snapshot, whoever put it there, so a
+  // one, or any input the agent filled a password or a code into, whatever its
+  // type is by now (a show-password button turns a password field into a text
+  // one). Its value is never read into a snapshot, whoever put it there, so a
   // password filled in for the person is not sent to the model afterwards.
+  // An input that cannot be told is taken to be one.
   function isSecretField(element) {
     if (!(element instanceof HTMLInputElement)) return false;
+    try {
+      if (window.__teanodeFilled && window.__teanodeFilled.has(element)) return true;
+    } catch (error) {
+      return true;
+    }
     return (element.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(element.getAttribute('autocomplete') || '');
   }
   function nameOf(element) {
@@ -72,7 +80,13 @@
       const name = nameOf(node);
       let extra = '';
       if (tag === 'a' && node.href) extra = ' href=' + node.getAttribute('href');
-      if ((tag === 'input' || tag === 'textarea') && node.value) extra = isSecretField(node) ? ' (filled, value not shown)' : ' value=' + JSON.stringify(node.value.slice(0, 80));
+      if ((tag === 'input' || tag === 'textarea') && node.value) {
+        // A value too long to show whole is not shown at all: its first
+        // characters would be a part of whatever it is.
+        if (isSecretField(node)) extra = ' (filled, value not shown)';
+        else if (node.value.length > 80) extra = ' (long value, not shown)';
+        else extra = ' value=' + JSON.stringify(node.value);
+      }
       if (tag === 'input' && (node.type === 'checkbox' || node.type === 'radio')) extra = node.checked ? ' checked' : '';
       if (tag === 'select') extra = ' value=' + JSON.stringify(node.value);
       lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + (name ? ' "' + name + '"' : '') + extra);

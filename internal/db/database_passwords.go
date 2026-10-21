@@ -132,7 +132,8 @@ type PasswordsOperation interface {
 	SetPasswordItemUsableByAgent(ownerUserId, itemId string, isUsable bool, itemKeyByAgentKey string) (*models.PasswordItem, error)
 
 	// ListAgentUsablePasswordItems are the owner's items they let the agent
-	// use, not deleted, with the item key sealed for the agent key.
+	// use, not deleted, with the item key sealed for the agent key. None when
+	// the owner's account is disabled or no longer holds passwords:use.
 	ListAgentUsablePasswordItems(ownerUserId string) ([]*models.PasswordItem, error)
 
 	// RecordPasswordItemAgentUse notes that the agent used the item on a host,
@@ -1511,6 +1512,15 @@ func (self *transaction) SetPasswordItemUsableByAgent(ownerUserId, itemId string
 }
 
 func (self *transaction) ListAgentUsablePasswordItems(ownerUserId string) ([]*models.PasswordItem, error) {
+	// An owner whose account was disabled, or who no longer holds
+	// passwords:use, has no item the agent can use, whatever is switched on.
+	mayUse, err := self.passwordPeopleWhoMayUse([]string{ownerUserId})
+	if err != nil {
+		return nil, err
+	}
+	if len(mayUse) == 0 {
+		return []*models.PasswordItem{}, nil
+	}
 	var rows []passwordItemModel
 	if err := self.tx.Where("\"owner_user_id\" = ? AND \"is_usable_by_agent\" AND \"deleted_at\" IS NULL", ownerUserId).
 		Order("\"created_at\" ASC, \"id\" ASC").Find(&rows).Error; err != nil {

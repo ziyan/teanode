@@ -44,6 +44,8 @@ func (self *fakeLink) IsTakenOver() bool             { return false }
 func (self *fakeLink) IsWatchable() bool             { return true }
 func (self *fakeLink) Filled() *browser.FilledValues { return &self.filled }
 func (self *fakeLink) CanFillPasswords() bool        { return true }
+func (self *fakeLink) CurrentTabID() string          { return "" }
+func (self *fakeLink) NoteCurrentTab(string)         {}
 
 func (self *fakeLink) actionsAsked() []string {
 	self.mutex.Lock()

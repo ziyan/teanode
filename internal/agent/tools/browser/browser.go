@@ -57,7 +57,7 @@ func init() {
 					"forget":         tools.BooleanProperty("for cdp_events: clear what has been kept after reading it"),
 					"steps":          tools.ArrayProperty("for steps: up to fifty of the above, run in order, stopping at the first failure", map[string]any{"type": "object"}),
 				}, "action"),
-				Guidance: "browser: navigate first, then snapshot to see the page with its refs, then act by ref. Snapshot again after anything that changes the page. Typing a password or a card number into the person's own tab is theirs to ask for and is not refused; say what you are about to do first, and never read one back into the conversation. To sign in with a saved login, call passwords list for the item_id, take a snapshot, then fill_login with the refs of the user name and password fields (and fill_one_time_code for a code field); you never see the values and a snapshot leaves a filled password out. If the item is not listed, the person has not let you use it: tell them to turn on \"Let the agent use this\" on it.",
+				Guidance: "browser: navigate first, then snapshot to see the page with its refs, then act by ref. Snapshot again after anything that changes the page. Typing a password or a card number into the person's own tab is theirs to ask for and is not refused; say what you are about to do first, and never read one back into the conversation. To sign in with a saved login, call passwords list for the item_id, take a snapshot, then fill_login with the refs of the user name and password fields (and fill_one_time_code for a code field); you never see the values and a snapshot leaves a filled password out. A page you filled a password or code into is locked: evaluate, screenshot, storage, cdp_events and the DevTools commands that read a page are refused on it until that tab loads a new page (navigate to one, or click through to the next), so click and type the rest of the sign-in. If the item is not listed, the person has not let you use it: tell them to turn on \"Let the agent use this\" on it.",
 				Preview: func(arguments json.RawMessage) string {
 					var call browserArguments
 					_ = json.Unmarshal(arguments, &call)
@@ -97,6 +97,13 @@ func init() {
 						return tools.RiskWrite
 					}
 					return tools.RiskRead
+				},
+				// Signing in with a login is for a person who may use
+				// Passwords: the verbs are not offered to one who may not.
+				ActionRequires: map[string][]models.Permission{
+					"fill_login":         {models.PermissionPasswordsUse},
+					"fill_one_time_code": {models.PermissionPasswordsUse},
+					"passkey_sign_in":    {models.PermissionPasswordsUse},
 				},
 				Run:     runBrowser,
 				Overlay: browserOverlay,
@@ -164,6 +171,12 @@ type browserArguments struct {
 	Params map[string]any `json:"params"`
 	Limit  int            `json:"limit"`
 	Forget bool           `json:"forget"`
+
+	// ExpectedTab is the tab this call means, set by the server when it is
+	// sent to the person's browser and never by the model: the extension
+	// refuses the call when the tab the actions go to is another, so a call
+	// checked against the lock on one tab is never done in another.
+	ExpectedTab string `json:"expectedTab,omitempty"`
 }
 
 func runBrowser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -236,10 +249,11 @@ func runBrowser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	// A page the agent filled a password into is not asked to run a script
-	// (the one way to read a field's value back) until it moves on, and
-	// nothing the page says repeats a value it was given.
-	if arguments.Action == "evaluate" && page.Filled().IsLocked() {
-		return nil, refusal(scriptsLockedWords)
+	// or photographed (the ways to read a field's value back) until it
+	// loads a new document, and nothing the page says repeats a value it was
+	// given.
+	if err := refuseWhileLocked(page.Filled(), "", &arguments); err != nil {
+		return nil, err
 	}
 	result, err := runBrowserOnPage(ctx, run, page, &arguments)
 	return scrubbed(page.Filled(), result, err)
@@ -272,8 +286,12 @@ func runBrowserOnPage(ctx context.Context, run tools.Run, page *devtools.Context
 		if err != nil {
 			return nil, err
 		}
-		text, nextOffset := part.cut(snapshot.Text, snapshot.Truncated)
-		return untrusted(map[string]any{"title": snapshot.Title, "url": snapshot.URL, "text": text, "next_offset": nextOffset}, "read "+snapshot.URL)
+		// What was filled is hidden from the whole page before it is cut
+		// into parts: a value cut by a part's edge is in no part whole,
+		// and the parts together would give it back.
+		filled := page.Filled()
+		text, nextOffset := part.cut(filled.Scrub(snapshot.Text), snapshot.Truncated)
+		return untrusted(map[string]any{"title": filled.Scrub(snapshot.Title), "url": filled.Scrub(snapshot.URL), "text": text, "next_offset": nextOffset}, "read "+filled.Scrub(snapshot.URL))
 	case "screenshot":
 		image, err := page.Screenshot(ctx, arguments.FullPage)
 		if err != nil {
@@ -346,7 +364,9 @@ func runBrowserOnPage(ctx context.Context, run tools.Run, page *devtools.Context
 		if attached == nil {
 			return untrusted(map[string]any{"headless": true, "tab": nil}, "no tab is attached")
 		}
-		return untrusted(map[string]any{"headless": true, "tab": map[string]any{"title": attached.Title(), "url": attached.URL()}}, "a tab is attached")
+		// The person's tab is not the headless page, and what was filled
+		// into it is hidden here too: its address can carry a form's value.
+		return untrusted(map[string]any{"headless": true, "tab": map[string]any{"title": attached.Filled().Scrub(attached.Title()), "url": attached.Filled().Scrub(attached.URL())}}, "a tab is attached")
 	}
 	return nil, fmt.Errorf("%q is not an action of browser", arguments.Action)
 }
@@ -366,35 +386,30 @@ func browserOverlay(ctx context.Context) string {
 	if !attached.HasTab() {
 		return "<tab>\nThe person's own browser is connected through the extension, with no tab of theirs attached. Browse for them there: open a page with target tab and action open, and it opens in their browser, in a TeaNode tab group, signed in as they are, and your actions go to it. Anything they will want to see or carry on with -- a cart, a booking, a form, an account, a search they asked you to do -- is done there: the headless browser is a separate session they never see, and a cart filled in it is not theirs. The headless browser is only for a quick read of a public page they did not ask to see. Say which page you are opening. What you do there is done as them: say what you are about to do before you do something they cannot undo, and never place an order, pay or send anything without their word.\n</tab>"
 	}
-	return fmt.Sprintf("<tab>\nThe person has attached their own browser tab: %q at %s. It carries their session; use target tab rather than the headless browser while it is attached, which is a separate session they never see. You may open more tabs beside it (open), which sit in a TeaNode group on their screen; tabs lists them, switch chooses which one your actions go to, close closes one you opened. It is signed in as they are, so what you do there is done as them: say what you are about to do before you do something they cannot undo. The DevTools protocol is there too (cdp): real mouse and keyboard events, and what the page asks the network for.\n</tab>", attached.Title(), attached.URL())
+	title, address := attached.Filled().Scrub(attached.Title()), attached.Filled().Scrub(attached.URL())
+	return fmt.Sprintf("<tab>\nThe person has attached their own browser tab: %q at %s. It carries their session; use target tab rather than the headless browser while it is attached, which is a separate session they never see. You may open more tabs beside it (open), which sit in a TeaNode group on their screen; tabs lists them, switch chooses which one your actions go to, close closes one you opened. It is signed in as they are, so what you do there is done as them: say what you are about to do before you do something they cannot undo. The DevTools protocol is there too (cdp): real mouse and keyboard events, and what the page asks the network for.\n</tab>", title, address)
 }
 
 // runBrowserOnTab carries a browser action to the person's tab. A tab the
-// agent filled a password into is not asked to run a script or a DevTools
-// command until it moves on, and nothing it answers repeats a value it was
-// given.
+// agent filled a password into is locked: it is not asked to run a script, to
+// take a picture or to answer a DevTools command that could read a field back,
+// until that tab commits a new document (see devtools.FilledValues), and
+// nothing it answers repeats a value it was given. Going to another tab, or
+// opening one, does not unlock it.
 func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArguments) (*tools.Result, error) {
 	tab := tabOf(run)
 	if tab == nil {
 		return runBrowserOnTabChecked(ctx, run, arguments)
 	}
 	filled := tab.Filled()
-	filled.UnlockIfMoved(tab.URL())
-	if (arguments.Action == "evaluate" || arguments.Action == "cdp") && filled.IsLocked() {
-		return nil, refusal(scriptsLockedWords)
+	if err := refuseWhileLocked(filled, tab.CurrentTabID(), arguments); err != nil {
+		return nil, err
 	}
 	result, err := runBrowserOnTabChecked(ctx, run, arguments)
-	// Going to a page, or back, or to another tab, is a new document.
-	if err == nil {
-		switch arguments.Action {
-		case "navigate", "open", "back", "switch":
-			filled.Unlock()
-		}
-	}
 	return scrubbed(filled, result, err)
 }
 
-// runBrowserOnTabChecked is runBrowserOnTab after the lock on scripts.
+// runBrowserOnTabChecked is runBrowserOnTab after the lock.
 func runBrowserOnTabChecked(ctx context.Context, run tools.Run, arguments *browserArguments) (*tools.Result, error) {
 	// The tab is signed in as the person: a click there can send their mail
 	// or pay with their card, and no card can be shown to an empty room to
@@ -432,13 +447,21 @@ func runBrowserOnTabChecked(ctx context.Context, run tools.Run, arguments *brows
 	if arguments.Action == "snapshot" {
 		arguments.MaxCharacters = part.readCharacters()
 	}
+	// The call is made for the tab the server checked the lock of, and the
+	// extension refuses it if the actions go to another by then.
+	arguments.ExpectedTab = ""
+	if tabGuardedActions[arguments.Action] {
+		arguments.ExpectedTab = tab.CurrentTabID()
+	}
 	data, err := askTab(ctx, run, tab, arguments.Action, arguments)
 	if err != nil {
 		return nil, err
 	}
+	noteCurrentTab(tab, arguments.Action, data)
 	switch arguments.Action {
 	case "snapshot":
-		data = part.cutTabAnswer(data)
+		// Hidden from the whole page before it is cut into parts.
+		data = part.cutTabAnswer(scrubbedAnswer(tab.Filled(), data))
 	case "tabs":
 		data = tabsSaidWhose(data)
 	}

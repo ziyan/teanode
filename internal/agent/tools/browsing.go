@@ -58,10 +58,16 @@ type Tab interface {
 	// CanFillPasswords says the extension can fill a login, a one-time code
 	// or a passkey that the server builds the arguments for (protocol 5).
 	CanFillPasswords() bool
-	// Filled is what the agent's sign-in put into this tab, kept in memory
-	// for as long as the connection lives: the values to hide from the model
-	// and whether scripts may run on the tab.
+	// Filled is what the agent's sign-in put into the person's browser, kept
+	// in memory: the values to hide from the model and which tabs are
+	// locked against what could read a field back.
 	Filled() *browser.FilledValues
+	// CurrentTabID is the number the extension gave the tab the actions go
+	// to, or empty when it did not say. A lock is kept for a tab by it.
+	CurrentTabID() string
+	// NoteCurrentTab records that an answer of the extension said the
+	// actions now go to this tab, without waiting for its next update.
+	NoteCurrentTab(tab string)
 }
 
 // TakeOverAsker is a turn that can ask the person to take their browser tab

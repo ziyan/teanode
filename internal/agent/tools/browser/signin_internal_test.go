@@ -45,7 +45,7 @@ type world struct {
 	ada      *models.User
 	ben      *models.User
 
-	grantedLogin, ungrantedLogin, card, othersLogin, noPasskeyLogin, grantedNote string
+	grantedLogin, ungrantedLogin, card, othersLogin, noPasskeyLogin, grantedNote, portedLogin string
 
 	passkeyCredential, passkeyPrivateKey, passkeyUserHandle []byte
 }
@@ -123,6 +123,9 @@ func newWorld(test *testing.T) *world {
 		if found.ben, err = tx.CreateUser(&models.User{Username: "ben", Name: "Ben Example"}); err != nil {
 			return err
 		}
+		for _, person := range []*models.User{found.ada, found.ben} {
+			dbtest.GrantPermission(test, tx, person.ID, models.PermissionPasswordsUse)
+		}
 		for person, keyPair := range map[*models.User]*passwords.KeyPair{found.ada: adaKeyPair, found.ben: benKeyPair} {
 			if _, err := tx.CreatePasswordsSetup(&models.PasswordSetup{
 				UserID: person.ID, AccountKeyByPassphrase: "a", PassphraseSalt: "c2FsdA==", PassphraseIterationCount: 600000, PassphraseProofHash: "b",
@@ -157,6 +160,10 @@ func newWorld(test *testing.T) *world {
 			Name: "Plain login", UserName: "ada", Password: "plain-password", Sites: []string{"https://shop.example.test"},
 		}, true)
 		found.grantedNote = seal(tx, found.ada, adaKeyPair, 7, models.PasswordItemKindNote, passwords.NoteFields{Name: "Shed", Text: "padlock"}, true)
+		found.portedLogin = seal(tx, found.ada, adaKeyPair, 8, models.PasswordItemKindLogin, passwords.LoginFields{
+			Name: "Ported shop", UserName: "ada.ported", Password: inventedPassword, Sites: []string{"https://shop.example.test:8443"},
+			OneTimeCodeURI: "otpauth://totp/Example:ada?secret=" + inventedOneTimeSecret,
+		}, true)
 		return nil
 	}); err != nil {
 		test.Fatal(err)
@@ -178,7 +185,13 @@ type fakeTab struct {
 	canFillPasswords bool
 	failure          string
 	answer           string
-	filled           devtools.FilledValues
+	// fillAnswer is what the extension says to a fill; the default says only
+	// that it filled.
+	fillAnswer string
+	// tabID is the number of the tab the actions go to, as the server last
+	// heard it.
+	tabID  string
+	filled devtools.FilledValues
 
 	mutex sync.Mutex
 	asked []askedOfTab
@@ -200,6 +213,9 @@ func (self *fakeTab) Ask(_ context.Context, action string, arguments any) (json.
 	if self.answer != "" && action != "fill_login" && action != "fill_one_time_code" {
 		return json.RawMessage(self.answer), nil
 	}
+	if self.fillAnswer != "" && (action == "fill_login" || action == "fill_one_time_code") {
+		return json.RawMessage(self.fillAnswer), nil
+	}
 	return json.RawMessage(`{"isFilled":true}`), nil
 }
 func (self *fakeTab) Title() string                  { return "A shop" }
@@ -209,6 +225,8 @@ func (self *fakeTab) IsTakenOver() bool              { return self.isTakenOver }
 func (self *fakeTab) IsWatchable() bool              { return true }
 func (self *fakeTab) Filled() *devtools.FilledValues { return &self.filled }
 func (self *fakeTab) CanFillPasswords() bool         { return self.canFillPasswords }
+func (self *fakeTab) CurrentTabID() string           { return self.tabID }
+func (self *fakeTab) NoteCurrentTab(tab string)      { self.tabID = tab }
 
 func (self *fakeTab) actions() []askedOfTab {
 	self.mutex.Lock()
@@ -225,8 +243,10 @@ type signInRun struct {
 	surface    string
 	isHeadless bool
 	isChat     bool
-	tab        *fakeTab
-	page       *devtools.Context
+	// isStartedByOthers is a run that content began, not the person.
+	isStartedByOthers bool
+	tab               *fakeTab
+	page              *devtools.Context
 }
 
 func (self *signInRun) Owner() *models.User     { return self.owner }
@@ -234,6 +254,7 @@ func (self *signInRun) Database() db.Database   { return self.database }
 func (self *signInRun) Surface() string         { return self.surface }
 func (self *signInRun) Headless() bool          { return self.isHeadless }
 func (self *signInRun) IsAnsweringInChat() bool { return self.isChat }
+func (self *signInRun) IsStartedByPerson() bool { return !self.isStartedByOthers }
 func (self *signInRun) Agent() *models.Agent    { return &models.Agent{ID: "agent-1"} }
 func (self *signInRun) TabsAllowed() bool       { return true }
 func (self *signInRun) AttachedTab() tools.Tab {
@@ -293,20 +314,46 @@ func (self *fakeChrome) sent(method string) []string {
 	return found
 }
 
-// typed is the text inserted into the page so far, in order.
-func (self *fakeChrome) typed(test *testing.T) []string {
+// fillCall is one fill the page was sent: the script's arguments.
+type fillCall struct {
+	Host     string
+	Port     int
+	Ref      int
+	Kind     string
+	Text     string
+	IsSecret bool
+}
+
+// fills are the fills the page was sent so far, in order. A fill is a single
+// script that checks the page and sets the value, so the text is an argument
+// of that script and is never sent by a command of its own.
+func (self *fakeChrome) fills(test *testing.T) []fillCall {
 	test.Helper()
-	var texts []string
-	for _, parameters := range self.sent("Input.insertText") {
-		var inserted struct {
-			Text string `json:"text"`
+	var calls []fillCall
+	for _, parameters := range self.sent("Runtime.evaluate") {
+		var evaluated struct {
+			Expression string `json:"expression"`
 		}
-		if err := json.Unmarshal([]byte(parameters), &inserted); err != nil {
+		if err := json.Unmarshal([]byte(parameters), &evaluated); err != nil {
 			test.Fatal(err)
 		}
-		texts = append(texts, inserted.Text)
+		if !strings.Contains(evaluated.Expression, "isFilled") {
+			continue
+		}
+		start := strings.LastIndex(evaluated.Expression, "\n})(")
+		if start < 0 {
+			test.Fatalf("a fill script without arguments: %s", evaluated.Expression)
+		}
+		var arguments []any
+		if err := json.Unmarshal([]byte("["+strings.TrimSuffix(evaluated.Expression[start+len("\n})("):], ")")+"]"), &arguments); err != nil || len(arguments) != 6 {
+			test.Fatalf("the arguments of a fill: %v %v", arguments, err)
+		}
+		calls = append(calls, fillCall{
+			Host: arguments[0].(string), Port: int(arguments[1].(float64)), Ref: int(arguments[2].(float64)),
+			Kind: arguments[3].(string), Text: arguments[4].(string), IsSecret: arguments[5].(bool),
+		})
 	}
-	return texts
+	return calls
 }
 
 // emit sends the page's event to the tool, as Chrome does.
@@ -360,10 +407,12 @@ func (self *fakeChrome) pageOf(test *testing.T) *devtools.Context {
 			case "Target.attachToTarget":
 				result = map[string]any{"sessionId": "session-1"}
 			case "Page.getNavigationHistory":
-				result = map[string]any{"currentIndex": 1, "entries": []map[string]any{{"url": "about:blank"}, {"url": address}}}
+				result = map[string]any{"currentIndex": 1, "entries": []map[string]any{{"id": 1, "url": "about:blank"}, {"id": 2, "url": address}}}
+			case "Page.getFrameTree":
+				result = map[string]any{"frameTree": map[string]any{"frame": map[string]any{"id": "main", "loaderId": "loader-1", "url": address}}}
 			case "Runtime.evaluate":
-				value := any(map[string]any{"isFocused": true, "problem": ""})
-				if self.evaluated != nil && !strings.Contains(string(incoming.Params), "isFocused") {
+				value := any(map[string]any{"isFilled": true, "problem": ""})
+				if self.evaluated != nil && !strings.Contains(string(incoming.Params), "isFilled") {
 					value = self.evaluated
 				}
 				result = map[string]any{"result": map[string]any{"type": "object", "value": value}}
@@ -475,8 +524,8 @@ func TestSignInRefusesItemsTheAgentMayNotUse(test *testing.T) {
 	if asked := tabRun.tab.actions(); len(asked) != 0 {
 		test.Fatalf("the tab was asked %v", asked)
 	}
-	if inserted := chrome.sent("Input.insertText"); len(inserted) != 0 {
-		test.Fatalf("the page was typed into: %v", inserted)
+	if filled := chrome.fills(test); len(filled) != 0 {
+		test.Fatalf("the page was filled: %v", filled)
 	}
 	for _, itemId := range []string{found.ungrantedLogin, found.card, found.grantedNote, found.othersLogin} {
 		if hosts := found.usedOn(test, itemId); len(hosts) != 0 {
@@ -511,8 +560,8 @@ func TestSignInRefusesAHostThatIsNotTheItemsSite(test *testing.T) {
 		if asked := tabRun.tab.actions(); len(asked) != 0 {
 			test.Fatalf("%s: the tab was asked %v", address, asked)
 		}
-		if inserted := chrome.sent("Input.insertText"); len(inserted) != 0 {
-			test.Fatalf("%s: the page was typed into: %v", address, inserted)
+		if filled := chrome.fills(test); len(filled) != 0 {
+			test.Fatalf("%s: the page was filled: %v", address, filled)
 		}
 	}
 	if hosts := found.usedOn(test, found.grantedLogin); len(hosts) != 0 {
@@ -574,7 +623,7 @@ func TestSignInActionsAreWritingActions(test *testing.T) {
 }
 
 // Over Telegram or Discord and in a chat with other people nothing is filled;
-// a scheduled run is allowed.
+// a schedule the person wrote is allowed.
 func TestSignInIsRefusedWhereOthersReadAndAllowedOnASchedule(test *testing.T) {
 	found := newWorld(test)
 	for _, surface := range []string{"telegram", "discord"} {
@@ -594,8 +643,8 @@ func TestSignInIsRefusedWhereOthersReadAndAllowedOnASchedule(test *testing.T) {
 	if _, err := browse(scheduled, fillLogin(found.grantedLogin)); err != nil {
 		test.Fatalf("a scheduled run signs in: %s", err)
 	}
-	if inserted := chrome.sent("Input.insertText"); len(inserted) != 2 {
-		test.Fatalf("typed %v", inserted)
+	if filled := chrome.fills(test); len(filled) != 2 {
+		test.Fatalf("filled %v", filled)
 	}
 }
 
@@ -624,7 +673,7 @@ func TestSignInInTheTabSendsTheContractArguments(test *testing.T) {
 	if err := json.Unmarshal([]byte(asked[0].arguments), &sent); err != nil {
 		test.Fatal(err)
 	}
-	wanted := map[string]any{"host": "shop.example.test", "userNameRef": float64(3), "passwordRef": float64(4), "userName": inventedUserName, "password": inventedPassword}
+	wanted := map[string]any{"host": "shop.example.test", "port": float64(443), "userNameRef": float64(3), "passwordRef": float64(4), "userName": inventedUserName, "password": inventedPassword}
 	if fmt.Sprint(sent) != fmt.Sprint(wanted) {
 		test.Fatalf("the extension was sent %v, wanted %v", sent, wanted)
 	}
@@ -663,13 +712,14 @@ func TestSignInWithAOneTimeCodeInTheTab(test *testing.T) {
 	}
 	var sent struct {
 		Host string `json:"host"`
+		Port int    `json:"port"`
 		Ref  int    `json:"ref"`
 		Code string `json:"code"`
 	}
 	if err := json.Unmarshal([]byte(asked[0].arguments), &sent); err != nil {
 		test.Fatal(err)
 	}
-	if sent.Host != "shop.example.test" || sent.Ref != 6 || (sent.Code != before && sent.Code != after) {
+	if sent.Host != "shop.example.test" || sent.Port != 443 || sent.Ref != 6 || (sent.Code != before && sent.Code != after) {
 		test.Fatalf("the extension was sent %+v, wanted the code %s or %s", sent, before, after)
 	}
 	if strings.Contains(result.Content, sent.Code) {
@@ -710,10 +760,10 @@ func TestSignInDoesNotPassOnAValueTheExtensionRepeats(test *testing.T) {
 	}
 }
 
-// In the headless browser each value is inserted into the field the ref names
-// after the page's own host is checked in the same script; the answer carries
-// no value.
-func TestSignInInTheHeadlessBrowserTypesIntoTheFields(test *testing.T) {
+// In the headless browser each value is put into the field the ref names by one
+// script that also checks the page's host and port and the kind of field; the
+// answer carries no value.
+func TestSignInInTheHeadlessBrowserFillsTheFields(test *testing.T) {
 	found := newWorld(test)
 	run, chrome := found.headlessRun(test, "https://shop.example.test/sign-in")
 	result, err := browse(run, fillLogin(found.grantedLogin))
@@ -724,23 +774,17 @@ func TestSignInInTheHeadlessBrowserTypesIntoTheFields(test *testing.T) {
 		test.Fatalf("the answer: %q", result.Content)
 	}
 	assertNoSecret(test, result.Content)
-	inserted := chrome.typed(test)
-	if len(inserted) != 2 || inserted[0] != inventedUserName || inserted[1] != inventedPassword {
-		test.Fatalf("typed %v", inserted)
+	fills := chrome.fills(test)
+	wanted := []fillCall{
+		{Host: "shop.example.test", Port: 443, Ref: 3, Kind: "userName", Text: inventedUserName, IsSecret: false},
+		{Host: "shop.example.test", Port: 443, Ref: 4, Kind: "password", Text: inventedPassword, IsSecret: true},
 	}
-	// Each field is found by its ref, and the script checks the host the page
-	// is on at that moment.
-	var scripts int
-	for _, parameters := range chrome.sent("Runtime.evaluate") {
-		if strings.Contains(parameters, "isFocused") {
-			scripts++
-			if !strings.Contains(parameters, `shop.example.test`) || strings.Contains(parameters, inventedPassword) {
-				test.Fatalf("the script: %s", parameters)
-			}
-		}
+	if fmt.Sprint(fills) != fmt.Sprint(wanted) {
+		test.Fatalf("filled %v, wanted %v", fills, wanted)
 	}
-	if scripts != 2 {
-		test.Fatalf("%d scripts prepared a field", scripts)
+	// A value is never typed by a command of its own.
+	if len(chrome.sent("Input.insertText")) != 0 || len(chrome.sent("Input.dispatchKeyEvent")) != 0 {
+		test.Fatal("a value was typed")
 	}
 	if hosts := found.usedOn(test, found.grantedLogin); len(hosts) != 1 || hosts[0] != "shop.example.test" {
 		test.Fatalf("the use was recorded for %v", hosts)
@@ -752,9 +796,9 @@ func TestSignInInTheHeadlessBrowserTypesIntoTheFields(test *testing.T) {
 	if err != nil || result.Content != "Filled the one-time code for shop.example.test from Example shop" {
 		test.Fatalf("a code: %v %v", result, err)
 	}
-	inserted = chrome.typed(test)
-	if code := inserted[len(inserted)-1]; code != before && code != after {
-		test.Fatalf("typed %s", code)
+	fills = chrome.fills(test)
+	if code := fills[len(fills)-1]; code.Kind != "oneTimeCode" || !code.IsSecret || code.Ref != 6 || (code.Text != before && code.Text != after) {
+		test.Fatalf("filled %+v", code)
 	}
 	assertNoSecret(test, result.Content)
 }
@@ -879,13 +923,15 @@ func TestSignInActionsAreWritesInTheToolDefinition(test *testing.T) {
 	}
 }
 
-// After a password is filled into the person's tab, scripts and raw DevTools
-// commands are refused until the tab moves on; other actions still work.
-func TestAFilledTabRefusesScriptsUntilItMovesOn(test *testing.T) {
+// After a password is filled into the person's tab, scripts, pictures and raw
+// DevTools commands are refused on that tab until it commits a new document;
+// other actions still work.
+func TestAFilledTabRefusesScriptsUntilItCommitsANewDocument(test *testing.T) {
 	found := newWorld(test)
 	run := found.tabRun(shopAddress)
+	run.tab.tabID = "7"
+	run.tab.fillAnswer = `{"isFilled":true,"tab":7,"documentId":"doc-1","commitCount":3}`
 	run.tab.answer = `{"result":"fine"}`
-	const locked = "Scripts cannot run on a page TeaNode filled a password into, until it moves on to another page."
 	evaluate := `{"action":"evaluate","expression":"1+1"}`
 	cdp := `{"action":"cdp","method":"Runtime.evaluate","params":{"expression":"1"}}`
 
@@ -897,11 +943,11 @@ func TestAFilledTabRefusesScriptsUntilItMovesOn(test *testing.T) {
 		test.Fatal(err)
 	}
 	asked := len(run.tab.actions())
-	mustRefuse(test, run, evaluate, locked)
-	mustRefuse(test, run, cdp, locked)
+	mustRefuse(test, run, evaluate, lockedWords)
+	mustRefuse(test, run, cdp, lockedWords)
 	// A step reports its refusal in the answer, which stops the steps.
 	stepped, err := browse(run, `{"action":"steps","steps":[{"action":"evaluate","expression":"document.title"}]}`)
-	if err != nil || !strings.Contains(stepped.Content, locked) {
+	if err != nil || !strings.Contains(stepped.Content, lockedWords) {
 		test.Fatalf("a script in steps: %v %v", stepped, err)
 	}
 	if len(run.tab.actions()) != asked {
@@ -913,34 +959,32 @@ func TestAFilledTabRefusesScriptsUntilItMovesOn(test *testing.T) {
 			test.Fatalf("%s on a locked tab: %s", arguments, err)
 		}
 	}
-	// The same document at another fragment is not a new one.
+	// A change of the address that keeps the document (a fragment, pushState)
+	// is not a new document.
 	run.tab.address = shopAddress + "#password"
-	mustRefuse(test, run, evaluate, locked)
-	// The tab reporting another page unlocks it.
-	run.tab.address = "https://shop.example.test/account"
+	mustRefuse(test, run, evaluate, lockedWords)
+	run.tab.address = "https://shop.example.test/pushed"
+	mustRefuse(test, run, evaluate, lockedWords)
+	// Going to a page with the tool, back, or to another tab is not the tab
+	// committing a new document: only the browser saying so is.
+	for _, arguments := range []string{`{"action":"navigate","url":"https://shop.example.test/"}`, `{"action":"back"}`} {
+		if _, err := browse(run, arguments); err != nil {
+			test.Fatal(err)
+		}
+		mustRefuse(test, run, evaluate, lockedWords)
+	}
+	// The browser says the tab committed a new document: unlocked.
+	run.tab.Filled().Committed("7", devtools.Commit{DocumentID: "doc-2", Address: "https://shop.example.test/account", Count: 4})
 	if _, err := browse(run, evaluate); err != nil {
-		test.Fatalf("a script after the tab moved on: %s", err)
-	}
-
-	// So does going to a page with the tool, though the tab's address is the
-	// same as it was.
-	run.tab.address = shopAddress
-	if _, err := browse(run, fillLogin(found.grantedLogin)); err != nil {
-		test.Fatal(err)
-	}
-	mustRefuse(test, run, evaluate, locked)
-	if _, err := browse(run, `{"action":"navigate","url":"https://shop.example.test/"}`); err != nil {
-		test.Fatal(err)
-	}
-	if _, err := browse(run, evaluate); err != nil {
-		test.Fatalf("a script after navigating: %s", err)
+		test.Fatalf("a script after the tab committed a new document: %s", err)
 	}
 
 	// A one-time code locks the tab too.
+	run.tab.fillAnswer = `{"isFilled":true,"tab":7,"documentId":"doc-2","commitCount":4}`
 	if _, err := browse(run, fmt.Sprintf(`{"action":"fill_one_time_code","item_id":%q,"ref":6}`, found.grantedLogin)); err != nil {
 		test.Fatal(err)
 	}
-	mustRefuse(test, run, evaluate, locked)
+	mustRefuse(test, run, evaluate, lockedWords)
 	// A fill of the user name alone holds no secret and locks nothing.
 	other := found.tabRun(shopAddress)
 	other.tab.answer = `{"result":"fine"}`
@@ -951,6 +995,9 @@ func TestAFilledTabRefusesScriptsUntilItMovesOn(test *testing.T) {
 		test.Fatalf("a script after only a user name: %s", err)
 	}
 }
+
+// lockedWords is what the lock answers.
+const lockedWords = "are not run on a page TeaNode filled a password or code into, until that tab loads a new page"
 
 // For the life of the tab every answer and error has the filled values
 // replaced, also after the tab moved on.
@@ -985,6 +1032,7 @@ func TestAFilledTabHidesTheValuesInEveryAnswer(test *testing.T) {
 	// After the tab moved on and scripts run again, the values are still hidden.
 	run.tab.failure = ""
 	run.tab.address = "https://shop.example.test/account"
+	run.tab.Filled().Committed("", devtools.Commit{DocumentID: "doc-2", Address: "https://shop.example.test/account", Count: 1})
 	run.tab.answer = fmt.Sprintf(`{"value":%q}`, inventedPassword)
 	result, err = browse(run, `{"action":"evaluate","expression":"document.title"}`)
 	if err != nil {
@@ -996,12 +1044,11 @@ func TestAFilledTabHidesTheValuesInEveryAnswer(test *testing.T) {
 	}
 }
 
-// In the headless browser too: scripts are refused until the main frame
-// navigates, and a script's result is scrubbed.
+// In the headless browser too: scripts and pictures are refused until the main
+// frame commits a new document, and a script's result is scrubbed.
 func TestAFilledHeadlessPageRefusesScriptsUntilItNavigatesAndHidesValues(test *testing.T) {
 	found := newWorld(test)
 	run, chrome := found.headlessRun(test, shopAddress)
-	const locked = "Scripts cannot run on a page TeaNode filled a password into, until it moves on to another page."
 	evaluate := `{"action":"evaluate","expression":"document.querySelector('input').value"}`
 	chrome.evaluated = "the field holds " + inventedPassword
 	if _, err := browse(run, evaluate); err != nil {
@@ -1011,17 +1058,18 @@ func TestAFilledHeadlessPageRefusesScriptsUntilItNavigatesAndHidesValues(test *t
 		test.Fatal(err)
 	}
 	asked := len(chrome.sent("Runtime.evaluate"))
-	mustRefuse(test, run, evaluate, locked)
-	if len(chrome.sent("Runtime.evaluate")) != asked {
-		test.Fatal("the page ran a script while locked")
+	mustRefuse(test, run, evaluate, lockedWords)
+	mustRefuse(test, run, `{"action":"screenshot"}`, lockedWords)
+	if len(chrome.sent("Runtime.evaluate")) != asked || len(chrome.sent("Page.captureScreenshot")) != 0 {
+		test.Fatal("the page ran a script or was photographed while locked")
 	}
 	// A frame inside the page navigating does not unlock it.
-	chrome.emit("Page.frameNavigated", `{"frame":{"id":"inner","parentId":"main"}}`)
+	chrome.emit("Page.frameNavigated", `{"frame":{"id":"inner","parentId":"main","loaderId":"loader-frame"}}`)
 	time.Sleep(100 * time.Millisecond)
-	mustRefuse(test, run, evaluate, locked)
-	chrome.emit("Page.frameNavigated", `{"frame":{"id":"main"}}`)
+	mustRefuse(test, run, evaluate, lockedWords)
+	chrome.emit("Page.frameNavigated", `{"frame":{"id":"main","loaderId":"loader-2","url":"https://shop.example.test/account"}}`)
 	deadline := time.Now().Add(5 * time.Second)
-	for run.page.Filled().IsLocked() && time.Now().Before(deadline) {
+	for run.page.Filled().IsLocked("") && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	result, err := browse(run, evaluate)

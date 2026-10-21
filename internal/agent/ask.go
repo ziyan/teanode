@@ -78,6 +78,10 @@ type AskSettings struct {
 	// Surface is where the answer goes: drawer, phone, cli, api or mail.
 	Surface string
 
+	// IsPersonsSchedule says a turn of the schedule surface was woken by a
+	// schedule the person wrote, not one the agent wrote for itself.
+	IsPersonsSchedule bool
+
 	// DrawerID names the open drawer that sent the turn: the browser a
 	// location call asks, rather than any other the person has open. Empty
 	// for a turn no drawer sent, such as one begun after a card was
@@ -750,6 +754,28 @@ func (self *AskRun) Database() db.Database                { return self.agent.se
 func (self *AskRun) Configuration() *config.Configuration { return self.agent.settings.Configuration() }
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
+
+// IsStartedByPerson says the person started this run: they typed or spoke the
+// turn, or a schedule they wrote themselves woke it (tools.PersonStarting). A
+// subagent is its parent's. Anything else is not: a turn woken by an inbound
+// mail, a chat app, a goal, a dream, a command left running or a schedule the
+// agent wrote for itself is steered by content the person did not write, and a
+// surface this does not know is taken not to be theirs.
+func (self *AskRun) IsStartedByPerson() bool {
+	if parent := self.settings.confirmVia; parent != nil {
+		return parent.IsStartedByPerson()
+	}
+	if self.settings.isUnattended {
+		return false
+	}
+	switch self.settings.Surface {
+	case "schedule", "mail":
+		return self.settings.IsPersonsSchedule
+	case "drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api", "mcp":
+		return !self.settings.Headless && !models.IsOwnTurn(self.settings.Message)
+	}
+	return false
+}
 func (self *AskRun) CanAsk() bool {
 	if self.settings.isUnattended {
 		return false

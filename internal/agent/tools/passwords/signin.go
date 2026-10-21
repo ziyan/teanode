@@ -20,11 +20,17 @@ import (
 // the browser tool's code.
 
 // CheckSignInHere is nil when the run may sign in with Passwords: the answer
-// goes to the person alone. A chat with other people and Telegram or Discord
-// are refused, as for every other action here. A scheduled run is allowed.
+// goes to the person alone, and the person started the run (a conversation
+// with them, or a schedule they wrote). A chat with other people and Telegram
+// or Discord are refused, as for every other action here, and so is a run
+// that content started, such as an inbound mail, a webhook, a goal or a
+// schedule the agent wrote for itself.
 func CheckSignInHere(run tools.Run) error {
 	if isOutsideOwnConversation(run) {
 		return answerError(elsewhereWords)
+	}
+	if !tools.IsStartedByPerson(run) {
+		return answerError(notTheirsWords)
 	}
 	return nil
 }
@@ -46,6 +52,14 @@ func OpenLoginToSignIn(ctx context.Context, run tools.Run, itemId string) (*pass
 	var login *passwords.LoginFields
 	var refusal string
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		isAllowed, err := ownerMayUse(tx, run)
+		if err != nil {
+			return err
+		}
+		if !isAllowed {
+			refusal = notAllowedWords
+			return nil
+		}
 		items, err := tx.ListAgentUsablePasswordItems(run.Owner().ID)
 		if err != nil {
 			return err
