@@ -95,6 +95,11 @@ final class AppModel {
     /// A mail a link asks to open.
     var openedMailItemId: String?
 
+    /// A web page a link asks to open in the app's own browser. Every http or
+    /// https link in the app comes here through the environment's openURL;
+    /// InAppBrowserPresenter shows the page and clears it.
+    var openedWebLink: WebLink?
+
     /// A contact card a link from the agent's memory asks to open.
     var openedContactId: String?
 
@@ -312,20 +317,40 @@ final class AppModel {
     /// What the main conversation is called: the agent's name.
     var agentTitle: String { agentName.isEmpty ? String(localized: "Your agent") : agentName }
 
-    /// Where a link in an answer goes. Web links open as they are; a mail
-    /// item or a memory page opens its page on the dashboard; anything else
-    /// is not followed, as the dashboard does not follow it.
-    func route(_ address: URL) -> OpenURLAction.Result {
-        if let account, let citation = RecordingLink(address, server: account.server) {
-            openedRecordingAccountKey = account.accountKey
-            openedRecordingLink = citation
-            openedSection = .recordings
+    /// Opens the recording a link of this server's own names, in Recordings;
+    /// false when the link names none.
+    private func openRecording(_ address: URL) -> Bool {
+        guard let account, let citation = RecordingLink(address, server: account.server) else { return false }
+        openedRecordingAccountKey = account.accountKey
+        openedRecordingLink = citation
+        openedSection = .recordings
+        return true
+    }
+
+    /// Where a link anywhere in the app goes: a recording this server's own
+    /// link names opens in Recordings, a web page opens in the app's browser,
+    /// and anything else (mailto:, tel:, Maps, this app's own universal links)
+    /// is the system's. It is the environment's openURL, set at the root.
+    func followLink(_ address: URL) -> OpenURLAction.Result {
+        if openRecording(address) { return .handled }
+        switch LinkOpening.way(for: address) {
+        case .inApp:
+            openedWebLink = WebLink(address: address)
             return .handled
+        case .system:
+            return .systemAction(address)
         }
+    }
+
+    /// Where a link in an answer goes. Web links open in the app's browser; a
+    /// mail item or a memory page opens its page on the dashboard; anything
+    /// else is not followed, as the dashboard does not follow it.
+    func route(_ address: URL) -> OpenURLAction.Result {
+        if openRecording(address) { return .handled }
         let written = address.absoluteString
         switch address.scheme?.lowercased() {
         case "http", "https":
-            return .systemAction(address)
+            return followLink(address)
         case "mail":
             let itemId = String(written.dropFirst("mail:".count))
             guard !itemId.isEmpty, itemId.allSatisfy({ $0.isLetter || $0.isNumber }) else { return .discarded }
@@ -353,6 +378,22 @@ final class AppModel {
         default:
             return .discarded
         }
+    }
+
+    /// The previews of the links in messages, asked for in one question for the
+    /// links of a screenful, by connection: what a preview is depends on whose
+    /// server it was read from.
+    private var linkPreviewLoaders: [ObjectIdentifier: LinkPreviewLoader] = [:]
+
+    /// The preview of a link written in a conversation, read through the
+    /// connection in use; nil when there is none to show. The link is the text
+    /// of the message's, not the cleaned one: the server looks for it there.
+    func linkPreview(for link: String, inConversation conversationId: String) async -> LinkPreview? {
+        guard let connection else { return nil }
+        let key = ObjectIdentifier(connection)
+        let loader = linkPreviewLoaders[key] ?? LinkPreviewLoader { conversationId, urls in try await connection.linkPreviews(conversationId: conversationId, urls: urls) }
+        linkPreviewLoaders[key] = loader
+        return await loader.preview(conversationId: conversationId, for: link)
     }
 
     /// A file being shown in Quick Look: pictures with pinch to zoom, and

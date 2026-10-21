@@ -208,6 +208,7 @@ type Transaction interface {
 	SyncOperation
 	MailboxOperation
 	PersonCardOperation
+	LinkPreviewOperation
 	SubscriptionQuery
 	BimiQuery
 	IdentityOperation

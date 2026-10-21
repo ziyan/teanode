@@ -368,6 +368,18 @@ when the last viewer of the tab goes. If Chrome lets the debugger go by
 itself (the person at the machine cancelled its bar, or opened the developer
 tools), the extension says so and the views watch nothing until asked again.
 
+On a phone the picture can be pinched to zoom and dragged about with one
+finger once zoomed; a tap clicks while the tab is held, and a drag scrolls
+the tab's page while it is held and not zoomed. A tab held from a view as
+narrow as a phone's (700 CSS pixels at most) is laid out at the size of the
+picture's box there, with the DevTools protocol's device metrics override,
+so its text is readable rather than a desktop page shrunk to fit; the page
+says its size when it takes the tab and when it changes, and the tab is laid
+out as it was when it is handed back, when that view closes or watches
+another tab, when the hold lapses, and when the stream ends. A page with no
+viewport tag is laid out 980 pixels wide, as phones do, and is still pinched
+to read. The person's desktop shows that layout while they hold the tab.
+
 Watching changes nothing. Take over makes the person the tab's holder
 (`tab_viewer.go`, a room per person beside the tabs, kept when the browser
 reconnects); their input is passed to the tab only while they hold it, field

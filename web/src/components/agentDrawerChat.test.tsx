@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql, subscribe } from '../api'
+import { forgetLinkPreviews } from '../lib/linkPreviews'
 import { TranslationProvider } from '../i18n/i18n'
 import { SessionProvider } from '../session'
 import { AgentDrawer } from './agentDrawer'
@@ -127,6 +128,9 @@ interface Shown {
   // agent that its owner does not let the others ask.
   isMuted?: boolean
   hasOwnerOnlyNote?: boolean
+  // Whether Person B sent a link, and whether the page behind it has a preview.
+  hasLink?: boolean
+  isLinkPreviewAvailable?: boolean
 }
 
 // answerWith makes the server: the agent on or off, the chat in the list,
@@ -166,6 +170,15 @@ function answerWith(shown: Shown = {}) {
   const messages = hasNewMessage
     ? [...MESSAGES, chatMessage('01J0000000000000000000004', 'Running late', false), ...work]
     : [...MESSAGES, ...work]
+  if (shown.hasLink) {
+    messages.push(
+      chatMessage(
+        '01J0000000000000000000008',
+        'Look at https://www.example.com/shop/chair/?gclid=abc&color=blue',
+        false,
+      ),
+    )
+  }
   if (shown.hasOwnerOnlyNote) {
     messages.push(
       chatMessage('01J0000000000000000000007', '{"agentName":"Agent","ownerName":"Person B"}', true, {
@@ -261,6 +274,23 @@ function answerWith(shown: Shown = {}) {
         ReadAgent: { budget: null, timezone: 'UTC' },
       } as never
     }
+    if (document.includes('ReadLinkPreviews')) {
+      const written = (variables as { urls: string[] }).urls
+      return {
+        ReadLinkPreviews: written.map((url) => ({
+          url,
+          cleanedUrl: 'https://www.example.com/shop/chair/?color=blue',
+          displayText: 'example.com/shop/chair/?color=blue',
+          isAvailable: shown.isLinkPreviewAvailable ?? true,
+          title: 'Garden Chair',
+          description: 'A chair for the garden.',
+          siteName: 'Example Shop',
+          imageUrl: '/api/v1/link-preview/image/link-preview-1',
+          imageWidthPixels: 600,
+          imageHeightPixels: 400,
+        })),
+      } as never
+    }
     if (document.includes('ReadAgentVoice'))
       return { ReadAgentVoice: { isVoiceAvailable: false, sampleRate: 0 } } as never
     return {} as never
@@ -315,6 +345,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  forgetLinkPreviews()
   vi.resetAllMocks()
   hasAgents = false
 })
@@ -1036,4 +1067,57 @@ it('words the note about somebody else’s agent by whose it is', async () => {
   openOnChat()
   renderDrawer()
   expect(await screen.findByText("Only Person B can ask Person B's agent in this chat.")).toBeTruthy()
+})
+
+it('shows a link short, opens it clean, and draws the page under the message as a card', async () => {
+  answerWith({ hasLink: true })
+  openOnChat()
+  const { container } = renderDrawer()
+  const card = await waitFor(() => {
+    const found = container.querySelector('a.link-card')
+    expect(found).not.toBeNull()
+    return found as HTMLAnchorElement
+  })
+  const inline = Array.from(container.querySelectorAll('.agent-line a')).find(
+    (link) => !link.classList.contains('link-card'),
+  )
+  expect(inline?.textContent).toBe('example.com/shop/chair/?color=blue')
+  expect(inline?.getAttribute('href')).toBe('https://www.example.com/shop/chair/?color=blue')
+  expect(card.getAttribute('href')).toBe('https://www.example.com/shop/chair/?color=blue')
+  expect(card.getAttribute('target')).toBe('_blank')
+  expect(card.getAttribute('rel')).toBe('noopener noreferrer')
+  expect(card.querySelector('img')?.getAttribute('src')).toBe('/api/v1/link-preview/image/link-preview-1')
+  expect(card.querySelector('.link-card-site')?.textContent).toBe('Example Shop')
+  expect(card.querySelector('strong')?.textContent).toBe('Garden Chair')
+  expect(card.querySelector('.link-card-description')?.textContent).toBe('A chair for the garden.')
+  // Under the bubble, not inside it.
+  expect(card.closest('.agent-line')).toBeNull()
+  // Asked for once, with the link as it was written.
+  const asked = vi.mocked(graphql).mock.calls.filter(([document]) => document.includes('ReadLinkPreviews'))
+  expect(asked).toHaveLength(1)
+  expect(asked[0][1]).toEqual({
+    conversationId: 'chat-conversation',
+    urls: ['https://www.example.com/shop/chair/?gclid=abc&color=blue'],
+  })
+})
+
+it('draws no card for a page that has no preview, and the link still opens', async () => {
+  answerWith({ hasLink: true, isLinkPreviewAvailable: false })
+  openOnChat()
+  const { container } = renderDrawer()
+  await waitFor(() => {
+    expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('ReadLinkPreviews'))).toBe(true)
+  })
+  expect(container.querySelector('a.link-card')).toBeNull()
+  expect(container.querySelector('.agent-line a')?.getAttribute('href')).toBe(
+    'https://www.example.com/shop/chair/?color=blue',
+  )
+})
+
+it('asks for no preview when no message holds a link', async () => {
+  answerWith()
+  openOnChat()
+  const { container } = renderDrawer()
+  await waitFor(() => expect(container.querySelector('.agent-chat-turn')).not.toBeNull())
+  expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('ReadLinkPreviews'))).toBe(false)
 })

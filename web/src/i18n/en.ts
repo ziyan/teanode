@@ -3801,6 +3801,7 @@ export const en = {
   'lightbox.fit': 'Fit',
   'lightbox.scale': '{percent}%',
   'lightbox.hint': 'Scroll or pinch to zoom, drag to move.',
+  'linkPreview.open': 'Open {title}',
   'reminders.addPlaceholder': 'Add a reminder',
   'reminders.add': 'Add',
   'reminders.dueDay': 'Due',

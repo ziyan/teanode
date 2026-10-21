@@ -307,6 +307,9 @@ jobs:
           shoot location-light light large -TeaNodeDemo -TeaNodeTab location
           shoot location-dark dark large -TeaNodeDemo -TeaNodeTab location
           shoot location-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location
+          shoot location-full-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-full
+          shoot location-collapsed-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-collapsed
+          shoot location-collapsed-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-collapsed
           shoot location-day-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
           shoot location-day-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
           shoot location-places-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
@@ -607,6 +610,12 @@ jobs:
             shoot "$chat_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
             shoot "$chat_screen-dark" dark large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
             shoot "$chat_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
+          done
+          # A message with a link: short, with the page's card under it, in a chat with a person and in the main conversation.
+          for link_screen in chat-link conversation-link; do
+            shoot "$link_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$link_screen"
+            shoot "$link_screen-dark" dark large -TeaNodeDemo -TeaNodeScreen "$link_screen"
+            shoot "$link_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen "$link_screen"
           done
           # Calendars other people shared, the list of calendars with its rename row, the screen that shares the person's own, and the one that finds a time they are all free.
           for calendar_screen in calendar-shared calendar-sheet calendar-share-sheet calendar-find-time; do

@@ -82,6 +82,81 @@ history the model is sent says each one after its message: "(The person
 reacted 👍)", or "(You reacted 🙏)" for the agent's own. Why is in
 `docs/decisions/20261011-a-reaction-is-a-mark-on-a-message-and-starts-no-turn.md`.
 
+## Links
+
+A link in a message is shown short, opens clean, and gets a card.
+
+**Cleaning.** `internal/util/linkclean` takes the known tracking parameters
+out of a link's query string (`utm_*`, `gclid`, `fbclid`, `_gl` and the
+rest of the list in that file) and keeps every other parameter, as written
+and in order. A link with nothing to remove comes back exactly as it was.
+`DisplayText` is the short text for a link that has no words of its own: the
+host without `www.`, the path, and the cleaned query only when it is short,
+with no scheme and no fragment, cut in the middle with an ellipsis past 48
+characters. A Markdown link keeps its own words, and its address is cleaned.
+The dashboard (`web/src/lib/linkClean.ts`) and the iPhone app
+(`LinkClean.swift` in TeaNodeKit) do the same work on the link's text rather
+than on a parsed URL, because each language's URL parser normalizes
+differently. The shared cases in `internal/util/linkclean/testdata/links.json`
+are read by the tests of all three, so a change to one is a change to all.
+
+**Which links get a card.** Only a link whose exact text is in a message of the
+conversation that the agent did not write: a person's message, or what a tool
+answered. `ReadLinkPreviews` takes the conversation and checks the link as the
+client sent it, or its cleaned form, as a substring of those messages (never a
+host or a path prefix), and answers any other link with `isAvailable` false
+without fetching it, even when a row is cached. The reason is that a reply can
+be made to carry what the agent read in a link's query, and drawing the card
+would send that to the link's site with no click. It is the rule agent pictures
+follow (`agent_picture.go`: only an address a tool showed the agent is fetched).
+
+**Previews.** Each message shows one card, for its first link, under the
+bubble: the page's picture, its site, its title and two lines about it. The
+dashboard and the app ask `ReadLinkPreviews(urls)` (at most 10 links) for the
+messages on screen, so old messages get a card too. For each link the answer
+has `cleanedUrl`, `displayText`, `isAvailable`, and, when the page could be
+read, `title`, `description`, `siteName` and `imageUrl`. There is no card
+while the answer is on its way, and none when `isAvailable` is false.
+
+The server fetches the page (`internal/linkpreview`), never the reader's
+device. The page's site learns that the server looked, and nothing about who
+was reading or in which conversation. The fetch goes through `safefetch`, so
+an address inside the network the server sits in is refused; it has a 5 second
+timeout, reads 512 KB at most, and accepts HTML only. The tags are read in
+this order: Open Graph (`og:title`, `og:description`, `og:site_name`,
+`og:image`), then Twitter's, then the page's `<title>` and its description
+meta tag.
+
+The page's picture is fetched by the server too, if it is a PNG, JPEG, GIF or
+WebP of at most 2 MB whose header claims at most 16 million pixels (a decoded
+picture takes four bytes a pixel, and a small file can claim a huge one). It is scaled to at most 600 pixels wide, written again
+as a JPEG (so none of the original's metadata survives), and kept in the file
+store. It is served from `/api/v1/link-preview/image/{name}` to a signed-in
+reader, so the page and the app never load anything from the linked site. The
+name changes with the picture.
+
+What was read is kept in the `link_preview` table, keyed by the cleaned
+address without its fragment, and shared by everyone who sees the link: it is
+what an anonymous visitor gets, never anything of a person's. A row is trusted
+for 24 hours, and a failure (the page did not answer, was not a web page, or
+had no title or description) for one hour, so a link that does not work is not
+asked again each time a message is drawn. Rows older than 30 days are removed
+with their pictures, a batch at a time, whenever a fetch happens. One account
+may have 60 pages fetched a minute; a question answered from what is kept
+costs nothing. `teanode link preview <url>...` prints the same answer.
+
+**On the iPhone.** The app shows the same card under a bubble (the picture,
+the site, the title, two lines), asked for when the message comes near the
+screen, ten links to a question (`LinkPreviewLoader` in TeaNodeKit). Every
+http or https link opened anywhere in the app comes up in an in-app Safari
+view that slides up from the bottom, through the environment's `openURL` set
+once at the root (`AppModel.followLink`). It is presented from the top of the
+window, as the lightbox is, because a link in a sheet has no root view free to
+present from while the sheet is up. `LinkOpening` in TeaNodeKit lists what the
+system keeps: `mailto:`, `tel:`, `sms:` and `teanode://`, the app's own
+universal links (`teanode.com/app/*`), Apple Maps links, and a configuration
+profile, which only Safari installs.
+
 ## Titles and summaries
 
 A background describer names conversations and writes the one line under them.

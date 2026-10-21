@@ -886,7 +886,8 @@ struct MailWebView: UIViewRepresentable {
                 return action.request.url?.scheme == MailWebView.scheme || action.request.url?.scheme == "about" ? .allow : .cancel
             }
             if ["http", "https", "mailto", "tel"].contains(address.scheme?.lowercased() ?? "") {
-                _ = await UIApplication.shared.open(address)
+                // A web page opens in the app's own browser, over the message.
+                InAppBrowser.open(address)
             }
             return .cancel
         }

@@ -181,3 +181,55 @@ export function piecesOf(text: string, most: number): string[] {
   }
   return pieces
 }
+
+// PictureView is how the picture of the tab is zoomed and moved inside its
+// box: scaled by scale from its top left corner, then moved by x and y, in
+// the box's pixels. Not zoomed is { scale: 1, x: 0, y: 0 }.
+export interface PictureView {
+  scale: number
+  x: number
+  y: number
+}
+
+export const UNZOOMED: PictureView = { scale: 1, x: 0, y: 0 }
+
+// The most the picture zooms in: enough to read a desktop page's small
+// print on a phone.
+export const MOST_ZOOM = 4
+
+// clampView keeps the zoom between unzoomed and MOST_ZOOM and the picture
+// covering its box, so it can never be moved off into nothing.
+export function clampView(view: PictureView, boxWidth: number, boxHeight: number): PictureView {
+  const scale = Math.min(MOST_ZOOM, Math.max(1, view.scale))
+  const clamp = (value: number, size: number) => Math.min(0, Math.max(size - size * scale, value))
+  return { scale, x: clamp(view.x, boxWidth), y: clamp(view.y, boxHeight) }
+}
+
+// pinchView is the view after two fingers moved: zoomed by how much farther
+// apart they are than when they came down, and moved so that the point of
+// the picture that was between them stays between them. Points are in the
+// box's pixels.
+export function pinchView(
+  start: PictureView,
+  startPoints: [{ x: number; y: number }, { x: number; y: number }],
+  points: [{ x: number; y: number }, { x: number; y: number }],
+  boxWidth: number,
+  boxHeight: number,
+): PictureView {
+  const distance = (pair: typeof points) => Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y)
+  const middle = (pair: typeof points) => ({ x: (pair[0].x + pair[1].x) / 2, y: (pair[0].y + pair[1].y) / 2 })
+  const startDistance = distance(startPoints)
+  const scale = startDistance > 0 ? start.scale * (distance(points) / startDistance) : start.scale
+  const from = middle(startPoints)
+  const to = middle(points)
+  // The point of the picture under the fingers' middle when they came down.
+  const pictureX = (from.x - start.x) / start.scale
+  const pictureY = (from.y - start.y) / start.scale
+  const clamped = Math.min(MOST_ZOOM, Math.max(1, scale))
+  return clampView({ scale: clamped, x: to.x - pictureX * clamped, y: to.y - pictureY * clamped }, boxWidth, boxHeight)
+}
+
+// panView is the view moved by a finger's drag of dx and dy.
+export function panView(start: PictureView, dx: number, dy: number, boxWidth: number, boxHeight: number): PictureView {
+  return clampView({ scale: start.scale, x: start.x + dx, y: start.y + dy }, boxWidth, boxHeight)
+}

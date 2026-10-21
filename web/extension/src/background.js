@@ -329,6 +329,10 @@ function connect(origin, secret) {
       else void stopCast(message.tab)
       return
     }
+    if (message.type === 'emulate') {
+      void emulate(message)
+      return
+    }
     if (INPUT_TYPES.has(message.type)) {
       void dispatchInput(message)
       return
@@ -671,13 +675,24 @@ const FRAME_LARGEST = 3 * 1024 * 1024
 // began unless a newer start has the tab.
 async function startCast(tabId, options) {
   if (!isListed(tabId)) return
+  // A stream started again keeps the size the last one was asked for.
+  const previous = casting.get(tabId)
   forgetCast(tabId)
-  const cast = { quality: options.quality || 60, maxSide: options.maxWidth || 1280, lastAt: 0, lastData: '', timer: null }
+  const cast = {
+    quality: options.quality || 60,
+    maxSide: options.maxWidth || 1280,
+    lastAt: 0,
+    lastData: '',
+    timer: null,
+    emulation: previous ? previous.emulation : null,
+    isReady: false,
+  }
   casting.set(tabId, cast)
   const isOvertaken = () => casting.get(tabId) !== cast
   const undo = async () => {
     if (casting.has(tabId)) return
     await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
+    await chrome.debugger.sendCommand({ tabId }, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
     await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {})
     await releaseIfUnused(tabId)
   }
@@ -692,6 +707,9 @@ async function startCast(tabId, options) {
       maxHeight: options.maxHeight || 1280,
       everyNthFrame: 2,
     })
+    if (isOvertaken()) return void (await undo())
+    cast.isReady = true
+    await applyEmulation(tabId, cast)
     if (isOvertaken()) return void (await undo())
     await sendStill(tabId)
     if (isOvertaken()) return void (await undo())
@@ -716,6 +734,42 @@ async function releaseIfUnused(tabId) {
   if (debugging.has(tabId) && !agentUsing.has(tabId) && !casting.has(tabId)) await letDebuggerGo(tabId)
 }
 
+// emulate records the size of the phone the person holds the tab from, or
+// that there is none, on the tab's stream, which lays the tab out at it so
+// the picture is readable there, or as it is. A stream still starting lays
+// it out once it is ready; one started again keeps what was asked. Handing
+// back, the view closing and the stream ending all put the tab back, and
+// Chrome puts it back by itself when the debugger goes.
+async function emulate(message) {
+  const tabId = message.tab
+  const cast = casting.get(tabId)
+  if (!cast || !isListed(tabId)) return
+  cast.emulation = message.isOn && message.width > 0 && message.height > 0 ? { width: Math.round(message.width), height: Math.round(message.height) } : null
+  if (cast.isReady) await applyEmulation(tabId, cast)
+}
+
+// applyEmulation lays the tab out as its stream asks: at a phone's size, or,
+// asked for none, as it is, which is safe to ask for again.
+async function applyEmulation(tabId, cast) {
+  const asked = cast.emulation
+  try {
+    if (asked) {
+      await chrome.debugger.sendCommand({ tabId }, 'Emulation.setDeviceMetricsOverride', {
+        width: asked.width,
+        height: asked.height,
+        deviceScaleFactor: 0,
+        mobile: true,
+      })
+    } else {
+      await chrome.debugger.sendCommand({ tabId }, 'Emulation.clearDeviceMetricsOverride')
+    }
+  } catch (reason) {
+    console.warn('[TeaNode] could not lay the tab out for the phone:', reason)
+  }
+  // Asked again while that was under way: what was asked last wins.
+  if (casting.get(tabId) === cast && cast.emulation !== asked) await applyEmulation(tabId, cast)
+}
+
 // forgetCast stops treating a tab as streamed, and its stills with it.
 function forgetCast(tabId) {
   const cast = casting.get(tabId)
@@ -728,9 +782,12 @@ function forgetCast(tabId) {
 async function stopCast(tabId) {
   if (!forgetCast(tabId)) return
   await chrome.debugger.sendCommand({ tabId }, 'Page.stopScreencast').catch(() => {})
-  // A start that came in meanwhile owns the tab now, focus emulation and
-  // the debugger with it.
+  // A start that came in meanwhile owns the tab now, its layout, focus
+  // emulation and the debugger with it.
   if (casting.has(tabId)) return
+  // Laid out as it is whether or not a phone's size was applied: asking
+  // for that again does nothing, and a size still being applied is undone.
+  await chrome.debugger.sendCommand({ tabId }, 'Emulation.clearDeviceMetricsOverride').catch(() => {})
   await chrome.debugger.sendCommand({ tabId }, 'Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {})
   // Attached only for the dashboard: let it go, and Chrome's bar with it.
   await releaseIfUnused(tabId)

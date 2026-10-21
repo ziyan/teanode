@@ -328,3 +328,146 @@ func TestTabRoomHoldsUpUnderConcurrentUse(t *testing.T) {
 	}
 	group.Wait()
 }
+
+// A tab held from a phone is laid out at the phone's size while it is
+// held, and as it is again when it is handed back or the phone goes; a
+// wide view, or a tab nobody holds, changes nothing.
+func TestTabHeldFromAPhoneIsLaidOutAtItsSize(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	phone := &recordingViewer{}
+	worker.AddTabViewer("a1", phone)
+	worker.WatchTab("a1", phone, "11")
+
+	worker.SetTabViewport("a1", phone, 390, 700)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 0 {
+		t.Fatalf("a tab nobody held was laid out for a phone: %v", emulations)
+	}
+	worker.TakeOverTab("a1")
+	worker.SetTabViewport("a1", phone, 1280, 800)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 0 {
+		t.Fatalf("a wide view laid the tab out: %v", emulations)
+	}
+	worker.SetTabViewport("a1", phone, 390, 700)
+	emulations := browser.sentOfType("emulate")
+	if len(emulations) != 1 || emulations[0]["isOn"] != true || emulations[0]["width"] != float64(390) || emulations[0]["tab"] != float64(11) {
+		t.Fatalf("the phone's size was not asked for: %v", emulations)
+	}
+	// The same size again asks nothing more.
+	worker.SetTabViewport("a1", phone, 390, 700)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 1 {
+		t.Fatalf("the same size was asked for twice: %v", emulations)
+	}
+
+	// A browser that reconnects starts its stream as the tab is: the size
+	// is asked for again.
+	replacement := &recordingBrowser{}
+	worker.ConnectBrowser("a1", replacement, "Shop", "https://shop.example/", true)
+	worker.SetBrowserCanCast("a1", replacement, true)
+	if emulations := replacement.sentOfType("emulate"); len(emulations) != 1 || emulations[0]["isOn"] != true {
+		t.Fatalf("the reconnected browser was not laid out again: %v", emulations)
+	}
+
+	worker.HandBackTab("a1")
+	emulations = replacement.sentOfType("emulate")
+	if len(emulations) != 2 || emulations[1]["isOn"] != false {
+		t.Fatalf("handing back did not lay the tab out as it is: %v", emulations)
+	}
+}
+
+func TestTabLaidOutForAPhoneGoesBackWhenThePhoneGoes(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	laptop, phone := &recordingViewer{}, &recordingViewer{}
+	worker.AddTabViewer("a1", laptop)
+	worker.AddTabViewer("a1", phone)
+	worker.WatchTab("a1", laptop, "11")
+	worker.WatchTab("a1", phone, "11")
+	worker.TakeOverTab("a1")
+	worker.SetTabViewport("a1", phone, 390, 700)
+	// The laptop's wide view does not undo the phone's.
+	worker.SetTabViewport("a1", laptop, 0, 0)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 1 {
+		t.Fatalf("another view undid the phone's layout: %v", emulations)
+	}
+	worker.RemoveTabViewer("a1", phone)
+	emulations := browser.sentOfType("emulate")
+	if len(emulations) != 2 || emulations[1]["isOn"] != false {
+		t.Fatalf("the phone going did not lay the tab out as it is: %v", emulations)
+	}
+}
+
+// The layout follows the phone: a size outside a phone's, a size barely
+// changed, and a size sent after handing back change nothing; watching
+// another tab, or the stream ending, puts the tab back, and a stream
+// ended by Chrome is not laid out again when it starts.
+func TestTabPhoneLayoutFollowsThePhone(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	phone := &recordingViewer{}
+	worker.AddTabViewer("a1", phone)
+	worker.WatchTab("a1", phone, "11")
+	worker.TakeOverTab("a1")
+
+	worker.SetTabViewport("a1", phone, 120, 700)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 0 {
+		t.Fatalf("a width no tab is laid out at was asked for: %v", emulations)
+	}
+	worker.SetTabViewport("a1", phone, 390, 90000)
+	emulations := browser.sentOfType("emulate")
+	if len(emulations) != 1 || emulations[0]["height"] != float64(mobileHeightMost) {
+		t.Fatalf("a height past any phone's was not held to the most: %v", emulations)
+	}
+	worker.SetTabViewport("a1", phone, 393, 90000)
+	if emulations := browser.sentOfType("emulate"); len(emulations) != 1 {
+		t.Fatalf("a size barely changed laid the tab out again: %v", emulations)
+	}
+
+	// Watching another tab puts the first back.
+	worker.WatchTab("a1", phone, "12")
+	emulations = browser.sentOfType("emulate")
+	if len(emulations) != 2 || emulations[1]["isOn"] != false || emulations[1]["tab"] != float64(11) {
+		t.Fatalf("watching another tab did not put the first back: %v", emulations)
+	}
+
+	// A stream Chrome ended is not laid out again when it starts again.
+	worker.SetTabViewport("a1", phone, 390, 700)
+	worker.CastEnded("a1", browser, "12")
+	worker.WatchTab("a1", phone, "12")
+	for _, emulation := range browser.sentOfType("emulate")[3:] {
+		if emulation["isOn"] == true {
+			t.Fatalf("a stream Chrome ended was laid out again on its own: %v", emulation)
+		}
+	}
+
+	// After handing back, a size sent late changes nothing.
+	worker.HandBackTab("a1")
+	before := len(browser.sentOfType("emulate"))
+	worker.SetTabViewport("a1", phone, 390, 700)
+	if after := len(browser.sentOfType("emulate")); after != before {
+		t.Fatalf("a size sent after handing back laid the tab out: %v", browser.sentOfType("emulate")[before:])
+	}
+}
+
+// A size the phone sends while the browser is away is kept, and the
+// browser is laid out at it when it connects again.
+func TestTabPhoneLayoutSentWhileTheBrowserIsAwayIsAppliedWhenItReturns(t *testing.T) {
+	worker := &Agent{}
+	browser := connectedBrowser(worker)
+	phone := &recordingViewer{}
+	worker.AddTabViewer("a1", phone)
+	worker.WatchTab("a1", phone, "11")
+	worker.TakeOverTab("a1")
+	worker.DetachTab("a1", browser)
+	worker.SetTabViewport("a1", phone, 390, 700)
+
+	returned := &recordingBrowser{}
+	worker.ConnectBrowser("a1", returned, "Shop", "https://shop.example/", true)
+	worker.SetBrowserCanCast("a1", returned, true)
+	worker.UpdateTabList("a1", []TabListing{{Tab: "11", Title: "Shop", IsOwn: true, IsCurrent: true}})
+	worker.WatchTab("a1", phone, "11")
+	emulations := returned.sentOfType("emulate")
+	if len(emulations) == 0 || emulations[len(emulations)-1]["isOn"] != true || emulations[len(emulations)-1]["width"] != float64(390) {
+		t.Fatalf("the returned browser was not laid out at the size sent while it was away: %v", emulations)
+	}
+}

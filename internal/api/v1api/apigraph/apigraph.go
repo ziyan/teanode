@@ -106,6 +106,10 @@ type graph struct {
 	mapLimitsOnce  sync.Once
 	mapLimitsValue *ratelimit.Registry
 
+	// linkPreviews is what the previews of links need: the fetcher and its
+	// limits (link_preview.go).
+	linkPreviews linkPreviewState
+
 	// locationLimits are what one account may ask of the place provider and
 	// how fast it may make places (location_limits.go).
 	locationLimitsOnce  sync.Once
@@ -199,6 +203,9 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// A person's picture, which is a file in storage and far too large to
 	// carry through a listing.
 	router.Path(api.PathAvatarUser).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.avatarView)
+	// The picture of a link preview, fetched from the linked page once and
+	// served from here (link_preview.go).
+	router.Path(api.PathLinkPreviewImage).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.linkPreviewImageView)
 	// The map style host's files, fetched here for the signed-in browser
 	// (location_map.go).
 	router.PathPrefix(api.PathMap + "/").Methods(http.MethodGet).HandlerFunc(self.mapView)

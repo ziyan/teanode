@@ -184,6 +184,13 @@ const (
 	// small one a list row needs.
 	PathAvatarUser = Prefix + "/avatar/user/{userId}"
 
+	// PathLinkPreviewImage is the picture of a link preview, as this server
+	// kept it: a JPEG scaled down to at most 600 pixels wide. Fetched from the
+	// linked page once and served from here, so that showing a preview does
+	// not tell the page's site who is reading. The name changes whenever the
+	// picture does, so a copy can be kept for a day.
+	PathLinkPreviewImage = Prefix + "/link-preview/image/{imageFileId}"
+
 	// A setup profile for an iPhone or a Mac, downloaded once. The address
 	// is the credential: Safari opens it without the person's session, and
 	// it works for five minutes.
@@ -251,6 +258,11 @@ func BimiLogoPath(fileId string) string {
 // SenderLogoPath is PathSenderLogo with its parameter filled in.
 func SenderLogoPath(domain string) string {
 	return Prefix + "/logo/" + url.PathEscape(domain)
+}
+
+// LinkPreviewImagePath is PathLinkPreviewImage with its parameter filled in.
+func LinkPreviewImagePath(imageFileId string) string {
+	return Prefix + "/link-preview/image/" + url.PathEscape(imageFileId)
 }
 
 // AgentDocumentFilePath is PathAgentDocumentFile with its parameter filled

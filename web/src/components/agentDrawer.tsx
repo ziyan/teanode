@@ -30,6 +30,8 @@ import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { MenuButton } from './menuButton'
 import { Markdown } from './markdown'
+import { LinkedText } from './linkedText'
+import { LinkPreviewCard } from './linkPreview'
 import { hasSharedCitation, linkSharedCitations, useShowPage } from './dashboardPath'
 import { IdeaSuggestions } from './ideaRow'
 import { RelativeTime } from './relativeTime'
@@ -5298,12 +5300,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               ) : line.authorKind === 'agent' ? (
                 <Markdown text={line.text} onLeaving={leaving} pictureSource={pictureSource} />
               ) : (
-                line.text
+                <LinkedText text={line.text} />
               )}
               {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
               {line.editedAt && !isEditing ? <span className="agent-chat-edited">{t('chat.edited')}</span> : null}
               {reactionsOn(line)}
             </SwipeableLine>
+            {isEditing || line.isPending || line.isStreaming ? null : (
+              <LinkPreviewCard
+                conversationId={backgroundConversationId}
+                text={line.text}
+                isMarkdown={line.authorKind === 'agent'}
+              />
+            )}
           </ChatLineFrame>
         )
       }
@@ -5314,63 +5323,75 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       case 'user': {
         const repliedTo = line.references?.find(isReplyReference)
         return (
-          <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
-            <SwipeableLine
-              className="agent-line user"
-              replyLabel={t('agentDrawer.reply')}
-              copyLabel={t('common.copy')}
-              onReply={() => replyTo(line)}
-              onCopy={() => copyLine(line)}
-              onCopyFailed={sayCopyFailed}
-            >
-              {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
-              {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
-              {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
-              {line.text}
-              {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
-              {reactionsOn(line)}
-            </SwipeableLine>
-          </Tooltip>
+          <Fragment key={line.key}>
+            <Tooltip label={line.at ? formatTime(line.at) : ''}>
+              <SwipeableLine
+                className="agent-line user"
+                replyLabel={t('agentDrawer.reply')}
+                copyLabel={t('common.copy')}
+                onReply={() => replyTo(line)}
+                onCopy={() => copyLine(line)}
+                onCopyFailed={sayCopyFailed}
+              >
+                {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
+                {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
+                {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
+                <LinkedText text={line.text} />
+                {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
+                {reactionsOn(line)}
+              </SwipeableLine>
+            </Tooltip>
+            <LinkPreviewCard conversationId={backgroundConversationId} text={line.text} isMarkdown={false} isOwn />
+          </Fragment>
         )
       }
       case 'assistant':
         return (
-          <Tooltip key={line.key} label={line.at ? formatTime(line.at) : ''}>
-            <SwipeableLine
-              className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}
-              replyLabel={t('agentDrawer.reply')}
-              copyLabel={t('common.copy')}
-              onReply={() => replyTo(line)}
-              onCopy={() => copyLine(line)}
-              onCopyFailed={sayCopyFailed}
-              reactLabel={t('agentDrawer.react')}
-              onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
-            >
-              <Markdown
-                text={
-                  line.streaming
-                    ? withoutPartialMarker(line.text)
-                    : linkSharedCitations(
-                        suggestedRepliesOf(line.text).displayText,
-                        (ownerName) => sharedOwners[ownerName.toLowerCase()],
-                      )
-                }
-                onLeaving={leaving}
-                pictureSource={pictureSource}
+          <Fragment key={line.key}>
+            <Tooltip label={line.at ? formatTime(line.at) : ''}>
+              <SwipeableLine
+                className={['agent-line assistant', line.streaming ? 'streaming' : ''].filter(Boolean).join(' ')}
+                replyLabel={t('agentDrawer.reply')}
+                copyLabel={t('common.copy')}
+                onReply={() => replyTo(line)}
+                onCopy={() => copyLine(line)}
+                onCopyFailed={sayCopyFailed}
+                reactLabel={t('agentDrawer.react')}
+                onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
+              >
+                <Markdown
+                  text={
+                    line.streaming
+                      ? withoutPartialMarker(line.text)
+                      : linkSharedCitations(
+                          suggestedRepliesOf(line.text).displayText,
+                          (ownerName) => sharedOwners[ownerName.toLowerCase()],
+                        )
+                  }
+                  onLeaving={leaving}
+                  pictureSource={pictureSource}
+                />
+                <CitedEvidence files={citedIn(line.text, citedFiles)} />
+                {showUsage && line.usage && (
+                  <div className="agent-usage muted">
+                    {t('agentDrawer.tokens', {
+                      in: formatCount(line.usage.promptTokens),
+                      out: formatCount(line.usage.completionTokens),
+                    })}
+                    {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
+                  </div>
+                )}
+                {reactionsOn(line)}
+              </SwipeableLine>
+            </Tooltip>
+            {line.streaming ? null : (
+              <LinkPreviewCard
+                conversationId={backgroundConversationId}
+                text={suggestedRepliesOf(line.text).displayText}
+                isMarkdown
               />
-              <CitedEvidence files={citedIn(line.text, citedFiles)} />
-              {showUsage && line.usage && (
-                <div className="agent-usage muted">
-                  {t('agentDrawer.tokens', {
-                    in: formatCount(line.usage.promptTokens),
-                    out: formatCount(line.usage.completionTokens),
-                  })}
-                  {line.usage.cost ? ` · ${formatMoney(line.usage.cost, budget?.currency)}` : ''}
-                </div>
-              )}
-              {reactionsOn(line)}
-            </SwipeableLine>
-          </Tooltip>
+            )}
+          </Fragment>
         )
       case 'tool': {
         const artifact = artifactOf(line)

@@ -35,6 +35,11 @@ type avatarWorld struct {
 	files    storage.Storage
 
 	person, other, manager *models.User
+
+	// linkAsker is a person with an agent that is on and a conversation, made
+	// by useLinkPreviewSite for the tests of link previews.
+	linkAsker          *models.User
+	linkConversationID string
 }
 
 func newAvatarWorld(t *testing.T) *avatarWorld {
