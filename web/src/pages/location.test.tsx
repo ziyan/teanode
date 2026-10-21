@@ -1262,3 +1262,17 @@ it('opens on the visits of somebody chosen from the Sharing tab, and comes back 
   expect(await screen.findByRole('heading', { name: 'Visits' })).toBeTruthy()
   expect(screen.queryByRole('combobox', { name: 'Share with' })).toBeNull()
 })
+
+it('puts somebody who shares only the place they are at on the map, at that place', async () => {
+  answerWith({
+    sharedViews: [
+      {
+        ...PERSON_B_VIEW,
+        latestPoint: null,
+        openVisit: { id: 'visit-now', arrivedAt: new Date().toISOString(), place: place({ placeName: 'Fixture Park' }) },
+      },
+    ] as never,
+  })
+  renderAt('/location')
+  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toContain('Person B'))
+})

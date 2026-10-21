@@ -442,22 +442,30 @@ function LocationContent({ userId }: { userId: string }) {
   const mapPeople: MapPerson[] = useMemo(
     () => [
       ...(hasNoOwnPosition && browserPosition ? [browserPosition] : []),
-      ...views.flatMap((view) =>
-        view.latestPoint
-          ? [
-              {
-                userId: view.userId,
-                name: personName(view),
-                avatarUrl: view.avatarUrl,
-                avatarColorIndex: view.avatarColorIndex,
-                latitudeDegrees: view.latestPoint.latitudeDegrees,
-                longitudeDegrees: view.latestPoint.longitudeDegrees,
-                accuracyMeters: view.latestPoint.accuracyMeters,
-                isSelected: view.userId === (viewedUserId ?? selectedUserId),
-              },
-            ]
-          : [],
-      ),
+      ...views.flatMap((view) => {
+        // Where they are: their latest position, or, for somebody who shares
+        // the place they are at and not their position, the middle of that
+        // place, as the iPhone's map draws them.
+        const place = view.openVisit?.place
+        const position = view.latestPoint
+          ? view.latestPoint
+          : place
+            ? { latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, accuracyMeters: 0 }
+            : null
+        if (!position) return []
+        return [
+          {
+            userId: view.userId,
+            name: personName(view),
+            avatarUrl: view.avatarUrl,
+            avatarColorIndex: view.avatarColorIndex,
+            latitudeDegrees: position.latitudeDegrees,
+            longitudeDegrees: position.longitudeDegrees,
+            accuracyMeters: position.accuracyMeters,
+            isSelected: view.userId === (viewedUserId ?? selectedUserId),
+          },
+        ]
+      }),
     ],
     [views, selectedUserId, viewedUserId, hasNoOwnPosition, browserPosition],
   )
