@@ -1,6 +1,8 @@
 import { createContext, useContext, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { framedDrawer } from '../api'
+import { cleanLink, linkDisplayText } from '../lib/linkClean'
+import { BARE_LINK_SOURCE, trimLinkEnd } from '../lib/linkText'
 import { withoutHiddenComments } from '../suggestions'
 
 import { CodeBlock } from './codeBlock'
@@ -111,6 +113,29 @@ function Picture({ address, alt, href }: { address: string; alt: string; href: s
   )
 }
 
+// BareLink is a link written out with no words of its own: shown as its short
+// text, and followed without its tracking parameters. One that is not a web
+// address is drawn as it was written.
+function BareLink({ written }: { written: string }) {
+  const href = webAddress(written)
+  if (!href) return <>{written}</>
+  return (
+    <a href={cleanLink(href)} title={cleanLink(href)} target="_blank" rel="noopener noreferrer nofollow">
+      {linkDisplayText(written)}
+    </a>
+  )
+}
+
+// INLINE_SOURCE is every inline rule in one pattern, tried in order at each
+// position. Its last two are a link written out between angle brackets and a
+// bare one: the words a person typed, or a model wrote, with no brackets.
+const INLINE_SOURCE =
+  /`([^`]+)`|\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)|!\[([^\]]*)\]\(([^)\s]+)\)|\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$(.+?)\$\$|(^|[^\\$\w`])\$(?=[^\s$\d])([^$\n]*?[^\s$\\])\$(?!\d)|\*\*([^*]+)\*\*|(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s.,;:!?)]|$)|\[([^\]]+)\]\(([^)]+)\)/
+    .source +
+  '|<(https?:\\/\\/[^\\s>]+)>|(' +
+  BARE_LINK_SOURCE +
+  ')'
+
 function inline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = []
   // No lookbehind: what precedes an italic run is captured and put back,
@@ -121,8 +146,7 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
   // \[displayed\] or $$displayed$$, or $inline$ where it reads as TeX and
   // not as two prices: no space inside either dollar, no digit after the
   // first or the last.
-  const pattern =
-    /`([^`]+)`|\[!\[([^\]]*)\]\(([^)\s]+)\)\]\(([^)\s]+)\)|!\[([^\]]*)\]\(([^)\s]+)\)|\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$(.+?)\$\$|(^|[^\\$\w`])\$(?=[^\s$\d])([^$\n]*?[^\s$\\])\$(?!\d)|\*\*([^*]+)\*\*|(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s.,;:!?)]|$)|\[([^\]]+)\]\(([^)]+)\)/g
+  const pattern = new RegExp(INLINE_SOURCE, 'g')
   let index = 0
   let match: RegExpExecArray | null
   let count = 0
@@ -150,6 +174,8 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
       italic,
       linkText,
       linkAddress,
+      angleLink,
+      bareLink,
     ] = match
     if (codeSpan !== undefined) {
       nodes.push(<code key={key}>{codeSpan}</code>)
@@ -176,6 +202,11 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
     } else if (italic !== undefined) {
       if (beforeItalic) nodes.push(beforeItalic)
       nodes.push(<em key={key}>{inline(italic, key)}</em>)
+    } else if (angleLink !== undefined || bareLink !== undefined) {
+      // A link with no words of its own is shown short, and followed clean.
+      const written = angleLink ?? trimLinkEnd(bareLink)
+      nodes.push(<BareLink key={key} written={written} />)
+      if (bareLink !== undefined && bareLink.length > written.length) nodes.push(bareLink.slice(written.length))
     } else {
       // Only http and https, and the dashboard's own pages the agent links
       // as mail: and memory:. A link in a release note is a link somebody
@@ -194,7 +225,9 @@ function inline(text: string, keyPrefix: string): React.ReactNode[] {
             {linkText}
           </DashboardLink>
         ) : href ? (
-          <a key={key} href={href} target="_blank" rel="noopener noreferrer nofollow">
+          // The words are the writer's, kept as written; the address is
+          // followed without the tracking in it.
+          <a key={key} href={cleanLink(href)} target="_blank" rel="noopener noreferrer nofollow">
             {linkText}
           </a>
         ) : (

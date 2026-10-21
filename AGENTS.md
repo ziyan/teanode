@@ -45,6 +45,9 @@ and a person turns it on. See `docs/subsystems/` for how it works.
                             and naming a version of one with an ETag
       avatar/               a person's picture: any PNG or JPEG made into one
                             square PNG with no metadata in it
+      linkpreview/          what a linked page says about itself, for the card
+                            under a message: read through safefetch, its
+                            picture scaled down and kept here
       calendar/             the iCalendar format: reading an event, working out
                             when a repeat happens, building a file from boxes
                             somebody filled in, and free-busy

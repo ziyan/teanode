@@ -21109,6 +21109,100 @@ button.person-row:focus-visible {
   line-height: 0;
 }
 
+/* A link in the person's own bubble is the bubble's letters: the page's text
+   color is the bubble's own color there, and would not be seen. */
+.agent-line.user a {
+  color: inherit;
+  text-decoration-color: currentColor;
+}
+
+/* The card under a message that holds a link: the page's picture, its site,
+   its title and two lines about it. The whole card opens the link, so it is an
+   anchor with no underline, and it keeps its size under the pointer: only the
+   border answers a hover. The marker is what the card waits to be near the
+   screen by; out of the flow, so it adds neither height nor a flex gap. */
+.link-card {
+  display: block;
+  flex: 0 0 auto;
+  width: 320px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.link-card:hover {
+  border-color: var(--border-strong);
+}
+
+/* In a chat the bubble and what is under it sit two pixels apart, which is
+   too close for a card. */
+.agent-chat-body > .link-card,
+.agent-chat-turn.mine > .link-card {
+  margin-top: 4px;
+}
+
+.link-card.is-own {
+  align-self: flex-end;
+}
+
+.link-card-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  object-fit: cover;
+  background: var(--field);
+}
+
+.link-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.link-card-site {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-card-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.link-card-description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--text-label);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.link-card-marker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 /* --- the Browser page ------------------------------------------------------
    The person's tab live: a strip of the tabs there are, then one panel with
    who controls the tab above the picture. The picture is as wide as the panel

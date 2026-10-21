@@ -700,12 +700,18 @@ struct ConversationItemView: View {
                             .onLongPressGesture(minimumDuration: 0.35) {
                                 if line.messageId != nil { MessageActionsPresenter.present(line: line, model: model, app: app) }
                             }
+                            .linkPreviewBelow(
+                                conversationId: model.conversationId, text: line.text, isMarkdown: false,
+                                alignment: author.isOwnWords ? .trailing : .leading, isReady: !line.isBeingSent && !line.isDeleted)
                     }
                 } else {
                     PersonBubble(line: line) { model.readingText = line.text }
                         .onLongPressGesture(minimumDuration: 0.35) {
                             MessageActionsPresenter.present(line: line, model: model, app: app)
                         }
+                        .linkPreviewBelow(
+                            conversationId: model.conversationId, text: line.text, isMarkdown: false, alignment: .trailing,
+                            isReady: !line.isBeingSent)
                 }
             case .answer where line.author != nil:
                 // An agent's words said in a chat: under its name, in front of
@@ -724,6 +730,9 @@ struct ConversationItemView: View {
                             .onLongPressGesture(minimumDuration: 0.35) {
                                 MessageActionsPresenter.present(line: line, model: model, app: app)
                             }
+                            .linkPreviewBelow(
+                                conversationId: model.conversationId, text: line.text, isMarkdown: true, alignment: .leading,
+                                isReady: !line.isStreaming)
                         }
                     }
                 }
@@ -735,6 +744,9 @@ struct ConversationItemView: View {
                     .onLongPressGesture(minimumDuration: 0.35) {
                         MessageActionsPresenter.present(line: line, model: model, app: app)
                     }
+                    .linkPreviewBelow(
+                        conversationId: model.conversationId, text: line.text, isMarkdown: true, alignment: .leading,
+                        isReady: !line.isStreaming)
                     if isShowingUsage, let usage = line.usage {
                         Text(UsageWords.turn(usage))
                             .font(.caption2)
@@ -794,7 +806,11 @@ enum MessageActionsPresenter {
             rootView: MessageActionsView(line: line, model: model) { then in
                 shown?.dismiss(animated: true) { then?() }
             }
-            .environment(app))
+            .environment(app)
+            // A link in the message opens in the app's browser, as anywhere
+            // else: this view is hosted from UIKit and has not the screen's
+            // environment.
+            .environment(\.openURL, OpenURLAction { address in app.followLink(address) }))
         controller.modalPresentationStyle = .overFullScreen
         controller.modalTransitionStyle = .crossDissolve
         controller.view.backgroundColor = .clear
@@ -1204,6 +1220,23 @@ struct PersonBubble: View {
     private static let shownLineCount = 30
     private static let shownCharacterCount = 3000
 
+    /// The color of a link in the bubble: the accent on the gray of
+    /// somebody else's, the words' own color on the person's, whose accent
+    /// tint would make an accent link too faint to read.
+    private var linkColor: Color { isOthers ? Color.accentColor : Color.primary }
+
+    /// The bubble's words with their links followable; on the person's own
+    /// side a link is underlined too, as it is in the words' own color.
+    static func bubbleText(_ text: String, isOwn: Bool) -> AttributedString {
+        var linked = LinkText.linked(plain: text)
+        guard isOwn else { return linked }
+        let linkRanges = linked.runs.filter { run in run.link != nil }.map(\.range)
+        for linkRange in linkRanges {
+            linked[linkRange][AttributeScopes.SwiftUIAttributes.UnderlineStyleAttribute.self] = Text.LineStyle.single
+        }
+        return linked
+    }
+
     private var isTooLong: Bool {
         line.text.count > Self.shownCharacterCount || line.text.split(separator: "\n", omittingEmptySubsequences: false).count > Self.shownLineCount
     }
@@ -1260,7 +1293,8 @@ struct PersonBubble: View {
                             .buttonStyle(.bordered)
                             .buttonBorderShape(.capsule)
                     } else {
-                        Text(line.text)
+                        Text(Self.bubbleText(line.text, isOwn: !isOthers))
+                            .tint(linkColor)
                     }
                 }
                 .padding(.horizontal, 14)
@@ -1688,9 +1722,16 @@ struct MarkdownView: View {
         }
     }
 
+    /// The inline styles of the text as the platform reads them, with its links
+    /// made followable: a bare address shown short, every address opened
+    /// without its tracking, code left as it is.
     static func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        let styled =
+            (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
+        return LinkText.linked(styled) { covered in
+            covered.runs.contains(where: { run in run.inlinePresentationIntent?.contains(.code) ?? false })
+        }
     }
 }
 

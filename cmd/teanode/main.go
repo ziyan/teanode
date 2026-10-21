@@ -96,6 +96,7 @@ func main() {
 			cmd.NewRecordingCommand(),
 			cmd.NewPhotoCommand(),
 			cmd.NewSearchCommand(),
+			cmd.NewLinkCommand(),
 			cmd.NewAgentCommand(),
 			cmd.NewHookCommand(),
 			cmd.NewComputerCommand(),

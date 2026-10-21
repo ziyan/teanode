@@ -27,10 +27,16 @@
             if let picture = Self.avatarPicture(for: request) {
                 return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
             }
+            // So is the picture of a link's page.
+            if let picture = Self.linkPreviewPicture(for: request) {
+                return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if let personCardAnswer = Self.personCardAnswering(query: query, body: request.httpBody) {
-                // First: its document names fields (photos, recordings, mail) that the operations below are looked for by.
+            if let linkPreviewAnswer = Self.linkPreviewAnswering(query: query, body: request.httpBody) {
+                answer = linkPreviewAnswer
+            } else if let personCardAnswer = Self.personCardAnswering(query: query, body: request.httpBody) {
+                // Before the rest: its document names fields (photos, recordings, mail) that the operations below are looked for by.
                 answer = personCardAnswer
             } else if query.contains("SearchEverything") {
                 answer = Self.searchEverything(answering: request.httpBody)
@@ -65,7 +71,13 @@
             } else if query.contains("GetServiceCapabilities") {
                 answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isPhotosEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
             } else if query.contains("ReadAgentConversation") {
-                answer = Self.screen?.hasPrefix("conversation-long-message") == true ? Self.longMessageConversation : Self.conversation
+                if Self.screen?.hasPrefix("conversation-long-message") == true {
+                    answer = Self.longMessageConversation
+                } else if Self.screen == "conversation-link" {
+                    answer = Self.linkConversation
+                } else {
+                    answer = Self.conversation
+                }
             } else if query.contains("ListAgentConversations") {
                 answer = Self.conversations
             } else if query.contains("ListMailboxes") {
@@ -631,11 +643,12 @@
             """#
 
         /// Whether a screenshot opens on the main conversation instead of the
-        /// list of conversations: `-TeaNodeScreen conversation`, and the screens
-        /// named `conversation-long-message` that open one with a long message.
+        /// list of conversations: `-TeaNodeScreen conversation`, `conversation-link`
+        /// with a message that holds a link, and the screens named
+        /// `conversation-long-message` that open one with a long message.
         static var opensMainChat: Bool {
             guard isRequested, let screen else { return false }
-            return screen == "conversation" || screen.hasPrefix("conversation-long-message")
+            return screen == "conversation" || screen == "conversation-link" || screen.hasPrefix("conversation-long-message")
         }
 
         /// What the Search tab finds for the words, as the server answers a

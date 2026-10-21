@@ -238,3 +238,44 @@ it('does not draw an HTML comment as text', () => {
   expect(container.textContent).toContain('Saved.')
   expect(container.textContent).not.toContain('kept')
 })
+
+it('links a bare address, shown short and followed without its tracking', () => {
+  const { container } = render(
+    <MemoryRouter>
+      <Markdown
+        text={
+          'See https://www.example.com/shop/item-1/?gclid=abc&color=red. Then <https://example.org/x?utm_source=a> too.'
+        }
+      />
+    </MemoryRouter>,
+  )
+  const links = Array.from(container.querySelectorAll('a'))
+  expect(links.map((link) => link.getAttribute('href'))).toEqual([
+    'https://www.example.com/shop/item-1/?color=red',
+    'https://example.org/x',
+  ])
+  expect(links[0].textContent).toBe('example.com/shop/item-1/?color=red')
+  expect(links[0].getAttribute('rel')).toContain('noopener')
+  expect(container.textContent).toBe('See example.com/shop/item-1/?color=red. Then example.org/x too.')
+})
+
+it('keeps the words of a link and cleans its address', () => {
+  const { container } = render(
+    <MemoryRouter>
+      <Markdown text={'[the chair](https://example.com/chair?fbclid=zz&color=blue)'} />
+    </MemoryRouter>,
+  )
+  const link = container.querySelector('a')
+  expect(link?.textContent).toBe('the chair')
+  expect(link?.getAttribute('href')).toBe('https://example.com/chair?color=blue')
+})
+
+it('does not link an address inside code', () => {
+  const { container } = render(
+    <MemoryRouter>
+      <Markdown text={'Run `curl https://example.com/x` now'} />
+    </MemoryRouter>,
+  )
+  expect(container.querySelector('a')).toBeNull()
+  expect(container.querySelector('code')?.textContent).toBe('curl https://example.com/x')
+})
