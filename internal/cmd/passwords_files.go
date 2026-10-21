@@ -80,7 +80,7 @@ func readPrivateFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	if !information.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a plain file; remove it with 'teanode passwords lock' and try again", path)
+		return nil, fmt.Errorf("%s is not a plain file; remove it and try again ('teanode passwords lock' removes the keys that unlock kept, and nothing else)", path)
 	}
 	if err := checkPrivateFile(path, information); err != nil {
 		return nil, err

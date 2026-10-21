@@ -18,7 +18,7 @@ func openPrivateFile(path string) (*os.File, error) {
 	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		if errorsIsLoop(err) {
-			return nil, fmt.Errorf("%s is a link, not a plain file; remove it with 'teanode passwords lock' and try again", path)
+			return nil, fmt.Errorf("%s is a link, not a plain file; remove it and try again ('teanode passwords lock' removes the keys that unlock kept, and nothing else)", path)
 		}
 		return nil, err
 	}
@@ -62,10 +62,11 @@ func lockPrivateFile(path string) (release func(), err error) {
 // command could read or change, or that belongs to somebody else.
 func checkPrivateFile(path string, information os.FileInfo) error {
 	if permissions := information.Mode().Perm(); permissions&0o077 != 0 {
-		return fmt.Errorf("%s can be read or changed by other people (mode %04o); 'teanode passwords lock' removes it, and its keys should be treated as seen", path, permissions)
+		return fmt.Errorf("%s can be read or changed by other people (mode %04o); if only you could have touched it, 'chmod 600 %s' fixes that, "+
+			"otherwise remove it and treat what it held as seen ('teanode passwords lock' removes the keys that unlock kept, and nothing else)", path, permissions, path)
 	}
 	if status, isStatus := information.Sys().(*syscall.Stat_t); isStatus && int(status.Uid) != os.Getuid() {
-		return fmt.Errorf("%s belongs to another user; 'teanode passwords lock' removes it", path)
+		return fmt.Errorf("%s belongs to another user; remove it ('teanode passwords lock' removes the keys that unlock kept, and nothing else)", path)
 	}
 	return nil
 }

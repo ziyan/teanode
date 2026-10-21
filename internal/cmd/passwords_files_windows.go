@@ -15,7 +15,7 @@ func openPrivateFile(path string) (*os.File, error) {
 		return nil, err
 	}
 	if !linkInformation.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a plain file; remove it with 'teanode passwords lock' and try again", path)
+		return nil, fmt.Errorf("%s is not a plain file; remove it and try again ('teanode passwords lock' removes the keys that unlock kept, and nothing else)", path)
 	}
 	return os.Open(path)
 }

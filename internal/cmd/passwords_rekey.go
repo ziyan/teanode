@@ -64,16 +64,19 @@ func (self *passwordsSession) reloadItem(itemID string) (*passwordsItem, error) 
 	return nil, fmt.Errorf("item %s is not there any more", itemID)
 }
 
-// rekeyItem gives an item the person owns a new item key. Every recipient the
-// item's shares reach now keeps access if their public key is one the person
-// confirmed (the same rule as sharing: the person is asked about the ones that
-// are not, at a terminal); the others wait, and are given back so that the
-// command can say so. The agent keeps access only when shouldKeepAgent is set
-// and the item is still usable by it. When the item moved on since it was read
-// the item is read again and the new key is made once more. The item is
-// updated in place to the new key and revision.
-func (self *passwordsSession) rekeyItem(item *passwordsItem, shouldKeepAgent bool) ([]*client.PasswordRecipientView, error) {
-	waiting, err := self.rekeyItemOnce(item, shouldKeepAgent)
+// rekeyItem gives an item the person owns a new item key. changeAccess, when
+// not nil, makes the access record that is sealed with the new fields from the
+// one the item has (narrowing it, for unshare and agent off); nil seals the
+// record as it is. Every recipient the sealed record reaches keeps access if
+// their public key is one the person confirmed (the same rule as sharing: the
+// person is asked about the ones that are not, at a terminal); the others wait,
+// and are given back so that the command can say so. A person the server lists
+// but the record does not reach is given no key. The agent keeps access only
+// when the record says it may use the item, and the server agrees. When the item
+// moved on since it was read the item is read again and the new key is made
+// once more. The item is updated in place to the new key and revision.
+func (self *passwordsSession) rekeyItem(item *passwordsItem, changeAccess func(*passwords.PasswordAccess) *passwords.PasswordAccess) ([]*client.PasswordRecipientView, error) {
+	waiting, err := self.rekeyItemOnce(item, changeAccess)
 	if !isChangedOnAnotherDevice(err) {
 		return waiting, err
 	}
@@ -82,14 +85,41 @@ func (self *passwordsSession) rekeyItem(item *passwordsItem, shouldKeepAgent boo
 		return nil, err
 	}
 	*item = *fresh
-	return self.rekeyItemOnce(item, shouldKeepAgent)
+	return self.rekeyItemOnce(item, changeAccess)
 }
 
-func (self *passwordsSession) rekeyItemOnce(item *passwordsItem, shouldKeepAgent bool) ([]*client.PasswordRecipientView, error) {
-	known, err := self.knownKeys()
-	if err != nil {
-		return nil, err
+func (self *passwordsSession) rekeyItemOnce(item *passwordsItem, changeAccess func(*passwords.PasswordAccess) *passwords.PasswordAccess) ([]*client.PasswordRecipientView, error) {
+	access := item.Access()
+	if changeAccess != nil {
+		access = changeAccess(access)
 	}
+	// The agent keeps a copy of the new key only when the owner's own record
+	// lets it use the item, and the server's record of it agrees. A record that
+	// says yes where the server says no is an agent permission that was never
+	// finished; it is sealed as no.
+	isAgentKept := access != nil && access.IsUsableByAgent && item.View.IsUsableByAgent
+	if access != nil && access.IsUsableByAgent && !item.View.IsUsableByAgent {
+		access = passwords.AccessWithAgentUse(access, false)
+	}
+	previousAccess := item.Access()
+	item.setAccess(access)
+	waiting, err := self.rekeyItemWithAccess(item, isAgentKept)
+	if err != nil {
+		item.setAccess(previousAccess)
+	}
+	return waiting, err
+}
+
+func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKept bool) ([]*client.PasswordRecipientView, error) {
+	// The known keys decide who can be sealed for. When their file cannot be
+	// read (a bad mode, say) nobody counts as confirmed: the narrowing still
+	// happens, the people the item is still shared with wait for the new key,
+	// and the person is told how to fix the file.
+	known, knownErr := self.knownKeys()
+	if knownErr != nil {
+		fmt.Fprintf(os.Stderr, "note: the file of known keys cannot be used, so nobody is given the new key until it is fixed: %s\n", forTerminal(knownErr.Error()))
+	}
+	circleIDs := circleIDsOfRecipients(item.View.Shares)
 	var reached, waiting []*client.PasswordRecipientView
 	seen := map[string]bool{}
 	for _, recipient := range existingRecipients(item.View) {
@@ -97,27 +127,34 @@ func (self *passwordsSession) rekeyItemOnce(item *passwordsItem, shouldKeepAgent
 			continue
 		}
 		seen[recipient.UserID] = true
-		if recipient.PublicKey == "" {
+		switch {
+		case !item.isReachedBySealedAccess(recipient, circleIDs):
+			fmt.Fprintf(os.Stderr, "note: the server lists %s as having this item, but you did not share it with them, so they are not given the new key\n",
+				forTerminal(textFromServer(recipient.Username)))
+		case recipient.PublicKey == "":
 			waiting = append(waiting, recipient)
-			continue
+		default:
+			reached = append(reached, recipient)
 		}
-		reached = append(reached, recipient)
 	}
 
 	// A recipient whose key was never confirmed, or changed since, is asked
 	// about now. If the person is not there to answer, or says no, the person
 	// waits for the new key instead of being sealed for a key nobody checked.
+	isConfirmed := func(recipient *client.PasswordRecipientView) bool {
+		return knownErr == nil && known.confirmedKey(recipient.UserID) == recipient.PublicKey
+	}
 	var unconfirmed []*client.PasswordRecipientView
 	for _, recipient := range reached {
-		if known.confirmedKey(recipient.UserID) != recipient.PublicKey {
+		if !isConfirmed(recipient) {
 			unconfirmed = append(unconfirmed, recipient)
 		}
 	}
-	if len(unconfirmed) > 0 {
-		if err := self.confirmRecipientKeys(unconfirmed); err != nil {
+	if len(unconfirmed) > 0 && knownErr == nil {
+		if err := self.confirmRecipientKeys(unconfirmed, nil); err != nil {
 			var names []string
 			for _, recipient := range unconfirmed {
-				names = append(names, recipient.Name+" ("+recipient.Username+")")
+				names = append(names, fmt.Sprintf("%q", textFromServer(recipient.Username)))
 			}
 			fmt.Fprintf(os.Stderr, "note: the key of %s is not confirmed, so they wait for the item's new key; "+
 				"run 'teanode passwords share --waiting' at a terminal to check their safety codes, or 'teanode passwords trust <username> <code>' and then 'share --waiting'\n", forTerminal(strings.Join(names, ", ")))
@@ -130,11 +167,11 @@ func (self *passwordsSession) rekeyItemOnce(item *passwordsItem, shouldKeepAgent
 	}
 	shareKeys := []*client.PasswordItemShareKeyInput{}
 	for _, recipient := range reached {
-		if known.confirmedKey(recipient.UserID) != recipient.PublicKey {
+		if !isConfirmed(recipient) {
 			waiting = append(waiting, recipient)
 			continue
 		}
-		shareKey, err := self.sealItemKeyFor(item.View.ID, newItemKey, recipient)
+		shareKey, err := self.sealItemKeyFor(item.View.ID, newItemKey, "", recipient)
 		if err != nil {
 			return nil, err
 		}
@@ -150,12 +187,12 @@ func (self *passwordsSession) rekeyItemOnce(item *passwordsItem, shouldKeepAgent
 	}
 	input := client.PasswordItemRekeyInput{
 		ID:              item.View.ID,
-		BaseRevision:    int(item.View.Revision),
+		BaseRevision:    item.View.Revision,
 		EncryptedFields: encryptedFields,
 		ItemKey:         sealedItemKey.String(),
 		ShareKeys:       shareKeys,
 	}
-	if shouldKeepAgent && item.View.IsUsableByAgent {
+	if isAgentKept {
 		itemKeyByAgentKey, err := self.sealItemKeyForAgent(item.View.ID, newItemKey)
 		if err != nil {
 			return nil, err

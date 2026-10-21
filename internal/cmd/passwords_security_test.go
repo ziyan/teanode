@@ -13,6 +13,9 @@ import (
 	"github.com/ziyan/teanode/internal/passwords"
 )
 
+// zeroCode is a safety code that is not anybody's.
+const zeroCode = "0000 0000 0000 0000 0000 0000 0000 0000"
+
 const (
 	benPassphrase   = "ben passphrase example"
 	coraToken       = "token-cora"
@@ -133,7 +136,7 @@ func TestPasswordsAKeySeenOnAnItemIsNotConfirmed(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	if _, err := session.sealItemKeyFor("item", make([]byte, passwords.KeyLength), recipients); err == nil || !strings.Contains(err.Error(), "not one you confirmed") {
+	if _, err := session.sealItemKeyFor("item", make([]byte, passwords.KeyLength), "", recipients); err == nil || !strings.Contains(err.Error(), "not one you confirmed") {
 		test.Errorf("sealing for a key that was not confirmed: %v", err)
 	}
 
@@ -469,8 +472,12 @@ func TestPasswordsRekeyFailureAndRetry(test *testing.T) {
 	if fake.rekeyCount != 1 {
 		test.Fatalf("running unshare again made %d re-keys", fake.rekeyCount)
 	}
-	if !strings.Contains(output, "not shared with") {
+	if !strings.Contains(output, "stopped sharing") {
 		test.Errorf("the second unshare said %q", output)
+	}
+	// The retry sealed the narrower record too.
+	if opened := fake.openedItemAccess(testToken, testPassphrase, item.id); opened == nil || len(opened.Grantees) != 0 {
+		test.Errorf("the record still reaches somebody after the retry: %+v", opened)
 	}
 	if !item.isUsableByAgent || item.itemKeyByAgentKey == "" {
 		test.Error("the agent lost the item in the re-key")
@@ -730,24 +737,24 @@ func TestPasswordsTrustComparesTheSafetyCode(test *testing.T) {
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "secret-example")
 
 	// Ben has not set up Passwords: there is no key to confirm.
-	if _, err := fake.run(testToken, "", "trust", "ben", "0000 0000 0000 0000 0000"); err == nil || !strings.Contains(err.Error(), "has not set up Passwords") {
+	if _, err := fake.run(testToken, "", "trust", "ben", zeroCode); err == nil || !strings.Contains(err.Error(), "has not set up Passwords") {
 		test.Errorf("trust for somebody with no key: %v", err)
 	}
 	fake.setUpAs(benToken, benPassphrase)
 	fake.unlockAs(testToken)
 	benKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
-	code := passwords.SafetyCode(benKey)
+	code := passwords.SafetyCode("user-ben", benKey)
 
 	// A wrong code, and codes that are not codes, record nothing.
-	wrong := "0000 0000 0000 0000 0000"
+	wrong := zeroCode
 	if wrong == code {
-		wrong = "1111 1111 1111 1111 1111"
+		wrong = strings.ReplaceAll(zeroCode, "0", "1")
 	}
 	if _, err := fake.run(testToken, "", "trust", "ben", wrong); err == nil || !strings.Contains(err.Error(), "nothing was recorded") {
 		test.Errorf("a wrong code: %v", err)
 	}
 	for _, bad := range []string{"1234", "abcd abcd abcd abcd abcd", strings.ReplaceAll(code, " ", "") + "1"} {
-		if _, err := fake.run(testToken, "", "trust", "ben", bad); err == nil || !strings.Contains(err.Error(), "five groups") {
+		if _, err := fake.run(testToken, "", "trust", "ben", bad); err == nil || !strings.Contains(err.Error(), "eight groups") {
 			test.Errorf("trust with %q: %v", bad, err)
 		}
 	}
@@ -791,8 +798,25 @@ func TestPasswordsTrustComparesTheSafetyCode(test *testing.T) {
 	if _, err := fake.run(testToken, "", "trust", "ben", code); err == nil {
 		test.Fatal("the old code confirmed a new key")
 	}
-	fake.mustRun(testToken, "", "trust", "ben", passwords.SafetyCode(newKey))
+	fake.mustRun(testToken, "", "trust", "ben", passwords.SafetyCode("user-ben", newKey))
 	if record := knownRecord(test, "user-ben"); record.ConfirmedPublicKey != fake.users[benToken].setup.PublicKey {
 		test.Errorf("the new key was not confirmed: %+v", record)
 	}
+}
+
+// openedItemAccess is the access record sealed inside an item the person owns,
+// opened the way a command opens it.
+func (self *fakePasswordsServer) openedItemAccess(token, passphrase, itemID string) *passwords.PasswordAccess {
+	self.test.Helper()
+	items, err := self.sessionAs(token, passphrase).loadItems(true)
+	if err != nil {
+		self.test.Fatal(err)
+	}
+	for _, item := range items {
+		if item.View.ID == itemID {
+			return item.Access()
+		}
+	}
+	self.test.Fatalf("no item %s", itemID)
+	return nil
 }

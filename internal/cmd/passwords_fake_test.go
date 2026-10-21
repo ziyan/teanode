@@ -51,6 +51,9 @@ type fakePasswordsServer struct {
 	// on another device, and moves its revision on, as a save from elsewhere
 	// would have.
 	staleOnce bool
+	// forgedWaiting is what a server that lies adds to the waiting list: an
+	// item id to a user id, shared or not.
+	forgedWaiting map[string]string
 }
 
 type fakePasswordsUser struct {
@@ -64,8 +67,10 @@ type fakePasswordsItem struct {
 	revision                                            int64
 	deletedAt                                           *time.Time
 	isUsableByAgent                                     bool
-	itemKeyByAgentKey                                   string
-	grantees                                            []*client.PasswordShareGranteeInput
+	// needsNewKey is set when access narrowed and cleared by a re-key.
+	needsNewKey       bool
+	itemKeyByAgentKey string
+	grantees          []*client.PasswordShareGranteeInput
 	// keys are the item key sealed for each recipient by user id.
 	keys map[string]*client.PasswordShareKeyInput
 }
@@ -191,7 +196,7 @@ func (self *fakePasswordsServer) itemView(item *fakePasswordsItem, reader *fakeP
 	view := map[string]any{
 		"id": item.id, "ownerUserId": item.ownerUserID, "ownerName": self.userByID(item.ownerUserID).name, "ownerPublicKey": ownerPublicKey, "itemKind": item.itemKind,
 		"encryptedFields": item.encryptedFields, "itemKey": item.itemKey, "isSharedWithMe": false, "revision": item.revision,
-		"isUsableByAgent": item.isUsableByAgent, "lastUsedByAgentAt": nil, "deletedAt": item.deletedAt,
+		"isUsableByAgent": item.isUsableByAgent, "lastUsedByAgentAt": nil, "needsNewKey": false, "deletedAt": item.deletedAt,
 		"createdAt": time.Now().UTC(), "updatedAt": time.Now().UTC(), "shares": []any{},
 	}
 	if item.ownerUserID != reader.id {
@@ -208,6 +213,7 @@ func (self *fakePasswordsServer) itemView(item *fakePasswordsItem, reader *fakeP
 		})
 	}
 	view["shares"] = shares
+	view["needsNewKey"] = item.needsNewKey
 	return view
 }
 
@@ -354,6 +360,9 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 				}
 			}
 		}
+		for itemID, userID := range self.forgedWaiting {
+			waiting = append(waiting, map[string]any{"itemId": itemID, "recipient": self.recipientView(self.items[itemID], self.userByID(userID))})
+		}
 		return waiting, ""
 	case "ReadPasswordsAgentKey":
 		return self.agentPublicKey, ""
@@ -395,6 +404,9 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 		if operation == "DeletePasswordItem" {
 			moment := time.Now().UTC()
 			item.deletedAt = &moment
+			if len(item.keys) > 0 || item.itemKeyByAgentKey != "" {
+				item.needsNewKey = true
+			}
 		}
 		return self.itemView(item, user), ""
 	case "SetPasswordItemShares":
@@ -426,6 +438,15 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 				keys[userID] = key
 			}
 		}
+		for _, before := range item.grantees {
+			isKept := false
+			for _, grantee := range variables.Input.Grantees {
+				isKept = isKept || (grantee.GranteeUserID != nil && before.GranteeUserID != nil && *grantee.GranteeUserID == *before.GranteeUserID)
+			}
+			if !isKept {
+				item.needsNewKey = true
+			}
+		}
 		item.grantees, item.keys = variables.Input.Grantees, keys
 		self.revision++
 		item.revision = self.revision
@@ -439,6 +460,9 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 			item := self.items[key.ItemID]
 			if item == nil || item.ownerUserID != user.id {
 				return nil, "not found"
+			}
+			if key.ItemKey != item.itemKey {
+				return nil, "This item changed on another device. Open it again."
 			}
 			item.keys[key.RecipientUserID] = key.ForShare()
 		}
@@ -458,6 +482,9 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 		if self.isTapRefused && variables.Input.IsUsableByAgent {
 			return nil, api.TapRequiredPhrase + ": letting the agent use an item is done on the dashboard"
 		}
+		if !variables.Input.IsUsableByAgent && item.isUsableByAgent {
+			item.needsNewKey = true
+		}
 		item.isUsableByAgent, item.itemKeyByAgentKey = variables.Input.IsUsableByAgent, variables.Input.ItemKeyByAgentKey
 		self.revision++
 		item.revision = self.revision
@@ -470,7 +497,7 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 		input := variables.Input
 		item := self.items[input.ID]
 		switch {
-		case item == nil || item.ownerUserID != user.id || item.deletedAt != nil:
+		case item == nil || item.ownerUserID != user.id:
 			return nil, "not found"
 		case self.rekeyFailure != "":
 			return nil, self.rekeyFailure
@@ -479,7 +506,7 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 			self.revision++
 			item.revision = self.revision
 			return nil, "This item changed on another device. Open it again."
-		case int64(input.BaseRevision) != item.revision:
+		case input.BaseRevision != item.revision:
 			return nil, "This item changed on another device. Open it again."
 		case input.ItemKeyByAgentKey != nil && !item.isUsableByAgent:
 			return nil, "The agent does not use this item."
@@ -503,6 +530,7 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 			item.isUsableByAgent = input.ItemKeyByAgentKey != nil
 		}
 		item.keys = keys
+		item.needsNewKey = false
 		item.encryptedFields, item.itemKey = input.EncryptedFields, input.ItemKey
 		self.rekeyCount++
 		self.lastRekeyKeyCount = len(input.ShareKeys)

@@ -569,8 +569,8 @@ func TestPasswordsShare(test *testing.T) {
 	}
 	// The code shown is the code of the key Ben set up.
 	benKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
-	if !strings.Contains(err.Error(), passwords.SafetyCode(benKey)) {
-		test.Errorf("the safety code of Ben's key %s is not in:\n%s", passwords.SafetyCode(benKey), err)
+	if !strings.Contains(err.Error(), passwords.SafetyCode("user-ben", benKey)) {
+		test.Errorf("the safety code of Ben's key %s is not in:\n%s", passwords.SafetyCode("user-ben", benKey), err)
 	}
 	if _, err := fake.run(testToken, "", "share", "--waiting"); err == nil || !strings.Contains(err.Error(), "safety code") {
 		test.Errorf("sealing for the waiting without checking safety codes: %v", err)
@@ -585,7 +585,7 @@ func TestPasswordsShare(test *testing.T) {
 	if fake.items[firstItemID(fake)].keys["user-ben"] == nil {
 		test.Fatal("no key was sealed for Ben")
 	}
-	if len(questions.warnings) != 1 || !strings.Contains(questions.warnings[0], passwords.SafetyCode(benKey)) {
+	if len(questions.warnings) != 1 || !strings.Contains(questions.warnings[0], passwords.SafetyCode("user-ben", benKey)) {
 		test.Errorf("the question about Ben's key: %q", questions.warnings)
 	}
 	fake.mustRun(testToken, "", "lock")
@@ -662,7 +662,7 @@ func TestPasswordsShare(test *testing.T) {
 	fake.mustRun(testToken, testPassphrase+"\n", "unlock", "--passphrase-stdin")
 	questions.isYes = false
 	_, err = fake.run(testToken, "", "share", "--waiting")
-	if err == nil || !strings.Contains(err.Error(), "KEY CHANGED") || !strings.Contains(err.Error(), passwords.SafetyCode(oldBenKey)) || !strings.Contains(err.Error(), passwords.SafetyCode(newBenKey)) {
+	if err == nil || !strings.Contains(err.Error(), "KEY CHANGED") || !strings.Contains(err.Error(), passwords.SafetyCode("user-ben", oldBenKey)) || !strings.Contains(err.Error(), passwords.SafetyCode("user-ben", newBenKey)) {
 		test.Fatalf("a changed key was not shown with both safety codes:\n%v", err)
 	}
 	if key := fake.items[firstItemID(fake)].keys["user-ben"]; key.RecipientPublicKey == fake.users[benToken].setup.PublicKey {

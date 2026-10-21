@@ -338,7 +338,7 @@ const passwordsExportVersion = 1
 func writeExportJSON(writer io.Writer, items []*passwordsItem) error {
 	exported := make([]passwordsExportItem, 0, len(items))
 	for _, item := range items {
-		exported = append(exported, passwordsExportItem{ID: item.View.ID, ItemKind: string(item.Kind), Fields: item.Fields()})
+		exported = append(exported, passwordsExportItem{ID: item.View.ID, ItemKind: string(item.Kind), Fields: item.fieldsWithoutAccess()})
 	}
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")

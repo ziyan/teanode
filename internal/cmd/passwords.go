@@ -33,6 +33,7 @@ const (
 	passwordsChangePassphraseTapSentence = "Changing the passphrase" + passwordsTapPlace + "."
 	passwordsNewRecoveryKeyTapSentence   = "Replacing the recovery key" + passwordsTapPlace + "."
 	passwordsEraseTapSentence            = "Erasing Passwords" + passwordsTapPlace + "."
+	passwordsShareTapSentence            = "Sharing with someone new" + passwordsTapPlace + ", but taking someone away works here."
 )
 
 // clipboardClearSeconds is how long a copied secret stays on the clipboard
@@ -179,17 +180,21 @@ func NewPasswordsCommand() *cli.Command {
 					"set up. It seals only for a key you confirmed: one you confirmed before (kept in a\n" +
 					"file in the configuration directory) or one you confirm now by its safety code,\n" +
 					"which it prints and asks you to check with the person (in person, or on a call you\n" +
-					"trust); with no terminal, compare the code with them, then run 'teanode passwords\n" +
-					"trust <username> <code>' and share again. A server that swapped their key for its\n" +
-					"own could otherwise read what you share. A key you only saw on an item they shared with you does not count as\n" +
+					"trust): ask them to open Passwords settings on their own device and read you their\n" +
+					"safety code ('teanode passwords code' prints yours). With no terminal, compare the\n" +
+					"code with them, then run 'teanode passwords trust <username> <code>' and share\n" +
+					"again. A server that swapped their key for its own could otherwise read what you\n" +
+					"share. A key you only saw on an item they shared with you does not count as\n" +
 					"confirmed. When a person's key has changed it shows the code you confirmed and the\n" +
 					"new one. Confirming needs you at a terminal: without one the command refuses, and\n" +
-					"--force does not skip it. A person who has not set Passwords up yet waits, and\n" +
-					"'teanode passwords share --waiting' seals for them once they have. People who\n" +
-					"already have the item keep the key they have. The people it reaches can use the\n" +
-					"item; only you change it. Adding somebody new is done on the Passwords page of the\n" +
-					"dashboard or in the iPhone app; a command line cannot do this. Taking somebody away\n" +
-					"works here.",
+					"--force does not skip it. The item's own sealed record of who may have it is\n" +
+					"updated first, and a key is sealed only for somebody that record reaches, never\n" +
+					"for somebody the server alone says is a recipient. A person who has not set\n" +
+					"Passwords up yet waits, and 'teanode passwords share --waiting' seals for them once\n" +
+					"they have. People who already have the item keep the key they have. The people it\n" +
+					"reaches can use the item; only you change it. Adding somebody new is done on the\n" +
+					"Passwords page of the dashboard or in the iPhone app; a command line cannot do\n" +
+					"this, and says so before it asks for anything. Taking somebody away works here.",
 				Flags: []cli.Flag{
 					JSONFlag(), passphraseFlag(),
 					&cli.BoolFlag{Name: "waiting", Usage: "instead, seal your items for the people who have set Passwords up since you shared them"},
@@ -202,23 +207,52 @@ func NewPasswordsCommand() *cli.Command {
 				ArgsUsage: "<username> [safety code]",
 				Description: "Reads the person's current Passwords public key from the server, works out its\n" +
 					"safety code, and records the key as confirmed only if the code you give matches\n" +
-					"it (spaces are optional). Otherwise it refuses and records nothing. This is for a\n" +
+					"it (spaces are optional; it is 32 digits). Otherwise it refuses and records\n" +
+					"nothing, and does not tell you the code it expected. It refuses too when the\n" +
+					"server answers with another person than the user name you typed. This is for a\n" +
 					"script or a session with no terminal: the code must still come from the person\n" +
-					"(in person or on a call you trust, read off their own screen), not from this\n" +
-					"computer, or it proves nothing. --code-stdin reads the code from a line of\n" +
-					"standard input so it is not in the process list. A confirmed key is what 'share'\n" +
-					"and 'unshare' seal for.\n\n" +
-					"  teanode passwords trust ben 0412 9930 0007 5121 8800\n" +
-					"  echo 0412993000075121 8800 | teanode passwords trust ben --code-stdin",
+					"(in person or on a call you trust, read off their own screen in Passwords\n" +
+					"settings, or from their 'teanode passwords code'), not from this computer, or it\n" +
+					"proves nothing. --code-stdin reads the code from a line of standard input so it\n" +
+					"is not in the process list. A confirmed key is what 'share' and 'unshare' seal\n" +
+					"for.\n\n" +
+					"  teanode passwords trust ben 0412 9930 0007 5121 8800 3341 0562 7719\n" +
+					"  echo 04129930000751218800334105627719 | teanode passwords trust ben --code-stdin",
 				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "code-stdin", Usage: "read the safety code from a line of standard input"}},
 				Action: runPasswordsTrust,
+			},
+			{
+				Name:      "rekey",
+				Usage:     "give an item you own a new key",
+				ArgsUsage: "<item>",
+				Description: "Makes a new key for the item and seals its fields and the key again, so that\n" +
+					"a copy of the old key, held by somebody who is no longer shared with or by a\n" +
+					"copy of the database, opens nothing saved from now on. The new key is sealed for\n" +
+					"each person your own record of the item still reaches whose key you confirmed\n" +
+					"(you are asked about the others at a terminal; until you answer they wait, and\n" +
+					"'teanode passwords share --waiting' seals for them), and for the agent only if\n" +
+					"you let it use the item. 'list' and 'show' say when an item needs this; 'edit',\n" +
+					"'share', 'unshare' and 'agent' do it first on such an item.",
+				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
+				Action: runPasswordsRekey,
+			},
+			{
+				Name:  "code",
+				Usage: "your own safety code, for the people who share with you to compare",
+				Description: "Prints the safety code of your own key, worked out on this computer from the key\n" +
+					"pair that unlocking opened and from your user id, not from anything the server\n" +
+					"reports. The people you share with compare it with the one their device shows\n" +
+					"for you (in person or on a call you trust) before they confirm your key.",
+				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
+				Action: runPasswordsCode,
 			},
 			{
 				Name:      "unshare",
 				Usage:     "stop sharing an item with a person or a circle",
 				ArgsUsage: "<item> [username|circle]",
 				Description: "With no person or circle it stops sharing the item with everyone. It then gives\n" +
-					"the item a new key, so that the key the people you removed held opens nothing saved\n" +
+					"the item a new key (and seals a narrower record of who may have it inside the\n" +
+					"item), so that the key the people you removed held opens nothing saved\n" +
 					"later: the new key is sealed for each person who still has the item, if you\n" +
 					"confirmed their key (you are asked about the others at a terminal; until you answer\n" +
 					"they wait, and 'teanode passwords share --waiting' seals for them). If the new key\n" +
@@ -709,6 +743,7 @@ type passwordsItemSummary struct {
 	IsSharedWithMe  bool       `json:"isSharedWithMe"`
 	OwnerName       string     `json:"ownerName"`
 	IsUsableByAgent bool       `json:"isUsableByAgent"`
+	NeedsNewKey     bool       `json:"needsNewKey"`
 	DeletedAt       *time.Time `json:"deletedAt"`
 	Revision        int64      `json:"revision"`
 }
@@ -721,8 +756,14 @@ func summarizeItem(item *passwordsItem) passwordsItemSummary {
 	return passwordsItemSummary{
 		ID: item.View.ID, ItemKind: string(item.Kind), Name: item.Name(), UserName: item.UserName(), Sites: sites, Folder: item.Folder(),
 		IsShared: len(item.View.Shares) > 0, IsSharedWithMe: item.View.IsSharedWithMe, OwnerName: item.View.OwnerName,
-		IsUsableByAgent: item.View.IsUsableByAgent, DeletedAt: item.View.DeletedAt, Revision: item.View.Revision,
+		IsUsableByAgent: item.View.IsUsableByAgent, NeedsNewKey: item.View.NeedsNewKey, DeletedAt: item.View.DeletedAt, Revision: item.View.Revision,
 	}
+}
+
+// needsNewKeyWords tell what to run for an item the server marks as needing a
+// new key.
+func needsNewKeyWords(itemID string) string {
+	return "needs a new key: run teanode passwords rekey " + itemID
 }
 
 // itemMarkers are the short words that go after an item in a list.
@@ -735,6 +776,9 @@ func itemMarkers(summary passwordsItemSummary) string {
 	}
 	if summary.IsUsableByAgent {
 		markers = append(markers, "agent")
+	}
+	if summary.NeedsNewKey {
+		markers = append(markers, "needs a new key")
 	}
 	if summary.DeletedAt != nil {
 		markers = append(markers, "deleted "+summary.DeletedAt.In(time.Local).Format(time.DateOnly))
@@ -789,7 +833,15 @@ func runPasswordsList(ctx context.Context, command *cli.Command) error {
 		}
 		rows = append(rows, []string{summary.Name, summary.ItemKind, summary.UserName, site, summary.Folder, itemMarkers(summary), summary.ID})
 	}
-	return printTable([]string{"name", "kind", "user name", "site", "folder", "", "id"}, rows)
+	if err := printTable([]string{"name", "kind", "user name", "site", "folder", "", "id"}, rows); err != nil {
+		return err
+	}
+	for _, summary := range summaries {
+		if summary.NeedsNewKey {
+			fmt.Printf("%s: %s\n", forTerminal(summary.Name), needsNewKeyWords(summary.ID))
+		}
+	}
+	return nil
 }
 
 // searchMatches are the items with the word in their name, user name or sites.
@@ -947,6 +999,9 @@ func runPasswordsShow(ctx context.Context, command *cli.Command) error {
 	}
 	if markers := itemMarkers(summary); markers != "" {
 		header = append(header, [2]string{"marks", markers})
+	}
+	if summary.NeedsNewKey {
+		header = append(header, [2]string{"note", needsNewKeyWords(summary.ID)})
 	}
 	fields := header
 	for _, row := range rows {
@@ -1342,6 +1397,14 @@ func runPasswordsEdit(ctx context.Context, command *cli.Command) error {
 	if !item.IsOwner() {
 		return fmt.Errorf("%s is shared with you by %s, and only its owner changes it", item.Name(), item.View.OwnerName)
 	}
+	// An item whose access narrowed gets its new key before it is changed.
+	if item.View.NeedsNewKey {
+		waiting, err := session.rekeyItem(item, nil)
+		if err != nil {
+			return fmt.Errorf("the item needed a new key first: %w", describeError(command, err))
+		}
+		printWaitingRecipients(waiting)
+	}
 	if err := applyFieldFlags(command, item, false); err != nil {
 		return err
 	}
@@ -1412,6 +1475,16 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() != 2 {
 		return usage("usage: teanode passwords share <item> <username|circle>; --waiting seals for people who have set Passwords up since")
 	}
+	// Sharing with somebody new needs the person's tap. Find that out before
+	// the passphrase is asked for and before the person has compared a safety
+	// code, so that none of it is done for nothing.
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := refuseWithoutPasswordsTap(ctx, command, connection, passwordsShareTapSentence); err != nil {
+		return err
+	}
 	session, item, err := findOpenItem(ctx, command, command.Args().Get(0), false)
 	if err != nil {
 		return err
@@ -1419,7 +1492,7 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 	if !item.IsOwner() {
 		return fmt.Errorf("%s is shared with you by %s, and only its owner shares it", item.Name(), item.View.OwnerName)
 	}
-	typed := command.Args().Get(1)
+	typed := strings.TrimSpace(command.Args().Get(1))
 	granteeUserID, granteeCircleID, described, err := shareTarget(ctx, session.connection, typed)
 	if err != nil {
 		return describeError(command, err)
@@ -1427,6 +1500,22 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 	newRecipients, err := client.ListPasswordRecipients(ctx, session.connection, granteeUserID, granteeCircleID)
 	if err != nil {
 		return describeNotFound(command, err, typed)
+	}
+	typedUserNames := map[string]string{}
+	if granteeUserID != "" {
+		// A person asked for must be the person answered with.
+		if len(newRecipients) != 1 || newRecipients[0].UserID != granteeUserID || !strings.EqualFold(newRecipients[0].Username, typed) {
+			return fmt.Errorf("the server answered with a different person than %q, whom you asked to share with; nothing was shared", typed)
+		}
+		typedUserNames[granteeUserID] = typed
+	}
+	// An item whose access narrowed gets its new key before anything is added.
+	if item.View.NeedsNewKey {
+		waiting, err := session.rekeyItem(item, nil)
+		if err != nil {
+			return fmt.Errorf("the item needed a new key first: %w", describeError(command, err))
+		}
+		printWaitingRecipients(waiting)
 	}
 	grantees := existingGrantees(item.View)
 	isAlreadyShared := false
@@ -1436,7 +1525,17 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 	if !isAlreadyShared {
 		grantees = append(grantees, newGrantee(granteeUserID, granteeCircleID))
 	}
-	return setItemShares(ctx, command, session, item, grantees, append(existingRecipients(item.View), newRecipients...), "sharing "+forTerminal(item.Name())+" with "+forTerminal(described))
+	// Who is a member of which circle is the server's word, here for the
+	// circle being shared with too.
+	circleIDs := circleIDsOfRecipients(item.View.Shares)
+	if granteeCircleID != "" {
+		for _, recipient := range newRecipients {
+			circleIDs[recipient.UserID] = append(circleIDs[recipient.UserID], granteeCircleID)
+		}
+	}
+	newAccess := withGrantee(item.Access(), granteeUserID, granteeCircleID)
+	return setItemShares(ctx, command, session, item, newAccess, grantees, append(existingRecipients(item.View), newRecipients...), circleIDs, typedUserNames,
+		"sharing "+forTerminal(item.Name())+" with "+forTerminal(described))
 }
 
 func newGrantee(granteeUserID, granteeCircleID string) *client.PasswordShareGranteeInput {
@@ -1474,11 +1573,16 @@ func existingRecipients(view *client.PasswordItemView) []*client.PasswordRecipie
 	return recipients
 }
 
-// setItemShares replaces the item's shares. A key is sealed only for a
-// recipient who has Passwords set up and has no key for the item yet, and only
-// once their public key is known to this computer or confirmed now by its safety
-// code. People who already have a key keep it: nothing is sealed again for them.
-func setItemShares(ctx context.Context, command *cli.Command, session *passwordsSession, item *passwordsItem, grantees []*client.PasswordShareGranteeInput, recipients []*client.PasswordRecipientView, doing string) error {
+// setItemShares widens who the item is shared with, in the order that keeps the
+// sealed record from ever being wider than what the person chose: the person
+// confirms the keys, the item's fields are saved with the new access record,
+// and only then does the server learn of the new share. A key is sealed only
+// for a recipient who has Passwords set up and has no key for the item yet, who
+// the new record reaches, and whose public key is known to this computer or
+// confirmed now by its safety code. People who already have a key keep it:
+// nothing is sealed again for them.
+func setItemShares(ctx context.Context, command *cli.Command, session *passwordsSession, item *passwordsItem, newAccess *passwords.PasswordAccess,
+	grantees []*client.PasswordShareGranteeInput, recipients []*client.PasswordRecipientView, circleIDs map[string][]string, typedUserNames map[string]string, doing string) error {
 	var newlyReached, waiting []*client.PasswordRecipientView
 	reachedCount := 0
 	seen := map[string]bool{}
@@ -1488,6 +1592,9 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 		}
 		seen[recipient.UserID] = true
 		switch {
+		case !passwords.IsReachedByAccess(newAccess, recipient.UserID, circleIDs[recipient.UserID]):
+			fmt.Fprintf(os.Stderr, "note: the server lists %s as having this item, but you did not share it with them, so no key is sealed for them\n",
+				forTerminal(textFromServer(recipient.Username)))
 		case recipient.PublicKey == "":
 			waiting = append(waiting, recipient)
 		case recipient.HasKey:
@@ -1497,20 +1604,25 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 			newlyReached = append(newlyReached, recipient)
 		}
 	}
-	if err := session.confirmRecipientKeys(newlyReached); err != nil {
+	if err := session.confirmRecipientKeys(newlyReached, typedUserNames); err != nil {
 		return err
 	}
 	keys := []*client.PasswordShareKeyInput{}
 	for _, recipient := range newlyReached {
-		key, err := session.sealItemKeyFor(item.View.ID, item.ItemKey, recipient)
+		key, err := session.sealItemKeyFor(item.View.ID, item.ItemKey, item.View.ItemKey, recipient)
 		if err != nil {
 			return err
 		}
 		keys = append(keys, key.ForShare())
 	}
+	// The record first: if the server call fails the record is wider than the
+	// shares, which lets nobody in, and the same command again finishes it.
+	if err := session.saveItemWithAccess(item, newAccess); err != nil {
+		return describeError(command, err)
+	}
 	view, err := client.SetPasswordItemShares(ctx, session.connection, &client.SetPasswordItemSharesInput{ItemID: item.View.ID, Grantees: grantees, Keys: keys})
 	if err != nil {
-		return describeTapRequired(describeError(command, err), "Sharing with someone new is done on the Passwords page of the dashboard or in the iPhone app; a command line cannot do this, but taking someone away works here.")
+		return describeTapRequired(describeError(command, err), passwordsShareTapSentence)
 	}
 	item.View = view
 	if command.Bool("json") {
@@ -1536,6 +1648,10 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 	}
 	remaining := []*client.PasswordShareView{}
 	doing := "stopped sharing " + forTerminal(item.Name())
+	// With no person or circle named, everyone is taken off.
+	changeAccess := func(access *passwords.PasswordAccess) *passwords.PasswordAccess {
+		return passwords.AccessWithGrantees(access, []passwords.PasswordGrantee{})
+	}
 	if command.Args().Len() == 2 {
 		typed := command.Args().Get(1)
 		granteeUserID, granteeCircleID, described, err := shareTarget(ctx, session.connection, typed)
@@ -1550,6 +1666,12 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 			}
 			remaining = append(remaining, share)
 		}
+		for _, grantee := range item.sealedGrantees() {
+			isShared = isShared || isSameGrantee(grantee, granteeUserID, granteeCircleID)
+		}
+		changeAccess = func(access *passwords.PasswordAccess) *passwords.PasswordAccess {
+			return withoutGrantee(access, granteeUserID, granteeCircleID)
+		}
 		if !isShared {
 			// The item may be shared with nobody new here because an earlier
 			// run took them off but could not give the item a new key. Running
@@ -1559,9 +1681,11 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 			doing = "stopped sharing " + forTerminal(item.Name()) + " with " + forTerminal(described)
 		}
 	}
-	// Nobody new is reached, so no key is sealed here. The server forgets the
-	// keys of the people no longer reached; the people who are still reached
-	// get a key for the new item key below.
+	// Narrowing, in this order: the server stops sharing, then the item is
+	// re-keyed with the narrower record sealed in its fields. Nobody new is
+	// reached, so no key is sealed here. The server forgets the keys of the
+	// people no longer reached; the people who are still reached get a key for
+	// the new item key below.
 	remainingView := &client.PasswordItemView{Shares: remaining}
 	view, err := client.SetPasswordItemShares(ctx, session.connection, &client.SetPasswordItemSharesInput{
 		ItemID: item.View.ID, Grantees: existingGrantees(remainingView), Keys: []*client.PasswordShareKeyInput{},
@@ -1572,7 +1696,7 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 	item.View = view
 	// The people taken off may hold a sealed copy of the item key. A new key
 	// means the copy opens nothing saved from now on.
-	waiting, err := session.rekeyItem(item, true)
+	waiting, err := session.rekeyItem(item, changeAccess)
 	if err != nil {
 		return fmt.Errorf("%s: %w", passwordsRekeyFailedWords, describeError(command, err))
 	}
@@ -1610,24 +1734,57 @@ func runPasswordsShareWaiting(ctx context.Context, command *cli.Command) error {
 			owned[item.View.ID] = item
 		}
 	}
-	var recipients []*client.PasswordRecipientView
-	seen := map[string]bool{}
+	// An item whose access narrowed is given its new key before anybody is
+	// sealed a key for it, so nobody new is given the old one. The people it
+	// reaches who can be are sealed the new key by the re-key, so the list of
+	// who is waiting is read again.
+	isRekeyed := false
 	for _, each := range waiting {
-		if each.Recipient != nil && each.Recipient.PublicKey != "" && !seen[each.Recipient.UserID] && owned[each.ItemID] != nil {
-			seen[each.Recipient.UserID] = true
-			recipients = append(recipients, each.Recipient)
+		item := owned[each.ItemID]
+		if item == nil || !item.View.NeedsNewKey {
+			continue
+		}
+		if _, err := session.rekeyItem(item, nil); err != nil {
+			return fmt.Errorf("%s needed a new key first: %w", forTerminal(item.Name()), describeError(command, err))
+		}
+		isRekeyed = true
+	}
+	if isRekeyed {
+		waiting, err = client.ListWaitingPasswordShares(ctx, session.connection)
+		if err != nil {
+			return describeError(command, err)
 		}
 	}
-	if err := session.confirmRecipientKeys(recipients); err != nil {
-		return err
-	}
-	keys := []*client.PasswordItemShareKeyInput{}
+	// The server's list says who is waiting; it does not say who may have the
+	// item. A key is sealed only for somebody the item's own sealed record
+	// reaches, so an item the server lists for a person it is not shared with
+	// gets no key, and no question about it.
+	var reachedWaiting []*client.PasswordWaitingShareView
+	var recipients []*client.PasswordRecipientView
+	seen := map[string]bool{}
 	for _, each := range waiting {
 		item := owned[each.ItemID]
 		if item == nil || each.Recipient == nil || each.Recipient.PublicKey == "" {
 			continue
 		}
-		key, err := session.sealItemKeyFor(item.View.ID, item.ItemKey, each.Recipient)
+		if !item.isReachedBySealedAccess(each.Recipient, circleIDsOfRecipients(item.View.Shares)) {
+			fmt.Fprintf(os.Stderr, "note: the server lists %s as waiting for %s, but you did not share it with them, so no key is sealed for them\n",
+				forTerminal(textFromServer(each.Recipient.Username)), forTerminal(item.Name()))
+			continue
+		}
+		reachedWaiting = append(reachedWaiting, each)
+		if !seen[each.Recipient.UserID] {
+			seen[each.Recipient.UserID] = true
+			recipients = append(recipients, each.Recipient)
+		}
+	}
+	if err := session.confirmRecipientKeys(recipients, nil); err != nil {
+		return err
+	}
+	keys := []*client.PasswordItemShareKeyInput{}
+	for _, each := range reachedWaiting {
+		item := owned[each.ItemID]
+		key, err := session.sealItemKeyFor(item.View.ID, item.ItemKey, item.View.ItemKey, each.Recipient)
 		if err != nil {
 			return err
 		}
@@ -1678,22 +1835,33 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	if !isOn {
 		return turnOffAgentUse(command, session, item)
 	}
-	input := &client.SetPasswordItemUsableByAgentInput{ItemID: item.View.ID, IsUsableByAgent: isOn}
-	if isOn {
-		warning := "This lets TeaNode's agent sign in with " + forTerminal(item.Name()) + " in its browser, on the item's own sites, in any run of your agent, scheduled ones included. It never shows the password to the model."
-		if item.Note != nil {
-			warning = "This lets TeaNode's agent read the note " + forTerminal(item.Name()) + ", which goes to your agent's model provider."
-		}
-		if err := confirm(command, warning); err != nil {
-			return err
-		}
-		itemKeyByAgentKey, err := session.sealItemKeyForAgent(item.View.ID, item.ItemKey)
+	// An item whose access narrowed gets its new key before anything is added.
+	if item.View.NeedsNewKey {
+		waiting, err := session.rekeyItem(item, nil)
 		if err != nil {
-			return describeError(command, err)
+			return fmt.Errorf("the item needed a new key first: %w", describeError(command, err))
 		}
-		input.ItemKeyByAgentKey = itemKeyByAgentKey
+		printWaitingRecipients(waiting)
 	}
-	view, err := client.SetPasswordItemUsableByAgent(ctx, session.connection, input)
+	warning := "This lets TeaNode's agent sign in with " + forTerminal(item.Name()) + " in its browser, on the item's own sites, in any run of your agent, scheduled ones included. It never shows the password to the model."
+	if item.Note != nil {
+		warning = "This lets TeaNode's agent read the note " + forTerminal(item.Name()) + ", which goes to your agent's model provider."
+	}
+	if err := confirm(command, warning); err != nil {
+		return err
+	}
+	itemKeyByAgentKey, err := session.sealItemKeyForAgent(item.View.ID, item.ItemKey)
+	if err != nil {
+		return describeError(command, err)
+	}
+	// Widening, in this order: the fields are saved with the record that lets
+	// the agent use the item, then the server is asked to let it.
+	if err := session.saveItemWithAccess(item, passwords.AccessWithAgentUse(item.Access(), true)); err != nil {
+		return describeError(command, err)
+	}
+	view, err := client.SetPasswordItemUsableByAgent(ctx, session.connection, &client.SetPasswordItemUsableByAgentInput{
+		ItemID: item.View.ID, IsUsableByAgent: true, ItemKeyByAgentKey: itemKeyByAgentKey,
+	})
 	if err != nil {
 		return describeTapRequired(describeError(command, err), passwordsAgentTapSentence)
 	}
@@ -1706,19 +1874,23 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 }
 
 // turnOffAgentUse stops the agent using an item and gives the item a new item
-// key in the same call, so that a copy of the old key the agent could open
-// (from a copy of the database taken while it could) opens nothing saved later.
-// People the item is shared with keep access if their keys are confirmed. An
-// item the agent could not use already has nothing to turn off.
+// key in the same call, whose fields carry a record that no longer lets the
+// agent use it, so that a copy of the old key the agent could open (from a copy
+// of the database taken while it could) opens nothing saved later. People the
+// item is shared with keep access if their keys are confirmed. An item that
+// neither the server nor the owner's own record let the agent use already has
+// nothing to turn off.
 func turnOffAgentUse(command *cli.Command, session *passwordsSession, item *passwordsItem) error {
-	if !item.View.IsUsableByAgent {
+	if !item.View.IsUsableByAgent && !item.isUsableByAgentBySealedAccess() && !item.View.NeedsNewKey {
 		if command.Bool("json") {
 			return PrintJSON(summarizeItem(item))
 		}
 		fmt.Printf("the agent could not use %s\n", forTerminal(item.Name()))
 		return nil
 	}
-	waiting, err := session.rekeyItem(item, false)
+	waiting, err := session.rekeyItem(item, func(access *passwords.PasswordAccess) *passwords.PasswordAccess {
+		return passwords.AccessWithAgentUse(access, false)
+	})
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -1726,6 +1898,33 @@ func turnOffAgentUse(command *cli.Command, session *passwordsSession, item *pass
 		return PrintJSON(summarizeItem(item))
 	}
 	fmt.Printf("the agent may no longer use %s, and it has a new key\n", forTerminal(item.Name()))
+	printWaitingRecipients(waiting)
+	return nil
+}
+
+// runPasswordsRekey gives an item the person owns a new item key, with the
+// same record of who may have it. It is what an item the server marks as needing
+// a new key waits for.
+func runPasswordsRekey(ctx context.Context, command *cli.Command) error {
+	typed, err := itemFindingArgument(command, "usage: teanode passwords rekey <item>")
+	if err != nil {
+		return err
+	}
+	session, item, err := findOpenItem(ctx, command, typed, false)
+	if err != nil {
+		return err
+	}
+	if !item.IsOwner() {
+		return fmt.Errorf("%s is shared with you by %s, and only its owner gives it a new key", item.Name(), item.View.OwnerName)
+	}
+	waiting, err := session.rekeyItem(item, nil)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(summarizeItem(item))
+	}
+	fmt.Printf("%s has a new key\n", forTerminal(item.Name()))
 	printWaitingRecipients(waiting)
 	return nil
 }

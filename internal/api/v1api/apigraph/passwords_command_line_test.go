@@ -34,9 +34,10 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 		user           *models.User
 		credentialKind models.CredentialKind
 	}{
-		"ada-session": {world.ada, models.CredentialSession},
-		"ada-token":   {world.ada, models.CredentialToken},
-		"ben-session": {world.ben, models.CredentialSession},
+		"ada-session":  {world.ada, models.CredentialSession},
+		"ada-token":    {world.ada, models.CredentialToken},
+		"ben-session":  {world.ben, models.CredentialSession},
+		"cora-session": {world.cora, models.CredentialSession},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		person, isKnown := people[strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")]
@@ -91,7 +92,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 		return err != nil && strings.Contains(err.Error(), "done on the Passwords page") && !strings.Contains(err.Error(), api.TapRequiredPhrase)
 	}
 
-	const adaPassphrase, benPassphrase = "ada passphrase example", "ben passphrase example"
+	const adaPassphrase, benPassphrase, coraPassphrase = "ada passphrase example", "ben passphrase example", "cora passphrase example"
 
 	// A token that is not a person's tap cannot set up; a session can.
 	if _, err := run("ada-token", adaPassphrase+"\n", "setup", "--passphrase-stdin"); !isTapRefusal(err) {
@@ -158,8 +159,8 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if err != nil || len(benPublicKey) == 0 {
 		test.Fatalf("Ben's public key: %v", err)
 	}
-	benSafetyCode := passwords.SafetyCode(benPublicKey)
-	if _, err := run("ada-token", "", "trust", world.ben.Username, "0000 0000 0000 0000 0001"); err == nil || !strings.Contains(err.Error(), "nothing was recorded") {
+	benSafetyCode := passwords.SafetyCode(world.ben.ID, benPublicKey)
+	if _, err := run("ada-token", "", "trust", world.ben.Username, "0000 0000 0000 0000 0000 0000 0000 0001"); err == nil || !strings.Contains(err.Error(), "nothing was recorded") {
 		test.Fatalf("trust with a wrong code: %v", err)
 	}
 	if _, err := run("ada-session", "", "share", "example.com", world.ben.Username); err == nil || !strings.Contains(err.Error(), "safety code") {
@@ -199,6 +200,65 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	// The agent: a card is refused, a token is not a tap and a session may turn it on, and
 	// any sign-in may turn it off.
 	mustRun("ada-session", adaPassphrase+"\n", "unlock", "--passphrase-stdin")
+
+	// The person's own safety code is worked out from the key that unlocking
+	// opened and their user id, and is the one the people who share compare.
+	var adaSettings struct {
+		Setup struct {
+			PublicKey string `json:"publicKey"`
+		} `json:"setup"`
+	}
+	if err := json.Unmarshal([]byte(mustRun("ada-session", "", "settings", "--json")), &adaSettings); err != nil {
+		test.Fatal(err)
+	}
+	adaPublicKey, err := base64.StdEncoding.DecodeString(adaSettings.Setup.PublicKey)
+	if err != nil || len(adaPublicKey) == 0 {
+		test.Fatalf("Ada's public key: %v", err)
+	}
+	if output := mustRun("ada-session", "", "code"); !strings.Contains(output, passwords.SafetyCode(world.ada.ID, adaPublicKey)) {
+		test.Fatalf("code printed:\n%s", output)
+	}
+
+	// Cora has not set Passwords up, so she waits. Once she has, and her safety
+	// code is confirmed, share --waiting seals the item key for her naming the
+	// item key it opened, which the server compares with the item's own.
+	world.join(test, world.ada, world.home, world.cora)
+	mustRun("ada-session", "", "share", "example.com", world.cora.Username)
+	mustRun("cora-session", coraPassphrase+"\n", "setup", "--passphrase-stdin")
+	var coraSettings struct {
+		Setup struct {
+			PublicKey string `json:"publicKey"`
+		} `json:"setup"`
+	}
+	if err := json.Unmarshal([]byte(mustRun("cora-session", "", "settings", "--json")), &coraSettings); err != nil {
+		test.Fatal(err)
+	}
+	coraPublicKey, err := base64.StdEncoding.DecodeString(coraSettings.Setup.PublicKey)
+	if err != nil || len(coraPublicKey) == 0 {
+		test.Fatalf("Cora's public key: %v", err)
+	}
+	mustRun("cora-session", "", "lock")
+	mustRun("ada-session", adaPassphrase+"\n", "unlock", "--passphrase-stdin")
+	mustRun("ada-session", "", "trust", world.cora.Username, passwords.SafetyCode(world.cora.ID, coraPublicKey))
+	if output := mustRun("ada-session", "", "share", "--waiting"); !strings.Contains(output, "sealed 1 item") {
+		test.Fatalf("share --waiting said:\n%s", output)
+	}
+	mustRun("cora-session", coraPassphrase+"\n", "unlock", "--passphrase-stdin")
+	if listed := mustRun("cora-session", "", "list"); !strings.Contains(listed, "example.com") {
+		test.Fatalf("Cora's list:\n%s", listed)
+	}
+	mustRun("cora-session", "", "lock")
+	mustRun("ada-session", adaPassphrase+"\n", "unlock", "--passphrase-stdin")
+	// Taking her off re-keys the item, which clears the mark the server set.
+	mustRun("ada-session", "", "unshare", "example.com", world.cora.Username)
+	for _, each := range world.list(test, world.ada, nil)["items"].([]any) {
+		item := each.(map[string]any)
+		if item["needsNewKey"] == true {
+			test.Fatalf("an item still needs a new key after unshare: %v", item["id"])
+		}
+	}
+	// The same command by hand, on an item that does not need it.
+	mustRun("ada-session", "", "rekey", "example.com")
 	if _, err := run("ada-session", "", "agent", "on", "Travel card", "--force"); err == nil || !strings.Contains(err.Error(), "card cannot be used by the agent") {
 		test.Fatalf("a card for the agent: %v", err)
 	}

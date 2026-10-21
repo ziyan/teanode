@@ -43,7 +43,7 @@ func TestPasswordsParity(test *testing.T) {
 		"SetPasswordItemShares":        {"share", "unshare"},
 		"AddPasswordShareKeys":         {"share"},
 		"SetPasswordItemUsableByAgent": {"agent"},
-		"RekeyPasswordItem":            {"agent", "unshare"},
+		"RekeyPasswordItem":            {"agent", "unshare", "rekey"},
 	}
 	for operation := range operations {
 		if _, isListed := table[operation]; !isListed {
@@ -73,6 +73,7 @@ func TestPasswordsParity(test *testing.T) {
 		"lock":     "forgets the keys kept on this computer",
 		"generate": "makes a password on this computer",
 		"export":   "reads the items the list operation returns and writes a file",
+		"code":     "works out the safety code of the key that unlocking opened, on this computer",
 	}
 	for name := range commands {
 		if _, isExempt := exempt[name]; !isSent[name] && !isExempt {

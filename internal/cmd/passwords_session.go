@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -415,7 +416,7 @@ type passwordsSession struct {
 
 	// checkedOwnerKeys remembers, for the length of this command, what was
 	// decided about an owner's key, so that a changed key is asked about once.
-	checkedOwnerKeys map[string]error
+	checkedOwnerKeys map[string]*ownerKeyDecision
 }
 
 // openPasswords gives the keys `unlock` kept, or asks for the passphrase when
@@ -540,6 +541,41 @@ func (self *passwordsItem) IsOwner() bool {
 	return !self.View.IsSharedWithMe
 }
 
+// Access is the record the owner's device sealed inside the fields: who may
+// have the item and whether the agent may use it. Nil is an item that was never
+// shared and that the agent may not use.
+func (self *passwordsItem) Access() *passwords.PasswordAccess {
+	switch {
+	case self.Login != nil:
+		return self.Login.Access
+	case self.Card != nil:
+		return self.Card.Access
+	case self.Note != nil:
+		return self.Note.Access
+	}
+	return nil
+}
+
+// setAccess puts a new access record in the fields, to be sealed with them.
+func (self *passwordsItem) setAccess(access *passwords.PasswordAccess) {
+	switch {
+	case self.Login != nil:
+		self.Login.Access = access
+	case self.Card != nil:
+		self.Card.Access = access
+	case self.Note != nil:
+		self.Note.Access = access
+	}
+}
+
+// isUsableByAgentBySealedAccess is whether the owner's own record lets the
+// agent use the item, which is the word of the owner's device and not the
+// server's.
+func (self *passwordsItem) isUsableByAgentBySealedAccess() bool {
+	access := self.Access()
+	return access != nil && access.IsUsableByAgent
+}
+
 // Fields are the fields to seal, whichever the kind.
 func (self *passwordsItem) Fields() any {
 	switch {
@@ -549,6 +585,25 @@ func (self *passwordsItem) Fields() any {
 		return self.Card
 	}
 	return self.Note
+}
+
+// fieldsWithoutAccess are the fields without the record of who may have the
+// item, for a file that leaves this computer: the record is for this server
+// and these people, and means nothing in another password manager.
+func (self *passwordsItem) fieldsWithoutAccess() any {
+	switch {
+	case self.Login != nil:
+		fields := *self.Login
+		fields.Access = nil
+		return &fields
+	case self.Card != nil:
+		fields := *self.Card
+		fields.Access = nil
+		return &fields
+	}
+	fields := *self.Note
+	fields.Access = nil
+	return &fields
 }
 
 // duplicateKey is what makes two items the same one for an import: the kind,
@@ -621,6 +676,10 @@ func (self *passwordsSession) openItem(view *client.PasswordItemView) (*password
 	plain, err := passwords.Open(itemKey, sealedFields, passwords.ItemFieldsData(view.ID, kind))
 	if err != nil {
 		return nil, fmt.Errorf("item %s: its fields do not open: %w", view.ID, err)
+	}
+	if view.IsSharedWithMe {
+		// The owner's key opened this item, so it is worth writing down now.
+		self.recordOwnerKey(view)
 	}
 	item := &passwordsItem{View: view, Kind: kind, ItemKey: itemKey}
 	switch kind {
@@ -794,6 +853,26 @@ func (self *passwordsSession) saveChangedItem(item *passwordsItem) (*client.Pass
 		ItemKey:         item.View.ItemKey,
 		BaseRevision:    &baseRevision,
 	})
+}
+
+// saveItemWithAccess saves the item's fields sealed with a new access record,
+// based on the revision it was read at. It is the first step of widening access
+// (sharing with somebody new, letting the agent use the item): the record is
+// written down before the server is asked, so it is never narrower than what
+// the server allows. A record that is already the item's is not saved again.
+func (self *passwordsSession) saveItemWithAccess(item *passwordsItem, access *passwords.PasswordAccess) error {
+	if reflect.DeepEqual(item.Access(), access) {
+		return nil
+	}
+	previous := item.Access()
+	item.setAccess(access)
+	view, err := self.saveChangedItem(item)
+	if err != nil {
+		item.setAccess(previous)
+		return err
+	}
+	item.View = view
+	return nil
 }
 
 // Bounds of a generated password. The generator is the one in
