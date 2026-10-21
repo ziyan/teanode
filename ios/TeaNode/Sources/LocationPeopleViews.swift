@@ -5,13 +5,17 @@ import TeaNodeKit
 // The people sharing their location with the person: their pictures on the
 // map, a row each under it, and, once one is chosen, their visits and places.
 
-/// LocationPeopleRows is a row for each person sharing, under the map, the
-/// person's own row first. A tap selects one (the map centers on them) and
+/// LocationPeopleRows is a row for each person sharing, at the top of the
+/// drawer's visits, the person's own row first. A tap selects one (the map centers on them) and
 /// brings up their card over the map, and they stay chosen until another row
 /// is tapped: the own row is the way back to the person's own location. With more people than fit under the map, one
 /// row says how many and opens a screen of their own.
 struct LocationPeopleRows: View {
     let model: LocationModel
+    /// Opens the screen of everyone sharing. A button, not a navigation link:
+    /// a list makes a link inside a row a row of its own, with a second
+    /// chevron and the list's text size.
+    let showPeople: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(AppModel.self) private var app
 
@@ -28,13 +32,16 @@ struct LocationPeopleRows: View {
                 LocationOwnRow(model: model, isHighlightedWhenChosen: true)
                 if model.people.count > mostRows {
                     LocationPeopleDivider()
-                    NavigationLink(value: LocationRoute.people) {
+                    Button(action: showPeople) {
                         HStack(spacing: 12) {
                             Image(systemName: "person.2")
                                 .font(.title3)
                                 .foregroundStyle(.tint)
                                 .frame(width: LocationPersonRow.avatarSize)
+                            // A font of its own: a text in a list row without
+                            // one takes the list's size, past the cap below.
                             Text("\(model.people.count) people")
+                                .font(.body)
                                 .foregroundStyle(.primary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Image(systemName: "chevron.right")
@@ -62,11 +69,8 @@ struct LocationPeopleRows: View {
             }
             .background(Color(.secondarySystemGroupedBackground))
             .clipShape(.rect(cornerRadius: 22, style: .continuous))
-            .padding(.horizontal)
-            .padding(.vertical, 12)
-            // The rows keep their height and the list under them gives way.
             // Past the first accessibility size the text here stops growing,
-            // so the rows still leave the list room on the screen.
+            // so a row still leaves the visits room in the drawer.
             .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -77,6 +81,24 @@ struct LocationPeopleRows: View {
     private func choose(_ person: PersonLocation) {
         model.select(userId: person.userId)
         app.openedPerson = .account(userId: person.userId)
+    }
+}
+
+/// LocationPeopleSection is the people's card as the first section of a list
+/// in the drawer, so it scrolls with the visits under it.
+struct LocationPeopleSection: View {
+    let model: LocationModel
+    let showPeople: () -> Void
+
+    var body: some View {
+        if model.location != nil || !model.people.isEmpty {
+            Section {
+                LocationPeopleRows(model: model, showPeople: showPeople)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+        }
     }
 }
 
