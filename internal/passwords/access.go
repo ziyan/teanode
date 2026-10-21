@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
+	"strings"
+	"unicode"
 )
 
 // accessRecordLabel starts the bytes an access record is signed over and is
@@ -79,8 +82,8 @@ func (self PasswordAccess) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON reads a record and refuses any other shape: a missing or
 // mistyped key, a key that is not one of the four, a grantee that is not
 // exactly one non-empty user id or circle id, a version that is not a positive
-// integer, or a signature that is not canonical base64 of 32 bytes. The version
-// and the signature may be missing.
+// whole number (1.0 is 1), or a signature that is not canonical base64 of 32
+// bytes. The version and the signature may be missing.
 func (self *PasswordAccess) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		IsUsableByAgent *bool              `json:"isUsableByAgent"`
@@ -98,14 +101,11 @@ func (self *PasswordAccess) UnmarshalJSON(data []byte) error {
 	}
 	recordVersion := 0
 	if raw.RecordVersion != nil {
-		var version int64
-		if err := json.Unmarshal(raw.RecordVersion, &version); err != nil || bytes.Equal(raw.RecordVersion, []byte("null")) {
-			return errors.New("passwords: the access record's recordVersion is not an integer")
+		version, err := readRecordVersion(raw.RecordVersion)
+		if err != nil {
+			return err
 		}
-		if version < 1 || version > MaximumRecordVersion {
-			return errors.New("passwords: the access record's recordVersion is not a positive integer")
-		}
-		recordVersion = int(version)
+		recordVersion = version
 	}
 	var recordMac []byte
 	if raw.RecordMac != nil {
@@ -126,34 +126,83 @@ func (self *PasswordAccess) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// readRecordVersion reads the recordVersion number of an access record. It is
+// a JSON number that is a whole number from 1 to MaximumRecordVersion, so 1,
+// 1.0 and 1e0 are the same version, as they are in the dashboard (a JavaScript
+// number) and on the iPhone. Text, null, a fraction, and anything out of range
+// are refused.
+func readRecordVersion(raw json.RawMessage) (int, error) {
+	text := string(raw)
+	if text == "" || text[0] != '-' && (text[0] < '0' || text[0] > '9') {
+		return 0, errors.New("passwords: the access record's recordVersion is not an integer")
+	}
+	version, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		number, numberErr := strconv.ParseFloat(text, 64)
+		if numberErr != nil || number != math.Trunc(number) || number < 1 || number > MaximumRecordVersion {
+			return 0, errors.New("passwords: the access record's recordVersion is not a positive integer")
+		}
+		version = int64(number)
+	}
+	if version < 1 || version > MaximumRecordVersion {
+		return 0, errors.New("passwords: the access record's recordVersion is not a positive integer")
+	}
+	return int(version), nil
+}
+
+// readGranteeID reads one id of a grantee. It returns "" when the key is
+// missing. A key that is there must be a non-empty JSON string, so null beside
+// the other id is refused as it is in the dashboard and on the iPhone.
+func readGranteeID(raw json.RawMessage) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	var id string
+	if err := json.Unmarshal(raw, &id); err != nil || bytes.Equal(raw, []byte("null")) {
+		return "", errors.New("passwords: a grantee's id is not text")
+	}
+	if id == "" {
+		return "", errors.New("passwords: a grantee needs a non-empty id")
+	}
+	return id, nil
+}
+
 // UnmarshalJSON reads a grantee and refuses one that is not exactly one
-// non-empty user id or circle id.
+// non-empty user id or circle id, written as text. A key that is present with
+// null counts as present and is refused.
 func (self *PasswordGrantee) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		UserID   *string `json:"userId"`
-		CircleID *string `json:"circleId"`
+		UserID   json.RawMessage `json:"userId"`
+		CircleID json.RawMessage `json:"circleId"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&raw); err != nil {
 		return fmt.Errorf("passwords: a grantee is not readable: %w", err)
 	}
-	isUserSet := raw.UserID != nil
-	isCircleSet := raw.CircleID != nil
-	if isUserSet == isCircleSet {
+	if (raw.UserID == nil) == (raw.CircleID == nil) {
 		return errors.New("passwords: a grantee needs exactly one of userId and circleId")
 	}
-	if isUserSet && *raw.UserID == "" || isCircleSet && *raw.CircleID == "" {
-		return errors.New("passwords: a grantee needs a non-empty id")
+	userID, err := readGranteeID(raw.UserID)
+	if err != nil {
+		return err
 	}
-	self.UserID = ""
-	self.CircleID = ""
-	if isUserSet {
-		self.UserID = *raw.UserID
-	} else {
-		self.CircleID = *raw.CircleID
+	circleID, err := readGranteeID(raw.CircleID)
+	if err != nil {
+		return err
 	}
+	self.UserID = userID
+	self.CircleID = circleID
 	return nil
+}
+
+// hasControlCharacter reports whether the text has a NUL or any other control
+// character (Unicode category Cc: U+0000 to U+001F and U+007F to U+009F). A
+// grantee id with one is refused when signing and when verifying: the signed
+// bytes separate their parts with a zero byte, and a control character hides in
+// a display.
+func hasControlCharacter(text string) bool {
+	return strings.ContainsFunc(text, unicode.IsControl)
 }
 
 // IsReachedByAccess reports whether the access record grants an item to a
@@ -256,6 +305,9 @@ func accessMacBytes(itemId string, itemKind ItemKind, access *PasswordAccess) ([
 			grantees = append(grantees, "c:"+grantee.CircleID)
 		default:
 			return nil, errors.New("passwords: a grantee needs exactly one non-empty user id or circle id")
+		}
+		if hasControlCharacter(grantees[len(grantees)-1]) {
+			return nil, errors.New("passwords: a grantee's id has a control character")
 		}
 	}
 	slices.Sort(grantees)

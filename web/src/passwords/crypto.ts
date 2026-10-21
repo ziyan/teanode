@@ -576,12 +576,25 @@ export function deriveAccessMacKey(accountKey: Uint8Array): Promise<Uint8Array> 
   return deriveHkdfBytes(accountKey, new Uint8Array(0), ACCESS_RECORD_LABEL)
 }
 
+// CONTROL_CHARACTER matches a NUL or any other control character (Unicode
+// category Cc: U+0000 to U+001F and U+007F to U+009F).
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/
+
+// accessGranteeText is the text of a grantee in the signed bytes. An id with a
+// control character is refused when signing and when verifying: the signed
+// bytes separate their parts with a zero byte, so such an id could read as two.
 function accessGranteeText(grantee: ItemGrantee): string {
-  if (grantee.userId !== undefined && grantee.userId !== '' && grantee.circleId === undefined)
-    return `u:${grantee.userId}`
-  if (grantee.circleId !== undefined && grantee.circleId !== '' && grantee.userId === undefined)
-    return `c:${grantee.circleId}`
-  throw new PasswordsCryptoError('A grantee needs exactly one non-empty user id or circle id')
+  let text: string
+  if (grantee.userId !== undefined && grantee.userId !== '' && grantee.circleId === undefined) {
+    text = `u:${grantee.userId}`
+  } else if (grantee.circleId !== undefined && grantee.circleId !== '' && grantee.userId === undefined) {
+    text = `c:${grantee.circleId}`
+  } else {
+    throw new PasswordsCryptoError('A grantee needs exactly one non-empty user id or circle id')
+  }
+  if (CONTROL_CHARACTER.test(text)) throw new PasswordsCryptoError("A grantee's id has a control character")
+  return text
 }
 
 // accessSignedBytes is what the signature covers: the label, a zero byte, the

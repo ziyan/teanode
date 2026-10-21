@@ -299,6 +299,275 @@
           "recordVersion": 7,
           "recordMac": "zKumAwaKhcyZf1JTEtc0SQ6jOm5B9ZB9YyxiVuCLIio="
         }
+      },
+      {
+        "name": "a user id with a NUL",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "access": {
+          "isUsableByAgent": true,
+          "grantees": [
+            {
+              "userId": "00000000-0000-4000-8000-000000000002"
+            },
+            {
+              "circleId": "00000000-0000-4000-8000-000000000005"
+            },
+            {
+              "userId": "00000000-0000-4000-8000-000000000002\u000000000000-0000-4000-8000-000000000003"
+            }
+          ],
+          "recordVersion": 7,
+          "recordMac": "QFO5r4qlIDKwQ8rRfdz0jcqgTdc5zSwIgGIfCVs+pwE="
+        }
+      },
+      {
+        "name": "a user id with a C1 control character",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "access": {
+          "isUsableByAgent": true,
+          "grantees": [
+            {
+              "userId": "00000000-0000-4000-8000-000000000002"
+            },
+            {
+              "circleId": "00000000-0000-4000-8000-000000000005"
+            },
+            {
+              "userId": "00000000-0000-4000-8000-000000000002\u0085"
+            }
+          ],
+          "recordVersion": 7,
+          "recordMac": "6+JX+GiwahKfVP4c4VSKr3+Ce+tYh1a7Dc/PAMV6dFY="
+        }
+      }
+    ],
+    "unsignable": [
+      {
+        "name": "a user id with a NUL",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "access": {
+          "isUsableByAgent": true,
+          "grantees": [
+            {
+              "userId": "00000000-0000-4000-8000-000000000002\u000000000000-0000-4000-8000-000000000003"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a circle id with a NUL",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "access": {
+          "isUsableByAgent": true,
+          "grantees": [
+            {
+              "circleId": "\u000000000000-0000-4000-8000-000000000005"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a user id with a line feed",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "access": {
+          "isUsableByAgent": true,
+          "grantees": [
+            {
+              "userId": "00000000-0000-4000-8000-000000000002\n"
+            }
+          ]
+        }
+      },
+      {
+        "name": "a user id with a C1 control character",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "access": {
+          "isUsableByAgent": true,
+          "grantees": [
+            {
+              "userId": "00000000-0000-4000-8000-000000000002\u0085"
+            }
+          ]
+        }
+      }
+    ],
+    "readCases": [
+      {
+        "name": "the version as written by the signer",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": true,
+        "isVerified": true,
+        "recordVersion": 1
+      },
+      {
+        "name": "a version written as 1.0",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1.0,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": true,
+        "isVerified": true,
+        "recordVersion": 1
+      },
+      {
+        "name": "a version written as 1e0",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1e0,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": true,
+        "isVerified": true,
+        "recordVersion": 1
+      },
+      {
+        "name": "a version written as text",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":\"1\",\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a version with a fraction",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1.5,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a version of null",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":null,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a version above the largest safe integer",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":9007199254740992,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a circle id of null beside a user id",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\",\"circleId\":null},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a signature without padding",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a signature with white space around it",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\" E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\\n\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a signature with unused bits that are not zero",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VJ=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a signature of null",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":null}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "no version",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": true,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "agent use written as a number",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":1,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a key the record does not have",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"note\":\"x\",\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a key the grantee does not have",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\",\"extra\":1},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a grantee with both ids",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\",\"circleId\":\"00000000-0000-4000-8000-000000000005\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a grantee with an empty id",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"\"},{\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
+      },
+      {
+        "name": "a user id of null beside a circle id",
+        "itemId": "00000000-0000-4000-8000-000000000001",
+        "itemKind": "login",
+        "accessJson": "{\"isUsableByAgent\":true,\"grantees\":[{\"userId\":\"00000000-0000-4000-8000-000000000002\"},{\"userId\":null,\"circleId\":\"00000000-0000-4000-8000-000000000005\"}],\"recordVersion\":1,\"recordMac\":\"E7Bs3uwGDNVUPxe2fF0TwNcDHE4s7NvPX1cL6acl/VI=\"}",
+        "isReadable": false,
+        "isVerified": false,
+        "recordVersion": 0
       }
     ]
   },

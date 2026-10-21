@@ -481,6 +481,12 @@ public enum PasswordsCrypto {
         try hkdf(secret: accountKey, salt: Data(), info: accessRecordLabel)
     }
 
+    /// Whether the text has a NUL or any other control character (Unicode
+    /// category Cc: U+0000 to U+001F and U+007F to U+009F).
+    static func hasControlCharacter(_ text: String) -> Bool {
+        text.unicodeScalars.contains { $0.properties.generalCategory == .control }
+    }
+
     /// What the signature covers: the label, a zero byte, the item id, a zero
     /// byte, the item kind, a zero byte, the record version in decimal, a zero
     /// byte, "1" or "0" for agent use, a zero byte, then each grantee as "u:"
@@ -490,14 +496,23 @@ public enum PasswordsCrypto {
         guard let version = access.recordVersion, version >= 1, version <= maximumRecordVersion else {
             throw PasswordsCryptoError.invalidAccessRecord
         }
-        let granteeBytes = access.grantees
-            .map { grantee -> [UInt8] in
-                switch grantee {
-                case .person(let userId): return Array("u:\(userId)".utf8)
-                case .circle(let circleId): return Array("c:\(circleId)".utf8)
-                }
+        var granteeTexts: [String] = []
+        for grantee in access.grantees {
+            let identifier: String
+            switch grantee {
+            case .person(let userId):
+                identifier = userId
+                granteeTexts.append("u:\(userId)")
+            case .circle(let circleId):
+                identifier = circleId
+                granteeTexts.append("c:\(circleId)")
             }
-            .sorted { $0.lexicographicallyPrecedes($1) }
+            // An id with a control character is refused when signing and when
+            // verifying: the parts are separated by a zero byte, so such an id
+            // could read as two.
+            guard !identifier.isEmpty, !hasControlCharacter(identifier) else { throw PasswordsCryptoError.invalidAccessRecord }
+        }
+        let granteeBytes = granteeTexts.map { Array($0.utf8) }.sorted { $0.lexicographicallyPrecedes($1) }
         var signed = Data()
         for part in [accessRecordLabel, itemId, itemKind.rawValue, String(version), access.isUsableByAgent ? "1" : "0"] {
             signed.append(contentsOf: Array(part.utf8))

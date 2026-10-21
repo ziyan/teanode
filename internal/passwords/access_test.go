@@ -96,6 +96,12 @@ func TestAccessRefusesOtherShapes(test *testing.T) {
 		`{"isUsableByAgent": true, "grantees": [{"userId": 7}]}`,
 		`{"isUsableByAgent": true, "grantees": [{"userId": "user-ben", "circleId": "circle-1"}]}`,
 		`{"isUsableByAgent": true, "grantees": [{"userId": null}]}`,
+		// A null beside the other id is still two keys, as in the dashboard and
+		// on the iPhone.
+		`{"isUsableByAgent": true, "grantees": [{"userId": "user-ben", "circleId": null}]}`,
+		`{"isUsableByAgent": true, "grantees": [{"userId": null, "circleId": "circle-1"}]}`,
+		`{"isUsableByAgent": true, "grantees": [{"userId": null, "circleId": null}]}`,
+		`{"isUsableByAgent": true, "grantees": [{"circleId": 7}]}`,
 		`{"isUsableByAgent": true, "grantees": [{"circleId": ""}]}`,
 		`{"isUsableByAgent": true, "grantees": [{"userId": "user-ben", "extra": true}]}`,
 		`{"isUsableByAgent": true, "grantees": [], "extra": true}`,
@@ -225,6 +231,68 @@ func TestAccessRefusesABadVersionOrMac(test *testing.T) {
 		record := `{"isUsableByAgent": true, "grantees": [], ` + extra + `}`
 		if err := json.Unmarshal([]byte(record), &PasswordAccess{}); err == nil {
 			test.Errorf("the record %s was read", record)
+		}
+	}
+}
+
+func TestAccessReadsAVersionWrittenAsAWholeNumber(test *testing.T) {
+	// 1.0 and 1e0 are the number 1 in the dashboard and on the iPhone.
+	for text, want := range map[string]int{"1": 1, "1.0": 1, "1e0": 1, "1E0": 1, "7.000": 7, "0.5e1": 5, "9007199254740991": MaximumRecordVersion, "9007199254740991.0": MaximumRecordVersion} {
+		access := &PasswordAccess{}
+		if err := json.Unmarshal([]byte(`{"isUsableByAgent": true, "grantees": [], "recordVersion": `+text+`}`), access); err != nil || access.RecordVersion != want {
+			test.Errorf("recordVersion %s read as %d, %v; want %d", text, access.RecordVersion, err, want)
+		}
+	}
+	for _, text := range []string{"0.0", "-1.0", "1.5", "1e400", "9007199254740992.0", "9007199254740993", "1e16", "true", "[1]", `"1.0"`, "{}"} {
+		if err := json.Unmarshal([]byte(`{"isUsableByAgent": true, "grantees": [], "recordVersion": `+text+`}`), &PasswordAccess{}); err == nil {
+			test.Errorf("recordVersion %s was read", text)
+		}
+	}
+}
+
+func TestAccessRefusesAControlCharacterInAGranteeIDWhenSigningAndVerifying(test *testing.T) {
+	accountKey := sequentialBytes(0xa0, KeyLength)
+	// The ids that bytes alone cannot tell from two ids: one id with a NUL and
+	// "u:" in it signs as the same bytes as two grantees.
+	joined := &PasswordAccess{Grantees: []PasswordGrantee{{UserID: "user-a\x00u:user-b"}}}
+	pair := &PasswordAccess{Grantees: []PasswordGrantee{{UserID: "user-a"}, {UserID: "user-b"}}}
+	pairSigned, err := SignAccess(accountKey, "item-1", ItemKindNote, pair, 0)
+	if err != nil {
+		test.Fatal(err)
+	}
+	for name, id := range map[string]string{
+		"a NUL":                  "user-a\x00u:user-b",
+		"a NUL first":            "\x00user-a",
+		"a line feed":            "user-a\n",
+		"a tab":                  "user\t-a",
+		"a delete character":     "user-a\x7f",
+		"a C1 control character": "user-a\u0085",
+	} {
+		for _, grantee := range []PasswordGrantee{{UserID: id}, {CircleID: id}} {
+			access := &PasswordAccess{Grantees: []PasswordGrantee{grantee}}
+			if _, err := SignAccess(accountKey, "item-1", ItemKindNote, access, 0); err == nil {
+				test.Errorf("%s in %+v was signed", name, grantee)
+			}
+			// A record that arrives with a good signature of the naive bytes.
+			access.RecordVersion = 1
+			access.RecordMac = pairSigned.RecordMac
+			if err := CheckAccess(accountKey, "item-1", ItemKindNote, access); !errors.Is(err, ErrAccessNotVerified) {
+				test.Errorf("%s in %+v verified: %v", name, grantee, err)
+			}
+		}
+	}
+	if _, err := MACOfAccess(accountKey, "item-1", ItemKindNote, &PasswordAccess{Grantees: joined.Grantees, RecordVersion: 1}); err == nil {
+		test.Error("the signature of an id with a NUL was made")
+	}
+	// Other characters are not control characters: a space, a non-breaking
+	// space, an accent, and an emoji are signed.
+	for _, id := range []string{"user a", "user\u00a0a", "user-\u00e9", "user-\U0001F600"} {
+		access := &PasswordAccess{Grantees: []PasswordGrantee{{UserID: id}}}
+		signed, err := SignAccess(accountKey, "item-1", ItemKindNote, access, 0)
+		if err != nil {
+			test.Errorf("%q was refused: %v", id, err)
+		} else if err := CheckAccess(accountKey, "item-1", ItemKindNote, signed); err != nil {
+			test.Errorf("%q did not verify: %v", id, err)
 		}
 	}
 }

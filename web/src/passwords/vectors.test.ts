@@ -91,6 +91,16 @@ interface Vectors {
     signedBytes: string
     signedAccess: ItemAccess
     forged: Array<{ name: string; itemId: string; itemKind: ItemKind; access: ItemAccess }>
+    unsignable: Array<{ name: string; itemId: string; itemKind: ItemKind; access: ItemAccess }>
+    readCases: Array<{
+      name: string
+      itemId: string
+      itemKind: ItemKind
+      accessJson: string
+      isReadable: boolean
+      isVerified: boolean
+      recordVersion: number
+    }>
   }
   share: {
     ownerId: string
@@ -279,6 +289,30 @@ describe.skipIf(!hasVectors && !isRequired)('the shared test vectors', () => {
         }),
         forged.name,
       ).toBeNull()
+    }
+  })
+
+  it('refuses to sign a control character in a grantee id and reads access records written other ways', async () => {
+    const vector = vectors.accessRecord
+    const accountKey = bytesOf(vector.accountKey)
+    expect(vector.unsignable.length).toBeGreaterThan(0)
+    for (const unsignable of vector.unsignable) {
+      await expect(
+        signAccess(accountKey, unsignable.itemId, unsignable.itemKind, unsignable.access, vector.highestVersionSeen),
+        unsignable.name,
+      ).rejects.toThrow()
+    }
+    expect(vector.readCases.length).toBeGreaterThan(0)
+    for (const readCase of vector.readCases) {
+      const fields = parseItemFields('login', {
+        ...emptyLoginFields(),
+        access: JSON.parse(readCase.accessJson),
+      })
+      expect(fields !== null, readCase.name).toBe(readCase.isReadable)
+      if (fields === null) continue
+      const verified = await verifyAccess(accountKey, readCase.itemId, readCase.itemKind, fields)
+      expect(verified !== null, readCase.name).toBe(readCase.isVerified)
+      expect(fields.access?.recordVersion ?? 0, readCase.name).toBe(readCase.recordVersion)
     }
   })
 

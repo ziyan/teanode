@@ -580,6 +580,44 @@ describe('the access record signature', () => {
     ).rejects.toThrow()
   })
 
+  it('refuses a control character in a grantee id when signing and when verifying', async () => {
+    // An id with a NUL and "u:" in it would sign to the same bytes as two grantees.
+    const pair = await signAccess(
+      accountKey,
+      'item-1',
+      'note',
+      { isUsableByAgent: false, grantees: [{ userId: 'user-a' }, { userId: 'user-b' }] },
+      0,
+    )
+    for (const [name, id] of [
+      ['a NUL', 'user-a\0u:user-b'],
+      ['a NUL first', '\0user-a'],
+      ['a line feed', 'user-a\n'],
+      ['a tab', 'user\t-a'],
+      ['a delete character', 'user-a\x7f'],
+      ['a C1 control character', 'user-a\u0085'],
+    ]) {
+      for (const grantee of [{ userId: id }, { circleId: id }]) {
+        const record: ItemAccess = { isUsableByAgent: false, grantees: [grantee] }
+        await expect(signAccess(accountKey, 'item-1', 'note', record, 0), name).rejects.toThrow()
+        expect(() => accessSignedBytes('item-1', 'note', { ...record, recordVersion: 1 }), name).toThrow()
+        const presented = { ...record, recordVersion: pair.recordVersion, recordMac: pair.recordMac }
+        expect(await isAccessVerified(accountKey, 'item-1', 'note', presented), name).toBe(false)
+      }
+    }
+    // A space, a non-breaking space, an accent and an emoji are not control characters.
+    for (const id of ['user a', 'user\u00a0a', 'user-\u00e9', 'user-\u{1F600}']) {
+      const signed = await signAccess(
+        accountKey,
+        'item-1',
+        'note',
+        { isUsableByAgent: false, grantees: [{ userId: id }] },
+        0,
+      )
+      expect(await isAccessVerified(accountKey, 'item-1', 'note', signed), id).toBe(true)
+    }
+  })
+
   it('puts the signed record into the fields and verifies it from them', async () => {
     const fields = { ...emptyNoteFields(), name: 'Example', text: 'hello', futureKey: [1, 2] }
     const signedFields = await withSignedAccess(accountKey, 'item-1', 'note', fields, access, 2)

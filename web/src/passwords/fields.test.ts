@@ -154,6 +154,8 @@ describe('the access record', () => {
       { isUsableByAgent: true, grantees: [{ userId: 5 }] },
       { isUsableByAgent: true, grantees: [{ userId: '' }] },
       { isUsableByAgent: true, grantees: [{ circleId: null }] },
+      { isUsableByAgent: true, grantees: [{ userId: 'user-ben', circleId: null }] },
+      { isUsableByAgent: true, grantees: [{ userId: null, circleId: 'circle-1' }] },
       { isUsableByAgent: true, grantees: [{ userId: 'user-ben', circleId: 'circle-1' }] },
       { isUsableByAgent: true, grantees: [{ groupId: 'group-1' }] },
       { isUsableByAgent: true, grantees: [{ userId: 'user-ben', extra: true }] },
@@ -177,6 +179,49 @@ describe('the access record', () => {
       for (const itemKind of ITEM_KINDS) {
         expect(parseItemFields(itemKind, { name: 'x', access: record }), JSON.stringify(record)).toBeNull()
       }
+    }
+  })
+
+  it('reads a record written as JSON text the way Go and the iPhone do', () => {
+    // The record as text, because JSON.stringify would not write 1.0, 1e0 or a
+    // repeated key. A version is a whole number whatever its spelling.
+    const mac = 'g2LqZsgmAuYvwlUvZ9wK87WOGDvGnZYvdOyVhyulVQ4='
+    const grantees = '"grantees":[{"userId":"user-a"}]'
+    const recordText = (version: string) =>
+      `{"isUsableByAgent":false,${grantees},"recordVersion":${version},"recordMac":"${mac}"}`
+    for (const [version, want] of [
+      ['1', 1],
+      ['1.0', 1],
+      ['1e0', 1],
+      ['1E0', 1],
+      ['7.000', 7],
+      ['0.5e1', 5],
+      ['9007199254740991', 9007199254740991],
+    ] as const) {
+      const parsed = parseItemFields('note', { name: 'x', access: JSON.parse(recordText(version)) })
+      expect(parsed?.access?.recordVersion, version).toBe(want)
+    }
+    for (const version of [
+      '0.0',
+      '-1.0',
+      '1.5',
+      '"1"',
+      'null',
+      '9007199254740992',
+      '9007199254740993',
+      '1e400',
+      '1e16',
+    ]) {
+      expect(parseItemFields('note', { name: 'x', access: JSON.parse(recordText(version)) }), version).toBeNull()
+    }
+    // A key present with null counts as present.
+    for (const grantee of [
+      '{"userId":"user-a","circleId":null}',
+      '{"userId":null,"circleId":"circle-1"}',
+      '{"userId":null}',
+    ]) {
+      const text = `{"isUsableByAgent":false,"grantees":[${grantee}],"recordVersion":1,"recordMac":"${mac}"}`
+      expect(parseItemFields('note', { name: 'x', access: JSON.parse(text) }), grantee).toBeNull()
     }
   })
 

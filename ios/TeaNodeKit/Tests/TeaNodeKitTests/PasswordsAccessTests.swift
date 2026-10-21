@@ -83,6 +83,9 @@ final class PasswordsAccessTests: XCTestCase {
             #"{"isUsableByAgent":true,"grantees":[{"userId":5}]}"#,
             #"{"isUsableByAgent":true,"grantees":[{"userId":""}]}"#,
             #"{"isUsableByAgent":true,"grantees":[{"circleId":null}]}"#,
+            // A null beside the other id is still two keys, as in Go and the dashboard.
+            #"{"isUsableByAgent":true,"grantees":[{"userId":"user-ben","circleId":null}]}"#,
+            #"{"isUsableByAgent":true,"grantees":[{"userId":null,"circleId":"circle-1"}]}"#,
             #"{"isUsableByAgent":true,"grantees":[{"userId":"user-ben","circleId":"circle-1"}]}"#,
             #"{"isUsableByAgent":true,"grantees":[{"groupId":"group-1"}]}"#,
             #"{"isUsableByAgent":true,"grantees":[{"userId":"user-ben","extra":true}]}"#,
@@ -255,6 +258,54 @@ final class PasswordsAccessTests: XCTestCase {
         changed.recordVersion = nil
         XCTAssertFalse(isVerified(changed), "no version")
         XCTAssertFalse(isVerified(nil), "no record")
+    }
+
+    func testAVersionWrittenAsAWholeNumberIsTheSameVersion() throws {
+        for (text, want) in [("1", 1), ("1.0", 1), ("1e0", 1), ("1E0", 1), ("7.000", 7), ("0.5e1", 5), ("9007199254740991", PasswordsCrypto.maximumRecordVersion)] {
+            let record = try JSONDecoder().decode(
+                PasswordsItemAccess.self, from: Data(#"{"isUsableByAgent":true,"grantees":[],"recordVersion":\#(text)}"#.utf8))
+            XCTAssertEqual(record.recordVersion, want, text)
+        }
+        for text in ["0.0", "-1.0", "1.5", #""1""#, "null", "9007199254740992", "9007199254740993", "1e400", "1e16"] {
+            XCTAssertThrowsError(
+                try JSONDecoder().decode(
+                    PasswordsItemAccess.self, from: Data(#"{"isUsableByAgent":true,"grantees":[],"recordVersion":\#(text)}"#.utf8)),
+                text)
+        }
+    }
+
+    func testAControlCharacterInAGranteeIDIsRefusedWhenSigningAndVerifying() throws {
+        // An id with a NUL and "u:" in it would sign to the same bytes as two grantees.
+        let pair = try PasswordsCrypto.signAccess(
+            accountKey: accountKey, itemId: "item-1", itemKind: .note,
+            access: PasswordsItemAccess(isUsableByAgent: false, grantees: [.person(userId: "user-a"), .person(userId: "user-b")]),
+            highestVersionSeen: 0)
+        let identifiers = [
+            "user-a\u{0}u:user-b", "\u{0}user-a", "user-a\n", "user\t-a", "user-a\u{7f}", "user-a\u{85}",
+        ]
+        for identifier in identifiers {
+            for grantee in [PasswordsGrantee.person(userId: identifier), .circle(circleId: identifier)] {
+                let record = PasswordsItemAccess(isUsableByAgent: false, grantees: [grantee])
+                XCTAssertThrowsError(
+                    try PasswordsCrypto.signAccess(
+                        accountKey: accountKey, itemId: "item-1", itemKind: .note, access: record, highestVersionSeen: 0),
+                    identifier)
+                var presented = record
+                presented.recordVersion = pair.recordVersion
+                presented.recordMac = pair.recordMac
+                XCTAssertFalse(
+                    PasswordsCrypto.isAccessVerified(accountKey: accountKey, itemId: "item-1", itemKind: .note, access: presented),
+                    identifier)
+            }
+        }
+        // A space, a non-breaking space, an accent and an emoji are not control characters.
+        for identifier in ["user a", "user\u{a0}a", "user-\u{e9}", "user-\u{1F600}"] {
+            let signed = try PasswordsCrypto.signAccess(
+                accountKey: accountKey, itemId: "item-1", itemKind: .note,
+                access: PasswordsItemAccess(isUsableByAgent: false, grantees: [.person(userId: identifier)]), highestVersionSeen: 0)
+            XCTAssertTrue(
+                PasswordsCrypto.isAccessVerified(accountKey: accountKey, itemId: "item-1", itemKind: .note, access: signed), identifier)
+        }
     }
 
     func testSigningRefusesBadInput() {

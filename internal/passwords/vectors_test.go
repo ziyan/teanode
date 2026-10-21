@@ -3,8 +3,10 @@ package passwords
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,6 +14,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +113,26 @@ type accessRecordVector struct {
 	SignedBytes        hexBytes        `json:"signedBytes"`
 	SignedAccess       *PasswordAccess `json:"signedAccess"`
 	Forged             []forgedAccess  `json:"forged"`
+	// Unsignable are records no implementation signs: a grantee id with a
+	// control character cannot be told apart from two ids in the signed bytes.
+	Unsignable []forgedAccess `json:"unsignable"`
+	// ReadCases are access records written as text, with what every
+	// implementation does when it reads them for the item.
+	ReadCases []accessReadCase `json:"readCases"`
+}
+
+// accessReadCase is an access record as the text of JSON, so spellings that a
+// struct would not keep (1.0, a null) are tested. IsReadable says whether the
+// text is accepted as an access record at all; when it is, IsVerified says
+// whether it then verifies for the item, and RecordVersion is the version read.
+type accessReadCase struct {
+	Name          string `json:"name"`
+	ItemID        string `json:"itemId"`
+	ItemKind      string `json:"itemKind"`
+	AccessJSON    string `json:"accessJson"`
+	IsReadable    bool   `json:"isReadable"`
+	IsVerified    bool   `json:"isVerified"`
+	RecordVersion int    `json:"recordVersion"`
 }
 
 // forgedAccess is a record that must not verify, for the item named. It is
@@ -604,6 +628,30 @@ func TestVectors(test *testing.T) {
 			test.Errorf("the forged access record %q was not refused: %v", forged.Name, err)
 		}
 	}
+	if len(record.Unsignable) == 0 || len(record.ReadCases) == 0 {
+		test.Error("the access record vectors have no unsignable records or no read cases")
+	}
+	for _, unsignable := range record.Unsignable {
+		if _, err := SignAccess(record.AccountKey, unsignable.ItemID, ItemKind(unsignable.ItemKind), unsignable.Access, record.HighestVersionSeen); err == nil {
+			test.Errorf("the record %q was signed", unsignable.Name)
+		}
+	}
+	for _, readCase := range record.ReadCases {
+		var read PasswordAccess
+		err := json.Unmarshal([]byte(readCase.AccessJSON), &read)
+		if (err == nil) != readCase.IsReadable {
+			test.Errorf("the access record %q: reading gave %v, want readable %v", readCase.Name, err, readCase.IsReadable)
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		isVerified := CheckAccess(record.AccountKey, readCase.ItemID, ItemKind(readCase.ItemKind), &read) == nil
+		if isVerified != readCase.IsVerified || read.RecordVersion != readCase.RecordVersion {
+			test.Errorf("the access record %q: verified %v at version %d, want %v at version %d",
+				readCase.Name, isVerified, read.RecordVersion, readCase.IsVerified, readCase.RecordVersion)
+		}
+	}
 
 	// Verify the stored signature, and one made now.
 	publicKey := verifyingKey(test, stored.Passkey.PublicKeyX, stored.Passkey.PublicKeyY)
@@ -659,7 +707,105 @@ func buildAccessRecordVector(test *testing.T, accountKey []byte, unsigned *Passw
 			{"no version", vectorItemID, string(ItemKindLogin), changed(func(access *PasswordAccess) { access.RecordVersion = 0 })},
 			{"another item", vectorOwnerID, string(ItemKindLogin), signed},
 			{"another kind", vectorItemID, string(ItemKindNote), signed},
+			// These two are signed by a program that does not refuse a control
+			// character in an id, so only the refusal keeps them out.
+			{"a user id with a NUL", vectorItemID, string(ItemKindLogin), signedWithUnsafeGrantee(test, macKey, signed, vectorRecipientID+"\x00"+vectorOwnerID)},
+			{"a user id with a C1 control character", vectorItemID, string(ItemKindLogin), signedWithUnsafeGrantee(test, macKey, signed, vectorRecipientID+"\u0085")},
 		},
+		Unsignable: []forgedAccess{
+			{"a user id with a NUL", vectorItemID, string(ItemKindLogin), AccessWithGrantees(unsigned, []PasswordGrantee{{UserID: vectorRecipientID + "\x00" + vectorOwnerID}})},
+			{"a circle id with a NUL", vectorItemID, string(ItemKindLogin), AccessWithGrantees(unsigned, []PasswordGrantee{{CircleID: "\x00" + vectorCircleID}})},
+			{"a user id with a line feed", vectorItemID, string(ItemKindLogin), AccessWithGrantees(unsigned, []PasswordGrantee{{UserID: vectorRecipientID + "\n"}})},
+			{"a user id with a C1 control character", vectorItemID, string(ItemKindLogin), AccessWithGrantees(unsigned, []PasswordGrantee{{UserID: vectorRecipientID + "\u0085"}})},
+		},
+		ReadCases: buildAccessReadCases(test, accountKey, unsigned),
+	}
+}
+
+// signedWithUnsafeGrantee is the signed record with a user id added as a third
+// grantee and a signature made over it by a signer that does not refuse
+// control characters in ids, so it is the record an attacker with a naive
+// signer would present. The bytes are those of accessMacBytes.
+func signedWithUnsafeGrantee(test *testing.T, macKey []byte, signed *PasswordAccess, userID string) *PasswordAccess {
+	test.Helper()
+	forged := AccessWithAgentUse(signed, signed.IsUsableByAgent)
+	forged.RecordVersion = signed.RecordVersion
+	forged.Grantees = append(forged.Grantees, PasswordGrantee{UserID: userID})
+	grantees := []string{}
+	for _, grantee := range forged.Grantees {
+		if grantee.UserID != "" {
+			grantees = append(grantees, "u:"+grantee.UserID)
+		} else {
+			grantees = append(grantees, "c:"+grantee.CircleID)
+		}
+	}
+	slices.Sort(grantees)
+	agentUse := "0"
+	if forged.IsUsableByAgent {
+		agentUse = "1"
+	}
+	signedBytes := []byte(accessRecordLabel)
+	for _, part := range []string{vectorItemID, string(ItemKindLogin), strconv.Itoa(forged.RecordVersion), agentUse} {
+		signedBytes = append(append(signedBytes, 0), part...)
+	}
+	signedBytes = append(signedBytes, 0)
+	for _, grantee := range grantees {
+		signedBytes = append(append(signedBytes, grantee...), 0)
+	}
+	mac := hmac.New(sha256.New, macKey)
+	mac.Write(signedBytes)
+	forged.RecordMac = mac.Sum(nil)
+	return forged
+}
+
+// buildAccessReadCases makes the records written as text. The signed version 1
+// record is the one a first change of an item makes, and the cases spell its
+// version and its grantees in the other ways JSON allows.
+func buildAccessReadCases(test *testing.T, accountKey []byte, unsigned *PasswordAccess) []accessReadCase {
+	test.Helper()
+	first, err := SignAccess(accountKey, vectorItemID, ItemKindLogin, unsigned, 0)
+	if err != nil {
+		test.Fatal(err)
+	}
+	encoded, err := json.Marshal(first)
+	if err != nil {
+		test.Fatal(err)
+	}
+	canonicalText := string(encoded)
+	respelled := func(from, to string) string {
+		if strings.Count(canonicalText, from) != 1 {
+			test.Fatalf("%q is not once in %s", from, canonicalText)
+		}
+		return strings.Replace(canonicalText, from, to, 1)
+	}
+	userKey := `{"userId":"` + vectorRecipientID + `"}`
+	macText := base64.StdEncoding.EncodeToString(first.RecordMac)
+	// The last base64 character of 32 bytes carries two unused bits, which
+	// must be zero. Another character with the same top four bits reads as the
+	// same bytes in a lenient decoder.
+	const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	lastValue := strings.IndexByte(base64Alphabet, macText[len(macText)-2])
+	nonCanonicalMac := macText[:len(macText)-2] + string(base64Alphabet[(lastValue&^3)|((lastValue+1)&3)]) + "="
+	return []accessReadCase{
+		{"the version as written by the signer", vectorItemID, string(ItemKindLogin), canonicalText, true, true, 1},
+		{"a version written as 1.0", vectorItemID, string(ItemKindLogin), respelled(`"recordVersion":1,`, `"recordVersion":1.0,`), true, true, 1},
+		{"a version written as 1e0", vectorItemID, string(ItemKindLogin), respelled(`"recordVersion":1,`, `"recordVersion":1e0,`), true, true, 1},
+		{"a version written as text", vectorItemID, string(ItemKindLogin), respelled(`"recordVersion":1,`, `"recordVersion":"1",`), false, false, 0},
+		{"a version with a fraction", vectorItemID, string(ItemKindLogin), respelled(`"recordVersion":1,`, `"recordVersion":1.5,`), false, false, 0},
+		{"a version of null", vectorItemID, string(ItemKindLogin), respelled(`"recordVersion":1,`, `"recordVersion":null,`), false, false, 0},
+		{"a version above the largest safe integer", vectorItemID, string(ItemKindLogin), respelled(`"recordVersion":1,`, `"recordVersion":9007199254740992,`), false, false, 0},
+		{"a circle id of null beside a user id", vectorItemID, string(ItemKindLogin), respelled(userKey, `{"userId":"`+vectorRecipientID+`","circleId":null}`), false, false, 0},
+		{"a signature without padding", vectorItemID, string(ItemKindLogin), respelled(macText, strings.TrimSuffix(macText, "=")), false, false, 0},
+		{"a signature with white space around it", vectorItemID, string(ItemKindLogin), respelled(`"recordMac":"`+macText+`"`, `"recordMac":" `+macText+`\n"`), false, false, 0},
+		{"a signature with unused bits that are not zero", vectorItemID, string(ItemKindLogin), respelled(macText, nonCanonicalMac), false, false, 0},
+		{"a signature of null", vectorItemID, string(ItemKindLogin), respelled(`"`+macText+`"`, `null`), false, false, 0},
+		{"no version", vectorItemID, string(ItemKindLogin), respelled(`"recordVersion":1,`, ``), true, false, 0},
+		{"agent use written as a number", vectorItemID, string(ItemKindLogin), respelled(`"isUsableByAgent":true`, `"isUsableByAgent":1`), false, false, 0},
+		{"a key the record does not have", vectorItemID, string(ItemKindLogin), respelled(`"recordVersion":1,`, `"recordVersion":1,"note":"x",`), false, false, 0},
+		{"a key the grantee does not have", vectorItemID, string(ItemKindLogin), respelled(userKey, `{"userId":"`+vectorRecipientID+`","extra":1}`), false, false, 0},
+		{"a grantee with both ids", vectorItemID, string(ItemKindLogin), respelled(userKey, `{"userId":"`+vectorRecipientID+`","circleId":"`+vectorCircleID+`"}`), false, false, 0},
+		{"a grantee with an empty id", vectorItemID, string(ItemKindLogin), respelled(userKey, `{"userId":""}`), false, false, 0},
+		{"a user id of null beside a circle id", vectorItemID, string(ItemKindLogin), respelled(`{"circleId":"`+vectorCircleID+`"}`, `{"userId":null,"circleId":"`+vectorCircleID+`"}`), false, false, 0},
 	}
 }
 

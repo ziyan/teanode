@@ -168,6 +168,41 @@ final class PasswordsVectorsTests: XCTestCase {
         }
     }
 
+    func testAccessRecordRefusesControlCharactersAndReadsOtherSpellings() throws {
+        let section = try object(try loadVectors(), "accessRecord")
+        let accountKey = try bytes(section, "accountKey")
+        let highestVersionSeen = try XCTUnwrap(section["highestVersionSeen"] as? Int)
+        let unsignable = try XCTUnwrap(section["unsignable"] as? [JSONObject])
+        XCTAssertFalse(unsignable.isEmpty)
+        for record in unsignable {
+            let name = try text(record, "name")
+            let recordKind = try XCTUnwrap(PasswordsItemKind(rawValue: try text(record, "itemKind")))
+            XCTAssertThrowsError(
+                try PasswordsCrypto.signAccess(
+                    accountKey: accountKey, itemId: try text(record, "itemId"), itemKind: recordKind,
+                    access: try signedAccess(record, "access"), highestVersionSeen: highestVersionSeen),
+                name)
+        }
+        let readCases = try XCTUnwrap(section["readCases"] as? [JSONObject])
+        XCTAssertFalse(readCases.isEmpty)
+        for readCase in readCases {
+            let name = try text(readCase, "name")
+            let recordKind = try XCTUnwrap(PasswordsItemKind(rawValue: try text(readCase, "itemKind")))
+            let isReadable = try XCTUnwrap(readCase["isReadable"] as? Bool)
+            let data = Data(try text(readCase, "accessJson").utf8)
+            guard let read = try? JSONDecoder().decode(PasswordsItemAccess.self, from: data) else {
+                XCTAssertFalse(isReadable, name)
+                continue
+            }
+            XCTAssertTrue(isReadable, name)
+            XCTAssertEqual(
+                PasswordsCrypto.isAccessVerified(
+                    accountKey: accountKey, itemId: try text(readCase, "itemId"), itemKind: recordKind, access: read),
+                try XCTUnwrap(readCase["isVerified"] as? Bool), name)
+            XCTAssertEqual(read.recordVersion ?? 0, try XCTUnwrap(readCase["recordVersion"] as? Int), name)
+        }
+    }
+
     func testPersonKey() throws {
         let section = try object(try loadVectors(), "personKey")
         let keyPair = try PasswordsCrypto.keyPair(privateKey: try bytes(section, "privateKey"))
