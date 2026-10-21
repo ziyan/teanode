@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.192.2] - 2026-10-21
+
+### Security
+
+- The agent can no longer reach the person's own files or TeaNode itself through an attached browser tab. (#621)
+
 ## [0.192.1] - 2026-10-21
 
 ### Fixed
