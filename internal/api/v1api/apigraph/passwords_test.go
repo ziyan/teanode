@@ -97,6 +97,7 @@ const (
 	listPasswordItemsQuery     = `query ($sinceRevision: Int64) { ListPasswordItems(sinceRevision: $sinceRevision) { items { ` + passwordItemFields + ` } itemIds revision } }`
 	deletePasswordItemQuery    = `mutation ($id: String!) { DeletePasswordItem(id: $id) { ` + passwordItemFields + ` } }`
 	restorePasswordItemQuery   = `mutation ($id: String!) { RestorePasswordItem(id: $id) { ` + passwordItemFields + ` } }`
+	purgePasswordItemQuery     = `mutation ($id: String!) { PurgePasswordItem(id: $id) }`
 	passwordRecipientsQuery    = `query ($granteeUserId: String, $granteeCircleId: String) { ListPasswordRecipients(granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId) { userId name username publicKey hasKey } }`
 	waitingPasswordSharesQuery = `query { ListWaitingPasswordShares { itemId recipient { userId publicKey hasKey } } }`
 	setPasswordItemSharesQuery = `mutation ($input: PasswordItemSharesInput!) { SetPasswordItemShares(input: $input) { ` + passwordItemFields + ` } }`
@@ -161,11 +162,11 @@ func shareKeyInput(itemId string, recipient *models.User, device *passwordsDevic
 }
 
 // shareSetKeyInput is shareKeyInput as SetPasswordItemShares takes it, which
-// names the item once for all its keys.
+// names the item once for all its keys (and the item key each was sealed from,
+// as AddPasswordShareKeys does).
 func shareSetKeyInput(itemId string, recipient *models.User, device *passwordsDevice) map[string]any {
 	key := shareKeyInput(itemId, recipient, device)
 	delete(key, "itemId")
-	delete(key, "itemKey")
 	return key
 }
 
@@ -508,7 +509,7 @@ func TestSharingAPasswordItemWithAPersonInACircle(test *testing.T) {
 	}
 
 	shareWithBen := sharesInput(id, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey,
+		"itemKey": sealedOf("item key of " + id), "recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey,
 	}})
 	if _, failures := world.callWithCredential(test, world.ada, models.CredentialToken, setPasswordItemSharesQuery, shareWithBen); !isTapRefusal(strings.Join(failures, "; ")) {
 		test.Fatalf("a token adding a grantee: %v", failures)
@@ -524,9 +525,9 @@ func TestSharingAPasswordItemWithAPersonInACircle(test *testing.T) {
 		"a person in no circle with her": sharesInput(id, []any{map[string]any{"granteeUserId": world.cora.ID}}, nil),
 		"a circle she is not in":         sharesInput(id, []any{map[string]any{"granteeCircleId": "no-such-circle"}}, nil),
 		"a key for a person not reached": sharesInput(id, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-			"recipientUserId": world.cora.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("key"), "recipientPublicKey": cora.publicKey}}),
+			"itemKey": sealedOf("item key of " + id), "recipientUserId": world.cora.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("key"), "recipientPublicKey": cora.publicKey}}),
 		"a key for an old public key": sharesInput(id, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-			"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("key"), "recipientPublicKey": newPasswordsPublicKey(test)}}),
+			"itemKey": sealedOf("item key of " + id), "recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("key"), "recipientPublicKey": newPasswordsPublicKey(test)}}),
 	} {
 		message := world.refusal(test, world.ada, setPasswordItemSharesQuery, input)
 		if name == "a key for an old public key" {
@@ -659,7 +660,7 @@ func TestLeavingTheCircleEndsAccessToASharedPasswordItem(test *testing.T) {
 	world.setUp(test, ben)
 	id := world.save(test, ada, "login")["id"].(string)
 	world.run(test, world.ada, setPasswordItemSharesQuery, sharesInput(id, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
+		"itemKey": sealedOf("item key of " + id), "recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
 	if got := world.list(test, world.ben, nil); len(got["items"].([]any)) != 1 {
 		test.Fatalf("ben reads: %v", got)
 	}
@@ -752,7 +753,7 @@ func TestErasingPasswordsNeedsATapAndTakesEverything(test *testing.T) {
 	world.save(test, ben, "note")
 	shared := world.save(test, ada, "login")["id"].(string)
 	world.run(test, world.ada, setPasswordItemSharesQuery, sharesInput(shared, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
+		"itemKey": sealedOf("item key of " + shared), "recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
 
 	if _, failures := world.callWithCredential(test, world.ben, models.CredentialToken, erasePasswordsQuery, nil); !isTapRefusal(strings.Join(failures, "; ")) {
 		test.Fatalf("a token erasing: %v", failures)
@@ -788,7 +789,7 @@ func TestThePasswordsAuditLogNeverHoldsASealedValue(test *testing.T) {
 	world.setUp(test, ben)
 	id := world.save(test, ada, "login")["id"].(string)
 	world.run(test, world.ada, setPasswordItemSharesQuery, sharesInput(id, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
+		"itemKey": sealedOf("item key of " + id), "recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
 	world.run(test, world.ada, passwordAgentUseQuery, map[string]any{"input": map[string]any{"itemId": id, "isUsableByAgent": true, "itemKeyByAgentKey": sealedForKeyPairOf("item key for the agent")}})
 	world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": id})
 	world.run(test, world.ada, erasePasswordsQuery, nil)

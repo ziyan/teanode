@@ -262,70 +262,143 @@ func TestPasswordsRefuseMoreThanTheBytesAPersonMayKeep(test *testing.T) {
 	input["encryptedFields"] = sealedOfSize(500000)
 	world.run(test, world.ben, savePasswordItemQuery, map[string]any{"input": input})
 
-	// A deleted item still counts until it is swept, so deleting makes no
-	// room for a new note; restoring it takes no more room than it holds.
+	// Deleting an item makes room for a new note at once, and restoring the
+	// deleted one takes that room back, so it is refused while the room is full.
 	world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": firstID})
 	input = ada.itemInput("note", nil)
 	input["encryptedFields"] = sealedOfSize(500000)
-	if message := world.refusal(test, world.ada, savePasswordItemQuery, map[string]any{"input": input}); !strings.Contains(message, "Passwords is full") {
-		test.Fatalf("a save after deleting: %s", message)
+	world.run(test, world.ada, savePasswordItemQuery, map[string]any{"input": input})
+	if message := world.refusal(test, world.ada, restorePasswordItemQuery, map[string]any{"id": firstID}); !strings.Contains(message, "Passwords is full") {
+		test.Fatalf("a restore with no room: %s", message)
 	}
-	world.run(test, world.ada, restorePasswordItemQuery, map[string]any{"id": firstID})
 }
 
-// Deleted items and the versions that saves keep count toward the same limit
-// as items that are not deleted: a program that deletes and saves again, or
-// saves the same item hour after hour, cannot take the table far past it.
-func TestDeletedPasswordItemsAndKeptVersionsCountTowardTheLimit(test *testing.T) {
+// Deleted items and the versions that saves keep have an allowance of their
+// own (models.PasswordsKeptBytesMost), apart from the room for items that are
+// not deleted. A token that fills the room with junk is undone by the person
+// deleting it, which frees the room at once; what is deleted and kept cannot
+// take the table far past its allowance, because a token's delete and a token's
+// save that would keep a version are refused when it is full, while the person's
+// own taps are not, and deleting forever empties it.
+func TestDeletedPasswordItemsAndKeptVersionsHaveTheirOwnAllowance(test *testing.T) {
 	world := newPasswordsWorld(test)
 	ada := newPasswordsDevice(test, world.ada)
 	world.setUp(test, ada)
 	const size = 512*1024 - 200
-	save := func(id string, base any) (map[string]any, []string) {
-		input := ada.namedItemInput(id, "note", base)
+	save := func(person *models.User, device *passwordsDevice, id string, base any, size int, credentialKind models.CredentialKind) (map[string]any, []string) {
+		input := device.namedItemInput(id, "note", base)
 		input["encryptedFields"] = sealedOfSize(size)
-		return world.callWithCredential(test, world.ada, models.CredentialToken, savePasswordItemQuery, map[string]any{"input": input})
+		return world.callWithCredential(test, person, credentialKind, savePasswordItemQuery, map[string]any{"input": input})
 	}
-	passwordsRowBytes := func() int64 {
-		total := dbtest.QueryString(test, world.database, `SELECT (
-			(SELECT coalesce(sum(octet_length(encrypted_fields)), 0) FROM password_item WHERE owner_user_id = '`+world.ada.ID+`') +
-			(SELECT coalesce(sum(octet_length(encrypted_fields)), 0) FROM password_item_version WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+world.ada.ID+`')))::text`)
+	rowBytes := func(person *models.User, isDeleted bool) int64 {
+		condition := "deleted_at IS NULL"
+		if isDeleted {
+			condition = "deleted_at IS NOT NULL"
+		}
+		total := dbtest.QueryString(test, world.database, `SELECT (SELECT coalesce(sum(octet_length(encrypted_fields) + octet_length(item_key_by_account_key)), 0) FROM password_item WHERE owner_user_id = '`+person.ID+`' AND `+condition+`)::text`)
+		return numberOfText(test, total)
+	}
+	versionBytes := func(person *models.User) int64 {
+		total := dbtest.QueryString(test, world.database, `SELECT (SELECT coalesce(sum(octet_length(encrypted_fields) + octet_length(item_key_by_account_key)), 0) FROM password_item_version WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+person.ID+`'))::text`)
 		return numberOfText(test, total)
 	}
 
-	// Fill the room with items, delete them all, and try again for three
-	// rounds: the first round after the deletions is already refused.
+	// A token fills the room with junk; the person deletes all of it, and the
+	// room is free again at once. Three rounds put about 192 MiB in the deleted
+	// items, which the person's taps are never refused for.
 	itemID := func(round, index int) string { return fmt.Sprintf("%08x-0000-4000-8000-%012d", round+1, index) }
-	fullAt := -1
-	for index := 0; index < 200; index++ {
-		if _, failures := save(itemID(0, index), nil); len(failures) > 0 {
-			fullAt = index
-			break
+	var fullCounts []int
+	for round := 0; round < 3; round++ {
+		fullAt := -1
+		for index := 0; index < 200; index++ {
+			if _, failures := save(world.ada, ada, itemID(round, index), nil, size, models.CredentialToken); len(failures) > 0 {
+				if !strings.Contains(strings.Join(failures, "; "), "Passwords is full") {
+					test.Fatalf("round %d: %v", round, failures)
+				}
+				fullAt = index
+				break
+			}
 		}
-	}
-	if fullAt < 100 {
-		test.Fatalf("the room ran out after %d notes of about 0.5 MiB", fullAt)
-	}
-	for index := 0; index < fullAt; index++ {
-		world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": itemID(0, index)})
-	}
-	for round := 1; round <= 3; round++ {
-		if _, failures := save(itemID(round, 0), nil); len(failures) == 0 {
-			test.Fatalf("round %d: a save was accepted with %d bytes held in deleted items", round, passwordsRowBytes())
+		if fullAt < 100 {
+			test.Fatalf("round %d: the room ran out after %d notes of about 0.5 MiB", round, fullAt)
 		}
+		if held := rowBytes(world.ada, false); held > models.PasswordsBytesMost {
+			test.Fatalf("round %d: the person's items hold %d bytes, past the %d limit", round, held, models.PasswordsBytesMost)
+		}
+		for index := 0; index < fullAt; index++ {
+			world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": itemID(round, index)})
+		}
+		fullCounts = append(fullCounts, fullAt)
 	}
-	if held := passwordsRowBytes(); held > models.PasswordsBytesMost {
-		test.Fatalf("the person's rows hold %d bytes, past the %d limit", held, models.PasswordsBytesMost)
+	if held := rowBytes(world.ada, true); held < models.PasswordsKeptBytesMost {
+		test.Fatalf("only %d bytes are in deleted items, not past the %d allowance", held, models.PasswordsKeptBytesMost)
 	}
 
-	// Versions: saving three notes again and again, an hour apart, keeps a
-	// version each time (up to 60 for each note, about 90 MiB in all); they
-	// count too, so the saves stop at the limit.
+	// The allowance is full. A token still saves a new note (it adds nothing to
+	// the allowance), but cannot delete it, nor save over it, in words that
+	// say what to do; the person's own taps are not refused.
+	if _, failures := save(world.ada, ada, itemID(9, 0), nil, size, models.CredentialToken); len(failures) > 0 {
+		test.Fatalf("a token saving a new note into the free room: %v", failures)
+	}
+	if message := strings.Join(func() []string {
+		_, failures := world.callWithCredential(test, world.ada, models.CredentialToken, deletePasswordItemQuery, map[string]any{"id": itemID(9, 0)})
+		return failures
+	}(), "; "); !strings.Contains(message, "keeping too many deleted items") {
+		test.Fatalf("a token's delete with the allowance full: %q", message)
+	}
+	current := world.list(test, world.ada, nil)
+	var revision any
+	for _, raw := range current["items"].([]any) {
+		if item := raw.(map[string]any); item["id"] == itemID(9, 0) {
+			revision = item["revision"]
+		}
+	}
+	if _, failures := save(world.ada, ada, itemID(9, 0), revision, size-10, models.CredentialToken); len(failures) == 0 || !strings.Contains(strings.Join(failures, "; "), "keeping too many deleted items") {
+		test.Fatalf("a token's save over a note, allowance full: %v", failures)
+	}
+	versionsBefore := versionBytes(world.ada)
+	if _, failures := save(world.ada, ada, itemID(9, 0), revision, size-10, models.CredentialSession); len(failures) > 0 {
+		test.Fatalf("a tap's save, allowance full: %v", failures)
+	}
+	if got := versionBytes(world.ada); got != versionsBefore {
+		test.Fatalf("a tap's save kept a version with the allowance full: %d then %d bytes", versionsBefore, got)
+	}
+
+	// Deleting forever is the person's tap. A token cannot, and an item that
+	// is not deleted is refused; each purged item frees its bytes.
+	if message := strings.Join(func() []string {
+		_, failures := world.callWithCredential(test, world.ada, models.CredentialToken, purgePasswordItemQuery, map[string]any{"id": itemID(0, 0)})
+		return failures
+	}(), "; "); !isTapRefusal(message) {
+		test.Fatalf("a token deleting forever: %q", message)
+	}
+	if message := world.refusal(test, world.ada, purgePasswordItemQuery, map[string]any{"id": itemID(9, 0)}); !strings.Contains(message, "only a deleted item") {
+		test.Fatalf("deleting forever an item that is not deleted: %q", message)
+	}
+	before := rowBytes(world.ada, true)
+	for round := 0; round < 2; round++ {
+		for index := 0; index < fullCounts[round]; index++ {
+			world.run(test, world.ada, purgePasswordItemQuery, map[string]any{"id": itemID(round, index)})
+		}
+	}
+	if freed := before - rowBytes(world.ada, true); freed < int64(fullCounts[0]+fullCounts[1]-2)*size {
+		test.Fatalf("the purged items freed %d bytes", freed)
+	}
+	if _, failures := world.callWithCredential(test, world.ada, models.CredentialToken, deletePasswordItemQuery, map[string]any{"id": itemID(9, 0)}); len(failures) > 0 {
+		test.Fatalf("a token's delete after the allowance was emptied: %v", failures)
+	}
+	if message := world.refusal(test, world.cora, purgePasswordItemQuery, map[string]any{"id": itemID(1, 0)}); isTapRefusal(message) {
+		test.Fatalf("somebody else's item is refused for want of a tap, not as not found: %q", message)
+	}
+
+	// Versions count toward the same allowance. Five notes saved again and
+	// again, an hour apart, keep a version each time (up to 60 for each note,
+	// about 150 MiB in all); the saves stop at the allowance.
 	ben := newPasswordsDevice(test, world.ben)
 	world.setUp(test, ben)
 	revisions := map[string]any{}
-	for index := 0; index < 3; index++ {
-		id := itemID(9, index)
+	for index := 0; index < 5; index++ {
+		id := itemID(8, index)
 		input := ben.namedItemInput(id, "note", nil)
 		input["encryptedFields"] = sealedOfSize(size)
 		revisions[id] = world.run(test, world.ben, savePasswordItemQuery, map[string]any{"input": input})["SavePasswordItem"].(map[string]any)["revision"]
@@ -333,13 +406,11 @@ func TestDeletedPasswordItemsAndKeptVersionsCountTowardTheLimit(test *testing.T)
 	refusedAt := -1
 	for step := 0; step < 70 && refusedAt < 0; step++ {
 		dbtest.Exec(test, world.database, `UPDATE password_item_version SET replaced_at = replaced_at - interval '2 hours' WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+world.ben.ID+`')`)
-		for index := 0; index < 3; index++ {
-			id := itemID(9, index)
-			input := ben.namedItemInput(id, "note", revisions[id])
-			input["encryptedFields"] = sealedOfSize(size - 4*(step+1))
-			data, failures := world.callWithCredential(test, world.ben, models.CredentialToken, savePasswordItemQuery, map[string]any{"input": input})
+		for index := 0; index < 5; index++ {
+			id := itemID(8, index)
+			data, failures := save(world.ben, ben, id, revisions[id], size-4*(step+1), models.CredentialToken)
 			if len(failures) > 0 {
-				if !strings.Contains(strings.Join(failures, "; "), "Passwords is full") {
+				if !strings.Contains(strings.Join(failures, "; "), "keeping too many deleted items") {
 					test.Fatalf("step %d: %v", step, failures)
 				}
 				refusedAt = step
@@ -349,14 +420,13 @@ func TestDeletedPasswordItemsAndKeptVersionsCountTowardTheLimit(test *testing.T)
 		}
 	}
 	if refusedAt < 0 {
-		test.Fatalf("every save of three 0.5 MiB notes was accepted; the kept versions are outside the limit")
+		test.Fatalf("every save of five 0.5 MiB notes was accepted; the kept versions are outside the allowance")
 	}
-	held := dbtest.QueryString(test, world.database, `SELECT (
-		(SELECT coalesce(sum(octet_length(encrypted_fields)), 0) FROM password_item WHERE owner_user_id = '`+world.ben.ID+`') +
-		(SELECT coalesce(sum(octet_length(encrypted_fields)), 0) FROM password_item_version WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+world.ben.ID+`')))::text`)
-	heldBytes := numberOfText(test, held)
-	if heldBytes > models.PasswordsBytesMost {
-		test.Fatalf("ben's rows hold %d bytes, past the %d limit", heldBytes, models.PasswordsBytesMost)
+	if kept := versionBytes(world.ben) + rowBytes(world.ben, true); kept > models.PasswordsKeptBytesMost {
+		test.Fatalf("ben's deleted items and versions hold %d bytes, past the %d allowance", kept, models.PasswordsKeptBytesMost)
+	}
+	if held := rowBytes(world.ben, false); held > models.PasswordsBytesMost {
+		test.Fatalf("ben's items hold %d bytes, past the %d limit", held, models.PasswordsBytesMost)
 	}
 }
 

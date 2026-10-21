@@ -23,8 +23,8 @@ func (self *financeFixture) asCredential(test *testing.T, credentialKind models.
 
 // The person editing a schedule on the dashboard is the person writing it. A
 // schedule they wrote stays theirs through any edit. One the agent wrote
-// becomes theirs only when they save a different prompt; turning it off, or
-// saving the same prompt again, leaves it the agent's.
+// becomes theirs when they save it with its prompt (changed or not); the on and
+// off switch, which sends no prompt, leaves it the agent's.
 func TestEditingAScheduleKeepsOrTakesItsWriter(t *testing.T) {
 	fixture := newFinanceFixture(t, false)
 	var theirsId, agentsId string
@@ -59,6 +59,30 @@ func TestEditingAScheduleKeepsOrTakesItsWriter(t *testing.T) {
 		}
 		if got := writer(ctx, tx, agentsId); got != models.WrittenByPerson {
 			t.Errorf("pressing Save on the agent's schedule, even with its prompt sent back unchanged, makes it theirs: %q", got)
+		}
+	})
+	// The on and off switch sends no prompt: the person has not read what the
+	// schedule says, so it stays the agent's.
+	var switchedId string
+	fixture.asCredential(t, models.CredentialSession, func(ctx context.Context, tx db.Transaction) {
+		created, err := tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: fixture.ownerAgent.ID, Name: "Switch", Cron: "0 12 * * *", Prompt: "Look at the pond.", WrittenBy: models.WrittenByAgent, Deliver: "drawer", Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		switchedId = created.ID
+		off := false
+		if _, err := fixture.resolver.SaveAgentSchedule(ctx, SaveAgentScheduleArguments{ScheduleID: switchedId, Enabled: &off}); err != nil {
+			t.Fatal(err)
+		}
+		if got := writer(ctx, tx, switchedId); got != models.WrittenByAgent {
+			t.Errorf("switching the agent's schedule off with a tap, without its prompt, made it theirs: %q", got)
+		}
+		on := true
+		if _, err := fixture.resolver.SaveAgentSchedule(ctx, SaveAgentScheduleArguments{ScheduleID: theirsId, Enabled: &on}); err != nil {
+			t.Fatal(err)
+		}
+		if got := writer(ctx, tx, theirsId); got != models.WrittenByPerson {
+			t.Errorf("switching the person's own schedule with a tap changed the writer to %q", got)
 		}
 	})
 	// A schedule the agent wrote is also theirs when they save a new prompt.

@@ -72,12 +72,20 @@ const (
 const PasswordItemsMost = 20000
 
 // PasswordsBytesMost is how many bytes of sealed text (the fields and the
-// sealed keys) one person's items may hold together, deleted items and the
-// versions that saves replaced included: a deleted item stays 30 days and a
-// version as long, so a person who deletes and saves again cannot grow past it.
-// A listing answers the part that is not deleted, so it also bounds what one
-// request costs the server.
+// sealed keys) one person's items that are not deleted may hold together. It
+// is the only limit a save is refused for, by whomever it comes: deleting an
+// item frees its room at once. A listing answers these items, so it also bounds
+// what one request costs the server.
 const PasswordsBytesMost = 64 << 20
+
+// PasswordsKeptBytesMost is how many bytes of sealed text one person's deleted
+// items (kept 30 days) and the versions that saves replaced may hold together.
+// When it is full, a change that is not the person's own tap and would add to
+// it is refused, so that a program holding a token cannot fill it with junk and
+// leave the person unable to save; a tap's save, delete or restore always goes
+// ahead (a tap's save then does not keep the version it replaces). The person
+// empties it with PurgePasswordItem.
+const PasswordsKeptBytesMost = 128 << 20
 
 // PasswordItemRekey is an item's fields sealed again under a new item key by
 // the owner's device, because access to the item narrowed: the new key sealed

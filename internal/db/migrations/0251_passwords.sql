@@ -139,11 +139,19 @@ CREATE INDEX "password_share_owner" ON "password_share" ("owner_user_id");
 -- not used and the recipient is listed as waiting until the owner's device
 -- seals the key again. A circle share has a row for each member who has set
 -- up Passwords; a member who has not, or who joined later, has none yet.
+--
+-- is_stored_by_person says the row was stored by the person's own tap, not by
+-- a command line token or another program that holds one. A row a token stored
+-- is replaced by a later tap, so that a token cannot fill a waiting recipient's
+-- place with a key that opens nothing and leave the owner's real key unable to
+-- take it; a row a tap stored is never replaced, and a call that is not a tap
+-- never replaces a row.
 CREATE TABLE "password_share_key" (
     "item_id"                    character varying(36)    NOT NULL REFERENCES "password_item" ("id") ON DELETE CASCADE,
     "recipient_user_id"          character varying(32)    NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
     "item_key_by_recipient_key"  text                     NOT NULL,
     "recipient_public_key"       text                     NOT NULL,
+    "is_stored_by_person"        boolean                  NOT NULL DEFAULT false,
     "created_at"                 timestamp with time zone NOT NULL,
     PRIMARY KEY ("item_id", "recipient_user_id")
 );

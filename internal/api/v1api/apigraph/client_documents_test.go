@@ -54,6 +54,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"SavePasswordItem":                    client.DocumentSavePasswordItem,
 		"DeletePasswordItem":                  client.DocumentDeletePasswordItem,
 		"RestorePasswordItem":                 client.DocumentRestorePasswordItem,
+		"PurgePasswordItem":                   client.DocumentPurgePasswordItem,
 		"SetPasswordItemShares":               client.DocumentSetPasswordItemShares,
 		"AddPasswordShareKeys":                client.DocumentAddPasswordShareKeys,
 		"SetPasswordItemUsableByAgent":        client.DocumentSetPasswordItemUsableByAgent,

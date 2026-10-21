@@ -153,6 +153,14 @@ func TestConversationSearchLeavesOutPrivateTurns(test *testing.T) {
 		add(main, "assistant", "The padlock is 0000-invented.")
 		add(main, "user", "and the regatta is on the 21st")
 		add(main, "assistant", "Noted the regatta.")
+		// A turn whose subagent read a note is private too, though the parent
+		// called no private tool itself.
+		add(main, "user", "ask a helper for the gate code")
+		add(main, "assistant", "", models.AgentToolCall{ID: "c3", Name: "subagent", Arguments: `{"task":"gate"}`})
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: main.ID, Role: "tool", Name: "subagent", Content: `{"answer":"gate 4321-invented","has_private_call":true}`}); err != nil {
+			test.Fatal(err)
+		}
+		add(main, "assistant", "The gate code is 4321-invented.")
 		// A conversation whose calls are of tools that are not private is
 		// searched as it always was.
 		add(plain, "user", "padlock shopping list")
@@ -179,6 +187,9 @@ func TestConversationSearchLeavesOutPrivateTurns(test *testing.T) {
 	}
 	if found := search("0000-invented", false); len(found) != 0 {
 		test.Errorf("words of a private turn were found: %v", found)
+	}
+	if found := search("4321-invented", false); len(found) != 0 {
+		test.Errorf("words of a turn whose subagent read a note were found: %v", found)
 	}
 	if found := search("shed note", false); len(found) != 0 {
 		test.Errorf("the person's own words in a private turn were found: %v", found)

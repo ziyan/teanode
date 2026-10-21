@@ -121,13 +121,13 @@ func TestPasswordSharesAreSentInTheShapeTheSchemaTakes(test *testing.T) {
 	_, err := SetPasswordItemShares(test.Context(), connection, &SetPasswordItemSharesInput{
 		ItemID:   "a",
 		Grantees: []*PasswordShareGranteeInput{{GranteeUserID: &person}, {GranteeCircleID: &circle}},
-		Keys:     []*PasswordShareKeyInput{{RecipientUserID: "user-ben", ItemKeyByRecipientKey: "{}", RecipientPublicKey: "key"}},
+		Keys:     []*PasswordShareKeyInput{{RecipientUserID: "user-ben", ItemKeyByRecipientKey: "{}", RecipientPublicKey: "key", ItemKey: `{"sealed":"item key"}`}},
 	})
 	if err != nil {
 		test.Fatal(err)
 	}
 	encoded, _ := json.Marshal(variables())
-	if want := `{"input":{"grantees":[{"granteeUserId":"user-ben"},{"granteeCircleId":"circle-family"}],"itemId":"a","keys":[{"itemKeyByRecipientKey":"{}","recipientPublicKey":"key","recipientUserId":"user-ben"}]}}`; string(encoded) != want {
+	if want := `{"input":{"grantees":[{"granteeUserId":"user-ben"},{"granteeCircleId":"circle-family"}],"itemId":"a","keys":[{"itemKey":"{\"sealed\":\"item key\"}","itemKeyByRecipientKey":"{}","recipientPublicKey":"key","recipientUserId":"user-ben"}]}}`; string(encoded) != want {
 		test.Errorf("shares sent %s", encoded)
 	}
 	// Nobody left to share with is an empty list, not null.
@@ -147,6 +147,30 @@ func TestPasswordSharesAreSentInTheShapeTheSchemaTakes(test *testing.T) {
 	encoded, _ = json.Marshal(waitingVariables())
 	if !strings.Contains(string(encoded), `"itemId":"a"`) || !strings.Contains(string(encoded), `"itemKey":"{\"sealed\":\"item key\"}"`) {
 		test.Errorf("a waiting key sent %s", encoded)
+	}
+}
+
+// A waiting key made for AddPasswordShareKeys is the same key in a share, with
+// the item key it was sealed from, which SetPasswordItemShares requires too.
+func TestAShareKeyKeepsItsItemKeyWhenItIsUsedInAShare(test *testing.T) {
+	waiting := &PasswordItemShareKeyInput{ItemID: "a", RecipientUserID: "user-ben", ItemKeyByRecipientKey: "{}", RecipientPublicKey: "key", ItemKey: `{"sealed":"item key"}`}
+	shared := waiting.ForShare()
+	if shared.ItemKey != waiting.ItemKey || shared.RecipientUserID != "user-ben" || shared.ItemKeyByRecipientKey != "{}" || shared.RecipientPublicKey != "key" {
+		test.Fatalf("the key as a share's: %+v", shared)
+	}
+}
+
+// Deleting forever sends the item's identifier, in a mutation.
+func TestPurgePasswordItemSendsAMutation(test *testing.T) {
+	connection, variables := passwordsServer(test, `{"PurgePasswordItem":true}`)
+	if err := PurgePasswordItem(test.Context(), connection, "a"); err != nil {
+		test.Fatal(err)
+	}
+	if variables()["id"] != "a" {
+		test.Errorf("variables=%v", variables())
+	}
+	if !IsMutationDocument(DocumentPurgePasswordItem) || !strings.Contains(DocumentPurgePasswordItem, "PurgePasswordItem(") {
+		test.Errorf("the document is not the mutation: %s", DocumentPurgePasswordItem)
 	}
 }
 

@@ -375,6 +375,14 @@ func (self *transaction) ListCircles(userId string) ([]*models.Circle, error) {
 }
 
 func (self *transaction) RenameCircle(circleId, name string) (*models.Circle, error) {
+	// The circle membership lock comes before any circle row, as in every
+	// other change to circles. Taking the row first would let a rename wait for
+	// a request that holds the membership lock and waits for this row (a
+	// Passwords change after the rename in the same request, against a person
+	// leaving the circle).
+	if err := lockCircleMembership(self.tx); err != nil {
+		return nil, err
+	}
 	var locked circleModel
 	if err := lockRow(self.tx, &locked, circleId); err != nil {
 		return nil, err

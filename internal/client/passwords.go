@@ -147,11 +147,15 @@ type PasswordShareGranteeInput struct {
 
 // PasswordShareKeyInput is an item key sealed for one recipient's public key,
 // in SetPasswordItemShares. RecipientPublicKey is the key it was sealed for,
-// which the server checks is still theirs.
+// which the server checks is still theirs. ItemKey is the item key the device
+// opened to seal the key, as the item view shows it (the account-sealed text):
+// required whenever keys are given, and a key whose ItemKey is no longer the
+// item's is refused as changed on another device, as in AddPasswordShareKeys.
 type PasswordShareKeyInput struct {
 	RecipientUserID       string `json:"recipientUserId"`
 	ItemKeyByRecipientKey string `json:"itemKeyByRecipientKey"`
 	RecipientPublicKey    string `json:"recipientPublicKey"`
+	ItemKey               string `json:"itemKey,omitempty"`
 }
 
 // PasswordItemShareKeyInput is a PasswordShareKeyInput that names its item, for
@@ -168,10 +172,12 @@ type PasswordItemShareKeyInput struct {
 	ItemKey               string `json:"itemKey,omitempty"`
 }
 
-// ForShare is the same key as SetPasswordItemShares takes it, without the item.
+// ForShare is the same key as SetPasswordItemShares takes it, without the item
+// (and with the item key it was sealed from, which it also requires).
 func (self *PasswordItemShareKeyInput) ForShare() *PasswordShareKeyInput {
 	return &PasswordShareKeyInput{
 		RecipientUserID: self.RecipientUserID, ItemKeyByRecipientKey: self.ItemKeyByRecipientKey, RecipientPublicKey: self.RecipientPublicKey,
+		ItemKey: self.ItemKey,
 	}
 }
 
@@ -267,6 +273,10 @@ const (
 
 	DocumentRestorePasswordItem = `mutation ($id: String!) {
   RestorePasswordItem(id: $id) { ` + passwordItemFields + ` }
+}`
+
+	DocumentPurgePasswordItem = `mutation ($id: String!) {
+  PurgePasswordItem(id: $id)
 }`
 
 	DocumentSetPasswordItemShares = `mutation ($input: PasswordItemSharesInput!) {
@@ -491,6 +501,16 @@ func RestorePasswordItem(ctx context.Context, connection *Client, itemID string)
 		return nil, err
 	}
 	return result.RestorePasswordItem, nil
+}
+
+// PurgePasswordItem removes a deleted item at once, with its old versions,
+// instead of after 30 days. Only the person's tap may do it (see IsTapRequired),
+// and an item that is not deleted is refused.
+func PurgePasswordItem(ctx context.Context, connection *Client, itemID string) error {
+	var result struct {
+		PurgePasswordItem bool `json:"PurgePasswordItem"`
+	}
+	return connection.Execute(ctx, DocumentPurgePasswordItem, map[string]any{"id": itemID}, &result)
 }
 
 // SetPasswordItemShares replaces who an item is shared with, with the item key

@@ -59,6 +59,9 @@ func TestThePasswordsMigrationKeepsItsConstraintsAndReverses(test *testing.T) {
 	if got := dbtest.QueryString(test, database, `SELECT is_saved_by_person::text FROM "password_item_version" WHERE "item_id" = '`+firstItemId+`'`); got != "false" {
 		test.Errorf("a new version has is_saved_by_person %q", got)
 	}
+	if got := dbtest.QueryString(test, database, `SELECT is_stored_by_person::text FROM "password_share_key" WHERE "item_id" = '`+firstItemId+`'`); got != "false" {
+		test.Errorf("a new share key has is_stored_by_person %q", got)
+	}
 	addedColumns := `SELECT count(*)::text FROM information_schema.columns WHERE table_schema = current_schema() AND (
 		(table_name = 'agent_interaction' AND column_name = 'is_started_by_person') OR
 		(table_name = 'password_item' AND column_name IN ('needs_new_key', 'is_saved_by_person')) OR
@@ -128,4 +131,44 @@ func TestThePasswordsMigrationKeepsItsConstraintsAndReverses(test *testing.T) {
 	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "role_permission" WHERE "permission_key" = 'passwords:use'`); got != "0" {
 		test.Errorf("the permission is still granted to %s roles", got)
 	}
+}
+
+// The forward file runs again after the reverse file, with accounts and a
+// grant on a role the person made themselves in the database: the reverse takes
+// every grant of the permission away, whoever made it, and the forward file
+// gives it back only to the ordinary roles by name.
+func TestThePasswordsMigrationRunsAgainAfterItsReverse(test *testing.T) {
+	test.Parallel()
+
+	database, releaseDatabase := dbtest.AcquireDatabase(test)
+	defer releaseDatabase()
+	if err := database.Migrate(); err != nil {
+		test.Fatalf("failed to migrate: %s", err)
+	}
+	forward, err := os.ReadFile("0251_passwords.sql")
+	if err != nil {
+		test.Fatalf("ReadFile: %s", err)
+	}
+	reverse, err := os.ReadFile("0251_passwords.reverse.sql")
+	if err != nil {
+		test.Fatalf("ReadFile: %s", err)
+	}
+	grants := `SELECT count(*) FROM "role_permission" WHERE "permission_key" = 'passwords:use'`
+	ordinaryGrants := dbtest.QueryString(test, database, grants)
+	dbtest.CreateUser(test, database, "again-passwords-user")
+	dbtest.Exec(test, database, `INSERT INTO "role" ("id", "name", "created_at", "modified_at") VALUES ('again-passwords-role', 'Reviewers', now(), now())`)
+	dbtest.Exec(test, database, `INSERT INTO "role_permission" ("role_id", "permission_key") VALUES ('again-passwords-role', 'passwords:use')`)
+	dbtest.Exec(test, database, string(reverse))
+	if got := dbtest.QueryString(test, database, grants); got != "0" {
+		test.Fatalf("%s grants of the permission are left after the reverse", got)
+	}
+	dbtest.Exec(test, database, string(forward))
+	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "role_permission" WHERE "permission_key" = 'passwords:use' AND "role_id" = 'again-passwords-role'`); got != "0" {
+		test.Errorf("the forward file gave the permission to a role it does not name")
+	}
+	if got := dbtest.QueryString(test, database, grants); got != ordinaryGrants {
+		test.Errorf("the ordinary roles hold %s grants after the forward file, want %s", got, ordinaryGrants)
+	}
+	dbtest.Exec(test, database, string(reverse))
+	dbtest.Exec(test, database, string(forward))
 }

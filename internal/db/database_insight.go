@@ -944,15 +944,21 @@ func (self *transaction) searchConversationsWithPrivateCalls(conversations any, 
 			ConversationID string `gorm:"column:conversation_id"`
 			Role           string `gorm:"column:role"`
 			ToolCalls      []byte `gorm:"column:tool_calls"`
+			Name           string `gorm:"column:name"`
+			SubagentAnswer string `gorm:"column:subagent_answer"`
 			IsMatch        bool   `gorm:"column:is_match"`
 		}
-		if err := self.tx.Raw(`SELECT "conversation_id", "role", "tool_calls", ("role" IN ('user', 'assistant') AND "content" ILIKE ?) AS "is_match"
-			FROM "agent_message" WHERE "conversation_id" = ? ORDER BY "created_at" ASC, "id" ASC`, pattern, conversationId).Scan(&rows).Error; err != nil {
+		// A subagent's answer says whether its run called a private tool, which
+		// makes the turn private, so that one tool's content is read too.
+		if err := self.tx.Raw(`SELECT "conversation_id", "role", "tool_calls", "name",
+				CASE WHEN "role" = 'tool' AND "name" = ? THEN "content" ELSE '' END AS "subagent_answer",
+				("role" IN ('user', 'assistant') AND "content" ILIKE ?) AS "is_match"
+			FROM "agent_message" WHERE "conversation_id" = ? ORDER BY "created_at" ASC, "id" ASC`, privateturn.SubagentToolName, pattern, conversationId).Scan(&rows).Error; err != nil {
 			return nil, err
 		}
 		stored := make([]*models.AgentMessage, 0, len(rows))
 		for _, row := range rows {
-			message := &models.AgentMessage{ConversationID: row.ConversationID, Role: row.Role}
+			message := &models.AgentMessage{ConversationID: row.ConversationID, Role: row.Role, Name: row.Name, Content: row.SubagentAnswer}
 			if err := decodeJSON(row.ToolCalls, &message.ToolCalls); err != nil {
 				return nil, fmt.Errorf("db: cannot read the tool calls of a message of conversation %q: %w", conversationId, err)
 			}

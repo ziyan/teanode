@@ -103,11 +103,19 @@ type PasswordsMutation interface {
 	// change. Needs passwords:use.
 	SavePasswordItem(ctx context.Context, arguments SavePasswordItemArguments) (*PasswordItemView, error)
 
-	// Marks one of the caller's items deleted. It is kept 30 days, and counts
-	// toward the room Passwords has until then. Its recipients lose it and the
-	// agent's use of it ends, and the item is marked needsNewKey if anybody
-	// held a copy of its key. Needs passwords:use.
+	// Marks one of the caller's items deleted. It is kept 30 days, and its room
+	// moves from the room for items to the allowance for deleted items and old
+	// versions (a delete that is not a person's tap is refused when that is
+	// full). Its recipients lose it and the agent's use of it ends, and the item
+	// is marked needsNewKey if anybody held a copy of its key. Needs
+	// passwords:use.
 	DeletePasswordItem(ctx context.Context, arguments PasswordItemIDArguments) (*PasswordItemView, error)
+
+	// Removes one of the caller's deleted items at once, with its old versions,
+	// instead of after 30 days: how a person empties Recently deleted and frees
+	// the allowance for deleted items. An item that is not deleted is refused.
+	// Only a person's tap. Answers true. Needs passwords:use.
+	PurgePasswordItem(ctx context.Context, arguments PasswordItemIDArguments) (bool, error)
 
 	// Brings back an item that was deleted less than 30 days ago. Its
 	// recipients wait for keys again. Needs passwords:use.
@@ -115,19 +123,25 @@ type PasswordsMutation interface {
 
 	// Replaces who an item is shared with, and stores the keys the caller's
 	// device sealed for the recipients. A tap is needed when this adds a
-	// person or a circle. Each key's recipient must be reached by a grantee
-	// and the key must be sealed for their current public key. A person the
-	// caller shares no circle with, or a circle the caller is not in, is not
-	// found. Needs passwords:use.
+	// person or a circle (decided once the item is locked, so a call waiting
+	// behind another is judged on what that one left). Each key's recipient
+	// must be reached by a grantee and the key must be sealed for their
+	// current public key, and each key names, in itemKey, the item key the
+	// device opened to seal it (required when keys are given) and is refused as
+	// changed on another device when that is no longer the item's. A key
+	// already stored is replaced only by a tap, and only if a token stored it.
+	// A person the caller shares no circle with, or a circle the caller is not
+	// in, is not found. Needs passwords:use.
 	SetPasswordItemShares(ctx context.Context, arguments SetPasswordItemSharesArguments) (*PasswordItemView, error)
 
 	// Stores keys sealed for recipients the caller's items already reach, such
 	// as the waiting ones. Each key names, in itemKey, the item key the device
 	// opened to seal it, and is refused as changed on another device when that
-	// is no longer the item's. A key already stored for the same public key is
-	// left as it is; only a re-key replaces it. It widens nothing, so it needs
-	// no tap. Counts one write for each item named. Answers how many keys it
-	// stored. Needs passwords:use.
+	// is no longer the item's. A key already stored is left as it is by a call
+	// that is not a tap; a tap replaces one a token stored; only a re-key
+	// replaces one a tap stored. It widens nothing, so it needs no tap. Counts
+	// one write for each item named. Answers how many keys it stored. Needs
+	// passwords:use.
 	AddPasswordShareKeys(ctx context.Context, arguments AddPasswordShareKeysArguments) (int, error)
 
 	// Lets the agent use one of the caller's items, with the item key sealed
@@ -371,6 +385,12 @@ type PasswordShareKey struct {
 
 	// RecipientPublicKey is the public key it was sealed for.
 	RecipientPublicKey string `json:"recipientPublicKey"`
+
+	// ItemKey is the item key, sealed by the account key as the item view shows
+	// it, that the device opened to seal this key. Required whenever keys are
+	// given: a key whose ItemKey is no longer the item's is refused as changed
+	// on another device.
+	ItemKey *string `json:"itemKey" graphapi:"nullable"`
 }
 
 // PasswordItemShares is the new set of grantees of an item with the keys for
@@ -486,6 +506,7 @@ const (
 	passwordsKeyChangedSentence       = "That person's key changed since it was read. Read their key again and seal the item for it."
 	passwordsCardSentence             = "A card cannot be used by the agent."
 	passwordsFullSentence             = "Passwords is full: delete items or make notes shorter."
+	passwordsKeptFullSentence         = "Passwords is keeping too many deleted items and old versions: a person empties Recently deleted on the Passwords page."
 	passwordsTooManyWritesSentence    = "Too many changes to Passwords in a short time. Try again in a few minutes."
 	passwordsListRunningSentence      = "Passwords is already being read for you. Try again in a moment."
 	passwordsAlreadySetUpSentence     = "Passwords is already set up."
@@ -527,6 +548,10 @@ func passwordsFailure(err error) error {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsCardSentence)
 	case errors.Is(err, db.ErrPasswordsFull):
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsFullSentence)
+	case errors.Is(err, db.ErrPasswordsKeptFull):
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsKeptFullSentence)
+	case errors.Is(err, db.ErrPasswordTapRequired):
+		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, passwordsOnATap)
 	case errors.Is(err, db.ErrAlreadyExists):
 		return fmt.Errorf("%w: %s", api.ErrAlreadyExists, passwordsAlreadySetUpSentence)
 	}
@@ -564,14 +589,16 @@ func (self *graph) passwordsLimiters() *passwordsLimiters {
 }
 
 // passwordsListStaleAfter is how long a listing counts as running. A listing
-// is released when its resolver returns, so this only matters for one that
-// never did.
-const passwordsListStaleAfter = time.Minute
+// is released when its answer has been written (which has its own deadline of
+// passwordsListWriteTimeout), so this only matters for one that never was.
+const passwordsListStaleAfter = 3 * time.Minute
 
 // takePasswordsListing lets one ListPasswordItems for a person run at a time:
 // each answers every item the person holds, up to the whole of their limit,
 // and several at once multiply the memory the server needs. A second one is
-// turned away to try again. The function it answers gives the place back.
+// turned away to try again. The function it answers gives the place back; the
+// place is held until the answer has been written, not only until the resolver
+// returns, because the answer stays in memory while a slow reader takes it.
 func (self *graph) takePasswordsListing(userId string) (func(), error) {
 	limiters := self.passwordsLimiters()
 	limiters.listingMutex.Lock()
@@ -933,19 +960,15 @@ func (self *graph) UpdatePasswordsSettings(ctx context.Context, arguments Update
 		return nil, passwordsInvalid("lockAfterMinutes is from %d to %d", models.PasswordsLockAfterMinutesLeast, models.PasswordsLockAfterMinutesMost)
 	}
 	tx := self.transaction(ctx)
-	setup, err := requirePasswordsSetUp(tx, principal.User.ID)
-	if err != nil {
+	if _, err := requirePasswordsSetUp(tx, principal.User.ID); err != nil {
 		return nil, err
 	}
 	// A longer time keeps every device unlocked for longer, which a token
 	// could do to leave one open for a week: that is a person's tap. A shorter
-	// one only asks for the passphrase sooner.
-	if arguments.LockAfterMinutes > setup.LockAfterMinutes {
-		if err := requirePasswordsTap(principal); err != nil {
-			return nil, err
-		}
-	}
-	if _, err := tx.SetPasswordsLockAfterMinutes(principal.User.ID, arguments.LockAfterMinutes); err != nil {
+	// one only asks for the passphrase sooner. Whether it is longer is decided
+	// by the database, on the row it has locked, so that the tap is not judged
+	// on a time another change is about to replace.
+	if _, err := tx.SetPasswordsLockAfterMinutes(principal.User.ID, arguments.LockAfterMinutes, principal.IsPersonsTap()); err != nil {
 		return nil, passwordsFailure(err)
 	}
 	return self.describePasswordsSetup(tx, principal.User.ID)
@@ -974,7 +997,10 @@ func (self *graph) ListPasswordItems(ctx context.Context, arguments ListPassword
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	if !holdUntilResponseIsWritten(ctx, release) {
+		defer release()
+	}
+	limitPasswordsListWrite(ctx)
 	var sinceRevision int64
 	if arguments.SinceRevision != nil && *arguments.SinceRevision > 0 {
 		sinceRevision = *arguments.SinceRevision
@@ -1121,11 +1147,30 @@ func (self *graph) DeletePasswordItem(ctx context.Context, arguments PasswordIte
 	if err := self.takePasswordsWrite(principal, 1); err != nil {
 		return nil, err
 	}
-	deleted, err := self.transaction(ctx).DeletePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID))
+	deleted, err := self.transaction(ctx).DeletePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID), principal.IsPersonsTap())
 	if err != nil {
 		return nil, passwordsFailure(err)
 	}
 	return describePasswordItem(deleted), nil
+}
+
+func (self *graph) PurgePasswordItem(ctx context.Context, arguments PasswordItemIDArguments) (bool, error) {
+	principal, err := self.requirePasswordsPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	// Gone for good, with the old versions that could bring it back: a
+	// person's tap, as erasing is.
+	if err := requirePasswordsTap(principal); err != nil {
+		return false, err
+	}
+	if err := self.takePasswordsWrite(principal, 1); err != nil {
+		return false, err
+	}
+	if err := self.transaction(ctx).PurgePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID)); err != nil {
+		return false, passwordsFailure(err)
+	}
+	return true, nil
 }
 
 func (self *graph) RestorePasswordItem(ctx context.Context, arguments PasswordItemIDArguments) (*PasswordItemView, error) {
@@ -1172,27 +1217,11 @@ func (self *graph) SetPasswordItemShares(ctx context.Context, arguments SetPassw
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	existing, err := tx.GetPasswordItem(principal.User.ID, itemId)
-	if err != nil {
-		return nil, passwordsFailure(err)
-	}
 	// Adding somebody to who may be given an item's key is disclosing a
 	// password to them, a person's tap. Narrowing or keeping the same
-	// discloses nothing and is open to every sign-in.
-	if !principal.IsPersonsTap() {
-		for _, grantee := range grantees {
-			isExisting := false
-			for _, share := range existing.Shares {
-				if share.GranteeUserID == grantee.GranteeUserID && share.GranteeCircleID == grantee.GranteeCircleID {
-					isExisting = true
-				}
-			}
-			if !isExisting {
-				return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, passwordsOnATap)
-			}
-		}
-	}
-	if _, err := tx.SetPasswordItemShares(principal.User.ID, itemId, grantees, keys); err != nil {
+	// discloses nothing and is open to every sign-in. The database decides it,
+	// once it holds the locks, from the shares as they are then.
+	if _, err := tx.SetPasswordItemShares(principal.User.ID, itemId, grantees, keys, principal.IsPersonsTap()); err != nil {
 		// Not a circle in common, a person who does not exist, a circle the
 		// caller is not in, a key for somebody not reached: all not found.
 		return nil, passwordsFailure(err)
@@ -1202,15 +1231,20 @@ func (self *graph) SetPasswordItemShares(ctx context.Context, arguments SetPassw
 
 // passwordShareKeysOf checks the keys of a call and makes them models. The
 // item identifier is that of the call for SetPasswordItemShares, which names
-// the item once.
+// the item once. Every key names the item key it was sealed from, as
+// AddPasswordShareKeys requires.
 func passwordShareKeysOf(itemId string, keys []PasswordShareKey) ([]*models.PasswordShareKey, error) {
 	made := make([]*models.PasswordShareKey, 0, len(keys))
 	for _, key := range keys {
-		key, err := checkedPasswordShareKey(itemId, key.RecipientUserID, key.ItemKeyByRecipientKey, key.RecipientPublicKey)
+		if key.ItemKey == nil || !isSealedText(*key.ItemKey, passwordsKeyMostBytes) {
+			return nil, passwordsInvalid("itemKey is the item key the device opened, as the item shows it")
+		}
+		checked, err := checkedPasswordShareKey(itemId, key.RecipientUserID, key.ItemKeyByRecipientKey, key.RecipientPublicKey)
 		if err != nil {
 			return nil, err
 		}
-		made = append(made, key)
+		checked.ItemKeyByAccountKey = *key.ItemKey
+		made = append(made, checked)
 	}
 	return made, nil
 }
@@ -1264,7 +1298,7 @@ func (self *graph) AddPasswordShareKeys(ctx context.Context, arguments AddPasswo
 		checked.ItemKeyByAccountKey = *key.ItemKey
 		keys = append(keys, checked)
 	}
-	stored, err := self.transaction(ctx).AddPasswordShareKeys(principal.User.ID, keys)
+	stored, err := self.transaction(ctx).AddPasswordShareKeys(principal.User.ID, keys, principal.IsPersonsTap())
 	if err != nil {
 		return 0, passwordsFailure(err)
 	}

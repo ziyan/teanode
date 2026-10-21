@@ -91,7 +91,7 @@ func mustListPasswordItems(test *testing.T, tx db.Transaction, viewer *models.Us
 
 func mustSetPasswordItemShares(test *testing.T, tx db.Transaction, owner *models.User, itemId string, grantees []models.PasswordShareGrantee, keys []*models.PasswordShareKey) *models.PasswordItem {
 	test.Helper()
-	item, err := tx.SetPasswordItemShares(owner.ID, itemId, grantees, keys)
+	item, err := tx.SetPasswordItemShares(owner.ID, itemId, grantees, keys, true)
 	if err != nil {
 		test.Fatalf("SetPasswordItemShares: %s", err)
 	}
@@ -183,11 +183,11 @@ func TestPasswordsSetupIsOnceAndProofsAreChecked(test *testing.T) {
 		}
 
 		for _, minutes := range []int{0, -1, 10081} {
-			if _, err := tx.SetPasswordsLockAfterMinutes(world.ada.ID, minutes); !errors.Is(err, db.ErrInvalidArguments) {
+			if _, err := tx.SetPasswordsLockAfterMinutes(world.ada.ID, minutes, true); !errors.Is(err, db.ErrInvalidArguments) {
 				test.Errorf("locking after %d minutes: %v", minutes, err)
 			}
 		}
-		if locked, err := tx.SetPasswordsLockAfterMinutes(world.ada.ID, 10080); err != nil || locked.LockAfterMinutes != 10080 {
+		if locked, err := tx.SetPasswordsLockAfterMinutes(world.ada.ID, 10080, true); err != nil || locked.LockAfterMinutes != 10080 {
 			test.Fatalf("locking after a week: %+v %v", locked, err)
 		}
 	})
@@ -243,7 +243,7 @@ func TestSavingAPasswordItemChecksTheRevision(test *testing.T) {
 			test.Fatalf("a kind nobody knows: %v", err)
 		}
 
-		deleted, err := tx.DeletePasswordItem(world.ada.ID, first.ID)
+		deleted, err := tx.DeletePasswordItem(world.ada.ID, first.ID, true)
 		if err != nil || deleted.DeletedAt == nil || deleted.Revision <= saved.Revision {
 			test.Fatalf("a delete: %+v %v", deleted, err)
 		}
@@ -253,11 +253,11 @@ func TestSavingAPasswordItemChecksTheRevision(test *testing.T) {
 		if count, _ := tx.CountPasswordItems(world.ada.ID); count != 1 {
 			test.Fatalf("a deleted item is not counted: %d", count)
 		}
-		again, err := tx.DeletePasswordItem(world.ada.ID, first.ID)
+		again, err := tx.DeletePasswordItem(world.ada.ID, first.ID, true)
 		if err != nil || again.Revision != deleted.Revision {
 			test.Fatalf("deleting twice changes nothing: %+v %v", again, err)
 		}
-		if _, err := tx.DeletePasswordItem(world.ben.ID, first.ID); !errors.Is(err, db.ErrNotFound) {
+		if _, err := tx.DeletePasswordItem(world.ben.ID, first.ID, true); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("deleting somebody else's: %v", err)
 		}
 		restored, err := tx.RestorePasswordItem(world.ada.ID, first.ID)
@@ -294,7 +294,7 @@ func TestListingPasswordItemsSinceARevision(test *testing.T) {
 		if len(later.Items) != 1 || later.Items[0].ID != second.ID || len(later.ItemIDs) != 2 || later.Revision != second.Revision {
 			test.Fatalf("since the first: %+v", later)
 		}
-		if _, err := tx.DeletePasswordItem(world.ada.ID, second.ID); err != nil {
+		if _, err := tx.DeletePasswordItem(world.ada.ID, second.ID, true); err != nil {
 			test.Fatal(err)
 		}
 		afterDelete := mustListPasswordItems(test, tx, world.ada, second.Revision)
@@ -324,11 +324,11 @@ func TestSharingAPasswordItemNeedsACircleAndAKey(test *testing.T) {
 		item := savePasswordItemFor(test, tx, world.ada, 1, models.PasswordItemKindLogin)
 
 		for _, stranger := range []*models.User{world.cora, world.dave} {
-			if _, err := tx.SetPasswordItemShares(world.ada.ID, item.ID, []models.PasswordShareGrantee{{GranteeUserID: stranger.ID}}, nil); !errors.Is(err, db.ErrNotFound) {
+			if _, err := tx.SetPasswordItemShares(world.ada.ID, item.ID, []models.PasswordShareGrantee{{GranteeUserID: stranger.ID}}, nil, true); !errors.Is(err, db.ErrNotFound) {
 				test.Fatalf("a share with %s needs a circle in common: %v", stranger.Username, err)
 			}
 		}
-		if _, err := tx.SetPasswordItemShares(world.ada.ID, item.ID, []models.PasswordShareGrantee{{GranteeCircleID: world.club.ID}}, nil); !errors.Is(err, db.ErrNotFound) {
+		if _, err := tx.SetPasswordItemShares(world.ada.ID, item.ID, []models.PasswordShareGrantee{{GranteeCircleID: world.club.ID}}, nil, true); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("a share with a circle she is not in: %v", err)
 		}
 		for name, grantees := range map[string][]models.PasswordShareGrantee{
@@ -336,24 +336,24 @@ func TestSharingAPasswordItemNeedsACircleAndAKey(test *testing.T) {
 			"neither": {{}},
 			"herself": {{GranteeUserID: world.ada.ID}},
 		} {
-			if _, err := tx.SetPasswordItemShares(world.ada.ID, item.ID, grantees, nil); !errors.Is(err, db.ErrInvalidArguments) {
+			if _, err := tx.SetPasswordItemShares(world.ada.ID, item.ID, grantees, nil, true); !errors.Is(err, db.ErrInvalidArguments) {
 				test.Fatalf("%s: %v", name, err)
 			}
 		}
-		if _, err := tx.SetPasswordItemShares(world.ben.ID, item.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ada.ID}}, nil); !errors.Is(err, db.ErrNotFound) {
+		if _, err := tx.SetPasswordItemShares(world.ben.ID, item.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ada.ID}}, nil, true); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("sharing somebody else's item: %v", err)
 		}
 
 		// A key for somebody the shares do not reach, and for a key that is
 		// not theirs now.
 		if _, err := tx.SetPasswordItemShares(world.ada.ID, item.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}},
-			[]*models.PasswordShareKey{passwordKeyFor(item, world.cora)}); !errors.Is(err, db.ErrNotFound) {
+			[]*models.PasswordShareKey{passwordKeyFor(item, world.cora)}, true); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("a key for a person not reached: %v", err)
 		}
 		oldKey := passwordKeyFor(item, world.ben)
 		oldKey.RecipientPublicKey = "an older public key"
 		if _, err := tx.SetPasswordItemShares(world.ada.ID, item.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}},
-			[]*models.PasswordShareKey{oldKey}); !errors.Is(err, db.ErrPasswordKeyStale) {
+			[]*models.PasswordShareKey{oldKey}, true); !errors.Is(err, db.ErrPasswordKeyStale) {
 			test.Fatalf("a key for an old public key: %v", err)
 		}
 		// None of the refusals above left a share or a key behind.
@@ -378,7 +378,7 @@ func TestSharingAPasswordItemNeedsACircleAndAKey(test *testing.T) {
 			test.Fatalf("waiting: %+v %v", waiting, err)
 		}
 
-		added, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)})
+		added, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)}, true)
 		if err != nil || added != 1 {
 			test.Fatalf("adding a key: %d %v", added, err)
 		}
@@ -400,10 +400,10 @@ func TestSharingAPasswordItemNeedsACircleAndAKey(test *testing.T) {
 
 		// Adding keys for people nobody shared with, and for a stranger's
 		// item, is refused.
-		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.cora)}); !errors.Is(err, db.ErrNotFound) {
+		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.cora)}, true); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("a key for somebody not reached: %v", err)
 		}
-		if _, err := tx.AddPasswordShareKeys(world.ben.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)}); !errors.Is(err, db.ErrNotFound) {
+		if _, err := tx.AddPasswordShareKeys(world.ben.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)}, true); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("a key for somebody else's item: %v", err)
 		}
 
@@ -425,12 +425,12 @@ func TestSharingAPasswordItemNeedsACircleAndAKey(test *testing.T) {
 		if waiting, _ := tx.ListWaitingPasswordShares(world.ada.ID); len(waiting) != 1 || waiting[0].Recipient.PublicKey != "a new public key of ben" {
 			test.Fatalf("ben waits with his new key: %+v", waiting)
 		}
-		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)}); !errors.Is(err, db.ErrPasswordKeyStale) {
+		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)}, true); !errors.Is(err, db.ErrPasswordKeyStale) {
 			test.Fatalf("a key for his old public key: %v", err)
 		}
 		fresh := passwordKeyFor(item, world.ben)
 		fresh.RecipientPublicKey = "a new public key of ben"
-		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{fresh}); err != nil {
+		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{fresh}, true); err != nil {
 			test.Fatalf("a key for his new public key: %s", err)
 		}
 		if got := mustListPasswordItems(test, tx, world.ben, 0); len(got.Items) != 1 {
@@ -543,7 +543,7 @@ func TestACircleShareWaitsForMembersAndEndsWhenTheyLeave(test *testing.T) {
 		if err != nil || len(waiting) != 1 || waiting[0].ItemID != item.ID || waiting[0].Recipient.UserID != world.ben.ID {
 			test.Fatalf("a member who set up after the share waits: %+v %v", waiting, err)
 		}
-		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)}); err != nil {
+		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)}, true); err != nil {
 			test.Fatal(err)
 		}
 		if got := mustListPasswordItems(test, tx, world.ben, 0); len(got.Items) != 1 {
@@ -707,7 +707,7 @@ func TestLettingTheAgentUseAPasswordItem(test *testing.T) {
 		if _, err := tx.SetPasswordItemUsableByAgent(world.ada.ID, login.ID, true, "sealed again"); err != nil {
 			test.Fatal(err)
 		}
-		deleted, err := tx.DeletePasswordItem(world.ada.ID, login.ID)
+		deleted, err := tx.DeletePasswordItem(world.ada.ID, login.ID, true)
 		if err != nil || deleted.IsUsableByAgent || deleted.ItemKeyByAgentKey != "" {
 			test.Fatalf("a delete ends the agent's use: %+v %v", deleted, err)
 		}
@@ -796,7 +796,7 @@ func TestSweepingDeletedPasswordItems(test *testing.T) {
 		liveItem = savePasswordItemFor(test, tx, world.ada, 3, models.PasswordItemKindLogin)
 		mustSetPasswordItemShares(test, tx, world.ada, oldItem.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}}, nil)
 		for _, item := range []*models.PasswordItem{oldItem, recentItem} {
-			if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID); err != nil {
+			if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID, true); err != nil {
 				test.Fatal(err)
 			}
 		}
@@ -980,7 +980,7 @@ func TestSavesSpreadOverHoursKeepTheOldestVersion(test *testing.T) {
 // A person's items that are not deleted hold at most PasswordsBytesMost bytes
 // of sealed text. Saving, re-keying and restoring are refused past it with
 // ErrPasswordsFull and draw no revision number; anything that does not make an
-// item larger is allowed, and deleting makes room.
+// item larger is allowed, and deleting makes room at once.
 func TestPasswordsHoldAtMostABoundedNumberOfBytes(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
@@ -1028,10 +1028,9 @@ func TestPasswordsHoldAtMostABoundedNumberOfBytes(test *testing.T) {
 			test.Fatalf("refused changes drew revisions: %s then %s", revisionBefore, got)
 		}
 
-		// A smaller item still fits. Making an item shorter keeps the version it
-		// replaces, which does not fit at the limit: a token's save is refused
-		// (the content it would overwrite could not be kept), and the person's
-		// own tap goes ahead without keeping it, which is how they make room.
+		// A smaller item still fits, and making an item shorter is allowed at
+		// the limit by a token too: the version it replaces goes to the other
+		// allowance, which has room.
 		if _, err := save(world.ada, 5, passwordItemFieldsOf("small", 1<<20)); err != nil {
 			test.Fatalf("a small note below the limit: %v", err)
 		}
@@ -1039,27 +1038,195 @@ func TestPasswordsHoldAtMostABoundedNumberOfBytes(test *testing.T) {
 			ID: first.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindNote,
 			EncryptedFields: passwordItemFieldsOf("first", 10<<20), ItemKeyByAccountKey: `{"sealed":"key"}`,
 		}
-		if _, err := tx.SavePasswordItem(shorter, &first.Revision); !errors.Is(err, db.ErrPasswordsFull) {
+		if _, err := tx.SavePasswordItem(shorter, &first.Revision); err != nil {
 			test.Fatalf("a shorter note from a token at the limit: %v", err)
 		}
-		shorter.IsSavedByPerson = true
-		if _, err := tx.SavePasswordItem(shorter, &first.Revision); err != nil {
-			test.Fatalf("a shorter note from the person's tap: %v", err)
-		}
 
-		// A deleted item still counts until it is swept, so deleting makes no
-		// room, and restoring it needs none.
-		if _, err := tx.DeletePasswordItem(world.ada.ID, second.ID); err != nil {
+		// A deleted item leaves the room for items at once, a restore needs
+		// the room back, and deleting one of the others makes it.
+		if _, err := tx.DeletePasswordItem(world.ada.ID, second.ID, false); err != nil {
 			test.Fatal(err)
 		}
-		if _, err := save(world.ada, 6, passwordItemFieldsOf("replacement", thirtyMebibytes)); !errors.Is(err, db.ErrPasswordsFull) {
+		replacement, err := save(world.ada, 6, passwordItemFieldsOf("replacement", thirtyMebibytes))
+		if err != nil {
 			test.Fatalf("a save after a delete: %v", err)
+		}
+		if _, err := tx.RestorePasswordItem(world.ada.ID, second.ID); !errors.Is(err, db.ErrPasswordsFull) {
+			test.Fatalf("a restore with no room: %v", err)
+		}
+		if _, err := tx.DeletePasswordItem(world.ada.ID, replacement.ID, false); err != nil {
+			test.Fatal(err)
 		}
 		restored, err := tx.RestorePasswordItem(world.ada.ID, second.ID)
 		if err != nil || restored.DeletedAt != nil {
 			test.Fatalf("a restore: %+v %v", restored, err)
 		}
 	})
+}
+
+// The deleted items and the kept versions have an allowance of their own,
+// models.PasswordsKeptBytesMost. When it is full a change that is not the
+// person's tap and would add to it is refused (a delete, a save that would keep
+// the version it replaces), and a tap's save, delete and restore always go
+// ahead, a tap's save without keeping the version. Deleting an item forever
+// frees its bytes, and the allowance does not touch the room for items.
+func TestDeletedItemsAndKeptVersionsHaveAnAllowanceOfTheirOwn(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	const thirtyMebibytes = 30 << 20
+	var world *shareWorld
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		world = newPasswordsWorld(test, tx)
+		setUpPasswordsFor(test, tx, world.ada)
+		setUpPasswordsFor(test, tx, world.ben)
+	})
+	// Each step is a transaction of its own, so that the counts below, which
+	// read the committed rows, see what the steps before it did.
+	save := func(owner *models.User, number int, fields string, base *int64) (item *models.PasswordItem, err error) {
+		dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+			item, err = tx.SavePasswordItem(&models.PasswordItem{
+				ID: passwordItemIdOf(number), OwnerUserID: owner.ID, ItemKind: models.PasswordItemKindNote,
+				EncryptedFields: fields, ItemKeyByAccountKey: `{"sealed":"key"}`,
+			}, base)
+		})
+		return item, err
+	}
+	mustSave := func(owner *models.User, number int, fields string) *models.PasswordItem {
+		test.Helper()
+		item, err := save(owner, number, fields, nil)
+		if err != nil {
+			test.Fatalf("save %d: %v", number, err)
+		}
+		return item
+	}
+	remove := func(owner *models.User, number int, isByPerson bool) (err error) {
+		dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+			_, err = tx.DeletePasswordItem(owner.ID, passwordItemIdOf(number), isByPerson)
+		})
+		return err
+	}
+	keptBytes := func(owner *models.User) int64 {
+		test.Helper()
+		return mustParseInt(test, dbtest.QueryString(test, database, `SELECT (
+			(SELECT coalesce(sum(octet_length(encrypted_fields) + octet_length(item_key_by_account_key)), 0) FROM password_item WHERE owner_user_id = '`+owner.ID+`' AND deleted_at IS NOT NULL) +
+			(SELECT coalesce(sum(octet_length(encrypted_fields) + octet_length(item_key_by_account_key)), 0) FROM password_item_version WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+owner.ID+`')))::text`))
+	}
+	versionCount := func() string {
+		return dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version"`)
+	}
+
+	// Five deleted items of 30 MiB: the person's own taps are never refused,
+	// even past the allowance (the fifth takes it to 150 MiB). The first has
+	// been saved over, so it has a kept version, which goes with it.
+	for number := 1; number <= 5; number++ {
+		item := mustSave(world.ada, number, passwordItemFieldsOf("junk", thirtyMebibytes))
+		if number == 1 {
+			if _, err := save(world.ada, number, passwordItemFieldsOf("junk again", 1<<20), &item.Revision); err != nil {
+				test.Fatal(err)
+			}
+			if got := versionCount(); got != "1" {
+				test.Fatalf("%s versions were kept of the first item", got)
+			}
+		}
+		if err := remove(world.ada, number, true); err != nil {
+			test.Fatalf("a tap's delete %d: %v", number, err)
+		}
+	}
+	if held := keptBytes(world.ada); held <= models.PasswordsKeptBytesMost {
+		test.Fatalf("the allowance holds %d bytes, not past %d", held, models.PasswordsKeptBytesMost)
+	}
+
+	// The room for items is untouched: the person saves notes as before.
+	note := mustSave(world.ada, 10, passwordItemFieldsOf("note", 1<<20))
+	mustSave(world.ada, 11, passwordItemFieldsOf("other", 1<<20))
+	versionsBefore := versionCount()
+	revisionBefore := lastPasswordRevision(test, database)
+
+	// A token's delete, and a token's save or re-key that would keep the
+	// version it replaces, are refused and draw no revision.
+	if err := remove(world.ada, 11, false); !errors.Is(err, db.ErrPasswordsKeptFull) {
+		test.Fatalf("a token's delete with the allowance full: %v", err)
+	}
+	if _, err := save(world.ada, 10, passwordItemFieldsOf("note", 2<<20), &note.Revision); !errors.Is(err, db.ErrPasswordsKeptFull) {
+		test.Fatalf("a token's save that would keep a version, allowance full: %v", err)
+	}
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		if _, err := tx.RekeyPasswordItem(world.ada.ID, &models.PasswordItemRekey{
+			ItemID: note.ID, BaseRevision: note.Revision, EncryptedFields: passwordItemFieldsOf("note", 2<<20), ItemKeyByAccountKey: `{"sealed":"key 2"}`,
+		}); !errors.Is(err, db.ErrPasswordsKeptFull) {
+			test.Fatalf("a token's re-key that would keep a version, allowance full: %v", err)
+		}
+	})
+	// A new item adds nothing to the allowance, so a token may still save one.
+	mustSave(world.ada, 12, passwordItemFieldsOf("new", 1<<10))
+	if got := lastPasswordRevision(test, database); got != fmt.Sprint(mustParseInt(test, revisionBefore)+1) {
+		test.Fatalf("refused changes drew revisions: %s then %s", revisionBefore, got)
+	}
+
+	// The person's tap saves over the note without keeping the version, and
+	// deletes and restores.
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		if _, err := tx.SavePasswordItem(&models.PasswordItem{
+			ID: note.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindNote, IsSavedByPerson: true,
+			EncryptedFields: passwordItemFieldsOf("note", 2<<20), ItemKeyByAccountKey: `{"sealed":"key"}`,
+		}, &note.Revision); err != nil {
+			test.Fatalf("a tap's save with the allowance full: %v", err)
+		}
+	})
+	if got := versionCount(); got != versionsBefore {
+		test.Fatalf("the allowance was full and a version was kept: %s then %s", versionsBefore, got)
+	}
+	if err := remove(world.ada, 11, true); err != nil {
+		test.Fatalf("a tap's delete with the allowance full: %v", err)
+	}
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		if _, err := tx.RestorePasswordItem(world.ada.ID, passwordItemIdOf(11)); err != nil {
+			test.Fatalf("a restore with the allowance full: %v", err)
+		}
+	})
+
+	// Somebody else's allowance is their own.
+	mustSave(world.ben, 20, passwordItemFieldsOf("ben", 1<<20))
+	if err := remove(world.ben, 20, false); err != nil {
+		test.Fatalf("ben's token delete: %v", err)
+	}
+
+	// Deleting forever: only a deleted item, only the owner's, and it frees the
+	// bytes, versions with it.
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		if err := tx.PurgePasswordItem(world.ada.ID, passwordItemIdOf(10)); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("purging an item that is not deleted: %v", err)
+		}
+		if err := tx.PurgePasswordItem(world.ben.ID, passwordItemIdOf(1)); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("purging somebody else's item: %v", err)
+		}
+	})
+	before := keptBytes(world.ada)
+	revisionBefore = lastPasswordRevision(test, database)
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		for number := 1; number <= 2; number++ {
+			if err := tx.PurgePasswordItem(world.ada.ID, passwordItemIdOf(number)); err != nil {
+				test.Fatalf("purge %d: %v", number, err)
+			}
+		}
+	})
+	if got := lastPasswordRevision(test, database); got != revisionBefore {
+		test.Fatalf("a purge drew a revision: %s then %s", revisionBefore, got)
+	}
+	if freed := before - keptBytes(world.ada); freed < 2*thirtyMebibytes {
+		test.Fatalf("two purged items freed %d bytes", freed)
+	}
+	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item" WHERE "id" IN ('`+passwordItemIdOf(1)+`', '`+passwordItemIdOf(2)+`')`); got != "0" {
+		test.Fatalf("%s purged items are still there", got)
+	}
+	if got := versionCount(); got != "0" {
+		test.Fatalf("%s versions outlived a purged item", got)
+	}
+	// With room in the allowance again, a token's delete goes ahead.
+	if err := remove(world.ada, 11, false); err != nil {
+		test.Fatalf("a token's delete after room was made: %v", err)
+	}
 }
 
 // A refused save draws no revision number, which every person's items share:
@@ -1073,7 +1240,7 @@ func TestRefusedPasswordChangesDrawNoRevision(test *testing.T) {
 		world := newPasswordsWorld(test, tx)
 		item := savePasswordItemFor(test, tx, world.ada, 1, models.PasswordItemKindLogin)
 		deleted := savePasswordItemFor(test, tx, world.ada, 2, models.PasswordItemKindLogin)
-		if _, err := tx.DeletePasswordItem(world.ada.ID, deleted.ID); err != nil {
+		if _, err := tx.DeletePasswordItem(world.ada.ID, deleted.ID, true); err != nil {
 			test.Fatal(err)
 		}
 		deleted, _ = tx.GetPasswordItem(world.ada.ID, deleted.ID)
@@ -1229,7 +1396,7 @@ func TestRekeyingAPasswordItem(test *testing.T) {
 			test.Fatalf("an agent copy for an item the agent does not use: %v", err)
 		}
 		// A deleted item can be re-keyed, so that a restore can follow.
-		if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID); err != nil {
+		if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID, true); err != nil {
 			test.Fatal(err)
 		}
 		deleted, _ := tx.GetPasswordItem(world.ada.ID, item.ID)

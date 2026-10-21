@@ -249,9 +249,12 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		if arguments.Cron != "" {
 			schedule.Cron = strings.TrimSpace(arguments.Cron)
 		}
-		// A save the person made with a tap on a screen is theirs, whether or
-		// not it changed anything: pressing Save on the dashboard or in the app
-		// is how a person takes over a schedule the agent wrote. A caller that
+		// A save the person made with a tap on a screen that includes the prompt
+		// is theirs, whether or not the prompt changed: pressing Save in the
+		// editor on the dashboard or in the app is how a person takes over a
+		// schedule the agent wrote. A tap that sends no prompt (the on and off
+		// switch) has not read what the schedule says, so it leaves the writer
+		// as it was. A caller that
 		// is not a tap (the command line holds a token the agent's own shell
 		// can use too) makes the schedule the agent's by changing its words,
 		// when it runs, where its answer goes or whether it runs, as the
@@ -270,7 +273,9 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 			schedule.Enabled = *arguments.Enabled
 		}
 		if principal.IsPersonsTap() {
-			schedule.WrittenBy = models.WrittenByPerson
+			if strings.TrimSpace(arguments.Prompt) != "" {
+				schedule.WrittenBy = models.WrittenByPerson
+			}
 		} else if arguments.Cron != "" || arguments.Deliver != "" || arguments.Enabled != nil {
 			schedule.WrittenBy = models.WrittenByAgent
 		}

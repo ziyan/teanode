@@ -154,7 +154,7 @@ func TestASaveThenAShareDoesNotDeadlockWithLeavingACircle(test *testing.T) {
 			// Ben starts leaving the circle now, and waits for this request.
 			<-leaving
 			time.Sleep(500 * time.Millisecond)
-			_, err = tx.SetPasswordItemShares(world.ada.ID, item.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}}, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)})
+			_, err = tx.SetPasswordItemShares(world.ada.ID, item.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}}, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)}, true)
 			return err
 		})
 	}()
@@ -253,7 +253,7 @@ func TestAnItemIsMarkedWhenAccessToItNarrows(test *testing.T) {
 			test.Fatal("turning the agent off did not mark the item")
 		}
 		rekey(nil)
-		if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID); err != nil {
+		if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID, true); err != nil {
 			test.Fatal(err)
 		}
 		if needsNewKey() {
@@ -262,8 +262,12 @@ func TestAnItemIsMarkedWhenAccessToItNarrows(test *testing.T) {
 		if _, err := tx.RestorePasswordItem(world.ada.ID, item.ID); err != nil {
 			test.Fatal(err)
 		}
-		mustSetPasswordItemShares(test, tx, world.ada, item.ID, granted, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)})
-		if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID); err != nil {
+		// The item has been re-keyed since it was saved: the key is sealed from
+		// the item key it has now.
+		currentKey := passwordKeyFor(item, world.ben)
+		currentKey.ItemKeyByAccountKey = item.ItemKeyByAccountKey
+		mustSetPasswordItemShares(test, tx, world.ada, item.ID, granted, []*models.PasswordShareKey{currentKey})
+		if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID, true); err != nil {
 			test.Fatal(err)
 		}
 		if !needsNewKey() {
@@ -317,7 +321,7 @@ func TestShareKeysAreStoredOnlyWhereNoneIsWorking(test *testing.T) {
 		replacement.ItemKeyByRecipientKey = "garbage"
 		mustSetPasswordItemShares(test, tx, world.ada, item.ID, granted, []*models.PasswordShareKey{replacement})
 		before := mustListPasswordItems(test, tx, world.ada, 0).Revision
-		stored, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{replacement})
+		stored, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{replacement}, true)
 		if err != nil || stored != 0 {
 			test.Fatalf("adding a key that is already there: %d %v", stored, err)
 		}
@@ -330,7 +334,7 @@ func TestShareKeysAreStoredOnlyWhereNoneIsWorking(test *testing.T) {
 
 		// The one for another item is stored, and only that item is raised.
 		sequenceBefore := lastPasswordRevision(test, database)
-		stored, err = tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{replacement, passwordKeyFor(other, world.ben)})
+		stored, err = tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{replacement, passwordKeyFor(other, world.ben)}, true)
 		if err != nil || stored != 1 {
 			test.Fatalf("adding one new key of two: %d %v", stored, err)
 		}
@@ -342,12 +346,12 @@ func TestShareKeysAreStoredOnlyWhereNoneIsWorking(test *testing.T) {
 		stale := passwordKeyFor(other, world.ben)
 		stale.ItemKeyByAccountKey = `{"sealed":"an older key"}`
 		sequenceBefore = lastPasswordRevision(test, database)
-		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{stale}); !errors.Is(err, db.ErrPasswordRevisionStale) {
+		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{stale}, true); !errors.Is(err, db.ErrPasswordRevisionStale) {
 			test.Fatalf("a key from another item key: %v", err)
 		}
 		missing := passwordKeyFor(other, world.ben)
 		missing.ItemKeyByAccountKey = ""
-		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{missing}); !errors.Is(err, db.ErrInvalidArguments) {
+		if _, err := tx.AddPasswordShareKeys(world.ada.ID, []*models.PasswordShareKey{missing}, true); !errors.Is(err, db.ErrInvalidArguments) {
 			test.Fatalf("a key that names no item key: %v", err)
 		}
 		if got := lastPasswordRevision(test, database); got != sequenceBefore {
