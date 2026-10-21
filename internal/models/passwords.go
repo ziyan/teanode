@@ -68,10 +68,20 @@ const (
 )
 
 // PasswordItemsMost is how many items one person may keep that are not
-// deleted. Deleted items are bounded by PasswordsKeptBytesMost instead, so
+// deleted. Deleted items are bounded by PasswordsKeptBytesMost and
+// PasswordRowsMost instead, so
 // that a program holding a token cannot use up the places by saving junk
 // that the person then cannot make room from.
 const PasswordItemsMost = 20000
+
+// PasswordRowsMost is how many items one person may have in all, deleted ones
+// (kept 30 days) included. A deleted item still takes a row that every first
+// read of the list has to answer, and a program holding a token can delete as
+// fast as it saves, so the places that PasswordItemsMost counts are not
+// enough. A save that makes a new item is refused at it (ErrLimitReached);
+// deleting, deleting forever and restoring make no new row and are never
+// refused for it, so the person always makes room.
+const PasswordRowsMost = 40000
 
 // PasswordSharePairsMost is how many pairs of an item and a person it reaches
 // one owner's items may have together. The owner's list names every person
@@ -91,6 +101,19 @@ const PasswordSharePairsMost = 50000
 // much shared with them), and a listing answers the keys already stored, the
 // oldest first, only up to it.
 const PasswordsSharedBytesMost = 64 << 20
+
+// PasswordsSharedBytesFromOneOwnerMost is how many of those bytes the items
+// one owner shared with one person may hold. Without it one member could use
+// the whole of PasswordsSharedBytesMost of another person, and every item
+// shared by anybody else would not reach them. A key that would take a
+// recipient past it is not stored, as for PasswordsSharedBytesMost.
+const PasswordsSharedBytesFromOneOwnerMost = 8 << 20
+
+// PasswordsSharedItemsMost is how many items other people may have shared
+// with one person together. The list names each of them in one answer, so
+// small items need a bound of their own beside the bytes. A key past it is
+// not stored, as for PasswordsSharedBytesMost.
+const PasswordsSharedItemsMost = 20000
 
 // PasswordWaitingSharesMost is how many entries ListWaitingPasswordShares
 // answers. The newest items come first; when more wait, every entry says so.
@@ -243,8 +266,9 @@ type PasswordRecipient struct {
 	HasKey bool `json:"hasKey"`
 
 	// HasTooMuchShared is whether storing a key for this item would take the
-	// recipient past PasswordsSharedBytesMost, so that none is stored for
-	// them. Only for a recipient without a key, where an item is in question.
+	// recipient past PasswordsSharedBytesMost, or what one owner may share
+	// with them (PasswordsSharedBytesFromOneOwnerMost), or
+	// PasswordsSharedItemsMost, so that none is stored for them. Only for a recipient without a key, where an item is in question.
 	HasTooMuchShared bool `json:"hasTooMuchShared"`
 }
 

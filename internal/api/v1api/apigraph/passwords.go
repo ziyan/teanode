@@ -579,6 +579,9 @@ func passwordsFailure(err error) error {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsFullSentence)
 	case errors.Is(err, db.ErrPasswordsKeptFull):
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsKeptFullSentence)
+	case errors.Is(err, db.ErrPasswordRecipientFull):
+		// The error is the sentence itself, naming the person.
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err.Error())
 	case errors.Is(err, db.ErrPasswordSharesFull):
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsSharesFullSentence)
 	case errors.Is(err, db.ErrPasswordTapRequired):

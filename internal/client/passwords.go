@@ -36,7 +36,7 @@ type PasswordsUnlockView struct {
 // empty when they have not set Passwords up; HasKey says a key sealed for the
 // item and their current public key is already stored. HasTooMuchShared says
 // the person already has the most the server lets others share with them (64
-// MiB of sealed text), so no key is stored for them for this item.
+// MiB of sealed text in all, 8 MiB from one owner, 20,000 items), so no key is stored for them for this item.
 type PasswordRecipientView struct {
 	UserID           string `json:"userId"`
 	Name             string `json:"name"`

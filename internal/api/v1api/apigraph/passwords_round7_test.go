@@ -77,14 +77,14 @@ func TestAKeySealedForARecipientOrTheAgentHasTheSizeOfAnItemKey(test *testing.T)
 
 // Another person's shares make up most of a person's own list, and the person
 // cannot refuse them: what the sender can make of it is bounded by the keys
-// being the size of a key, so thirty items of 400 KB come to little more than
+// being the size of a key, so fifteen items of 400 KB come to little more than
 // their fields.
 func TestAShareCannotInflateTheRecipientsListBeyondTheFields(test *testing.T) {
 	world := newPasswordsWorld(test)
 	ada, ben := newPasswordsDevice(test, world.ada), newPasswordsDevice(test, world.ben)
 	world.setUp(test, ada)
 	world.setUp(test, ben)
-	const itemCount, fieldsBytes = 30, 400 * 1024
+	const itemCount, fieldsBytes = 15, 400 * 1024
 	for index := 0; index < itemCount; index++ {
 		input := ada.itemInput("note", nil)
 		input["encryptedFields"] = sealedOfSize(fieldsBytes)

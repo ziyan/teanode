@@ -304,6 +304,7 @@ func TestWhatOthersShareWithAPersonIsBounded(test *testing.T) {
 	const fieldsBytes = 1_000_000
 	var world *shareWorld
 	var eve *models.User
+	var fillers []*models.User
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		world = newPasswordsWorld(test, tx)
 		for _, person := range []*models.User{world.ada, world.ben, world.cora} {
@@ -318,21 +319,44 @@ func TestWhatOthersShareWithAPersonIsBounded(test *testing.T) {
 		if _, err := tx.AddCircleMember(world.home.ID, eve.ID, models.MemberRoleMember, world.ada.ID); err != nil {
 			test.Fatal(err)
 		}
+		// One owner may share only 8 MiB with one person, so it takes several
+		// owners to fill the 64 MiB.
+		for index := 1; index <= 8; index++ {
+			filler, err := tx.CreateUser(&models.User{Username: fmt.Sprintf("filler%d", index)})
+			if err != nil {
+				test.Fatal(err)
+			}
+			grantPasswordsUseToAll(test, tx, []string{filler.ID})
+			setUpPasswordsFor(test, tx, filler)
+			if _, err := tx.AddCircleMember(world.home.ID, filler.ID, models.MemberRoleMember, world.ada.ID); err != nil {
+				test.Fatal(err)
+			}
+			fillers = append(fillers, filler)
+		}
 	})
 	benBytes := func() int64 {
 		return mustParseInt(test, dbtest.QueryString(test, database, `SELECT COALESCE(SUM(octet_length(item.encrypted_fields) + octet_length(share_key.item_key_by_recipient_key)), 0)::text
 			FROM password_share_key share_key JOIN password_item item ON item.id = share_key.item_id WHERE share_key.recipient_user_id = '`+world.ben.ID+`'`))
 	}
-	// Ada shares 40 items with ben (about 40 MB), cora 30 (about 30 MB): 70 MB
-	// is more than 64 MiB, so the last three of cora's are not stored for ben.
+	// Eight others share 7 items each with ben (56 MB), ada 7 (7 MB), cora 7
+	// (7 MB): 70 MB is more than 64 MiB, so the last three of cora's are not
+	// stored for ben.
+	for index, filler := range fillers {
+		for number := 1; number <= 7; number++ {
+			dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+				item := savePasswordItemOfSize(test, tx, filler, 2000+index*10+number, fieldsBytes)
+				mustSetPasswordItemShares(test, tx, filler, item.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}}, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)})
+			})
+		}
+	}
 	var coraItems []*models.PasswordItem
-	for number := 1; number <= 40; number++ {
+	for number := 1; number <= 7; number++ {
 		dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 			item := savePasswordItemOfSize(test, tx, world.ada, number, fieldsBytes)
 			mustSetPasswordItemShares(test, tx, world.ada, item.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}}, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)})
 		})
 	}
-	for number := 1; number <= 30; number++ {
+	for number := 1; number <= 7; number++ {
 		dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 			item := savePasswordItemOfSize(test, tx, world.cora, 1000+number, fieldsBytes)
 			coraItems = append(coraItems, item)
@@ -418,8 +442,9 @@ func TestWhatOthersShareWithAPersonIsBounded(test *testing.T) {
 }
 
 // The list answers what is shared with a person only up to the bound, the keys
-// stored first first, even when an item grew after its key was stored (the
-// owner's own allowance is no bound on what reaches somebody else).
+// stored first first, even for an item that grew after its key was stored (a
+// save or a re-key that grows one is refused now, so the growth is made in the
+// table, as data from before would be).
 func TestAListAnswersWhatIsSharedWithAPersonOnlyUpToTheBound(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
@@ -432,27 +457,30 @@ func TestAListAnswersWhatIsSharedWithAPersonOnlyUpToTheBound(test *testing.T) {
 	})
 	var first, second, third *models.PasswordItem
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
-		first = savePasswordItemOfSize(test, tx, world.ada, 1, 40_000_000)
-		second = savePasswordItemOfSize(test, tx, world.ada, 2, 20_000_000)
+		first = savePasswordItemOfSize(test, tx, world.ada, 1, 1000)
+		second = savePasswordItemOfSize(test, tx, world.ada, 2, 1000)
 		first = mustSetPasswordItemShares(test, tx, world.ada, first.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}}, []*models.PasswordShareKey{passwordKeyFor(first, world.ben)})
 		second = mustSetPasswordItemShares(test, tx, world.ada, second.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}}, []*models.PasswordShareKey{passwordKeyFor(second, world.ben)})
 	})
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
-		third = savePasswordItemOfSize(test, tx, world.cora, 1003, 7_000_000)
+		third = savePasswordItemOfSize(test, tx, world.cora, 1003, 1000)
 		mustSetPasswordItemShares(test, tx, world.cora, third.ID, []models.PasswordShareGrantee{{GranteeUserID: world.ben.ID}}, []*models.PasswordShareKey{passwordKeyFor(third, world.ben)})
 	})
+	growItem := func(item *models.PasswordItem, fieldsBytes int) {
+		dbtest.Exec(test, database, fmt.Sprintf(`UPDATE password_item SET encrypted_fields = repeat('y', %d) WHERE id = '%s'`, fieldsBytes, item.ID))
+	}
+	growItem(first, 40_000_000)
+	growItem(second, 20_000_000)
+	growItem(third, 7_000_000)
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		if got := mustListPasswordItems(test, tx, world.ben, 0); len(got.Items) != 3 {
 			test.Fatalf("ben lists %d items before the growth, want 3", len(got.Items))
 		}
-		// Ada's second item grows to 27 MB, which her own allowance permits: ben
-		// would hold 74 MB, so the key stored last (cora's) is left out.
-		if _, err := tx.SavePasswordItem(&models.PasswordItem{
-			ID: second.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindNote,
-			EncryptedFields: strings.Repeat("y", 27_000_000), ItemKeyByAccountKey: second.ItemKeyByAccountKey, IsSavedByPerson: true,
-		}, &second.Revision); err != nil {
-			test.Fatal(err)
-		}
+	})
+	// Ada's second item grows to 27 MB: ben would hold 74 MB, so the key stored
+	// last (cora's) is left out.
+	growItem(second, 27_000_000)
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		got := mustListPasswordItems(test, tx, world.ben, 0)
 		var ids []string
 		for _, item := range got.Items {
