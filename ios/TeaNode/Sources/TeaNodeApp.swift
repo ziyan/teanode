@@ -940,11 +940,14 @@ struct AccountsSection: View {
                             colorIndex: profile?.avatarColorIndex, size: 36, account: account
                         )
                         let displayName = profile?.displayName ?? account.username
+                        // The text colors as colors, not the hierarchical
+                        // styles: inside a list's button those take the tint,
+                        // and an account is not an action to be drawn green.
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(displayName).foregroundStyle(.primary)
+                            Text(displayName).foregroundStyle(Color.primary)
                             // The username only when the name above is not it.
                             Text(verbatim: displayName == account.username ? account.server.host : "\(account.username) · \(account.server.host)")
-                                .font(.footnote).foregroundStyle(.secondary)
+                                .font(.footnote).foregroundStyle(Color.secondary)
                         }
                         Spacer()
                         if account.accountKey == app.account?.accountKey {
