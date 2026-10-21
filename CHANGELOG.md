@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.0] - 2026-10-21
+
+### Added
+
+- Passwords: keep logins, passkeys, one-time codes, cards and notes on your own server, encrypted so only your devices can read them. Fill them from the Chrome extension, the iPhone (turn on TeaNode in AutoFill settings) and the dashboard, share some with your circles, and let the agent sign in with the ones you choose. (#617)
+
 ## [0.192.3] - 2026-10-21
 
 ### Security
