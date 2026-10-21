@@ -115,7 +115,7 @@ an agent copy from a record they cannot verify.
 
 **A new key when access narrows.** Taking somebody off an item, ending the agent's
 use of it, a member leaving or being removed from a circle, a circle being
-deleted, and deleting an item that had other keys all leave a copy of the old
+deleted, an account being deleted (for the items shared with it), and deleting an item that had other keys all leave a copy of the old
 sealed item key in the wrong hands. The server marks such an item
 `needsNewKey` in the same transaction, and only `RekeyPasswordItem` clears the
 mark. An owner's device that sees the mark (the dashboard and the iPhone on open
@@ -553,8 +553,10 @@ would; it does not give it the password.
   `grep`; the names are the two files above and an export,
   `passwords-export-*.json` or `.csv`, which is what `teanode passwords export`
   writes when it is given no file name; and the tool refuses any file that
-  exists and begins as an export does (the JSON export's `version` and
-  `exportedAt` keys, or the CSV export's header row), whatever its name; and the program sets `TEANODE_AGENT_COMMAND=1` on every shell command
+  exists and begins as an export does (a JSON object with an `items` array holding items
+  with an `itemKind` or carrying `version` and `exportedAt`, in any key order, or
+  a CSV file whose header row is one `import csv` reads: Chrome, Apple Passwords
+  or Bitwarden), whatever its name; and the program sets `TEANODE_AGENT_COMMAND=1` on every shell command
   and terminal session it starts for the agent (last, so a call cannot unset it),
   and the `teanode passwords` commands that open the keys, read or write the
   unlock file or ask for the passphrase, which is every command that shows,
@@ -698,7 +700,10 @@ an earlier migration had marked).
   busy with other changes. Try again in a moment." with nothing changed (every
   change takes its locks under a savepoint, so the request can still commit; once
   one change of a document has timed out, the rest of that document's changes are
-  refused at once, so a document waits once and not for each change), and
+  refused at once, so a document waits once and not for each change; leaving a
+  circle and deleting a circle or an account give the same answer when ending
+  their Passwords shares waited that long, and a person with no items, shares or
+  keys has nothing to end and never waits), and
   how much a person holds is summed from two numbers the database keeps for each
   item (`item_bytes`, `versions_bytes`) so that the sum does not read their
   versions while the locks are held.

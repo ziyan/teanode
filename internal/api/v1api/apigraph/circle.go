@@ -466,7 +466,7 @@ func (self *graph) DeleteCircle(ctx context.Context, arguments DeleteCircleArgum
 		return false, err
 	}
 	if err := tx.DeleteCircle(arguments.CircleID); err != nil {
-		return false, translateError(err)
+		return false, translateCircleError(err)
 	}
 	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
 		return false, err

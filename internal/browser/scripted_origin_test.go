@@ -42,7 +42,7 @@ func TestTheOriginOfAnAddressSurvivesAMalformedPathQueryOrFragment(test *testing
 // that belongs to no site is not a reason for that.
 func TestAScriptOnADocumentWhoseSiteCannotBeReadIsOnEveryPage(test *testing.T) {
 	var filled FilledValues
-	filled.NoteScriptedAddress("7", "https://exa%zzmple.com/")
+	filled.NoteScriptedAddress("7", "https://shop%zz.example.test/")
 	if !filled.HasScriptOnEveryPage("7") || filled.HasScriptOnEveryPage("8") {
 		test.Error("a script on an address with an unreadable host was not taken to be on every page of the tab")
 	}

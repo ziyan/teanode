@@ -840,7 +840,7 @@ func lostAgentCopyWords(item *passwordsItem) string {
 func itemMarkers(summary passwordsItemSummary) string {
 	var markers []string
 	if summary.IsSharedWithMe {
-		markers = append(markers, "shared by "+summary.OwnerName)
+		markers = append(markers, "shared by "+forTableCell(summary.OwnerName))
 	} else if summary.IsShared {
 		markers = append(markers, "shared")
 	}
@@ -1499,7 +1499,7 @@ func runPasswordsEdit(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if !item.IsOwner() {
-		return fmt.Errorf("%s is shared with you by %s, and only its owner changes it", item.Name(), item.View.OwnerName)
+		return fmt.Errorf("%s is shared with you by %s, and only its owner changes it", forTableCell(item.Name()), forTableCell(item.View.OwnerName))
 	}
 	// An item whose access narrowed gets its new key before it is changed.
 	if item.View.NeedsNewKey {
@@ -1537,7 +1537,7 @@ func runPasswordsDelete(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if !item.IsOwner() {
-		return fmt.Errorf("%s is shared with you by %s, and only its owner deletes it", item.Name(), item.View.OwnerName)
+		return fmt.Errorf("%s is shared with you by %s, and only its owner deletes it", forTableCell(item.Name()), forTableCell(item.View.OwnerName))
 	}
 	view, err := client.DeletePasswordItem(ctx, session.connection, item.View.ID)
 	if err != nil {
@@ -1589,7 +1589,7 @@ func runPasswordsPurge(ctx context.Context, command *cli.Command, typed string) 
 		return err
 	}
 	if !item.IsOwner() {
-		return fmt.Errorf("%s is shared with you by %s, and only its owner removes it", item.Name(), item.View.OwnerName)
+		return fmt.Errorf("%s is shared with you by %s, and only its owner removes it", forTableCell(item.Name()), forTableCell(item.View.OwnerName))
 	}
 	if item.View.DeletedAt == nil {
 		return fmt.Errorf("%s is not deleted; 'teanode passwords delete %s' moves it to recently deleted first", forTerminal(item.Name()), forTerminal(item.View.ID))
@@ -1666,7 +1666,7 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if !item.IsOwner() {
-		return fmt.Errorf("%s is shared with you by %s, and only its owner shares it", item.Name(), item.View.OwnerName)
+		return fmt.Errorf("%s is shared with you by %s, and only its owner shares it", forTableCell(item.Name()), forTableCell(item.View.OwnerName))
 	}
 	typed := strings.TrimSpace(command.Args().Get(1))
 	granteeUserID, granteeCircleID, described, err := shareTarget(ctx, session.connection, typed)
@@ -1868,7 +1868,7 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if !item.IsOwner() {
-		return fmt.Errorf("%s is shared with you by %s, and only its owner changes who it is shared with", item.Name(), item.View.OwnerName)
+		return fmt.Errorf("%s is shared with you by %s, and only its owner changes who it is shared with", forTableCell(item.Name()), forTableCell(item.View.OwnerName))
 	}
 	remaining := []*client.PasswordShareView{}
 	doing := "stopped sharing " + forTerminal(item.Name())
@@ -2098,7 +2098,7 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if !item.IsOwner() {
-		return fmt.Errorf("%s is shared with you by %s, and only its owner can let the agent use it", item.Name(), item.View.OwnerName)
+		return fmt.Errorf("%s is shared with you by %s, and only its owner can let the agent use it", forTableCell(item.Name()), forTableCell(item.View.OwnerName))
 	}
 	if item.Card != nil {
 		return errors.New("a card cannot be used by the agent")
@@ -2195,7 +2195,7 @@ func runPasswordsRekey(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if !item.IsOwner() {
-		return fmt.Errorf("%s is shared with you by %s, and only its owner gives it a new key", item.Name(), item.View.OwnerName)
+		return fmt.Errorf("%s is shared with you by %s, and only its owner gives it a new key", forTableCell(item.Name()), forTableCell(item.View.OwnerName))
 	}
 	// An item whose record lets the agent use it while the server has no copy
 	// for the agent is given a record that says what the server has: the agent

@@ -337,6 +337,14 @@ func (self *transaction) DeleteUser(userId string) error {
 			if err := releaseCircles(tx, userId); err != nil {
 				return err
 			}
+			// Now that they share no circle with anybody, the shares of
+			// Passwords that reached them or that they made end, and the items
+			// they could open are flagged for a new key and get a new
+			// revision, as when they leave a circle: the owners' devices see
+			// the change and seal a new key that leaves them out.
+			if err := endPasswordSharesOutsideCircles(tx, userId); err != nil {
+				return err
+			}
 			// Out of every chat under the name they had, before the foreign keys
 			// forget whose they were.
 			if err := leaveEveryChat(tx, userId, before.DisplayName(), time.Now()); err != nil {

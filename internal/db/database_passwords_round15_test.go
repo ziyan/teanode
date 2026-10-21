@@ -82,6 +82,9 @@ func TestLeavingACircleWhilePasswordsIsBusyAnswersBusyAndChangesNothing(test *te
 		world = newPasswordsWorld(test, tx)
 		setUpPasswordsFor(test, tx, world.ada)
 		setUpPasswordsFor(test, tx, world.ben)
+		// Ending the shares of a person with nothing in Passwords takes no lock,
+		// so Ben has an item.
+		savePasswordItemFor(test, tx, world.ben, 1, models.PasswordItemKindNote)
 	})
 	var holder sync.WaitGroup
 	listingHeld, releaseListing := make(chan struct{}), make(chan struct{})

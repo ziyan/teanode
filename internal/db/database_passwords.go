@@ -2925,6 +2925,21 @@ func (self *database) ScavengePasswordItems(before time.Time) (int64, error) {
 // circle_member: this tidies what would otherwise come back to life, unchosen,
 // the day the two met in another circle.
 func endPasswordSharesOutsideCircles(tx *gorm.DB, userId string) error {
+	// A person with no items, no shares and no keys has nothing to end, and
+	// the revision lock the ending takes would make leaving a circle wait
+	// behind everybody else's changes to Passwords for nothing. Nobody can
+	// give them a share meanwhile: that needs the circle membership, which the
+	// caller holds locked.
+	var hasPasswords bool
+	if err := tx.Raw(`SELECT EXISTS (SELECT 1 FROM "password_item" WHERE "owner_user_id" = @user)
+		OR EXISTS (SELECT 1 FROM "password_share" WHERE "owner_user_id" = @user OR "grantee_user_id" = @user)
+		OR EXISTS (SELECT 1 FROM "password_share_key" WHERE "recipient_user_id" = @user)`,
+		sql.Named("user", userId)).Scan(&hasPasswords).Error; err != nil {
+		return err
+	}
+	if !hasPasswords {
+		return nil
+	}
 	// A lock wait that times out is undone back to a savepoint and answers
 	// ErrPasswordsBusy, with the lock_timeout of the circle change put back.
 	// Without it the transaction would be left failed, the answer would be a
