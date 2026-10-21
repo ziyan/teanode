@@ -59,8 +59,8 @@ struct HostileServerAPI: PasswordsAPI {
     }
 }
 
-/// PasswordsPinTests are the checks that a server choosing keys cannot get an item key out of the phone,
-/// and cannot make the phone forget whose key it had seen.
+/// PasswordsPinTests are the checks that a server choosing keys cannot get an item key out of the phone
+/// for anybody the owner's record does not reach, and cannot make the phone forget whose key it knew.
 final class PasswordsPinTests: XCTestCase {
     private let iterationCount = PasswordsCrypto.minimumPassphraseIterationCount
     private var directories: [URL] = []
@@ -81,9 +81,10 @@ final class PasswordsPinTests: XCTestCase {
         .login(PasswordsLoginFields(name: "Example", userName: "ada@example.com", password: "correct horse", sites: ["https://example.com"]))
     }
 
-    /// A key learned only from an incoming shared item (nobody compared its code) must not let the phone
-    /// seal an outgoing item key without asking.
-    func testAKeyPlantedByAnIncomingItemIsSeenButNeverLetsTheServerHaveAnItemKey() async throws {
+    /// An item the server plants in the list opens with nothing, so the key it carries is not recorded.
+    /// A waiting member of the circle the owner's record reaches is sealed for at once, with the key the
+    /// server gives, and that key is recorded as the known one.
+    func testAPlantedItemRecordsNoKeyAndAWaitingMemberTheRecordReachesIsSealedForAtOnce() async throws {
         let server = FakePasswordsServer()
         await server.addPerson(userId: "user-ada", name: "Ada")
         await server.addPerson(userId: "user-mallory", name: "Mallory")
@@ -97,54 +98,40 @@ final class PasswordsPinTests: XCTestCase {
         // Ada shares with her circle. Mallory has not set up Passwords, so nothing is sealed for anybody.
         let recipients = try await ada.recipients(granteeCircleId: "circle-one")
         _ = try await ada.setShares(itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients)
-        // The server operator sets up Passwords for the account Mallory in the circle, with a key pair it holds.
-        let operatorDevice = PasswordsSession(
+        let malloryDevice = PasswordsSession(
             api: FakePasswordsAPI(server: server, userId: "user-mallory"), cache: makeCache(), userId: "user-mallory")
-        _ = try await operatorDevice.setUp(passphrase: "operator passphrase", iterationCount: iterationCount)
-        let operatorKey = await server.publicKey(of: "user-mallory")
+        _ = try await malloryDevice.setUp(passphrase: "mallory invented passphrase", iterationCount: iterationCount)
+        let malloryKey = await server.publicKey(of: "user-mallory")
 
-        try await ada.sync()
-        let control = try await ada.completeWaitingShares()
-        XCTAssertEqual(control.addedKeyCount, 0)
-        XCTAssertEqual(control.waitingForConfirmation.count, 1)
-
-        // The operator adds one made-up shared item to Ada's list, "from" Mallory, carrying the operator's key.
+        // The server adds one made-up shared item to Ada's list, "from" Mallory, carrying her key.
         flags.plantedItem = PasswordItemView(
-            id: "planted-1", ownerUserId: "user-mallory", ownerName: "Mallory", ownerPublicKey: operatorKey, itemKind: "login",
+            id: "planted-1", ownerUserId: "user-mallory", ownerName: "Mallory", ownerPublicKey: malloryKey, itemKind: "login",
             encryptedFields: "{}", itemKey: "{}", isSharedWithMe: true, revision: 99999, isUsableByAgent: false,
             createdAt: "2026-10-20T10:00:00Z", updatedAt: "2026-10-20T10:00:00Z")
         try await ada.sync()
-        let pinned = try XCTUnwrap(try adaCache.load())
-        // The planted item opens with nothing, so the key it carries is not even recorded as seen.
-        XCTAssertNil(pinned.seenPublicKeys["user-mallory"])
-        XCTAssertEqual(pinned.confirmedPublicKeys, [:])
+        let planted = try XCTUnwrap(try adaCache.load())
+        XCTAssertNil(planted.knownPublicKeys["user-mallory"], "the planted item opens with nothing, so its key is not recorded")
+        let plantedNoticeCount = await ada.keyChanges().count
+        XCTAssertEqual(plantedNoticeCount, 0)
 
-        // What the phone does after every sync: the planted key still has to be confirmed.
+        // The record reaches the circle, so Mallory's waiting share is sealed at once for the key the server gives.
         let result = try await ada.completeWaitingShares()
-        XCTAssertEqual(result.addedKeyCount, 0)
-        XCTAssertEqual(result.waitingForConfirmation.count, 1)
-        XCTAssertEqual(result.waitingForConfirmation.first?.recipient.keyTrust, .new)
-
-        // Sharing again does not seal for it either.
-        let again = try await ada.recipients(granteeCircleId: "circle-one")
-        XCTAssertEqual(again.first?.keyTrust, .new)
-        _ = try await ada.setShares(itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: again)
+        XCTAssertEqual(result.addedKeyCount, 1)
+        XCTAssertEqual(try XCTUnwrap(try adaCache.load()).knownPublicKeys["user-mallory"], malloryKey)
         let stored = await server.item(item.id)
-        XCTAssertNil(stored?.keys["user-mallory"])
+        XCTAssertEqual(stored?.keys["user-mallory"]?.recipientPublicKey, malloryKey)
 
-        // The operator's device cannot open Ada's item.
-        _ = try await operatorDevice.unlock(passphrase: "operator passphrase")
-        try await operatorDevice.sync()
-        do {
-            _ = try await operatorDevice.item(id: item.id)
-            XCTFail("the operator was never given the item key")
-        } catch {
-            XCTAssertEqual(error as? PasswordsError, .itemNotFound)
-        }
+        // An item the record does not reach gets nothing: a second item Ada never shared.
+        let unsharedItem = try await ada.save(fields: loginFields())
+        try await ada.sync()
+        let again = try await ada.completeWaitingShares()
+        XCTAssertEqual(again.addedKeyCount, 0)
+        let storedPrivate = await server.item(unsharedItem.id)
+        XCTAssertNil(storedPrivate?.keys["user-mallory"])
     }
 
     /// The server makes the phone drop its copy by answering the setup read with another public key. The
-    /// pins about other people stay, so a later change of an owner's key is still a warning.
+    /// pins about other people stay, so a later change of an owner's key is still noticed.
     func testAServerAnswerThatDropsTheCopyLeavesThePinsAndALaterKeyChangeStillWarns() async throws {
         let server = FakePasswordsServer()
         await server.addPerson(userId: "user-ada", name: "Ada")
@@ -161,11 +148,10 @@ final class PasswordsPinTests: XCTestCase {
         let item = try await ada.save(fields: loginFields())
         let recipients = try await ada.recipients(granteeUserId: "user-grace")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
         try await grace.sync()
         let adaKey = await server.publicKey(of: "user-ada")
-        XCTAssertEqual(try XCTUnwrap(try graceCache.load()).seenPublicKeys, ["user-ada": adaKey])
+        XCTAssertEqual(try XCTUnwrap(try graceCache.load()).knownPublicKeys, ["user-ada": adaKey])
 
         // One lying answer to the setup read.
         flags.setupPublicKeyOverride = PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()
@@ -176,20 +162,20 @@ final class PasswordsPinTests: XCTestCase {
             XCTAssertEqual(error as? PasswordsError, .needsPassphrase)
         }
         XCTAssertNil(try graceCache.load())  // the copy is gone
-        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace").seenPublicKeys, ["user-ada": adaKey])  // the pins are not
+        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace").knownPublicKeys, ["user-ada": adaKey])  // the pins are not
         flags.setupPublicKeyOverride = nil
         _ = try await grace.unlock(passphrase: "grace invented passphrase")
-        XCTAssertEqual(try XCTUnwrap(try graceCache.load()).seenPublicKeys, ["user-ada": adaKey])
+        XCTAssertEqual(try XCTUnwrap(try graceCache.load()).knownPublicKeys, ["user-ada": adaKey])
 
-        // Now Ada's key changes: with the pin kept this is a warning, not a silent first sight.
+        // Now the server shows another key for Ada without sealing the item key for it: the item opens
+        // with nothing, so nothing is recorded and the key that was known stays.
         let newOwnerKey = PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()
         await server.replacePublicKey(userId: "user-ada", publicKey: newOwnerKey)
         await server.setRevision(itemId: item.id, revision: 500)
         try await grace.sync(isFull: true)
-        let changes = await grace.ownerKeyChanges()
-        XCTAssertEqual(changes.map(\.userId), ["user-ada"])
-        XCTAssertEqual(changes.first?.newPublicKey, newOwnerKey)
-        XCTAssertEqual(try XCTUnwrap(try graceCache.load()).seenPublicKeys["user-ada"], adaKey)
+        let noticeCount = await grace.keyChanges().count
+        XCTAssertEqual(noticeCount, 0)
+        XCTAssertEqual(try XCTUnwrap(try graceCache.load()).knownPublicKeys["user-ada"], adaKey)
     }
 
     /// Erasing Passwords on purpose (the person asked to start over) does remove the pins.
@@ -205,10 +191,9 @@ final class PasswordsPinTests: XCTestCase {
         let item = try await ada.save(fields: loginFields())
         let recipients = try await ada.recipients(granteeUserId: "user-grace")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
         try await grace.sync()
-        XCTAssertFalse(try graceCache.loadPins(userId: "user-grace").seenPublicKeys.isEmpty)
+        XCTAssertFalse(try graceCache.loadPins(userId: "user-grace").knownPublicKeys.isEmpty)
         try await grace.erase()
         XCTAssertNil(try graceCache.load())
         XCTAssertEqual(try graceCache.loadPins(userId: "user-grace"), PasswordsPins(userId: "user-grace"))

@@ -81,14 +81,14 @@ final class PasswordsCacheTests: XCTestCase {
         let cache = PasswordsCache(fileURL: url, pinStore: pinStore)
         let stored = contents(items: [view("one", revision: 1, isSharedWithMe: true)], revision: 1)
         try cache.save(stored)
-        try cache.recordSeenIfAbsent(userId: "user-ada", ownerUserId: "user-grace", publicKey: "grace-key")
-        try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-linus", publicKey: "linus-key")
+        try cache.recordKnownIfAbsent(userId: "user-ada", otherUserId: "user-grace", publicKey: "grace-key")
+        try cache.recordCompared(userId: "user-ada", otherUserId: "user-linus", publicKey: "linus-key")
 
         var expected = stored
-        expected.seenPublicKeys = ["user-grace": "grace-key", "user-linus": "linus-key"]
-        expected.confirmedPublicKeys = ["user-linus": "linus-key"]
+        expected.knownPublicKeys = ["user-grace": "grace-key", "user-linus": "linus-key"]
+        expected.comparedPublicKeys = ["user-linus": "linus-key"]
         XCTAssertEqual(try cache.load(), expected)
-        XCTAssertEqual(try cache.loadHeader()?.seenPublicKeys, expected.seenPublicKeys)
+        XCTAssertEqual(try cache.loadHeader()?.knownPublicKeys, expected.knownPublicKeys)
         // Neither the header nor an item file holds a key, and no pins file is written.
         for fileURL in [url] + (try FileManager.default.contentsOfDirectory(at: cache.itemsDirectoryURL, includingPropertiesForKeys: nil)) {
             let text = String(decoding: try Data(contentsOf: fileURL), as: UTF8.self)
@@ -96,12 +96,51 @@ final class PasswordsCacheTests: XCTestCase {
             XCTAssertFalse(text.contains("linus-key"))
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: cache.pinsFileURL.path))
-        // The key seen first is not replaced by a later first sight; a confirmation replaces it.
-        try cache.recordSeenIfAbsent(userId: "user-ada", ownerUserId: "user-grace", publicKey: "other-key")
-        XCTAssertEqual(try cache.loadPins(userId: "user-ada").seenPublicKeys["user-grace"], "grace-key")
-        try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-grace", publicKey: "other-key")
-        XCTAssertEqual(try cache.loadPins(userId: "user-ada").seenPublicKeys["user-grace"], "other-key")
-        XCTAssertEqual(try cache.loadPins(userId: "user-ada").confirmedPublicKeys["user-grace"], "other-key")
+        // The key seen first is not replaced by a later first sight; only an accepted change replaces it.
+        try cache.recordKnownIfAbsent(userId: "user-ada", otherUserId: "user-grace", publicKey: "other-key")
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").knownPublicKeys["user-grace"], "grace-key")
+        try cache.recordChangedKey(userId: "user-ada", otherUserId: "user-grace", publicKey: "other-key")
+        var pins = try cache.loadPins(userId: "user-ada")
+        XCTAssertEqual(pins.knownPublicKeys["user-grace"], "other-key")
+        XCTAssertEqual(pins.changedPublicKeys["user-grace"], "grace-key", "the key it replaced is kept for the notice")
+        // Comparing codes marks the key and clears the notice; a dismissed notice keeps the new key.
+        try cache.recordCompared(userId: "user-ada", otherUserId: "user-grace", publicKey: "other-key")
+        pins = try cache.loadPins(userId: "user-ada")
+        XCTAssertEqual(pins.comparedPublicKeys["user-grace"], "other-key")
+        XCTAssertTrue(pins.isCompared(userId: "user-grace"))
+        XCTAssertEqual(pins.changedPublicKeys, [:])
+        try cache.recordChangedKey(userId: "user-ada", otherUserId: "user-grace", publicKey: "third-key")
+        pins = try cache.loadPins(userId: "user-ada")
+        XCTAssertFalse(pins.isCompared(userId: "user-grace"), "a new key is not the compared one")
+        XCTAssertEqual(pins.changedPublicKeys["user-grace"], "other-key")
+        try cache.dismissKeyChange(userId: "user-ada", otherUserId: "user-grace")
+        pins = try cache.loadPins(userId: "user-ada")
+        XCTAssertEqual(pins.changedPublicKeys, [:])
+        XCTAssertEqual(pins.knownPublicKeys["user-grace"], "third-key")
+    }
+
+    func testPinsWrittenBeforeThereWasOneKnownKeyAreReadAsKnownAndCompared() throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let cache = PasswordsCache(fileURL: url)
+        try cache.save(contents(items: [], revision: 0))
+        // The first version kept a seen key for Grace and a confirmed key for Linus (also recorded as seen).
+        let text = #"""
+            {"formatVersion":1,"userId":"user-ada","seenPublicKeys":{"user-grace":"grace-key","user-linus":"linus-key"},
+             "confirmedPublicKeys":{"user-linus":"linus-key"}}
+            """#
+        try Data(text.utf8).write(to: cache.pinsFileURL)
+        let pins = try cache.loadPins(userId: "user-ada")
+        XCTAssertEqual(pins.knownPublicKeys, ["user-grace": "grace-key", "user-linus": "linus-key"])
+        XCTAssertEqual(pins.comparedPublicKeys, ["user-linus": "linus-key"])
+        XCTAssertFalse(pins.isCompared(userId: "user-grace"))
+        XCTAssertTrue(pins.isCompared(userId: "user-linus"))
+        // The next change is written in the new shape.
+        try cache.recordKnownIfAbsent(userId: "user-ada", otherUserId: "user-heidi", publicKey: "heidi-key")
+        let written = String(decoding: try Data(contentsOf: cache.pinsFileURL), as: UTF8.self)
+        XCTAssertTrue(written.contains("knownPublicKeys"))
+        XCTAssertFalse(written.contains("seenPublicKeys"))
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").knownPublicKeys.count, 3)
     }
 
     func testAPlantedPinsFileIsNotReadWhenThePinsAreInAnotherStore() throws {
@@ -110,10 +149,10 @@ final class PasswordsCacheTests: XCTestCase {
         let cache = PasswordsCache(fileURL: url, pinStore: PasswordsMemoryPinStore())
         try cache.save(contents(items: [], revision: 0))
         // What anything that can write to the app group's folder can do.
-        let planted = PasswordsPins(userId: "user-ada", seenPublicKeys: [:], confirmedPublicKeys: ["user-mallory": "mallory-key"])
+        let planted = PasswordsPins(userId: "user-ada", knownPublicKeys: ["user-mallory": "mallory-key"])
         try JSONEncoder().encode(planted).write(to: cache.pinsFileURL)
         XCTAssertEqual(try cache.loadPins(userId: "user-ada"), PasswordsPins(userId: "user-ada"))
-        XCTAssertEqual(try XCTUnwrap(try cache.load()).confirmedPublicKeys, [:])
+        XCTAssertEqual(try XCTUnwrap(try cache.load()).knownPublicKeys, [:])
     }
 
     func testAPinsFileThatCannotBeReadIsNeverWrittenOverOrTakenForEmpty() throws {
@@ -121,18 +160,18 @@ final class PasswordsCacheTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let cache = PasswordsCache(fileURL: url)
         try cache.save(contents(items: [], revision: 0))
-        try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-grace", publicKey: "grace-key")
+        try cache.recordCompared(userId: "user-ada", otherUserId: "user-grace", publicKey: "grace-key")
         let stored = try Data(contentsOf: cache.pinsFileURL)
         let damaged = Data("{\"formatVersion\":1,\"userId\":\"user-ada\",\"seenPublicKeys\":5}".utf8)
         try damaged.write(to: cache.pinsFileURL)
         XCTAssertThrowsError(try cache.loadPins(userId: "user-ada")) { error in
             XCTAssertEqual(error as? PasswordsPinStoreError, .unreadable)
         }
-        XCTAssertThrowsError(try cache.recordSeenIfAbsent(userId: "user-ada", ownerUserId: "user-linus", publicKey: "linus-key"))
-        XCTAssertThrowsError(try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-linus", publicKey: "linus-key"))
+        XCTAssertThrowsError(try cache.recordKnownIfAbsent(userId: "user-ada", otherUserId: "user-linus", publicKey: "linus-key"))
+        XCTAssertThrowsError(try cache.recordCompared(userId: "user-ada", otherUserId: "user-linus", publicKey: "linus-key"))
         XCTAssertEqual(try Data(contentsOf: cache.pinsFileURL), damaged)
         try stored.write(to: cache.pinsFileURL)
-        XCTAssertEqual(try cache.loadPins(userId: "user-ada").confirmedPublicKeys, ["user-grace": "grace-key"])
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").comparedPublicKeys, ["user-grace": "grace-key"])
     }
 
     func testErasingKeepingPinsLeavesThePinsAndErasingRemovesEverything() throws {
@@ -141,12 +180,12 @@ final class PasswordsCacheTests: XCTestCase {
         let cache = PasswordsCache(fileURL: url)
         try cache.save(contents(items: [view("one", revision: 1)], revision: 1))
         try cache.saveSummaryData(Data("sealed".utf8))
-        try cache.recordSeenIfAbsent(userId: "user-ada", ownerUserId: "user-grace", publicKey: "grace-key")
+        try cache.recordKnownIfAbsent(userId: "user-ada", otherUserId: "user-grace", publicKey: "grace-key")
         try cache.eraseKeepingPins()
         XCTAssertNil(try cache.load())
         XCTAssertNil(try cache.loadSummaryData())
         XCTAssertFalse(FileManager.default.fileExists(atPath: cache.itemsDirectoryURL.path))
-        XCTAssertEqual(try cache.loadPins(userId: "user-ada").seenPublicKeys, ["user-grace": "grace-key"])
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").knownPublicKeys, ["user-grace": "grace-key"])
         // Another person's pins are never read as this person's.
         XCTAssertEqual(try cache.loadPins(userId: "user-other"), PasswordsPins(userId: "user-other"))
         try cache.erase()
@@ -161,7 +200,7 @@ final class PasswordsCacheTests: XCTestCase {
         let cache = PasswordsCache(fileURL: PasswordsLocation.fileURL(groupContainer: container, signInAccountKey: "demo.example.com|ada"))
         try cache.save(contents(items: [view("one", revision: 1)], revision: 1))
         try cache.saveSummaryData(Data("sealed".utf8))
-        try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-grace", publicKey: "grace-key")
+        try cache.recordCompared(userId: "user-ada", otherUserId: "user-grace", publicKey: "grace-key")
         PasswordsLocation.removeCopy(groupContainer: container, signInAccountKey: "demo.example.com|ada")
         XCTAssertFalse(FileManager.default.fileExists(atPath: cache.fileURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: cache.itemsDirectoryURL.path))

@@ -78,12 +78,10 @@ enum PasswordsWords {
         case .onlyOwnerCanChangeItem: String(localized: "Only the person who owns an item can change it.")
         case .itemKindCannotChange: String(localized: "An item cannot change from a login to a note or a card.")
         case .cardCannotBeUsedByAgent: String(localized: "A card cannot be used by the agent.")
-        case .recipientKeyChangedSinceRead: String(localized: "That person's key changed while you were sharing. Open the share again and compare the new safety code.")
+        case .recipientKeyChangedSinceRead: String(localized: "That person's key changed while you were sharing. Open the share again and save it.")
         case .tooManyAttempts: String(localized: "Too many attempts. Wait a while and try again.")
         case .unknownItemKind: String(localized: "This item is of a kind this version cannot open. Update the app.")
         case .invalidServerAnswer: String(localized: "The server sent something this app cannot read.")
-        case .ownerKeyChanged: String(localized: "The key of the person who shared this changed. Compare the safety codes with them, then trust the new key.")
-        case .ownerKeyUnknown: String(localized: "This iPhone has not seen the key of the person who shared this yet. Open Passwords and pull to refresh.")
         case .itemNeedsNewKey: String(localized: "Removed. The item could not be given a new key.")
         case .sharingCouldNotBeChecked: String(localized: "Sharing for this item could not be checked. Set sharing again first.")
         case .itemNeedsAttention: String(localized: "This item needs a new key, but one was given a moment ago. Try again in a few minutes.")
@@ -122,7 +120,7 @@ enum PasswordsWords {
 
     /// Whom an item the person owns is shared with, for the Share row: "Sam and
     /// Alex", "Home", or "Home, 1 waiting" when somebody the share reaches has
-    /// not set up Passwords or still waits for the owner to confirm their key.
+    /// not set up Passwords or has not been given the item's key yet.
     /// A circle is named by the circle, not by everyone in it. Only the shares the person's
     /// own record lists count (`PasswordItem.recordedShares`); an item whose record could not
     /// be checked is shared with nobody as far as the app can tell.

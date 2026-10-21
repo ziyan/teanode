@@ -4,12 +4,11 @@ import TeaNodeKit
 // Sharing one item with a circle or a person in one. The owner's iPhone seals
 // the item's key for each person who has set up Passwords, so the server never
 // sees it. A person who has not set up Passwords is listed as waiting; this
-// iPhone gives them their key the next time it is open after they have. The
-// safety codes are shown so the owner can check each one with the person: a
-// code that is not the same on their screen is a key that is not theirs. A key
-// is sealed for only after the owner confirmed its code (or this iPhone
-// already knew the key), and a key that changed is shown with both codes and
-// waits for the owner to trust it.
+// iPhone gives them their key the next time it is open after they have. Nobody
+// is asked to confirm a key: the first key this iPhone sees for a person is
+// the one it uses, and a key that changes is used too, with a notice that stays
+// until it is dismissed. "Compare codes" is there for anybody who wants to check
+// a key with the person, and marks it "Codes compared"; it gates nothing.
 
 /// PasswordsShareGrantee is somebody an item is shared with, and the people
 /// that reaches.
@@ -39,8 +38,8 @@ struct PasswordsShareScreen: View {
     @State private var people: [CalendarSharePerson] = []
     @State private var circles: [CalendarShareCircle] = []
     @State private var chosen: ShareTarget?
-    /// The people whose safety code the owner confirmed on this screen.
-    @State private var confirmedUserIds: Set<String> = []
+    /// The person whose safety codes are being compared, if the sheet is open.
+    @State private var comparing: PasswordsCompareTarget?
     @State private var isLoaded = false
     @State private var isAdding = false
     @State private var isSaving = false
@@ -74,6 +73,9 @@ struct PasswordsShareScreen: View {
             }
         }
         .task { await load() }
+        .sheet(item: $comparing, onDismiss: { Task { await refreshRecipients() } }) { target in
+            PasswordsCompareCodesSheet(model: model, target: target)
+        }
     }
 
     private var shareTitle: String {
@@ -95,7 +97,14 @@ struct PasswordsShareScreen: View {
                         .disabled(chosen == nil || isAdding)
                 }
             } footer: {
-                Text("Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only, once you have confirmed their safety code. Only you can change the item.")
+                Text("Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only. Only you can change the item.")
+            }
+            if !keyChangesHere.isEmpty {
+                Section {
+                    ForEach(keyChangesHere) { change in
+                        PasswordsKeyChangeRow(model: model, change: change)
+                    }
+                }
             }
             if let item, item.sharingCheck == .unverified || item.sharingCheck == .replayed {
                 Section {
@@ -129,6 +138,12 @@ struct PasswordsShareScreen: View {
         }
     }
 
+    /// The notices of changed keys for the people this item is shared with, on this screen as well as in the list.
+    private var keyChangesHere: [PasswordsKeyChange] {
+        let userIds = Set(grantees.flatMap(\.recipients).map(\.userId))
+        return model.keyChanges.filter { userIds.contains($0.userId) }
+    }
+
     private func granteeSection(_ grantee: PasswordsShareGrantee) -> some View {
         Section {
             if grantee.recipients.isEmpty {
@@ -136,9 +151,7 @@ struct PasswordsShareScreen: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(grantee.recipients) { recipient in
-                PasswordsRecipientRow(
-                    recipient: recipient, isConfirmed: confirmedUserIds.contains(recipient.userId),
-                    toggleConfirmed: { toggleConfirmed(recipient) })
+                PasswordsRecipientRow(recipient: recipient) { comparing = PasswordsCompareTarget(recipient: recipient) }
             }
             Button(role: .destructive) {
                 grantees.removeAll { $0.id == grantee.id }
@@ -149,10 +162,6 @@ struct PasswordsShareScreen: View {
             .actionColor(isDestructive: true)
         } header: {
             PasswordsValueText(grantee.name, isProse: true)
-        } footer: {
-            if grantee.id == grantees.last?.id {
-                Text("Ask each person to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
-            }
         }
     }
 
@@ -210,11 +219,10 @@ struct PasswordsShareScreen: View {
         }
     }
 
-    private func toggleConfirmed(_ recipient: PasswordRecipient) {
-        if confirmedUserIds.contains(recipient.userId) {
-            confirmedUserIds.remove(recipient.userId)
-        } else {
-            confirmedUserIds.insert(recipient.userId)
+    /// Reads the people each share reaches again, so a key just marked as compared shows as such.
+    private func refreshRecipients() async {
+        for index in grantees.indices {
+            if let fresh = try? await model.recipients(for: grantees[index].target) { grantees[index].recipients = fresh }
         }
     }
 
@@ -224,19 +232,15 @@ struct PasswordsShareScreen: View {
         defer { isSaving = false }
         // Everyone each share reaches; the session seals once for a person who is reached twice.
         let recipients = grantees.flatMap(\.recipients)
-        let waitingUserIdsHere = Set(
-            recipients.filter { $0.publicKey == nil || ($0.needsConfirmation && !confirmedUserIds.contains($0.userId)) }.map(\.userId))
+        let waitingUserIds = Set(recipients.filter { $0.publicKey == nil }.map(\.userId))
         do {
-            let waitingUserIdsForOk = try await model.setShares(
-                of: item, grantees: grantees.map(\.input), recipients: recipients, confirmedUserIds: Array(confirmedUserIds))
-            let waitingCount = waitingUserIdsHere.union(waitingUserIdsForOk).count
+            try await model.setShares(of: item, grantees: grantees.map(\.input), recipients: recipients)
+            let waitingCount = waitingUserIds.count
             if waitingCount > 0 {
-                model.doneText = String(localized: "Sharing saved. \(waitingCount) people will get access when they set up Passwords and you confirm their key.")
+                model.doneText = String(localized: "Sharing saved. \(waitingCount) people will get access when they set up Passwords.")
             } else {
                 model.doneText = String(localized: "Sharing saved.")
             }
-            // Whoever is left waiting for the person's OK is listed at the top of the Passwords screen.
-            if !waitingUserIdsForOk.isEmpty { model.openConfirmations() }
             dismiss()
         } catch PasswordsError.itemNeedsNewKey(let itemIdWithoutNewKey) {
             // The removal went through; the item's screen says it has no new key yet and offers a retry.
@@ -248,16 +252,8 @@ struct PasswordsShareScreen: View {
     }
 }
 
-extension PasswordRecipient {
-    /// Whether the owner has to confirm this key before it is sealed for: a key
-    /// the owner has not confirmed on this iPhone or that changed, for somebody the item has no key for yet.
-    var needsConfirmation: Bool {
-        !hasKey && publicKey != nil && (keyTrust == .new || keyTrust == .changed)
-    }
-}
-
 /// PasswordsSafetyCodeLines shows one safety code under a caption.
-private struct PasswordsSafetyCodeLines: View {
+struct PasswordsSafetyCodeLines: View {
     let caption: LocalizedStringKey
     let code: String
 
@@ -275,15 +271,13 @@ private struct PasswordsSafetyCodeLines: View {
     }
 }
 
-/// PasswordsRecipientRow is one person an item reaches: their name and the
-/// safety code of their key, or that they are waiting to set up Passwords. A
-/// key that changed shows the code it had and the code it has, and a key to
-/// confirm has a button to say the code was compared.
+/// PasswordsRecipientRow is one person an item reaches: their name, that they are
+/// waiting to set up Passwords, or whether the codes were compared, with "Compare
+/// codes" to check the key with them. Nothing here has to be done before sharing.
 struct PasswordsRecipientRow: View {
     let recipient: PasswordRecipient
-    var isConfirmed = false
-    /// Called by the confirm button, which only a key to confirm has.
-    var toggleConfirmed: () -> Void = {}
+    /// Called by "Compare codes", which only a person with a key has.
+    var compare: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -293,112 +287,139 @@ struct PasswordsRecipientRow: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                PasswordsRecipientCodes(recipient: recipient)
-            }
-            if recipient.needsConfirmation {
-                Text("Ask \(recipient.name) to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                confirmButton
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private var confirmButton: some View {
-        Button(action: toggleConfirmed) {
-            Label(confirmTitle, systemImage: isConfirmed ? "checkmark.circle.fill" : "checkmark.shield")
-        }
-        .buttonStyle(.borderless)
-        .actionColor()
-    }
-
-    private var confirmTitle: LocalizedStringKey {
-        if isConfirmed { return "Confirmed" }
-        return recipient.keyTrust == .changed ? "Trust this key" : "Confirm this code"
-    }
-}
-
-/// PasswordsWaitingConfirmationRow is a person whose key this iPhone has not
-/// seen (or that changed) and who is waiting for an item of the owner's: it
-/// shows the item, the codes and a button that seals the key after the owner
-/// compared the code with the person.
-struct PasswordsWaitingConfirmationRow: View {
-    let waiting: PasswordWaitingShare
-    let confirm: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            PasswordsValueText(PersonWords.pickerLabel(name: waiting.recipient.name, username: waiting.recipient.username), isProse: true)
-            if let itemName = waiting.itemName {
-                PasswordsValueText(itemName, isProse: true)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            PasswordsRecipientCodes(recipient: waiting.recipient)
-            Text("Ask \(waiting.recipient.name) to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Button(action: confirm) {
-                Label(confirmTitle, systemImage: "checkmark.shield")
-            }
-            .buttonStyle(.borderless)
-            .actionColor()
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private var confirmTitle: LocalizedStringKey {
-        waiting.recipient.keyTrust == .changed ? "Trust this key and share" : "Confirm this code and share"
-    }
-}
-
-/// PasswordsRecipientCodes is the safety code of a recipient's key, and for a
-/// key that changed the code it had before as well.
-private struct PasswordsRecipientCodes: View {
-    let recipient: PasswordRecipient
-
-    var body: some View {
-        if let safetyCode = recipient.safetyCode {
-            if recipient.keyTrust == .changed, !recipient.hasKey {
-                Text("Their key changed")
-                    .font(.footnote.weight(.semibold))
-                if let knownSafetyCode = recipient.knownSafetyCode {
-                    PasswordsSafetyCodeLines(caption: "Safety code before", code: knownSafetyCode)
+                if recipient.isCompared {
+                    Label("Codes compared", systemImage: "checkmark.circle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
-                PasswordsSafetyCodeLines(caption: "Safety code now", code: safetyCode)
-            } else {
-                PasswordsSafetyCodeLines(caption: "Safety code", code: safetyCode)
+                Button(action: compare) {
+                    Label("Compare codes", systemImage: "checkmark.shield")
+                }
+                .buttonStyle(.borderless)
+                .actionColor()
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// PasswordsCompareTarget is a key whose safety codes the person can read out and compare.
+struct PasswordsCompareTarget: Identifiable, Hashable {
+    let userId: String
+    let name: String
+    /// The key whose code is shown, standard base64: what "Codes match" marks as compared.
+    let publicKey: String
+    let safetyCode: String
+    /// The code of the key before it changed, when it did.
+    let previousSafetyCode: String?
+    let isCompared: Bool
+
+    var id: String { userId }
+
+    init(recipient: PasswordRecipient) {
+        userId = recipient.userId
+        name = recipient.name
+        publicKey = recipient.publicKey?.base64EncodedString() ?? ""
+        safetyCode = recipient.safetyCode ?? ""
+        previousSafetyCode = recipient.knownSafetyCode
+        isCompared = recipient.isCompared
+    }
+
+    init(change: PasswordsKeyChange) {
+        userId = change.userId
+        name = change.displayName
+        publicKey = change.newPublicKey
+        safetyCode = change.newSafetyCode
+        previousSafetyCode = change.oldSafetyCode
+        isCompared = false
+    }
+}
+
+extension PasswordsKeyChange {
+    /// The person's name, or a word for them when the copy does not hold it.
+    var displayName: String {
+        name.isEmpty ? String(localized: "Someone") : name
+    }
+}
+
+/// PasswordsCompareCodesSheet shows the safety codes of a person's key (and the code it had before
+/// when it changed) next to the person's own, to read out and compare. "Codes match" marks the
+/// key as compared. Nothing waits on it.
+struct PasswordsCompareCodesSheet: View {
+    let model: PasswordsModel
+    let target: PasswordsCompareTarget
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Ask \(target.name) to open Passwords settings on their own device and read you their safety code. It should be the same as the one below.")
+                    PasswordsSafetyCodeLines(caption: "Their safety code", code: target.safetyCode)
+                    if let previousSafetyCode = target.previousSafetyCode {
+                        PasswordsSafetyCodeLines(caption: "Their safety code before", code: previousSafetyCode)
+                    }
+                    if let ownSafetyCode = model.ownSafetyCode {
+                        PasswordsSafetyCodeLines(caption: "Your safety code", code: ownSafetyCode)
+                    }
+                } footer: {
+                    Text("Comparing is optional. Sharing and opening items work either way.")
+                }
+                Section {
+                    if target.isCompared {
+                        Label("Codes compared", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.primary)
+                    } else {
+                        Button {
+                            Task {
+                                await model.markCompared(userId: target.userId, publicKey: target.publicKey)
+                                dismiss()
+                            }
+                        } label: {
+                            Label("The codes match", systemImage: "checkmark.shield")
+                                .actionColor()
+                        }
+                        .actionColor()
+                    }
+                }
+            }
+            .navigationTitle("Compare codes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
             }
         }
     }
 }
 
-/// PasswordsOwnerKeyChangeRow explains that the person who shared items
-/// changed their key, with both safety codes and a button to trust the new
-/// key once the codes were compared with them.
-struct PasswordsOwnerKeyChangeRow: View {
-    let change: PasswordsOwnerKeyChange
-    let trust: () -> Void
+/// PasswordsKeyChangeRow is the notice that a person's key changed: it was accepted, nothing
+/// waits on it, and it stays until it is dismissed. "Compare codes" shows both codes.
+struct PasswordsKeyChangeRow: View {
+    let model: PasswordsModel
+    let change: PasswordsKeyChange
+    @State private var isComparing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("\(change.ownerName)'s key changed")
-                .font(.footnote.weight(.semibold))
-            Text("Their shared items stay closed until you trust the new key. Trusting it also lets you share items with them.")
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(change.displayName)'s key changed. This happens when they erase Passwords and set it up again. If you did not expect it, compare safety codes with them.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
-            Text("Ask \(change.ownerName) to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            PasswordsSafetyCodeLines(caption: "Safety code before", code: change.oldSafetyCode)
-            PasswordsSafetyCodeLines(caption: "Safety code now", code: change.newSafetyCode)
-            Button(action: trust) {
-                Label("Trust this key", systemImage: "checkmark.shield")
+            VStack(alignment: .leading, spacing: 8) {
+                Button { isComparing = true } label: {
+                    Label("Compare codes", systemImage: "checkmark.shield")
+                        .actionColor()
+                }
+                Button { Task { await model.dismissKeyChange(change) } } label: {
+                    Label("Dismiss", systemImage: "xmark")
+                        .actionColor()
+                }
             }
             .buttonStyle(.borderless)
-            .actionColor()
         }
         .accessibilityElement(children: .contain)
+        .sheet(isPresented: $isComparing) {
+            PasswordsCompareCodesSheet(model: model, target: PasswordsCompareTarget(change: change))
+        }
     }
 }

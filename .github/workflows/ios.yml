@@ -345,7 +345,7 @@ jobs:
           done
           # Passwords: the list, a login (with its one-time code, a site and a passkey), a card, the agent's
           # login, an item shared with the person, recently deleted, the editor and the generator over it,
-          # sharing, the settings, setting up (the introduction, the passphrase, the recovery key), and closed.
+          # sharing (with the notice of a key that changed), the settings, setting up (the introduction, the passphrase, the recovery key), and closed.
           shoot passwords-light light large -TeaNodeDemo -TeaNodeTab passwords
           shoot passwords-dark dark large -TeaNodeDemo -TeaNodeTab passwords
           shoot passwords-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab passwords

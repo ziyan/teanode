@@ -44,13 +44,6 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
     case unknownItemKind(String)
     /// The server sent a key or a value that is not the shape it should be.
     case invalidServerAnswer
-    /// A shared item's owner has a different public key than the one this device
-    /// knows for them. Nothing is opened with the new key until the person has
-    /// compared the two safety codes and trusted it (`PasswordsSession.trustOwnerKey`).
-    case ownerKeyChanged(userId: String, oldSafetyCode: String, newSafetyCode: String)
-    /// This device has never seen the owner's key, so a shared item's owner cannot be checked
-    /// yet. The app records the key the first time it syncs the item; the AutoFill extension skips the item until then.
-    case ownerKeyUnknown(userId: String)
     /// Somebody was removed from an item's shares, but the item could not be given a new key
     /// afterwards. The removal stands; `giveNewKey(itemId:)` tries again, and so does the next save.
     case itemNeedsNewKey(itemId: String)
@@ -79,8 +72,6 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
         case .tooManyAttempts: return "Too many attempts. Wait a while and try again."
         case .unknownItemKind: return "This item is of a kind this version cannot open. Update the app."
         case .invalidServerAnswer: return "The server sent something this app cannot read."
-        case .ownerKeyChanged: return "The owner of this item has a different key than before."
-        case .ownerKeyUnknown: return "This device has not seen the owner of this item before."
         case .itemNeedsNewKey: return "Removed. The item could not be given a new key."
         case .sharingCouldNotBeChecked: return "Sharing could not be checked. Set sharing again."
         case .itemNeedsAttention: return "This item needs a new key, but one was given a moment ago."
@@ -188,53 +179,29 @@ extension PasswordShareView {
     }
 }
 
-/// PasswordsUnreadableReason is why one item did not open, where the person has
-/// something to do about it.
-public enum PasswordsUnreadableReason: Hashable, Sendable {
-    /// The owner's key is not the one this device knows: compare both codes with the owner, then trust it.
-    case ownerKeyChanged(userId: String, oldSafetyCode: String, newSafetyCode: String)
-    /// This device has not seen the owner's key yet.
-    case ownerKeyUnknown(userId: String)
-    /// Damaged, or of a kind this build does not know.
-    case cannotOpen
-
-    static func reason(for error: Error) -> PasswordsUnreadableReason {
-        switch error as? PasswordsError {
-        case .ownerKeyChanged(let userId, let oldSafetyCode, let newSafetyCode):
-            return .ownerKeyChanged(userId: userId, oldSafetyCode: oldSafetyCode, newSafetyCode: newSafetyCode)
-        case .ownerKeyUnknown(let userId):
-            return .ownerKeyUnknown(userId: userId)
-        default:
-            return .cannotOpen
-        }
-    }
-}
-
 /// PasswordsOpenedItems is every item that opened, and the ids of those that
-/// did not (damaged, of a kind this build does not know, or shared by an owner
-/// whose key changed), with the reason for each.
+/// did not (damaged, or of a kind this build does not know).
 public struct PasswordsOpenedItems: Equatable, Sendable {
     public var items: [PasswordItem]
     public var unreadableItemIds: [String]
-    /// Why each item in `unreadableItemIds` did not open.
-    public var unreadableReasons: [String: PasswordsUnreadableReason] = [:]
 }
 
 /// PasswordsKeyTrust is what a device knows about a recipient's public key.
 public enum PasswordsKeyTrust: Equatable, Hashable, Sendable {
-    /// The key is the one the person already confirmed on this device by its safety code.
+    /// The key is the one this device knows for the person.
     case known
-    /// The person has not confirmed a key for this recipient on this device (a key only seen on an
-    /// incoming item does not count): the owner confirms its safety code before sealing.
+    /// This device has never seen a key for the person: the key the server gives is sealed for at
+    /// once and recorded as the known one.
     case new
-    /// The recipient's key is not the one the person confirmed: both safety codes are shown and nothing is sealed until the owner trusts it.
+    /// The server now gives another key than the one this device knows: it is sealed for at
+    /// once, recorded as the known one, and a notice is shown until the person dismisses it.
     case changed
     /// The person has not set up Passwords, so there is no key.
     case noKey
 }
 
 /// PasswordRecipient is a person an item reaches or could reach, with the
-/// code the owner compares with them to be sure of the key.
+/// code the owner can compare with them to be sure of the key.
 public struct PasswordRecipient: Identifiable, Hashable, Sendable {
     public let userId: String
     public let name: String
@@ -249,6 +216,8 @@ public struct PasswordRecipient: Identifiable, Hashable, Sendable {
     public let keyTrust: PasswordsKeyTrust
     /// The safety code of the key this device knew before, when `keyTrust` is `.changed`.
     public let knownSafetyCode: String?
+    /// Whether the person compared safety codes for this key. It gates nothing.
+    public let isCompared: Bool
     /// The circles the server listed this person as a member of when the recipients were read:
     /// the circle the recipients were asked for. A circle in the owner's access record reaches
     /// somebody only when the server lists them as a member of that circle.
@@ -256,8 +225,9 @@ public struct PasswordRecipient: Identifiable, Hashable, Sendable {
 
     public var id: String { userId }
 
-    /// `knownPublicKey` is the key the person confirmed on this device for this person (standard base64), if any.
-    public init(view: PasswordRecipientView, knownPublicKey: String? = nil, circleIds: [String] = []) {
+    /// `knownPublicKey` is the key this device knows for this person (standard base64), if any.
+    /// `comparedPublicKey` is the key the person compared safety codes for, if any.
+    public init(view: PasswordRecipientView, knownPublicKey: String? = nil, comparedPublicKey: String? = nil, circleIds: [String] = []) {
         self.circleIds = circleIds
         userId = view.userId
         name = view.name
@@ -268,6 +238,7 @@ public struct PasswordRecipient: Identifiable, Hashable, Sendable {
         {
             publicKey = data
             safetyCode = code
+            isCompared = comparedPublicKey == text
             if let knownPublicKey {
                 keyTrust = knownPublicKey == text ? .known : .changed
                 knownSafetyCode = knownPublicKey == text ? nil : PasswordsOpener.safetyCodeText(publicKey: knownPublicKey)
@@ -278,6 +249,7 @@ public struct PasswordRecipient: Identifiable, Hashable, Sendable {
         } else {
             publicKey = nil
             safetyCode = nil
+            isCompared = false
             keyTrust = .noKey
             knownSafetyCode = nil
         }
@@ -293,30 +265,26 @@ public struct PasswordWaitingShare: Hashable, Sendable {
     public let recipient: PasswordRecipient
 }
 
-/// PasswordsOwnerKeyChange is a person whose shared items this device cannot
-/// open because their public key is not the one it knew: the screen shows both
-/// safety codes and a Trust button (`PasswordsSession.trustOwnerKey`).
-public struct PasswordsOwnerKeyChange: Identifiable, Hashable, Sendable {
+/// PasswordsKeyChange is a person whose key changed from the one this device knew: the key was
+/// accepted, and the screen shows a notice until the person dismisses it
+/// (`PasswordsSession.dismissKeyChange`), with both safety codes under "Compare codes".
+public struct PasswordsKeyChange: Identifiable, Hashable, Sendable {
     public let userId: String
-    public let ownerName: String
+    /// The person's name when the phone's copy knows it (as the owner of a shared item or a
+    /// recipient of an item); empty otherwise.
+    public let name: String
     public let oldSafetyCode: String
     public let newSafetyCode: String
-    /// The key the owner has now, standard base64: what `trustOwnerKey` is given,
-    /// so it trusts the key whose code the person compared and no other.
+    /// The key the person has now, standard base64: what `markCompared` is given.
     public let newPublicKey: String
-    /// How many of their shared items are held back.
-    public let itemCount: Int
 
     public var id: String { userId }
 }
 
-/// PasswordsCompletedShares is what `completeWaitingShares` did: the keys it
-/// sealed, and the waiting recipients whose key it left alone because the
-/// device does not know it yet or it changed. The screen shows those with
-/// their safety codes and calls `confirmWaitingShare` for each one the person confirms.
+/// PasswordsCompletedShares is what `completeWaitingShares` did: how many keys it sealed for
+/// recipients who were waiting.
 public struct PasswordsCompletedShares: Equatable, Sendable {
     public let addedKeyCount: Int
-    public let waitingForConfirmation: [PasswordWaitingShare]
 }
 
 /// PasswordsUnlocked is what a right passphrase or recovery key opened.
@@ -336,33 +304,27 @@ public struct PasswordsOpener: Sendable {
     public let userId: String
     public let keyPair: PasswordsKeyPair
     let accountKey: Data
-    /// The keys this device saw when each owner's first shared item arrived, by user id
-    /// (standard base64). A shared item opens only with the owner key in here or in
-    /// `confirmedPublicKeys`. They never allow sealing an item key.
-    public var seenPublicKeys: [String: String]
-    /// The keys the person confirmed by their safety codes, by user id. Only these allow
-    /// sealing an item key for somebody without asking.
-    public var confirmedPublicKeys: [String: String]
+    /// The one key this device knows for each person, by user id (standard base64). A shared
+    /// item opens with the key the item carries, so this is only what the session compares
+    /// a key against to tell a first sight or a change from a key it already has.
+    public var knownPublicKeys: [String: String]
+    /// The key the person compared safety codes for, by user id. It gates nothing.
+    public var comparedPublicKeys: [String: String]
     /// The highest access record version this device has seen with a valid signature for each
     /// item the person owns, by item id. A record with a lower version is an older one the server
     /// sent back (`PasswordsSharingCheck.replayed`).
     public var highestRecordVersions: [String: Int]
 
     public init(
-        accountKey: Data, userId: String, keyPair: PasswordsKeyPair, seenPublicKeys: [String: String] = [:],
-        confirmedPublicKeys: [String: String] = [:], highestRecordVersions: [String: Int] = [:]
+        accountKey: Data, userId: String, keyPair: PasswordsKeyPair, knownPublicKeys: [String: String] = [:],
+        comparedPublicKeys: [String: String] = [:], highestRecordVersions: [String: Int] = [:]
     ) {
         self.accountKey = accountKey
         self.userId = userId
         self.keyPair = keyPair
-        self.seenPublicKeys = seenPublicKeys
-        self.confirmedPublicKeys = confirmedPublicKeys
+        self.knownPublicKeys = knownPublicKeys
+        self.comparedPublicKeys = comparedPublicKeys
         self.highestRecordVersions = highestRecordVersions
-    }
-
-    /// The key for opening and checking a person's shared items: the confirmed one, else the one first seen.
-    func ownerPublicKeyText(forUserId otherUserId: String) -> String? {
-        confirmedPublicKeys[otherUserId] ?? seenPublicKeys[otherUserId]
     }
 
     /// Opens the person's key pair with the account key. When
@@ -371,7 +333,7 @@ public struct PasswordsOpener: Sendable {
     /// seal somehow opened.
     public init(
         accountKey: Data, userId: String, privateKeyByAccountKey: String, expectedPublicKey: String? = nil,
-        seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:], highestRecordVersions: [String: Int] = [:]
+        knownPublicKeys: [String: String] = [:], comparedPublicKeys: [String: String] = [:], highestRecordVersions: [String: Int] = [:]
     ) throws {
         let sealed = try PasswordsSealedValue(jsonText: privateKeyByAccountKey)
         let privateKey = try PasswordsCrypto.open(sealed, key: accountKey, associatedData: PasswordsCrypto.privateKeyAssociatedData)
@@ -380,16 +342,16 @@ public struct PasswordsOpener: Sendable {
             throw PasswordsCryptoError.invalidKeyPair
         }
         self.init(
-            accountKey: accountKey, userId: userId, keyPair: keyPair, seenPublicKeys: seenPublicKeys,
-            confirmedPublicKeys: confirmedPublicKeys, highestRecordVersions: highestRecordVersions)
+            accountKey: accountKey, userId: userId, keyPair: keyPair, knownPublicKeys: knownPublicKeys,
+            comparedPublicKeys: comparedPublicKeys, highestRecordVersions: highestRecordVersions)
     }
 
-    /// Opens the cache's key pair, and keeps the cache's pinned keys to check shared items against.
+    /// Opens the cache's key pair, and keeps the cache's pinned keys.
     public init(accountKey: Data, contents: PasswordsCacheContents) throws {
         try self.init(
             accountKey: accountKey, userId: contents.userId, privateKeyByAccountKey: contents.privateKeyByAccountKey,
-            expectedPublicKey: contents.publicKey, seenPublicKeys: contents.seenPublicKeys,
-            confirmedPublicKeys: contents.confirmedPublicKeys,
+            expectedPublicKey: contents.publicKey, knownPublicKeys: contents.knownPublicKeys,
+            comparedPublicKeys: contents.comparedPublicKeys,
             highestRecordVersions: contents.itemMemories.mapValues(\.highestRecordVersion))
     }
 
@@ -399,19 +361,14 @@ public struct PasswordsOpener: Sendable {
         return code
     }
 
-    /// The owner's public key for a shared item, but only when it is the key this
-    /// device knows for the owner: `ownerKeyUnknown` when it has never seen one,
-    /// `ownerKeyChanged` (with both safety codes) when the item carries another.
+    /// The owner's public key for a shared item: the key the item carries. The item key was sealed
+    /// with it, so only an owner who holds its private half makes an item that opens. A key that
+    /// differs from the one this device knows is accepted (and noted by the session, which has the
+    /// pin store); nobody is asked.
     func ownerPublicKey(for view: PasswordItemView) throws -> Data {
-        guard let known = ownerPublicKeyText(forUserId: view.ownerUserId) else {
-            throw PasswordsError.ownerKeyUnknown(userId: view.ownerUserId)
+        guard let data = Data(base64Encoded: view.ownerPublicKey), PasswordsCrypto.isPublicKeyValid(data) else {
+            throw PasswordsError.invalidServerAnswer
         }
-        guard known == view.ownerPublicKey else {
-            throw PasswordsError.ownerKeyChanged(
-                userId: view.ownerUserId, oldSafetyCode: Self.safetyCodeText(publicKey: known),
-                newSafetyCode: Self.safetyCodeText(publicKey: view.ownerPublicKey))
-        }
-        guard let data = Data(base64Encoded: known), PasswordsCrypto.isPublicKeyValid(data) else { throw PasswordsError.invalidServerAnswer }
         return data
     }
 
@@ -461,30 +418,18 @@ public struct PasswordsOpener: Sendable {
         return version < (highestRecordVersions[view.id] ?? 0) ? .replayed : .verified
     }
 
-    /// Opens a shared item whose owner this device has not seen before with the key the item itself
-    /// carries, on trust. Only an item that opens proves its owner holds the private half of that key
-    /// (the item key was sealed with it), so the caller records the key as seen after this returns,
-    /// never before.
-    func openOnFirstSight(_ view: PasswordItemView) throws -> PasswordItem {
-        var trusting = self
-        trusting.seenPublicKeys[view.ownerUserId] = view.ownerPublicKey
-        return try trusting.open(view)
-    }
-
     /// Opens many; the ones that do not open are named, not hidden.
     public func openAll(_ views: [PasswordItemView]) -> PasswordsOpenedItems {
         var items: [PasswordItem] = []
         var unreadableItemIds: [String] = []
-        var unreadableReasons: [String: PasswordsUnreadableReason] = [:]
         for view in views {
             do {
                 items.append(try open(view))
             } catch {
                 unreadableItemIds.append(view.id)
-                unreadableReasons[view.id] = PasswordsUnreadableReason.reason(for: error)
             }
         }
-        return PasswordsOpenedItems(items: items, unreadableItemIds: unreadableItemIds, unreadableReasons: unreadableReasons)
+        return PasswordsOpenedItems(items: items, unreadableItemIds: unreadableItemIds)
     }
 }
 
@@ -575,8 +520,8 @@ public actor PasswordsSession {
         guard var current = opener else { throw PasswordsError.locked }
         touch()
         let pins = currentPins()
-        current.seenPublicKeys = pins.seenPublicKeys
-        current.confirmedPublicKeys = pins.confirmedPublicKeys
+        current.knownPublicKeys = pins.knownPublicKeys
+        current.comparedPublicKeys = pins.comparedPublicKeys
         current.highestRecordVersions = pins.itemMemories.mapValues(\.highestRecordVersion)
         return current
     }
@@ -592,29 +537,30 @@ public actor PasswordsSession {
         return lastReadPins ?? PasswordsPins(userId: userId)
     }
 
-    /// Opens an item, and when it is shared by an owner this device has no key for, opens it on
-    /// trust with the key the item carries and records that key as seen, but only after the item
-    /// has opened: a key that opens nothing is not recorded. A seen key is not a confirmed one: it
-    /// never lets this device seal an item key, because the server chose it. An owner the device
-    /// already has a key for is never touched here: only `trustOwnerKey` replaces a key.
+    /// Opens an item. A shared item opens with the key its owner carries on it; once it has opened
+    /// (a key that opens nothing is not recorded), that key is recorded as the known one for the
+    /// owner when none was known, and, when it differs from the known one, accepted with a notice
+    /// the person can dismiss (`keyChanges()`).
     private func openItem(_ view: PasswordItemView, opener: inout PasswordsOpener) throws -> PasswordItem {
-        let opened = try openItemOnTrust(view, opener: &opener)
+        let opened = try opener.open(view)
+        if view.isSharedWithMe { noteKey(userId: view.ownerUserId, publicKey: view.ownerPublicKey, opener: &opener) }
         remember(opened, view: view)
         return opened
     }
 
-    private func openItemOnTrust(_ view: PasswordItemView, opener: inout PasswordsOpener) throws -> PasswordItem {
-        do {
-            return try opener.open(view)
-        } catch {
-            guard view.isSharedWithMe, let passwordsError = error as? PasswordsError, case .ownerKeyUnknown = passwordsError else { throw error }
-            guard let data = Data(base64Encoded: view.ownerPublicKey), PasswordsCrypto.isPublicKeyValid(data) else {
-                throw PasswordsError.invalidServerAnswer
+    /// Records a key the server gave for a person and this device used: the first one seen becomes
+    /// the known key; another one replaces it and leaves a notice. Best effort when the pin store
+    /// cannot be written: the key is still used, and the next read records it.
+    private func noteKey(userId otherUserId: String, publicKey: String, opener: inout PasswordsOpener) {
+        guard let known = opener.knownPublicKeys[otherUserId] else {
+            if (try? cache.recordKnownIfAbsent(userId: userId, otherUserId: otherUserId, publicKey: publicKey)) != nil {
+                opener.knownPublicKeys[otherUserId] = publicKey
             }
-            let opened = try opener.openOnFirstSight(view)
-            try cache.recordSeenIfAbsent(userId: userId, ownerUserId: view.ownerUserId, publicKey: view.ownerPublicKey)
-            opener.seenPublicKeys[view.ownerUserId] = view.ownerPublicKey
-            return opened
+            return
+        }
+        guard known != publicKey else { return }
+        if (try? cache.recordChangedKey(userId: userId, otherUserId: otherUserId, publicKey: publicKey)) != nil {
+            opener.knownPublicKeys[otherUserId] = publicKey
         }
     }
 
@@ -733,8 +679,8 @@ public actor PasswordsSession {
         try store(
             PasswordsCacheContents(
                 userId: userId, publicKey: input.publicKey, privateKeyByAccountKey: input.privateKeyByAccountKey,
-                lockAfterMinutes: setup.lockAfterMinutes, seenPublicKeys: pins.seenPublicKeys,
-                confirmedPublicKeys: pins.confirmedPublicKeys))
+                lockAfterMinutes: setup.lockAfterMinutes, knownPublicKeys: pins.knownPublicKeys,
+                comparedPublicKeys: pins.comparedPublicKeys, changedPublicKeys: pins.changedPublicKeys))
         opener = PasswordsOpener(accountKey: accountKey, userId: userId, keyPair: keyPair)
         openedItems = [:]
         touch()
@@ -861,8 +807,8 @@ public actor PasswordsSession {
         let result = updated.merge(list)
         try store(updated)
         for itemId in result.changedItemIds + result.removedItemIds { openedItems[itemId] = nil }
-        // Pin the key of each owner whose first shared item opens, then list the logins for AutoFill.
-        recordFirstSightOwnerKeys(opener: &opener)
+        // Record the key of each owner whose shared item opens, then list the logins for AutoFill.
+        recordOwnerKeys(opener: &opener)
         refreshSummary(opener: opener)
         return result
     }
@@ -873,15 +819,15 @@ public actor PasswordsSession {
         return itemIds.contains { !heldItemIds.contains($0) }
     }
 
-    /// Opens one shared item of each owner this device has no key for, so the key that item carries
-    /// is recorded as seen once it has opened (`openItem`). An owner none of whose items open is
-    /// not recorded.
-    private func recordFirstSightOwnerKeys(opener: inout PasswordsOpener) {
+    /// Opens one shared item of each owner whose key differs from the one this device knows (or
+    /// whose key it has never seen), so that key is recorded once the item has opened (`openItem`),
+    /// with a notice when it replaced another. An owner none of whose items open is not recorded.
+    private func recordOwnerKeys(opener: inout PasswordsOpener) {
         guard let current = loadedContents() else { return }
-        var recordedOwnerUserIds = Set<String>()
-        for view in current.items where view.isSharedWithMe && !recordedOwnerUserIds.contains(view.ownerUserId) {
-            guard opener.ownerPublicKeyText(forUserId: view.ownerUserId) == nil else { continue }
-            if (try? openItem(view, opener: &opener)) != nil { recordedOwnerUserIds.insert(view.ownerUserId) }
+        var checkedOwnerUserIds = Set<String>()
+        for view in current.items where view.isSharedWithMe && !checkedOwnerUserIds.contains(view.ownerUserId) {
+            guard opener.knownPublicKeys[view.ownerUserId] != view.ownerPublicKey else { continue }
+            if (try? openItem(view, opener: &opener)) != nil { checkedOwnerUserIds.insert(view.ownerUserId) }
         }
     }
 
@@ -921,7 +867,7 @@ public actor PasswordsSession {
 
     /// Drops the copy and locks. The pinned keys of other people stay in their store: a
     /// server's answer alone (another public key, "not set up") must not make the phone
-    /// forget whose key it had seen or confirmed. `erase()` and removing the sign-in remove them.
+    /// forget whose key it knew. `erase()` and removing the sign-in remove them.
     private func forgetEverything(isKeepingPins: Bool = true) throws {
         if isKeepingPins {
             try cache.eraseKeepingPins()
@@ -941,7 +887,6 @@ public actor PasswordsSession {
         guard let contents = loadedContents() else { return PasswordsOpenedItems(items: [], unreadableItemIds: []) }
         var items: [PasswordItem] = []
         var unreadableItemIds: [String] = []
-        var unreadableReasons: [String: PasswordsUnreadableReason] = [:]
         for view in contents.items {
             if let known = openedItems[view.id], known.revision == view.revision {
                 items.append(known)
@@ -953,18 +898,16 @@ public actor PasswordsSession {
                 items.append(opened)
             } catch {
                 unreadableItemIds.append(view.id)
-                unreadableReasons[view.id] = PasswordsUnreadableReason.reason(for: error)
             }
         }
         items.sort {
             let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
             return comparison == .orderedSame ? $0.id < $1.id : comparison == .orderedAscending
         }
-        return PasswordsOpenedItems(items: items, unreadableItemIds: unreadableItemIds, unreadableReasons: unreadableReasons)
+        return PasswordsOpenedItems(items: items, unreadableItemIds: unreadableItemIds)
     }
 
-    /// One item, opened. `PasswordsError.itemNotFound` when the copy has no such item,
-    /// `PasswordsError.ownerKeyChanged` when its owner's key is not the one this device knows.
+    /// One item, opened. `PasswordsError.itemNotFound` when the copy has no such item.
     public func item(id: String) throws -> PasswordItem {
         var opener = try requireOpener()
         guard let view = itemView(id: id) else { throw PasswordsError.itemNotFound }
@@ -982,7 +925,7 @@ public actor PasswordsSession {
 
     /// The person's own safety code, from the key pair this session opened at unlock and the
     /// person's own user id, never from what the server reports. The person reads it to
-    /// somebody who is confirming their key. `PasswordsError.locked` while locked.
+    /// somebody who wants to compare codes. `PasswordsError.locked` while locked.
     public func ownSafetyCode() throws -> String {
         let opener = try requireOpener()
         return try PasswordsCrypto.safetyCode(publicKey: opener.keyPair.publicKey)
@@ -1134,15 +1077,23 @@ public actor PasswordsSession {
     // MARK: Sharing
 
     /// The people a share with this person or circle would reach, with the
-    /// safety code of each one's public key and whether the person confirmed it
-    /// on this device (`keyTrust`). Show the codes to the owner before `setShares`; a person
+    /// safety code of each one's public key, whether it is the key this device
+    /// knows (`keyTrust`) and whether the person compared codes (`isCompared`). A person
     /// who has not set up Passwords has no key yet.
     public func recipients(granteeUserId: String? = nil, granteeCircleId: String? = nil) async throws -> [PasswordRecipient] {
         _ = try requireOpener()
         let views = try await call { try await api.listPasswordRecipients(granteeUserId: granteeUserId, granteeCircleId: granteeCircleId) }
-        let confirmedPublicKeys = currentPins().confirmedPublicKeys
-        let circleIds = granteeCircleId.map { [$0] } ?? []
-        return views.map { PasswordRecipient(view: $0, knownPublicKey: confirmedPublicKeys[$0.userId], circleIds: circleIds) }
+        return makeRecipients(views, circleIds: granteeCircleId.map { [$0] } ?? [])
+    }
+
+    /// Recipients marked with what this device knows of each key.
+    private func makeRecipients(_ views: [PasswordRecipientView], circleIds: [String]) -> [PasswordRecipient] {
+        let pins = currentPins()
+        return views.map {
+            PasswordRecipient(
+                view: $0, knownPublicKey: pins.knownPublicKeys[$0.userId], comparedPublicKey: pins.comparedPublicKeys[$0.userId],
+                circleIds: circleIds)
+        }
     }
 
     /// The grantee of the access record that a share target is.
@@ -1165,7 +1116,7 @@ public actor PasswordsSession {
     /// Replaces who the item is shared with by `grantees`. The owner's own record decides who may
     /// have the item: the list of grantees is sealed inside the item's fields (`access`, signed with
     /// the account key), and a key is sealed for a person only if that record reaches them and
-    /// their key is confirmed. The calls go in the order that keeps the sealed record from ever
+    /// they have a key. The calls go in the order that keeps the sealed record from ever
     /// being wider than what the person chose:
     ///
     /// - When somebody is added, the fields are saved with the new, signed record first, then the
@@ -1184,15 +1135,15 @@ public actor PasswordsSession {
     /// server lists any share or agent copy for it, because whoever wrote the record may hold the
     /// old key.
     ///
-    /// `recipients` are the people the grantees reach (from `recipients(...)`). A recipient whose key
-    /// the person confirmed on this device, or whose user id is in `confirmedUserIds` (the person
-    /// compared the safety code and confirmed), gets a key, and a newly confirmed key is recorded. A
-    /// key merely seen on an incoming item does not count. A recipient that already has a key for
-    /// their current public key is not sealed for again. Anybody else, and a recipient without a
-    /// public key, is left out and shows up in `waitingShares()`. Only the owner shares; a
+    /// `recipients` are the people the grantees reach (from `recipients(...)`). Each one the record
+    /// reaches who has a key gets a key sealed for the public key the server gives, at once: a
+    /// first-seen key is recorded as the known one, and a key that differs from the known one is
+    /// accepted and recorded with a notice (`keyChanges()`). Nobody is asked. A recipient that
+    /// already has a key for their current public key is not sealed for again. A recipient without a
+    /// public key is left out and shows up in `waitingShares()`. Only the owner shares; a
     /// recipient never shares onward.
     public func setShares(
-        itemId: String, grantees: [PasswordShareGranteeInput], recipients: [PasswordRecipient], confirmedUserIds: [String] = []
+        itemId: String, grantees: [PasswordShareGranteeInput], recipients: [PasswordRecipient]
     ) async throws -> PasswordItem {
         var opener = try requireOpener()
         var view = try ownedView(itemId)
@@ -1237,7 +1188,7 @@ public actor PasswordsSession {
         var circleIdsByUserId: [String: [String]] = [:]
         for recipient in recipients { circleIdsByUserId[recipient.userId, default: []] += recipient.circleIds }
         var keys: [PasswordShareKeyInput] = []
-        var confirmedKeys: [String: String] = [:]
+        var sealedKeys: [String: String] = [:]
         var sealedUserIds = Set<String>()
         for recipient in recipients where recipient.userId != userId && !alreadyKeyedUserIds.contains(recipient.userId) {
             guard let publicKey = recipient.publicKey, sealedUserIds.insert(recipient.userId).inserted else { continue }
@@ -1246,18 +1197,15 @@ public actor PasswordsSession {
             guard PasswordsItemAccess.isReachedByAccess(newAccess, recipientUserId: recipient.userId, circleIdsOfRecipient: circleIds) else {
                 continue
             }
-            let publicKeyText = publicKey.base64EncodedString()
-            let isConfirmed = confirmedUserIds.contains(recipient.userId)
-            guard isConfirmed || opener.confirmedPublicKeys[recipient.userId] == publicKeyText else { continue }
             keys.append(
                 try Self.shareKey(
                     itemKey: itemKey, itemId: itemId, ownerKeyPair: opener.keyPair, ownerId: userId, recipientUserId: recipient.userId,
                     recipientPublicKey: publicKey, accountSealedItemKey: view.itemKey))
-            if isConfirmed { confirmedKeys[recipient.userId] = publicKeyText }
+            sealedKeys[recipient.userId] = publicKey.base64EncodedString()
         }
-        // The keys the person just confirmed are recorded before the server is told, so a pin store
-        // that cannot be written stops the share before anything is sealed for them.
-        try recordConfirmedPublicKeys(confirmedKeys)
+        // The keys sealed for are recorded before the server is told, so a pin store that cannot be
+        // written stops the share before anything is sealed for them.
+        try recordSealedKeys(sealedKeys)
         let answered = try await call { try await api.setPasswordItemShares(itemId: itemId, grantees: chosenInputs, keys: keys) }
         let kept = try keep(answered, opener: opener)
         // Somebody lost access, and they may hold the item key: it gets replaced. The person's own
@@ -1310,97 +1258,91 @@ public actor PasswordsSession {
     }
 
     /// The same recipients as `recipients(...)` for views the server already sent (the owner's
-    /// `shares` of an item), marked with whether the person confirmed each key. `circleId` is the
+    /// `shares` of an item), marked with what this device knows of each key. `circleId` is the
     /// circle of the share they came from, if it is a circle's.
     public func recipients(of views: [PasswordRecipientView], circleId: String? = nil) -> [PasswordRecipient] {
-        let confirmedPublicKeys = currentPins().confirmedPublicKeys
-        let circleIds = circleId.map { [$0] } ?? []
-        return views.map { PasswordRecipient(view: $0, knownPublicKey: confirmedPublicKeys[$0.userId], circleIds: circleIds) }
+        makeRecipients(views, circleIds: circleId.map { [$0] } ?? [])
     }
 
-    /// The owners of shared items whose key is not the one this device knows,
-    /// each once, with both safety codes.
-    public func ownerKeyChanges() -> [PasswordsOwnerKeyChange] {
-        guard let contents = loadedContents() else { return [] }
+    /// The people whose key changed from the one this device knew (as an item's owner, or as a
+    /// recipient the person shared with), each once, until the person dismisses the notice. The
+    /// new key was accepted: nothing waits on the notice.
+    public func keyChanges() -> [PasswordsKeyChange] {
         let pins = currentPins()
-        var changes: [PasswordsOwnerKeyChange] = []
-        for view in contents.items where view.isSharedWithMe {
-            guard let known = pins.ownerPublicKey(forUserId: view.ownerUserId), known != view.ownerPublicKey,
-                Data(base64Encoded: view.ownerPublicKey).map(PasswordsCrypto.isPublicKeyValid) == true
-            else { continue }
-            if let index = changes.firstIndex(where: { $0.userId == view.ownerUserId }) {
-                let earlier = changes[index]
-                changes[index] = PasswordsOwnerKeyChange(
-                    userId: earlier.userId, ownerName: earlier.ownerName, oldSafetyCode: earlier.oldSafetyCode,
-                    newSafetyCode: earlier.newSafetyCode, newPublicKey: earlier.newPublicKey, itemCount: earlier.itemCount + 1)
-            } else {
-                changes.append(
-                    PasswordsOwnerKeyChange(
-                        userId: view.ownerUserId, ownerName: view.ownerName,
-                        oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: known),
-                        newSafetyCode: PasswordsOpener.safetyCodeText(publicKey: view.ownerPublicKey),
-                        newPublicKey: view.ownerPublicKey, itemCount: 1))
-            }
+        var names: [String: String] = [:]
+        for view in loadedContents()?.items ?? [] {
+            if view.isSharedWithMe { names[view.ownerUserId] = view.ownerName }
+            for recipient in view.shares.flatMap(\.recipients) { names[recipient.userId] = recipient.name }
         }
-        return changes
+        var changes: [PasswordsKeyChange] = []
+        for (otherUserId, previousPublicKey) in pins.changedPublicKeys {
+            guard let currentPublicKey = pins.knownPublicKeys[otherUserId] else { continue }
+            changes.append(
+                PasswordsKeyChange(
+                    userId: otherUserId, name: names[otherUserId] ?? "", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: previousPublicKey),
+                    newSafetyCode: PasswordsOpener.safetyCodeText(publicKey: currentPublicKey), newPublicKey: currentPublicKey))
+        }
+        return changes.sorted { ($0.name, $0.userId) < ($1.name, $1.userId) }
     }
 
-    /// Remembers these keys (user id to standard base64) as the ones the person confirmed.
-    /// They also replace the seen key of that person, so their items are checked against it.
-    private func recordConfirmedPublicKeys(_ keys: [String: String]) throws {
-        for (ownerUserId, publicKey) in keys.sorted(by: { $0.key < $1.key }) {
-            try cache.recordConfirmed(userId: userId, ownerUserId: ownerUserId, publicKey: publicKey)
-        }
+    /// Dismisses the notice of a changed key. The key stays accepted.
+    public func dismissKeyChange(userId otherUserId: String) throws {
+        _ = try requireOpener()
+        try cache.dismissKeyChange(userId: userId, otherUserId: otherUserId)
     }
 
-    /// Accepts the key a shared item's owner has now, after the person compared
-    /// the old and new safety codes with the owner (`ownerKeyChanged`). The key is recorded as
-    /// confirmed, not just seen: it is the key the person checked, so it also lets this device
-    /// seal an item key for that person when the person shares with them. Items of that owner open
-    /// with the new key from then on. `expectedPublicKey` is the
-    /// key whose code the person was shown (`PasswordsOwnerKeyChange.newPublicKey`,
-    /// standard base64): if the owner's items carry another key by now, nothing is
-    /// trusted and `PasswordsError.ownerKeyChanged` is thrown with the code that
-    /// was shown and the code of the key now, for the screen to show again.
-    /// `PasswordsError.itemNotFound` when no shared item of that owner is in the
-    /// phone's copy.
-    public func trustOwnerKey(userId ownerUserId: String, expectedPublicKey: String) throws {
-        let opener = try requireOpener()
-        guard let updated = loadedContents() else { throw PasswordsError.needsPassphrase }
-        let ownerViews = updated.items.filter { $0.isSharedWithMe && $0.ownerUserId == ownerUserId }
-        guard
-            let view = ownerViews.first(where: { Data(base64Encoded: $0.ownerPublicKey).map(PasswordsCrypto.isPublicKeyValid) == true })
-        else { throw PasswordsError.itemNotFound }
-        guard ownerViews.allSatisfy({ $0.ownerPublicKey == expectedPublicKey }) else {
-            throw PasswordsError.ownerKeyChanged(
-                userId: ownerUserId, oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: expectedPublicKey),
-                newSafetyCode: PasswordsOpener.safetyCodeText(publicKey: view.ownerPublicKey))
+    /// Marks the key as compared ("Codes compared") after the person read the safety codes with
+    /// its owner. `publicKey` is the key whose code the person was shown (standard base64); it
+    /// is recorded as the known key when the device does not know it yet or knew another, and the
+    /// person's changed-key notice is cleared. It never gates sharing or opening.
+    public func markCompared(userId otherUserId: String, publicKey: String) throws {
+        _ = try requireOpener()
+        guard let data = Data(base64Encoded: publicKey), PasswordsCrypto.isPublicKeyValid(data), otherUserId != userId else {
+            throw PasswordsError.invalidServerAnswer
         }
-        try cache.recordConfirmed(userId: userId, ownerUserId: ownerUserId, publicKey: view.ownerPublicKey)
+        if let known = currentPins().knownPublicKeys[otherUserId], known != publicKey {
+            try cache.recordChangedKey(userId: userId, otherUserId: otherUserId, publicKey: publicKey)
+        }
+        try cache.recordCompared(userId: userId, otherUserId: otherUserId, publicKey: publicKey)
         openedItems = [:]
-        // Their items open now: list them for AutoFill.
-        var trusting = opener
-        trusting.seenPublicKeys[ownerUserId] = view.ownerPublicKey
-        trusting.confirmedPublicKeys[ownerUserId] = view.ownerPublicKey
-        refreshSummary(opener: trusting)
+    }
+
+    /// Records the keys (user id to standard base64) this device is about to seal item keys for:
+    /// the first one seen for a person becomes their known key, and one that differs from the
+    /// known key replaces it and leaves a notice (`keyChanges()`). Nothing is asked.
+    private func recordSealedKeys(_ keys: [String: String]) throws {
+        let pins = currentPins()
+        for (otherUserId, publicKey) in keys.sorted(by: { $0.key < $1.key }) {
+            guard let known = pins.knownPublicKeys[otherUserId] else {
+                try cache.recordKnownIfAbsent(userId: userId, otherUserId: otherUserId, publicKey: publicKey)
+                continue
+            }
+            if known != publicKey { try cache.recordChangedKey(userId: userId, otherUserId: otherUserId, publicKey: publicKey) }
+        }
     }
 
     /// The recipients of the person's items who cannot open them yet, each
-    /// with whether the device knows their key.
+    /// with what the device knows of their key.
     public func waitingShares() async throws -> [PasswordWaitingShare] {
         let opener = try requireOpener()
         let views = try await call { try await api.listWaitingPasswordShares() }
         return views.map { view in
             let name = itemView(id: view.itemId).flatMap { try? opener.open($0).name }
-            let recipient = PasswordRecipient(view: view.recipient, knownPublicKey: opener.confirmedPublicKeys[view.recipient.userId])
-            return PasswordWaitingShare(itemId: view.itemId, itemName: name, recipient: recipient)
+            return PasswordWaitingShare(itemId: view.itemId, itemName: name, recipient: Self.recipient(view.recipient, opener: opener))
         }
+    }
+
+    /// A recipient marked with what the opener knows of their key.
+    private static func recipient(_ view: PasswordRecipientView, opener: PasswordsOpener) -> PasswordRecipient {
+        PasswordRecipient(
+            view: view, knownPublicKey: opener.knownPublicKeys[view.userId], comparedPublicKey: opener.comparedPublicKeys[view.userId])
     }
 
     /// What `completeWaitingShares` works out from the server's list of waiting recipients and the copy.
     private struct WaitingPlan {
         var keys: [PasswordItemShareKeyInput] = []
-        var waitingForConfirmation: [PasswordWaitingShare] = []
+        /// The key each recipient sealed for was given, user id to standard base64.
+        var sealedKeys: [String: String] = [:]
         /// The server names an item the copy does not hold, or a person the owner's record would
         /// reach but the copy's shares do not list (they joined a circle after the copy was made).
         var isCopyBehind = false
@@ -1409,7 +1351,7 @@ public actor PasswordsSession {
     private func waitingPlan(_ waiting: [PasswordWaitingShareView], opener: PasswordsOpener) throws -> WaitingPlan {
         var plan = WaitingPlan()
         for entry in waiting {
-            let recipient = PasswordRecipient(view: entry.recipient, knownPublicKey: opener.confirmedPublicKeys[entry.recipient.userId])
+            let recipient = Self.recipient(entry.recipient, opener: opener)
             guard let publicKey = recipient.publicKey, recipient.userId != userId else { continue }
             guard let view = itemView(id: entry.itemId) else {
                 plan.isCopyBehind = true
@@ -1432,11 +1374,8 @@ public actor PasswordsSession {
                 }
                 continue
             }
-            guard recipient.keyTrust == .known else {
-                plan.waitingForConfirmation.append(PasswordWaitingShare(itemId: entry.itemId, itemName: opened.name, recipient: recipient))
-                continue
-            }
             guard let itemKey = try? opener.itemKey(for: view) else { continue }
+            plan.sealedKeys[recipient.userId] = publicKey.base64EncodedString()
             plan.keys.append(
                 try Self.itemShareKey(
                     itemKey: itemKey, itemId: entry.itemId, ownerKeyPair: opener.keyPair, ownerId: userId, recipient: recipient,
@@ -1447,13 +1386,10 @@ public actor PasswordsSession {
 
     /// Seals the keys of items whose recipients were waiting (they set up
     /// Passwords, or joined the circle, after the share was made) for their
-    /// current public keys, but only when the owner's sealed record reaches the recipient (a
-    /// person grantee by user id, a circle grantee when the server lists them as a member) and the
-    /// person confirmed their key on this device. A recipient with a key the person
-    /// has not confirmed (one only seen on an incoming item counts as not confirmed), or one
-    /// that changed, is not sealed for: they come back in
-    /// `waitingForConfirmation` for the screen to show with their safety codes,
-    /// and `confirmWaitingShare` seals one after the person confirms. A waiting recipient the
+    /// current public keys, at once, but only when the owner's sealed record reaches the recipient (a
+    /// person grantee by user id, a circle grantee when the server lists them as a member). The key
+    /// given for a first-seen person is recorded as their known key; one that differs from the known
+    /// key replaces it and leaves a notice (`keyChanges()`). Nobody is asked. A waiting recipient the
     /// server lists that the record does not reach is ignored. When the server names an item the
     /// copy does not hold, or somebody the record would reach but the copy's shares do not
     /// list, the copy is read in full once and the list checked again.
@@ -1470,12 +1406,11 @@ public actor PasswordsSession {
                 try await sync(isFull: true)
                 continue
             }
-            guard !plan.keys.isEmpty else {
-                return PasswordsCompletedShares(addedKeyCount: 0, waitingForConfirmation: plan.waitingForConfirmation)
-            }
+            guard !plan.keys.isEmpty else { return PasswordsCompletedShares(addedKeyCount: 0) }
+            try recordSealedKeys(plan.sealedKeys)
             do {
                 let addedKeyCount = try await call { try await api.addPasswordShareKeys(plan.keys) }
-                return PasswordsCompletedShares(addedKeyCount: addedKeyCount, waitingForConfirmation: plan.waitingForConfirmation)
+                return PasswordsCompletedShares(addedKeyCount: addedKeyCount)
             } catch PasswordsError.itemChangedOnAnotherDevice where !isRetriedAfterChange {
                 // An item got a new key since the copy was made: read it again, then seal from that.
                 isRetriedAfterChange = true
@@ -1494,28 +1429,6 @@ public actor PasswordsSession {
                 itemKey: itemKey, itemId: itemId, ownerKeyPair: ownerKeyPair, ownerId: ownerId, recipientUserId: recipient.userId,
                 recipientPublicKey: recipientPublicKey),
             recipientPublicKey: recipientPublicKey.base64EncodedString(), itemKey: accountSealedItemKey)
-    }
-
-    /// Seals one waiting share the person has just confirmed by its safety
-    /// code (an entry of `waitingForConfirmation` or `waitingShares()`), for
-    /// exactly the key that was shown, and records that key as confirmed. The item
-    /// must be the person's own and the owner's sealed record must reach the recipient.
-    public func confirmWaitingShare(_ waiting: PasswordWaitingShare) async throws {
-        let opener = try requireOpener()
-        guard let publicKey = waiting.recipient.publicKey, waiting.recipient.userId != userId else {
-            throw PasswordsError.invalidServerAnswer
-        }
-        let view = try ownedView(waiting.itemId)
-        let opened = try opener.open(view)
-        guard let access = opened.verifiedAccess else { throw PasswordsError.sharingCouldNotBeChecked(itemId: waiting.itemId) }
-        let circleIds = Self.circleIds(listing: waiting.recipient.userId, in: view)
-        guard PasswordsItemAccess.isReachedByAccess(access, recipientUserId: waiting.recipient.userId, circleIdsOfRecipient: circleIds)
-        else { throw PasswordsError.itemNotFound }
-        let key = try Self.itemShareKey(
-            itemKey: try opener.itemKey(for: view), itemId: waiting.itemId, ownerKeyPair: opener.keyPair, ownerId: userId,
-            recipient: waiting.recipient, recipientPublicKey: publicKey, accountSealedItemKey: view.itemKey)
-        try recordConfirmedPublicKeys([waiting.recipient.userId: publicKey.base64EncodedString()])
-        _ = try await call { try await api.addPasswordShareKeys([key]) }
     }
 
     // MARK: The agent
@@ -1615,7 +1528,7 @@ public actor PasswordsSession {
 
     /// Gives the item a new item key now: for the retry after a removal whose re-key failed. It
     /// seals only for the people who held a key when this device last saw the item, and for the
-    /// agent only if it had a copy; anybody else waits for the person's OK (`waitingShares()`).
+    /// agent only if it had a copy; anybody else is left for the person to share with again.
     /// `PasswordsError.sharingCouldNotBeChecked` when the item's record is not the person's own.
     @discardableResult
     public func giveNewKey(itemId: String) async throws -> PasswordItem {
@@ -1663,7 +1576,7 @@ public actor PasswordsSession {
     /// Who asked for a new key, which decides who it is sealed for.
     private enum RekeyOrigin {
         /// The person chose who has access (they removed somebody, or turned the agent off): the
-        /// key is sealed for everyone the new record reaches whose key they confirmed here.
+        /// key is sealed for everyone the new record reaches who has a key.
         case choice
         /// The person asked for a new key without choosing who (the retry button, restoring an
         /// item): sealed only for people who held a key when this device last saw the item.
@@ -1676,14 +1589,14 @@ public actor PasswordsSession {
     /// Makes a new item key for an item the person owns and seals everything with it: the fields
     /// (`replacing` when a save brings new ones, else the item's own, with `accessEdit` applied to
     /// their access record and signed again), the person's copy, a copy for each recipient the
-    /// owner's record still reaches and whose key the person confirmed on this device, and the
+    /// owner's record still reaches and who has a key, and the
     /// agent's copy when the record says the agent may use the item.
     ///
     /// For an origin other than `choice` the new key never reaches further than the old one did:
     /// a recipient also has to have held a key when this device last saw the item without the server
     /// asking for a new key (`PasswordsItemMemory`), and the agent copy is made only if it had one,
-    /// and only from a record that is the person's own. Anybody else is left waiting for the person's
-    /// OK, because sealing for them unasked is what the confirmation exists to prevent. One the
+    /// and only from a record that is the person's own. Anybody else is not sealed for here: only a
+    /// share the person makes widens who holds the item. One the
     /// record does not reach gets nothing, whatever the server's list of shares says. When the server
     /// says the item changed on another device and the change was not based on a revision the caller
     /// gave, the copy is brought up to date and this is tried once more.
@@ -1763,6 +1676,7 @@ public actor PasswordsSession {
         let sealedItemKey = try PasswordsCrypto.seal(
             newItemKey, key: opener.accountKey, associatedData: PasswordsCrypto.itemKeyAssociatedData(itemId: itemId))
         var shareKeys: [PasswordItemShareKeyInput] = []
+        var sealedKeys: [String: String] = [:]
         var seenUserIds = Set<String>()
         for recipientView in view.shares.flatMap(\.recipients) where recipientView.userId != userId {
             guard seenUserIds.insert(recipientView.userId).inserted else { continue }
@@ -1770,8 +1684,9 @@ public actor PasswordsSession {
             guard PasswordsItemAccess.isReachedByAccess(fields.access, recipientUserId: recipientView.userId, circleIdsOfRecipient: circleIds)
             else { continue }
             if origin != .choice, !memory.keyHolderUserIds.contains(recipientView.userId) { continue }
-            let recipient = PasswordRecipient(view: recipientView, knownPublicKey: opener.confirmedPublicKeys[recipientView.userId])
-            guard recipient.keyTrust == .known, let publicKey = recipient.publicKey else { continue }
+            let recipient = Self.recipient(recipientView, opener: opener)
+            guard let publicKey = recipient.publicKey else { continue }
+            sealedKeys[recipient.userId] = publicKey.base64EncodedString()
             shareKeys.append(
                 try Self.itemShareKey(
                     itemKey: newItemKey, itemId: itemId, ownerKeyPair: opener.keyPair, ownerId: userId, recipient: recipient,
@@ -1784,6 +1699,7 @@ public actor PasswordsSession {
         {
             agentCopyText = try await agentCopy(of: newItemKey, itemId: itemId, opener: opener)
         }
+        try recordSealedKeys(sealedKeys)
         let input = PasswordItemRekeyInput(
             id: itemId, baseRevision: baseRevision ?? view.revision, encryptedFields: sealedFields.jsonText, itemKey: sealedItemKey.jsonText,
             shareKeys: shareKeys, itemKeyByAgentKey: agentCopyText)

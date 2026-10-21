@@ -188,8 +188,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
 
         let recipients = try await ada.recipients(granteeUserId: "user-ben")
         let shared = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients,
-            confirmedUserIds: ["user-ben"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients)
         XCTAssertEqual(flags.calls, ["savePasswordItem", "setPasswordItemShares"])
         XCTAssertEqual(shared.sharingCheck, .verified)
         XCTAssertEqual(shared.fields.access?.grantees, [.person(userId: "user-ben")])
@@ -246,8 +245,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let item = try await ada.save(fields: loginFields())
         let recipients = try await ada.recipients(granteeUserId: "user-ben")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients,
-            confirmedUserIds: ["user-ben"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients)
         _ = try await ada.setUsableByAgent(itemId: item.id, isUsable: true)
         let agentOnItem = try await ada.item(id: item.id)
         let access = try XCTUnwrap(agentOnItem.fields.access)
@@ -283,8 +281,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let item = try await ada.save(fields: loginFields())
         let recipients = try await ada.recipients(granteeUserId: "user-ben")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients,
-            confirmedUserIds: ["user-ben"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients)
         let keyBefore = await server.item(item.id)?.itemKeyByAccountKey
 
         flags.isAnsweringSharesUnchanged = true
@@ -308,12 +305,11 @@ final class PasswordsAccessFlowTests: XCTestCase {
         try await setUp(ada, passphrase: "ada invented passphrase")
         let mallory = makeSession(server, userId: "user-mallory")
         try await setUp(mallory, passphrase: "mallory invented passphrase")
-        // Ada once confirmed Mallory's key, for another item.
+        // Ada knows Mallory's key from sharing another item with her.
         let shared = try await ada.save(fields: loginFields(name: "Shared"))
         let recipients = try await ada.recipients(granteeUserId: "user-mallory")
         _ = try await ada.setShares(
-            itemId: shared.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-mallory")], recipients: recipients,
-            confirmedUserIds: ["user-mallory"])
+            itemId: shared.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-mallory")], recipients: recipients)
         let secret = try await ada.save(fields: loginFields(name: "Secret"))
         let malloryView = try XCTUnwrap(recipients.first.map { recipient in
             PasswordRecipientView(
@@ -330,15 +326,6 @@ final class PasswordsAccessFlowTests: XCTestCase {
         flags.calls = []
         let completed = try await ada.completeWaitingShares()
         XCTAssertEqual(completed.addedKeyCount, 0)
-        XCTAssertTrue(completed.waitingForConfirmation.isEmpty)
-        XCTAssertTrue(flags.addedShareKeyCalls.isEmpty)
-        do {
-            try await ada.confirmWaitingShare(
-                PasswordWaitingShare(itemId: secret.id, itemName: nil, recipient: PasswordRecipient(view: malloryView, knownPublicKey: malloryView.publicKey)))
-            XCTFail("the owner's record does not reach Mallory")
-        } catch {
-            XCTAssertEqual(error as? PasswordsError, .itemNotFound)
-        }
         XCTAssertTrue(flags.addedShareKeyCalls.isEmpty)
 
         // A new key for the secret item is not sealed for her either.
@@ -397,8 +384,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let item = try await ada.save(fields: loginFields())
         let recipients = try await ada.recipients(granteeCircleId: "circle-one")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients,
-            confirmedUserIds: ["user-grace", "user-linus"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients)
         try await linus.sync()
         let linusOpened = try await linus.item(id: item.id)
         XCTAssertEqual(linusOpened.fields.withAccess(nil), loginFields())
@@ -416,7 +402,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let stillMarked = await ada.itemIdsNeedingNewKey
         XCTAssertEqual(stillMarked, [])
 
-        // Grace keeps her access (her key was confirmed here); Linus is gone.
+        // Grace keeps her access (she held a key when this device last saw the item); Linus is gone.
         try await grace.sync()
         let graceOpened = try await grace.item(id: item.id)
         XCTAssertEqual(graceOpened.fields.withAccess(nil), loginFields(password: "changed afterwards"))
@@ -434,8 +420,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let item = try await first.save(fields: loginFields())
         let recipients = try await first.recipients(granteeUserId: "user-ben")
         _ = try await first.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients,
-            confirmedUserIds: ["user-ben"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients)
         await server.setRekeyRefusal("api: internal error")
         do {
             _ = try await first.setShares(itemId: item.id, grantees: [], recipients: [])
@@ -457,7 +442,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         XCTAssertEqual(stillMarked, [])
     }
 
-    func testMarkedItemsAreGivenANewKeyAfterASyncAndPeopleWhoseKeyIsNotConfirmedHereAreLeftWaiting() async throws {
+    func testMarkedItemsAreGivenANewKeyAfterASyncAndPeopleThisDeviceNeverSawHoldingAKeyAreSealedForByTheWaitingShares() async throws {
         let server = await makeServer([("user-ada", "Ada"), ("user-grace", "Grace"), ("user-linus", "Linus")])
         await server.setCircle("circle-one", members: ["user-ada", "user-grace", "user-linus"])
         let first = makeSession(server, userId: "user-ada")
@@ -466,21 +451,24 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let item = try await first.save(fields: loginFields())
         let recipients = try await first.recipients(granteeCircleId: "circle-one")
         _ = try await first.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients,
-            confirmedUserIds: ["user-grace", "user-linus"])
-        // A second device of Ada has confirmed nobody.
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients)
+        // A second device of Ada has not seen anybody hold a key for the item.
         let second = makeSession(server, userId: "user-ada")
         _ = try await second.unlock(passphrase: "ada invented passphrase")
         try await second.sync()
-        // Grace is removed from the circle and added again: the item is marked, and her key was never confirmed on the second device.
+        // Grace is removed from the circle and added again: the item is marked, and the second device never saw her hold a key.
         await server.setCircle("circle-one", members: ["user-ada", "user-linus"])
         await server.setCircle("circle-one", members: ["user-ada", "user-grace", "user-linus"])
         try await second.sync()
         let given = await second.giveNewKeysToMarkedItems()
         XCTAssertEqual(given, [item.id])
+        // The automatic new key did not widen anything; the waiting shares are sealed for both at once.
+        let storedAfterRekey = await server.item(item.id)
+        XCTAssertEqual(storedAfterRekey?.keys.count, 0)
         let completed = try await second.completeWaitingShares()
-        XCTAssertEqual(Set(completed.waitingForConfirmation.map(\.recipient.userId)), ["user-grace", "user-linus"])
-        XCTAssertEqual(completed.addedKeyCount, 0)
+        XCTAssertEqual(completed.addedKeyCount, 2)
+        let afterCompletion = await server.item(item.id)
+        XCTAssertEqual(Set(afterCompletion?.keys.keys.map { $0 } ?? []), ["user-grace", "user-linus"])
     }
 
     // MARK: Share keys name the item key
@@ -498,10 +486,9 @@ final class PasswordsAccessFlowTests: XCTestCase {
             itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: early)
         let grace = makeSession(server, userId: "user-grace")
         try await setUp(grace, passphrase: "grace invented passphrase")
-        // The person confirms Grace's key on the waiting screen.
-        let waiting = try await ada.completeWaitingShares()
-        let entry = try XCTUnwrap(waiting.waitingForConfirmation.first)
-        try await ada.confirmWaitingShare(entry)
+        // Ada's device seals for Grace's key at once.
+        let completed = try await ada.completeWaitingShares()
+        XCTAssertEqual(completed.addedKeyCount, 1)
         let stored = await server.item(item.id)
         XCTAssertEqual(flags.addedShareKeyCalls.count, 1)
         XCTAssertEqual(flags.addedShareKeyCalls.first?.first?.itemKey, stored?.itemKeyByAccountKey)
@@ -517,12 +504,11 @@ final class PasswordsAccessFlowTests: XCTestCase {
         try await setUp(ada, passphrase: "ada invented passphrase")
         let grace = makeSession(server, userId: "user-grace")
         try await setUp(grace, passphrase: "grace invented passphrase")
-        // Ada confirmed Grace's key before, for another item.
+        // Ada knows Grace's key from sharing another item with her.
         let other = try await ada.save(fields: loginFields(name: "Other"))
         let graceRecipients = try await ada.recipients(granteeUserId: "user-grace")
         _ = try await ada.setShares(
-            itemId: other.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: graceRecipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: other.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: graceRecipients)
         let item = try await ada.save(fields: loginFields())
         let recipients = try await ada.recipients(granteeCircleId: "circle-one")
         _ = try await ada.setShares(
@@ -561,7 +547,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         }
     }
 
-    func testAnOwnersKeyIsRecordedAsSeenOnlyAfterAnItemOfTheirsOpened() async throws {
+    func testAnOwnersKeyIsRecordedAsKnownOnlyAfterAnItemOfTheirsOpened() async throws {
         let server = await makeServer([("user-ada", "Ada"), ("user-grace", "Grace")])
         let flags = HookedServerFlags()
         let ada = makeSession(server, userId: "user-ada")
@@ -572,8 +558,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let item = try await ada.save(fields: loginFields())
         let recipients = try await ada.recipients(granteeUserId: "user-grace")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
 
         // The server hands Grace the item with its sealed fields damaged: it does not open, so nothing is recorded.
         flags.damagedFieldsByItemId[item.id] = "{}"
@@ -589,11 +574,11 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let opened = try await grace.item(id: item.id)
         XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
         let adaKey = await server.publicKey(of: "user-ada")
-        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace").seenPublicKeys, ["user-ada": adaKey])
-        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace").confirmedPublicKeys, [:])
+        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace").knownPublicKeys, ["user-ada": adaKey])
+        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace").comparedPublicKeys, [:])
     }
 
-    func testTrustingAnOwnersChangedKeyRecordsItAsConfirmedSoTheyCanBeSharedWith() async throws {
+    func testAChangedOwnerKeyThatOpensNothingIsNotRecordedAndComparingCodesMarksTheNewKeyCompared() async throws {
         let server = await makeServer([("user-ada", "Ada"), ("user-grace", "Grace")])
         let ada = makeSession(server, userId: "user-ada")
         try await setUp(ada, passphrase: "ada invented passphrase")
@@ -603,22 +588,30 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let item = try await ada.save(fields: loginFields())
         let recipients = try await ada.recipients(granteeUserId: "user-grace")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
         try await grace.sync()
-        // Ada's key changes (here the server shows another key), then Grace compares the codes and trusts it.
+        let oldKey = await server.publicKey(of: "user-ada")
+        // The server shows another key for Ada without sealing the item key for it: the item opens
+        // with nothing, so the key is not recorded and there is no notice.
         let newKey = PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()
         await server.replacePublicKey(userId: "user-ada", publicKey: newKey)
         await server.setRevision(itemId: item.id, revision: 900)
         try await grace.sync(isFull: true)
-        let changes = await grace.ownerKeyChanges()
-        let change = try XCTUnwrap(changes.first)
-        try await grace.trustOwnerKey(userId: change.userId, expectedPublicKey: change.newPublicKey)
+        let listed = try await grace.list()
+        XCTAssertEqual(listed.unreadableItemIds, [item.id])
+        let noticeCount = await grace.keyChanges().count
+        XCTAssertEqual(noticeCount, 0)
+        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace").knownPublicKeys["user-ada"], oldKey)
+
+        // Comparing codes with the key the person was shown records it, marked as compared.
+        try await grace.markCompared(userId: "user-ada", publicKey: newKey)
         let pins = try graceCache.loadPins(userId: "user-grace")
-        XCTAssertEqual(pins.confirmedPublicKeys["user-ada"], newKey)
-        XCTAssertEqual(pins.seenPublicKeys["user-ada"], newKey)
+        XCTAssertEqual(pins.knownPublicKeys["user-ada"], newKey)
+        XCTAssertEqual(pins.comparedPublicKeys["user-ada"], newKey)
+        XCTAssertEqual(pins.changedPublicKeys, [:])
         let recipientsOfAda = await grace.recipients(
             of: [PasswordRecipientView(userId: "user-ada", name: "Ada", username: "ada", publicKey: newKey, hasKey: false)])
         XCTAssertEqual(recipientsOfAda.first?.keyTrust, .known)
+        XCTAssertEqual(recipientsOfAda.first?.isCompared, true)
     }
 }

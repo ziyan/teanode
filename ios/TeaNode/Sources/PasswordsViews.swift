@@ -52,11 +52,6 @@ struct PasswordsScreen: View {
                 path = []
                 editing = nil
             }
-            // People who wait for the person's OK are listed at the top of the list: go back to it.
-            .onChange(of: model.confirmationRequestCount) {
-                path = []
-                editing = nil
-            }
             // Coming back to the app from another one asks for Face ID again if Passwords locked meanwhile.
             .onChange(of: scenePhase) { previous, current in
                 if previous == .background, current == .active, model.phase == .locked {
@@ -292,7 +287,7 @@ struct PasswordsListView: View {
 
     private var list: some View {
         List {
-            keyConfirmationSections
+            keyChangeSection
             Section {
                 ForEach(shownItems) { item in
                     NavigationLink(value: PasswordsDestination.item(item.id)) {
@@ -311,25 +306,14 @@ struct PasswordsListView: View {
         .refreshable { await model.sync() }
     }
 
-    /// Keys the person has to decide on: an owner whose key changed (their shared items stay closed), and people waiting for an item of the person's whose key is new or changed.
+    /// Notices of keys that changed: each was accepted, nothing waits on it, and it stays until it is dismissed.
     @ViewBuilder
-    private var keyConfirmationSections: some View {
-        if !model.ownerKeyChanges.isEmpty {
+    private var keyChangeSection: some View {
+        if !model.keyChanges.isEmpty {
             Section {
-                ForEach(model.ownerKeyChanges) { change in
-                    PasswordsOwnerKeyChangeRow(change: change) { Task { await model.trustOwnerKey(of: change) } }
+                ForEach(model.keyChanges) { change in
+                    PasswordsKeyChangeRow(model: model, change: change)
                 }
-            }
-        }
-        if !model.waitingConfirmations.isEmpty {
-            Section {
-                ForEach(model.waitingConfirmations, id: \.self) { waiting in
-                    PasswordsWaitingConfirmationRow(waiting: waiting) { Task { await model.confirmWaitingShare(waiting) } }
-                }
-            } header: {
-                Text("Waiting for your OK")
-            } footer: {
-                Text("These people cannot open an item of yours yet. Ask each person to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
             }
         }
     }
@@ -465,6 +449,7 @@ struct PasswordsDeletedScreen: View {
                                 } label: {
                                     Label("Delete forever", systemImage: "trash")
                                 }
+                                .tint(.red)
                                 Button {
                                     Task { await restore(item) }
                                 } label: {

@@ -149,8 +149,7 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
         let item = try await ada.save(fields: login(name: "Shared by Ada"))
         let recipients = try await ada.recipients(granteeUserId: "user-grace")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
         let graceKey = try await grace.unlock(passphrase: "grace invented passphrase").accountKey
         try await grace.sync()
         let summary = try PasswordsAutoFillSummary.open(
@@ -223,15 +222,14 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
             userId: "user-ada", isLoadingItemsOnDemand: true)
         try await autoFill.open(accountKey: unlocked.accountKey)
 
-        // The app confirms Ben's key and shares with him; the extension still holds the copy from before.
+        // The app shares with Ben; the extension still holds the copy from before.
         let ben = PasswordsSession(
             api: FakePasswordsAPI(server: server, userId: "user-ben"),
             cache: PasswordsCache(fileURL: directory.appendingPathComponent("ben.json")), userId: "user-ben")
         _ = try await ben.setUp(passphrase: "ben invented passphrase", iterationCount: iterationCount)
         let recipients = try await app.recipients(granteeUserId: "user-ben")
         _ = try await app.setShares(
-            itemId: alpha.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients,
-            confirmedUserIds: ["user-ben"])
+            itemId: alpha.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients)
         let revisionBefore = try XCTUnwrap(try appCache.loadHeader()).revision
 
         // The extension saves a passkey into a new login.
@@ -242,7 +240,7 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
         let loaded = try XCTUnwrap(try appCache.load())
         XCTAssertEqual(Set(loaded.items.map(\.id)), [alpha.id, fromExtension.id, fromApp.id])
         XCTAssertGreaterThanOrEqual(loaded.revision, revisionBefore)
-        XCTAssertNotNil(loaded.confirmedPublicKeys["user-ben"], "the confirmed key survives both saves")
+        XCTAssertNotNil(loaded.knownPublicKeys["user-ben"], "the known key survives both saves")
         let summary = try PasswordsAutoFillSummary.open(
             try XCTUnwrap(try appCache.loadSummaryData()), accountKey: unlocked.accountKey, userId: "user-ada")
         XCTAssertEqual(Set(summary.logins.map(\.itemId)), [alpha.id, fromExtension.id, fromApp.id])
@@ -255,7 +253,7 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
 
     // MARK: Pinned keys
 
-    func testAFileInTheSharedFolderCannotPlantAConfirmedKeyWhenThePinsAreKeptElsewhere() async throws {
+    func testAFileInTheSharedFolderCannotPlantAKnownKeyWhenThePinsAreKeptElsewhere() async throws {
         let server = await makeServer([("user-ada", "Ada"), ("user-mallory", "Mallory")])
         await server.setCircle("circle-one", members: ["user-ada", "user-mallory"])
         let cache = PasswordsCache(fileURL: makeDirectory().appendingPathComponent("passwords.json"), pinStore: PasswordsMemoryPinStore())
@@ -272,16 +270,18 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
         let operatorKey = await server.publicKey(of: "user-mallory")
 
         // What a process that shares the app group folder can do: write the pins file.
-        let planted = PasswordsPins(userId: "user-ada", confirmedPublicKeys: ["user-mallory": operatorKey])
+        let plantedKey = PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()
+        let planted = PasswordsPins(userId: "user-ada", knownPublicKeys: ["user-mallory": plantedKey])
         try JSONEncoder().encode(planted).write(to: cache.pinsFileURL, options: .atomic)
 
         let relaunched = PasswordsSession(api: FakePasswordsAPI(server: server, userId: "user-ada"), cache: cache, userId: "user-ada")
         _ = try await relaunched.unlock(passphrase: "ada invented passphrase")
         let completed = try await relaunched.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 0)
-        XCTAssertEqual(completed.waitingForConfirmation.count, 1)
+        // The planted file is not read, so the key the server gives is the first one seen, and it is the one sealed for.
+        XCTAssertEqual(completed.addedKeyCount, 1)
         let stored = await server.item(item.id)
-        XCTAssertNil(stored?.keys["user-mallory"])
+        XCTAssertEqual(stored?.keys["user-mallory"]?.recipientPublicKey, operatorKey)
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").knownPublicKeys["user-mallory"], operatorKey)
     }
 
     func testPinsThatCannotBeReadAreNotTakenForNoneAndAreNotWrittenOver() async throws {
@@ -298,8 +298,7 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
         let item = try await ada.save(fields: login(name: "Example"))
         let graceRecipients = try await ada.recipients(granteeUserId: "user-grace")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: graceRecipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: graceRecipients)
         let known = try await ada.recipients(granteeUserId: "user-grace")
         XCTAssertEqual(known.first?.keyTrust, .known)
 
@@ -314,8 +313,8 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
             _ = try await ada.setShares(
                 itemId: item.id,
                 grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace"), PasswordShareGranteeInput(granteeUserId: "user-linus")],
-                recipients: graceRecipients + linusRecipients, confirmedUserIds: ["user-linus"])
-            XCTFail("the confirmation could not be written")
+                recipients: graceRecipients + linusRecipients)
+            XCTFail("the key could not be recorded")
         } catch {
             XCTAssertEqual(error as? PasswordsPinStoreError, .unreadable)
         }

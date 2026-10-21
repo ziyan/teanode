@@ -68,8 +68,8 @@ public struct PasswordsItemMemory: Codable, Equatable, Sendable {
         self.hadAgentCopy = hadAgentCopy
     }
 
-    /// Most key holders remembered for one item. Somebody beyond this is left waiting for the
-    /// person's OK after an automatic new key, which is the safe side.
+    /// Most key holders remembered for one item. Somebody beyond this is not sealed for by an
+    /// automatic new key, which is the safe side.
     public static let mostKeyHolderUserIds = 1000
 }
 
@@ -80,50 +80,80 @@ public struct PasswordsItemMemory: Codable, Equatable, Sendable {
 /// or an older record must not be able to make the phone forget them) and goes only when the
 /// sign-in is removed.
 public struct PasswordsPins: Codable, Equatable, Sendable {
-    public static let currentFormatVersion = 1
+    public static let currentFormatVersion = 2
 
     public var formatVersion: Int
     /// The signed-in person's id, so one person's pins are never read as another's.
     public var userId: String
-    /// The key each person had the first time one of their shared items arrived, by user id
-    /// (standard base64, 65 bytes). Nobody compared its safety code. It opens that person's
-    /// shared items and warns when their key changes; it never lets this device seal a key.
-    public var seenPublicKeys: [String: String]
-    /// The key the person confirmed by comparing its safety code, by user id. Only these keys
-    /// let this device seal an item key for somebody without asking.
-    public var confirmedPublicKeys: [String: String]
+    /// The one key this device knows for each person, by user id (standard base64, 65 bytes):
+    /// the first key it saw for them, from any source (sharing with them, an item they shared,
+    /// a waiting share), replaced when the server later gives another and the item opens with it
+    /// (`changedPublicKeys` then holds the one it replaced). It opens that person's shared items
+    /// and is sealed for without asking.
+    public var knownPublicKeys: [String: String]
+    /// The key the person compared safety codes for, by user id. The person is shown "Codes
+    /// compared" while it is the known key. It gates nothing.
+    public var comparedPublicKeys: [String: String]
+    /// For each person whose known key changed and whose notice the person has not dismissed, the
+    /// key it replaced, by user id.
+    public var changedPublicKeys: [String: String]
     /// What this device remembers about each item the person owns, by item id.
     public var itemMemories: [String: PasswordsItemMemory]
 
     public init(
-        userId: String, seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:],
-        itemMemories: [String: PasswordsItemMemory] = [:]
+        userId: String, knownPublicKeys: [String: String] = [:], comparedPublicKeys: [String: String] = [:],
+        changedPublicKeys: [String: String] = [:], itemMemories: [String: PasswordsItemMemory] = [:]
     ) {
         self.formatVersion = Self.currentFormatVersion
         self.userId = userId
-        self.seenPublicKeys = seenPublicKeys
-        self.confirmedPublicKeys = confirmedPublicKeys
+        self.knownPublicKeys = knownPublicKeys
+        self.comparedPublicKeys = comparedPublicKeys
+        self.changedPublicKeys = changedPublicKeys
         self.itemMemories = itemMemories
     }
 
     private enum CodingKeys: String, CodingKey {
-        case formatVersion, userId, seenPublicKeys, confirmedPublicKeys, itemMemories
+        case formatVersion, userId, knownPublicKeys, comparedPublicKeys, changedPublicKeys, itemMemories
+        // The first version kept two stores, a key first seen and a key confirmed.
+        case seenPublicKeys, confirmedPublicKeys
     }
 
-    /// Reads pins written before items had a memory too: they have none.
+    /// Reads pins of this version, and the first version's too: its confirmed key becomes the
+    /// known and the compared key, a key only seen becomes the known one.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        formatVersion = try container.decode(Int.self, forKey: .formatVersion)
+        let storedFormatVersion = try container.decode(Int.self, forKey: .formatVersion)
         userId = try container.decode(String.self, forKey: .userId)
-        seenPublicKeys = try container.decode([String: String].self, forKey: .seenPublicKeys)
-        confirmedPublicKeys = try container.decode([String: String].self, forKey: .confirmedPublicKeys)
         itemMemories = try container.decodeIfPresent([String: PasswordsItemMemory].self, forKey: .itemMemories) ?? [:]
+        if storedFormatVersion >= 2 {
+            formatVersion = storedFormatVersion
+            knownPublicKeys = try container.decode([String: String].self, forKey: .knownPublicKeys)
+            comparedPublicKeys = try container.decodeIfPresent([String: String].self, forKey: .comparedPublicKeys) ?? [:]
+            changedPublicKeys = try container.decodeIfPresent([String: String].self, forKey: .changedPublicKeys) ?? [:]
+        } else {
+            formatVersion = Self.currentFormatVersion
+            let seen = try container.decodeIfPresent([String: String].self, forKey: .seenPublicKeys) ?? [:]
+            let confirmed = try container.decodeIfPresent([String: String].self, forKey: .confirmedPublicKeys) ?? [:]
+            knownPublicKeys = seen.merging(confirmed) { _, confirmedKey in confirmedKey }
+            comparedPublicKeys = confirmed
+            changedPublicKeys = [:]
+        }
     }
 
-    /// The key to open a person's shared items with and to compare their items against: the
-    /// confirmed one when there is one, else the one first seen.
-    public func ownerPublicKey(forUserId otherUserId: String) -> String? {
-        confirmedPublicKeys[otherUserId] ?? seenPublicKeys[otherUserId]
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(formatVersion, forKey: .formatVersion)
+        try container.encode(userId, forKey: .userId)
+        try container.encode(knownPublicKeys, forKey: .knownPublicKeys)
+        try container.encode(comparedPublicKeys, forKey: .comparedPublicKeys)
+        try container.encode(changedPublicKeys, forKey: .changedPublicKeys)
+        try container.encode(itemMemories, forKey: .itemMemories)
+    }
+
+    /// Whether the person compared safety codes for this person's key as it is known now.
+    public func isCompared(userId otherUserId: String) -> Bool {
+        guard let known = knownPublicKeys[otherUserId] else { return false }
+        return comparedPublicKeys[otherUserId] == known
     }
 }
 
@@ -146,14 +176,14 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
     /// Every item the person can reach, owned ones deleted in the last 30 days included. Each is
     /// stored in a file of its own, not in the header; a header loaded without its items has none.
     public var items: [PasswordItemView]
-    /// The key each owner of a shared item had when the first of their items opened, by user
-    /// id (standard base64, 65 bytes). Public data. It opens that owner's items and warns when
-    /// the key changes; nobody compared its safety code, so it never lets this device seal an
-    /// item key. Read from the pin store, not from the cache files.
-    public var seenPublicKeys: [String: String]
-    /// The keys the person confirmed by comparing safety codes, by user id. A device seals an
-    /// item key without asking only for a key in here. Read from the pin store, not from the cache files.
-    public var confirmedPublicKeys: [String: String]
+    /// The one key this device knows for each person, by user id (standard base64, 65 bytes).
+    /// Public data. Read from the pin store, not from the cache files.
+    public var knownPublicKeys: [String: String]
+    /// The key the person compared safety codes for, by user id. Read from the pin store.
+    public var comparedPublicKeys: [String: String]
+    /// The key each person's known key replaced, by user id, until the person dismisses the
+    /// notice. Read from the pin store.
+    public var changedPublicKeys: [String: String]
     /// What this device remembers about each item the person owns, by item id. Read from the pin
     /// store, not from the cache files.
     public var itemMemories: [String: PasswordsItemMemory]
@@ -162,19 +192,21 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
     public var pins: PasswordsPins {
         get {
             PasswordsPins(
-                userId: userId, seenPublicKeys: seenPublicKeys, confirmedPublicKeys: confirmedPublicKeys, itemMemories: itemMemories)
+                userId: userId, knownPublicKeys: knownPublicKeys, comparedPublicKeys: comparedPublicKeys,
+                changedPublicKeys: changedPublicKeys, itemMemories: itemMemories)
         }
         set {
-            seenPublicKeys = newValue.seenPublicKeys
-            confirmedPublicKeys = newValue.confirmedPublicKeys
+            knownPublicKeys = newValue.knownPublicKeys
+            comparedPublicKeys = newValue.comparedPublicKeys
+            changedPublicKeys = newValue.changedPublicKeys
             itemMemories = newValue.itemMemories
         }
     }
 
     public init(
         userId: String, publicKey: String, privateKeyByAccountKey: String, revision: Int64 = 0, lockAfterMinutes: Int,
-        items: [PasswordItemView] = [], seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:],
-        itemMemories: [String: PasswordsItemMemory] = [:]
+        items: [PasswordItemView] = [], knownPublicKeys: [String: String] = [:], comparedPublicKeys: [String: String] = [:],
+        changedPublicKeys: [String: String] = [:], itemMemories: [String: PasswordsItemMemory] = [:]
     ) {
         self.formatVersion = Self.currentFormatVersion
         self.userId = userId
@@ -183,8 +215,9 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
         self.revision = revision
         self.lockAfterMinutes = lockAfterMinutes
         self.items = items
-        self.seenPublicKeys = seenPublicKeys
-        self.confirmedPublicKeys = confirmedPublicKeys
+        self.knownPublicKeys = knownPublicKeys
+        self.comparedPublicKeys = comparedPublicKeys
+        self.changedPublicKeys = changedPublicKeys
         self.itemMemories = itemMemories
     }
 
@@ -202,8 +235,9 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
         revision = try container.decode(Int64.self, forKey: .revision)
         lockAfterMinutes = try container.decode(Int.self, forKey: .lockAfterMinutes)
         items = []
-        seenPublicKeys = [:]
-        confirmedPublicKeys = [:]
+        knownPublicKeys = [:]
+        comparedPublicKeys = [:]
+        changedPublicKeys = [:]
         itemMemories = [:]
     }
 
@@ -495,14 +529,25 @@ public struct PasswordsCache: Sendable {
         }
     }
 
-    /// Records a key seen on the first shared item of an owner that opened, unless a key is known already.
-    public func recordSeenIfAbsent(userId: String, ownerUserId: String, publicKey: String) throws {
-        try pinStore.recordSeenIfAbsent(userId: userId, ownerUserId: ownerUserId, publicKey: publicKey)
+    /// Records the first key seen for a person, unless a key is known for them already.
+    public func recordKnownIfAbsent(userId: String, otherUserId: String, publicKey: String) throws {
+        try pinStore.recordKnownIfAbsent(userId: userId, otherUserId: otherUserId, publicKey: publicKey)
     }
 
-    /// Records a key the person confirmed by comparing safety codes.
-    public func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws {
-        try pinStore.recordConfirmed(userId: userId, ownerUserId: ownerUserId, publicKey: publicKey)
+    /// Accepts another key for a person: it becomes the known one, and the key it replaced is
+    /// kept for the changed-key notice until the person dismisses it.
+    public func recordChangedKey(userId: String, otherUserId: String, publicKey: String) throws {
+        try pinStore.recordChangedKey(userId: userId, otherUserId: otherUserId, publicKey: publicKey)
+    }
+
+    /// Records that the person compared safety codes for this key. It also clears the notice.
+    public func recordCompared(userId: String, otherUserId: String, publicKey: String) throws {
+        try pinStore.recordCompared(userId: userId, otherUserId: otherUserId, publicKey: publicKey)
+    }
+
+    /// Dismisses the changed-key notice of a person.
+    public func dismissKeyChange(userId: String, otherUserId: String) throws {
+        try pinStore.dismissKeyChange(userId: userId, otherUserId: otherUserId)
     }
 
     /// Remembers that an owned item's access record was seen at this version with a valid

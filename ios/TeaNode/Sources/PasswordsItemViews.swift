@@ -346,7 +346,7 @@ struct PasswordsItemScreen: View {
         defer { isWorking = false }
         do {
             try await model.setUsableByAgent(item, isUsable: isOn)
-            // The toast may already say who is waiting for the person's OK after the new key.
+            // The toast may already say who got access after the new key.
             if model.doneText == nil {
                 model.doneText =
                     isOn

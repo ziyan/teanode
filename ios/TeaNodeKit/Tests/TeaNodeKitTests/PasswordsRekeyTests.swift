@@ -97,8 +97,8 @@ final class PasswordsRekeyTests: XCTestCase {
         XCTAssertEqual(rekeyCallCount, 0)
     }
 
-    /// Ada has two devices. The first shares an item with Grace; the second shares it with Linus and Heidi and confirms
-    /// their keys, which the first never did.
+    /// Ada has two devices. The first shares an item with Grace; the second shares it with Linus and Heidi, whose
+    /// keys the first never saw.
     private func makeSharedWorld() async throws -> (
         server: FakePasswordsServer, ada: PasswordsSession, people: [String: PasswordsSession], itemId: String
     ) {
@@ -114,8 +114,7 @@ final class PasswordsRekeyTests: XCTestCase {
         let item = try await ada.save(fields: loginFields())
         let graceRecipients = try await ada.recipients(granteeUserId: "user-grace")
         _ = try await ada.setShares(
-            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: graceRecipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: graceRecipients)
 
         let secondDevice = makeDevice(server, userId: "user-ada")
         _ = try await secondDevice.unlock(passphrase: "ada invented passphrase")
@@ -125,13 +124,13 @@ final class PasswordsRekeyTests: XCTestCase {
         let linusAndHeidi = linusRecipients + heidiRecipients
         let everyone = ["user-grace", "user-linus", "user-heidi"].map { PasswordShareGranteeInput(granteeUserId: $0) }
         _ = try await secondDevice.setShares(
-            itemId: item.id, grantees: everyone, recipients: linusAndHeidi, confirmedUserIds: ["user-linus", "user-heidi"])
+            itemId: item.id, grantees: everyone, recipients: linusAndHeidi)
         try await ada.sync()
         for session in people.values { try await session.sync() }
         return (server, ada, people, item.id)
     }
 
-    func testRemovingSomebodyKeepsAConfirmedRecipientDropsTheRemovedOneAndLeavesAnUnconfirmedOneWaiting() async throws {
+    func testRemovingSomebodyKeepsEveryoneTheRecordStillReachesAndDropsTheRemovedOne() async throws {
         let world = try await makeSharedWorld()
         for userId in ["user-grace", "user-linus", "user-heidi"] {
             let opened = try await XCTUnwrap(world.people[userId]).item(id: world.itemId)
@@ -141,7 +140,7 @@ final class PasswordsRekeyTests: XCTestCase {
         let before = try XCTUnwrap(beforeOptional)
         let graceKeyBefore = try XCTUnwrap(before.keys["user-grace"]?.itemKeyByRecipientKey)
 
-        // Heidi is removed. Grace's key was confirmed on this device; Linus's was confirmed only on the other one.
+        // Heidi is removed. Grace's key is known on this device; Linus's was first seen only on the other one.
         let narrower = ["user-grace", "user-linus"].map { PasswordShareGranteeInput(granteeUserId: $0) }
         let result = try await world.ada.setShares(itemId: world.itemId, grantees: narrower, recipients: [])
         XCTAssertEqual(result.fields.withAccess(nil), loginFields())
@@ -151,7 +150,8 @@ final class PasswordsRekeyTests: XCTestCase {
         XCTAssertNotNil(after.keys["user-grace"])
         XCTAssertNotEqual(after.keys["user-grace"]?.itemKeyByRecipientKey, graceKeyBefore)
         XCTAssertNil(after.keys["user-heidi"])
-        XCTAssertNil(after.keys["user-linus"])
+        // The person chose who keeps access, so the new key is sealed at once for Linus too.
+        XCTAssertNotNil(after.keys["user-linus"])
         let isRekeyed = await world.ada.needsNewKey(itemId: world.itemId)
         XCTAssertFalse(isRekeyed)
 
@@ -165,20 +165,13 @@ final class PasswordsRekeyTests: XCTestCase {
         let heidiResult = try await heidi.sync()
         XCTAssertEqual(heidiResult.removedItemIds, [world.itemId])
 
-        // Linus is waiting, and the person is asked for the safety code as for any waiting share.
+        // Linus keeps access with the new key and nobody is left waiting.
         let linus = try XCTUnwrap(world.people["user-linus"])
-        let linusResult = try await linus.sync()
-        XCTAssertEqual(linusResult.removedItemIds, [world.itemId])
-        let waiting = try await world.ada.waitingShares()
-        XCTAssertEqual(waiting.map(\.recipient.userId), ["user-linus"])
-        XCTAssertEqual(waiting.first?.recipient.keyTrust, .new)
-        let completed = try await world.ada.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 0)
-        XCTAssertEqual(completed.waitingForConfirmation.map(\.recipient.userId), ["user-linus"])
-        try await world.ada.confirmWaitingShare(try XCTUnwrap(completed.waitingForConfirmation.first))
         try await linus.sync()
         let linusOpened = try await linus.item(id: world.itemId)
         XCTAssertEqual(linusOpened.fields.withAccess(nil), loginFields(password: "changed afterwards"))
+        let waiting = try await world.ada.waitingShares()
+        XCTAssertEqual(waiting, [])
     }
 
     func testARekeyThatFailsAfterTheRemovalLeavesTheRemovalAndCanBeRetried() async throws {

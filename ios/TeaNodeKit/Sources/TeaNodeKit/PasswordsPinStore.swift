@@ -1,9 +1,10 @@
 import Foundation
 
-// Where a device keeps the public keys it holds for other people: the key each
-// owner of a shared item had when their first item opened ("seen"), and the key
-// the person confirmed by comparing safety codes ("confirmed"). They decide
-// which items open and for whom this device seals an item key, so whoever can
+// Where a device keeps the public keys it holds for other people: the one key it
+// knows for each person (the first it saw, replaced when the person's key
+// changes), whether the person compared safety codes for it, and the key a
+// changed one replaced until the person dismisses the notice. They decide which
+// shared items open and for whom this device seals an item key, so whoever can
 // write them can make the device seal for a key of their choosing.
 //
 // On the phone they live in the keychain, in the group only the app and the
@@ -28,12 +29,17 @@ public protocol PasswordsPinStore: Sendable {
     /// The keys pinned for this person. Empty when there are none; throws
     /// `PasswordsPinStoreError.unreadable` when something is stored but cannot be read.
     func loadPins(userId: String) throws -> PasswordsPins
-    /// Records a seen key for an owner, only when none is recorded for that owner. A key
-    /// that is already there (seen or not) is left alone.
-    func recordSeenIfAbsent(userId: String, ownerUserId: String, publicKey: String) throws
-    /// Records a key the person confirmed by comparing safety codes. It replaces the seen key
-    /// of that person too, so their items are checked against it.
-    func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws
+    /// Records the first key seen for a person, only when none is known for them. A key that is
+    /// already there is left alone.
+    func recordKnownIfAbsent(userId: String, otherUserId: String, publicKey: String) throws
+    /// Accepts another key for a person: it becomes the known one, and the key it replaced is
+    /// kept until the notice is dismissed. Does nothing when it is the known key already.
+    func recordChangedKey(userId: String, otherUserId: String, publicKey: String) throws
+    /// Records that the person compared safety codes for this key. It becomes the known key if
+    /// none was known, and the person's changed-key notice is cleared.
+    func recordCompared(userId: String, otherUserId: String, publicKey: String) throws
+    /// Dismisses the changed-key notice of a person.
+    func dismissKeyChange(userId: String, otherUserId: String) throws
     /// Remembers that an owned item's access record was seen with this version and a valid
     /// signature. Never lowers what is remembered.
     func raiseRecordVersion(userId: String, itemId: String, version: Int) throws
@@ -42,6 +48,37 @@ public protocol PasswordsPinStore: Sendable {
     func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws
     /// Forgets every pinned key and item memory of the sign-in.
     func removeAll() throws
+}
+
+extension PasswordsPins {
+    /// The pins with the first key seen for a person added, when none is known.
+    func recordingKnownIfAbsent(otherUserId: String, publicKey: String) -> PasswordsPins {
+        var recorded = self
+        if recorded.knownPublicKeys[otherUserId] == nil { recorded.knownPublicKeys[otherUserId] = publicKey }
+        return recorded
+    }
+
+    /// The pins with another key accepted for a person.
+    func recordingChangedKey(otherUserId: String, publicKey: String) -> PasswordsPins {
+        var recorded = self
+        guard let previous = recorded.knownPublicKeys[otherUserId] else {
+            recorded.knownPublicKeys[otherUserId] = publicKey
+            return recorded
+        }
+        guard previous != publicKey else { return recorded }
+        recorded.knownPublicKeys[otherUserId] = publicKey
+        recorded.changedPublicKeys[otherUserId] = previous
+        return recorded
+    }
+
+    /// The pins with a key marked as compared.
+    func recordingCompared(otherUserId: String, publicKey: String) -> PasswordsPins {
+        var recorded = self
+        if recorded.knownPublicKeys[otherUserId] == nil { recorded.knownPublicKeys[otherUserId] = publicKey }
+        recorded.comparedPublicKeys[otherUserId] = publicKey
+        recorded.changedPublicKeys[otherUserId] = nil
+        return recorded
+    }
 }
 
 extension PasswordsItemMemory {
@@ -67,53 +104,63 @@ extension PasswordsItemMemory {
 /// to stand in for the keychain when two caches must share one store.
 public final class PasswordsMemoryPinStore: PasswordsPinStore, @unchecked Sendable {
     private let lock = NSLock()
-    private var seen: [String: [String: String]] = [:]
-    private var confirmed: [String: [String: String]] = [:]
-    private var memories: [String: [String: PasswordsItemMemory]] = [:]
+    private var pinsByUserId: [String: PasswordsPins] = [:]
 
     public init() {}
+
+    private func update(userId: String, _ change: (PasswordsPins) -> PasswordsPins) {
+        lock.lock()
+        defer { lock.unlock() }
+        pinsByUserId[userId] = change(pinsByUserId[userId] ?? PasswordsPins(userId: userId))
+    }
 
     public func loadPins(userId: String) throws -> PasswordsPins {
         lock.lock()
         defer { lock.unlock() }
-        return PasswordsPins(
-            userId: userId, seenPublicKeys: seen[userId] ?? [:], confirmedPublicKeys: confirmed[userId] ?? [:],
-            itemMemories: memories[userId] ?? [:])
+        return pinsByUserId[userId] ?? PasswordsPins(userId: userId)
     }
 
-    public func recordSeenIfAbsent(userId: String, ownerUserId: String, publicKey: String) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        if confirmed[userId]?[ownerUserId] != nil || seen[userId]?[ownerUserId] != nil { return }
-        seen[userId, default: [:]][ownerUserId] = publicKey
+    public func recordKnownIfAbsent(userId: String, otherUserId: String, publicKey: String) throws {
+        update(userId: userId) { $0.recordingKnownIfAbsent(otherUserId: otherUserId, publicKey: publicKey) }
     }
 
-    public func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        confirmed[userId, default: [:]][ownerUserId] = publicKey
-        seen[userId, default: [:]][ownerUserId] = publicKey
+    public func recordChangedKey(userId: String, otherUserId: String, publicKey: String) throws {
+        update(userId: userId) { $0.recordingChangedKey(otherUserId: otherUserId, publicKey: publicKey) }
+    }
+
+    public func recordCompared(userId: String, otherUserId: String, publicKey: String) throws {
+        update(userId: userId) { $0.recordingCompared(otherUserId: otherUserId, publicKey: publicKey) }
+    }
+
+    public func dismissKeyChange(userId: String, otherUserId: String) throws {
+        update(userId: userId) {
+            var dismissed = $0
+            dismissed.changedPublicKeys[otherUserId] = nil
+            return dismissed
+        }
     }
 
     public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        memories[userId, default: [:]][itemId] = (memories[userId]?[itemId] ?? PasswordsItemMemory()).raised(to: version)
+        update(userId: userId) {
+            var raised = $0
+            raised.itemMemories[itemId] = ($0.itemMemories[itemId] ?? PasswordsItemMemory()).raised(to: version)
+            return raised
+        }
     }
 
     public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
-        lock.lock()
-        defer { lock.unlock() }
-        memories[userId, default: [:]][itemId] = (memories[userId]?[itemId] ?? PasswordsItemMemory()).holding(
-            keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy)
+        update(userId: userId) {
+            var holding = $0
+            holding.itemMemories[itemId] = ($0.itemMemories[itemId] ?? PasswordsItemMemory()).holding(
+                keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy)
+            return holding
+        }
     }
 
     public func removeAll() throws {
         lock.lock()
         defer { lock.unlock() }
-        seen = [:]
-        confirmed = [:]
-        memories = [:]
+        pinsByUserId = [:]
     }
 }
 
@@ -150,17 +197,23 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         try read(userId: userId)
     }
 
-    public func recordSeenIfAbsent(userId: String, ownerUserId: String, publicKey: String) throws {
-        var pins = try read(userId: userId)
-        guard pins.ownerPublicKey(forUserId: ownerUserId) == nil else { return }
-        pins.seenPublicKeys[ownerUserId] = publicKey
-        try write(pins)
+    public func recordKnownIfAbsent(userId: String, otherUserId: String, publicKey: String) throws {
+        let pins = try read(userId: userId)
+        guard pins.knownPublicKeys[otherUserId] == nil else { return }
+        try write(pins.recordingKnownIfAbsent(otherUserId: otherUserId, publicKey: publicKey))
     }
 
-    public func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws {
+    public func recordChangedKey(userId: String, otherUserId: String, publicKey: String) throws {
+        try write(try read(userId: userId).recordingChangedKey(otherUserId: otherUserId, publicKey: publicKey))
+    }
+
+    public func recordCompared(userId: String, otherUserId: String, publicKey: String) throws {
+        try write(try read(userId: userId).recordingCompared(otherUserId: otherUserId, publicKey: publicKey))
+    }
+
+    public func dismissKeyChange(userId: String, otherUserId: String) throws {
         var pins = try read(userId: userId)
-        pins.confirmedPublicKeys[ownerUserId] = publicKey
-        pins.seenPublicKeys[ownerUserId] = publicKey
+        pins.changedPublicKeys[otherUserId] = nil
         try write(pins)
     }
 
@@ -192,13 +245,17 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
     /// Passwords (the group `PasswordsKeychainKeyStore` uses), which only the app and the AutoFill
     /// extension are entitled to. The items are not synchronized, are never in a backup, and can be
     /// read once the phone has been unlocked after starting. The account of an item says what the key
-    /// is for (`seen` or `confirmed`, the signed-in person, the owner); its data is the public key text.
-    /// An item that does not read as a public key is skipped, so one damaged item never makes the
-    /// others disappear.
+    /// is for (`known`, `compared` or `changed`, the signed-in person, the other person); its data is the
+    /// public key text. An item that does not read as a public key is skipped, so one damaged item never
+    /// makes the others disappear. The first version kept `seen` and `confirmed` keys; `loadPins` moves
+    /// them into `known` (and `compared` for a confirmed one) once and deletes them.
     public struct PasswordsKeychainPinStore: PasswordsPinStore {
         static let servicePrefix = "com.teanode.app.passwords.pins."
-        private static let seenKind = "seen"
-        private static let confirmedKind = "confirmed"
+        private static let knownKind = "known"
+        private static let comparedKind = "compared"
+        private static let changedKind = "changed"
+        private static let legacySeenKind = "seen"
+        private static let legacyConfirmedKind = "confirmed"
         private static let itemKind = "item"
 
         public let signInAccountKey: String
@@ -249,8 +306,11 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
             if status == errSecItemNotFound { return PasswordsPins(userId: userId) }
             guard status == errSecSuccess, let found = items as? [[String: Any]] else { throw PasswordsPinStoreError.failed(status) }
             var pins = PasswordsPins(userId: userId)
-            let seenPrefix = "\(Self.seenKind)|\(userId)|"
-            let confirmedPrefix = "\(Self.confirmedKind)|\(userId)|"
+            var legacySeenKeys: [String: String] = [:]
+            var legacyConfirmedKeys: [String: String] = [:]
+            let prefixes = [Self.knownKind, Self.comparedKind, Self.changedKind, Self.legacySeenKind, Self.legacyConfirmedKind].map {
+                ($0, "\($0)|\(userId)|")
+            }
             let itemPrefix = "\(Self.itemKind)|\(userId)|"
             for attributes in found {
                 guard let account = attributes[kSecAttrAccount as String] as? String,
@@ -263,15 +323,49 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
                     continue
                 }
                 guard let text = String(data: data, encoding: .utf8), let keyBytes = Data(base64Encoded: text),
-                    PasswordsCrypto.isPublicKeyValid(keyBytes)
+                    PasswordsCrypto.isPublicKeyValid(keyBytes),
+                    let match = prefixes.first(where: { account.hasPrefix($0.1) })
                 else { continue }
-                if account.hasPrefix(seenPrefix) {
-                    pins.seenPublicKeys[String(account.dropFirst(seenPrefix.count))] = text
-                } else if account.hasPrefix(confirmedPrefix) {
-                    pins.confirmedPublicKeys[String(account.dropFirst(confirmedPrefix.count))] = text
+                let otherUserId = String(account.dropFirst(match.1.count))
+                switch match.0 {
+                case Self.knownKind: pins.knownPublicKeys[otherUserId] = text
+                case Self.comparedKind: pins.comparedPublicKeys[otherUserId] = text
+                case Self.changedKind: pins.changedPublicKeys[otherUserId] = text
+                case Self.legacySeenKind: legacySeenKeys[otherUserId] = text
+                default: legacyConfirmedKeys[otherUserId] = text
                 }
             }
+            migrateLegacyKeys(userId: userId, seenKeys: legacySeenKeys, confirmedKeys: legacyConfirmedKeys, into: &pins)
             return pins
+        }
+
+        /// Moves the first version's keys into the one known key of each person: a confirmed key
+        /// is also the compared one. A key is added before the old item is deleted, and one that
+        /// could not be added keeps its old item for the next read. Best effort, as the keys are
+        /// all in `pins` for this read either way.
+        private func migrateLegacyKeys(
+            userId: String, seenKeys: [String: String], confirmedKeys: [String: String], into pins: inout PasswordsPins
+        ) {
+            for (otherUserId, publicKey) in confirmedKeys {
+                pins.knownPublicKeys[otherUserId] = publicKey
+                pins.comparedPublicKeys[otherUserId] = publicKey
+                let isKnownKept = (try? put(
+                    kind: Self.knownKind, userId: userId, ownerUserId: otherUserId, publicKey: publicKey, isReplacing: true)) != nil
+                let isComparedKept = (try? put(
+                    kind: Self.comparedKind, userId: userId, ownerUserId: otherUserId, publicKey: publicKey, isReplacing: true)) != nil
+                if isKnownKept && isComparedKept {
+                    SecItemDelete(accountQuery(kind: Self.legacyConfirmedKind, userId: userId, ownerUserId: otherUserId) as CFDictionary)
+                }
+            }
+            for (otherUserId, publicKey) in seenKeys {
+                // A confirmed key, when there is one, was recorded as the seen key too and stands for the person.
+                if pins.knownPublicKeys[otherUserId] == nil { pins.knownPublicKeys[otherUserId] = publicKey }
+                let isKnownKept = (try? put(
+                    kind: Self.knownKind, userId: userId, ownerUserId: otherUserId, publicKey: publicKey, isReplacing: false)) != nil
+                if isKnownKept {
+                    SecItemDelete(accountQuery(kind: Self.legacySeenKind, userId: userId, ownerUserId: otherUserId) as CFDictionary)
+                }
+            }
         }
 
         /// Adds the item, or replaces its data when `isReplacing` and it is already there.
@@ -300,16 +394,33 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
             guard status == errSecSuccess else { throw PasswordsPinStoreError.failed(status) }
         }
 
-        public func recordSeenIfAbsent(userId: String, ownerUserId: String, publicKey: String) throws {
-            // A confirmed key already stands for this person: nothing is learned from a first sight.
+        public func recordKnownIfAbsent(userId: String, otherUserId: String, publicKey: String) throws {
             let pins = try loadPins(userId: userId)
-            guard pins.ownerPublicKey(forUserId: ownerUserId) == nil else { return }
-            try put(kind: Self.seenKind, userId: userId, ownerUserId: ownerUserId, publicKey: publicKey, isReplacing: false)
+            guard pins.knownPublicKeys[otherUserId] == nil else { return }
+            try put(kind: Self.knownKind, userId: userId, ownerUserId: otherUserId, publicKey: publicKey, isReplacing: false)
         }
 
-        public func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws {
-            try put(kind: Self.confirmedKind, userId: userId, ownerUserId: ownerUserId, publicKey: publicKey, isReplacing: true)
-            try put(kind: Self.seenKind, userId: userId, ownerUserId: ownerUserId, publicKey: publicKey, isReplacing: true)
+        public func recordChangedKey(userId: String, otherUserId: String, publicKey: String) throws {
+            let pins = try loadPins(userId: userId)
+            guard let previous = pins.knownPublicKeys[otherUserId] else {
+                try put(kind: Self.knownKind, userId: userId, ownerUserId: otherUserId, publicKey: publicKey, isReplacing: false)
+                return
+            }
+            guard previous != publicKey else { return }
+            // The notice is kept before the key moves, so a failure in between never accepts a key silently.
+            try put(kind: Self.changedKind, userId: userId, ownerUserId: otherUserId, publicKey: previous, isReplacing: true)
+            try put(kind: Self.knownKind, userId: userId, ownerUserId: otherUserId, publicKey: publicKey, isReplacing: true)
+        }
+
+        public func recordCompared(userId: String, otherUserId: String, publicKey: String) throws {
+            try put(kind: Self.knownKind, userId: userId, ownerUserId: otherUserId, publicKey: publicKey, isReplacing: false)
+            try put(kind: Self.comparedKind, userId: userId, ownerUserId: otherUserId, publicKey: publicKey, isReplacing: true)
+            try dismissKeyChange(userId: userId, otherUserId: otherUserId)
+        }
+
+        public func dismissKeyChange(userId: String, otherUserId: String) throws {
+            let status = SecItemDelete(accountQuery(kind: Self.changedKind, userId: userId, ownerUserId: otherUserId) as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else { throw PasswordsPinStoreError.failed(status) }
         }
 
         /// The memory kept for one item, read from its own keychain item.

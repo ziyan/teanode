@@ -86,7 +86,7 @@ final class PasswordsRecordTests: XCTestCase {
         try PasswordsCrypto.macOfAccess(accountKey: PasswordsCrypto.makeKey(), itemId: itemId, itemKind: .login, access: access)
     }
 
-    /// Ada owns an item shared with Ben; both have set up Passwords and Ada confirmed Ben's key.
+    /// Ada owns an item shared with Ben; both have set up Passwords.
     private struct Setup {
         let server: FakePasswordsServer
         let flags: HookedServerFlags
@@ -112,8 +112,7 @@ final class PasswordsRecordTests: XCTestCase {
         var recipients: [PasswordRecipient] = []
         for userId in sharedWith { recipients += try await ada.recipients(granteeUserId: userId) }
         _ = try await ada.setShares(
-            itemId: item.id, grantees: sharedWith.map { PasswordShareGranteeInput(granteeUserId: $0) }, recipients: recipients,
-            confirmedUserIds: sharedWith)
+            itemId: item.id, grantees: sharedWith.map { PasswordShareGranteeInput(granteeUserId: $0) }, recipients: recipients)
         return Setup(server: server, flags: flags, ada: ada, adaCache: cache, accountKey: accountKey, itemId: item.id)
     }
 
@@ -156,7 +155,6 @@ final class PasswordsRecordTests: XCTestCase {
             setup.flags.calls = []
             let completed = try await setup.ada.completeWaitingShares()
             XCTAssertEqual(completed.addedKeyCount, 0)
-            XCTAssertTrue(completed.waitingForConfirmation.isEmpty)
             XCTAssertEqual(setup.flags.calls.filter { $0 == "addPasswordShareKeys" }, [])
             let given = await setup.ada.giveNewKeysToMarkedItems()
             XCTAssertEqual(given, [])
@@ -205,8 +203,7 @@ final class PasswordsRecordTests: XCTestCase {
         let recipients = try await setup.ada.recipients(granteeUserId: "user-ben")
         setup.flags.calls = []
         let repaired = try await setup.ada.setShares(
-            itemId: setup.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients,
-            confirmedUserIds: ["user-ben"])
+            itemId: setup.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients)
         XCTAssertEqual(repaired.sharingCheck, .verified)
         XCTAssertEqual(repaired.fields.access?.grantees, [.person(userId: "user-ben")])
         XCTAssertEqual(repaired.fields.access?.isUsableByAgent, false)
@@ -217,7 +214,7 @@ final class PasswordsRecordTests: XCTestCase {
         XCTAssertEqual(stored?.isUsableByAgent, false)
         XCTAssertEqual(stored?.grantees.compactMap(\.granteeUserId), ["user-ben"])
         XCTAssertEqual(stored?.needsNewKey, false)
-        // Ben, whom the person chose and confirmed, keeps a key for the new item key.
+        // Ben, whom the person chose, keeps a key for the new item key.
         XCTAssertNotNil(stored?.keys["user-ben"])
         XCTAssertNil(stored?.keys["user-mallory"])
     }
@@ -284,7 +281,7 @@ final class PasswordsRecordTests: XCTestCase {
     func testAnAutomaticNewKeyIsSealedOnlyForPeopleWhoHeldAKeyAndTheAgentCopyOnlyIfItHadOne() async throws {
         let setup = try await makeSharedItem(extraPeople: [("user-dan", "Dan")], sharedWith: ["user-ben"])
         let ben = "user-ben"
-        // A second device of Ada's adds Dan (confirming his key there) and the agent, and then the server
+        // A second device of Ada's adds Dan and the agent, and then the server
         // asks for a new key before this device has looked at the item again.
         let second = makeSession(setup.server, userId: "user-ada")
         _ = try await second.unlock(passphrase: adaPassphrase)
@@ -295,12 +292,12 @@ final class PasswordsRecordTests: XCTestCase {
         _ = try await second.setShares(
             itemId: setup.itemId,
             grantees: [PasswordShareGranteeInput(granteeUserId: ben), PasswordShareGranteeInput(granteeUserId: "user-dan")],
-            recipients: recipients, confirmedUserIds: ["user-dan"])
+            recipients: recipients)
         _ = try await second.setUsableByAgent(itemId: setup.itemId, isUsable: true)
         await setup.server.markNeedsNewKey(itemId: setup.itemId)
-        // This device already confirmed Dan's key, but never saw Dan or the agent hold a key for the item.
+        // This device already knows Dan's key, but never saw Dan or the agent hold a key for the item.
         let danKey = await setup.server.publicKey(of: "user-dan")
-        try setup.adaCache.recordConfirmed(userId: "user-ada", ownerUserId: "user-dan", publicKey: danKey)
+        try setup.adaCache.recordKnownIfAbsent(userId: "user-ada", otherUserId: "user-dan", publicKey: danKey)
 
         try await setup.ada.sync()
         let marked = try await setup.ada.item(id: setup.itemId)
@@ -315,7 +312,7 @@ final class PasswordsRecordTests: XCTestCase {
         let rekeyInput = try XCTUnwrap(setup.flags.lastRekeyInput)
         XCTAssertEqual(rekeyInput.shareKeys.map(\.recipientUserId), [ben])
         XCTAssertNil(rekeyInput.itemKeyByAgentKey)
-        // Dan, in the record and confirmed here, waits for the person's OK instead.
+        // Dan is in the record but this device never saw him hold a key, so the automatic key leaves him for the waiting shares.
         let waiting = try await setup.ada.waitingShares()
         XCTAssertEqual(waiting.map(\.recipient.userId), ["user-dan"])
         // The record stays what the person signed.
@@ -419,8 +416,7 @@ final class PasswordsRecordTests: XCTestCase {
         let keyBefore = await setup.server.item(setup.itemId)?.itemKeyByAccountKey
         setup.flags.calls = []
         let saved = try await setup.ada.setShares(
-            itemId: setup.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients,
-            confirmedUserIds: ["user-ben"])
+            itemId: setup.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients)
         XCTAssertTrue(saved.unrecordedShares.isEmpty)
         XCTAssertEqual(saved.recordedShares.compactMap(\.granteeUserId), ["user-ben"])
         XCTAssertTrue(setup.flags.calls.contains("rekeyPasswordItem"))
@@ -482,7 +478,7 @@ final class PasswordsRecordTests: XCTestCase {
     }
 
     func testPinsWrittenBeforeItemsHadAMemoryStillRead() throws {
-        let text = #"{"formatVersion":1,"userId":"user-ada","seenPublicKeys":{},"confirmedPublicKeys":{}}"#
+        let text = #"{"formatVersion":1,"userId":"user-ada","seenPublicKeys":{},"confirmedPublicKeys":{}}"#  // the first version's shape
         let pins = try JSONDecoder().decode(PasswordsPins.self, from: Data(text.utf8))
         XCTAssertTrue(pins.itemMemories.isEmpty)
     }

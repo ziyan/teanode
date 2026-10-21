@@ -2599,64 +2599,6 @@
         }
       }
     },
-    "%lld people are waiting for your OK to open an item again.": {
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld person is waiting for your OK to open an item again."
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld people are waiting for your OK to open an item again."
-                }
-              }
-            }
-          }
-        },
-        "ja": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld 人が、項目を再び開くためにあなたの確認を待っています。"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld 人が、項目を再び開くためにあなたの確認を待っています。"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "有 %lld 位成员在等你确认，之后才能再次打开项目。"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "有 %lld 位成员在等你确认，之后才能再次打开项目。"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "%lld permission": {
       "localizations": {
         "ja": {
@@ -10567,22 +10509,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示图片前询问"
-          }
-        }
-      }
-    },
-    "Ask each person to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "それぞれの相手に、自分のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。一致する場合にのみ確認してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请每个人在自己的设备上打开“密码”设置，并向你读出他们的安全码。只有完全一致时才确认。"
           }
         }
       }
@@ -43140,22 +43066,6 @@
         }
       }
     },
-    "Their shared items stay closed until you trust the new key. Trusting it also lets you share items with them.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいキーを信頼するまで、その人が共有した項目は開けないままです。信頼すると、その人と項目を共有できるようにもなります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在你信任新密钥之前，对方共享的项目将保持锁定。信任后，你也可以向对方共享项目。"
-          }
-        }
-      }
-    },
     "There is no Members group, so this person joins no group and can read nothing until they are put in one.": {
       "localizations": {
         "ja": {
@@ -52768,22 +52678,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "これらのファイルはチャット添付の上限を超えています。音声または動画は録音として保存してください。"
-          }
-        }
-      }
-    },
-    "These people cannot open an item of yours yet. Ask each person to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この人たちはまだあなたの項目を開けません。それぞれの相手に、自分のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。一致する場合にのみ確認してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这些人暂时还无法打开你的项目。请每个人在自己的设备上打开“密码”设置，并向你读出他们的安全码。只有完全一致时才确认。"
           }
         }
       }
@@ -64238,22 +64132,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "向%@询问这个视频"
-          }
-        }
-      }
-    },
-    "Ask %@ to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@さんに、ご自身のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。一致する場合にのみ確認してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请%@在自己的设备上打开“密码”设置，并向你读出安全码。只有完全一致时才确认。"
           }
         }
       }
@@ -80036,22 +79914,6 @@
         }
       }
     },
-    "Safety code": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "安全コード"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "安全码"
-          }
-        }
-      }
-    },
     "Search items": {
       "localizations": {
         "ja": {
@@ -81266,320 +81128,6 @@
         }
       }
     },
-    "Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only, once you have confirmed their safety code. Only you can change the item.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "パスワードを設定した人には、安全コードを確認したあと、この項目のキーがこの iPhone でその人のキーだけに封じて渡されます。項目を変更できるのはあなただけです。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每位已设置“密码”的成员，在你确认其安全码后，会收到此项目的密钥，它在这部 iPhone 上仅为对方的密钥加密。只有你能修改此项目。"
-          }
-        }
-      }
-    },
-    "Sharing saved. %lld people will get access when they set up Passwords and you confirm their key.": {
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "Sharing saved. %lld person will get access when they set up Passwords and you confirm their key."
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "Sharing saved. %lld people will get access when they set up Passwords and you confirm their key."
-                }
-              }
-            }
-          }
-        },
-        "ja": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "共有を保存しました。%lld 人は、パスワードを設定し、あなたがそのキーを確認するとアクセスできます。"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "共有を保存しました。%lld 人は、パスワードを設定し、あなたがそのキーを確認するとアクセスできます。"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "共享设置已保存。%lld 位成员设置“密码”并经你确认其密钥后即可访问。"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "共享设置已保存。%lld 位成员设置“密码”并经你确认其密钥后即可访问。"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "Their key changed": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "相手のキーが変わりました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对方的密钥已更改"
-          }
-        }
-      }
-    },
-    "Safety code before": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "以前の安全コード"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更改前的安全码"
-          }
-        }
-      }
-    },
-    "Safety code now": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "現在の安全コード"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前的安全码"
-          }
-        }
-      }
-    },
-    "Trust this key": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このキーを信頼"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "信任此密钥"
-          }
-        }
-      }
-    },
-    "Confirm this code": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このコードを確認"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "确认此安全码"
-          }
-        }
-      }
-    },
-    "Trust this key and share": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このキーを信頼して共有"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "信任此密钥并共享"
-          }
-        }
-      }
-    },
-    "Confirm this code and share": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このコードを確認して共有"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "确认此安全码并共享"
-          }
-        }
-      }
-    },
-    "%@'s key changed": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@のキーが変わりました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@的密钥已更改"
-          }
-        }
-      }
-    },
-    "Waiting for your OK": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "確認待ち"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等待你的确认"
-          }
-        }
-      }
-    },
-    "%@ can open the item now.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@がこの項目を開けるようになりました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@现在可以打开此项目了。"
-          }
-        }
-      }
-    },
-    "You trust the new key of %@.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@の新しいキーを信頼しました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你已信任%@的新密钥。"
-          }
-        }
-      }
-    },
-    "The key could not be given.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キーを渡せませんでした。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法提供密钥。"
-          }
-        }
-      }
-    },
-    "The new key could not be trusted.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいキーを信頼できませんでした。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法信任新密钥。"
-          }
-        }
-      }
-    },
-    "The key of the person who shared this changed. Compare the safety codes with them, then trust the new key.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共有した人のキーが変わりました。安全コードを相手と照合してから、新しいキーを信頼してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共享此项目的人的密钥已更改。请先与对方核对安全码，再信任新密钥。"
-          }
-        }
-      }
-    },
-    "This iPhone has not seen the key of the person who shared this yet. Open Passwords and pull to refresh.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この iPhone は、共有した人のキーをまだ確認していません。パスワードを開いて、引き下げて更新してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这部 iPhone 还没有见过共享此项目的人的密钥。请打开“密码”并下拉刷新。"
-          }
-        }
-      }
-    },
     "The server asked for a passphrase check that is far too slow. Passwords stays closed.": {
       "localizations": {
         "ja": {
@@ -81720,22 +81268,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除全部密码"
-          }
-        }
-      }
-    },
-    "That person's key changed while you were sharing. Open the share again and compare the new safety code.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共有している間に相手のキーが変わりました。共有をもう一度開いて、新しい安全コードを確認してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共享期间对方的密钥变了。请重新打开共享，并核对新的安全码。"
           }
         }
       }
@@ -82088,6 +81620,288 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存后会将其移除。"
+          }
+        }
+      }
+    },
+    "%@'s key changed. This happens when they erase Passwords and set it up again. If you did not expect it, compare safety codes with them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のキーが変わりました。これは、相手が「パスワード」を消去して設定し直したときに起こります。心当たりがない場合は、安全コードを相手と照らし合わせてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的密钥已更改。对方抹掉“密码”后重新设置时会出现这种情况。如果这不在你的预期之内，请与对方核对安全码。"
+          }
+        }
+      }
+    },
+    "Compare codes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを照合"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对安全码"
+          }
+        }
+      }
+    },
+    "Codes compared": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを照合済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全码已核对"
+          }
+        }
+      }
+    },
+    "Codes compared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを照合済みにしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已标记为安全码已核对。"
+          }
+        }
+      }
+    },
+    "Someone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方"
+          }
+        }
+      }
+    },
+    "Their safety code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手の安全コード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方的安全码"
+          }
+        }
+      }
+    },
+    "Their safety code before": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手の以前の安全コード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方更改前的安全码"
+          }
+        }
+      }
+    },
+    "The codes match": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードが一致しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全码一致"
+          }
+        }
+      }
+    },
+    "Ask %@ to open Passwords settings on their own device and read you their safety code. It should be the same as the one below.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんに、ご自身のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。下のコードと同じになるはずです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请%@在自己的设备上打开“密码”设置，并向你读出安全码。它应与下方的安全码相同。"
+          }
+        }
+      }
+    },
+    "Comparing is optional. Sharing and opening items work either way.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照合は任意です。照合しなくても、共有や項目を開くことはできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对是可选的。不核对也可以共享和打开项目。"
+          }
+        }
+      }
+    },
+    "Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only. Only you can change the item.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「パスワード」を設定した人には、この iPhone でその人のキー専用に封じたこの項目のキーが渡されます。項目を変更できるのはあなただけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每位已设置“密码”的成员都会获得此项目的密钥，由这部 iPhone 仅针对其密钥加密封存。只有你可以更改此项目。"
+          }
+        }
+      }
+    },
+    "The notice could not be dismissed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知を閉じられませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法忽略此提示。"
+          }
+        }
+      }
+    },
+    "That could not be saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存。"
+          }
+        }
+      }
+    },
+    "That person's key changed while you were sharing. Open the share again and save it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有中に相手のキーが変わりました。共有をもう一度開いて保存してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你共享时对方的密钥已更改。请重新打开共享并保存。"
+          }
+        }
+      }
+    },
+    "Sharing saved. %lld people will get access when they set up Passwords.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Sharing saved. %lld person will get access when they set up Passwords."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Sharing saved. %lld people will get access when they set up Passwords."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "共有を保存しました。%lld 人は、パスワードを設定するとアクセスできます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "共有を保存しました。%lld 人は、パスワードを設定するとアクセスできます。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "共享设置已保存。%lld 位成员设置“密码”后即可访问。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "共享设置已保存。%lld 位成员设置“密码”后即可访问。"
+                }
+              }
+            }
           }
         }
       }

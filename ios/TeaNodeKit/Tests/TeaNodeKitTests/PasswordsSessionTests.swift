@@ -325,8 +325,7 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(grace.keyTrust, .new)
 
         let shared = try await world.ada.session.setShares(
-            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients)
         XCTAssertEqual(shared.shares.count, 1)
         XCTAssertEqual(shared.shares.first?.recipients.map(\.hasKey), [true])
 
@@ -356,8 +355,7 @@ final class PasswordsSessionTests: XCTestCase {
         let world = try await makeSharingWorld()
         let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
         _ = try await world.ada.session.setShares(
-            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
         try await world.grace.session.sync()
         let before = try await world.grace.session.list()
         XCTAssertEqual(before.items.count, 1)
@@ -369,7 +367,7 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(after.items.count, 0)
     }
 
-    func testARecipientWhoSetsUpLaterIsWaitingUntilTheOwnersDeviceSealsTheirKey() async throws {
+    func testARecipientWhoSetsUpLaterIsSealedForAtOnceWhenTheOwnersDeviceCompletesTheWaitingShares() async throws {
         let server = await makeServer(people: [("user-ada", "Ada"), ("user-grace", "Grace")])
         await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
         let ada = makeDevice(server, userId: "user-ada")
@@ -393,15 +391,13 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(waiting.first?.recipient.userId, "user-grace")
         XCTAssertEqual(waiting.first?.recipient.keyTrust, .new)
 
-        // Ada's device has never seen Grace's key, so nothing is sealed until Ada confirms it.
-        let unconfirmed = try await ada.session.completeWaitingShares()
-        XCTAssertEqual(unconfirmed.addedKeyCount, 0)
-        XCTAssertEqual(unconfirmed.waitingForConfirmation.map(\.itemId), [item.id])
-        XCTAssertEqual(unconfirmed.waitingForConfirmation.first?.recipient.keyTrust, .new)
-        let storedBefore = await server.item(item.id)
-        XCTAssertNil(storedBefore?.keys["user-grace"])
-
-        try await ada.session.confirmWaitingShare(try XCTUnwrap(unconfirmed.waitingForConfirmation.first))
+        // Ada's device has never seen Grace's key, and seals for it at once without asking.
+        let completed = try await ada.session.completeWaitingShares()
+        XCTAssertEqual(completed.addedKeyCount, 1)
+        let stored = await server.item(item.id)
+        XCTAssertNotNil(stored?.keys["user-grace"])
+        let graceKey = await server.publicKey(of: "user-grace")
+        XCTAssertEqual(try XCTUnwrap(try ada.cache.load()).knownPublicKeys, ["user-grace": graceKey])
         let stillWaiting = try await ada.session.waitingShares()
         XCTAssertEqual(stillWaiting.count, 0)
         try await grace.session.sync()
@@ -414,41 +410,41 @@ final class PasswordsSessionTests: XCTestCase {
     private func grantGrace(_ world: (server: FakePasswordsServer, ada: (session: PasswordsSession, cache: PasswordsCache), grace: (session: PasswordsSession, cache: PasswordsCache), itemId: String)) async throws -> PasswordItem {
         let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
         return try await world.ada.session.setShares(
-            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
     }
 
-    func testANewRecipientIsNotSealedForUntilTheirKeyIsConfirmedAndThenItIsKnown() async throws {
+    func testSharingWithAFirstSeenPersonSealsAtOnceAndRecordsTheirKeyAsKnown() async throws {
         let world = try await makeSharingWorld()
         let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
         XCTAssertEqual(recipients.first?.keyTrust, .new)
+        XCTAssertEqual(recipients.first?.isCompared, false)
 
-        // No confirmation: the share is made, but no key is sealed for Grace.
         _ = try await world.ada.session.setShares(
             itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
-        var stored = await world.server.item(world.itemId)
-        XCTAssertNil(stored?.keys["user-grace"])
-        XCTAssertEqual(try XCTUnwrap(try world.ada.cache.load()).confirmedPublicKeys, [:])
-
-        // Confirmed: sealed, and Grace's key is recorded as known.
-        _ = try await world.ada.session.setShares(
-            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-            confirmedUserIds: ["user-grace"])
-        stored = await world.server.item(world.itemId)
+        let stored = await world.server.item(world.itemId)
         XCTAssertNotNil(stored?.keys["user-grace"])
         let graceKey = try XCTUnwrap(recipients.first?.publicKey).base64EncodedString()
-        XCTAssertEqual(try XCTUnwrap(try world.ada.cache.load()).confirmedPublicKeys, ["user-grace": graceKey])
+        let contents = try XCTUnwrap(try world.ada.cache.load())
+        XCTAssertEqual(contents.knownPublicKeys, ["user-grace": graceKey])
+        XCTAssertEqual(contents.changedPublicKeys, [:])
+        let noticeCount = await world.ada.session.keyChanges().count
+        XCTAssertEqual(noticeCount, 0)
         let again = try await world.ada.session.recipients(granteeUserId: "user-grace")
         XCTAssertEqual(again.first?.keyTrust, .known)
+
+        // Grace opens it without anything having been confirmed.
+        try await world.grace.session.sync()
+        let opened = try await world.grace.session.item(id: world.itemId)
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
     }
 
-    func testAKnownRecipientNeedsNoConfirmationOnAnotherItemAndExistingRecipientsAreNotSealedAgain() async throws {
+    func testAKnownRecipientIsSealedOnAnotherItemAndExistingRecipientsAreNotSealedAgain() async throws {
         let world = try await makeSharingWorld()
         _ = try await grantGrace(world)
         let first = await world.server.item(world.itemId)
         let firstKey = try XCTUnwrap(first?.keys["user-grace"]?.itemKeyByRecipientKey)
 
-        // A second item: Grace's key is known now, so it is sealed without a confirmation.
+        // A second item: Grace's key is known now, and it is sealed for.
         let second = try await world.ada.session.save(fields: loginFields(name: "Second"))
         let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
         XCTAssertEqual(recipients.first?.keyTrust, .known)
@@ -467,12 +463,13 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(after?.keys["user-grace"]?.itemKeyByRecipientKey, firstKey)
     }
 
-    func testAChangedRecipientKeyIsMarkedChangedAndNotSealedForUntilTrusted() async throws {
+    func testAChangedRecipientKeyIsSealedForAtOnceAndLeavesANoticeThatCanBeDismissed() async throws {
         let world = try await makeSharingWorld()
         _ = try await grantGrace(world)
         let oldKey = await world.server.publicKey(of: "user-grace")
         let newKeyPair = PasswordsCrypto.makeKeyPair()
-        await world.server.replacePublicKey(userId: "user-grace", publicKey: newKeyPair.publicKey.base64EncodedString())
+        let newKey = newKeyPair.publicKey.base64EncodedString()
+        await world.server.replacePublicKey(userId: "user-grace", publicKey: newKey)
 
         let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
         let grace = try XCTUnwrap(recipients.first)
@@ -481,30 +478,76 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(grace.safetyCode, try PasswordsCrypto.safetyCode(publicKey: newKeyPair.publicKey))
         XCTAssertNotEqual(grace.knownSafetyCode, grace.safetyCode)
 
+        // Nothing is asked: on an item Grace has no key for yet, the new key is sealed for and recorded, with a notice.
+        let second = try await world.ada.session.save(fields: loginFields(name: "Second"))
         _ = try await world.ada.session.setShares(
-            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
-        var stored = await world.server.item(world.itemId)
-        XCTAssertNotEqual(stored?.keys["user-grace"]?.recipientPublicKey, newKeyPair.publicKey.base64EncodedString())
+            itemId: second.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
+        let stored = await world.server.item(second.id)
+        XCTAssertEqual(stored?.keys["user-grace"]?.recipientPublicKey, newKey)
+        let contents = try XCTUnwrap(try world.ada.cache.load())
+        XCTAssertEqual(contents.knownPublicKeys["user-grace"], newKey)
+        XCTAssertEqual(contents.changedPublicKeys["user-grace"], oldKey)
+        let notices = await world.ada.session.keyChanges()
+        XCTAssertEqual(
+            notices,
+            [
+                PasswordsKeyChange(
+                    userId: "user-grace", name: "Grace", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
+                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newKeyPair.publicKey), newPublicKey: newKey)
+            ])
 
-        // Grace is waiting, and completing the waiting shares leaves her key alone.
+        // The first item, sealed for her old key, is waiting for the new one: completing seals it at once.
         let waiting = try await world.ada.session.waitingShares()
-        XCTAssertEqual(waiting.map(\.recipient.keyTrust), [.changed])
+        XCTAssertEqual(waiting.map(\.itemId), [world.itemId])
         let completed = try await world.ada.session.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 0)
-        XCTAssertEqual(completed.waitingForConfirmation.map(\.recipient.userId), ["user-grace"])
-        XCTAssertEqual(completed.waitingForConfirmation.first?.recipient.knownSafetyCode, grace.knownSafetyCode)
-        stored = await world.server.item(world.itemId)
-        XCTAssertNotEqual(stored?.keys["user-grace"]?.recipientPublicKey, newKeyPair.publicKey.base64EncodedString())
+        XCTAssertEqual(completed.addedKeyCount, 1)
+        let firstStored = await world.server.item(world.itemId)
+        XCTAssertEqual(firstStored?.keys["user-grace"]?.recipientPublicKey, newKey)
 
-        // Confirming that one key seals it and records it.
-        try await world.ada.session.confirmWaitingShare(try XCTUnwrap(completed.waitingForConfirmation.first))
-        stored = await world.server.item(world.itemId)
-        XCTAssertEqual(stored?.keys["user-grace"]?.recipientPublicKey, newKeyPair.publicKey.base64EncodedString())
-        let known = try XCTUnwrap(try world.ada.cache.load()).confirmedPublicKeys
-        XCTAssertEqual(known["user-grace"], newKeyPair.publicKey.base64EncodedString())
+        // The notice stays until it is dismissed, and dismissing it does not undo the new key.
+        let stillThere = await world.ada.session.keyChanges()
+        XCTAssertEqual(stillThere.count, 1)
+        try await world.ada.session.dismissKeyChange(userId: "user-grace")
+        let dismissed = await world.ada.session.keyChanges()
+        XCTAssertEqual(dismissed, [])
+        XCTAssertEqual(try XCTUnwrap(try world.ada.cache.load()).knownPublicKeys["user-grace"], newKey)
     }
 
-    func testConfirmingOneWaitingShareLetsTheNextCompletionSealTheSameRecipientsOtherItems() async throws {
+    func testComparingCodesMarksTheKeyComparedAndGatesNothing() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        let graceKey = await world.server.publicKey(of: "user-grace")
+        let before = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        XCTAssertEqual(before.first?.isCompared, false)
+
+        try await world.ada.session.markCompared(userId: "user-grace", publicKey: graceKey)
+        let after = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        XCTAssertEqual(after.first?.keyTrust, .known)
+        XCTAssertEqual(after.first?.isCompared, true)
+
+        // A new key is accepted as before, and it is no longer shown as compared.
+        let newKey = PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()
+        await world.server.replacePublicKey(userId: "user-grace", publicKey: newKey)
+        let changed = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        XCTAssertEqual(changed.first?.keyTrust, .changed)
+        XCTAssertEqual(changed.first?.isCompared, false)
+        let second = try await world.ada.session.save(fields: loginFields(name: "Second"))
+        _ = try await world.ada.session.setShares(
+            itemId: second.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: changed)
+        let stored = await world.server.item(second.id)
+        XCTAssertEqual(stored?.keys["user-grace"]?.recipientPublicKey, newKey)
+        let notices = await world.ada.session.keyChanges()
+        XCTAssertEqual(notices.map(\.userId), ["user-grace"])
+
+        // Comparing the new codes clears the notice and shows "compared" again.
+        try await world.ada.session.markCompared(userId: "user-grace", publicKey: newKey)
+        let cleared = await world.ada.session.keyChanges()
+        XCTAssertEqual(cleared, [])
+        let compared = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        XCTAssertEqual(compared.first?.isCompared, true)
+    }
+
+    func testCompletingWaitingSharesSealsEveryItemOfARecipientWithNoConfirmation() async throws {
         let server = await makeServer(people: [("user-ada", "Ada"), ("user-grace", "Grace")])
         await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
         let ada = makeDevice(server, userId: "user-ada")
@@ -517,13 +560,8 @@ final class PasswordsSessionTests: XCTestCase {
         let grace = makeDevice(server, userId: "user-grace")
         _ = try await grace.session.setUp(passphrase: "grace invented passphrase", iterationCount: iterationCount)
 
-        let unconfirmed = try await ada.session.completeWaitingShares()
-        XCTAssertEqual(unconfirmed.waitingForConfirmation.count, 2)
-        try await ada.session.confirmWaitingShare(try XCTUnwrap(unconfirmed.waitingForConfirmation.first))
-        // The key is known now, so the other item completes without another confirmation.
         let completed = try await ada.session.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 1)
-        XCTAssertEqual(completed.waitingForConfirmation, [])
+        XCTAssertEqual(completed.addedKeyCount, 2)
         try await grace.session.sync()
         let opened = try await grace.session.list()
         XCTAssertEqual(opened.items.map(\.name), ["First", "Second"])
@@ -539,41 +577,27 @@ final class PasswordsSessionTests: XCTestCase {
             itemId: second.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: [])
         let completed = try await world.ada.session.completeWaitingShares()
         XCTAssertEqual(completed.addedKeyCount, 1)
-        XCTAssertEqual(completed.waitingForConfirmation, [])
         try await world.grace.session.sync()
         let opened = try await world.grace.session.item(id: second.id)
         XCTAssertEqual(opened.fields.withAccess(nil), loginFields(name: "Second"))
     }
 
-    func testAWaitingShareIsNotSealedWhenTheItemsSharesDoNotReachTheRecipient() async throws {
-        let world = try await makeSharingWorld()
-        _ = try await grantGrace(world)
-        let waitingForGrace = PasswordWaitingShare(
-            itemId: world.itemId, itemName: nil,
-            recipient: PasswordRecipient(
-                view: PasswordRecipientView(
-                    userId: "user-nobody", name: "Nobody", username: "nobody", publicKey: PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString(),
-                    hasKey: false)))
-        do {
-            try await world.ada.session.confirmWaitingShare(waitingForGrace)
-            XCTFail("the item's shares do not reach that person")
-        } catch {
-            XCTAssertEqual(error as? PasswordsError, .itemNotFound)
-        }
-    }
-
-    func testARecipientRecordsTheOwnersKeyOnFirstSightAndOpensOnlyWithIt() async throws {
+    func testARecipientRecordsTheOwnersKeyOnFirstSightWithNoNotice() async throws {
         let world = try await makeSharingWorld()
         _ = try await grantGrace(world)
         try await world.grace.session.sync()
         let adaKey = await world.server.publicKey(of: "user-ada")
-        // Recorded in the file (the AutoFill extension reads it there).
-        XCTAssertEqual(try XCTUnwrap(try world.grace.cache.load()).seenPublicKeys, ["user-ada": adaKey])
+        // Recorded in the pin store (the AutoFill extension reads it there).
+        let contents = try XCTUnwrap(try world.grace.cache.load())
+        XCTAssertEqual(contents.knownPublicKeys, ["user-ada": adaKey])
+        XCTAssertEqual(contents.changedPublicKeys, [:])
+        let noticeCount = await world.grace.session.keyChanges().count
+        XCTAssertEqual(noticeCount, 0)
         let opened = try await world.grace.session.item(id: world.itemId)
         XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
     }
 
-    func testAChangedOwnerKeyMakesTheItemUnreadableUntilTheRecipientTrustsIt() async throws {
+    func testAChangedOwnerKeyIsAcceptedTheItemKeepsOpeningAndANoticeStaysUntilDismissed() async throws {
         let world = try await makeSharingWorld()
         _ = try await grantGrace(world)
         try await world.grace.session.sync()
@@ -587,68 +611,42 @@ final class PasswordsSessionTests: XCTestCase {
             try PasswordsSealedValue(jsonText: storedItem.itemKeyByAccountKey), key: adaUnlocked.accountKey,
             associatedData: PasswordsCrypto.itemKeyAssociatedData(itemId: world.itemId))
         let newOwner = PasswordsCrypto.makeKeyPair()
+        let newOwnerKey = newOwner.publicKey.base64EncodedString()
         let gracePublicKeyText = await world.server.publicKey(of: "user-grace")
         let gracePublicKey = try XCTUnwrap(Data(base64Encoded: gracePublicKeyText))
         let resealed = try PasswordsCrypto.sealForKeyPair(
             itemKey, ownerKeyPair: newOwner, ownerId: "user-ada", recipientPublicKey: gracePublicKey, recipientId: "user-grace",
             itemId: world.itemId)
-        await world.server.replacePublicKey(userId: "user-ada", publicKey: newOwner.publicKey.base64EncodedString())
+        await world.server.replacePublicKey(userId: "user-ada", publicKey: newOwnerKey)
         await world.server.replaceShareKey(itemId: world.itemId, recipientUserId: "user-grace", itemKeyByRecipientKey: resealed.jsonText)
         try await world.grace.session.sync()
 
-        let expectedReason = PasswordsUnreadableReason.ownerKeyChanged(
-            userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
-            newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey))
+        // The item opens with the new key, nothing waits on the person, and the notice carries both codes.
         let listed = try await world.grace.session.list()
-        XCTAssertEqual(listed.items.count, 0)
-        XCTAssertEqual(listed.unreadableItemIds, [world.itemId])
-        XCTAssertEqual(listed.unreadableReasons[world.itemId], expectedReason)
-        do {
-            _ = try await world.grace.session.item(id: world.itemId)
-            XCTFail("the owner's key changed")
-        } catch {
-            XCTAssertEqual(
-                error as? PasswordsError,
-                .ownerKeyChanged(
-                    userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
-                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey)))
-        }
-        let changes = await world.grace.session.ownerKeyChanges()
+        XCTAssertEqual(listed.items.map(\.id), [world.itemId])
+        XCTAssertEqual(listed.unreadableItemIds, [])
+        let opened = try await world.grace.session.item(id: world.itemId)
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
+        let notices = await world.grace.session.keyChanges()
         XCTAssertEqual(
-            changes,
+            notices,
             [
-                PasswordsOwnerKeyChange(
-                    userId: "user-ada", ownerName: "Ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
-                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey),
-                    newPublicKey: newOwner.publicKey.base64EncodedString(), itemCount: 1)
+                PasswordsKeyChange(
+                    userId: "user-ada", name: "Ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
+                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey), newPublicKey: newOwnerKey)
             ])
-        // The file still holds the key that was known, which the AutoFill extension reads.
-        let graceContents = try XCTUnwrap(try world.grace.cache.load())
-        XCTAssertEqual(graceContents.seenPublicKeys["user-ada"], oldKey)
+        // The file holds the new key, which the AutoFill extension reads.
+        XCTAssertEqual(try XCTUnwrap(try world.grace.cache.load()).knownPublicKeys["user-ada"], newOwnerKey)
 
-        // Trusting a key other than the one whose code was shown is refused, and nothing is trusted.
-        let otherKey = PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()
-        do {
-            try await world.grace.session.trustOwnerKey(userId: "user-ada", expectedPublicKey: otherKey)
-            XCTFail("the key shown was not the owner's key")
-        } catch {
-            XCTAssertEqual(
-                error as? PasswordsError,
-                .ownerKeyChanged(
-                    userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: otherKey),
-                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey)))
-        }
-        let stillKnown = try XCTUnwrap(try world.grace.cache.load()).seenPublicKeys["user-ada"]
-        XCTAssertEqual(stillKnown, oldKey)
-        let stillChanged = await world.grace.session.ownerKeyChanges()
-        XCTAssertEqual(stillChanged.count, 1)
-
-        try await world.grace.session.trustOwnerKey(userId: "user-ada", expectedPublicKey: newOwner.publicKey.base64EncodedString())
-        let trusted = try await world.grace.session.item(id: world.itemId)
-        XCTAssertEqual(trusted.fields.withAccess(nil), loginFields())
-        let remaining = await world.grace.session.ownerKeyChanges()
-        XCTAssertEqual(remaining, [])
-        XCTAssertEqual(try XCTUnwrap(try world.grace.cache.load()).seenPublicKeys["user-ada"], newOwner.publicKey.base64EncodedString())
+        // A later sync and a relaunch keep the notice; dismissing it removes only the notice.
+        try await world.grace.session.sync()
+        let afterSync = await world.grace.session.keyChanges()
+        XCTAssertEqual(afterSync.count, 1)
+        try await world.grace.session.dismissKeyChange(userId: "user-ada")
+        let dismissed = await world.grace.session.keyChanges()
+        XCTAssertEqual(dismissed, [])
+        let stillOpens = try await world.grace.session.item(id: world.itemId)
+        XCTAssertEqual(stillOpens.fields.withAccess(nil), loginFields())
     }
 
     func testAnItemSealedByTheServerForAKeyItCallsTheOwnersDoesNotOpen() async throws {
@@ -665,10 +663,13 @@ final class PasswordsSessionTests: XCTestCase {
         try await world.grace.session.sync()
         let listed = try await world.grace.session.list()
         XCTAssertEqual(listed.items.count, 0)
-        XCTAssertEqual(listed.unreadableReasons[world.itemId], .cannotOpen)
+        XCTAssertEqual(listed.unreadableItemIds, [world.itemId])
+        // A key that opens nothing is not recorded as a change.
+        let noticeCount = await world.grace.session.keyChanges().count
+        XCTAssertEqual(noticeCount, 0)
     }
 
-    func testTheOpenerForTheAutoFillExtensionSkipsOwnersItDoesNotKnow() async throws {
+    func testTheOpenerForTheAutoFillExtensionOpensSharedItemsWhateverKeysItKnows() async throws {
         let world = try await makeSharingWorld()
         _ = try await grantGrace(world)
         let adaUnlocked = try await world.grace.session.unlock(passphrase: "grace invented passphrase")
@@ -679,20 +680,13 @@ final class PasswordsSessionTests: XCTestCase {
         let knowing = try PasswordsOpener(accountKey: adaUnlocked.accountKey, contents: contents)
         XCTAssertEqual(try knowing.open(view).fields.withAccess(nil), loginFields())
 
-        contents.seenPublicKeys = [:]
+        contents.knownPublicKeys = [:]
         let unaware = try PasswordsOpener(accountKey: adaUnlocked.accountKey, contents: contents)
-        XCTAssertThrowsError(try unaware.open(view)) { error in
-            XCTAssertEqual(error as? PasswordsError, .ownerKeyUnknown(userId: "user-ada"))
-        }
-        XCTAssertEqual(unaware.openAll([view]).unreadableReasons[world.itemId], .ownerKeyUnknown(userId: "user-ada"))
+        XCTAssertEqual(try unaware.open(view).fields.withAccess(nil), loginFields())
 
-        contents.seenPublicKeys = ["user-ada": PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()]
+        contents.knownPublicKeys = ["user-ada": PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()]
         let mistaken = try PasswordsOpener(accountKey: adaUnlocked.accountKey, contents: contents)
-        XCTAssertEqual(
-            mistaken.openAll([view]).unreadableReasons[world.itemId].map { reason -> Bool in
-                if case .ownerKeyChanged = reason { return true }
-                return false
-            }, true)
+        XCTAssertEqual(mistaken.openAll([view]).items.map(\.id), [world.itemId])
     }
 
     // MARK: The agent
@@ -929,8 +923,7 @@ final class PasswordsSessionTests: XCTestCase {
         await world.server.replacePublicKey(userId: "user-grace", publicKey: PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString())
         do {
             _ = try await world.ada.session.setShares(
-                itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
-                confirmedUserIds: ["user-grace"])
+                itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
             XCTFail("the key was stale")
         } catch {
             XCTAssertEqual(error as? PasswordsError, .recipientKeyChangedSinceRead)

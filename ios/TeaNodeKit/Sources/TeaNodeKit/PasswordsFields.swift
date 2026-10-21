@@ -139,9 +139,8 @@ public struct PasswordsItemAccess: Codable, Equatable, Sendable {
 
     /// Whether the record grants an item to a recipient: a person grantee by
     /// user id, or a circle grantee when the server lists the recipient as a
-    /// member of that circle (`circleIdsOfRecipient`). The recipient still needs
-    /// a key confirmed on this device before anything is sealed for them. No
-    /// record (`nil`) reaches nobody.
+    /// member of that circle (`circleIdsOfRecipient`). The recipient also needs
+    /// a key before anything is sealed for them. No record (`nil`) reaches nobody.
     public static func isReachedByAccess(_ access: PasswordsItemAccess?, recipientUserId: String, circleIdsOfRecipient: [String]) -> Bool {
         guard let access, !recipientUserId.isEmpty else { return false }
         return access.grantees.contains { grantee in
