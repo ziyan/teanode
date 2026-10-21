@@ -28,7 +28,7 @@ export function clear(parent: Element): void {
 export class AskError extends Error {
   constructor(
     message: string,
-    readonly code: string | undefined,
+    readonly errorCode: string | undefined,
   ) {
     super(message)
   }
@@ -37,7 +37,7 @@ export class AskError extends Error {
 export async function ask<Answer>(message: Record<string, unknown>): Promise<Answer> {
   const answer = await chrome.runtime.sendMessage(message)
   if (answer && typeof answer === 'object' && typeof answer.error === 'string') {
-    throw new AskError(answer.error, typeof answer.code === 'string' ? answer.code : undefined)
+    throw new AskError(answer.error, typeof answer.errorCode === 'string' ? answer.errorCode : undefined)
   }
   return answer as Answer
 }

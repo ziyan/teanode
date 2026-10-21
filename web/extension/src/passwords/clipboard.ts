@@ -9,6 +9,19 @@ export const CLEAR_CLIPBOARD_ALARM = 'passwords-clear-clipboard'
 export const CLIPBOARD_CLEAR_MILLISECONDS = 30_000
 const CLIPBOARD_STORAGE_KEY = 'passwordsClipboard'
 
+// Only one offscreen document can exist, and a copy and the clearing of an
+// earlier copy can come at once. Each piece of work with the document (make
+// it, talk to it, close it) runs to the end before the next one starts, so
+// one never closes the document another is about to use, and two never both
+// try to make it.
+let offscreenQueue: Promise<unknown> = Promise.resolve()
+
+function inOffscreenQueue<Result>(work: () => Promise<Result>): Promise<Result> {
+  const result = offscreenQueue.then(work, work)
+  offscreenQueue = result.catch(() => undefined)
+  return result
+}
+
 async function ensureOffscreenDocument(): Promise<void> {
   const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] })
   if (contexts.length > 0) return
@@ -29,7 +42,11 @@ async function closeOffscreenDocument(): Promise<void> {
 
 // copySecret puts text on the clipboard and arranges for it to be cleared in
 // 30 seconds if it is still there.
-export async function copySecret(text: string): Promise<void> {
+export function copySecret(text: string): Promise<void> {
+  return inOffscreenQueue(() => copySecretNow(text))
+}
+
+async function copySecretNow(text: string): Promise<void> {
   await ensureOffscreenDocument()
   const answer = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'copy', text })
   if (!answer || answer.isCopied !== true) {
@@ -44,7 +61,11 @@ export async function copySecret(text: string): Promise<void> {
 
 // clearClipboardIfUnchanged empties the clipboard if it still holds what was
 // copied, and forgets the hash either way.
-export async function clearClipboardIfUnchanged(): Promise<void> {
+export function clearClipboardIfUnchanged(): Promise<void> {
+  return inOffscreenQueue(clearClipboardIfUnchangedNow)
+}
+
+async function clearClipboardIfUnchangedNow(): Promise<void> {
   const stored = (await chrome.storage.session.get(CLIPBOARD_STORAGE_KEY))[CLIPBOARD_STORAGE_KEY]
   await chrome.storage.session.remove(CLIPBOARD_STORAGE_KEY)
   if (!stored || typeof stored.salt !== 'string' || typeof stored.hash !== 'string') return

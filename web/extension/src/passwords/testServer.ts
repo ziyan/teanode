@@ -6,7 +6,7 @@ import { decodeBase64, hashProof } from '../../../src/passwords/crypto'
 import { emptyLoginFields, LoginFields } from '../../../src/passwords/fields'
 import { PasswordItemRecord } from '../../../src/pages/passwords/passwordsApi'
 import { makeSetUp, PendingSetUp, sealPasswordItem } from '../../../src/pages/passwords/passwordsProtocol'
-import { GraphqlCall, StorageArea } from './vault'
+import { GraphqlCall, StorageArea } from './openedKeys'
 
 export const PASSPHRASE = 'correct horse battery staple'
 export const USER_ID = 'person-a'

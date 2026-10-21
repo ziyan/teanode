@@ -93,7 +93,6 @@
     // size is kept in pixels, which is what the person actually chose.
     const LEAST_WIDE = 320
     const LEAST_TALL = 360
-    const GEOMETRY = 'panel:geometry:' + window.location.origin
     const clamp = (value, least, most) => Math.max(least, Math.min(most, value))
 
     let geometry = { across: 1, down: 1, width: 440, height: 760 }
@@ -102,7 +101,8 @@
       clearTimeout(writing)
       writing = setTimeout(() => {
         try {
-          chrome.storage.local.set({ [GEOMETRY]: geometry })
+          // Through the worker: the extension's storage is closed to scripts in pages.
+          chrome.runtime.sendMessage({ type: 'panel:geometry-write', geometry })
         } catch {
           // A panel that cannot remember where it was is still a panel.
         }
@@ -141,8 +141,8 @@
       place()
     }
     try {
-      chrome.storage.local.get([GEOMETRY], (stored) => {
-        const saved = stored && stored[GEOMETRY]
+      chrome.runtime.sendMessage({ type: 'panel:geometry-read' }, (answer) => {
+        const saved = answer && answer.geometry
         if (saved && typeof saved.width === 'number' && typeof saved.across === 'number' && typeof saved.down === 'number') {
           geometry = saved
         }

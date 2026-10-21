@@ -26,13 +26,25 @@ function readText(): string {
   return text
 }
 
+// isFromServiceWorker says a message came from this extension's service
+// worker and from nowhere else: not a content script (which has a tab), not a
+// frame of a page, not another extension. The worker is the only one that
+// asks for the clipboard.
+export function isFromServiceWorker(sender: { id?: string; tab?: unknown; frameId?: number; url?: string }): boolean {
+  if (!sender || sender.id !== chrome.runtime.id || sender.tab !== undefined) return false
+  if (sender.frameId !== undefined && sender.frameId !== 0) return false
+  // The worker's address, or none (a worker has no page to name).
+  return sender.url === undefined || sender.url === chrome.runtime.getURL('background.js')
+}
+
 chrome.runtime.onMessage.addListener(
   (
     message: { target?: string; type?: string; text?: string; salt?: string; hash?: string },
-    _sender: unknown,
+    sender: { id?: string; tab?: unknown; frameId?: number; url?: string },
     sendResponse: (answer: unknown) => void,
   ) => {
     if (!message || message.target !== 'offscreen') return false
+    if (!isFromServiceWorker(sender)) return false
     if (message.type === 'copy' && typeof message.text === 'string') {
       sendResponse({ isCopied: copyText(message.text) })
       return false

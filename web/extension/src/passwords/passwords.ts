@@ -10,7 +10,7 @@
 import { DEFAULT_PASSWORD_OPTIONS, generatePassword, MAXIMUM_PASSWORD_LENGTH } from '../../../src/passwords/generator'
 import { PopupState, SearchAnswer } from './messages'
 import { ask, AskError, clear, element, errorText } from './pageDom'
-import type { LoginSummary } from './vault'
+import type { LoginSummary } from './openedKeys'
 
 const root = document.getElementById('app') as HTMLElement
 const parameters = new URLSearchParams(window.location.search)
@@ -18,13 +18,13 @@ const tabId = parameters.has('tab') ? Number(parameters.get('tab')) : undefined
 const frameId = parameters.has('frame') ? Number(parameters.get('frame')) : undefined
 const target = tabId === undefined ? {} : { tabId, frameId: frameId ?? 0 }
 
-const status = element('div', { className: 'status', role: 'status' })
+const statusLine = element('div', { className: 'status', role: 'status' })
 let query = ''
 let timer: ReturnType<typeof setInterval> | null = null
 
 function say(text: string, tone: '' | 'good' | 'bad' = '') {
-  status.textContent = text
-  status.className = tone ? `status ${tone}` : 'status'
+  statusLine.textContent = text
+  statusLine.className = tone ? `status ${tone}` : 'status'
 }
 
 function stopTimer() {
@@ -32,14 +32,14 @@ function stopTimer() {
   timer = null
 }
 
-function header(state: PopupState | null): HTMLElement {
+function header(popupState: PopupState | null): HTMLElement {
   const bar = element(
     'div',
     { className: 'header' },
     element('img', { className: 'mark', src: 'icons/icon48.png', alt: '', width: 22, height: 22 }),
     element('strong', {}, 'TeaNode Passwords'),
   )
-  if (state?.isUnlocked) {
+  if (popupState?.isUnlocked) {
     const lock = element('button', { type: 'button', className: 'quiet' }, 'Lock')
     lock.addEventListener('click', async () => {
       await ask({ type: 'passwords:lock' })
@@ -53,27 +53,27 @@ function header(state: PopupState | null): HTMLElement {
 async function refresh() {
   stopTimer()
   clear(root)
-  let state: PopupState
+  let popupState: PopupState
   try {
-    state = await ask<PopupState>({ type: 'passwords:state', ...target })
+    popupState = await ask<PopupState>({ type: 'passwords:state', ...target })
   } catch (error) {
     root.append(header(null), element('p', { className: 'status bad' }, errorText(error)))
     return
   }
-  root.append(header(state))
-  if (!state.isSignedIn)
+  root.append(header(popupState))
+  if (!popupState.isSignedIn)
     return showMessage('Sign in to TeaNode from the extension options first.', 'Open the options', () =>
       chrome.runtime.openOptionsPage(),
     )
-  if (!state.isSetUp) {
+  if (!popupState.isSetUp) {
     return showMessage(
       'Passwords is not set up yet. Set it up on the dashboard, with a passphrase and a recovery key.',
       'Open the dashboard',
       () => ask({ type: 'passwords:open-dashboard' }),
     )
   }
-  if (!state.isUnlocked) return showUnlock()
-  showLogins(state)
+  if (!popupState.isUnlocked) return showUnlock()
+  showLogins(popupState)
 }
 
 function showMessage(text: string, buttonText: string, onClick: () => unknown) {
@@ -108,7 +108,7 @@ function showUnlock() {
     ),
     element('label', { className: 'field' }, label, input),
     element('div', { className: 'actions' }, unlock, switchKind),
-    status,
+    statusLine,
   )
   form.addEventListener('submit', async (event) => {
     event.preventDefault()
@@ -130,14 +130,14 @@ function showUnlock() {
 
 // --- the logins ------------------------------------------------------------
 
-async function showLogins(state: PopupState) {
-  if (state.pendingSave) root.append(pendingSaveCard(state.pendingSave))
-  if (state.isFrameCrossOrigin && state.frameHost) {
+async function showLogins(popupState: PopupState) {
+  if (popupState.pendingSave) root.append(pendingSaveCard(popupState.pendingSave))
+  if (popupState.isFrameCrossOrigin && popupState.frameHost) {
     root.append(
       element(
         'div',
         { className: 'card muted' },
-        `The sign-in form is in a frame from ${state.frameHost}. The page around it is ${state.topHost || 'another site'}. Filling puts the login into that frame.`,
+        `The sign-in form is in a frame from ${popupState.frameHost}. The page around it is ${popupState.topHost || 'another site'}. Filling puts the login into that frame.`,
       ),
     )
   }
@@ -147,27 +147,41 @@ async function showLogins(state: PopupState) {
     void loadList()
   })
   const listArea = element('div', { className: 'list-area' })
-  root.append(search, listArea, generatorSection(), status)
+  root.append(search, listArea, generatorSection(), statusLine)
   async function loadList() {
     let answer: SearchAnswer
     try {
       answer = await ask<SearchAnswer>({ type: 'passwords:search', query, ...target })
     } catch (error) {
-      if (error instanceof AskError && error.code === 'locked') return void refresh()
+      if (error instanceof AskError && error.errorCode === 'locked') return void refresh()
       say(errorText(error), 'bad')
       return
     }
     clear(listArea)
     if (answer.forThisSite.length > 0) {
-      listArea.append(element('h2', {}, `For ${state.frameHost || 'this site'}`), loginList(answer.forThisSite, state))
+      listArea.append(
+        element('h2', {}, `For ${popupState.frameHost || 'this site'}`),
+        loginList(answer.forThisSite, popupState),
+      )
     }
     if (answer.others.length > 0) {
       listArea.append(
         element('h2', {}, answer.forThisSite.length > 0 ? 'All other logins' : 'All logins'),
-        loginList(answer.others, state),
+        loginList(answer.others, popupState),
       )
     }
-    if (answer.forThisSite.length === 0 && answer.others.length === 0) {
+    if (answer.ownerKeyChangedCount > 0) {
+      listArea.append(
+        element(
+          'div',
+          { className: 'card muted' },
+          answer.ownerKeyChangedCount === 1
+            ? "A shared login is not shown. Its owner's key changed; open Passwords on the dashboard to check it."
+            : `${answer.ownerKeyChangedCount} shared logins are not shown. Their owners' keys changed; open Passwords on the dashboard to check them.`,
+        ),
+      )
+    }
+    if (answer.forThisSite.length === 0 && answer.others.length === 0 && answer.ownerKeyChangedCount === 0) {
       listArea.append(element('p', { className: 'muted' }, query ? 'Nothing matches.' : 'There are no logins yet.'))
     } else if (query && answer.others.length === 0) {
       listArea.append(element('p', { className: 'muted' }, 'No other logins match.'))
@@ -181,9 +195,13 @@ function pendingSaveCard(pending: { host: string; userName: string }): HTMLEleme
   save.addEventListener('click', async () => {
     save.disabled = true
     try {
-      const answer = await ask<{ outcome: string }>({ type: 'passwords:save-pending', tabId })
+      const answer = await ask<{ saveOutcome: string }>({ type: 'passwords:save-pending', tabId })
       say(
-        answer.outcome === 'saved' ? 'Saved.' : answer.outcome === 'updated' ? 'Password updated.' : 'Nothing to save.',
+        answer.saveOutcome === 'saved'
+          ? 'Saved.'
+          : answer.saveOutcome === 'updated'
+            ? 'Password updated.'
+            : 'Nothing to save.',
         'good',
       )
       void refresh()
@@ -201,9 +219,9 @@ function pendingSaveCard(pending: { host: string; userName: string }): HTMLEleme
   )
 }
 
-function loginList(logins: LoginSummary[], state: PopupState): HTMLElement {
+function loginList(logins: LoginSummary[], popupState: PopupState): HTMLElement {
   const list = element('div', { className: 'list' })
-  for (const login of logins) list.append(loginRow(login, state))
+  for (const login of logins) list.append(loginRow(login, popupState))
   return list
 }
 
@@ -211,7 +229,7 @@ async function guarded<Result>(work: () => Promise<Result>): Promise<Result | un
   try {
     return await work()
   } catch (error) {
-    if (error instanceof AskError && error.code === 'locked') {
+    if (error instanceof AskError && error.errorCode === 'locked') {
       void refresh()
       return undefined
     }
@@ -220,7 +238,7 @@ async function guarded<Result>(work: () => Promise<Result>): Promise<Result | un
   }
 }
 
-function loginRow(login: LoginSummary, state: PopupState): HTMLElement {
+function loginRow(login: LoginSummary, popupState: PopupState): HTMLElement {
   const row = element(
     'div',
     { className: 'row' },
@@ -234,71 +252,73 @@ function loginRow(login: LoginSummary, state: PopupState): HTMLElement {
     button.addEventListener('click', () => void guarded(work))
     actions.append(button)
   }
-  if (tabId !== undefined && state.frameHost !== '') {
-    add(
-      'Fill',
-      async () => {
-        const answer = await ask<{ filledCount: number }>({
-          type: 'passwords:fill-in-tab',
-          itemId: login.id,
-          part: 'login',
-          tabId,
-          frameId: frameId ?? 0,
-        })
-        if (answer.filledCount === 0) return say('No sign-in field was found on the page.', 'bad')
-        say('Filled.', 'good')
-        setTimeout(() => window.close(), 500)
-      },
-      'primary',
-    )
+  if (tabId !== undefined && popupState.frameHost !== '') {
+    add('Fill', () => fillInTab(login, 'login', false), 'primary')
   }
   if (login.hasPassword) add('Copy password', () => copy(login.id, 'password'))
   if (login.userName) add('Copy user name', () => copy(login.id, 'userName'))
-  if (login.hasOneTimeCode) add('One-time code', () => showCode(login, codeArea, state))
+  if (login.hasOneTimeCode) add('One-time code', () => showCode(login, codeArea, popupState))
   row.append(actions, codeArea)
   return row
 }
 
-async function copy(itemId: string, field: 'password' | 'userName' | 'oneTimeCode') {
-  await ask({ type: 'passwords:copy', itemId, field })
+// fillInTab fills the page the window was opened for. A form that sends what
+// is typed to another host than the page's own is filled only after the
+// person is told so and presses the button that says to go on.
+async function fillInTab(login: LoginSummary, fillPart: 'login' | 'oneTimeCode', isForeignActionConfirmed: boolean) {
+  const answer = await ask<{ filledCount: number; foreignActionHost: string }>({
+    type: 'passwords:fill-in-tab',
+    itemId: login.id,
+    fillPart,
+    isForeignActionConfirmed,
+    tabId,
+    frameId: frameId ?? 0,
+  })
+  if (answer.foreignActionHost) {
+    const goOn = element('button', { type: 'button', className: 'primary' }, 'Fill anyway')
+    goOn.addEventListener('click', () => void guarded(() => fillInTab(login, fillPart, true)))
+    statusLine.className = 'status bad'
+    statusLine.textContent = `This form sends what you type to ${answer.foreignActionHost}, not to the page's own host. Nothing was filled.`
+    statusLine.append(' ', goOn)
+    return
+  }
+  if (answer.filledCount === 0) {
+    return say(
+      fillPart === 'login'
+        ? 'No sign-in field was found on the page.'
+        : 'No one-time code field was found on the page.',
+      'bad',
+    )
+  }
+  say('Filled.', 'good')
+  setTimeout(() => window.close(), 500)
+}
+
+async function copy(itemId: string, copiedField: 'password' | 'userName' | 'oneTimeCode') {
+  await ask({ type: 'passwords:copy', itemId, copiedField })
   say('Copied. The clipboard is cleared in 30 seconds if nothing else is copied.', 'good')
 }
 
 // showCode shows the one-time code with the seconds it holds for, and asks
 // for the next one when it runs out.
-async function showCode(login: LoginSummary, area: HTMLElement, state: PopupState) {
+async function showCode(login: LoginSummary, area: HTMLElement, popupState: PopupState) {
   stopTimer()
   const draw = async () => {
-    const answer = await ask<{ code: string; secondsLeft: number }>({
+    const answer = await ask<{ oneTimeCode: string; secondsLeft: number }>({
       type: 'passwords:one-time-code',
       itemId: login.id,
     })
     let secondsLeft = answer.secondsLeft
     clear(area)
-    const digits = element('span', { className: 'code' }, answer.code.replace(/(\d{3})(\d+)/, '$1 $2'))
+    const digits = element('span', { className: 'code' }, answer.oneTimeCode.replace(/(\d{3})(\d+)/, '$1 $2'))
     const countdown = element('span', { className: 'muted' }, ` ${secondsLeft}s left`)
     const copyButton = element('button', { type: 'button' }, 'Copy code')
     copyButton.addEventListener('click', () => void guarded(() => copy(login.id, 'oneTimeCode')))
     const codeActions = element('div', { className: 'actions' }, digits, countdown, copyButton)
     area.append(codeActions)
-    if (tabId !== undefined && state.frameHost !== '') {
+    if (tabId !== undefined && popupState.frameHost !== '') {
       const fill = element('button', { type: 'button' }, 'Fill code')
-      fill.addEventListener(
-        'click',
-        () =>
-          void guarded(async () => {
-            const filled = await ask<{ filledCount: number }>({
-              type: 'passwords:fill-in-tab',
-              itemId: login.id,
-              part: 'oneTimeCode',
-              tabId,
-              frameId: frameId ?? 0,
-            })
-            if (filled.filledCount === 0) return say('No one-time code field was found on the page.', 'bad')
-            say('Filled.', 'good')
-            setTimeout(() => window.close(), 500)
-          }),
-      )
+      fill.addEventListener('click', () => void guarded(() => fillInTab(login, 'oneTimeCode', false)))
       codeActions.append(fill)
     }
     stopTimer()

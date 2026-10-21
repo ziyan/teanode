@@ -35,10 +35,18 @@ export interface PageContext {
 // How a request that cannot be served is answered: left to the browser, or
 // refused with the error a browser would throw.
 export type Refusal =
-  | { outcome: 'fallback'; reason: string }
-  | { outcome: 'error'; errorName: 'SecurityError' | 'NotSupportedError' | 'TypeError'; reason: string }
+  | { parseOutcome: 'fallback'; refusalReason: string }
+  | { parseOutcome: 'error'; errorName: 'SecurityError' | 'NotSupportedError' | 'TypeError'; refusalReason: string }
 
-export type Parsed<Request> = { outcome: 'ok'; request: Request } | Refusal
+export type Parsed<Request> = { parseOutcome: 'ok'; request: Request } | Refusal
+
+// How much the site insists that the person proved who they are (WebAuthn's
+// userVerification). The default, when the site says nothing, is "preferred".
+export type UserVerificationRequirement = 'required' | 'preferred' | 'discouraged'
+
+function readUserVerification(value: unknown): UserVerificationRequirement {
+  return value === 'required' || value === 'discouraged' ? value : 'preferred'
+}
 
 export interface PasskeyCreationRequest {
   relyingPartyId: string
@@ -50,11 +58,13 @@ export interface PasskeyCreationRequest {
   userDisplayName: string
   challenge: string
   excludedCredentialIds: string[]
+  userVerification: UserVerificationRequirement
 }
 
 export interface PasskeyAssertionRequest {
   relyingPartyId: string
   challenge: string
+  userVerification: UserVerificationRequirement
   // Empty when the site accepts any passkey it can find for the relying party.
   allowedCredentialIds: string[]
 }
@@ -96,12 +106,12 @@ function readCredentialIds(value: unknown): string[] | null {
 // it, which isRelyingPartyOfHost knows.
 function readRelyingPartyId(named: unknown, context: PageContext): { id: string } | Refusal {
   if (!isSecureContextPage(context.pageUrl)) {
-    return { outcome: 'fallback', reason: 'passkeys need a secure page' }
+    return { parseOutcome: 'fallback', refusalReason: 'passkeys need a secure page' }
   }
   const id =
     typeof named === 'string' && named.trim() !== '' ? named.trim().toLowerCase() : effectiveDomain(context.pageUrl)
   if (!isRelyingPartyOfHost(id, context.pageUrl)) {
-    return { outcome: 'error', errorName: 'SecurityError', reason: 'the relying party id is not this site' }
+    return { parseOutcome: 'error', errorName: 'SecurityError', refusalReason: 'the relying party id is not this site' }
   }
   return { id }
 }
@@ -112,34 +122,38 @@ function readRelyingPartyId(named: unknown, context: PageContext): { id: string 
 // is left to the browser; what the page has no right to ask for is refused.
 export function parseCreationRequest(raw: unknown, context: PageContext): Parsed<PasskeyCreationRequest> {
   if (!isRecord(raw) || !isRecord(raw.rp) || !isRecord(raw.user)) {
-    return { outcome: 'error', errorName: 'TypeError', reason: 'the request is missing its relying party or user' }
+    return {
+      parseOutcome: 'error',
+      errorName: 'TypeError',
+      refusalReason: 'the request is missing its relying party or user',
+    }
   }
   const relyingParty = readRelyingPartyId(raw.rp.id, context)
-  if ('outcome' in relyingParty) return relyingParty
+  if ('parseOutcome' in relyingParty) return relyingParty
 
   const challenge = readBase64Url(raw.challenge)
   const userHandle = readBase64Url(raw.user.id)
   if (challenge === null || userHandle === null || decodeBase64Url(userHandle).length > MAXIMUM_USER_HANDLE_BYTES) {
-    return { outcome: 'error', errorName: 'TypeError', reason: 'the challenge or user id is not usable' }
+    return { parseOutcome: 'error', errorName: 'TypeError', refusalReason: 'the challenge or user id is not usable' }
   }
   if (typeof raw.user.name !== 'string' || raw.user.name === '') {
-    return { outcome: 'error', errorName: 'TypeError', reason: 'the user has no name' }
+    return { parseOutcome: 'error', errorName: 'TypeError', refusalReason: 'the user has no name' }
   }
   const parameters = Array.isArray(raw.pubKeyCredParams) ? raw.pubKeyCredParams : []
   // No list at all means ES256 and RS256 (WebAuthn section 5.4); an empty
   // one is read the same way.
   const offersEs256 = parameters.length === 0 || parameters.some((entry) => isRecord(entry) && entry.alg === ES256)
-  if (!offersEs256) return { outcome: 'fallback', reason: 'this site does not accept ES256 passkeys' }
+  if (!offersEs256) return { parseOutcome: 'fallback', refusalReason: 'this site does not accept ES256 passkeys' }
   const selection = isRecord(raw.authenticatorSelection) ? raw.authenticatorSelection : {}
   if (selection.authenticatorAttachment === 'cross-platform') {
-    return { outcome: 'fallback', reason: 'a security key was asked for' }
+    return { parseOutcome: 'fallback', refusalReason: 'a security key was asked for' }
   }
   const excludedCredentialIds = readCredentialIds(raw.excludeCredentials)
   if (excludedCredentialIds === null) {
-    return { outcome: 'error', errorName: 'TypeError', reason: 'the excluded credentials are not usable' }
+    return { parseOutcome: 'error', errorName: 'TypeError', refusalReason: 'the excluded credentials are not usable' }
   }
   return {
-    outcome: 'ok',
+    parseOutcome: 'ok',
     request: {
       relyingPartyId: relyingParty.id,
       relyingPartyName: isRecord(raw.rp) && typeof raw.rp.name === 'string' ? raw.rp.name : '',
@@ -148,6 +162,7 @@ export function parseCreationRequest(raw: unknown, context: PageContext): Parsed
       userDisplayName: typeof raw.user.displayName === 'string' ? raw.user.displayName : '',
       challenge,
       excludedCredentialIds,
+      userVerification: readUserVerification(selection.userVerification),
     },
   }
 }
@@ -155,18 +170,24 @@ export function parseCreationRequest(raw: unknown, context: PageContext): Parsed
 // parseAssertionRequest checks the options of navigator.credentials.get's
 // publicKey the same way.
 export function parseAssertionRequest(raw: unknown, context: PageContext): Parsed<PasskeyAssertionRequest> {
-  if (!isRecord(raw)) return { outcome: 'error', errorName: 'TypeError', reason: 'the request is empty' }
+  if (!isRecord(raw)) return { parseOutcome: 'error', errorName: 'TypeError', refusalReason: 'the request is empty' }
   const relyingParty = readRelyingPartyId(raw.rpId, context)
-  if ('outcome' in relyingParty) return relyingParty
+  if ('parseOutcome' in relyingParty) return relyingParty
   const challenge = readBase64Url(raw.challenge)
-  if (challenge === null) return { outcome: 'error', errorName: 'TypeError', reason: 'the challenge is not usable' }
+  if (challenge === null)
+    return { parseOutcome: 'error', errorName: 'TypeError', refusalReason: 'the challenge is not usable' }
   const allowedCredentialIds = readCredentialIds(raw.allowCredentials)
   if (allowedCredentialIds === null) {
-    return { outcome: 'error', errorName: 'TypeError', reason: 'the allowed credentials are not usable' }
+    return { parseOutcome: 'error', errorName: 'TypeError', refusalReason: 'the allowed credentials are not usable' }
   }
   return {
-    outcome: 'ok',
-    request: { relyingPartyId: relyingParty.id, challenge, allowedCredentialIds },
+    parseOutcome: 'ok',
+    request: {
+      relyingPartyId: relyingParty.id,
+      challenge,
+      allowedCredentialIds,
+      userVerification: readUserVerification(raw.userVerification),
+    },
   }
 }
 
@@ -234,11 +255,14 @@ export interface MadePasskey {
 
 // makePasskey creates a passkey for a creation request: a new key pair, the
 // authenticator data and the attestation object (format "none"). The person
-// confirmed in the extension's own window and the passphrase unlocked
-// Passwords, so the ceremony counts as user verified.
+// confirmed in the extension's own window. The credential says the person was
+// verified (the user verified flag) only when isUserVerified is true: they
+// typed the passphrase in that window, or a moment before. Otherwise it says
+// only that they were present.
 export async function makePasskey(
   request: PasskeyCreationRequest,
   context: PageContext,
+  isUserVerified: boolean,
   now: Date = new Date(),
 ): Promise<MadePasskey> {
   const passkey = await createPasskey()
@@ -247,7 +271,7 @@ export async function makePasskey(
     credentialId: passkey.credentialId,
     publicKeyX: passkey.publicKeyX,
     publicKeyY: passkey.publicKeyY,
-    isVerified: true,
+    isVerified: isUserVerified,
   })
   const clientDataJson = buildClientDataJson({
     type: 'webauthn.create',
@@ -284,8 +308,9 @@ export async function signWithPasskey(
   request: PasskeyAssertionRequest,
   passkey: PasskeyFields,
   context: PageContext,
+  isUserVerified: boolean,
 ): Promise<AssertionCredentialJson> {
-  const authenticatorData = await assertionAuthenticatorData(request.relyingPartyId, true)
+  const authenticatorData = await assertionAuthenticatorData(request.relyingPartyId, isUserVerified)
   const clientDataJson = buildClientDataJson({
     type: 'webauthn.get',
     challenge: request.challenge,

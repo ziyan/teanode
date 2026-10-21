@@ -7,7 +7,7 @@
 //
 // The steps that work on keys are the dashboard's own (passwordsProtocol.ts);
 // this file only puts them in an order that fits a worker that can stop at
-// any time. The storage and the server are passed in (VaultEnvironment) so the
+// any time. The storage and the server are passed in (PasswordsEnvironment) so the
 // tests can run the whole of it without a browser.
 
 import {
@@ -51,7 +51,7 @@ export interface StorageArea {
 
 export type GraphqlCall = (query: string, variables?: Record<string, unknown>) => Promise<any>
 
-export interface VaultEnvironment {
+export interface PasswordsEnvironment {
   // session holds the opened keys; local holds the public keys of the people
   // this person shares with (public, so local is fine).
   session: StorageArea
@@ -62,7 +62,16 @@ export interface VaultEnvironment {
 
 const KEYS_STORAGE_KEY = 'passwordsKeys'
 const PINS_PREFIX = 'passwordsPins:'
+const PASSKEY_SITES_KEY = 'passwordsPasskeySites'
 const SESSION_QUERY = 'query { GetSession { userId } }'
+
+// The longest lock time the extension honors, whatever the server says: a
+// day. The server's own limit is the dashboard's business; a larger number
+// from a server must not keep the keys in the browser for longer.
+export const MAXIMUM_LOCK_AFTER_MINUTES = 1440
+// How long after the person typed the passphrase a ceremony still counts as
+// one in which they proved who they are (the user verified flag of a passkey).
+export const USER_VERIFICATION_MILLISECONDS = 60_000
 
 interface StoredKeys {
   userId: string
@@ -71,9 +80,12 @@ interface StoredKeys {
   publicKey: string
   lockAfterMinutes: number
   lastUsedAtMilliseconds: number
+  // verifiedAtMilliseconds is when the passphrase or recovery key was typed.
+  // Use does not move it. Keys stored before this was kept have none (zero).
+  verifiedAtMilliseconds: number
 }
 
-export interface VaultKeys {
+export interface OpenedKeys {
   userId: string
   accountKey: Uint8Array
   keyPair: PersonKeyPair
@@ -89,23 +101,32 @@ function isStoredKeys(value: unknown): value is StoredKeys {
     typeof keys.privateKey === 'string' &&
     typeof keys.publicKey === 'string' &&
     typeof keys.lockAfterMinutes === 'number' &&
-    typeof keys.lastUsedAtMilliseconds === 'number'
+    typeof keys.lastUsedAtMilliseconds === 'number' &&
+    (keys.verifiedAtMilliseconds === undefined || typeof keys.verifiedAtMilliseconds === 'number')
   )
 }
 
-async function readStoredKeys(environment: VaultEnvironment): Promise<StoredKeys | null> {
+async function readStoredKeys(environment: PasswordsEnvironment): Promise<StoredKeys | null> {
   const stored = (await environment.session.get(KEYS_STORAGE_KEY))[KEYS_STORAGE_KEY]
-  return isStoredKeys(stored) ? stored : null
+  if (!isStoredKeys(stored)) return null
+  return {
+    ...stored,
+    lockAfterMinutes: Math.min(stored.lockAfterMinutes, MAXIMUM_LOCK_AFTER_MINUTES),
+    verifiedAtMilliseconds: stored.verifiedAtMilliseconds ?? 0,
+  }
 }
 
-// lockVault drops the opened keys.
-export async function lockVault(environment: VaultEnvironment): Promise<void> {
+// lockPasswords drops the opened keys.
+export async function lockPasswords(environment: PasswordsEnvironment): Promise<void> {
   await environment.session.remove(KEYS_STORAGE_KEY)
 }
 
-export interface VaultState {
+export interface PasswordsState {
   isUnlocked: boolean
   lockAfterMinutes: number
+  // wasUserVerifiedRecently: the passphrase or recovery key was typed within
+  // USER_VERIFICATION_MILLISECONDS.
+  wasUserVerifiedRecently: boolean
 }
 
 // isLockTimeOver says whether the keys have gone unused for the lock time.
@@ -117,21 +138,26 @@ export function isLockTimeOver(
 }
 
 // lockIfIdle drops the keys when the lock time is over, and says whether it did.
-export async function lockIfIdle(environment: VaultEnvironment): Promise<boolean> {
+export async function lockIfIdle(environment: PasswordsEnvironment): Promise<boolean> {
   const stored = await readStoredKeys(environment)
   if (stored === null || !isLockTimeOver(stored, environment.now())) return false
-  await lockVault(environment)
+  await lockPasswords(environment)
   return true
 }
 
-// readVaultState says whether Passwords is open, without counting as use.
-export async function readVaultState(environment: VaultEnvironment): Promise<VaultState> {
+// readPasswordsState says whether Passwords is open, without counting as use.
+export async function readPasswordsState(environment: PasswordsEnvironment): Promise<PasswordsState> {
   await lockIfIdle(environment)
   const stored = await readStoredKeys(environment)
-  return { isUnlocked: stored !== null, lockAfterMinutes: stored?.lockAfterMinutes ?? 0 }
+  return {
+    isUnlocked: stored !== null,
+    lockAfterMinutes: stored?.lockAfterMinutes ?? 0,
+    wasUserVerifiedRecently:
+      stored !== null && environment.now() - stored.verifiedAtMilliseconds < USER_VERIFICATION_MILLISECONDS,
+  }
 }
 
-export async function readPasswordsSetup(environment: VaultEnvironment): Promise<PasswordsSetup> {
+export async function readPasswordsSetup(environment: PasswordsEnvironment): Promise<PasswordsSetup> {
   const answer = await environment.call(READ_PASSWORDS_SETUP)
   return answer.ReadPasswordsSetup as PasswordsSetup
 }
@@ -142,10 +168,10 @@ export interface UnlockInput {
   isRecoveryKey: boolean
 }
 
-// unlockVault proves the passphrase or recovery key to the server, opens the
+// unlockPasswords proves the passphrase or recovery key to the server, opens the
 // account key and the key pair with the answer, and keeps them for the lock
 // time. The token it calls with is not a tap and needs none.
-export async function unlockVault(environment: VaultEnvironment, input: UnlockInput): Promise<void> {
+export async function unlockPasswords(environment: PasswordsEnvironment, input: UnlockInput): Promise<void> {
   const setup = await readPasswordsSetup(environment)
   if (!setup.isSetUp) throw new PasswordsError('notSetUp')
   const secret = input.isRecoveryKey
@@ -178,31 +204,32 @@ export async function unlockVault(environment: VaultEnvironment, input: UnlockIn
     accountKey: encodeBase64(accountKey),
     privateKey: encodeBase64(privateKey),
     publicKey: answer.publicKey,
-    lockAfterMinutes: setup.lockAfterMinutes >= 1 ? setup.lockAfterMinutes : 15,
+    lockAfterMinutes: setup.lockAfterMinutes >= 1 ? Math.min(setup.lockAfterMinutes, MAXIMUM_LOCK_AFTER_MINUTES) : 15,
     lastUsedAtMilliseconds: environment.now(),
+    verifiedAtMilliseconds: environment.now(),
   }
   accountKey.fill(0)
   privateKey.fill(0)
   await environment.session.set({ [KEYS_STORAGE_KEY]: stored })
 }
 
-// withUnlockedVault runs a step with the opened keys and puts the lock off.
+// withOpenedKeys runs a step with the opened keys and puts the lock off.
 // The keys are copies made for the step and are overwritten after it.
-export async function withUnlockedVault<Result>(
-  environment: VaultEnvironment,
-  step: (keys: VaultKeys) => Promise<Result>,
+export async function withOpenedKeys<Result>(
+  environment: PasswordsEnvironment,
+  step: (keys: OpenedKeys) => Promise<Result>,
   options: { isUse: boolean } = { isUse: true },
 ): Promise<Result> {
   const stored = await readStoredKeys(environment)
   if (stored === null) throw new PasswordsError('locked')
   if (isLockTimeOver(stored, environment.now())) {
-    await lockVault(environment)
+    await lockPasswords(environment)
     throw new PasswordsError('locked')
   }
   if (options.isUse) {
     await environment.session.set({ [KEYS_STORAGE_KEY]: { ...stored, lastUsedAtMilliseconds: environment.now() } })
   }
-  const keys: VaultKeys = {
+  const keys: OpenedKeys = {
     userId: stored.userId,
     accountKey: decodeBase64(stored.accountKey),
     keyPair: { privateKey: decodeBase64(stored.privateKey), publicKey: decodeBase64(stored.publicKey) },
@@ -218,7 +245,7 @@ export async function withUnlockedVault<Result>(
 // ---------------------------------------------------------------------------
 // Known keys (trust on first use for the owners of shared items)
 
-async function readPins(environment: VaultEnvironment, userId: string): Promise<Record<string, string>> {
+async function readPins(environment: PasswordsEnvironment, userId: string): Promise<Record<string, string>> {
   const stored = (await environment.local.get(PINS_PREFIX + userId))[PINS_PREFIX + userId]
   if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return {}
   const pins: Record<string, string> = {}
@@ -228,7 +255,7 @@ async function readPins(environment: VaultEnvironment, userId: string): Promise<
   return pins
 }
 
-async function pinOwnerKey(environment: VaultEnvironment, userId: string, ownerUserId: string, publicKey: string) {
+async function pinOwnerKey(environment: PasswordsEnvironment, userId: string, ownerUserId: string, publicKey: string) {
   const pins = await readPins(environment, userId)
   await environment.local.set({ [PINS_PREFIX + userId]: { ...pins, [ownerUserId]: publicKey } })
 }
@@ -242,7 +269,11 @@ async function pinOwnerKey(environment: VaultEnvironment, userId: string, ownerU
 // cannot be filled. A shared item opens only with the owner key this device
 // already knows; the first key seen for an owner is kept once an item of
 // theirs has opened with it.
-export async function openItems(environment: VaultEnvironment, keys: VaultKeys): Promise<PasswordItem[]> {
+export async function openItems(
+  environment: PasswordsEnvironment,
+  keys: OpenedKeys,
+  report?: OpenReport,
+): Promise<PasswordItem[]> {
   const list = (await environment.call(LIST_PASSWORD_ITEMS, { sinceRevision: null }))
     .ListPasswordItems as PasswordItemList
   const pins = await readPins(environment, keys.userId)
@@ -250,6 +281,9 @@ export async function openItems(environment: VaultEnvironment, keys: VaultKeys):
   for (const record of list.items) {
     const pinned = record.isSharedWithMe ? (pins[record.ownerUserId] ?? null) : null
     const item = await openPasswordItem(record, keys.accountKey, keys.keyPair, keys.userId, pinned)
+    if (item !== null && item.deletedAt === null && item.ownerKeyChange !== null && report) {
+      report.ownerKeyChangedCount += 1
+    }
     if (item === null || item.deletedAt !== null || item.isUnreadable) continue
     opened.push(item)
     if (record.isSharedWithMe && pinned === null && pins[record.ownerUserId] === undefined) {
@@ -257,7 +291,15 @@ export async function openItems(environment: VaultEnvironment, keys: VaultKeys):
       await pinOwnerKey(environment, keys.userId, record.ownerUserId, record.ownerPublicKey)
     }
   }
+  await rememberPasskeySites(environment, keys.userId, loginsOf(opened))
   return opened
+}
+
+// OpenReport collects what openItems leaves out and the person should hear
+// of: a shared login is not opened when its owner's key is not the one this
+// device kept, and is counted here instead of dropped without a word.
+export interface OpenReport {
+  ownerKeyChangedCount: number
 }
 
 // releaseItems overwrites the item keys of items that are no longer needed.
@@ -310,11 +352,99 @@ export function sortLogins(logins: LoginItem[]): LoginItem[] {
 export async function currentOneTimeCode(
   login: LoginItem,
   nowMilliseconds: number,
-): Promise<{ code: string; secondsLeft: number } | null> {
+): Promise<{ oneTimeCode: string; secondsLeft: number } | null> {
   if (login.fields.oneTimeCodeUri === '') return null
   const settings = parseOneTimeCodeUri(login.fields.oneTimeCodeUri)
   const seconds = Math.floor(nowMilliseconds / 1000)
-  return { code: await oneTimeCode(settings, seconds), secondsLeft: oneTimeCodeSecondsLeft(settings, seconds) }
+  return { oneTimeCode: await oneTimeCode(settings, seconds), secondsLeft: oneTimeCodeSecondsLeft(settings, seconds) }
+}
+
+// ---------------------------------------------------------------------------
+// Which sites have a passkey here (known while locked)
+//
+// A site asking for a passkey while Passwords is locked is left to the browser
+// unless this extension has a passkey for it, and it cannot look while locked.
+// So whenever the items are opened, the relying party ids of the passkeys
+// found are kept in chrome.storage.local, as salted SHA-256 hashes: enough to
+// answer "is there a passkey for this id?", with no site name on disk. The
+// salt is stored beside the hashes, so this only keeps the list from being
+// read at a glance; it is not secret.
+
+interface StoredPasskeySites {
+  userId: string
+  salt: string
+  hashes: string[]
+}
+
+async function hashRelyingPartyId(salt: string, relyingPartyId: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`${salt}\n${relyingPartyId.trim().toLowerCase()}`)
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function readPasskeySites(environment: PasswordsEnvironment): Promise<StoredPasskeySites | null> {
+  const stored = (await environment.local.get(PASSKEY_SITES_KEY))[PASSKEY_SITES_KEY] as StoredPasskeySites | undefined
+  if (
+    typeof stored !== 'object' ||
+    stored === null ||
+    typeof stored.userId !== 'string' ||
+    typeof stored.salt !== 'string' ||
+    !Array.isArray(stored.hashes)
+  ) {
+    return null
+  }
+  return stored
+}
+
+// rememberPasskeySites keeps the relying party ids of the passkeys in these
+// logins, replacing what was kept.
+export async function rememberPasskeySites(
+  environment: PasswordsEnvironment,
+  userId: string,
+  logins: LoginItem[],
+): Promise<void> {
+  const before = await readPasskeySites(environment)
+  let salt = before?.userId === userId ? before.salt : ''
+  if (salt === '') {
+    const random = crypto.getRandomValues(new Uint8Array(16))
+    salt = Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+  const relyingPartyIds = new Set(logins.flatMap((login) => login.fields.passkeys.map((kept) => kept.relyingPartyId)))
+  const hashes = (await Promise.all([...relyingPartyIds].map((id) => hashRelyingPartyId(salt, id)))).sort()
+  if (before && before.userId === userId && before.salt === salt && before.hashes.join() === hashes.join()) return
+  await environment.local.set({ [PASSKEY_SITES_KEY]: { userId, salt, hashes } satisfies StoredPasskeySites })
+}
+
+// isPasskeySiteKnown says whether a passkey for the relying party id was seen
+// the last time the items were opened. Never opened here: not known.
+export async function isPasskeySiteKnown(environment: PasswordsEnvironment, relyingPartyId: string): Promise<boolean> {
+  const stored = await readPasskeySites(environment)
+  if (stored === null) return false
+  return stored.hashes.includes(await hashRelyingPartyId(stored.salt, relyingPartyId))
+}
+
+// addPasskeySite adds one relying party id to what was kept, for a passkey
+// that was just saved.
+export async function addPasskeySite(
+  environment: PasswordsEnvironment,
+  userId: string,
+  relyingPartyId: string,
+): Promise<void> {
+  const before = await readPasskeySites(environment)
+  const salt =
+    before?.userId === userId
+      ? before.salt
+      : Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  const kept = before?.userId === userId ? before.hashes : []
+  const hash = await hashRelyingPartyId(salt, relyingPartyId)
+  if (kept.includes(hash)) return
+  await environment.local.set({
+    [PASSKEY_SITES_KEY]: { userId, salt, hashes: [...kept, hash].sort() } satisfies StoredPasskeySites,
+  })
+}
+
+export async function forgetPasskeySites(environment: PasswordsEnvironment): Promise<void> {
+  await environment.local.remove(PASSKEY_SITES_KEY)
 }
 
 // ---------------------------------------------------------------------------
@@ -329,8 +459,8 @@ export interface LoginToSave {
 }
 
 async function saveLoginFields(
-  environment: VaultEnvironment,
-  keys: VaultKeys,
+  environment: PasswordsEnvironment,
+  keys: OpenedKeys,
   itemId: string,
   fields: LoginFields,
   existing: LoginItem | null,
@@ -374,7 +504,7 @@ export function findOwnLoginFor(logins: LoginItem[], pageUrl: string, userName: 
 export function whatToDoWithCapturedLogin(
   logins: LoginItem[],
   captured: LoginToSave,
-): { action: 'save' | 'update' | 'none'; existing: LoginItem | null } {
+): { offerAction: 'save' | 'update' | 'none'; existing: LoginItem | null } {
   const existing = findOwnLoginFor(logins, captured.pageUrl, captured.userName)
   if (existing === null) {
     // The same user name and password already reachable through a shared
@@ -384,21 +514,21 @@ export function whatToDoWithCapturedLogin(
         login.fields.userName.trim().toLowerCase() === captured.userName.trim().toLowerCase() &&
         login.fields.password === captured.password,
     )
-    return { action: sharedSame ? 'none' : 'save', existing: null }
+    return { offerAction: sharedSame ? 'none' : 'save', existing: null }
   }
-  return { action: existing.fields.password === captured.password ? 'none' : 'update', existing }
+  return { offerAction: existing.fields.password === captured.password ? 'none' : 'update', existing }
 }
 
 // saveCapturedLogin saves a new login, or changes the password of the
 // person's own login for this site and user name.
 export async function saveCapturedLogin(
-  environment: VaultEnvironment,
-  keys: VaultKeys,
+  environment: PasswordsEnvironment,
+  keys: OpenedKeys,
   logins: LoginItem[],
   captured: LoginToSave,
 ): Promise<SaveOutcome> {
   const decision = whatToDoWithCapturedLogin(logins, captured)
-  if (decision.action === 'none') return 'unchanged'
+  if (decision.offerAction === 'none') return 'unchanged'
   if (decision.existing) {
     await saveLoginFields(
       environment,
@@ -452,8 +582,8 @@ export function passkeysForRelyingParty(
 // user name, or in a new login. A passkey for the same relying party and user
 // handle is replaced (a site that asks again for the same account).
 export async function savePasskey(
-  environment: VaultEnvironment,
-  keys: VaultKeys,
+  environment: PasswordsEnvironment,
+  keys: OpenedKeys,
   logins: LoginItem[],
   input: { pageUrl: string; relyingPartyName: string; passkey: PasskeyFields },
 ): Promise<'saved' | 'updated'> {
@@ -469,6 +599,7 @@ export async function savePasskey(
       { ...existing.fields, passkeys: [...others, input.passkey] },
       existing,
     )
+    await addPasskeySite(environment, keys.userId, input.passkey.relyingPartyId)
     return 'updated'
   }
   const fields: LoginFields = {
@@ -479,5 +610,6 @@ export async function savePasskey(
     passkeys: [input.passkey],
   }
   await saveLoginFields(environment, keys, crypto.randomUUID(), fields, null)
+  await addPasskeySite(environment, keys.userId, input.passkey.relyingPartyId)
   return 'saved'
 }

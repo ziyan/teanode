@@ -206,10 +206,20 @@ describe('installPasskeyOverride', () => {
 
   it('passes conditional mediation through to the browser', async () => {
     installPasskeyOverride(window)
-    stubContentScript({ outcome: 'error', errorName: 'NotAllowedError', message: 'no' })
+    stubContentScript({ replyOutcome: 'error', errorName: 'NotAllowedError', errorMessage: 'no' })
     expect(await credentials.get({ publicKey: { challenge: new Uint8Array([1]) }, mediation: 'conditional' })).toBe(
       'browser-got',
     )
+  })
+
+  it('passes silent mediation, and a conditional create, through to the browser', async () => {
+    installPasskeyOverride(window)
+    stubContentScript({ replyOutcome: 'error', errorName: 'NotAllowedError', errorMessage: 'no' })
+    expect(await credentials.get({ publicKey: { challenge: new Uint8Array([1]) }, mediation: 'silent' })).toBe(
+      'browser-got',
+    )
+    expect(await credentials.create({ publicKey, mediation: 'conditional' })).toBe('browser-created')
+    expect(await credentials.create({ publicKey, mediation: 'silent' })).toBe('browser-created')
   })
 
   it('falls back to the browser when nobody is listening', async () => {
@@ -219,7 +229,7 @@ describe('installPasskeyOverride', () => {
 
   it('falls back when the extension says to use the browser instead', async () => {
     installPasskeyOverride(window)
-    stubContentScript({ outcome: 'fallback' })
+    stubContentScript({ replyOutcome: 'fallback' })
     expect(await credentials.create({ publicKey })).toBe('browser-created')
     expect(await credentials.get({ publicKey: { challenge: new Uint8Array([1]) } })).toBe('browser-got')
   })
@@ -227,16 +237,19 @@ describe('installPasskeyOverride', () => {
   it('gives the page the credential the extension made, and sends only plain data', async () => {
     const seen: Record<string, unknown>[] = []
     installPasskeyOverride(window)
-    stubContentScript({ outcome: 'credential', credential: attestation }, seen)
+    stubContentScript({ replyOutcome: 'credential', credential: attestation }, seen)
     const credential = (await credentials.create({ publicKey })) as any
     expect(credential.id).toBe('AQID')
     expect(originalCreate).not.toHaveBeenCalled()
-    expect(seen[0]).toMatchObject({ kind: 'create', options: { challenge: 'AQ', user: { id: 'AQ', name: 'a' } } })
+    expect(seen[0]).toMatchObject({
+      ceremonyKind: 'create',
+      options: { challenge: 'AQ', user: { id: 'AQ', name: 'a' } },
+    })
   })
 
   it('throws what the extension says to throw', async () => {
     installPasskeyOverride(window)
-    stubContentScript({ outcome: 'error', errorName: 'SecurityError', message: 'not this site' })
+    stubContentScript({ replyOutcome: 'error', errorName: 'SecurityError', errorMessage: 'not this site' })
     await expect(credentials.create({ publicKey })).rejects.toMatchObject({
       name: 'SecurityError',
       message: 'not this site',
@@ -245,7 +258,7 @@ describe('installPasskeyOverride', () => {
 
   it('throws a TypeError for a malformed request', async () => {
     installPasskeyOverride(window)
-    stubContentScript({ outcome: 'error', errorName: 'TypeError', message: 'bad' })
+    stubContentScript({ replyOutcome: 'error', errorName: 'TypeError', errorMessage: 'bad' })
     await expect(credentials.get({ publicKey: { challenge: new Uint8Array([1]) } })).rejects.toBeInstanceOf(TypeError)
   })
 
@@ -256,7 +269,7 @@ describe('installPasskeyOverride', () => {
 
   it('stops at once for a request that was already cancelled', async () => {
     installPasskeyOverride(window)
-    stubContentScript({ outcome: 'fallback' })
+    stubContentScript({ replyOutcome: 'fallback' })
     const controller = new AbortController()
     controller.abort()
     await expect(credentials.create({ publicKey, signal: controller.signal })).rejects.toMatchObject({

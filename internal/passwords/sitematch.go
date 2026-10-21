@@ -19,14 +19,19 @@ func NormalizedHost(site string) string {
 // hostOf is the host of a site, with its leading "www." dropped or kept.
 func hostOf(site string, shouldDropWWW bool) string {
 	text := strings.TrimSpace(site)
-	if schemeEnd := strings.Index(text, "://"); schemeEnd >= 0 {
-		scheme := strings.ToLower(text[:schemeEnd])
-		if scheme != "http" && scheme != "https" {
+	if strings.IndexFunc(text, isBackslashOrControl) >= 0 {
+		return ""
+	}
+	if scheme, rest, hasScheme := splitScheme(text); hasScheme {
+		if strings.ToLower(scheme) != "http" && strings.ToLower(scheme) != "https" {
 			return ""
 		}
-		text = text[schemeEnd+len("://"):]
-	} else {
-		text = strings.TrimPrefix(text, "//")
+		text = rest
+	} else if strings.HasPrefix(text, "//") {
+		text = text[len("//"):]
+	} else if isSchemeWithoutSlashes(text) {
+		// "javascript:", "mailto:", "about:blank": not a host and a port.
+		return ""
 	}
 	if authorityEnd := strings.IndexAny(text, "/?#"); authorityEnd >= 0 {
 		text = text[:authorityEnd]
@@ -60,6 +65,55 @@ func hostOf(site string, shouldDropWWW bool) string {
 		return ""
 	}
 	return host
+}
+
+// splitScheme splits "scheme://rest" when the text starts with a scheme
+// followed by two slashes. A "://" further on, in a path or a query, is not a
+// scheme.
+func splitScheme(text string) (scheme, rest string, hasScheme bool) {
+	schemeEnd := strings.Index(text, "://")
+	if schemeEnd <= 0 || !isSchemeToken(text[:schemeEnd]) {
+		return "", text, false
+	}
+	return text[:schemeEnd], text[schemeEnd+len("://"):], true
+}
+
+// isSchemeToken is true for a letter followed by letters, digits, "+", "-"
+// and ".".
+func isSchemeToken(text string) bool {
+	for index := 0; index < len(text); index++ {
+		character := text[index]
+		isLetter := (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+		isOther := (character >= '0' && character <= '9') || character == '+' || character == '-' || character == '.'
+		if !isLetter && (index == 0 || !isOther) {
+			return false
+		}
+	}
+	return text != ""
+}
+
+// isSchemeWithoutSlashes is true for a scheme and a colon that is not a host
+// and a port: "mailto:ada@example.com" is, "localhost:8080/sign-in" is not.
+func isSchemeWithoutSlashes(text string) bool {
+	colon := strings.Index(text, ":")
+	if colon <= 0 || !isSchemeToken(text[:colon]) {
+		return false
+	}
+	rest := text[colon+1:]
+	digitsEnd := 0
+	for digitsEnd < len(rest) && rest[digitsEnd] >= '0' && rest[digitsEnd] <= '9' {
+		digitsEnd++
+	}
+	if digitsEnd > 0 && (digitsEnd == len(rest) || strings.IndexByte("/?#", rest[digitsEnd]) >= 0) {
+		return false
+	}
+	return true
+}
+
+// isBackslashOrControl is true for a backslash and for an ASCII control
+// character, including a delete.
+func isBackslashOrControl(character rune) bool {
+	return character == '\\' || character < 0x20 || character == 0x7f
 }
 
 // IsHostOfSites reports whether the page's host is the host of one of the
@@ -173,7 +227,7 @@ func EffectivePort(page string) int {
 // schemeOf is "http" when the address says so and "https" otherwise, which is
 // what a site typed without a scheme means.
 func schemeOf(site string) string {
-	if schemeEnd := strings.Index(site, "://"); schemeEnd >= 0 && strings.EqualFold(strings.TrimSpace(site[:schemeEnd]), "http") {
+	if scheme, _, hasScheme := splitScheme(strings.TrimSpace(site)); hasScheme && strings.EqualFold(scheme, "http") {
 		return "http"
 	}
 	return "https"
@@ -191,8 +245,8 @@ func defaultPortOf(scheme string) int {
 // matches nothing.
 func explicitPortOf(site string) (int, bool) {
 	text := strings.TrimSpace(site)
-	if schemeEnd := strings.Index(text, "://"); schemeEnd >= 0 {
-		text = text[schemeEnd+len("://"):]
+	if _, rest, hasScheme := splitScheme(text); hasScheme {
+		text = rest
 	} else {
 		text = strings.TrimPrefix(text, "//")
 	}

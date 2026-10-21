@@ -6,17 +6,30 @@
 // registry here keeps what each open window is waiting for; background.ts
 // decides what an answer does.
 
-import type { PasskeyAssertionRequest, PasskeyCreationRequest, PageContext } from './webauthn'
+import type {
+  PasskeyAssertionRequest,
+  PasskeyCreationRequest,
+  PageContext,
+  UserVerificationRequirement,
+} from './webauthn'
 import type { PasskeyReply } from './passkeyOverride'
 
 export const PROMPT_LIFETIME_MILLISECONDS = 5 * 60 * 1000
 
 export interface PendingPrompt {
   id: string
-  kind: 'create' | 'get'
+  ceremonyKind: 'create' | 'get'
   tabId: number
+  // frameId is the frame of the tab that asked.
+  frameId: number
+  // tabUrl is the address of the tab when the question was asked; the
+  // question ends when the tab goes anywhere else.
+  tabUrl: string
   relyingPartyId: string
   userName: string
+  // userVerification is what the site asked for. "required" is answered only
+  // after the person typed the passphrase (shortly before at the latest).
+  userVerification: UserVerificationRequirement
   windowId: number | null
   context: PageContext
   creation: { request: PasskeyCreationRequest } | null
@@ -47,6 +60,10 @@ export class PasskeyPrompts {
     return [...this.byId.values()].find((prompt) => prompt.windowId === windowId) ?? null
   }
 
+  findByFrame(tabId: number, frameId: number): PendingPrompt | null {
+    return [...this.byId.values()].find((prompt) => prompt.tabId === tabId && prompt.frameId === frameId) ?? null
+  }
+
   findByTab(tabId: number): PendingPrompt | null {
     return [...this.byId.values()].find((prompt) => prompt.tabId === tabId) ?? null
   }
@@ -65,7 +82,7 @@ export class PasskeyPrompts {
 }
 
 export const NOT_ALLOWED_REPLY: PasskeyReply = {
-  outcome: 'error',
+  replyOutcome: 'error',
   errorName: 'NotAllowedError',
-  message: 'The operation either timed out or was not allowed.',
+  errorMessage: 'The operation either timed out or was not allowed.',
 }

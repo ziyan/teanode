@@ -4,16 +4,22 @@
 // shadow root inside one host element that is placed in the top layer where
 // the browser supports it, the host's styles are set as important inline
 // declarations, and nothing the frame says is believed until the content
-// script has checked the frame is really shown (frameVisibility.ts). A
-// message is believed only if it comes from the frame's own window and the
-// extension's own origin.
+// script has checked the frame is really shown (frameVisibility.ts).
+//
+// The frame and the content script talk over a MessageChannel. Once the
+// frame has loaded, the content script posts one end of the channel to it,
+// addressed to the origin the frame's own address has (so a frame the page
+// navigated elsewhere gets nothing), and the page's window carries no other
+// message of ours. A frame that does not answer through the channel within a
+// moment is closed. If a page managed to hand the frame a channel of its own
+// first, the frame would be talking to the page and not to the content
+// script, which then hears nothing, believes nothing and acts on nothing.
 
-import { FRAME_MESSAGE_CHANNEL } from './frameChannel'
+import { FRAME_CONNECT_KIND, FRAME_MESSAGE_CHANNEL, originOfAddress } from './frameChannel'
 import { checkFrameShown, FrameCheck } from './frameVisibility'
 
 export interface FrameMessage {
-  channel: typeof FRAME_MESSAGE_CHANNEL
-  kind: string
+  frameMessageKind: string
   [key: string]: unknown
 }
 
@@ -26,20 +32,25 @@ export interface HostedFrameOptions {
   anchor: HTMLElement | null
   title: string
   onMessage: (message: FrameMessage) => void
+  // onClose is called when the frame closes itself because it never answered.
+  onClose?: () => void
 }
 
 const MAXIMUM_Z_INDEX = '2147483647'
 const EDGE_PIXELS = 8
+// How long a frame has, from when it was handed its channel, to say it is ready.
+const CONNECT_TIMEOUT_MILLISECONDS = 3000
 
 export class HostedFrame {
   readonly host: HTMLElement
   private readonly frame: HTMLIFrameElement
-  private readonly extensionOrigin: string
+  private readonly frameOrigin: string
+  private port: MessagePort | null = null
+  private connectTimer: ReturnType<typeof setTimeout> | null = null
   private anchor: HTMLElement | null
   private heightPixels: number
   private widthPixels: number
   private isClosed = false
-  private readonly listener: (event: MessageEvent) => void
 
   constructor(
     private readonly document: Document,
@@ -48,20 +59,21 @@ export class HostedFrame {
     this.anchor = options.anchor
     this.heightPixels = options.heightPixels
     this.widthPixels = options.widthPixels
-    // The extension's origin is its address without the trailing slash.
-    this.extensionOrigin = chrome.runtime.getURL('').replace(/\/$/, '')
     this.host = document.createElement('div')
     const shadow = this.host.attachShadow({ mode: 'closed' })
     this.frame = document.createElement('iframe')
     this.frame.src = chrome.runtime.getURL(options.page)
+    // The origin of the frame's own address, which is not always the one
+    // chrome.runtime.getURL('') names: a page of the extension that is only
+    // reachable at a dynamic address (use_dynamic_url) has another.
+    this.frameOrigin = originOfAddress(this.frame.src)
     this.frame.title = options.title
     this.frame.setAttribute('allow', '')
     const style = document.createElement('style')
     style.textContent = 'iframe { border: 0; width: 100%; height: 100%; display: block; color-scheme: light dark; }'
     shadow.append(style, this.frame)
     this.applyHostStyles()
-    this.listener = (event: MessageEvent) => this.receive(event)
-    document.defaultView?.addEventListener('message', this.listener)
+    this.frame.addEventListener('load', () => this.connect())
   }
 
   private applyHostStyles() {
@@ -132,26 +144,57 @@ export class HostedFrame {
 
   // check says whether the frame is really shown right now.
   check(): FrameCheck {
-    return this.isClosed ? { isShown: false, reason: 'the frame is closed' } : checkFrameShown(this.host)
+    return this.isClosed ? { isShown: false, failureReason: 'the frame is closed' } : checkFrameShown(this.host)
   }
 
+  // connect hands the frame one end of a new channel, once. Messages go
+  // through the other end from then on.
+  private connect() {
+    const frameWindow = this.frame.contentWindow
+    if (this.isClosed || this.port !== null || !frameWindow) return
+    const channel = new MessageChannel()
+    this.port = channel.port1
+    channel.port1.onmessage = (event: MessageEvent) => this.receive(event.data)
+    frameWindow.postMessage(
+      { channel: FRAME_MESSAGE_CHANNEL, frameMessageKind: FRAME_CONNECT_KIND },
+      this.frameOrigin,
+      [channel.port2],
+    )
+    this.connectTimer = setTimeout(() => {
+      this.close()
+      this.options.onClose?.()
+    }, CONNECT_TIMEOUT_MILLISECONDS)
+  }
+
+  // send tells the frame something. Before the frame has a channel there is
+  // nobody to tell.
   send(message: Record<string, unknown>) {
-    this.frame.contentWindow?.postMessage({ channel: FRAME_MESSAGE_CHANNEL, ...message }, this.extensionOrigin)
+    this.port?.postMessage(message)
   }
 
-  private receive(event: MessageEvent) {
-    // Only the frame's own window, from the extension's own origin. A page
-    // script can post to this window but is neither.
-    if (this.isClosed || event.source !== this.frame.contentWindow || event.origin !== this.extensionOrigin) return
-    const data = event.data as FrameMessage | null
-    if (!data || data.channel !== FRAME_MESSAGE_CHANNEL || typeof data.kind !== 'string') return
-    this.options.onMessage(data)
+  // focusFrame moves the keyboard focus into the frame.
+  focusFrame() {
+    if (!this.isClosed) this.frame.focus()
+  }
+
+  private receive(data: unknown) {
+    if (this.isClosed) return
+    const message = data as FrameMessage | null
+    if (!message || typeof message !== 'object' || typeof message.frameMessageKind !== 'string') return
+    if (this.connectTimer !== null) {
+      clearTimeout(this.connectTimer)
+      this.connectTimer = null
+    }
+    this.options.onMessage(message)
   }
 
   close() {
     if (this.isClosed) return
     this.isClosed = true
-    this.document.defaultView?.removeEventListener('message', this.listener)
+    if (this.connectTimer !== null) clearTimeout(this.connectTimer)
+    this.connectTimer = null
+    this.port?.close()
+    this.port = null
     try {
       ;(this.host as any).hidePopover?.()
     } catch {

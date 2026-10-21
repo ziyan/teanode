@@ -38,7 +38,7 @@ describe('parseCreationRequest', () => {
   it('reads a request for the page it comes from', () => {
     const parsed = parseCreationRequest(creationOptions(), context)
     expect(parsed).toEqual({
-      outcome: 'ok',
+      parseOutcome: 'ok',
       request: {
         relyingPartyId: 'example.test',
         relyingPartyName: 'Example',
@@ -47,73 +47,103 @@ describe('parseCreationRequest', () => {
         userDisplayName: 'Ada',
         challenge,
         excludedCredentialIds: [],
+        userVerification: 'preferred',
       },
+    })
+  })
+
+  it('reads how much the site insists on the person being verified', () => {
+    for (const [asked, wanted] of [
+      ['required', 'required'],
+      ['discouraged', 'discouraged'],
+      ['preferred', 'preferred'],
+      [undefined, 'preferred'],
+      ['something else', 'preferred'],
+    ]) {
+      const parsed = parseCreationRequest(
+        creationOptions({ authenticatorSelection: { userVerification: asked } }),
+        context,
+      )
+      expect(parsed, String(asked)).toMatchObject({ request: { userVerification: wanted } })
+    }
+    expect(
+      parseAssertionRequest({ rpId: 'example.test', challenge, userVerification: 'required' }, context),
+    ).toMatchObject({
+      request: { userVerification: 'required' },
+    })
+    expect(parseAssertionRequest({ rpId: 'example.test', challenge }, context)).toMatchObject({
+      request: { userVerification: 'preferred' },
     })
   })
 
   it('takes the page host when the relying party names no id', () => {
     const parsed = parseCreationRequest(creationOptions({ rp: { name: 'Example' } }), context)
-    expect(parsed).toMatchObject({ outcome: 'ok', request: { relyingPartyId: 'login.example.test' } })
+    expect(parsed).toMatchObject({ parseOutcome: 'ok', request: { relyingPartyId: 'login.example.test' } })
   })
 
   it('refuses a relying party id that is not the page, as a browser would', () => {
     for (const id of ['evil.test', 'example.test.evil.test', 'test', 'login.example.test.']) {
       const parsed = parseCreationRequest(creationOptions({ rp: { id, name: 'x' } }), context)
-      if (id === 'login.example.test.') expect(parsed.outcome).toBe('ok')
-      else expect(parsed, id).toMatchObject({ outcome: 'error', errorName: 'SecurityError' })
+      if (id === 'login.example.test.') expect(parsed.parseOutcome).toBe('ok')
+      else expect(parsed, id).toMatchObject({ parseOutcome: 'error', errorName: 'SecurityError' })
     }
   })
 
   it('refuses a page at an address from naming a domain', () => {
     const address: PageContext = { pageUrl: 'https://192.0.2.7/', origin: 'https://192.0.2.7', isCrossOrigin: false }
     expect(parseCreationRequest(creationOptions({ rp: { id: '2.7', name: 'x' } }), address)).toMatchObject({
-      outcome: 'error',
+      parseOutcome: 'error',
       errorName: 'SecurityError',
     })
-    expect(parseCreationRequest(creationOptions({ rp: { id: '192.0.2.7', name: 'x' } }), address).outcome).toBe('ok')
+    // An address is not a relying party at all.
+    expect(parseCreationRequest(creationOptions({ rp: { id: '192.0.2.7', name: 'x' } }), address)).toMatchObject({
+      parseOutcome: 'error',
+      errorName: 'SecurityError',
+    })
   })
 
   it('leaves a page that is not secure to the browser', () => {
     const plain: PageContext = { pageUrl: 'http://example.test/', origin: 'http://example.test', isCrossOrigin: false }
-    expect(parseCreationRequest(creationOptions(), plain)).toMatchObject({ outcome: 'fallback' })
+    expect(parseCreationRequest(creationOptions(), plain)).toMatchObject({ parseOutcome: 'fallback' })
   })
 
   it('leaves to the browser what this authenticator cannot make', () => {
     expect(
-      parseCreationRequest(creationOptions({ pubKeyCredParams: [{ type: 'public-key', alg: -257 }] }), context).outcome,
+      parseCreationRequest(creationOptions({ pubKeyCredParams: [{ type: 'public-key', alg: -257 }] }), context)
+        .parseOutcome,
     ).toBe('fallback')
     expect(
       parseCreationRequest(
         creationOptions({ authenticatorSelection: { authenticatorAttachment: 'cross-platform' } }),
         context,
-      ).outcome,
+      ).parseOutcome,
     ).toBe('fallback')
   })
 
   it('reads an empty list of parameters as the default, which includes ES256', () => {
-    expect(parseCreationRequest(creationOptions({ pubKeyCredParams: [] }), context).outcome).toBe('ok')
+    expect(parseCreationRequest(creationOptions({ pubKeyCredParams: [] }), context).parseOutcome).toBe('ok')
   })
 
   it('refuses a request with a missing or malformed part', () => {
-    expect(parseCreationRequest(null, context)).toMatchObject({ outcome: 'error', errorName: 'TypeError' })
+    expect(parseCreationRequest(null, context)).toMatchObject({ parseOutcome: 'error', errorName: 'TypeError' })
     expect(parseCreationRequest(creationOptions({ challenge: null }), context)).toMatchObject({
-      outcome: 'error',
+      parseOutcome: 'error',
       errorName: 'TypeError',
     })
     expect(parseCreationRequest(creationOptions({ challenge: 'not base64 url!' }), context)).toMatchObject({
-      outcome: 'error',
+      parseOutcome: 'error',
     })
     expect(parseCreationRequest(creationOptions({ user: { id: userHandle, name: '' } }), context)).toMatchObject({
-      outcome: 'error',
+      parseOutcome: 'error',
     })
     expect(
       parseCreationRequest(
         creationOptions({ user: { id: encodeBase64Url(new Uint8Array(65)), name: 'ada' } }),
         context,
       ),
-    ).toMatchObject({ outcome: 'error' })
+    ).toMatchObject({ parseOutcome: 'error' })
     expect(parseCreationRequest(creationOptions({ excludeCredentials: [{ id: null }] }), context)).toMatchObject({
-      outcome: 'error',
+      parseOutcome: 'error',
     })
   })
 
@@ -123,7 +153,7 @@ describe('parseCreationRequest', () => {
       creationOptions({ excludeCredentials: [{ type: 'public-key', id: excluded }] }),
       context,
     )
-    expect(parsed).toMatchObject({ outcome: 'ok', request: { excludedCredentialIds: [excluded] } })
+    expect(parsed).toMatchObject({ parseOutcome: 'ok', request: { excludedCredentialIds: [excluded] } })
   })
 })
 
@@ -135,28 +165,33 @@ describe('parseAssertionRequest', () => {
       context,
     )
     expect(parsed).toEqual({
-      outcome: 'ok',
-      request: { relyingPartyId: 'example.test', challenge, allowedCredentialIds: [allowed] },
+      parseOutcome: 'ok',
+      request: {
+        relyingPartyId: 'example.test',
+        challenge,
+        allowedCredentialIds: [allowed],
+        userVerification: 'preferred',
+      },
     })
   })
 
   it('takes the page host when no id is named, and refuses another site', () => {
     expect(parseAssertionRequest({ challenge }, context)).toMatchObject({
-      outcome: 'ok',
+      parseOutcome: 'ok',
       request: { relyingPartyId: 'login.example.test' },
     })
     expect(parseAssertionRequest({ rpId: 'evil.test', challenge }, context)).toMatchObject({
-      outcome: 'error',
+      parseOutcome: 'error',
       errorName: 'SecurityError',
     })
   })
 
   it('refuses a request without a usable challenge', () => {
     expect(parseAssertionRequest({ rpId: 'example.test' }, context)).toMatchObject({
-      outcome: 'error',
+      parseOutcome: 'error',
       errorName: 'TypeError',
     })
-    expect(parseAssertionRequest('nonsense', context)).toMatchObject({ outcome: 'error' })
+    expect(parseAssertionRequest('nonsense', context)).toMatchObject({ parseOutcome: 'error' })
   })
 })
 
@@ -193,8 +228,8 @@ describe('encodeSpkiPublicKey', () => {
 describe('makePasskey and signWithPasskey', () => {
   it('makes the registration a site verifies and keeps what a login stores', async () => {
     const parsed = parseCreationRequest(creationOptions(), context)
-    if (parsed.outcome !== 'ok') throw new Error('request refused')
-    const made = await makePasskey(parsed.request, context, new Date('2026-10-20T10:00:00Z'))
+    if (parsed.parseOutcome !== 'ok') throw new Error('request refused')
+    const made = await makePasskey(parsed.request, context, true, new Date('2026-10-20T10:00:00Z'))
 
     const credentialId = decodeBase64Url(made.credential.rawId)
     expect(credentialId.length).toBe(16)
@@ -231,12 +266,12 @@ describe('makePasskey and signWithPasskey', () => {
 
   it('signs a sign-in the public key verifies, over the client data hash', async () => {
     const parsed = parseCreationRequest(creationOptions(), context)
-    if (parsed.outcome !== 'ok') throw new Error('request refused')
-    const made = await makePasskey(parsed.request, context)
+    if (parsed.parseOutcome !== 'ok') throw new Error('request refused')
+    const made = await makePasskey(parsed.request, context, true)
     const assertionRequest = parseAssertionRequest({ rpId: 'example.test', challenge }, context)
-    if (assertionRequest.outcome !== 'ok') throw new Error('request refused')
+    if (assertionRequest.parseOutcome !== 'ok') throw new Error('request refused')
 
-    const answer = await signWithPasskey(assertionRequest.request, made.passkeyFields, context)
+    const answer = await signWithPasskey(assertionRequest.request, made.passkeyFields, context, true)
     expect(answer.rawId).toBe(made.credential.rawId)
     expect(answer.userHandle).toBe(userHandle)
 
@@ -270,13 +305,30 @@ describe('makePasskey and signWithPasskey', () => {
     ).toBe(false)
   })
 
+  it('says the person was only present, not verified, unless they were', async () => {
+    const parsed = parseCreationRequest(creationOptions(), context)
+    if (parsed.parseOutcome !== 'ok') throw new Error('request refused')
+    const present = await makePasskey(parsed.request, context, false)
+    // UP, BE, BS and attested credential data, and not UV.
+    expect(decodeBase64Url(present.credential.authenticatorData)[32]).toBe(0x59)
+    const assertionRequest = parseAssertionRequest({ rpId: 'example.test', challenge }, context)
+    if (assertionRequest.parseOutcome !== 'ok') throw new Error('request refused')
+    const answer = await signWithPasskey(assertionRequest.request, present.passkeyFields, context, false)
+    expect(decodeBase64Url(answer.authenticatorData)[32]).toBe(0x19)
+  })
+
   it('answers with a null user handle when the login has none', async () => {
     const parsed = parseCreationRequest(creationOptions(), context)
-    if (parsed.outcome !== 'ok') throw new Error('request refused')
-    const made = await makePasskey(parsed.request, context)
+    if (parsed.parseOutcome !== 'ok') throw new Error('request refused')
+    const made = await makePasskey(parsed.request, context, true)
     const assertionRequest = parseAssertionRequest({ rpId: 'example.test', challenge }, context)
-    if (assertionRequest.outcome !== 'ok') throw new Error('request refused')
-    const answer = await signWithPasskey(assertionRequest.request, { ...made.passkeyFields, userHandle: '' }, context)
+    if (assertionRequest.parseOutcome !== 'ok') throw new Error('request refused')
+    const answer = await signWithPasskey(
+      assertionRequest.request,
+      { ...made.passkeyFields, userHandle: '' },
+      context,
+      true,
+    )
     expect(answer.userHandle).toBeNull()
   })
 })

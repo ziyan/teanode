@@ -1,0 +1,430 @@
+{
+  "description": "Shared cases for the site rule. internal/passwords (sitematch_test.go) and the Chrome extension (hosts.ts, siteMatchParity.test.ts) both read this file and must give the same answers. Written by hand; every host is invented.",
+  "normalizedHostCases": [
+    {
+      "site": "example.com",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "https://www.Example.com/sign-in?x=1",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "http://example.com:8080/",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "example.com/sign-in",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "example.com?next=1",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "example.com#top",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "//example.com",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "  https://example.com/  ",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "HTTPS://EXAMPLE.COM/",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "https://user:secret@example.com/",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "https://example.com@evil.test/",
+      "expectedHost": "evil.test"
+    },
+    {
+      "site": "https://example.com./",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "https://www.example.com.evil.test/",
+      "expectedHost": "example.com.evil.test"
+    },
+    {
+      "site": "https://login.example.com/",
+      "expectedHost": "login.example.com"
+    },
+    {
+      "site": "www.test",
+      "expectedHost": "www.test"
+    },
+    {
+      "site": "localhost:8080",
+      "expectedHost": "localhost"
+    },
+    {
+      "site": "https://[::1]:8443/",
+      "expectedHost": "[::1]"
+    },
+    {
+      "site": "[::1]:8443",
+      "expectedHost": "[::1]"
+    },
+    {
+      "site": "ftp://example.com/",
+      "expectedHost": ""
+    },
+    {
+      "site": "javascript:alert(1)",
+      "expectedHost": ""
+    },
+    {
+      "site": "about:blank",
+      "expectedHost": ""
+    },
+    {
+      "site": "mailto:ada@example.com",
+      "expectedHost": ""
+    },
+    {
+      "site": "",
+      "expectedHost": ""
+    },
+    {
+      "site": "   ",
+      "expectedHost": ""
+    },
+    {
+      "site": "https://example.test:notaport/",
+      "expectedHost": ""
+    },
+    {
+      "site": "example.test:abc",
+      "expectedHost": ""
+    },
+    {
+      "site": "https://exa mple.test/",
+      "expectedHost": ""
+    },
+    {
+      "site": "https://exa\tmple.test/",
+      "expectedHost": ""
+    },
+    {
+      "site": "https://example.test/\nHost: other.test",
+      "expectedHost": ""
+    },
+    {
+      "site": "https://exa\u0000mple.test/",
+      "expectedHost": ""
+    },
+    {
+      "site": "https://example.com\\@evil.test/",
+      "expectedHost": ""
+    },
+    {
+      "site": "https:\\\\example.com/",
+      "expectedHost": ""
+    },
+    {
+      "site": "example.com\\sign-in",
+      "expectedHost": ""
+    },
+    {
+      "site": "example.com/redirect?u=http://other.test",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "example.com:8443/redirect?u=http://other.test",
+      "expectedHost": "example.com"
+    },
+    {
+      "site": "localhost:",
+      "expectedHost": ""
+    }
+  ],
+  "originCases": [
+    {
+      "name": "same host, default port",
+      "sites": [
+        "example.com"
+      ],
+      "page": "https://example.com/sign-in",
+      "isMatch": true
+    },
+    {
+      "name": "www is ignored in the site",
+      "sites": [
+        "www.example.com"
+      ],
+      "page": "https://example.com/",
+      "isMatch": true
+    },
+    {
+      "name": "www is ignored in the page",
+      "sites": [
+        "example.com"
+      ],
+      "page": "https://www.example.com/",
+      "isMatch": true
+    },
+    {
+      "name": "a site is matched by any of its entries",
+      "sites": [
+        "other.test",
+        "https://example.com"
+      ],
+      "page": "https://example.com/",
+      "isMatch": true
+    },
+    {
+      "name": "a login with no sites matches nothing",
+      "sites": [],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a subdomain is another site",
+      "sites": [
+        "example.com"
+      ],
+      "page": "https://login.example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a parent domain is another site",
+      "sites": [
+        "login.example.com"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a longer name that ends alike is another site",
+      "sites": [
+        "example.com"
+      ],
+      "page": "https://example.com.evil.test/",
+      "isMatch": false
+    },
+    {
+      "name": "a user name in the page address is not the host",
+      "sites": [
+        "example.com"
+      ],
+      "page": "https://example.com@evil.test/",
+      "isMatch": false
+    },
+    {
+      "name": "a site without a port is not another port",
+      "sites": [
+        "example.com"
+      ],
+      "page": "https://example.com:8443/",
+      "isMatch": false
+    },
+    {
+      "name": "a site with a port matches that port",
+      "sites": [
+        "https://example.com:8443"
+      ],
+      "page": "https://example.com:8443/x",
+      "isMatch": true
+    },
+    {
+      "name": "a site with a port is not the default port",
+      "sites": [
+        "https://example.com:8443"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a site with a port is not another port",
+      "sites": [
+        "https://example.com:8443"
+      ],
+      "page": "https://example.com:9443/",
+      "isMatch": false
+    },
+    {
+      "name": "the default port may be written in the site",
+      "sites": [
+        "https://example.com:443"
+      ],
+      "page": "https://example.com/",
+      "isMatch": true
+    },
+    {
+      "name": "the default port may be written in the page",
+      "sites": [
+        "example.com"
+      ],
+      "page": "https://example.com:443/",
+      "isMatch": true
+    },
+    {
+      "name": "a page on http needs a site saved as http",
+      "sites": [
+        "example.com"
+      ],
+      "page": "http://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a site saved as https is not its plain-text twin",
+      "sites": [
+        "https://example.com"
+      ],
+      "page": "http://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a site saved as http matches the page on http",
+      "sites": [
+        "http://example.com"
+      ],
+      "page": "http://example.com/",
+      "isMatch": true
+    },
+    {
+      "name": "a site saved as http is on port 80, not the secure port",
+      "sites": [
+        "http://example.com"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a loopback page on http needs a site saved as http",
+      "sites": [
+        "localhost:8080"
+      ],
+      "page": "http://localhost:8080/",
+      "isMatch": false
+    },
+    {
+      "name": "a loopback page on http with its port",
+      "sites": [
+        "http://localhost:8080"
+      ],
+      "page": "http://localhost:8080/",
+      "isMatch": true
+    },
+    {
+      "name": "a loopback page on http, another port",
+      "sites": [
+        "http://localhost:8080"
+      ],
+      "page": "http://localhost:9090/",
+      "isMatch": false
+    },
+    {
+      "name": "a loopback page on http, no port named",
+      "sites": [
+        "http://localhost"
+      ],
+      "page": "http://localhost:8080/",
+      "isMatch": false
+    },
+    {
+      "name": "a loopback page on http, default port",
+      "sites": [
+        "http://localhost"
+      ],
+      "page": "http://localhost/",
+      "isMatch": true
+    },
+    {
+      "name": "port zero matches nothing",
+      "sites": [
+        "https://example.com:0"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a port too large matches nothing",
+      "sites": [
+        "https://example.com:99999"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "an address with a port",
+      "sites": [
+        "[::1]:8443"
+      ],
+      "page": "https://[::1]:8443/",
+      "isMatch": true
+    },
+    {
+      "name": "a backslash in a site matches nothing",
+      "sites": [
+        "https://example.com\\@evil.test/"
+      ],
+      "page": "https://evil.test/",
+      "isMatch": false
+    },
+    {
+      "name": "a backslash in a site matches nothing, either host",
+      "sites": [
+        "https://example.com\\@evil.test/"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a control character in a site matches nothing",
+      "sites": [
+        "https://example.com/\u0001"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a page that is not a web page matches nothing",
+      "sites": [
+        "example.com"
+      ],
+      "page": "about:blank",
+      "isMatch": false
+    },
+    {
+      "name": "an empty page matches nothing",
+      "sites": [
+        "example.com"
+      ],
+      "page": "",
+      "isMatch": false
+    },
+    {
+      "name": "a script address is not a site",
+      "sites": [
+        "javascript:alert(1)"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    },
+    {
+      "name": "a scheme further on in the query is not the scheme",
+      "sites": [
+        "example.com:8443/redirect?u=http://other.test"
+      ],
+      "page": "https://example.com:8443/",
+      "isMatch": true
+    },
+    {
+      "name": "a scheme further on in the query does not hide the port",
+      "sites": [
+        "example.com:8443/redirect?u=http://other.test"
+      ],
+      "page": "https://example.com/",
+      "isMatch": false
+    }
+  ]
+}

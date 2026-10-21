@@ -4,6 +4,8 @@
 // page that hides a user name or password field and waits for a manager to
 // fill it is the oldest trick against managers.
 
+import { normalizeHost } from './hosts'
+
 export type FieldRole = 'userName' | 'currentPassword' | 'newPassword' | 'oneTimeCode'
 
 const TEXT_LIKE_TYPES = new Set(['', 'text', 'email', 'tel', 'number', 'url'])
@@ -46,27 +48,72 @@ export function classifyField(input: HTMLInputElement, hasPasswordFieldNear = fa
   return null
 }
 
+// A field the page fades below this much (its own opacity times that of
+// every element around it) is not one a person can be said to see.
+const MINIMUM_OPACITY = 0.5
+const MINIMUM_SIDE_PIXELS = 5
+
+function isOpenToView(value: string | undefined): boolean {
+  return value === undefined || value === '' || value === 'none' || value === 'auto'
+}
+
+// isClippedByOverflow says whether a box that cuts off what is outside it
+// (an overflow other than visible) leaves too little of the field showing.
+function isClippedByOverflow(clipper: Element, rect: DOMRect): boolean {
+  const box = clipper.getBoundingClientRect()
+  const width = Math.min(rect.right, box.right) - Math.max(rect.left, box.left)
+  const height = Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top)
+  return width < MINIMUM_SIDE_PIXELS || height < MINIMUM_SIDE_PIXELS
+}
+
+// isCoveredAtCenter says whether something else is drawn over the middle of
+// the field. Where the browser cannot say (the middle is off the screen, or it
+// has no such lookup) it is not counted as covered.
+function isCoveredAtCenter(input: HTMLInputElement, rect: DOMRect, view: Window): boolean {
+  const centerHorizontal = rect.left + rect.width / 2
+  const centerVertical = rect.top + rect.height / 2
+  if (centerHorizontal < 0 || centerVertical < 0) return false
+  if (centerHorizontal >= view.innerWidth || centerVertical >= view.innerHeight) return false
+  const root = input.getRootNode()
+  const lookup = root instanceof ShadowRoot || root instanceof Document ? root : input.ownerDocument
+  if (typeof lookup.elementFromPoint !== 'function') return false
+  const hit = lookup.elementFromPoint(centerHorizontal, centerVertical)
+  return hit !== null && hit !== input && !input.contains(hit)
+}
+
 // isFieldVisible says whether a person can see and use the field: not hidden
-// by display, visibility, opacity (the field's own or an ancestor's), size or
-// position far off the page. It looks at what the browser computed, so a
+// by display, visibility, opacity (the field's own and that of the elements
+// around it, together at least MINIMUM_OPACITY), a clip path, a clip, an
+// overflow that cuts it off, size, position far off the page, or another
+// element drawn over its middle. It looks at what the browser computed, so a
 // style a page set by script counts the same as one in its stylesheet.
 export function isFieldVisible(input: HTMLInputElement): boolean {
   if (input.type.toLowerCase() === 'hidden' || input.hidden || !input.isConnected) return false
   const view = input.ownerDocument.defaultView
   if (!view) return false
   let opacity = 1
+  const clippers: Element[] = []
   for (let element: Element | null = input; element; element = parentOf(element)) {
     const style = view.getComputedStyle(element)
     if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false
     if (style.contentVisibility === 'hidden') return false
     opacity *= Number.parseFloat(style.opacity === '' ? '1' : style.opacity)
+    if (!isOpenToView(style.clipPath)) return false
+    // The old "clip" property cuts an element that is positioned out of the flow.
+    if ((style.position === 'absolute' || style.position === 'fixed') && !isOpenToView(style.clip)) return false
+    const isRoot = element === input.ownerDocument.body || element === input.ownerDocument.documentElement
+    const overflows = [style.overflow, style.overflowX, style.overflowY]
+    if (element !== input && !isRoot && overflows.some((value) => !isOpenToView(value) && value !== 'visible')) {
+      clippers.push(element)
+    }
   }
-  if (opacity < 0.1) return false
+  if (opacity < MINIMUM_OPACITY) return false
   const rect = input.getBoundingClientRect()
-  if (rect.width < 5 || rect.height < 5) return false
+  if (rect.width < MINIMUM_SIDE_PIXELS || rect.height < MINIMUM_SIDE_PIXELS) return false
   // Pushed off the left or top of the page, where nobody scrolls to.
   if (rect.right + view.scrollX <= 0 || rect.bottom + view.scrollY <= 0) return false
-  return true
+  if (clippers.some((clipper) => isClippedByOverflow(clipper, rect))) return false
+  return !isCoveredAtCenter(input, rect, view)
 }
 
 function parentOf(element: Element): Element | null {
@@ -172,4 +219,31 @@ export function setFieldValue(input: HTMLInputElement, value: string): void {
   else input.value = value
   input.dispatchEvent(new Event('input', { bubbles: true }))
   input.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+// foreignFormActionHost is the host the form around a field sends to when that
+// is not the host of the page the form is on, else an empty text. The form's
+// "action" and any button's "formaction" are read as attributes: a field named
+// "action" inside the form would stand in for the form's action property.
+export function foreignFormActionHost(input: HTMLInputElement): string {
+  const form = input.form
+  if (!form) return ''
+  const document = input.ownerDocument
+  const pageHost = normalizeHost(document.location?.href ?? '')
+  const attributes = [
+    form.getAttribute('action'),
+    ...Array.from(form.querySelectorAll('[formaction]')).map((button) => button.getAttribute('formaction')),
+  ]
+  for (const attribute of attributes) {
+    if (attribute === null || attribute.trim() === '') continue
+    let resolved: URL
+    try {
+      resolved = new URL(attribute, document.baseURI)
+    } catch {
+      continue
+    }
+    const host = normalizeHost(resolved.href)
+    if (host !== '' && host !== pageHost) return host
+  }
+  return ''
 }

@@ -3,6 +3,41 @@
 // own session): it reads and saves items and unlocks, and cannot set up,
 // share or grant the agent.
 
+// The sentences the server writes for a person, which are shown as they are.
+// Anything else it says (a validation message, a rate limit, an internal
+// error) is put in the words below, so a person is not shown what is meant
+// for a log.
+const SERVER_SENTENCES_TO_SHOW = new Set([
+  'That passphrase is not right.',
+  'That recovery key is not right.',
+  'This item changed on another device. Open it again.',
+  'Passwords is not set up yet.',
+  'Passwords is already set up.',
+])
+
+// friendlyServerWords turns what the server answered (the messages of a
+// GraphQL error, or an HTTP status when there are none) into one sentence.
+export function friendlyServerWords(messages: string[], status = 200): string {
+  const shown = messages.find((message) => SERVER_SENTENCES_TO_SHOW.has(message.trim()))
+  if (shown) return shown.trim()
+  const text = messages.join(' ').toLowerCase()
+  if (status === 401 || /unauthori[sz]ed|unauthenticated|not signed in|invalid token|token (has )?expired/.test(text)) {
+    return 'Sign in to TeaNode from the extension options again.'
+  }
+  if (status === 429 || /rate.?limit|too many|try again later|slow down/.test(text)) {
+    return 'Too many tries. Wait a minute and try again.'
+  }
+  if (text.includes('approve it on the dashboard')) {
+    return 'That is done on the Passwords page of the dashboard, not from the extension.'
+  }
+  if (status === 403 || /permission|forbidden|not allowed|denied/.test(text)) {
+    return 'The server does not let this sign-in do that.'
+  }
+  if (status === 404 || /not found|no such/.test(text)) return 'The server did not know that item.'
+  if (status >= 500) return 'The server had a problem. Try again in a moment.'
+  return 'The server could not do that. Try again in a moment.'
+}
+
 export class ServerCallError extends Error {
   readonly isSignedOut: boolean
 
@@ -44,11 +79,13 @@ export async function callServer(query: string, variables: Record<string, unknow
   } catch {
     throw new ServerCallError('The server could not be reached.')
   }
-  if (response.status === 401) throw new ServerCallError('Sign in to TeaNode from the extension options again.', true)
-  if (!response.ok) throw new ServerCallError(`The server answered ${response.status}.`)
+  if (response.status === 401) throw new ServerCallError(friendlyServerWords([], 401), true)
+  if (!response.ok) throw new ServerCallError(friendlyServerWords([], response.status))
   const body = await response.json()
   if (body.errors && body.errors.length > 0) {
-    throw new ServerCallError(body.errors.map((error: { message: string }) => error.message).join('; '))
+    const messages = body.errors.map((error: { message?: unknown }) => String(error.message ?? ''))
+    const words = friendlyServerWords(messages)
+    throw new ServerCallError(words, words === friendlyServerWords([], 401))
   }
   return body.data
 }

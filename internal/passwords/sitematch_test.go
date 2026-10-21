@@ -1,6 +1,8 @@
 package passwords
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -118,5 +120,53 @@ func TestIsOriginOfSitesMatchesThePortToo(test *testing.T) {
 	}
 	if EffectivePort("https://example.com/") != 443 || EffectivePort("http://example.com/") != 80 || EffectivePort("https://example.com:8443/x") != 8443 {
 		test.Error("EffectivePort")
+	}
+}
+
+// testdata/sitematch.json holds the cases the site rule must answer the same
+// way here and in the Chrome extension (web/extension/src/passwords/hosts.ts,
+// which reads the same file).
+type sharedSiteMatchCases struct {
+	NormalizedHostCases []struct {
+		Site         string `json:"site"`
+		ExpectedHost string `json:"expectedHost"`
+	} `json:"normalizedHostCases"`
+	OriginCases []struct {
+		Name    string   `json:"name"`
+		Sites   []string `json:"sites"`
+		Page    string   `json:"page"`
+		IsMatch bool     `json:"isMatch"`
+	} `json:"originCases"`
+}
+
+func TestSharedSiteMatchCases(test *testing.T) {
+	content, err := os.ReadFile("testdata/sitematch.json")
+	if err != nil {
+		test.Fatal(err)
+	}
+	var cases sharedSiteMatchCases
+	if err := json.Unmarshal(content, &cases); err != nil {
+		test.Fatal(err)
+	}
+	if len(cases.NormalizedHostCases) == 0 || len(cases.OriginCases) == 0 {
+		test.Fatal("testdata/sitematch.json has no cases")
+	}
+	for _, each := range cases.NormalizedHostCases {
+		if got := NormalizedHost(each.Site); got != each.ExpectedHost {
+			test.Errorf("NormalizedHost(%q) = %q, wanted %q", each.Site, got, each.ExpectedHost)
+		}
+	}
+	for _, each := range cases.OriginCases {
+		if got := IsOriginOfSites(each.Sites, each.Page); got != each.IsMatch {
+			test.Errorf("%s: IsOriginOfSites(%q, %q) = %v, wanted %v", each.Name, each.Sites, each.Page, got, each.IsMatch)
+		}
+	}
+}
+
+func TestNormalizedHostRefusesBackslashesAndControlCharacters(test *testing.T) {
+	for _, site := range []string{"https://example.com\\@evil.test/", "https://exa\x00mple.test/", "example.com\x7f", "a\\b.test"} {
+		if got := NormalizedHost(site); got != "" {
+			test.Errorf("NormalizedHost(%q) = %q, wanted nothing", site, got)
+		}
 	}
 }

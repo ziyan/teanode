@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe('checkFrameShown', () => {
   it('passes a frame that is displayed, opaque and on top', () => {
-    expect(checkFrameShown(host)).toEqual({ isShown: true, reason: '' })
+    expect(checkFrameShown(host)).toEqual({ isShown: true, failureReason: '' })
   })
 
   it('fails when the frame is made see-through, by itself or by an element around it', () => {
@@ -46,7 +46,7 @@ describe('checkFrameShown', () => {
   it('fails when a filter, a clip or a blend mode is put on it or around it', () => {
     const wrapper = document.getElementById('wrapper') as HTMLElement
     wrapper.style.filter = 'opacity(0)'
-    expect(checkFrameShown(host)).toMatchObject({ isShown: false, reason: expect.stringContaining('filter') })
+    expect(checkFrameShown(host)).toMatchObject({ isShown: false, failureReason: expect.stringContaining('filter') })
     wrapper.style.filter = ''
     host.style.clipPath = 'inset(100%)'
     expect(checkFrameShown(host).isShown).toBe(false)
@@ -57,7 +57,7 @@ describe('checkFrameShown', () => {
 
   it('fails when another element covers it', () => {
     stack(document.getElementById('decoy') as HTMLElement, host)
-    expect(checkFrameShown(host)).toMatchObject({ isShown: false, reason: 'another element covers the frame' })
+    expect(checkFrameShown(host)).toMatchObject({ isShown: false, failureReason: 'another element covers the frame' })
   })
 
   it('fails when only a corner is covered', () => {
@@ -70,7 +70,7 @@ describe('checkFrameShown', () => {
     setLayout(host, { width: 5, height: 5 })
     expect(checkFrameShown(host).isShown).toBe(false)
     setLayout(host, { left: 5000, top: 5000, width: 200, height: 100 })
-    expect(checkFrameShown(host)).toMatchObject({ isShown: false, reason: 'the frame is off the screen' })
+    expect(checkFrameShown(host)).toMatchObject({ isShown: false, failureReason: 'the frame is off the screen' })
   })
 
   it('fails when the frame has been taken off the page', () => {
@@ -85,7 +85,7 @@ describe('checkFrameShown', () => {
       if (selector === ':popover-open') return [host, other] as unknown as NodeListOf<Element>
       return original(selector)
     }) as typeof document.querySelectorAll)
-    expect(checkFrameShown(host)).toMatchObject({ isShown: false, reason: 'a popover is open' })
+    expect(checkFrameShown(host)).toMatchObject({ isShown: false, failureReason: 'a popover is open' })
   })
 
   it('passes when the only popover open is the frame itself', () => {
@@ -99,7 +99,7 @@ describe('checkFrameShown', () => {
 
   it('fails when an element is full screen', () => {
     Object.defineProperty(document, 'fullscreenElement', { value: document.body, configurable: true })
-    expect(checkFrameShown(host)).toMatchObject({ isShown: false, reason: 'an element is full screen' })
+    expect(checkFrameShown(host)).toMatchObject({ isShown: false, failureReason: 'an element is full screen' })
     delete (document as any).fullscreenElement
   })
 })

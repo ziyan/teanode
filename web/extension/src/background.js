@@ -28,6 +28,9 @@
 // time), and the agent's fill_login and fill_one_time_code. Written in
 // TypeScript with the dashboard's own encryption; see passwords/.
 import './passwords/background'
+// The token and the other storage the extension keeps are closed to its
+// content scripts (the part of it that runs inside web pages).
+import { restrictStorageToTrustedContexts } from './storageAccess'
 import { fillLoginForAgent, fillOneTimeCodeForAgent } from './passwords/agentFill'
 // Which document each of the agent's tabs shows and which the agent filled a
 // password or code into: the server locks a filled tab until it commits a new
@@ -37,6 +40,8 @@ import { TabDocuments, withoutRequestBodies } from './tabDocuments'
 import { inPage } from './inPage'
 
 const PROTOCOL = 5
+
+void restrictStorageToTrustedContexts()
 
 let socket = null
 const documents = new TabDocuments()
@@ -530,10 +535,29 @@ const CDP_ALLOWED = [
   'Log.',
 ]
 
-function cdpRefusal(method) {
+function cdpRefusal(method, params) {
   const asked = String(method || '').trim()
   if (!/^[A-Z][A-Za-z]*\.[a-zA-Z][A-Za-z0-9]*$/.test(asked)) {
     return 'a method is written Domain.method, for example Input.dispatchMouseEvent'
+  }
+  // A javascript: address given to Page.navigate runs script in the document
+  // the tab is showing (a filled one included), and Page.reload can be asked
+  // to run a script on load. The navigate and open actions already take only
+  // http and https addresses; the same holds here.
+  if (asked === 'Page.navigate') {
+    let address = null
+    try {
+      address = new URL(String(params && params.url))
+    } catch {
+      address = null
+    }
+    if (!address || (address.protocol !== 'http:' && address.protocol !== 'https:')) {
+      return 'Page.navigate takes an http or https address in url'
+    }
+  }
+  if (asked === 'Page.reload') {
+    const extra = Object.keys(params || {}).filter((name) => name !== 'ignoreCache')
+    if (extra.length > 0) return 'Page.reload takes only ignoreCache'
   }
   for (const allowed of CDP_ALLOWED) {
     const matches = allowed.endsWith('.') ? asked.startsWith(allowed) : asked === allowed
@@ -923,7 +947,7 @@ async function act(action, args) {
     }
     if (action === 'cdp') {
       if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
-      const refusal = cdpRefusal(args.method)
+      const refusal = cdpRefusal(args.method, args.params)
       if (refusal) return { ok: false, error: refusal }
       agentUsing.add(tab.id)
       await debuggerFor(tab.id)
@@ -1004,37 +1028,137 @@ function waitForLoad(tabId) {
   })
 }
 
+// The panel's script runs inside the page the person pressed the button on:
+// it is a content script, not a page of the extension, so what it asks of this
+// worker is not told from what it says. It is told by where it comes from and
+// when: the worker itself put the script into that tab, and only just, when
+// the button was pressed. The token goes to a tab only in the few seconds after
+// that, once; the other requests (attach, detach, the place the panel was left
+// at) only from a tab that has the panel in its current page. Any other
+// content script, and any frame of a page, is refused.
+const PANEL_TOKEN_GRANT_MILLISECONDS = 10000
+const PANEL_STORAGE_KEY = 'panelTabs'
+
+async function readPanelTabs() {
+  const stored = (await chrome.storage.session.get(PANEL_STORAGE_KEY))[PANEL_STORAGE_KEY]
+  return {
+    tabs: stored && Array.isArray(stored.tabs) ? stored.tabs.filter((id) => typeof id === 'number') : [],
+    grants: stored && stored.grants && typeof stored.grants === 'object' ? stored.grants : {},
+  }
+}
+
+async function writePanelTabs(panel) {
+  await chrome.storage.session.set({ [PANEL_STORAGE_KEY]: panel })
+}
+
+async function markPanelPressed(tabId) {
+  const panel = await readPanelTabs()
+  if (!panel.tabs.includes(tabId)) panel.tabs.push(tabId)
+  panel.grants[tabId] = Date.now()
+  await writePanelTabs(panel)
+}
+
+async function forgetPanelTab(tabId) {
+  const panel = await readPanelTabs()
+  if (!panel.tabs.includes(tabId) && !(tabId in panel.grants)) return
+  panel.tabs = panel.tabs.filter((id) => id !== tabId)
+  delete panel.grants[tabId]
+  await writePanelTabs(panel)
+}
+
+// isPanelSender says whether a message is from the panel script in the top
+// frame of a tab that has it. With wantsToken it must also be within the few
+// seconds after the button was pressed, and the grant is used up.
+async function isPanelSender(sender, wantsToken) {
+  if (!sender || sender.id !== chrome.runtime.id || !sender.tab || typeof sender.tab.id !== 'number') return false
+  if (sender.frameId !== undefined && sender.frameId !== 0) return false
+  const panel = await readPanelTabs()
+  if (!panel.tabs.includes(sender.tab.id)) return false
+  if (!wantsToken) return true
+  const pressedAt = panel.grants[sender.tab.id]
+  if (typeof pressedAt !== 'number' || Date.now() - pressedAt > PANEL_TOKEN_GRANT_MILLISECONDS) return false
+  delete panel.grants[sender.tab.id]
+  await writePanelTabs(panel)
+  return true
+}
+
 // The button opens the agent's panel on the page: the dashboard's own
 // drawer, framed, or the dashboard's drawer itself when the page is the
 // dashboard. Where nothing can be put on the page, the options open.
 chrome.action.onClicked.addListener(async (tab) => {
   try {
+    await markPanelPressed(tab.id)
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['panel.js'] })
   } catch {
+    await forgetPanelTab(tab.id).catch(() => {})
     chrome.runtime.openOptionsPage()
   }
 })
 
+// A tab that loads a new page no longer has the panel in it.
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === 'loading') void forgetPanelTab(tabId).catch(() => {})
+})
+
+const PANEL_GEOMETRY_PREFIX = 'panel:geometry:'
+
+function panelGeometryKey(sender) {
+  try {
+    return PANEL_GEOMETRY_PREFIX + new URL(sender.url).origin
+  } catch {
+    return null
+  }
+}
+
+function isPanelGeometry(value) {
+  return (
+    !!value &&
+    ['across', 'down', 'width', 'height'].every((name) => typeof value[name] === 'number' && Number.isFinite(value[name]))
+  )
+}
+
 // What the panel asks of this worker.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const type = message && message.type
+  if (typeof type !== 'string' || !type.startsWith('panel:')) return false
   const tab = sender.tab
-  switch (message && message.type) {
-    case 'panel:token':
-      Promise.all([serverOrigin(), token(), chrome.storage.local.get('username')]).then(([server, secret, { username }]) => {
-        sendResponse({ server, token: secret, username: username || '', attached: !!tab && attached.ownTabId === tab.id })
-      })
-      return true
-    case 'panel:options':
-      chrome.runtime.openOptionsPage()
-      return false
-    case 'panel:attach':
-      if (tab) attach(tab).then(() => sendResponse({ attached: attached.ownTabId === tab.id }))
-      return true
-    case 'panel:detach':
-      detach().then(() => sendResponse({ attached: false }))
-      return true
-  }
-  return false
+  isPanelSender(sender, type === 'panel:token').then(async (isAllowed) => {
+    if (!isAllowed) return sendResponse({ error: 'Not allowed from here.' })
+    switch (type) {
+      case 'panel:token': {
+        const [server, secret, { username }] = await Promise.all([
+          serverOrigin(),
+          token(),
+          chrome.storage.local.get('username'),
+        ])
+        return sendResponse({ server, token: secret, username: username || '', attached: attached.ownTabId === tab.id })
+      }
+      case 'panel:options':
+        chrome.runtime.openOptionsPage()
+        return sendResponse({})
+      case 'panel:attach':
+        await attach(tab)
+        return sendResponse({ attached: attached.ownTabId === tab.id })
+      case 'panel:detach':
+        await detach()
+        return sendResponse({ attached: false })
+      case 'panel:geometry-read': {
+        const key = panelGeometryKey(sender)
+        const stored = key ? (await chrome.storage.local.get(key))[key] : null
+        return sendResponse({ geometry: isPanelGeometry(stored) ? stored : null })
+      }
+      case 'panel:geometry-write': {
+        const key = panelGeometryKey(sender)
+        if (key && isPanelGeometry(message.geometry)) {
+          const { across, down, width, height } = message.geometry
+          await chrome.storage.local.set({ [key]: { across, down, width, height } })
+        }
+        return sendResponse({})
+      }
+    }
+    return sendResponse({ error: 'Unknown request.' })
+  }).catch(() => sendResponse({ error: 'Something went wrong.' }))
+  return true
 })
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
@@ -1058,6 +1182,7 @@ if (chrome.webNavigation) {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  void forgetPanelTab(tabId).catch(() => {})
   forgetCast(tabId)
   documents.forget(tabId)
   if (opened.has(tabId)) tellSoon()

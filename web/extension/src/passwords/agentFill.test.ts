@@ -115,10 +115,16 @@ describe('fillLoginForAgent', () => {
   })
 
   it('treats www. as the same host', async () => {
-    tabUrl = 'https://www.login.example.test/sign-in'
-    // The page itself is at login.example.test in this test; the tab address is what the first check reads.
     const answer = await fillLoginForAgent(7, { host: 'WWW.login.example.test', passwordRef: 2, password: 'hunter2' })
     expect(answer.ok).toBe(true)
+  })
+
+  it('types nothing when the page is at another origin than the tab was a moment ago', async () => {
+    // The tab says www., the page in this test is at login.example.test: it moved in between.
+    tabUrl = 'https://www.login.example.test/sign-in'
+    const answer = await fillLoginForAgent(7, { host: 'login.example.test', passwordRef: 2, password: 'hunter2' })
+    expect(answer).toEqual({ ok: false, error: 'the page is not on the site this login is for' })
+    expect(field('pass').value).toBe('')
   })
 
   it('refuses a tab on another host, and says nothing of the value', async () => {
@@ -172,6 +178,52 @@ describe('fillLoginForAgent', () => {
     })
     setLayout(field('pass'), { width: 1, height: 1 })
     expect((await fillLoginForAgent(7, { ...args, passwordRef: 2 })).ok).toBe(false)
+  })
+
+  it('refuses a field that is faded below half, cut off by a clip path or an overflow, or covered', async () => {
+    const args = { host: 'login.example.test', password: 'hunter2' }
+    const refusal = { ok: false, error: 'the password field cannot be typed into' }
+    const pass = field('pass')
+    pass.style.opacity = '0.3'
+    expect(await fillLoginForAgent(7, { ...args, passwordRef: 2 })).toEqual(refusal)
+    pass.style.opacity = '0.6'
+    expect((await fillLoginForAgent(7, { ...args, passwordRef: 2 })).ok).toBe(true)
+
+    // Cut off by an overflow around it that shows none of it.
+    pass.value = ''
+    const box = document.createElement('div')
+    box.style.overflow = 'hidden'
+    setLayout(box, { left: 900, top: 900, width: 20, height: 20 })
+    pass.replaceWith(box)
+    box.append(pass)
+    expect(await fillLoginForAgent(7, { ...args, passwordRef: 2 })).toEqual(refusal)
+    box.replaceWith(pass)
+
+    // Something else drawn over the middle of it.
+    ;(document as any).elementFromPoint = () => document.getElementById('user')
+    expect(await fillLoginForAgent(7, { ...args, passwordRef: 2 })).toEqual(refusal)
+    ;(document as any).elementFromPoint = () => pass
+    expect((await fillLoginForAgent(7, { ...args, passwordRef: 2 })).ok).toBe(true)
+    delete (document as any).elementFromPoint
+  })
+
+  it('refuses a form that sends what is typed to another host than the page', async () => {
+    const args = { host: 'login.example.test', password: 'hunter2', passwordRef: 2 }
+    const form = document.querySelector('form') as HTMLFormElement
+    form.setAttribute('action', 'https://collect.example.test/session')
+    const refused = await fillLoginForAgent(7, args)
+    expect(refused).toEqual({
+      ok: false,
+      error: 'the form around the password field sends to another site than this page',
+    })
+    expect(field('pass').value).toBe('')
+    // A button\'s own address counts too; the page\'s own host does not.
+    form.setAttribute('action', '/session')
+    form.insertAdjacentHTML('beforeend', '<button formaction="//collect.example.test/x">Go</button>')
+    expect((await fillLoginForAgent(7, args)).ok).toBe(false)
+    form.querySelector('button')?.remove()
+    form.setAttribute('action', 'https://login.example.test/session')
+    expect((await fillLoginForAgent(7, args)).ok).toBe(true)
   })
 
   it('types into none of them when one of them cannot be typed into', async () => {

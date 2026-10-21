@@ -10,9 +10,9 @@
 
 export interface FrameCheck {
   isShown: boolean
-  // reason says what failed, for a test and for the console; the person is
-  // told nothing, since the frame is simply closed.
-  reason: string
+  // failureReason says what failed, for a test and for the console; the
+  // person is told nothing, since the frame is simply closed.
+  failureReason: string
 }
 
 const MINIMUM_SIDE_PIXELS = 20
@@ -51,9 +51,9 @@ function openTopLayerElement(document: Document, host: HTMLElement): string {
     [':popover-open', 'a popover is open'],
     ['dialog:modal', 'a modal dialog is open'],
   ]
-  for (const [selector, reason] of selectors) {
+  for (const [selector, openReason] of selectors) {
     try {
-      if (Array.from(document.querySelectorAll(selector)).some((element) => element !== host)) return reason
+      if (Array.from(document.querySelectorAll(selector)).some((element) => element !== host)) return openReason
     } catch {
       // This browser does not know the selector.
     }
@@ -67,17 +67,17 @@ function openTopLayerElement(document: Document, host: HTMLElement): string {
 export function checkFrameShown(host: HTMLElement): FrameCheck {
   const document = host.ownerDocument
   const view = document.defaultView
-  if (!view || !host.isConnected) return { isShown: false, reason: 'the frame is not on the page' }
+  if (!view || !host.isConnected) return { isShown: false, failureReason: 'the frame is not on the page' }
   for (let element: Element | null = host; element; element = parentOf(element)) {
-    const reason = shownByStyle(element, view)
-    if (reason !== '') return { isShown: false, reason }
+    const styleReason = shownByStyle(element, view)
+    if (styleReason !== '') return { isShown: false, failureReason: styleReason }
   }
   const rect = host.getBoundingClientRect()
   if (rect.width < MINIMUM_SIDE_PIXELS || rect.height < MINIMUM_SIDE_PIXELS) {
-    return { isShown: false, reason: 'the frame is too small to read' }
+    return { isShown: false, failureReason: 'the frame is too small to read' }
   }
   const topLayerReason = openTopLayerElement(document, host)
-  if (topLayerReason !== '') return { isShown: false, reason: topLayerReason }
+  if (topLayerReason !== '') return { isShown: false, failureReason: topLayerReason }
 
   const viewWidth = view.innerWidth
   const viewHeight = view.innerHeight
@@ -90,10 +90,10 @@ export function checkFrameShown(host: HTMLElement): FrameCheck {
   ].filter(([x, y]) => x >= 0 && y >= 0 && x < viewWidth && y < viewHeight)
   // A frame with none of its corners or its middle on the screen is not one
   // anybody is looking at.
-  if (points.length === 0) return { isShown: false, reason: 'the frame is off the screen' }
-  for (const [x, y] of points) {
-    const stack = document.elementsFromPoint(x, y)
-    if (stack[0] !== host) return { isShown: false, reason: 'another element covers the frame' }
+  if (points.length === 0) return { isShown: false, failureReason: 'the frame is off the screen' }
+  for (const [horizontalPixels, verticalPixels] of points) {
+    const stack = document.elementsFromPoint(horizontalPixels, verticalPixels)
+    if (stack[0] !== host) return { isShown: false, failureReason: 'another element covers the frame' }
   }
-  return { isShown: true, reason: '' }
+  return { isShown: true, failureReason: '' }
 }

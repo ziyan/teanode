@@ -128,6 +128,33 @@ describe('what is kept of the network', () => {
     expect(sendCommand.mock.calls.filter(([, method]) => method === 'Network.getRequestPostData')).toHaveLength(0)
   })
 
+  it('navigates only to an http or https address, and reloads with nothing but ignoreCache', async () => {
+    const countOf = (method: string) => sendCommand.mock.calls.filter(([, called]) => called === method).length
+    for (const url of ['javascript:alert(1)', 'data:text/html,x', 'file:///srv/page.html', 'not an address', '']) {
+      const answer = await act('cdp', { method: 'Page.navigate', params: { url } })
+      expect(answer.ok, url).toBe(false)
+      expect(answer.error).toContain('http or https')
+    }
+    expect((await act('cdp', { method: 'Page.navigate', params: {} })).ok).toBe(false)
+    expect((await act('cdp', { method: 'Page.navigate' })).ok).toBe(false)
+    expect(countOf('Page.navigate')).toBe(0)
+    expect((await act('cdp', { method: 'Page.navigate', params: { url: 'https://shop.example.test/home' } })).ok).toBe(
+      true,
+    )
+    expect((await act('cdp', { method: 'Page.navigate', params: { url: 'http://shop.example.test/home' } })).ok).toBe(
+      true,
+    )
+    expect(countOf('Page.navigate')).toBe(2)
+
+    const refused = await act('cdp', { method: 'Page.reload', params: { scriptToEvaluateOnLoad: 'alert(1)' } })
+    expect(refused.ok).toBe(false)
+    expect(refused.error).toContain('ignoreCache')
+    expect(countOf('Page.reload')).toBe(0)
+    expect((await act('cdp', { method: 'Page.reload', params: { ignoreCache: true } })).ok).toBe(true)
+    expect((await act('cdp', { method: 'Page.reload' })).ok).toBe(true)
+    expect(countOf('Page.reload')).toBe(2)
+  })
+
   it('is turned off and forgotten before a password goes in, and nothing is kept of that document', async () => {
     await act('cdp', { method: 'Network.enable' })
     debuggerEvent('Network.requestWillBeSent', requestEvent)

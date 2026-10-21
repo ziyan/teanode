@@ -11,11 +11,11 @@ import { ask, AskError, clear, element, errorText } from './pageDom'
 
 const root = document.getElementById('app') as HTMLElement
 const promptId = new URLSearchParams(window.location.search).get('id') ?? ''
-const status = element('div', { className: 'status', role: 'status' })
+const statusLine = element('div', { className: 'status', role: 'status' })
 
 function say(text: string, tone: '' | 'bad' = '') {
-  status.textContent = text
-  status.className = tone ? `status ${tone}` : 'status'
+  statusLine.textContent = text
+  statusLine.className = tone ? `status ${tone}` : 'status'
 }
 
 function heading(): HTMLElement {
@@ -39,12 +39,28 @@ async function refresh() {
     return
   }
   const question =
-    info.kind === 'create'
+    info.ceremonyKind === 'create'
       ? `Save a passkey for ${info.relyingPartyId} as ${info.userName}?`
       : `Sign in to ${info.relyingPartyId} with your passkey?`
   root.append(heading(), element('strong', {}, question))
-  if (!info.isUnlocked) return showUnlock()
+  // The page that asked, when it is not the host the passkey is for: a page at
+  // one host can ask for a passkey of a domain above it.
+  if (hostOfOrigin(info.pageOrigin) !== info.relyingPartyId) {
+    root.append(element('p', { className: 'muted' }, `Asked by the page at ${info.pageOrigin}.`))
+  }
+  if (!info.isUnlocked) return showUnlock('Passwords is locked. Unlock it with your passphrase to continue.')
+  if (info.isVerificationNeeded) {
+    return showUnlock('This site asks you to prove it is you. Type your passphrase to continue.')
+  }
   showChoice(info)
+}
+
+function hostOfOrigin(origin: string): string {
+  try {
+    return new URL(origin).hostname
+  } catch {
+    return origin
+  }
 }
 
 // Cancel closes the window, which answers the website as a refusal.
@@ -59,7 +75,7 @@ function makeBrowserButton(): HTMLButtonElement {
   button.addEventListener('click', async () => {
     button.disabled = true
     try {
-      await ask({ type: 'passwords:prompt-decide', promptId, decision: 'browser', choiceCredentialId: '' })
+      await ask({ type: 'passwords:prompt-decide', promptId, promptDecision: 'browser', choiceCredentialId: '' })
     } catch (error) {
       button.disabled = false
       say(errorText(error), 'bad')
@@ -68,16 +84,16 @@ function makeBrowserButton(): HTMLButtonElement {
   return button
 }
 
-function showUnlock() {
+function showUnlock(explanation: string) {
   const input = element('input', { type: 'password', autocomplete: 'off', spellcheck: false })
   const unlock = element('button', { type: 'submit', className: 'primary' }, 'Unlock')
   const form = element(
     'form',
     {},
-    element('p', { className: 'muted' }, 'Passwords is locked. Unlock it with your passphrase to continue.'),
+    element('p', { className: 'muted' }, explanation),
     element('label', { className: 'field' }, element('span', {}, 'Passphrase'), input),
     element('div', { className: 'actions' }, unlock, makeBrowserButton(), makeCancelButton()),
-    status,
+    statusLine,
   )
   form.addEventListener('submit', async (event) => {
     event.preventDefault()
@@ -100,7 +116,7 @@ function showUnlock() {
 function showChoice(info: PromptInfo) {
   let chosenCredentialId = info.choices[0]?.credentialId ?? ''
   const choices = element('div', { className: 'list' })
-  if (info.kind === 'get' && info.choices.length > 1) {
+  if (info.ceremonyKind === 'get' && info.choices.length > 1) {
     info.choices.forEach((choice, index) => {
       const radio = element('input', { type: 'radio', name: 'passkey', checked: index === 0 })
       radio.addEventListener('change', () => {
@@ -108,13 +124,13 @@ function showChoice(info: PromptInfo) {
       })
       choices.append(element('label', { className: 'row choice-row' }, radio, element('span', {}, choice.label)))
     })
-  } else if (info.kind === 'get' && info.choices.length === 1) {
+  } else if (info.ceremonyKind === 'get' && info.choices.length === 1) {
     choices.append(element('div', { className: 'row' }, element('div', { className: 'name' }, info.choices[0].label)))
   }
   const allow = element(
     'button',
     { type: 'button', className: 'primary' },
-    info.kind === 'create' ? 'Save passkey' : 'Sign in',
+    info.ceremonyKind === 'create' ? 'Save passkey' : 'Sign in',
   )
   allow.addEventListener('click', async () => {
     allow.disabled = true
@@ -123,12 +139,14 @@ function showChoice(info: PromptInfo) {
       await ask({
         type: 'passwords:prompt-decide',
         promptId,
-        decision: 'allow',
+        promptDecision: 'allow',
         choiceCredentialId: chosenCredentialId,
       })
     } catch (error) {
       allow.disabled = false
-      if (error instanceof AskError && error.code === 'locked') return void refresh()
+      if (error instanceof AskError && (error.errorCode === 'locked' || error.errorCode === 'verificationNeeded')) {
+        return void refresh()
+      }
       say(errorText(error), 'bad')
     }
   })
@@ -137,12 +155,12 @@ function showChoice(info: PromptInfo) {
     element(
       'p',
       { className: 'muted' },
-      info.kind === 'create'
+      info.ceremonyKind === 'create'
         ? 'The passkey is kept encrypted in TeaNode Passwords.'
         : 'Your passkey signs the sign-in on this device.',
     ),
     element('div', { className: 'actions' }, allow, makeBrowserButton(), makeCancelButton()),
-    status,
+    statusLine,
   )
 }
 

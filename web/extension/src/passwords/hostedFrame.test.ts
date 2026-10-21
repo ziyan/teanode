@@ -1,37 +1,66 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FRAME_MESSAGE_CHANNEL } from './frameChannel'
+import { FRAME_CONNECT_KIND, FRAME_MESSAGE_CHANNEL, originOfAddress } from './frameChannel'
 import { FrameMessage, HostedFrame } from './hostedFrame'
 import { giveLayout } from './testLayout'
 
-const EXTENSION_ORIGIN = 'chrome-extension://abcdefghijklmnop'
+// The extension's static origin, and the one its pages are reached at when
+// they are only available at a dynamic address (use_dynamic_url): the frame's
+// own address is on the second.
+const STATIC_ORIGIN = 'chrome-extension://abcdefghijklmnop'
+const FRAME_ORIGIN = 'chrome-extension://dynamicdynamicdy'
 
 let received: FrameMessage[]
+let closedCount: number
 let hosted: HostedFrame
+let ports: MessagePort[]
 
 function internalFrame(): HTMLIFrameElement {
   return (hosted as any).frame as HTMLIFrameElement
 }
 
-function post(source: unknown, origin: string, data: unknown) {
-  window.dispatchEvent(new MessageEvent('message', { source: source as Window, origin, data }))
-}
-
-beforeEach(() => {
-  giveLayout()
-  vi.stubGlobal('chrome', { runtime: { getURL: (path: string) => `${EXTENSION_ORIGIN}/${path}` } })
-  received = []
-  hosted = new HostedFrame(document, {
+function makeHosted(): HostedFrame {
+  return new HostedFrame(document, {
     page: 'suggestion.html',
     widthPixels: 300,
     heightPixels: 100,
     anchor: null,
     title: 'TeaNode Passwords',
     onMessage: (message) => received.push(message),
+    onClose: () => (closedCount += 1),
   })
+}
+
+// load makes the frame finish loading, and returns what the content script
+// posted to it: the connect message, the origin it was addressed to and the
+// frame's end of the channel.
+function load() {
+  const frameWindow = internalFrame().contentWindow as Window
+  const post = vi.spyOn(frameWindow, 'postMessage')
+  internalFrame().dispatchEvent(new Event('load'))
+  const [message, origin, transfer] = post.mock.calls[0] as unknown as [Record<string, unknown>, string, MessagePort[]]
+  ports.push(transfer[0])
+  return { message, origin, frameEnd: transfer[0], post }
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
+
+beforeEach(() => {
+  giveLayout()
+  vi.stubGlobal('chrome', {
+    runtime: {
+      getURL: (path: string) => (path === '' ? `${STATIC_ORIGIN}/` : `${FRAME_ORIGIN}/${path}`),
+    },
+  })
+  received = []
+  closedCount = 0
+  ports = []
+  hosted = makeHosted()
   hosted.show()
 })
 afterEach(() => {
   hosted.close()
+  for (const port of ports) port.close()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -39,7 +68,7 @@ describe('HostedFrame', () => {
   it('puts the extension page in an iframe inside a closed shadow root', () => {
     expect(hosted.host.isConnected).toBe(true)
     expect(hosted.host.shadowRoot).toBeNull()
-    expect(internalFrame().getAttribute('src')).toBe(`${EXTENSION_ORIGIN}/suggestion.html`)
+    expect(internalFrame().getAttribute('src')).toBe(`${FRAME_ORIGIN}/suggestion.html`)
   })
 
   it('sets the styles that keep it in view as important declarations', () => {
@@ -55,35 +84,103 @@ describe('HostedFrame', () => {
     }
   })
 
-  it("believes a message only from its own frame's window and the extension's origin", () => {
-    const message = { channel: FRAME_MESSAGE_CHANNEL, kind: 'choose', itemId: 'x' }
-    const frameWindow = internalFrame().contentWindow
-    expect(frameWindow).not.toBeNull()
-    // The page\'s own script, posting to its window.
-    post(window, 'https://page.test', message)
-    // Another window claiming the extension\'s origin cannot be the frame.
-    post(window, EXTENSION_ORIGIN, message)
-    // The frame\'s window from some other origin (it was navigated away).
-    post(frameWindow, 'https://page.test', message)
+  it("posts a channel to the frame once it has loaded, addressed to the frame's own origin", () => {
+    const { message, origin, frameEnd } = load()
+    expect(message).toEqual({ channel: FRAME_MESSAGE_CHANNEL, frameMessageKind: FRAME_CONNECT_KIND })
+    // Not the origin chrome.runtime.getURL('') names.
+    expect(origin).toBe(FRAME_ORIGIN)
+    expect(origin).not.toBe(STATIC_ORIGIN)
+    expect(frameEnd).toBeInstanceOf(MessagePort)
+  })
+
+  it('posts the channel once, however many times the frame loads', () => {
+    const { post } = load()
+    internalFrame().dispatchEvent(new Event('load'))
+    expect(post).toHaveBeenCalledTimes(1)
+  })
+
+  it('believes what comes through its channel, and nothing the window carries', async () => {
+    const { frameEnd } = load()
+    // The page\'s own script, posting to its window, and a window claiming the extension\'s origin.
+    const message = { frameMessageKind: 'choose', itemId: 'x' }
+    window.dispatchEvent(new MessageEvent('message', { source: window, origin: 'https://page.test', data: message }))
+    window.dispatchEvent(new MessageEvent('message', { source: window, origin: FRAME_ORIGIN, data: message }))
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: internalFrame().contentWindow,
+        origin: FRAME_ORIGIN,
+        data: { channel: FRAME_MESSAGE_CHANNEL, ...message },
+      }),
+    )
+    await settle()
     expect(received).toEqual([])
-    post(frameWindow, EXTENSION_ORIGIN, message)
+    frameEnd.postMessage(message)
+    await settle()
     expect(received).toEqual([message])
   })
 
-  it('ignores a message of another channel, or one with no kind', () => {
-    const frameWindow = internalFrame().contentWindow
-    post(frameWindow, EXTENSION_ORIGIN, { channel: 'other', kind: 'choose' })
-    post(frameWindow, EXTENSION_ORIGIN, { channel: FRAME_MESSAGE_CHANNEL })
-    post(frameWindow, EXTENSION_ORIGIN, 'text')
+  it('ignores a message with no kind, and one that is not an object', async () => {
+    const { frameEnd } = load()
+    frameEnd.postMessage({ itemId: 'x' })
+    frameEnd.postMessage('text')
+    frameEnd.postMessage(null)
+    await settle()
     expect(received).toEqual([])
   })
 
-  it('hears nothing once closed, and takes its element off the page', () => {
-    const frameWindow = internalFrame().contentWindow
+  it('tells the frame things through the channel', async () => {
+    const { frameEnd } = load()
+    const heard: unknown[] = []
+    frameEnd.onmessage = (event) => heard.push(event.data)
+    hosted.send({ frameMessageKind: 'render', answer: 1 })
+    await settle()
+    expect(heard).toEqual([{ frameMessageKind: 'render', answer: 1 }])
+  })
+
+  it('tells nobody before the frame has a channel', async () => {
+    expect(() => hosted.send({ frameMessageKind: 'render' })).not.toThrow()
+    const { frameEnd } = load()
+    const heard: unknown[] = []
+    frameEnd.onmessage = (event) => heard.push(event.data)
+    await settle()
+    expect(heard).toEqual([])
+  })
+
+  it('is closed when the frame never answers through the channel, and says so', () => {
+    vi.useFakeTimers()
+    load()
+    vi.advanceTimersByTime(2999)
+    expect(hosted.host.isConnected).toBe(true)
+    vi.advanceTimersByTime(2)
+    expect(hosted.host.isConnected).toBe(false)
+    expect(closedCount).toBe(1)
+  })
+
+  it('stays open once the frame has said anything through the channel', async () => {
+    const { frameEnd } = load()
+    frameEnd.postMessage({ frameMessageKind: 'ready' })
+    await settle()
+    vi.useFakeTimers()
+    vi.advanceTimersByTime(10_000)
+    expect(hosted.host.isConnected).toBe(true)
+    expect(closedCount).toBe(0)
+  })
+
+  it('hears nothing once closed, and takes its element off the page', async () => {
+    const { frameEnd } = load()
     hosted.close()
-    post(frameWindow, EXTENSION_ORIGIN, { channel: FRAME_MESSAGE_CHANNEL, kind: 'choose' })
+    frameEnd.postMessage({ frameMessageKind: 'choose' })
+    await settle()
     expect(received).toEqual([])
     expect(hosted.host.isConnected).toBe(false)
     expect(hosted.check().isShown).toBe(false)
+    expect(hosted.check().failureReason).toBe('the frame is closed')
+  })
+})
+
+describe('originOfAddress', () => {
+  it('is the origin of the address, and the scheme and host where the browser gives none', () => {
+    expect(originOfAddress('https://example.test/page.html')).toBe('https://example.test')
+    expect(originOfAddress('chrome-extension://abc/suggestion.html?x=1')).toBe('chrome-extension://abc')
   })
 })

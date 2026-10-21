@@ -31,15 +31,15 @@ export const PASSKEY_CHANNEL = 'teanode-passkeys'
 const HANDSHAKE_MILLISECONDS = 400
 
 export type PasskeyReply =
-  | { outcome: 'credential'; credential: AttestationJson | AssertionJson }
-  | { outcome: 'fallback' }
-  | { outcome: 'error'; errorName: string; message: string }
+  | { replyOutcome: 'credential'; credential: AttestationJson | AssertionJson }
+  | { replyOutcome: 'fallback' }
+  | { replyOutcome: 'error'; errorName: string; errorMessage: string }
 
 interface RelayMessage {
   channel: typeof PASSKEY_CHANNEL
   direction: 'request' | 'reply' | 'cancel' | 'ping' | 'pong'
   id: string
-  kind?: 'create' | 'get'
+  ceremonyKind?: 'create' | 'get'
   options?: Record<string, unknown>
   reply?: PasskeyReply
 }
@@ -107,18 +107,18 @@ export function installPasskeyOverride(win: Window): void {
   }
 
   const ask = async (
-    kind: 'create' | 'get',
+    ceremonyKind: 'create' | 'get',
     options: Record<string, unknown>,
     signal: AbortSignal | undefined,
   ): Promise<PasskeyReply> => {
-    if (!(await isContentScriptListening())) return { outcome: 'fallback' }
+    if (!(await isContentScriptListening())) return { replyOutcome: 'fallback' }
     const id = makeId(win)
     const reply = waitForReply(id, 'reply')
     win.postMessage(
-      { channel: PASSKEY_CHANNEL, direction: 'request', id, kind, options } satisfies RelayMessage,
+      { channel: PASSKEY_CHANNEL, direction: 'request', id, ceremonyKind, options } satisfies RelayMessage,
       targetOrigin,
     )
-    if (!signal) return (await reply)?.reply ?? { outcome: 'fallback' }
+    if (!signal) return (await reply)?.reply ?? { replyOutcome: 'fallback' }
     return new Promise<PasskeyReply>((resolve, reject) => {
       const onAbort = () => {
         win.postMessage({ channel: PASSKEY_CHANNEL, direction: 'cancel', id } satisfies RelayMessage, targetOrigin)
@@ -127,26 +127,31 @@ export function installPasskeyOverride(win: Window): void {
       signal.addEventListener('abort', onAbort, { once: true })
       void reply.then((message) => {
         signal.removeEventListener('abort', onAbort)
-        resolve(message?.reply ?? { outcome: 'fallback' })
+        resolve(message?.reply ?? { replyOutcome: 'fallback' })
       })
     })
   }
 
-  const settle = (reply: PasskeyReply, kind: 'create' | 'get'): unknown => {
-    if (reply.outcome === 'credential') {
-      return kind === 'create'
+  const settle = (reply: PasskeyReply, ceremonyKind: 'create' | 'get'): unknown => {
+    if (reply.replyOutcome === 'credential') {
+      return ceremonyKind === 'create'
         ? buildAttestationCredential(reply.credential as AttestationJson)
         : buildAssertionCredential(reply.credential as AssertionJson)
     }
-    if (reply.outcome === 'error') {
-      if (reply.errorName === 'TypeError') throw new TypeError(reply.message)
-      throw new DOMException(reply.message, reply.errorName)
+    if (reply.replyOutcome === 'error') {
+      if (reply.errorName === 'TypeError') throw new TypeError(reply.errorMessage)
+      throw new DOMException(reply.errorMessage, reply.errorName)
     }
     return undefined
   }
 
   const create = async function create(this: unknown, options?: CredentialCreationOptions) {
     if (!options || typeof options.publicKey !== 'object' || options.publicKey === null) return originalCreate(options)
+    // A passkey the browser offers to make without a question (conditional)
+    // or no question at all (silent): not ours to ask about.
+    // (The type of a create request does not list mediation yet; browsers read it.)
+    const createMediation = (options as { mediation?: string }).mediation
+    if (createMediation === 'conditional' || createMediation === 'silent') return originalCreate(options)
     if (options.signal?.aborted) throw abortReason(options.signal)
     let copied: Record<string, unknown>
     try {
@@ -155,14 +160,15 @@ export function installPasskeyOverride(win: Window): void {
       return originalCreate(options)
     }
     const reply = await ask('create', copied, options.signal)
-    if (reply.outcome === 'fallback') return originalCreate(options)
+    if (reply.replyOutcome === 'fallback') return originalCreate(options)
     return settle(reply, 'create')
   }
 
   const get = async function get(this: unknown, options?: CredentialRequestOptions) {
     if (!options || typeof options.publicKey !== 'object' || options.publicKey === null) return originalGet(options)
-    // The browser's own list of passkeys, shown under the field: not replaced.
-    if (options.mediation === 'conditional') return originalGet(options)
+    // The browser's own list of passkeys, shown under the field (conditional),
+    // or a sign-in meant to happen with no window at all (silent): not replaced.
+    if (options.mediation === 'conditional' || options.mediation === 'silent') return originalGet(options)
     if (options.signal?.aborted) throw abortReason(options.signal)
     let copied: Record<string, unknown>
     try {
@@ -171,7 +177,7 @@ export function installPasskeyOverride(win: Window): void {
       return originalGet(options)
     }
     const reply = await ask('get', copied, options.signal)
-    if (reply.outcome === 'fallback') return originalGet(options)
+    if (reply.replyOutcome === 'fallback') return originalGet(options)
     return settle(reply, 'get')
   }
 

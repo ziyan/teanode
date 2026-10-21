@@ -4,10 +4,13 @@ import { NOT_ALLOWED_REPLY, PasskeyPrompts, PendingPrompt } from './passkeyPromp
 function prompt(id: string, tabId: number, windowId: number | null = null): PendingPrompt {
   return {
     id,
-    kind: 'get',
+    ceremonyKind: 'get',
     tabId,
+    frameId: 0,
+    tabUrl: 'https://example.com/',
     relyingPartyId: 'example.com',
     userName: '',
+    userVerification: 'preferred',
     windowId,
     context: { pageUrl: 'https://example.com/', origin: 'https://example.com', isCrossOrigin: false },
     creation: null,
@@ -26,6 +29,8 @@ describe('PasskeyPrompts', () => {
     expect(prompts.isPendingForTab(2)).toBe(false)
     expect(prompts.findByWindow(10)?.id).toBe('a')
     expect(prompts.findByTab(1)?.id).toBe('a')
+    expect(prompts.findByFrame(1, 0)?.id).toBe('a')
+    expect(prompts.findByFrame(1, 3)).toBeNull()
     expect(prompts.findByWindow(11)).toBeNull()
   })
 
@@ -35,7 +40,7 @@ describe('PasskeyPrompts', () => {
     prompts.add(waiting)
     expect(prompts.settle('a', NOT_ALLOWED_REPLY)?.id).toBe('a')
     expect(waiting.resolve).toHaveBeenCalledWith(NOT_ALLOWED_REPLY)
-    expect(prompts.settle('a', { outcome: 'fallback' })).toBeNull()
+    expect(prompts.settle('a', { replyOutcome: 'fallback' })).toBeNull()
     expect(waiting.resolve).toHaveBeenCalledTimes(1)
     expect(prompts.isPendingForTab(1)).toBe(false)
   })
@@ -47,7 +52,7 @@ describe('PasskeyPrompts', () => {
     const timeout = vi.fn()
     waiting.timer = setTimeout(timeout, 1000) as unknown as PendingPrompt['timer']
     prompts.add(waiting)
-    prompts.settle('a', { outcome: 'fallback' })
+    prompts.settle('a', { replyOutcome: 'fallback' })
     vi.advanceTimersByTime(2000)
     expect(timeout).not.toHaveBeenCalled()
     vi.useRealTimers()

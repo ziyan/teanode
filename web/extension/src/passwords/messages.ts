@@ -6,17 +6,17 @@
 // message says about itself.
 
 import type { FieldRole } from './fieldDetection'
-import type { LoginSummary } from './vault'
+import type { LoginSummary } from './openedKeys'
 
 // --- from a content script ---------------------------------------------
 
 export type SuggestionAnswer =
   // Nothing to offer: signed out, Passwords not set up, or nothing for this site.
-  | { state: 'none' }
-  | { state: 'locked'; host: string }
-  | { state: 'logins'; host: string; logins: LoginSummary[] }
+  | { suggestionState: 'none' }
+  | { suggestionState: 'locked'; host: string }
+  | { suggestionState: 'logins'; host: string; logins: LoginSummary[] }
   // A new password field while Passwords is open: offer a generated one.
-  | { state: 'generate'; host: string }
+  | { suggestionState: 'generate'; host: string }
 
 export interface CapturedLoginMessage {
   type: 'passwords:captured'
@@ -27,16 +27,19 @@ export interface CapturedLoginMessage {
 
 export interface BarOffer {
   // 'unlock': Passwords is locked; the button opens the window to unlock.
-  action: 'save' | 'update' | 'unlock'
+  offerAction: 'save' | 'update' | 'unlock'
   host: string
   userName: string
 }
 
 export interface FillFieldsMessage {
   type: 'passwords:fill-fields'
-  // host is the host the secrets were approved for; the content script fills
-  // only if its own frame is still at it.
-  host: string
+  // origin is the origin (scheme, host and port) the secrets were approved
+  // for; the content script fills only if its own frame is still at it.
+  origin: string
+  // isForeignActionConfirmed: the person was told the form sends to another
+  // host than the page's own and said to fill anyway.
+  isForeignActionConfirmed: boolean
   userName: string
   password: string
   oneTimeCode: string
@@ -54,9 +57,15 @@ export type ContentRequest =
   | { type: 'passwords:generate' }
   | CapturedLoginMessage
   | { type: 'passwords:page-ready'; hasPasswordField: boolean }
-  | { type: 'passwords:bar-answer'; answer: 'save' | 'dismiss' | 'unlock' }
+  | { type: 'passwords:bar-answer'; barAnswer: 'save' | 'dismiss' | 'unlock' }
   | { type: 'passwords:open-popup' }
-  | { type: 'passwords:passkey'; kind: 'create' | 'get'; options: Record<string, unknown>; isCrossOrigin: boolean }
+  | { type: 'passwords:passkey-cancel' }
+  | {
+      type: 'passwords:passkey'
+      ceremonyKind: 'create' | 'get'
+      options: Record<string, unknown>
+      isCrossOrigin: boolean
+    }
 
 // --- from the extension's own pages ------------------------------------
 
@@ -81,6 +90,9 @@ export interface PopupState {
 export interface SearchAnswer {
   forThisSite: LoginSummary[]
   others: LoginSummary[]
+  // ownerKeyChangedCount is how many shared logins were left out because
+  // their owner's key is not the one this device kept.
+  ownerKeyChangedCount: number
 }
 
 export type PopupRequest =
@@ -88,21 +100,37 @@ export type PopupRequest =
   | { type: 'passwords:unlock'; secretText: string; isRecoveryKey: boolean }
   | { type: 'passwords:lock' }
   | ({ type: 'passwords:search'; query: string } & Partial<FrameTarget>)
-  | { type: 'passwords:copy'; itemId: string; field: 'password' | 'userName' | 'oneTimeCode' }
+  | { type: 'passwords:copy'; itemId: string; copiedField: 'password' | 'userName' | 'oneTimeCode' }
   | { type: 'passwords:copy-text'; text: string }
   | { type: 'passwords:one-time-code'; itemId: string }
-  | ({ type: 'passwords:fill-in-tab'; itemId: string; part: 'login' | 'oneTimeCode' } & FrameTarget)
+  | ({
+      type: 'passwords:fill-in-tab'
+      itemId: string
+      fillPart: 'login' | 'oneTimeCode'
+      isForeignActionConfirmed?: boolean
+    } & FrameTarget)
   | ({ type: 'passwords:save-pending' } & Pick<FrameTarget, 'tabId'>)
   | { type: 'passwords:open-dashboard' }
   | { type: 'passwords:open-popup-window' }
   | { type: 'passwords:prompt-info'; promptId: string }
-  | { type: 'passwords:prompt-decide'; promptId: string; decision: 'allow' | 'browser'; choiceCredentialId: string }
+  | {
+      type: 'passwords:prompt-decide'
+      promptId: string
+      promptDecision: 'allow' | 'browser'
+      choiceCredentialId: string
+    }
 
 export interface PromptInfo {
-  kind: 'create' | 'get'
+  ceremonyKind: 'create' | 'get'
   relyingPartyId: string
+  // pageOrigin is the origin of the page that asked, which can be another
+  // than the relying party id names (a page at a host under it).
+  pageOrigin: string
   userName: string
   isUnlocked: boolean
+  // isVerificationNeeded: the site insists on the person proving who they are
+  // and they have not typed the passphrase lately.
+  isVerificationNeeded: boolean
   // For a sign-in: the passkeys that can answer, labelled by user name.
   choices: { label: string; credentialId: string }[]
 }

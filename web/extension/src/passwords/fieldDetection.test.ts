@@ -1,7 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+// @vitest-environment-options {"url": "https://example.test/sign-in"}
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   classifyField,
   findLoginScope,
+  foreignFormActionHost,
   isFieldVisible,
   readSubmittedLogin,
   roleOfFocusedField,
@@ -112,6 +114,131 @@ describe('isFieldVisible', () => {
   it('is false for a field that is not on the page', () => {
     const detached = document.createElement('input')
     expect(isFieldVisible(detached)).toBe(false)
+  })
+
+  it("wants at least half of the opacity, the field's and every element around it together", () => {
+    page(`
+      <input id="mostly" style="opacity:0.6">
+      <input id="half" style="opacity:0.5">
+      <input id="faint" style="opacity:0.4">
+      <div style="opacity:0.7"><input id="stacked" style="opacity:0.8"></div>
+      <div style="opacity:0.7"><div style="opacity:0.6"><input id="fadedTwice"></div></div>
+    `)
+    expect(isFieldVisible(field('#mostly'))).toBe(true)
+    expect(isFieldVisible(field('#half'))).toBe(true)
+    expect(isFieldVisible(field('#stacked'))).toBe(true)
+    expect(isFieldVisible(field('#faint'))).toBe(false)
+    // 0.7 times 0.6 is 0.42.
+    expect(isFieldVisible(field('#fadedTwice'))).toBe(false)
+  })
+
+  // jsdom keeps few properties of a style; the ones it does not are given
+  // to getComputedStyle by hand.
+  function withComputedStyle(extra: (element: Element) => Record<string, string>) {
+    const original = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(((element: Element) => {
+      const style = original(element)
+      return new Proxy(style, {
+        get(target, name) {
+          const given = extra(element)
+          return typeof name === 'string' && name in given ? given[name] : (target as any)[name]
+        },
+      })
+    }) as typeof window.getComputedStyle)
+  }
+
+  it("is false for a field cut off by a clip path or a clip, its own or an element's around it", () => {
+    page(`
+      <input id="clipPath">
+      <div id="clippedParent"><input id="inClippedParent"></div>
+      <input id="srOnly">
+      <input id="clearPath">
+    `)
+    withComputedStyle((element): Record<string, string> => {
+      if (element.id === 'clipPath' || element.id === 'clippedParent') return { clipPath: 'inset(50%)' }
+      if (element.id === 'srOnly') return { position: 'absolute', clip: 'rect(0px, 0px, 0px, 0px)' }
+      if (element.id === 'clearPath') return { clipPath: 'none', clip: 'auto' }
+      return {}
+    })
+    expect(isFieldVisible(field('#clipPath'))).toBe(false)
+    expect(isFieldVisible(field('#inClippedParent'))).toBe(false)
+    expect(isFieldVisible(field('#srOnly'))).toBe(false)
+    expect(isFieldVisible(field('#clearPath'))).toBe(true)
+  })
+
+  it('is false for a field an overflow around it cuts off, and true when it shows enough', () => {
+    page(`
+      <div id="box" style="overflow:hidden"><input id="inBox"></div>
+      <div id="scroller" style="overflow:auto"><input id="inScroller"></div>
+      <div id="open" style="overflow:visible"><input id="inOpen"></div>
+    `)
+    // The field is at (10, 10) and 200 by 30. The box is far to the right of it.
+    setLayout(document.getElementById('box') as Element, { left: 600, width: 100, height: 100 })
+    // The scroller shows the field.
+    setLayout(document.getElementById('scroller') as Element, { left: 0, top: 0, width: 400, height: 300 })
+    setLayout(document.getElementById('open') as Element, { left: 600 })
+    expect(isFieldVisible(field('#inBox'))).toBe(false)
+    expect(isFieldVisible(field('#inScroller'))).toBe(true)
+    expect(isFieldVisible(field('#inOpen'))).toBe(true)
+  })
+
+  it('is false when another element is drawn over the middle of the field, and true when it is the field or inside it', () => {
+    page('<input id="a"><input id="b"><div id="cover"></div><input id="offscreen">')
+    setLayout(field('#offscreen'), { left: 50_000 })
+    const lookup = vi.fn((horizontal: number, vertical: number): Element | null => {
+      expect([horizontal, vertical]).toEqual([110, 25])
+      return field('#a')
+    })
+    ;(document as any).elementFromPoint = lookup
+    expect(isFieldVisible(field('#a'))).toBe(true)
+    lookup.mockReturnValue(document.getElementById('cover'))
+    expect(isFieldVisible(field('#b'))).toBe(false)
+    // A middle that is off the screen cannot be looked at: the field is not counted as covered.
+    lookup.mockClear()
+    expect(isFieldVisible(field('#offscreen'))).toBe(true)
+    expect(lookup).not.toHaveBeenCalled()
+    delete (document as any).elementFromPoint
+  })
+
+  it("looks inside a shadow root with that root's own lookup", () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = host.attachShadow({ mode: 'open' })
+    const inner = document.createElement('input')
+    root.append(inner)
+    ;(root as any).elementFromPoint = vi.fn(() => document.createElement('div'))
+    ;(document as any).elementFromPoint = vi.fn(() => inner)
+    expect(isFieldVisible(inner)).toBe(false)
+    delete (document as any).elementFromPoint
+  })
+})
+
+describe('foreignFormActionHost', () => {
+  it("is empty for a form that sends to the page's own host, a relative address, none, or a field with no form", () => {
+    page(`
+      <form id="relative" action="/session"><input id="a"></form>
+      <form id="same" action="https://www.example.test/session"><input id="b"></form>
+      <form id="none"><input id="c"></form>
+      <form id="script" action="javascript:void(0)"><input id="d"></form>
+      <input id="loose">
+    `)
+    for (const id of ['a', 'b', 'c', 'd', 'loose']) expect(foreignFormActionHost(field(`#${id}`)), id).toBe('')
+  })
+
+  it('names the host a form sends to when it is another, whatever the scheme or port', () => {
+    page(`
+      <form action="https://collect.example.test/session"><input id="a"></form>
+      <form action="//collect.example.test:8443/x"><input id="b"></form>
+      <form action="/ok"><input id="c"><button type="submit" formaction="https://collect.example.test/other">Go</button></form>
+    `)
+    expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')
+    expect(foreignFormActionHost(field('#b'))).toBe('collect.example.test')
+    expect(foreignFormActionHost(field('#c'))).toBe('collect.example.test')
+  })
+
+  it("reads the attribute, not a field called action that stands in for the form's property", () => {
+    page('<form action="https://collect.example.test/session"><input name="action" value="/ok"><input id="a"></form>')
+    expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')
   })
 })
 

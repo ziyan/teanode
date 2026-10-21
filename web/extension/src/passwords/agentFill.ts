@@ -10,7 +10,7 @@
 // document it filled (the browser's id for it), so that the server can keep a
 // lock on that document and nothing else.
 
-import { doesHostMatch, isSecureContextPage, normalizeHost } from './hosts'
+import { doesHostMatch, isSecureContextPage, originOf } from './hosts'
 
 export interface AgentFillAnswer {
   ok: boolean
@@ -26,7 +26,7 @@ interface FieldToFill {
   ref: string | number
   value: string
   label: string
-  kind: FieldKind
+  fieldKind: FieldKind
 }
 
 function textOf(value: unknown): string {
@@ -49,33 +49,85 @@ function hasRef(value: unknown): value is string | number {
 // A password or a code that goes in is noted in a set of the page's filled
 // nodes, so that a snapshot never shows it, whatever the field's type
 // becomes (a show-password button makes it a text input).
-function fillInPage(host: string, port: number, fields: FieldToFill[]): { ok: boolean; error?: string } {
-  const normalize = (name: string): string => {
-    let lowered = name.toLowerCase().replace(/\.+$/, '')
-    if (lowered.startsWith('www.') && lowered.slice(4).includes('.')) lowered = lowered.slice(4)
-    return lowered
-  }
-  const pagePort = Number(location.port || (location.protocol === 'https:' ? 443 : 80))
-  if (normalize(location.hostname) !== host || pagePort !== port)
-    return { ok: false, error: 'the page is not on the site this login is for' }
+function fillInPage(origin: string, fields: FieldToFill[]): { isFilled: boolean; error?: string } {
+  // The origin (scheme, host and port) the tab was checked to be on a moment
+  // ago; a page that moved since gets nothing.
+  if (location.origin !== origin) return { isFilled: false, error: 'the page is not on the site this login is for' }
   const references: Map<unknown, unknown> | undefined = (window as any).__teanodeRefs
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  // The same test of "a person can see this field" as isFieldVisible in
+  // fieldDetection.ts, written out again because this function runs inside the
+  // page with nothing of this file in scope: not hidden, not faded below half
+  // (the field's opacity with that of every element around it), not cut off
+  // by a clip path, a clip or an overflow, big enough, and nothing else drawn
+  // over its middle.
+  const isOpenToView = (value: string | undefined): boolean =>
+    value === undefined || value === '' || value === 'none' || value === 'auto'
   const isVisible = (node: HTMLElement): boolean => {
     let opacity = 1
+    const clippers: Element[] = []
     for (let element: Element | null = node; element; element = element.parentElement) {
       const style = getComputedStyle(element)
       if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false
+      if (style.contentVisibility === 'hidden') return false
       opacity *= Number.parseFloat(style.opacity === '' ? '1' : style.opacity)
+      if (!isOpenToView(style.clipPath)) return false
+      if ((style.position === 'absolute' || style.position === 'fixed') && !isOpenToView(style.clip)) return false
+      const isRoot = element === document.body || element === document.documentElement
+      if (
+        element !== node &&
+        !isRoot &&
+        [style.overflow, style.overflowX, style.overflowY].some((value) => !isOpenToView(value) && value !== 'visible')
+      ) {
+        clippers.push(element)
+      }
     }
     const rect = node.getBoundingClientRect()
-    return opacity >= 0.1 && rect.width >= 5 && rect.height >= 5
+    if (opacity < 0.5 || rect.width < 5 || rect.height < 5) return false
+    for (const clipper of clippers) {
+      const box = clipper.getBoundingClientRect()
+      const width = Math.min(rect.right, box.right) - Math.max(rect.left, box.left)
+      const height = Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top)
+      if (width < 5 || height < 5) return false
+    }
+    const centerHorizontal = rect.left + rect.width / 2
+    const centerVertical = rect.top + rect.height / 2
+    const isCenterOnScreen =
+      centerHorizontal >= 0 &&
+      centerVertical >= 0 &&
+      centerHorizontal < window.innerWidth &&
+      centerVertical < window.innerHeight
+    if (isCenterOnScreen && typeof document.elementFromPoint === 'function') {
+      const hit = document.elementFromPoint(centerHorizontal, centerVertical)
+      if (hit !== null && hit !== node && !node.contains(hit)) return false
+    }
+    return true
   }
-  const isKind = (node: HTMLInputElement, kind: FieldKind): boolean => {
+  // A form that sends what is typed to another host than the page's own is
+  // not filled for the agent: nobody can be asked here.
+  const isFormSendingElsewhere = (node: HTMLInputElement): boolean => {
+    const form = node.form
+    if (!form) return false
+    const attributes = [
+      form.getAttribute('action'),
+      ...Array.from(form.querySelectorAll('[formaction]')).map((button) => button.getAttribute('formaction')),
+    ]
+    return attributes.some((attribute) => {
+      if (attribute === null || attribute.trim() === '') return false
+      try {
+        const target = new URL(attribute, document.baseURI)
+        return (target.protocol === 'http:' || target.protocol === 'https:') && target.host !== location.host
+      } catch {
+        return false
+      }
+    })
+  }
+  const isKind = (node: HTMLInputElement, fieldKind: FieldKind): boolean => {
     const type = (node.type || 'text').toLowerCase()
     const tokens = (node.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/)
     const has = (...names: string[]): boolean => names.some((name) => tokens.includes(name))
     const isTextual = ['text', 'email', 'tel', 'number', 'search', 'url', 'password'].includes(type)
-    switch (kind) {
+    switch (fieldKind) {
       case 'password':
         return type === 'password' || (isTextual && has('current-password', 'new-password'))
       case 'userName':
@@ -89,28 +141,31 @@ function fillInPage(host: string, port: number, fields: FieldToFill[]): { ok: bo
     userName: 'a text, email or telephone input, or one whose autocomplete says username or email',
     oneTimeCode: 'a text, number or telephone input, or one whose autocomplete says one-time-code',
   }
-  const targets: { node: HTMLInputElement; value: string; kind: FieldKind }[] = []
+  const targets: { node: HTMLInputElement; value: string; fieldKind: FieldKind }[] = []
   for (const field of fields) {
     const node = references && (references.get(Number(field.ref)) ?? references.get(field.ref))
     if (!(node instanceof Element) || !node.isConnected) {
-      return { ok: false, error: `the ${field.label} field is not on the page; take a snapshot first` }
+      return { isFilled: false, error: `the ${field.label} field is not on the page; take a snapshot first` }
     }
     if (!(node instanceof HTMLInputElement)) {
       return {
-        ok: false,
+        isFilled: false,
         error: `the ${field.label} field is not an input; a textarea, a select and an editable region are never filled`,
       }
     }
-    if (!isKind(node, field.kind)) {
-      return { ok: false, error: `the ${field.label} field is not ${wanted[field.kind]}` }
+    if (!isKind(node, field.fieldKind)) {
+      return { isFilled: false, error: `the ${field.label} field is not ${wanted[field.fieldKind]}` }
     }
     if (node.type === 'hidden' || node.disabled || node.readOnly || !isVisible(node)) {
-      return { ok: false, error: `the ${field.label} field cannot be typed into` }
+      return { isFilled: false, error: `the ${field.label} field cannot be typed into` }
     }
-    targets.push({ node, value: field.value, kind: field.kind })
+    if (isFormSendingElsewhere(node)) {
+      return { isFilled: false, error: `the form around the ${field.label} field sends to another site than this page` }
+    }
+    targets.push({ node, value: field.value, fieldKind: field.fieldKind })
   }
   for (const target of targets) {
-    if (target.kind !== 'userName') {
+    if (target.fieldKind !== 'userName') {
       const filledNodes: WeakSet<Node> =
         (window as any).__teanodeFilled ?? ((window as any).__teanodeFilled = new WeakSet())
       filledNodes.add(target.node)
@@ -121,7 +176,7 @@ function fillInPage(host: string, port: number, fields: FieldToFill[]): { ok: bo
     target.node.dispatchEvent(new Event('input', { bubbles: true }))
     target.node.dispatchEvent(new Event('change', { bubbles: true }))
   }
-  return { ok: true }
+  return { isFilled: true }
 }
 
 // effectivePort is the port an address is on: the one it names, or the default
@@ -157,35 +212,53 @@ async function fillFields(
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
     func: fillInPage,
-    args: [normalizeHost(named), namedPort, fields],
+    // The origin just checked, scheme and host and port, which the page is
+    // asked to still be at.
+    args: [originOf(address), fields],
   })
-  const answer = result?.result as { ok: boolean; error?: string } | undefined
+  const answer = result?.result as { isFilled: boolean; error?: string } | undefined
   if (!answer) return { ok: false, error: 'the page did not answer' }
-  if (!answer.ok) return { ok: false, error: answer.error }
+  if (!answer.isFilled) return { ok: false, error: answer.error }
   const documentId = typeof result.documentId === 'string' ? result.documentId : undefined
   return { ok: true, data: documentId ? { isFilled: true, documentId } : { isFilled: true } }
 }
 
 // fillLoginForAgent types the user name and password into the fields the
 // snapshot references name. Either reference may be empty.
-export async function fillLoginForAgent(tabId: number, args: Record<string, unknown>): Promise<AgentFillAnswer> {
+export async function fillLoginForAgent(
+  tabId: number,
+  actionArguments: Record<string, unknown>,
+): Promise<AgentFillAnswer> {
   const fields: FieldToFill[] = []
-  if (hasRef(args.userNameRef))
-    fields.push({ ref: args.userNameRef, value: textOf(args.userName), label: 'user name', kind: 'userName' })
-  if (hasRef(args.passwordRef))
-    fields.push({ ref: args.passwordRef, value: textOf(args.password), label: 'password', kind: 'password' })
+  if (hasRef(actionArguments.userNameRef))
+    fields.push({
+      ref: actionArguments.userNameRef,
+      value: textOf(actionArguments.userName),
+      label: 'user name',
+      fieldKind: 'userName',
+    })
+  if (hasRef(actionArguments.passwordRef))
+    fields.push({
+      ref: actionArguments.passwordRef,
+      value: textOf(actionArguments.password),
+      label: 'password',
+      fieldKind: 'password',
+    })
   if (fields.length === 0) return { ok: false, error: 'name the user name or the password field to fill' }
   if (fields.some((field) => field.value === ''))
     return { ok: false, error: 'there is nothing to type into a field that was named' }
-  return fillFields(tabId, args.host, args.port, fields)
+  return fillFields(tabId, actionArguments.host, actionArguments.port, fields)
 }
 
 // fillOneTimeCodeForAgent types a one-time code into the field the snapshot
 // reference names.
-export async function fillOneTimeCodeForAgent(tabId: number, args: Record<string, unknown>): Promise<AgentFillAnswer> {
-  if (!hasRef(args.ref)) return { ok: false, error: 'name the one-time code field to fill' }
-  if (textOf(args.code) === '') return { ok: false, error: 'there is no code to type' }
-  return fillFields(tabId, args.host, args.port, [
-    { ref: args.ref, value: textOf(args.code), label: 'one-time code', kind: 'oneTimeCode' },
+export async function fillOneTimeCodeForAgent(
+  tabId: number,
+  actionArguments: Record<string, unknown>,
+): Promise<AgentFillAnswer> {
+  if (!hasRef(actionArguments.ref)) return { ok: false, error: 'name the one-time code field to fill' }
+  if (textOf(actionArguments.code) === '') return { ok: false, error: 'there is no code to type' }
+  return fillFields(tabId, actionArguments.host, actionArguments.port, [
+    { ref: actionArguments.ref, value: textOf(actionArguments.code), label: 'one-time code', fieldKind: 'oneTimeCode' },
   ])
 }
