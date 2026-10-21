@@ -477,7 +477,7 @@ func TestSharingAPasswordItemWithAPersonInACircle(test *testing.T) {
 	}
 
 	shareWithBen := sharesInput(id, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for ben"), "recipientPublicKey": ben.publicKey,
+		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey,
 	}})
 	if _, failures := world.callWithCredential(test, world.ada, models.CredentialToken, setPasswordItemSharesQuery, shareWithBen); !isTapRefusal(strings.Join(failures, "; ")) {
 		test.Fatalf("a token adding a grantee: %v", failures)
@@ -531,7 +531,7 @@ func TestSharingAPasswordItemWithAPersonInACircle(test *testing.T) {
 		test.Fatalf("what ben reads: %v", reading)
 	}
 	read := readItems[0].(map[string]any)
-	if read["id"] != id || read["isSharedWithMe"] != true || read["itemKey"] != sealedForKeyPairOf("item key for ben") || len(read["shares"].([]any)) != 0 ||
+	if read["id"] != id || read["isSharedWithMe"] != true || read["itemKey"] != sealedForKeyPairOf("item key for "+world.ben.Username) || len(read["shares"].([]any)) != 0 ||
 		read["encryptedFields"] != item["encryptedFields"] || read["ownerUserId"] != world.ada.ID || read["isUsableByAgent"] != false ||
 		reading["itemIds"].([]any)[0] != id || reading["revision"] != shared["revision"] {
 		test.Fatalf("what ben reads: %v", reading)
@@ -614,7 +614,7 @@ func TestACircleShareListsAWaitingMemberUntilTheirKeyIsAdded(test *testing.T) {
 		test.Fatalf("nobody waits now: %v", waiting)
 	}
 	reading := world.list(test, world.ben, nil)["items"].([]any)
-	if len(reading) != 1 || reading[0].(map[string]any)["itemKey"] != sealedForKeyPairOf("item key for ben") {
+	if len(reading) != 1 || reading[0].(map[string]any)["itemKey"] != sealedForKeyPairOf("item key for "+world.ben.Username) {
 		test.Fatalf("what ben reads: %v", reading)
 	}
 }
@@ -628,7 +628,7 @@ func TestLeavingTheCircleEndsAccessToASharedPasswordItem(test *testing.T) {
 	world.setUp(test, ben)
 	id := world.save(test, ada, "login")["id"].(string)
 	world.run(test, world.ada, setPasswordItemSharesQuery, sharesInput(id, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for ben"), "recipientPublicKey": ben.publicKey}}))
+		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
 	if got := world.list(test, world.ben, nil); len(got["items"].([]any)) != 1 {
 		test.Fatalf("ben reads: %v", got)
 	}
@@ -721,7 +721,7 @@ func TestErasingPasswordsNeedsATapAndTakesEverything(test *testing.T) {
 	world.save(test, ben, "note")
 	shared := world.save(test, ada, "login")["id"].(string)
 	world.run(test, world.ada, setPasswordItemSharesQuery, sharesInput(shared, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for ben"), "recipientPublicKey": ben.publicKey}}))
+		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
 
 	if _, failures := world.callWithCredential(test, world.ben, models.CredentialToken, erasePasswordsQuery, nil); !isTapRefusal(strings.Join(failures, "; ")) {
 		test.Fatalf("a token erasing: %v", failures)
@@ -757,7 +757,7 @@ func TestThePasswordsAuditLogNeverHoldsASealedValue(test *testing.T) {
 	world.setUp(test, ben)
 	id := world.save(test, ada, "login")["id"].(string)
 	world.run(test, world.ada, setPasswordItemSharesQuery, sharesInput(id, []any{map[string]any{"granteeUserId": world.ben.ID}}, []any{map[string]any{
-		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for ben"), "recipientPublicKey": ben.publicKey}}))
+		"recipientUserId": world.ben.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + world.ben.Username), "recipientPublicKey": ben.publicKey}}))
 	world.run(test, world.ada, passwordAgentUseQuery, map[string]any{"input": map[string]any{"itemId": id, "isUsableByAgent": true, "itemKeyByAgentKey": sealedForKeyPairOf("item key for the agent")}})
 	world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": id})
 	world.run(test, world.ada, erasePasswordsQuery, nil)
