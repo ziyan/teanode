@@ -201,7 +201,14 @@ func TestAnOwnersListOfManySharesIsFast(test *testing.T) {
 			}
 		}
 		test.Logf("listing 48000 shares took %s", elapsed)
-		if elapsed > 4*time.Second {
+		// Linear takes under a second; the quadratic loop this guards against
+		// took about ten. The race detector makes either several times slower,
+		// so its bound is wider and still far below the quadratic one.
+		bound := 4 * time.Second
+		if isRaceDetectorOn {
+			bound = 20 * time.Second
+		}
+		if elapsed > bound {
 			test.Fatalf("listing 48000 shares took %s", elapsed)
 		}
 	})

@@ -154,7 +154,7 @@ struct PasswordsSettingsScreen: View {
             } header: {
                 Text("Your safety code")
             } footer: {
-                Text("Somebody who shares with you, or checks your key, can ask you to read them this code. It is made from your key and your account, so it is the same on every device.")
+                Text("Somebody who shares with you, or checks your key, can ask you to read them this code. It is made from your key, so it is the same on every device.")
             }
         }
     }

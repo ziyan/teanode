@@ -63672,18 +63672,18 @@
         }
       }
     },
-    "Somebody who shares with you, or checks your key, can ask you to read them this code. It is made from your key and your account, so it is the same on every device.": {
+    "Somebody who shares with you, or checks your key, can ask you to read them this code. It is made from your key, so it is the same on every device.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "あなたと共有する人やあなたのキーを確認する人が、このコードの読み上げを求めることがあります。コードはあなたのキーとアカウントから作られるため、どのデバイスでも同じです。"
+            "value": "あなたと共有する人やあなたのキーを確認する人が、このコードの読み上げを求めることがあります。コードはあなたのキーから作られるため、どのデバイスでも同じです。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "与你共享项目或核对你密钥的人可能会请你读出这个安全码。它由你的密钥和账户生成，所以在每台设备上都一样。"
+            "value": "与你共享项目或核对你密钥的人可能会请你读出这个安全码。它由你的密钥生成，所以在每台设备上都一样。"
           }
         }
       }

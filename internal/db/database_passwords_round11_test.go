@@ -547,7 +547,13 @@ func TestAPersonWithManyVersionsCostsAChangeNothingExtra(test *testing.T) {
 	})
 	elapsed := time.Since(started)
 	test.Logf("25 token deletes: %s", elapsed)
-	if elapsed > 3*time.Second {
+	// Summing every row per delete took minutes; the race detector only
+	// multiplies the fast path, so its bound is wider.
+	bound := 3 * time.Second
+	if isRaceDetectorOn {
+		bound = 15 * time.Second
+	}
+	if elapsed > bound {
 		test.Fatalf("25 token deletes took %s", elapsed)
 	}
 }
