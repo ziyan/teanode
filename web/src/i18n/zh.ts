@@ -2295,6 +2295,7 @@ export const zh: Catalog = {
   'authorize.introWholeAccount': '这台设备上的一个应用请求以你的身份登录整个账户：你的邮件、助手和设置。',
   'authorize.grantWholeAccount':
     '只有在你刚刚在这台设备上打开 TeaNode 应用登录时才允许。它将能做你在这里能做的一切。你可以随时在设置的“设备”或“应用”中将它退出登录。',
+  'authorize.approveOnlyIfJustStarted': '只有在你刚刚在 iPhone 上的 TeaNode 应用中开始登录时才批准。',
   'authorize.program': '应用',
   'authorize.claimedName': '注册时自称的名称',
   'authorize.unnamed': '未提供名称的应用',
@@ -6862,6 +6863,7 @@ export const zh: Catalog = {
   'passwords.errorAnsweredAboutAnotherItem': '服务器回答的是另一个项目。',
   'passwords.errorRestoredAnotherVersion': '服务器恢复的是别的内容。',
   'passwords.errorItemNotInSharingPlan': '该项目不在你确认的范围内。',
+  'passwords.errorSharingPlanOutOfDate': '确认之后该项目的共享发生了变化。请重新查看共享对象，然后再次完成。',
   'passwords.finishConfirmTitle': '完成共享？',
   'passwords.finishConfirmBody': '只有在你确认后才会发放密钥。拿到密钥的人或助手可以打开该项目。',
   'passwords.finishConfirmPeopleOne': '把密钥给 {names}，涉及 {count} 个项目。',

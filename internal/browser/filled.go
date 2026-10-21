@@ -473,9 +473,27 @@ func (self *FilledValues) ForgetPages() {
 // OriginOf is the site an address is on, written the one way the scripted
 // marks are compared: scheme, lower-case host without a leading "www." (the
 // fill treats it as the same site) and the port when it is not the scheme's
-// own. It is empty for an address that is not an http or https one.
+// own. It is empty for an address that is not an http or https one, and for one
+// whose site cannot be read (see IsWebAddress).
+//
+// Only the scheme and the part up to the first "/", "?" or "#" are parsed. A
+// path, query or fragment that is not valid on its own (a stray "%") is still a
+// page of the site, and parsing the whole address would fail on it and name no
+// site at all.
 func OriginOf(address string) string {
-	parsed, err := url.Parse(strings.TrimSpace(address))
+	text := strings.TrimSpace(address)
+	if strings.IndexFunc(text, isBackslashOrControlCharacter) >= 0 {
+		return ""
+	}
+	schemeEnd := strings.Index(text, "://")
+	if schemeEnd < 0 {
+		return ""
+	}
+	authorityEnd := len(text)
+	if end := strings.IndexAny(text[schemeEnd+len("://"):], "/?#"); end >= 0 {
+		authorityEnd = schemeEnd + len("://") + end
+	}
+	parsed, err := url.Parse(text[:authorityEnd])
 	if err != nil {
 		return ""
 	}
@@ -498,6 +516,34 @@ func OriginOf(address string) string {
 		return scheme + "://" + host
 	}
 	return scheme + "://" + host + ":" + port
+}
+
+func isBackslashOrControlCharacter(character rune) bool {
+	return character == '\\' || character < ' ' || character == 0x7f
+}
+
+// IsWebAddress says the address is an http or https one, whether or not its
+// site can be read (OriginOf): a page that is not one (about:blank, a data
+// page, an error page) belongs to no site.
+func IsWebAddress(address string) bool {
+	text := strings.ToLower(strings.TrimSpace(address))
+	return strings.HasPrefix(text, "http:") || strings.HasPrefix(text, "https:")
+}
+
+// NoteScriptedAddress is NoteScriptedOrigin for the address of a document the
+// agent ran a script in. When the address is a web one whose site cannot be
+// read, nothing can say which pages the script was on, so it is taken to be on
+// every page of the tab (NoteScriptOnEveryPage), as a script that cannot be
+// placed at all is.
+func (self *FilledValues) NoteScriptedAddress(tab, address string) {
+	if self == nil {
+		return
+	}
+	if OriginOf(address) == "" && IsWebAddress(address) {
+		self.NoteScriptOnEveryPage(tab)
+		return
+	}
+	self.NoteScriptedOrigin(address)
 }
 
 // NoteScriptOnEveryPage says the tab was given something that runs in every

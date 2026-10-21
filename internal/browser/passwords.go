@@ -102,7 +102,7 @@ func (self *Context) noteScript(ctx context.Context) {
 		return
 	}
 	self.filled.NoteScripted("", document)
-	self.filled.NoteScriptedOrigin(document.Address)
+	self.filled.NoteScriptedAddress("", document.Address)
 	self.noteScriptedTargets(ctx)
 }
 
@@ -127,7 +127,7 @@ func (self *Context) noteScriptedNavigations(events <-chan *message) {
 				continue
 			}
 			self.filled.NoteScripted("", Document{ID: navigated.Frame.LoaderID, Address: navigated.Frame.URL})
-			self.filled.NoteScriptedOrigin(navigated.Frame.URL)
+			self.filled.NoteScriptedAddress("", navigated.Frame.URL)
 		default:
 			return
 		}
@@ -181,7 +181,7 @@ func (self *Context) noteScriptedTargets(ctx context.Context) {
 		return
 	}
 	for _, target := range others {
-		self.filled.NoteScriptedOrigin(target.URL)
+		self.filled.NoteScriptedAddress("", target.URL)
 	}
 }
 

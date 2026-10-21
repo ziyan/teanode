@@ -324,6 +324,11 @@ func translateCircleError(err error) error {
 	if errors.Is(err, db.ErrCircleNeedsAdmin) {
 		return fmt.Errorf("%w: a circle needs an admin; make somebody else an admin first, or delete the circle", api.ErrInvalidArguments)
 	}
+	if errors.Is(err, db.ErrPasswordsBusy) {
+		// Ending the shares of Passwords that only the circle made possible
+		// waited for a lock and gave up; the member is still in.
+		return passwordsFailure(err)
+	}
 	return translateError(err)
 }
 

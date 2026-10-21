@@ -213,3 +213,17 @@ ALTER TABLE "agent_interaction" ADD COLUMN "is_started_by_person" boolean NOT NU
 INSERT INTO "role_permission" ("role_id", "permission_key")
 SELECT "id", 'passwords:use' FROM "role" WHERE lower("name") IN ('administrator', 'operator', 'member')
 ON CONFLICT DO NOTHING;
+
+-- Only a token of the TeaNode phone app carries the app mark (the one that
+-- lets a tap approve a call that spends money, and now Passwords). The
+-- migration that introduced the mark gave it to every token a client held
+-- that named no resource, which includes tokens of other apps that registered
+-- a private-use return address of their own. Take the mark off every token
+-- whose client is not registered with exactly the TeaNode app's one address.
+UPDATE "token" SET "client_kind" = NULL
+WHERE "client_kind" = 'app'
+  AND NOT EXISTS (
+      SELECT 1 FROM "oauth_client"
+      WHERE "oauth_client"."id" = "token"."client_id"
+        AND "oauth_client"."redirect_uris" = 'com.teanode.app:/oauth'
+  );

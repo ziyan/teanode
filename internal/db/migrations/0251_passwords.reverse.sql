@@ -8,3 +8,5 @@ DROP FUNCTION "password_item_version_count_bytes"();
 DROP TABLE "password_item";
 DROP SEQUENCE "password_item_revision";
 DROP TABLE "password_setup";
+-- The app mark taken off other apps' tokens by the forward migration is not
+-- put back: it should never have been there.

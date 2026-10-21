@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -149,6 +150,22 @@ func (self *oauth) refreshToken(response http.ResponseWriter, request *http.Requ
 		return
 	}
 
+	// The renewal is the same sign-in, so it is the same kind of token, but
+	// the app mark stays only while the client is still the TeaNode app: a
+	// token that carries the mark for any other client is renewed without it.
+	clientKind := previous.ClientKind
+	if clientKind != "" {
+		client, err := self.database.GetOAuthClient(previous.ClientID)
+		if err != nil {
+			log.Errorf("could not read a client: %s", err)
+			writeOAuthError(response, http.StatusInternalServerError, "server_error", "the client could not be read")
+			return
+		}
+		if client == nil || !api.IsTeaNodeAppClient(client.RedirectURIs) {
+			clientKind = ""
+		}
+	}
+
 	// Retired before the replacement is minted. The other order leaves both
 	// working if the second step fails, and a refresh token that still works
 	// after being spent is the one thing a rotation is supposed to prevent.
@@ -169,8 +186,7 @@ func (self *oauth) refreshToken(response http.ResponseWriter, request *http.Requ
 			"that refresh token has been used, has expired, or was not issued here")
 		return
 	}
-	// The renewal is the same sign-in, so it is the same kind of token.
-	self.issue(response, previous.UserID, previous.Name, previous.ClientID, previous.Resource, previous.ClientKind)
+	self.issue(response, previous.UserID, previous.Name, previous.ClientID, previous.Resource, clientKind)
 }
 
 // clientIdOf is the client a token request names, in the body or in an HTTP

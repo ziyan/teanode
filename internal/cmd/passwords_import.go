@@ -414,8 +414,8 @@ func writeExportFile(path, format string, items []*passwordsItem) (leftOutCount 
 }
 
 func runPasswordsExport(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() != 1 {
-		return usage("usage: teanode passwords export <file> [--format json|csv]")
+	if command.Args().Len() > 1 {
+		return usage("usage: teanode passwords export [file] [--format json|csv]")
 	}
 	path := command.Args().First()
 	format := strings.ToLower(command.String("format"))
@@ -427,6 +427,10 @@ func runPasswordsExport(ctx context.Context, command *cli.Command) error {
 	}
 	if format != "json" && format != "csv" {
 		return usage("--format is json or csv")
+	}
+	if path == "" {
+		// A name the agent's file tool refuses (passwords.IsLocalFileName).
+		path = passwords.ExportFileName(time.Now().UTC().Format("20060102T150405Z"), format)
 	}
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("%s already exists; export does not overwrite a file", path)
@@ -457,6 +461,9 @@ func runPasswordsExport(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(map[string]any{"exportedCount": len(items) - leftOutCount, "leftOutCount": leftOutCount, "exportedFilePath": path})
 	}
 	fmt.Printf("wrote %s to %s, readable by you only\n", countWords(len(items)-leftOutCount, "item"), path)
+	if !passwords.IsLocalFileName(filepath.Base(path)) {
+		fmt.Fprintf(os.Stderr, "note: name an export passwords-export-<anything> so that the agent's file tool refuses it by its name as well as by its first bytes\n")
+	}
 	if leftOutCount > 0 {
 		fmt.Printf("left out %s that a CSV file has no place for (cards); --format json has them\n", countWords(leftOutCount, "item"))
 	}

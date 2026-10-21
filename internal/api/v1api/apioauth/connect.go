@@ -80,8 +80,15 @@ func (self *oauth) collectConnectCode(response http.ResponseWriter, request *htt
 	deviceName := api.DisplayName(request.PostForm.Get("device_name"), deviceNameLongest)
 	log.Noticef("%s connected the client %s (%q) on %q", user.Username, client.ID, client.Name, deviceName)
 	// The code carries whether it was made where a person was tapping; a
-	// code a command line token made yields an app token with no marker.
-	self.issue(response, user.ID, connectedTokenName(client.Name, deviceName), client.ID, "", connected.ClientKind)
+	// code a command line token made yields an app token with no marker. And
+	// the mark is kept only for the TeaNode app itself: another app that
+	// registered a private-use address of its own can collect a code, and
+	// gets an ordinary token.
+	clientKind := connected.ClientKind
+	if !api.IsTeaNodeAppClient(client.RedirectURIs) {
+		clientKind = ""
+	}
+	self.issue(response, user.ID, connectedTokenName(client.Name, deviceName), client.ID, "", clientKind)
 }
 
 // connectedTokenName is how a connected phone's token is listed: the program,

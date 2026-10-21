@@ -520,25 +520,89 @@ var passwordRevisionLockKey = func() int64 {
 	return int64(binary.BigEndian.Uint64(digest[:8]) & math.MaxInt64)
 }()
 
-// passwordsLockTimeout is how long a change of Passwords waits for the locks
-// all of them take (the circle membership lock and the revision lock) before it
-// gives up with ErrPasswordsBusy. Every change holds them until it commits, so
-// without a limit a document of slow changes would make every other waiter, the
-// person's own taps among them, pile up behind it for as long as it takes.
+// passwordsLockTimeout is how long one change of Passwords waits, in all, for
+// the locks it takes (the circle membership lock, the revision lock and the
+// rows after them) before it gives up with ErrPasswordsBusy. Every change holds
+// them until it commits, so without a limit a document of slow changes would
+// make every other waiter, the person's own taps among them, pile up behind it
+// for as long as it takes. The limit is one deadline for the whole change, not
+// one wait for each lock: a change that waited most of it for the first lock
+// has only what is left for the second.
 const passwordsLockTimeout = 5 * time.Second
 
-// setPasswordsLockTimeout limits how long the rest of the transaction waits for
-// any lock, advisory or row, to passwordsLockTimeout.
-func setPasswordsLockTimeout(tx *gorm.DB) error {
-	return tx.Exec(`SELECT set_config('lock_timeout', ?, true)`, fmt.Sprintf("%dms", passwordsLockTimeout.Milliseconds())).Error
+// passwordsDeadlineSetting is the transaction-local setting that holds the
+// deadline of the change of Passwords in progress, as a timestamp, or nothing
+// when none is. It lives in the database session, not in a Go value, because
+// the code that waits for locks (the circle code among it) is handed only the
+// transaction's connection, and because PostgreSQL puts a setting back when a
+// savepoint is rolled back.
+const passwordsDeadlineSetting = "teanode.passwords_deadline"
+
+// limitPasswordsLockWait limits how long the next wait for any lock, advisory
+// or row, may take: to what is left of the deadline of the change in progress,
+// or to passwordsLockTimeout when no change has set one. It is set again before
+// each wait, because the time left is less each time. A lock_timeout of zero
+// would mean no limit at all, so the least it sets is one millisecond, which
+// still gets a lock nobody holds.
+func limitPasswordsLockWait(tx *gorm.DB) error {
+	return tx.Exec(`SELECT set_config('lock_timeout', CASE WHEN deadline.moment IS NULL THEN ?
+		ELSE greatest(1, ceil(extract(epoch FROM deadline.moment - clock_timestamp()) * 1000))::bigint::text || 'ms' END, true)
+		FROM (SELECT NULLIF(current_setting('`+passwordsDeadlineSetting+`', true), '')::timestamptz AS moment) deadline`,
+		fmt.Sprintf("%dms", passwordsLockTimeout.Milliseconds())).Error
+}
+
+// runPasswordsChange runs the steps of one change of Passwords under a
+// savepoint and one deadline for all the lock waits in it. A lock wait that
+// timed out, or any refusal after some steps wrote, is undone back to the
+// savepoint: PostgreSQL refuses every later statement of a transaction that
+// failed, and without a savepoint to go back to the answer would be a failed
+// commit. The lock_timeout the change set is put back when it ends, so that
+// the rest of the transaction does not wait for locks under whatever time was
+// left. A change that runs inside another (a circle change that ends shares)
+// shares the outer deadline and leaves the setting for the outer one to
+// restore.
+func runPasswordsChange(tx *gorm.DB, steps func() error) error {
+	savepointName := "passwords_" + newID()
+	if err := tx.Exec("SAVEPOINT " + savepointName).Error; err != nil {
+		return err
+	}
+	var deadline string
+	if err := tx.Raw(`SELECT COALESCE(current_setting('` + passwordsDeadlineSetting + `', true), '')`).Scan(&deadline).Error; err != nil {
+		return err
+	}
+	isOutermost := deadline == ""
+	var originalLockTimeout string
+	if isOutermost {
+		if err := tx.Raw(`SELECT current_setting('lock_timeout')`).Scan(&originalLockTimeout).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(fmt.Sprintf(`SELECT set_config('%s', (clock_timestamp() + interval '%d milliseconds')::text, true)`,
+			passwordsDeadlineSetting, passwordsLockTimeout.Milliseconds())).Error; err != nil {
+			return err
+		}
+	}
+	if err := steps(); err != nil {
+		// Going back to the savepoint also puts back lock_timeout and the
+		// deadline, which were set inside it.
+		if rollbackErr := tx.Exec("ROLLBACK TO SAVEPOINT " + savepointName).Error; rollbackErr != nil {
+			return errors.Join(err, rollbackErr)
+		}
+		return err
+	}
+	if isOutermost {
+		if err := tx.Exec(fmt.Sprintf(`SELECT set_config('lock_timeout', ?, true), set_config('%s', '', true)`, passwordsDeadlineSetting),
+			originalLockTimeout).Error; err != nil {
+			return err
+		}
+	}
+	return tx.Exec("RELEASE SAVEPOINT " + savepointName).Error
 }
 
 // passwordsBusyError turns the error of a lock wait that timed out (SQLSTATE
 // 55P03, lock_not_available) into ErrPasswordsBusy, and leaves any other error
 // as it is.
 func passwordsBusyError(err error) error {
-	var failure *pgconn.PgError
-	if errors.As(err, &failure) && failure.Code == "55P03" {
+	if isPasswordsLockTimeout(err) && !errors.Is(err, ErrPasswordsBusy) {
 		return ErrPasswordsBusy
 	}
 	return err
@@ -549,16 +613,11 @@ func passwordsBusyError(err error) error {
 // change of Passwords takes both through lockPasswordsForWrite, so that a
 // request which makes several changes takes them in that one order every time;
 // code already holding the circle membership lock (a circle change) calls this
-// directly. It waits at most passwordsLockTimeout.
+// directly. It waits no longer than what is left of the change's deadline.
 func lockPasswordRevisions(tx *gorm.DB) error {
-	if err := setPasswordsLockTimeout(tx); err != nil {
+	if err := limitPasswordsLockWait(tx); err != nil {
 		return err
 	}
-	return takePasswordRevisionLock(tx)
-}
-
-// takePasswordRevisionLock waits for the lock under the timeout already set.
-func takePasswordRevisionLock(tx *gorm.DB) error {
 	return passwordsBusyError(tx.Exec(`SELECT pg_advisory_xact_lock(?)`, passwordRevisionLockKey).Error)
 }
 
@@ -567,17 +626,18 @@ func takePasswordRevisionLock(tx *gorm.DB) error {
 // is taken even by a change that reads no membership, because a request can
 // make a save and then a share: were the first to take only the revision
 // lock, a circle change holding the membership lock and waiting for the
-// revision lock would wait for a request that waits for it. Neither lock nor
-// any row lock after them is waited for longer than passwordsLockTimeout: a
-// change that cannot get them is ErrPasswordsBusy and nothing is changed.
+// revision lock would wait for a request that waits for it. No lock, and no
+// row lock after them, is waited for beyond the change's one deadline
+// (passwordsLockTimeout): a change that cannot get them is ErrPasswordsBusy and
+// nothing is changed.
 func lockPasswordsForWrite(tx *gorm.DB) error {
-	if err := setPasswordsLockTimeout(tx); err != nil {
+	if err := limitPasswordsLockWait(tx); err != nil {
 		return err
 	}
 	if err := passwordsBusyError(lockCircleMembership(tx)); err != nil {
 		return err
 	}
-	return takePasswordRevisionLock(tx)
+	return lockPasswordRevisions(tx)
 }
 
 func nextPasswordRevision(tx *gorm.DB) (int64, error) {
@@ -613,6 +673,9 @@ func passwordsProofHash(proof string) (string, bool) {
 func (self *transaction) loadPasswordsSetup(userId string, isLocked bool) (*passwordsSetupModel, error) {
 	query := self.tx
 	if isLocked {
+		if err := limitPasswordsLockWait(self.tx); err != nil {
+			return nil, err
+		}
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
 	var rows []passwordsSetupModel
@@ -844,6 +907,9 @@ func (self *transaction) CountPasswordItems(userId string) (int, error) {
 func (self *transaction) loadOwnedPasswordItem(ownerUserId, itemId string, isLocked bool) (*passwordItemModel, error) {
 	query := self.tx
 	if isLocked {
+		if err := limitPasswordsLockWait(self.tx); err != nil {
+			return nil, err
+		}
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
 	var rows []passwordItemModel
@@ -1042,6 +1108,9 @@ func (self *transaction) savePasswordItem(item *models.PasswordItem, baseRevisio
 		return nil, ErrInvalidArguments
 	}
 	if err := lockPasswordsForWrite(self.tx); err != nil {
+		return nil, err
+	}
+	if err := limitPasswordsLockWait(self.tx); err != nil {
 		return nil, err
 	}
 	var found []passwordItemModel
@@ -1737,7 +1806,7 @@ func (self *transaction) ListPasswordItems(viewerUserId string, sinceRevision in
 	if viewerUserId == "" {
 		return list, nil
 	}
-	if err := setPasswordsLockTimeout(self.tx); err != nil {
+	if err := limitPasswordsLockWait(self.tx); err != nil {
 		return nil, err
 	}
 	if err := self.tx.Exec(`SELECT pg_advisory_xact_lock_shared(?)`, passwordRevisionLockKey).Error; err != nil {
@@ -1898,6 +1967,9 @@ func (self *transaction) ListPasswordRecipients(callerUserId, granteeUserId, gra
 		}
 		candidateIds = []string{granteeUserId}
 	} else {
+		if err := limitPasswordsLockWait(self.tx); err != nil {
+			return nil, err
+		}
 		var memberRows []circleMemberModel
 		if err := self.tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("\"circle_id\" = ?", granteeCircleId).Find(&memberRows).Error; err != nil {
 			return nil, err
@@ -1943,27 +2015,20 @@ func (self *transaction) ListPasswordRecipients(callerUserId, granteeUserId, gra
 // that failed, and without a savepoint to go back to the answer would be a
 // failed commit instead of ErrPasswordsBusy.
 //
-// Once one change of this transaction timed out on a lock, the rest are
-// refused with ErrPasswordsBusy at once. A document of many changes would
-// otherwise wait passwordsLockTimeout for each of them, behind the same lock.
+// Each change has one deadline of passwordsLockTimeout for all its lock waits
+// (runPasswordsChange). Once one change of this transaction timed out on a
+// lock, the rest are refused with ErrPasswordsBusy at once. A document of many
+// changes would otherwise wait that long for each of them, behind the same
+// lock.
 func (self *transaction) withPasswordsSavepoint(steps func() error) error {
 	if self.isPasswordsBusy {
 		return ErrPasswordsBusy
 	}
-	savepointName := "passwords_" + newID()
-	if err := self.tx.Exec("SAVEPOINT " + savepointName).Error; err != nil {
-		return err
+	err := runPasswordsChange(self.tx, steps)
+	if err != nil && isPasswordsLockTimeout(err) {
+		self.isPasswordsBusy = true
 	}
-	if err := steps(); err != nil {
-		if isPasswordsLockTimeout(err) {
-			self.isPasswordsBusy = true
-		}
-		if rollbackErr := self.tx.Exec("ROLLBACK TO SAVEPOINT " + savepointName).Error; rollbackErr != nil {
-			return errors.Join(err, rollbackErr)
-		}
-		return err
-	}
-	return self.tx.Exec("RELEASE SAVEPOINT " + savepointName).Error
+	return err
 }
 
 // isPasswordsLockTimeout says the error is a lock wait that gave up, either
@@ -2082,6 +2147,9 @@ func (self *transaction) setPasswordItemShares(ownerUserId, itemId string, grant
 		}
 	}
 	for circleId := range seenCircles {
+		if err := limitPasswordsLockWait(self.tx); err != nil {
+			return nil, err
+		}
 		var memberRows []circleMemberModel
 		if err := self.tx.Clauses(clause.Locking{Strength: "SHARE"}).
 			Where("\"circle_id\" = ? AND \"user_id\" = ?", circleId, ownerUserId).Find(&memberRows).Error; err != nil {
@@ -2857,6 +2925,17 @@ func (self *database) ScavengePasswordItems(before time.Time) (int64, error) {
 // circle_member: this tidies what would otherwise come back to life, unchosen,
 // the day the two met in another circle.
 func endPasswordSharesOutsideCircles(tx *gorm.DB, userId string) error {
+	// A lock wait that times out is undone back to a savepoint and answers
+	// ErrPasswordsBusy, with the lock_timeout of the circle change put back.
+	// Without it the transaction would be left failed, the answer would be a
+	// failed commit, and every lock after this one would wait under what was
+	// left of this one's timeout.
+	return passwordsBusyError(runPasswordsChange(tx, func() error {
+		return endPasswordShares(tx, userId)
+	}))
+}
+
+func endPasswordShares(tx *gorm.DB, userId string) error {
 	// Circle membership is already locked by the caller; revisions come next.
 	if err := lockPasswordRevisions(tx); err != nil {
 		return err

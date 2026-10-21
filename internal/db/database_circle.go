@@ -415,7 +415,10 @@ func (self *transaction) DeleteCircle(circleId string) error {
 	if err := self.tx.Model(&circleMemberModel{}).Where("\"circle_id\" = ?", circleId).Pluck("user_id", &memberIds).Error; err != nil {
 		return err
 	}
-	return deleteCircleRow(self.tx, circleId, memberIds)
+	// One unit with the ending of the members' shares, as in RemoveCircleMember.
+	return self.withPasswordsSavepoint(func() error {
+		return deleteCircleRow(self.tx, circleId, memberIds)
+	})
 }
 
 // deleteCircleRow deletes a circle whose row the caller has locked, and does
@@ -611,6 +614,21 @@ func (self *transaction) RemoveCircleMember(circleId, userId string) (*models.Ci
 	if found == nil {
 		return nil, ErrNotFound
 	}
+	// The change and the ending of the shares it makes are one unit: were the
+	// ending of Passwords shares refused because Passwords is busy, a request
+	// that answers with that error would still commit the member's removal.
+	var remaining *models.Circle
+	err = self.withPasswordsSavepoint(func() (err error) {
+		remaining, err = self.removeLockedCircleMember(circleId, userId, rows, found)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return remaining, nil
+}
+
+func (self *transaction) removeLockedCircleMember(circleId, userId string, rows []circleMemberModel, found *circleMemberModel) (*models.Circle, error) {
 	if len(rows) == 1 {
 		// Nobody is left to belong to it, and its last member leaves its
 		// chats as any other member would.

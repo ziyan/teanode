@@ -69,6 +69,13 @@ type OAuthAuthorizationRequest struct {
 
 	// IsWholeAccount says approving gives the whole account, not only the agent tools: an app installed on a device signing in, as a connect code would sign it in
 	IsWholeAccount bool `json:"isWholeAccount"`
+
+	// IsTeaNodeApp says the program is registered as the TeaNode phone app
+	// (and approving signs it in as the whole account). The page then tells
+	// the reader to approve only a sign-in they just started in that app,
+	// because its return address is a private-use scheme that another app on
+	// the same phone can also claim.
+	IsTeaNodeApp bool `json:"isTeaNodeApp"`
 }
 
 type ApproveOAuthAuthorizationArguments struct {
@@ -171,6 +178,7 @@ func (self *graph) ReadOAuthAuthorizationRequest(ctx context.Context, arguments 
 		Username:       principal.User.Username,
 		Registered:     client.CreatedAt,
 		IsWholeAccount: isWholeAccount,
+		IsTeaNodeApp:   isWholeAccount && isTeaNodeApp(client),
 	}, nil
 }
 
@@ -259,25 +267,14 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 }
 
 // teaNodeAppRedirectAddress is the only return address of the TeaNode phone
-// app (RFC 8252 private-use scheme, the app's bundle identifier), the one
-// ios/TeaNodeKit registers with. A phone hands an address in this scheme to
-// the app that claimed it, so an approval that returns here reaches the
-// TeaNode app and no other.
-const teaNodeAppRedirectAddress = "com.teanode.app:/oauth"
+// app. A phone hands an address in this scheme to the app that claimed it, so
+// an approval that returns here reaches the TeaNode app and no other.
+const teaNodeAppRedirectAddress = api.TeaNodeAppRedirectAddress
 
 // isTeaNodeApp says the client registered as the TeaNode phone app, and
-// nothing else. Any app can register an address of its own scheme, so a
-// private-use address alone does not say whose app it is.
+// nothing else.
 func isTeaNodeApp(client *models.OAuthClient) bool {
-	if len(client.RedirectURIs) == 0 {
-		return false
-	}
-	for _, redirect := range client.RedirectURIs {
-		if redirect != teaNodeAppRedirectAddress {
-			return false
-		}
-	}
-	return true
+	return api.IsTeaNodeAppClient(client.RedirectURIs)
 }
 
 // tokenResource is what an approved token will be good for, and whether that

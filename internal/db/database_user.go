@@ -329,16 +329,21 @@ func (self *transaction) DeleteUser(userId string) error {
 	if before == nil {
 		return ErrNotFound
 	}
-	return self.applyMutation(models.AuditResourceUser, userId, models.AuditActionDelete, before, nil, func(tx *gorm.DB) error {
-		if err := releaseCircles(tx, userId); err != nil {
-			return err
-		}
-		// Out of every chat under the name they had, before the foreign keys
-		// forget whose they were.
-		if err := leaveEveryChat(tx, userId, before.DisplayName(), time.Now()); err != nil {
-			return err
-		}
-		return tx.Where("\"id\" = ?", userId).Delete(&userModel{}).Error
+	// One unit with the ending of the account's shares of Passwords: were that
+	// refused because Passwords is busy, a request that answers with that error
+	// would still commit the circles it had already taken the account out of.
+	return self.withPasswordsSavepoint(func() error {
+		return self.applyMutation(models.AuditResourceUser, userId, models.AuditActionDelete, before, nil, func(tx *gorm.DB) error {
+			if err := releaseCircles(tx, userId); err != nil {
+				return err
+			}
+			// Out of every chat under the name they had, before the foreign keys
+			// forget whose they were.
+			if err := leaveEveryChat(tx, userId, before.DisplayName(), time.Now()); err != nil {
+				return err
+			}
+			return tx.Where("\"id\" = ?", userId).Delete(&userModel{}).Error
+		})
 	})
 }
 

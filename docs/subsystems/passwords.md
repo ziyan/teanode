@@ -550,7 +550,11 @@ would; it does not give it the password.
   routes (`internal/passwords/localfiles.go` names the files and the mark once):
   the computer program's filesystem tool refuses to read, write, copy, move or
   edit a file with those names (also through a link) and leaves them out of
-  `grep`; and the program sets `TEANODE_AGENT_COMMAND=1` on every shell command
+  `grep`; the names are the two files above and an export,
+  `passwords-export-*.json` or `.csv`, which is what `teanode passwords export`
+  writes when it is given no file name; and the tool refuses any file that
+  exists and begins as an export does (the JSON export's `version` and
+  `exportedAt` keys, or the CSV export's header row), whatever its name; and the program sets `TEANODE_AGENT_COMMAND=1` on every shell command
   and terminal session it starts for the agent (last, so a call cannot unset it),
   and the `teanode passwords` commands that open the keys, read or write the
   unlock file or ask for the passphrase, which is every command that shows,
@@ -561,7 +565,13 @@ would; it does not give it the password.
   person is typing into (a terminal the person attached is theirs, not marked).
   The guard stops the obvious routes, not a determined program; the way to keep
   an unlocked computer from the agent is `teanode passwords lock` when you are
-  done, or not unlocking on a computer the agent can run commands on.
+  done, or not unlocking on a computer the agent can run commands on. The mark
+  does not reach every route the agent has to a shell on this computer: a
+  coding-session pane of herdr (a pane the person attached or the agent opened
+  through the herdr tool) is a terminal that was not started by the program, so
+  its commands are not marked and can open Passwords like the person's own.
+  Run `teanode passwords lock` before the agent works in such a pane, and do not
+  leave an export file lying about.
 - **A terminal the person attached.** The terminal tool can read the screen of a
   terminal the person attached as well as type into it. A command typed there is
   unmarked, and the output of `teanode passwords show --reveal` in that terminal
@@ -581,9 +591,26 @@ grant are not taps. The one exception is the TeaNode iPhone app's own sign-in: a
 token has the app's kind (`ClientKindApp`, which `IsPersonsTap` accepts) only when
 the person approved the sign-in with a tap and the client is registered with
 exactly the app's return address, `com.teanode.app:/oauth` (or the token came from
-a connect code made with a tap). Any other app can register an address of its own
-and ask for the whole API, and is signed in, but its token is not a tap, so it
-cannot set up, erase, share, restore or let the agent use an item.
+a connect code made with a tap, collected by a client registered that way). Any
+other app can register an address of its own and ask for the whole API, and is
+signed in, but its token is not a tap, so it cannot set up, erase, share, restore
+or let the agent use an item. That holds at every step: a connect code made with
+a tap, collected by another native app, gives an ordinary token, and a refresh
+keeps the mark only while the token's client is still registered with exactly the
+app's address (migration 0251 took the mark off the tokens of other clients that
+an earlier migration had marked).
+
+  **A known limit of the app mark.** The mark rests on the app's return address,
+  a private-use scheme (`com.teanode.app:`). Nothing stops another app on the same
+  iPhone from also claiming that scheme: if the person approves a sign-in they
+  did not start, and the system hands the return address to that other app, it
+  collects a token that is a tap. Code on the server cannot close this, so the
+  consent page for the TeaNode app says "Approve only if you just started signing
+  in to the TeaNode app on your iPhone." (English, Chinese and Japanese). The real
+  fix is a return address the system gives only to the app that owns it: an HTTPS
+  callback tied to the app's associated domain (a universal link), or App Attest
+  on the sign-in. Both need work in the iPhone app and the server together; it is
+  a Follow-up in `docs/planning/passwords-execplan.md`.
 
 - **Size.** An item's sealed fields are at most 512 KB, and a sealed share key or
   agent copy is exactly the size of a sealed 32-byte item key, written the one way
@@ -665,7 +692,9 @@ cannot set up, erase, share, restore or let the agent use an item.
 - **Locks and one document.** Every change of Passwords holds the circle
   membership lock and the revision lock until its request commits. A document may
   name at most 25 Passwords mutations (it is refused whole, before any runs), a
-  change waits at most 5 seconds for the locks and is then told "Passwords is
+  change waits at most 5 seconds in all for its locks (one deadline across the
+  circle membership lock, the revision lock and any row lock, each wait getting
+  what is left of it) and is then told "Passwords is
   busy with other changes. Try again in a moment." with nothing changed (every
   change takes its locks under a savepoint, so the request can still commit; once
   one change of a document has timed out, the rest of that document's changes are

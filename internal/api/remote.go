@@ -239,3 +239,23 @@ func IsNativeAppClient(redirects []string) bool {
 	}
 	return true
 }
+
+// TeaNodeAppRedirectAddress is the only return address of the TeaNode phone
+// app (RFC 8252 private-use scheme, the app's bundle identifier), the one
+// ios/TeaNodeKit registers with.
+const TeaNodeAppRedirectAddress = "com.teanode.app:/oauth"
+
+// IsTeaNodeAppClient says every address a program registered is the TeaNode
+// phone app's, and nothing else. Any app can register a private-use address
+// of its own, so a private-use address alone does not say whose app it is.
+func IsTeaNodeAppClient(redirects []string) bool {
+	if len(redirects) == 0 {
+		return false
+	}
+	for _, redirect := range redirects {
+		if redirect != TeaNodeAppRedirectAddress {
+			return false
+		}
+	}
+	return true
+}

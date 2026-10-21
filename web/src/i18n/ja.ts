@@ -2374,6 +2374,8 @@ export const ja: Catalog = {
     'このデバイス上のアプリが、あなたとしてアカウント全体（メール、エージェント、設定）にサインインしようとしています。',
   'authorize.grantWholeAccount':
     'このデバイスで TeaNode アプリを開いてサインインしたところである場合にだけ許可してください。あなたがここでできることはすべてできるようになります。設定の「デバイス」または「アプリ」からいつでもサインアウトできます。',
+  'authorize.approveOnlyIfJustStarted':
+    'iPhone の TeaNode アプリでサインインを開始したところである場合にだけ承認してください。',
   'authorize.program': 'アプリ',
   'authorize.claimedName': '登録時に名乗った名前',
   'authorize.unnamed': '名前のないアプリ',
@@ -7138,6 +7140,8 @@ export const ja: Catalog = {
   'passwords.errorAnsweredAboutAnotherItem': 'サーバーが別の項目について応答しました。',
   'passwords.errorRestoredAnotherVersion': 'サーバーが別の内容を復元しました。',
   'passwords.errorItemNotInSharingPlan': 'この項目は確認した内容に含まれていません。',
+  'passwords.errorSharingPlanOutOfDate':
+    '確認後にこの項目の共有が変わりました。共有先を確認して、もう一度完了してください。',
   'passwords.finishConfirmTitle': '共有を完了しますか？',
   'passwords.finishConfirmBody':
     '確認するまで鍵は渡されません。鍵を受け取った人やエージェントは、その項目を開けるようになります。',

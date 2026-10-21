@@ -161,7 +161,10 @@ func NewPasswordsCommand() *cli.Command {
 					"after the passphrase) or --generate; --password is in your shell history and in\n" +
 					"the process list while the command runs. The same goes for --one-time-code, whose\n" +
 					"secret other programs on this computer can see in the process list; use\n" +
-					"--one-time-code-stdin (the line after the password) instead.\n\n" +
+					"--one-time-code-stdin (the line after the password) instead. A card's number and\n" +
+					"security code are typed at a prompt, or given with --number-stdin and\n" +
+					"--security-code-stdin (the lines after the passphrase); --number, --security-code,\n" +
+					"--notes and --text are in the process list too.\n\n" +
 					"  teanode passwords add example.com --user-name ada@example.com --site https://example.com --generate\n" +
 					"  teanode passwords add \"Spare key\" --kind note --text \"under the blue pot\"",
 				Flags:  append([]cli.Flag{JSONFlag(), passphraseFlag(), &cli.StringFlag{Name: "kind", Usage: "login, card or note", Value: "login"}}, passwordsFieldFlags()...),
@@ -385,14 +388,18 @@ func NewPasswordsCommand() *cli.Command {
 			{
 				Name:      "export",
 				Usage:     "write your items to a file, unencrypted",
-				ArgsUsage: "<file>",
+				ArgsUsage: "[file]",
 				Description: "Writes the items you own, in the clear, as JSON (everything, passkeys and cards\n" +
 					"included) or as a Bitwarden-style CSV (logins and notes). The file is readable by\n" +
 					"you only, an existing file is not overwritten, and the command asks first. Anybody\n" +
 					"who gets the file has your passwords: delete it when you are done. The CSV is for\n" +
 					"importing into another password manager, which needs every value exactly as it\n" +
 					"is, so a value that starts with = + - or @ is written as it is: do not open the\n" +
-					"file in a spreadsheet, which would run such a value as a formula.",
+					"file in a spreadsheet, which would run such a value as a formula.\n\n" +
+					"With no file the export is written to passwords-export-<time>.json (or .csv) in\n" +
+					"this directory. Keep that name: the file tool of the agent's computer program\n" +
+					"refuses to read a file named passwords-export-*, and a file that begins as an\n" +
+					"export does; a file named otherwise has only the second protection.",
 				Flags: []cli.Flag{
 					JSONFlag(), passphraseFlag(), ForceFlag(),
 					&cli.StringFlag{Name: "format", Usage: "json or csv; by the file's ending, json otherwise"},
@@ -429,14 +436,16 @@ func passwordsFieldFlags() []cli.Flag {
 		&cli.StringSliceFlag{Name: "site", Usage: "a login's site, such as https://example.com; repeat it for more"},
 		&cli.StringFlag{Name: "one-time-code", Usage: "a login's one-time code: an otpauth:// address, or its base32 secret; other programs on this computer can see it in the process list, prefer --one-time-code-stdin"},
 		&cli.BoolFlag{Name: "one-time-code-stdin", Usage: "read the login's one-time code (an otpauth:// address or a base32 secret) from a line of standard input, after the passphrase and the password"},
-		&cli.StringFlag{Name: "notes", Usage: "a login's or card's notes"},
+		&cli.StringFlag{Name: "notes", Usage: "a login's or card's notes; other programs on this computer can see them in the process list while the command runs"},
 		&cli.StringFlag{Name: "cardholder-name", Usage: "a card's holder"},
-		&cli.StringFlag{Name: "number", Usage: "a card's number; typed at a prompt when left out"},
+		&cli.StringFlag{Name: "number", Usage: "a card's number; other programs on this computer can see it in the process list, prefer --number-stdin or the prompt it is typed at when left out"},
+		&cli.BoolFlag{Name: "number-stdin", Usage: "read the card's number from a line of standard input, after the passphrase"},
 		&cli.StringFlag{Name: "expiry-month", Usage: "a card's expiry month, as printed"},
 		&cli.StringFlag{Name: "expiry-year", Usage: "a card's expiry year, as printed"},
-		&cli.StringFlag{Name: "security-code", Usage: "a card's security code; typed at a prompt when left out"},
+		&cli.StringFlag{Name: "security-code", Usage: "a card's security code; other programs on this computer can see it in the process list, prefer --security-code-stdin or the prompt it is typed at when left out"},
+		&cli.BoolFlag{Name: "security-code-stdin", Usage: "read the card's security code from a line of standard input, after the passphrase and the number"},
 		&cli.StringFlag{Name: "brand", Usage: "a card's brand"},
-		&cli.StringFlag{Name: "text", Usage: "a note's text"},
+		&cli.StringFlag{Name: "text", Usage: "a note's text; other programs on this computer can see it in the process list, prefer --text-stdin"},
 		&cli.BoolFlag{Name: "text-stdin", Usage: "read the note's text from standard input, to its end, after the passphrase"},
 	}
 }
@@ -457,9 +466,11 @@ var passwordsFlagKinds = map[string][]passwords.ItemKind{
 	"notes":               {passwords.ItemKindLogin, passwords.ItemKindCard},
 	"cardholder-name":     {passwords.ItemKindCard},
 	"number":              {passwords.ItemKindCard},
+	"number-stdin":        {passwords.ItemKindCard},
 	"expiry-month":        {passwords.ItemKindCard},
 	"expiry-year":         {passwords.ItemKindCard},
 	"security-code":       {passwords.ItemKindCard},
+	"security-code-stdin": {passwords.ItemKindCard},
 	"brand":               {passwords.ItemKindCard},
 	"text":                {passwords.ItemKindNote},
 	"text-stdin":          {passwords.ItemKindNote},
@@ -1067,11 +1078,14 @@ func runPasswordsShow(ctx context.Context, command *cli.Command) error {
 		}
 		return PrintJSON(map[string]any{"item": summary, "fields": fields, "hiddenFields": hidden})
 	}
+	// The name and folder are one line each: a line break in them (an item
+	// someone shared, say) is shown as its escape, so it cannot print a line
+	// that reads as another field.
 	header := [][2]string{
-		{"name", summary.Name}, {"kind", summary.ItemKind}, {"id", summary.ID},
+		{"name", forTableCell(summary.Name)}, {"kind", summary.ItemKind}, {"id", summary.ID},
 	}
 	if summary.Folder != "" {
-		header = append(header, [2]string{"folder", summary.Folder})
+		header = append(header, [2]string{"folder", forTableCell(summary.Folder)})
 	}
 	if markers := itemMarkers(summary); markers != "" {
 		header = append(header, [2]string{"marks", markers})
@@ -1377,6 +1391,8 @@ func applyCardFlags(command *cli.Command, card *passwords.CardFields, isNew bool
 			*field.target = command.String(field.flag)
 		}
 	}
+	// Standard input is read in the order the flags are described: the
+	// passphrase, then the number, then the security code.
 	for _, field := range []struct {
 		flag   string
 		prompt string
@@ -1384,11 +1400,20 @@ func applyCardFlags(command *cli.Command, card *passwords.CardFields, isNew bool
 	}{
 		{"number", "Card number: ", &card.Number}, {"security-code", "Security code (empty for none): ", &card.SecurityCode},
 	} {
+		standardInputFlag := field.flag + "-stdin"
 		switch {
+		case command.IsSet(field.flag) && command.Bool(standardInputFlag):
+			return usage(fmt.Sprintf("give the card's %s one way: --%s or --%s", strings.ReplaceAll(field.flag, "-", " "), field.flag, standardInputFlag))
 		case command.IsSet(field.flag):
 			*field.target = command.String(field.flag)
+		case command.Bool(standardInputFlag):
+			typed, err := readHiddenLine(command, "", true, standardInputFlag)
+			if err != nil {
+				return err
+			}
+			*field.target = typed
 		case isNew && isTerminalInput():
-			typed, err := readHiddenLine(command, field.prompt, false, "passphrase-stdin")
+			typed, err := readHiddenLine(command, field.prompt, false, standardInputFlag)
 			if err != nil {
 				return err
 			}

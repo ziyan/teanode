@@ -2378,6 +2378,8 @@ export const en = {
     'An app on this device is asking to sign in to your whole account: your mail, your agent and your settings, as you.',
   'authorize.grantWholeAccount':
     'Allow it only if you just opened the TeaNode app on this device to sign in. It will be able to do everything you can do here. You can sign it out at any time under Devices or Apps in your settings.',
+  'authorize.approveOnlyIfJustStarted':
+    'Approve only if you just started signing in to the TeaNode app on your iPhone.',
   'authorize.program': 'App',
   'authorize.claimedName': 'the name it gave when it registered',
   'authorize.unnamed': 'an app that gave no name',
@@ -7193,6 +7195,8 @@ export const en = {
   'passwords.errorAnsweredAboutAnotherItem': 'The server answered about another item.',
   'passwords.errorRestoredAnotherVersion': 'The server restored something else.',
   'passwords.errorItemNotInSharingPlan': 'That item was not in what you confirmed.',
+  'passwords.errorSharingPlanOutOfDate':
+    'Sharing for that item changed after you confirmed. Review who gets it and finish again.',
   'passwords.finishConfirmTitle': 'Finish sharing?',
   'passwords.finishConfirmBody':
     'Keys are given only after you confirm. A person or the agent who is given a key can open the item.',

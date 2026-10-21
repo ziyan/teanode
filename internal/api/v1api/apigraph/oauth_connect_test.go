@@ -448,3 +448,85 @@ func TestOnlyTheTeaNodeAppsAddressIsTheTeaNodeApp(test *testing.T) {
 		}
 	}
 }
+
+// A connect code made at a tap carries the app mark, but only the TeaNode app
+// is given it. Another app that registered a private-use address of its own
+// can collect a code and gets an ordinary token, and a renewal does not add
+// the mark either.
+func TestOnlyTheTeaNodeAppCollectsTheAppMarkWithAConnectCode(test *testing.T) {
+	world := newSignInWorld(test)
+	for name, redirect := range map[string]string{
+		"the TeaNode app":                         teaNodeAppRedirectAddress,
+		"an app of another scheme":                "com.example.app:/oauth",
+		"another scheme that starts the same way": "com.teanode.app.evil:/oauth",
+	} {
+		expected := models.CredentialToken
+		if redirect == teaNodeAppRedirectAddress {
+			expected = models.CredentialApp
+		}
+		appClient := world.register(test, redirect)
+		_, answer := world.post(test, api.PathOAuthToken, url.Values{
+			"grant_type": {"urn:teanode:params:oauth:grant-type:connect-code"}, "client_id": {appClient},
+			"connect_code": {world.connectCode(test)}, "device_name": {"a test phone"},
+		})
+		token, _ := answer["access_token"].(string)
+		if token == "" || !world.worksOnTheAPI(token) {
+			test.Errorf("%s: the sign-in was answered %v", name, answer)
+			continue
+		}
+		if got := world.credentialOf(token); got != expected {
+			test.Errorf("%s: the token signs in as %q, expected %q", name, got, expected)
+		}
+		_, renewed := world.post(test, api.PathOAuthToken, url.Values{
+			"grant_type": {"refresh_token"}, "client_id": {appClient}, "refresh_token": {answer["refresh_token"].(string)},
+		})
+		renewedToken, _ := renewed["access_token"].(string)
+		if got := world.credentialOf(renewedToken); renewedToken == "" || got != expected {
+			test.Errorf("%s: the renewal signs in as %q, expected %q (%v)", name, got, expected, renewed)
+		}
+	}
+}
+
+// A token that carries the app mark for a client that is not the TeaNode app
+// (one made before the mark was tied to the client, or by a client whose
+// addresses were edited) loses the mark when it is renewed.
+func TestARenewalDropsTheAppMarkOfAClientThatIsNotTheTeaNodeApp(test *testing.T) {
+	world := newSignInWorld(test)
+	otherClient := world.register(test, "com.example.app:/oauth")
+	_, value, refresh, err := world.authenticator.IssueAuthorizedToken(world.person.ID, "a test app", otherClient, "", models.ClientKindApp, time.Hour)
+	if err != nil {
+		test.Fatalf("IssueAuthorizedToken: %s", err)
+	}
+	if got := world.credentialOf(value); got != models.CredentialApp {
+		test.Fatalf("the token set up for the test signs in as %q, expected %q", got, models.CredentialApp)
+	}
+	_, renewed := world.post(test, api.PathOAuthToken, url.Values{
+		"grant_type": {"refresh_token"}, "client_id": {otherClient}, "refresh_token": {refresh},
+	})
+	renewedToken, _ := renewed["access_token"].(string)
+	if got := world.credentialOf(renewedToken); renewedToken == "" || got != models.CredentialToken {
+		test.Errorf("the renewal signs in as %q, expected %q (%v)", got, models.CredentialToken, renewed)
+	}
+}
+
+// The consent page asks the reader to approve only a sign-in they just started
+// in the TeaNode app, and only for the TeaNode app: the server says which
+// program that is.
+func TestTheConsentRequestSaysWhichProgramIsTheTeaNodeApp(test *testing.T) {
+	world := newSignInWorld(test)
+	resource := "https://" + world.host + api.Prefix
+	for name, redirect := range map[string]string{
+		"the TeaNode app":          teaNodeAppRedirectAddress,
+		"an app of another scheme": "com.example.app:/oauth",
+	} {
+		appClient := world.register(test, redirect)
+		data, failures := world.ask(test, `query { ReadOAuthAuthorizationRequest(clientId: "`+appClient+`", redirectUri: "`+redirect+`", resource: "`+resource+`") { isWholeAccount isTeaNodeApp } }`)
+		if len(failures) > 0 {
+			test.Fatalf("%s: ReadOAuthAuthorizationRequest: %v", name, failures)
+		}
+		read, _ := data["ReadOAuthAuthorizationRequest"].(map[string]any)
+		if read["isWholeAccount"] != true || read["isTeaNodeApp"] != (redirect == teaNodeAppRedirectAddress) {
+			test.Errorf("%s: the request says %v", name, read)
+		}
+	}
+}
