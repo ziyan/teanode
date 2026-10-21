@@ -1,19 +1,25 @@
 import { useState } from 'react'
 
+import { graphql } from '../../api'
 import { SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 import { parseRecoveryKey } from '../../passwords/crypto'
 import { useFailureToast } from './passwordsErrors'
-import { PasswordsSetup } from './passwordsApi'
+import { PasswordsSetup, READ_PASSWORDS_SETUP } from './passwordsApi'
 import { passphraseSecret } from './passwordsProtocol'
 import { passwordsSession } from './passwordsSession'
 
 // The locked screen: the passphrase, or the recovery key, and Unlock. A wrong
 // one is said in a toast, in the server's words, and the field keeps what was
 // typed so a typo can be mended.
+//
+// The salt and iteration count are read again before each attempt, not taken
+// from when the page loaded: the passphrase may have been changed on another
+// device since, and a right passphrase derived with the old salt would be
+// refused by the server, and each refusal counts toward its limit on tries.
 
-export function PasswordsUnlock({ userId, setup }: { userId: string; setup: PasswordsSetup }) {
+export function PasswordsUnlock({ userId }: { userId: string }) {
   const { t } = useTranslation()
   const toast = useToast()
   const reportFailure = useFailureToast()
@@ -34,7 +40,9 @@ export function PasswordsUnlock({ userId, setup }: { userId: string; setup: Pass
           return
         }
       } else {
-        secret = await passphraseSecret(typedText, setup)
+        const freshSetup = (await graphql<{ ReadPasswordsSetup: PasswordsSetup }>(READ_PASSWORDS_SETUP))
+          .ReadPasswordsSetup
+        secret = await passphraseSecret(typedText, freshSetup)
       }
       await passwordsSession.unlock(userId, { secret, isRecoveryKey })
       setTypedText('')

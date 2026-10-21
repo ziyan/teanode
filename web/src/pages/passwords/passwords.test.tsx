@@ -38,7 +38,7 @@ import { exportText } from './passwordsSettings'
 import { passwordsSession } from './passwordsSession'
 import { lockPasswords } from './passwordsLock'
 import { PasswordsError, failureText } from './passwordsErrors'
-import { clearClipboardLater, SafetyCode, SecretValue } from './passwordsParts'
+import { clearClipboardLater, RecoveryKeyPanel, SafetyCode, SecretValue } from './passwordsParts'
 import { oneTimeCodeUriFromText, sitesFromText } from './passwordsEditor'
 
 vi.mock('../../api', async (importOriginal) => ({
@@ -497,7 +497,7 @@ it('lists the items in a table with their sites, a shared marker and an agent ma
   expect(within(cardRow).getByText('Visa •••• 1111')).toBeTruthy()
 })
 
-it('narrows the list by search, kind and folder, all from the address', async () => {
+it('narrows the list by kind from the address, and by search and folder without putting them there', async () => {
   serve({ records: await recordsToList() })
   await openSession()
   renderAt('/passwords?kind=card')
@@ -506,16 +506,21 @@ it('narrows the list by search, kind and folder, all from the address', async ()
   expect(rowNames()).toEqual(['Travel card'])
 
   cleanup()
-  renderAt('/passwords?folder=Money')
-  await screen.findByRole('link', { name: 'Bank' })
-  expect(rowNames()).toEqual(['Bank'])
-
-  cleanup()
   renderAt('/passwords')
   await screen.findByRole('link', { name: 'Bank' })
+  fireEvent.click(screen.getByRole('combobox', { name: 'Folder' }))
+  fireEvent.click(await screen.findByRole('option', { name: 'Money' }))
+  expect(rowNames()).toEqual(['Bank'])
+  // The folder name is a decrypted value: it stays out of the address.
+  expect(screen.getByTestId('address').textContent).toBe('')
+
+  fireEvent.click(screen.getByRole('combobox', { name: 'Folder' }))
+  fireEvent.click(await screen.findByRole('option', { name: 'All folders' }))
+  await screen.findByRole('link', { name: 'Bank' })
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search items' }), { target: { value: 'ada@example' } })
-  await waitFor(() => expect(screen.getByTestId('address').textContent).toBe('?q=ada%40example'))
-  expect(rowNames()).toEqual(['Example login'])
+  await waitFor(() => expect(rowNames()).toEqual(['Example login']))
+  // Neither is the search text.
+  expect(screen.getByTestId('address').textContent).toBe('')
   // A password is never searched.
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search items' }), { target: { value: 'invented-password' } })
   expect(await screen.findByText('No items match.')).toBeTruthy()
@@ -812,7 +817,7 @@ it('shows each recipient with a safety code, or waiting if they have not set up 
     { userId: 'person-b', name: 'Person B', username: 'person-b-login', publicKey: personBPublicKey, hasKey: false },
     { userId: 'person-c', name: 'Person C', username: 'person-c-login', publicKey: null, hasKey: false },
   ]
-  const server = serve({ records: await recordsToList(), recipients })
+  const server = serve({ records: await onlyExampleLogin(), recipients })
   await openSession()
   renderAt('/passwords?item=login-one')
 
@@ -828,6 +833,9 @@ it('shows each recipient with a safety code, or waiting if they have not set up 
   expect(within(dialog).getByText('Waiting until they set up Passwords')).toBeTruthy()
   expect(within(dialog).getByText('Person C (person-c-login)')).toBeTruthy()
 
+  // Person B's key is new to this device: it is sealed for only after the
+  // owner confirms the safety code here.
+  fireEvent.click(within(dialog).getByRole('button', { name: 'The safety code matches' }))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
   await waitFor(() => expect(calls('SetPasswordItemShares')).toHaveLength(1))
   const input = (calls('SetPasswordItemShares')[0][1] as { input: Record<string, any> }).input
@@ -886,6 +894,8 @@ function waitingFor(itemId: string, publicKey: string) {
 
 it('gives the key to a person who set up Passwords after the item was shared, and says so', async () => {
   const personBPublicKey = encodeBase64(personB.publicKey)
+  // Person B's key is the one this device kept when it shared with them before.
+  window.localStorage.setItem(`teanode.passwords.pins:${USER_ID}`, JSON.stringify({ 'person-b': personBPublicKey }))
   serve({
     records: [...(await recordsToList()), await sharedWithPersonB('login-given', 'Given login')],
     waiting: [
@@ -976,6 +986,64 @@ it('does not ask again about a changed key the owner said no to', async () => {
   expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.pins:${USER_ID}`)!)).toEqual({
     'person-b': encodeBase64(oldKeyPair.publicKey),
   })
+})
+
+it('seals nothing for a waiting person this device has no key for until the owner confirms the safety code', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  serve({
+    records: [await sharedWithPersonB('login-given', 'Given login')],
+    waiting: [waitingFor('login-given', personBPublicKey)],
+  })
+  await openSession()
+  renderAt('/passwords')
+
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText("Confirm Person B's safety code")).toBeTruthy()
+  expect(await within(dialog).findByText(await safetyCode(personB.publicKey))).toBeTruthy()
+  // The background read has run, and nothing was sealed or kept.
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+  expect(window.localStorage.getItem(`teanode.passwords.pins:${USER_ID}`)).toBeNull()
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'The safety code matches' }))
+  await waitFor(() => expect(calls('AddPasswordShareKeys')).toHaveLength(1))
+  expect((calls('AddPasswordShareKeys')[0][1] as { keys: Record<string, string>[] }).keys[0]).toMatchObject({
+    itemId: 'login-given',
+    recipientUserId: 'person-b',
+    recipientPublicKey: personBPublicKey,
+  })
+  expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.pins:${USER_ID}`)!)).toEqual({
+    'person-b': personBPublicKey,
+  })
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+})
+
+it('returns an unpinned waiting person for confirmation, seals only the key that was confirmed, and asks again if the key is swapped', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  const swappedPublicKey = encodeBase64((await generatePersonKeyPair()).publicKey)
+  const server = serve({
+    records: [await sharedWithPersonB('login-given', 'Given login')],
+    waiting: [waitingFor('login-given', personBPublicKey)],
+  })
+  await openSession()
+
+  const first = await passwordsSession.completeWaitingShares()
+  expect(first.sharedCount).toBe(0)
+  expect(first.changedKeys).toEqual([
+    expect.objectContaining({ recipientUserId: 'person-b', oldPublicKey: null, newPublicKey: personBPublicKey }),
+  ])
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+
+  // The server lists another key after the owner looked at the first one.
+  server.waiting = [waitingFor('login-given', swappedPublicKey)]
+  const swapped = await passwordsSession.trustChangedKey(first.changedKeys[0])
+  expect(swapped.sharedCount).toBe(0)
+  expect(swapped.changedKeys).toEqual([expect.objectContaining({ newPublicKey: swappedPublicKey })])
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+
+  server.waiting = [waitingFor('login-given', personBPublicKey)]
+  const confirmed = await passwordsSession.trustChangedKey(first.changedKeys[0])
+  expect(confirmed.sharedCount).toBe(1)
+  expect(calls('AddPasswordShareKeys')).toHaveLength(1)
 })
 
 // --- the agent --------------------------------------------------------------------
@@ -1090,13 +1158,15 @@ it("writes an export of the person's own items only", async () => {
   const written = JSON.parse(exportText(passwordsSession.getSnapshot().items, new Date('2026-10-20T10:00:00Z')))
   expect(written.version).toBe(1)
   expect(written.exportedAt).toBe('2026-10-20T10:00:00.000Z')
-  const names = written.items.map((item: { name: string }) => item.name).sort()
+  type Written = { id: string; itemKind: string; fields: { name: string; password?: string } }
+  const names = written.items.map((item: Written) => item.fields.name).sort()
   // Not the shared item, and not the deleted one.
   expect(names).toEqual(['Agent login', 'Bank', 'Example login', 'Router note', 'Travel card'])
-  expect(written.items.find((item: { name: string }) => item.name === 'Bank')).toMatchObject({
-    itemKind: 'login',
-    password: 'invented-password-2',
-  })
+  // The same shape the command line writes: id, itemKind and fields.
+  const bank = written.items.find((item: Written) => item.fields.name === 'Bank')
+  expect(Object.keys(bank).sort()).toEqual(['fields', 'id', 'itemKind'])
+  expect(bank).toMatchObject({ id: 'login-two', itemKind: 'login', fields: { password: 'invented-password-2' } })
+  expect(Object.keys(written).sort()).toEqual(['exportedAt', 'items', 'version'])
 })
 
 it('changes the passphrase after asking for the current one', async () => {
@@ -1327,23 +1397,79 @@ async function openShareWithCircle(item = 'Example login') {
   return dialog
 }
 
+// onlyExampleLogin is a list with one item the person owns and nothing shared
+// by Person B: an item Person B shared would already make this device keep
+// Person B's key, and these tests are about a key it has not kept.
+async function onlyExampleLogin(): Promise<PasswordItemRecord[]> {
+  return [await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' })]
+}
+
 function personBRecipient(publicKey: string | null, hasKey = false): PasswordRecipient {
   return { userId: 'person-b', name: 'Person B', username: 'person-b-login', publicKey, hasKey }
 }
 
 it('keeps the key it sealed for as the known key of that person', async () => {
   const personBPublicKey = encodeBase64(personB.publicKey)
-  serve({ records: await recordsToList(), recipients: [personBRecipient(personBPublicKey)] })
+  serve({ records: await onlyExampleLogin(), recipients: [personBRecipient(personBPublicKey)] })
   await openSession()
   renderAt('/passwords?item=login-one')
 
   const dialog = await openShareWithCircle()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'The safety code matches' }))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
   await waitFor(() => expect(calls('SetPasswordItemShares')).toHaveLength(1))
   await screen.findByText('Sharing saved.')
   expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.pins:${USER_ID}`)!)).toEqual({
     'person-b': personBPublicKey,
   })
+})
+
+it('seals nothing for a person whose key this device has never kept until the owner confirms it in the share dialog', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  serve({ records: await onlyExampleLogin(), recipients: [personBRecipient(personBPublicKey)] })
+  await openSession()
+  renderAt('/passwords?item=login-one')
+
+  const dialog = await openShareWithCircle()
+  expect(
+    within(dialog).getByText(
+      'This device has not seen their key before. Compare the safety code with them before sharing.',
+    ),
+  ).toBeTruthy()
+  // Saved without confirming: the sharing is saved, with no key for Person B,
+  // and nothing is kept as their known key.
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
+  await waitFor(() => expect(calls('SetPasswordItemShares')).toHaveLength(1))
+  expect((calls('SetPasswordItemShares')[0][1] as { input: { keys: unknown[] } }).input.keys).toEqual([])
+  expect(
+    await screen.findByText('Sharing saved. 1 person was left out until you confirm their safety code.'),
+  ).toBeTruthy()
+  expect(window.localStorage.getItem(`teanode.passwords.pins:${USER_ID}`)).toBeNull()
+})
+
+it('refuses to seal in shareItem for an unpinned key unless that very key was confirmed', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  const otherPublicKey = encodeBase64((await generatePersonKeyPair()).publicKey)
+  serve({ records: await onlyExampleLogin() })
+  await openSession()
+  const item = passwordsSession.getSnapshot().items.find((candidate) => candidate.id === 'login-one')!
+  const grantees = [{ granteeUserId: 'person-b', granteeCircleId: null }]
+  const recipient = personBRecipient(personBPublicKey)
+
+  // A different key was confirmed than the one the server lists now.
+  let shared = await passwordsSession.shareItem(item, grantees, [recipient], new Map([['person-b', otherPublicKey]]))
+  expect(shared.unconfirmedUserIds).toEqual(['person-b'])
+  expect((calls('SetPasswordItemShares')[0][1] as { input: { keys: unknown[] } }).input.keys).toEqual([])
+
+  shared = await passwordsSession.shareItem(
+    shared.item,
+    grantees,
+    [recipient],
+    new Map([['person-b', personBPublicKey]]),
+  )
+  expect(shared.unconfirmedUserIds).toEqual([])
+  expect((calls('SetPasswordItemShares')[1][1] as { input: { keys: unknown[] } }).input.keys).toHaveLength(1)
+  expect(passwordsSession.pinnedKeyOf('person-b')).toBe(personBPublicKey)
 })
 
 it('flags a key that is not the known one and seals nothing for it until the owner trusts it', async () => {
@@ -1365,7 +1491,9 @@ it('flags a key that is not the known one and seals nothing for it until the own
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
   await waitFor(() => expect(calls('SetPasswordItemShares')).toHaveLength(1))
   expect((calls('SetPasswordItemShares')[0][1] as { input: { keys: unknown[] } }).input.keys).toEqual([])
-  expect(await screen.findByText('Sharing saved. 1 person was left out until you trust their new key.')).toBeTruthy()
+  expect(
+    await screen.findByText('Sharing saved. 1 person was left out until you confirm their safety code.'),
+  ).toBeTruthy()
   expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.pins:${USER_ID}`)!)).toEqual({
     'person-b': encodeBase64(oldKeyPair.publicKey),
   })
@@ -1602,6 +1730,56 @@ it('lists a site written bare as a link, once, and a site that is not a web addr
   expect(screen.getByText('javascript:alert(1)').closest('a')).toBeNull()
 })
 
+it('reads the passphrase setting again before each unlock, so a passphrase changed on another device still opens', async () => {
+  const server = serve({
+    records: await recordsToList(),
+    setup: { ...setupView, passphraseSalt: encodeBase64(new Uint8Array(16).fill(9)) },
+  })
+  renderAt('/passwords')
+  await screen.findByRole('heading', { name: 'Passwords is locked' })
+  // The passphrase was changed elsewhere after this page read the setting.
+  server.setup = setupView
+  fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: PASSPHRASE } })
+  fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
+  expect(await screen.findByRole('link', { name: 'Example login' }, { timeout: 15_000 })).toBeTruthy()
+  // One attempt on the server, with the new setting.
+  expect(calls('UnlockPasswords')).toHaveLength(1)
+}, 60_000)
+
+it('does not put an older copy of an item over a newer one that is held', async () => {
+  const newer = await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Newer name' }, { revision: 7 })
+  const older = await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Older name' }, { revision: 3 })
+  const server = serve({ records: [newer] })
+  await openSession()
+  const answer = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    // A read that started earlier ends last and lists the old copy.
+    if (document.includes('ListPasswordItems')) {
+      return { ListPasswordItems: { items: [older], itemIds: ['login-one'], revision: 7 } } as never
+    }
+    if (document.includes('SavePasswordItem')) return { SavePasswordItem: older } as never
+    return answer(document, variables)
+  })
+
+  await passwordsSession.refresh()
+  const names = () => passwordsSession.getSnapshot().items.map((item) => item.fields.name)
+  expect(names()).toEqual(['Newer name'])
+
+  // The same goes for an answer to a save that arrives after a newer copy.
+  const held = passwordsSession.getSnapshot().items[0]
+  const saved = await passwordsSession.saveItem({ itemKind: 'login', fields: emptyLoginFields() }, held)
+  expect(saved.fields.name).toBe('Newer name')
+  expect(names()).toEqual(['Newer name'])
+
+  // A newer copy replaces the held one.
+  server.records = [
+    await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Newest name' }, { revision: 9 }),
+  ]
+  vi.mocked(graphql).mockImplementation(answer)
+  await passwordsSession.refresh()
+  expect(names()).toEqual(['Newest name'])
+})
+
 // --- the clipboard and files -----------------------------------------------------
 
 it('clears a copied secret from the clipboard after 30 seconds if it is still there and the window has focus', async () => {
@@ -1645,6 +1823,39 @@ it('clears a copied secret from the clipboard after 30 seconds if it is still th
     expect(clipboardText).toBe('invented-secret')
     hasFocus.mockRestore()
   } finally {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    vi.useRealTimers()
+  }
+})
+
+it('clears the recovery key from the clipboard after 30 seconds, like any secret', async () => {
+  vi.useFakeTimers()
+  try {
+    let clipboardText = ''
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: vi.fn(async (text: string) => {
+          clipboardText = text
+        }),
+        readText: vi.fn(async () => clipboardText),
+      },
+      configurable: true,
+    })
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    render(
+      <TranslationProvider>
+        <ToastProvider>
+          <RecoveryKeyPanel recoveryKeyText="INVENTED-RECOVERY-KEY" isSaved={false} onSavedChange={() => undefined} />
+        </ToastProvider>
+      </TranslationProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Copy recovery key' }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(clipboardText).toBe('INVENTED-RECOVERY-KEY')
+    await vi.advanceTimersByTimeAsync(30_500)
+    expect(clipboardText).toBe('')
+  } finally {
+    vi.mocked(document.hasFocus).mockRestore?.()
     Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
     vi.useRealTimers()
   }

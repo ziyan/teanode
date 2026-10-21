@@ -25,7 +25,9 @@ import { PasswordsUnlock } from './passwordsUnlock'
 // memory (passwordsSession) and is gone on a reload or after the lock time.
 //
 // In the address: tab (Settings), item (the open item), edit, new (the kind of
-// a new item), q (search), kind, folder, deleted (Recently deleted) and page.
+// a new item), kind, deleted (Recently deleted) and page. The search text and
+// the folder name are decrypted values, so they are kept out of the address
+// (browser history and request logs) and live in the page's state.
 
 const TABS: TabItem[] = [
   { id: 'items', label: 'passwords.tabItems' },
@@ -66,9 +68,9 @@ function PasswordsContent({ userId }: { userId: string }) {
   const { t, plural } = useTranslation()
   const toast = useToast()
   const reportFailure = useFailureToast()
-  // keyChange is the person whose key is not the one kept, being asked about;
-  // declinedKeys are the new keys already answered no to, so the 30 second
-  // read does not ask again.
+  // keyChange is the person whose key is new to this device or is not the one
+  // kept, being asked about; declinedKeys are the new keys already answered
+  // no to, so the 30 second read does not ask again.
   const [keyChange, setKeyChange] = useState<KeyChange | null>(null)
   const [isTrusting, setIsTrusting] = useState(false)
   const declinedKeys = useRef(new Set<string>())
@@ -205,7 +207,7 @@ function PasswordsContent({ userId }: { userId: string }) {
           ) : isUnlocked ? (
             <PasswordsItems parameters={parameters} changeParameters={changeParameters} />
           ) : (
-            <PasswordsUnlock userId={userId} setup={data} />
+            <PasswordsUnlock userId={userId} />
           )}
         </>
       )}
@@ -213,21 +215,33 @@ function PasswordsContent({ userId }: { userId: string }) {
       {keyChange && (
         <ConfirmDialog
           destructive={false}
-          title={t('passwords.keyChangedTitle', { name: keyChange.recipientName || keyChange.recipientUsername })}
+          title={
+            keyChange.oldPublicKey === null
+              ? t('passwords.keyFirstTitle', { name: keyChange.recipientName || keyChange.recipientUsername })
+              : t('passwords.keyChangedTitle', { name: keyChange.recipientName || keyChange.recipientUsername })
+          }
           body={
             <>
-              <p className="muted">{t('passwords.keyChangedBody')}</p>
-              <p>
-                <span className="muted">{t('passwords.keyChangedOld')} </span>
-                <SafetyCode publicKey={keyChange.oldPublicKey} />
+              <p className="muted">
+                {keyChange.oldPublicKey === null ? t('passwords.keyFirstBody') : t('passwords.keyChangedBody')}
               </p>
+              {keyChange.oldPublicKey !== null && (
+                <p>
+                  <span className="muted">{t('passwords.keyChangedOld')} </span>
+                  <SafetyCode publicKey={keyChange.oldPublicKey} />
+                </p>
+              )}
               <p>
-                <span className="muted">{t('passwords.keyChangedNew')} </span>
+                <span className="muted">
+                  {keyChange.oldPublicKey === null ? t('passwords.safetyCode') : t('passwords.keyChangedNew')}{' '}
+                </span>
                 <SafetyCode publicKey={keyChange.newPublicKey} />
               </p>
             </>
           }
-          confirmLabel={t('passwords.keyChangedTrust')}
+          confirmLabel={
+            keyChange.oldPublicKey === null ? t('passwords.keyFirstConfirm') : t('passwords.keyChangedTrust')
+          }
           busy={isTrusting}
           onClose={() => declineKey(keyChange)}
           onConfirm={() => void trustKey(keyChange)}

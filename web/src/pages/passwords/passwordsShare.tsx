@@ -31,8 +31,8 @@ import { passwordsSession } from './passwordsSession'
 // have. The safety codes are shown so the owner can check each one with the
 // person: a code that does not match is a key that is not theirs. Saving
 // keeps each key sealed for as the known key of that person; a key that is
-// not the known one is flagged, and nothing is sealed for it until the owner
-// trusts it.
+// not the known one (a person met for the first time, or a key that changed)
+// is flagged, and nothing is sealed for it until the owner confirms it here.
 
 type Person = { userId: string; username: string; name: string }
 type CircleChoice = { id: string; name: string; members: { userId: string }[] }
@@ -79,7 +79,7 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
     })),
   )
   const [chosen, setChosen] = useState('')
-  // trustedKeys are the new keys the owner trusted in this dialog, by user id.
+  // trustedKeys are the keys the owner confirmed in this dialog, by user id.
   const [trustedKeys, setTrustedKeys] = useState<ReadonlyMap<string, string>>(new Map())
   const [isBusy, setIsBusy] = useState(false)
 
@@ -209,12 +209,10 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
           <ul className="passwords-recipients">
             {row.recipients.map((recipient) => {
               const pinnedKey = passwordsSession.pinnedKeyOf(recipient.userId)
-              const isKeyChanged =
-                recipient.publicKey !== null &&
-                !recipient.hasKey &&
-                pinnedKey !== null &&
-                pinnedKey !== recipient.publicKey
-              const isTrusted = isKeyChanged && trustedKeys.get(recipient.userId) === recipient.publicKey
+              const needsConfirmation =
+                recipient.publicKey !== null && !recipient.hasKey && pinnedKey !== recipient.publicKey
+              const isKeyChanged = needsConfirmation && pinnedKey !== null
+              const isTrusted = needsConfirmation && trustedKeys.get(recipient.userId) === recipient.publicKey
               return (
                 <li key={recipient.userId}>
                   {/* A person is named once, as the title of their card; only a
@@ -230,13 +228,17 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                       <SafetyCode publicKey={recipient.publicKey} />
                     </span>
                   )}
-                  {isKeyChanged && recipient.publicKey !== null && pinnedKey !== null && (
+                  {needsConfirmation && recipient.publicKey !== null && (
                     <div className="passwords-key-changed">
-                      <p className="muted">{t('passwords.keyChangedWarning')}</p>
-                      <p>
-                        <span className="muted">{t('passwords.keyChangedOld')} </span>
-                        <SafetyCode publicKey={pinnedKey} />
+                      <p className="muted">
+                        {isKeyChanged ? t('passwords.keyChangedWarning') : t('passwords.keyFirstWarning')}
                       </p>
+                      {isKeyChanged && pinnedKey !== null && (
+                        <p>
+                          <span className="muted">{t('passwords.keyChangedOld')} </span>
+                          <SafetyCode publicKey={pinnedKey} />
+                        </p>
+                      )}
                       {isTrusted ? (
                         <p className="muted">{t('passwords.keyTrusted')}</p>
                       ) : (
@@ -248,7 +250,7 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                             )
                           }
                         >
-                          {t('passwords.keyChangedTrust')}
+                          {isKeyChanged ? t('passwords.keyChangedTrust') : t('passwords.keyFirstConfirm')}
                         </button>
                       )}
                     </div>

@@ -24,8 +24,10 @@ import { PasswordItem } from './passwordsProtocol'
 import { passwordsSession, usePasswordsSession } from './passwordsSession'
 
 // The unlocked Items tab: the list with its search and filters, or one item,
-// with the editor over either. Which item, the editor, the search, the kind,
-// the folder and Recently deleted are all in the address.
+// with the editor over either. Which item, the editor, the kind and Recently
+// deleted are in the address. The search text and the folder name are
+// decrypted values, so they stay in this component's state: the address ends up
+// in browser history and in the server's request logs.
 
 export type ChangeParameters = (changes: Record<string, string | null>, options?: { replace?: boolean }) => void
 
@@ -45,11 +47,13 @@ export function PasswordsItems({
   const reportFailure = useFailureToast()
   const snapshot = usePasswordsSession()
   const [isChoosingKind, setIsChoosingKind] = useState(false)
+  const [search, setSearch] = useState('')
+  const [folder, setFolder] = useState('')
 
   const filter: ItemFilter = {
-    search: parameters.get('q') ?? '',
+    search,
     itemKind: isItemKind(parameters.get('kind')) ? (parameters.get('kind') as ItemKind) : '',
-    folder: parameters.get('folder') ?? '',
+    folder,
     isDeleted: parameters.get('deleted') === '1',
   }
   const itemId = parameters.get('item')
@@ -76,7 +80,7 @@ export function PasswordsItems({
   )
   const shownItems = useMemo(
     () => filterItems(snapshot.items, filter),
-    // The filter is built from the address each render.
+    // The filter is built from the address and the state each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [snapshot.items, filter.search, filter.itemKind, filter.folder, filter.isDeleted],
   )
@@ -123,7 +127,7 @@ export function PasswordsItems({
               aria-label={t('passwords.search')}
               placeholder={t('passwords.search')}
               value={filter.search}
-              onChange={(event) => changeParameters({ q: event.target.value || null, page: null }, { replace: true })}
+              onChange={(event) => setSearch(event.target.value)}
             />
             <Select
               value={filter.itemKind}
@@ -136,7 +140,7 @@ export function PasswordsItems({
                 value={filter.folder}
                 label={t('passwords.folderFilter')}
                 options={folderOptions}
-                onChange={(value) => changeParameters({ folder: value || null, page: null })}
+                onChange={setFolder}
               />
             )}
           </div>

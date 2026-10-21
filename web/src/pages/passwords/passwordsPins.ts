@@ -39,10 +39,3 @@ export function pinKey(userId: string, recipientUserId: string, publicKey: strin
     // Nothing is remembered, and the next key is a first one again.
   }
 }
-
-// hasKeyChanged says whether a key differs from the one kept. No pin kept is
-// not a change.
-export function hasKeyChanged(userId: string, recipientUserId: string, publicKey: string): boolean {
-  const pinned = pinnedKeyOf(userId, recipientUserId)
-  return pinned !== null && pinned !== publicKey
-}

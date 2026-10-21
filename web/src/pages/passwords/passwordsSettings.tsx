@@ -33,7 +33,9 @@ const LOCK_AFTER_WORDS: Record<number, Key> = {
 const FORMAT_NAMES = { chrome: 'Chrome', apple: 'Apple Passwords', bitwarden: 'Bitwarden' } as const
 
 // exportText is the person's own items, readable, as JSON. It is not
-// encrypted: the confirmation before it says so.
+// encrypted: the confirmation before it says so. The shape is the same as the
+// command line's export: {version, exportedAt, items: [{id, itemKind,
+// fields}]}.
 export function exportText(items: PasswordItem[], exportedAt: Date): string {
   return JSON.stringify(
     {
@@ -41,7 +43,7 @@ export function exportText(items: PasswordItem[], exportedAt: Date): string {
       exportedAt: exportedAt.toISOString(),
       items: items
         .filter((item) => item.isOwnedByMe && item.deletedAt === null && !item.isUnreadable)
-        .map((item) => ({ itemKind: item.itemKind, ...item.fields })),
+        .map((item) => ({ id: item.id, itemKind: item.itemKind, fields: item.fields })),
     },
     null,
     2,

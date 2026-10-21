@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { CopyIconButton } from '../../components/common'
 import { EyeIcon, EyeOffIcon, RefreshIcon } from '../../components/icons'
-import { CopyButton } from '../../components/settingsList'
+import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
 import { decodeBase64, safetyCode } from '../../passwords/crypto'
@@ -49,6 +49,35 @@ export function clearClipboardLater(copied: string) {
 // SecretCopyButton copies a secret and clears it from the clipboard later.
 export function SecretCopyButton({ value, label }: { value: string; label: string }) {
   return <CopyIconButton value={value} label={label} onCopied={clearClipboardLater} />
+}
+
+// SecretCopyTextButton is the labeled "Copy" button for a secret that sits in
+// a row of other buttons (the recovery key), and clears the clipboard later
+// like SecretCopyButton does.
+export function SecretCopyTextButton({ value, label }: { value: string; label: string }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={() => {
+        if (!navigator.clipboard) {
+          toast.failed(t('common.copyFailed'))
+          return
+        }
+        void navigator.clipboard.writeText(value).then(
+          () => {
+            clearClipboardLater(value)
+            toast.done(t('common.copied'))
+          },
+          () => toast.failed(t('common.copyFailed')),
+        )
+      }}
+    >
+      {t('common.copy')}
+    </button>
+  )
 }
 
 // downloadText hands the browser a file to save. The address of the file is
@@ -198,7 +227,7 @@ export function RecoveryKeyPanel({
         {recoveryKeyText}
       </pre>
       <div className="page-actions">
-        <CopyButton value={recoveryKeyText} label={t('passwords.recoveryKeyCopy')} />
+        <SecretCopyTextButton value={recoveryKeyText} label={t('passwords.recoveryKeyCopy')} />
         <button type="button" onClick={download}>
           {t('passwords.recoveryKeyDownload')}
         </button>

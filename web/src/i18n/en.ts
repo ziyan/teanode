@@ -7160,6 +7160,12 @@ export const en = {
   'passwords.keyChangedTrust': 'Trust the new key',
   'passwords.keyChangedWarning': 'Their key changed. Compare the safety code with them before sharing.',
   'passwords.keyTrusted': 'You trust this key.',
+  'passwords.keyFirstTitle': "Confirm {name}'s safety code",
+  'passwords.keyFirstBody':
+    'This device has not seen their key before, and they should not get the items you shared until you know it is theirs. Compare the safety code with them, in person or on a call, before you confirm.',
+  'passwords.keyFirstWarning':
+    'This device has not seen their key before. Compare the safety code with them before sharing.',
+  'passwords.keyFirstConfirm': 'The safety code matches',
   'passwords.errorPublicKeyMismatch':
     'The server sent a public key that is not the one your private key makes, so Passwords stays locked.',
   'passwords.ownerKeyChangedTitle': "Its owner's key changed",
@@ -7167,9 +7173,9 @@ export const en = {
     '{name} shared this item, and their key is not the one you saw before. It changes when they set Passwords up again, but it could also be somebody else. Compare the new safety code with them, in person or on a call, before you trust it. The item stays closed until you do.',
   'passwords.ownerKeyTrustFailed': 'The new key could not be trusted.',
   'passwords.shareSavedUnconfirmedOne':
-    'Sharing saved. {count} person was left out until you trust their new key.',
+    'Sharing saved. {count} person was left out until you confirm their safety code.',
   'passwords.shareSavedUnconfirmed':
-    'Sharing saved. {count} people were left out until you trust their new keys.',
+    'Sharing saved. {count} people were left out until you confirm their safety codes.',
   'passwords.itemCountOne': '1 item',
   'passwords.itemCount': '{count} items',
   'passwords.reload': 'Reload',

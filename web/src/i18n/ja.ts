@@ -7057,14 +7057,19 @@ export const ja: Catalog = {
   'passwords.keyChangedTrust': '新しい鍵を信頼する',
   'passwords.keyChangedWarning': '相手の鍵が変わりました。共有する前に安全コードを照合してください。',
   'passwords.keyTrusted': 'この鍵を信頼しています。',
+  'passwords.keyFirstTitle': '{name} さんの安全コードを確認',
+  'passwords.keyFirstBody':
+    'この端末は相手の鍵をまだ見たことがありません。相手本人の鍵だと確認できるまで、共有した項目は渡されません。確認する前に、会うか通話して安全コードを照合してください。',
+  'passwords.keyFirstWarning': 'この端末は相手の鍵をまだ見たことがありません。共有する前に安全コードを照合してください。',
+  'passwords.keyFirstConfirm': '安全コードが一致する',
   'passwords.errorPublicKeyMismatch':
     'サーバーから届いた公開鍵が、あなたの秘密鍵から作られる公開鍵と一致しないため、パスワードはロックされたままです。',
   'passwords.ownerKeyChangedTitle': '所有者の鍵が変わりました',
   'passwords.ownerKeyChangedBody':
     '{name} さんがこの項目を共有しましたが、以前に見た鍵とは異なります。相手がパスワードを設定し直したときにも起こりますが、別の人である可能性もあります。信頼する前に、直接会うか通話で、新しい安全コードを相手と照合してください。それまでこの項目は開かれません。',
   'passwords.ownerKeyTrustFailed': '新しい鍵を信頼できませんでした。',
-  'passwords.shareSavedUnconfirmedOne': '共有を保存しました。{count} 人は、新しい鍵を信頼するまで対象から外れています。',
-  'passwords.shareSavedUnconfirmed': '共有を保存しました。{count} 人は、新しい鍵を信頼するまで対象から外れています。',
+  'passwords.shareSavedUnconfirmedOne': '共有を保存しました。{count} 人は、安全コードを確認するまで対象から外れています。',
+  'passwords.shareSavedUnconfirmed': '共有を保存しました。{count} 人は、安全コードを確認するまで対象から外れています。',
   'passwords.itemCountOne': '1件の項目',
   'passwords.itemCount': '{count}件の項目',
   'passwords.reload': '再読み込み',
