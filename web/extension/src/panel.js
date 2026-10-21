@@ -86,6 +86,10 @@
     panel.append(bar, frame, grip)
     shadow.append(style, panel)
     document.documentElement.append(host)
+    // Kept in the extension's own world, which the page cannot reach, so that
+    // the worker finds the panel by this and not only by its id, which the
+    // page can change: it is where the agent must not click.
+    window.__teanodePanel = host
 
     // Where the panel sits and how big it is, remembered per site. The
     // place is kept as a fraction of the window so that a panel put in a

@@ -23,6 +23,14 @@ import (
 type fakeLink struct {
 	isDropped bool
 
+	// address is where the tab is, and answer what it says to an action,
+	// when the test says otherwise than the defaults; serverHost is the
+	// host the browser connected through, and listed the tabs it listed.
+	address    string
+	answer     string
+	serverHost string
+	listed     []tools.TabAddress
+
 	mutex sync.Mutex
 	asked []string
 }
@@ -34,13 +42,23 @@ func (self *fakeLink) Ask(_ context.Context, action string, _ any) (json.RawMess
 	if self.isDropped {
 		return nil, fmt.Errorf("the person's browser: %w", tools.ErrDeviceDetached)
 	}
+	if self.answer != "" {
+		return json.RawMessage(self.answer), nil
+	}
 	return json.RawMessage(`{"url":"https://shop.example.org/","text":"a page"}`), nil
 }
-func (self *fakeLink) Title() string     { return "A shop" }
-func (self *fakeLink) URL() string       { return "https://shop.example.org/" }
-func (self *fakeLink) HasTab() bool      { return true }
-func (self *fakeLink) IsTakenOver() bool { return false }
-func (self *fakeLink) IsWatchable() bool { return true }
+func (self *fakeLink) Title() string                  { return "A shop" }
+func (self *fakeLink) HasTab() bool                   { return true }
+func (self *fakeLink) IsTakenOver() bool              { return false }
+func (self *fakeLink) IsWatchable() bool              { return true }
+func (self *fakeLink) ServerHost() string             { return self.serverHost }
+func (self *fakeLink) ListedTabs() []tools.TabAddress { return self.listed }
+func (self *fakeLink) URL() string {
+	if self.address != "" {
+		return self.address
+	}
+	return "https://shop.example.org/"
+}
 
 func (self *fakeLink) actionsAsked() []string {
 	self.mutex.Lock()
@@ -56,6 +74,9 @@ type fakeBrowsingRun struct {
 	first  *fakeLink
 	second *fakeLink
 
+	// serverName is the name the configuration gives the server.
+	serverName string
+
 	mutex       sync.Mutex
 	waitedFor   []tools.Tab
 	waitedUpTo  time.Duration
@@ -69,6 +90,7 @@ func (self *fakeBrowsingRun) AttachedTab() tools.Tab { return self.first }
 func (self *fakeBrowsingRun) Configuration() *config.Configuration {
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
+	configuration.Server.Name = self.serverName
 	return configuration
 }
 func (self *fakeBrowsingRun) BrowserPage(context.Context) (*browser.Context, error) {

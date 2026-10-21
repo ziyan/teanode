@@ -307,11 +307,35 @@ since, and `cdp_stop` lets go. While it is attached Chrome shows its own bar
 saying so, which is the person's sign that it is happening; it is let go when
 the tab closes, when the person detaches, and when the connection drops.
 
-A handful of methods are refused, not because the agent is not trusted with
-the tab but because they are not about the tab: every site's cookies rather
-than this one's, the browser's own settings, other targets, and holding or
-rewriting the page's own requests. What the page itself holds stays reachable
-through `storage`, `fetch` and `evaluate`.
+Only methods on a list of exact names are sent (`reach.go` on the server,
+`reach.js` in the extension, and a test keeps the two equal), not because the
+agent is not trusted with the tab but because most of the protocol is not about
+the tab: every site's cookies rather than this one's, the browser's own
+settings, other targets, holding or rewriting the page's own requests, and
+putting a file of the person's machine into a page (`DOM.setFileInputFiles`,
+`Input.dispatchDragEvent`), after which the page could read it back. What the
+page itself holds stays reachable through `storage`, `fetch` and `evaluate`.
+
+The agent also does not drive TeaNode itself or the extension's own pages in
+the person's browser. A request made by script from the server's origin carries
+the person's session cookie, which the server takes for the person's own tap, so
+`open`, `navigate`, `switch` and `Page.navigate` refuse an address on a host the
+server is reached by (the configured server name, the passkey relying party and
+origins, the TLS hosts, and the host the extension connected through) or one
+that is not http or https, and every other action refuses a tab that shows such
+a page or a `chrome-extension://` one. The server refuses first, so a server
+deploy closes this without anyone reloading the extension; the extension holds
+the same lines against where the tab is at the moment of the action.
+
+The panel the extension's button puts on a page is the dashboard's drawer,
+signed in as the person. Input the protocol dispatches is real input, so a
+click at the place where that frame is would land in TeaNode itself. The
+extension therefore reads where the panel is at the moment of each `Input.`
+call (the server cannot see it) and refuses a mouse, touch, tap or scroll
+gesture whose point is inside it, and keys while its frame has focus; the
+script actions `click`, `hover`, `type` and `select` refuse an element the
+panel covers. The person moves or closes the panel to let the agent at what is
+under it.
 
 It is the person's own session, so the agent acts as them: it can fill in a
 password or a card number, because an assistant that cannot is not much of

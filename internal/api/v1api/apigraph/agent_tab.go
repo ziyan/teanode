@@ -265,6 +265,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			hasTab := message.HasTab == nil || *message.HasTab
 			worker.ConnectBrowser(found.ID, socket, message.Title, message.URL, hasTab)
 			worker.SetBrowserCanCast(found.ID, socket, message.Protocol >= 4)
+			worker.SetBrowserServerHost(found.ID, socket, request.Host)
 			// Signed in, it may send pictures of a tab, which are larger
 			// than anything said before the hello.
 			conn.SetReadLimit(tabFrameReadLimit)

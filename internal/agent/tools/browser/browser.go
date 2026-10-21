@@ -144,6 +144,9 @@ type browserArguments struct {
 	Expression    string            `json:"expression"`
 	Steps         []json.RawMessage `json:"steps"`
 
+	// For switch and close: the tab, by the number tabs gave.
+	Tab *int64 `json:"tab,omitempty"`
+
 	// For the DevTools protocol, on the person's own tab: the method to
 	// send and what to send with it, and, for reading back what the page
 	// did, which events and how many.
@@ -364,6 +367,13 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	default:
 		return nil, fmt.Errorf("%q is not an action a tab does", arguments.Action)
 	}
+	// The person's session must not be put to work on TeaNode itself, and
+	// no file of theirs may be put into a page: refused here, before the
+	// extension is asked, so that a server deploy closes it without anyone
+	// reloading the extension.
+	if refusal := tabReachRefusal(run.Configuration(), tab, arguments); refusal != "" {
+		return nil, errors.New(refusal)
+	}
 	part := snapshotPartOf(arguments.Offset, arguments.MaxCharacters)
 	if arguments.Action == "snapshot" {
 		arguments.MaxCharacters = part.readCharacters()
@@ -371,6 +381,9 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	data, err := askTab(ctx, run, tab, arguments.Action, arguments)
 	if err != nil {
 		return nil, err
+	}
+	if refusal := answerReachRefusal(run.Configuration(), tab, arguments.Action, data); refusal != "" {
+		return nil, errors.New(refusal)
 	}
 	switch arguments.Action {
 	case "snapshot":

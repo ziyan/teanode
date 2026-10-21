@@ -23,6 +23,18 @@
 // picture comes back here as input, while they hold it. Their screen does
 // not change for it.
 
+import {
+  OWN_PAGES_REFUSAL,
+  PANEL_ELEMENT_REFUSAL,
+  addressRefusal,
+  cdpRefusal,
+  isOwnPage,
+  pageRefusal,
+  panelProbe,
+  panelRefusal,
+  serverHostname,
+} from './reach.js'
+
 const PROTOCOL = 4
 
 let socket = null
@@ -464,64 +476,9 @@ const DEBUGGER_PROTOCOL = '1.3'
 const EVENTS_KEPT = 500
 const DEBUGGER_IDLE = 10 * 60 * 1000
 
-// What the protocol may be asked for, as a list of what is allowed.
-//
-// The line is not "the agent is trusted" -- it is their agent and their tab --
-// but what attaching one tab is: everything that tab's own origin can reach,
-// plus real input and what the page asks the network for. Anything that
-// reaches past the tab into the browser is not that.
-//
-// Written as a list of refusals it kept losing, because the protocol grows
-// every release and a refusal only covers what somebody thought of. Three
-// methods with exactly the reach the list describes were outside it:
-// Page.setDownloadBehavior -- the deprecated twin of the Browser. one, which
-// was refused -- writes a file of the caller's choosing to a directory of its
-// choosing, and Network.clearBrowserCookies, Network.clearBrowserCache and
-// Storage.clearDataForOrigin are the whole browser rather than this page. A
-// list of what is allowed cannot lose that way: something new is refused
-// until somebody decides otherwise.
-const CDP_ALLOWED = [
-  // Real input, which is what driving a page is.
-  'Input.',
-  // Watching what the page asks the network for, and reading a body back.
-  // Not Network.setCookie and friends, which are every site's cookies, and
-  // not the clearBrowser* pair, which are the whole browser.
-  'Network.enable',
-  'Network.disable',
-  'Network.getResponseBody',
-  'Network.getRequestPostData',
-  'Network.setCacheDisabled',
-  'Network.setExtraHTTPHeaders',
-  // The page itself: what it is, what it looks like, where it is going.
-  'Page.enable',
-  'Page.disable',
-  'Page.navigate',
-  'Page.reload',
-  'Page.captureSnapshot',
-  'Page.getLayoutMetrics',
-  'Page.getFrameTree',
-  'Page.getNavigationHistory',
-  // Reading and running in the page's own world, which evaluate already is.
-  'Runtime.',
-  'DOM.',
-  'DOMSnapshot.',
-  'CSS.',
-  'Accessibility.',
-  'Emulation.setEmulatedMedia',
-  'Log.',
-]
-
-function cdpRefusal(method) {
-  const asked = String(method || '').trim()
-  if (!/^[A-Z][A-Za-z]*\.[a-zA-Z][A-Za-z0-9]*$/.test(asked)) {
-    return 'a method is written Domain.method, for example Input.dispatchMouseEvent'
-  }
-  for (const allowed of CDP_ALLOWED) {
-    const matches = allowed.endsWith('.') ? asked.startsWith(allowed) : asked === allowed
-    if (matches) return ''
-  }
-  return `${asked} is not one of the methods an attached tab answers: driving it (Input.), reading it (DOM., Runtime., CSS., Accessibility.), watching what it fetches (Network.enable, Network.getResponseBody) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser, which attaching one tab does not allow`
-}
+// What the protocol may be asked for is a list of exact method names, and
+// what the agent may reach in the browser, TeaNode's own pages included, is
+// decided in reach.js; the server holds the same lines and refuses first.
 
 // agentUsing are the tabs whose debugger the agent's cdp action uses,
 // marked before it waits for the attachment, so a stream's start or stop
@@ -854,14 +811,30 @@ async function dispatchInput(message) {
   }
 }
 
+// panelIn is where the person's TeaNode panel is in a tab now, read from the
+// page: see panelProbe. A page the extension cannot run a script in cannot
+// have the panel on it either, since the panel is put there by a script.
+async function panelIn(tabId) {
+  try {
+    const [probed] = await chrome.scripting.executeScript({ target: { tabId }, func: panelProbe })
+    return (probed && probed.result) || { isOpen: false }
+  } catch {
+    return { isOpen: false }
+  }
+}
+
 // act does one action in the attached tab: navigation here, everything
 // else in the page through the content script; fetch through the tab's
 // own session.
 async function act(action, args) {
   await restored
   try {
+    // Where TeaNode is: its pages, and the extension's own, are not driven
+    // in the person's browser, whatever the address the agent was given.
+    const origin = await serverOrigin()
     if (action === 'open') {
-      if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
+      const unwelcome = addressRefusal(args.url, origin)
+      if (unwelcome) return { ok: false, error: unwelcome }
       // Beside the tab the actions go to, or, with none, in the window the
       // person last used; a browser with no window gets one.
       const beside = attached.tabId === null ? null : await chrome.tabs.get(attached.tabId).catch(() => null)
@@ -883,8 +856,13 @@ async function act(action, args) {
     }
     if (attached.tabId === null) return { ok: false, error: 'no tab is open for you in this browser yet; open one first' }
     const tab = await chrome.tabs.get(attached.tabId)
+    // Where the tab is now, not where it was when it was attached or last
+    // reported: a page may have gone to TeaNode since.
+    const unreachable = pageRefusal(action, tab, origin)
+    if (unreachable) return { ok: false, error: unreachable }
     if (action === 'navigate') {
-      if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
+      const unwelcome = addressRefusal(args.url, origin)
+      if (unwelcome) return { ok: false, error: unwelcome }
       await chrome.tabs.update(tab.id, { url: args.url })
       await waitForLoad(tab.id)
       const updated = await chrome.tabs.get(tab.id)
@@ -898,6 +876,8 @@ async function act(action, args) {
       // back to the person's own tab.
       const wanted = await pickTab(args, attached.ownTabId)
       if (!wanted) return { ok: false, error: 'not a tab of this conversation: the person\'s own, or one you opened; tabs lists them' }
+      const chosen = await chrome.tabs.get(wanted).catch(() => null)
+      if (chosen && (isOwnPage(chosen.url, origin) || isOwnPage(chosen.pendingUrl, origin))) return { ok: false, error: OWN_PAGES_REFUSAL }
       await chrome.tabs.update(wanted, { active: true })
       await useTab(wanted)
       return { ok: true, data: await current() }
@@ -937,11 +917,24 @@ async function act(action, args) {
       return { ok: true, data: image }
     }
     if (action === 'cdp') {
-      if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
       const refusal = cdpRefusal(args.method)
       if (refusal) return { ok: false, error: refusal }
+      // Page.navigate is the navigate action by another name.
+      if (args.method === 'Page.navigate') {
+        const unwelcome = addressRefusal(args.params && args.params.url, origin)
+        if (unwelcome) return { ok: false, error: unwelcome }
+      }
       agentUsing.add(tab.id)
       await debuggerFor(tab.id)
+      // Attaching takes a moment, in which the page may have gone to TeaNode.
+      const unreachableNow = pageRefusal(action, await chrome.tabs.get(tab.id), origin)
+      if (unreachableNow) return { ok: false, error: unreachableNow }
+      // Input dispatched where the panel is would be a click in TeaNode
+      // itself, as the person's hand. Read as late as it can be.
+      if (args.method.startsWith('Input.')) {
+        const covered = panelRefusal(args.method, args.params, await panelIn(tab.id))
+        if (covered) return { ok: false, error: covered }
+      }
       const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
       return { ok: true, data: { result: answer === undefined ? null : answer } }
     }
@@ -971,10 +964,13 @@ async function act(action, args) {
       await letDebuggerGo(tab.id)
       return { ok: true, data: { stopped: true } }
     }
+    // An element the panel covers is not clicked, hovered, typed into or
+    // chosen in: the person would see it happen under the panel.
+    const panel = ['click', 'hover', 'type', 'select'].includes(action) ? await panelIn(tab.id) : { isOpen: false }
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: inPage,
-      args: [action, args],
+      args: [action, args, serverHostname(origin), OWN_PAGES_REFUSAL, panel, PANEL_ELEMENT_REFUSAL],
     })
     return result?.result || { ok: false, error: 'the page did not answer' }
   } catch (error) {
@@ -1007,7 +1003,19 @@ function waitForLoad(tabId) {
 
 // inPage runs inside the page. It is self-contained: nothing from this
 // file is in scope there.
-async function inPage(action, args) {
+async function inPage(action, args, ownHostname, ownPagesRefusal, panel, panelWords) {
+  // The check that was made on the tab's address a moment ago, made again
+  // where the script runs: a page can go to TeaNode in between.
+  if (/^(chrome|moz)-extension:$/.test(location.protocol) || (ownHostname && location.hostname.replace(/\.$/, '').toLowerCase() === ownHostname)) {
+    return { ok: false, error: ownPagesRefusal }
+  }
+  // Whether an element is under the person's TeaNode panel, which is where
+  // the agent does not act.
+  const isUnderPanel = (node) => {
+    if (!panel || !panel.isOpen) return false
+    const box = node.getBoundingClientRect()
+    return box.left <= panel.right && box.right >= panel.left && box.top <= panel.bottom && box.bottom >= panel.top
+  }
   const refs = (window.__teanodeRefs = window.__teanodeRefs || new Map())
   let next = window.__teanodeNextRef || 1
   const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label'])
@@ -1089,6 +1097,7 @@ async function inPage(action, args) {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
       node.scrollIntoView({ block: 'center' })
+      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       node.click()
       await new Promise((resolve) => setTimeout(resolve, 300))
       return { ok: true, data: { clicked: nameOf(node), now: { url: location.href, title: document.title } } }
@@ -1096,12 +1105,14 @@ async function inPage(action, args) {
     case 'hover': {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches' }
+      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
       return { ok: true, data: { hovered: nameOf(node) } }
     }
     case 'type': {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
+      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       node.focus()
       if (args.clear_first) node.value = ''
       if ('value' in node) {
@@ -1119,6 +1130,7 @@ async function inPage(action, args) {
     case 'select': {
       const node = find()
       if (!node || node.tagName.toLowerCase() !== 'select') return { ok: false, error: 'not a select' }
+      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       let picked = null
       for (const option of node.options) if (option.value === args.value || option.text.trim() === args.value) picked = option
       if (!picked && typeof args.index === 'number') picked = node.options[args.index]
