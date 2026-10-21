@@ -6,7 +6,7 @@
 // message says about itself.
 
 import type { FieldRole } from './fieldDetection'
-import type { LoginSummary } from './openedKeys'
+import type { LoginSummary, OwnerKeyChangeAnswer } from './openedKeys'
 
 // --- from a content script ---------------------------------------------
 
@@ -87,12 +87,40 @@ export interface PopupState {
   pendingSave: { host: string; userName: string } | null
 }
 
+// OtherSiteQuestion is what the window asks before it fills a login into a
+// page the login is not saved for ("Fill <name> into <site>? It is saved for
+// <its sites>."). The answer to it is sent back with the origin, so that a
+// page that moved in the meantime is not filled on the strength of a yes
+// given for another.
+export interface OtherSiteQuestion {
+  loginName: string
+  // requestedSite is the host of the page the window would fill into.
+  requestedSite: string
+  // origin is that page's origin (scheme, host and port).
+  origin: string
+  // savedSites are the hosts the login is saved for; none when it has no site.
+  savedSites: string[]
+  // isPageEncrypted is false for a plain-text page that is not a local one.
+  isPageEncrypted: boolean
+}
+
+export interface FillInTabAnswer {
+  filledCount: number
+  foreignActionHost: string
+  // otherSite is set instead of filling when the login is not saved for the
+  // page and the person has not said yes to that yet.
+  otherSite?: OtherSiteQuestion
+}
+
 export interface SearchAnswer {
   forThisSite: LoginSummary[]
   others: LoginSummary[]
   // ownerKeyChangedCount is how many shared logins were left out because
   // their owner's key is not the one this device kept.
   ownerKeyChangedCount: number
+  // ownerKeyChanges are those owners, with the safety code before and now, for
+  // the window to ask whether to trust the new key.
+  ownerKeyChanges: OwnerKeyChangeAnswer[]
 }
 
 export type PopupRequest =
@@ -108,8 +136,12 @@ export type PopupRequest =
       itemId: string
       fillPart: 'login' | 'oneTimeCode'
       isForeignActionConfirmed?: boolean
+      // confirmedOtherSiteOrigin is the origin the person said yes to filling
+      // a login that is not saved for it into (see OtherSiteQuestion).
+      confirmedOtherSiteOrigin?: string
     } & FrameTarget)
   | ({ type: 'passwords:save-pending' } & Pick<FrameTarget, 'tabId'>)
+  | { type: 'passwords:trust-owner-key'; ownerUserId: string; newPublicKey: string }
   | { type: 'passwords:open-dashboard' }
   | { type: 'passwords:open-popup-window' }
   | { type: 'passwords:prompt-info'; promptId: string }
@@ -132,5 +164,7 @@ export interface PromptInfo {
   // and they have not typed the passphrase lately.
   isVerificationNeeded: boolean
   // For a sign-in: the passkeys that can answer, labelled by user name.
-  choices: { label: string; credentialId: string }[]
+  // sharedByText is "Shared by <owner name>" for a passkey in a login somebody
+  // else owns, else empty.
+  choices: { label: string; credentialId: string; sharedByText: string }[]
 }

@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   encodeBase64,
   generatePersonKeyPair,
+  safetyCode,
   openItemFields,
   openItemKey,
   parseRecoveryKey,
@@ -15,6 +16,7 @@ import { PasswordsError } from '../../../src/passwords/passwordsError'
 import {
   addPasskeySite,
   currentOneTimeCode,
+  describeOwnerKeyChanges,
   forgetPasskeySites,
   isPasskeySiteKnown,
   loginsForPage,
@@ -22,12 +24,14 @@ import {
   lockIfIdle,
   lockPasswords,
   openItems,
+  OpenReport,
   passkeysForRelyingParty,
   readPasswordsState,
   releaseItems,
   saveCapturedLogin,
   savePasskey,
   summaryOf,
+  trustOwnerKey,
   unlockPasswords,
   PasswordsEnvironment,
   whatToDoWithCapturedLogin,
@@ -309,7 +313,7 @@ describe('reading logins', () => {
             userHandle: '',
             userName: 'ada',
             userDisplayName: '',
-            privateKey: 'PRIVATE',
+            privateKey: 'c2VjcmV0',
             createdAt: '',
           },
         ],
@@ -328,9 +332,11 @@ describe('reading logins', () => {
         hasOneTimeCode: true,
         passkeyCount: 1,
         isOwnedByMe: true,
+        ownerName: 'Ada',
+        sharedByText: '',
       })
       expect(JSON.stringify(summary)).not.toContain('hunter2')
-      expect(JSON.stringify(summary)).not.toContain('PRIVATE')
+      expect(JSON.stringify(summary)).not.toContain('c2VjcmV0')
     })
   })
 
@@ -367,6 +373,12 @@ describe('reading logins', () => {
     await withOpenedKeys(environment, async (keys) => {
       const items = await openItems(environment, keys)
       expect(items.map((item) => [item.fields.name, item.isOwnedByMe])).toEqual([['Shared', false]])
+      // A shared login says whose it is wherever a list draws it.
+      expect(summaryOf(loginsOf(items)[0])).toMatchObject({
+        isOwnedByMe: false,
+        ownerName: 'Bo',
+        sharedByText: 'Shared by Bo',
+      })
     })
     expect(local.contents['passwordsPins:' + USER_ID]).toEqual({ 'owner-b': encodeBase64(ownerKeyPair.publicKey) })
     expect(JSON.stringify(local.contents)).not.toContain('Shared')
@@ -375,11 +387,196 @@ describe('reading logins', () => {
     const otherKeyPair = await generatePersonKeyPair()
     server.records = [{ ...shared, ownerPublicKey: encodeBase64(otherKeyPair.publicKey) }]
     await withOpenedKeys(environment, async (keys) => {
-      const report = { ownerKeyChangedCount: 0 }
+      const report: OpenReport = { ownerKeyChangedCount: 0, ownerKeyChanges: [] }
       expect(await openItems(environment, keys, report)).toEqual([])
       // Not dropped without a word: it is counted, for the window to say so.
-      expect(report).toEqual({ ownerKeyChangedCount: 1 })
+      expect(report).toEqual({
+        ownerKeyChangedCount: 1,
+        ownerKeyChanges: [
+          {
+            ownerUserId: 'owner-b',
+            ownerName: 'Bo',
+            oldPublicKey: encodeBase64(ownerKeyPair.publicKey),
+            newPublicKey: encodeBase64(otherKeyPair.publicKey),
+          },
+        ],
+      })
     })
+  })
+})
+
+describe('trusting the changed key of the owner of shared logins', () => {
+  const id = '00000000-0000-4000-8000-0000000000aa'
+
+  // A login shared by owner-b. It is sealed by sealingPair; the record names
+  // reportedPair's public key as the owner's, as a server would.
+  async function sharedRecord(sealingPair: PersonKeyPair, reportedPair: PersonKeyPair): Promise<PasswordItemRecord> {
+    const itemKey = crypto.getRandomValues(new Uint8Array(32))
+    const { sealItemFields, serializeSealed } = await import('../../../src/passwords/crypto')
+    return {
+      ...(await ownRecord(id, login({}))),
+      ownerUserId: 'owner-b',
+      ownerName: 'Bo',
+      ownerPublicKey: encodeBase64(reportedPair.publicKey),
+      isSharedWithMe: true,
+      encryptedFields: serializeSealed(await sealItemFields(itemKey, login({ name: 'Shared' }), id, 'login')),
+      itemKey: await sealItemKeyFor(itemKey, sealingPair, fixture.input.publicKey, id, 'owner-b', USER_ID),
+    }
+  }
+
+  async function readPin(local: ReturnType<typeof memoryArea>) {
+    return (local.contents['passwordsPins:' + USER_ID] as Record<string, string> | undefined)?.['owner-b']
+  }
+
+  it('keeps the new key as the owner key, once an item of theirs opens with it', async () => {
+    const newPair = await generatePersonKeyPair()
+    const { environment, local, server } = await unlocked([await sharedRecord(ownerKeyPair, ownerKeyPair)])
+    await withOpenedKeys(environment, async (keys) => releaseItems(await openItems(environment, keys)))
+    expect(await readPin(local)).toBe(encodeBase64(ownerKeyPair.publicKey))
+
+    server.records = [await sharedRecord(newPair, newPair)]
+    await withOpenedKeys(environment, async (keys) => {
+      expect(await openItems(environment, keys)).toEqual([])
+      await trustOwnerKey(environment, keys, 'owner-b', encodeBase64(newPair.publicKey))
+    })
+    expect(await readPin(local)).toBe(encodeBase64(newPair.publicKey))
+    await withOpenedKeys(environment, async (keys) => {
+      const items = await openItems(environment, keys)
+      expect(items.map((item) => item.fields.name)).toEqual(['Shared'])
+      releaseItems(items)
+    })
+  })
+
+  it('trusts nothing the server no longer shows, and nothing that does not open', async () => {
+    const newPair = await generatePersonKeyPair()
+    const otherPair = await generatePersonKeyPair()
+    const { environment, local, server } = await unlocked([await sharedRecord(ownerKeyPair, ownerKeyPair)])
+    await withOpenedKeys(environment, async (keys) => releaseItems(await openItems(environment, keys)))
+    // The server shows a different key than the one that was compared.
+    server.records = [await sharedRecord(newPair, newPair)]
+    await withOpenedKeys(environment, async (keys) => {
+      await expect(trustOwnerKey(environment, keys, 'owner-b', encodeBase64(otherPair.publicKey))).rejects.toThrow(
+        /changed again/,
+      )
+      // Another owner's id does not do either.
+      await expect(trustOwnerKey(environment, keys, 'owner-c', encodeBase64(newPair.publicKey))).rejects.toThrow(
+        /changed again/,
+      )
+    })
+    // A key the server shows, on an item that was not sealed by it.
+    server.records = [await sharedRecord(otherPair, newPair)]
+    await withOpenedKeys(environment, async (keys) => {
+      await expect(trustOwnerKey(environment, keys, 'owner-b', encodeBase64(newPair.publicKey))).rejects.toThrow(
+        /did not open|None of their/,
+      )
+    })
+    expect(await readPin(local)).toBe(encodeBase64(ownerKeyPair.publicKey))
+  })
+
+  it('works out the safety codes of both keys for the owner, and leaves one that cannot be read empty', async () => {
+    const newPair = await generatePersonKeyPair()
+    const [answer, unreadable] = await describeOwnerKeyChanges([
+      {
+        ownerUserId: 'owner-b',
+        ownerName: 'Bo',
+        oldPublicKey: encodeBase64(ownerKeyPair.publicKey),
+        newPublicKey: encodeBase64(newPair.publicKey),
+      },
+      {
+        ownerUserId: 'owner-b',
+        ownerName: 'Bo',
+        oldPublicKey: 'not a key',
+        newPublicKey: encodeBase64(newPair.publicKey),
+      },
+    ])
+    expect(answer.oldSafetyCode).toBe(await safetyCode('owner-b', ownerKeyPair.publicKey))
+    expect(answer.newSafetyCode).toBe(await safetyCode('owner-b', newPair.publicKey))
+    expect(answer.oldSafetyCode).not.toBe(answer.newSafetyCode)
+    expect(answer.newPublicKey).toBe(encodeBase64(newPair.publicKey))
+    expect(unreadable.oldSafetyCode).toBe('')
+    expect(unreadable.newSafetyCode).not.toBe('')
+  })
+})
+
+describe('an item that needs a new key', () => {
+  const id = '00000000-0000-4000-8000-000000000001'
+  const words = 'Open Passwords on the dashboard or in the iPhone app first: this item needs a new key.'
+
+  async function needingRecord(needsNewKey: boolean | undefined): Promise<PasswordItemRecord> {
+    const record = await ownRecord(id, login({ sites: ['example.com'] }), 2)
+    return needsNewKey === undefined ? record : ({ ...record, needsNewKey } as PasswordItemRecord)
+  }
+
+  const passkey: PasskeyFields = {
+    credentialId: encodeBase64(new Uint8Array([1, 2, 3])),
+    relyingPartyId: 'example.com',
+    userHandle: encodeBase64(new Uint8Array([9])),
+    userName: 'ada@example.test',
+    userDisplayName: 'Ada',
+    privateKey: encodeBase64(new Uint8Array([5, 6, 7])),
+    createdAt: '2026-10-20T00:00:00Z',
+  }
+
+  it('is not saved over by a new password, and nothing is sent', async () => {
+    const { environment, server } = await unlocked([await needingRecord(true)])
+    await withOpenedKeys(environment, async (keys) => {
+      const logins = loginsOf(await openItems(environment, keys))
+      await expect(
+        saveCapturedLogin(environment, keys, logins, {
+          pageUrl: 'https://example.com/',
+          userName: 'ada@example.test',
+          password: 'a-new-password',
+        }),
+      ).rejects.toThrow(words)
+    })
+    expect(server.saved).toEqual([])
+  })
+
+  it('is not saved over by a passkey either', async () => {
+    const { environment, server } = await unlocked([await needingRecord(true)])
+    await withOpenedKeys(environment, async (keys) => {
+      const logins = loginsOf(await openItems(environment, keys))
+      await expect(
+        savePasskey(environment, keys, logins, {
+          pageUrl: 'https://example.com/',
+          relyingPartyName: 'Example',
+          passkey,
+        }),
+      ).rejects.toThrow(words)
+    })
+    expect(server.saved).toEqual([])
+  })
+
+  it('still lets a new login be saved for a site and user name that has none', async () => {
+    const { environment, server } = await unlocked([await needingRecord(true)])
+    await withOpenedKeys(environment, async (keys) => {
+      const logins = loginsOf(await openItems(environment, keys))
+      expect(
+        await saveCapturedLogin(environment, keys, logins, {
+          pageUrl: 'https://example.com/',
+          userName: 'grace@example.test',
+          password: 'another-password',
+        }),
+      ).toBe('saved')
+    })
+    expect(server.saved).toHaveLength(1)
+  })
+
+  it('is saved over as usual when the server says it does not, or says nothing', async () => {
+    for (const needsNewKey of [false, undefined]) {
+      const { environment, server } = await unlocked([await needingRecord(needsNewKey)])
+      await withOpenedKeys(environment, async (keys) => {
+        const logins = loginsOf(await openItems(environment, keys))
+        expect(
+          await saveCapturedLogin(environment, keys, logins, {
+            pageUrl: 'https://example.com/',
+            userName: 'ada@example.test',
+            password: 'a-new-password',
+          }),
+        ).toBe('updated')
+      })
+      expect(server.saved, String(needsNewKey)).toHaveLength(1)
+    }
   })
 })
 
@@ -591,7 +788,7 @@ describe('passkeys in logins', () => {
     userHandle: encodeBase64(new Uint8Array([9])),
     userName: 'ada@example.test',
     userDisplayName: 'Ada',
-    privateKey: 'PRIVATE',
+    privateKey: encodeBase64(new Uint8Array([5, 6, 7])),
     createdAt: '2026-10-20T00:00:00Z',
   }
 
@@ -647,6 +844,49 @@ describe('passkeys in logins', () => {
       })
     })
     expect((await readFields(server.saved[0].input)).passkeys).toEqual([passkey])
+  })
+
+  it('leaves out a passkey whose credential id, user handle or private key is not canonical base64', async () => {
+    const bad = (overrides: Partial<PasskeyFields>): PasskeyFields => ({ ...passkey, ...overrides })
+    const broken = [
+      bad({ credentialId: 'not base64!' }),
+      bad({ credentialId: 'AQID', userHandle: 'AQI' }),
+      bad({ credentialId: 'BAUG', privateKey: 'AQ' }),
+      bad({ credentialId: 'BwgJ', privateKey: '' }),
+      bad({ credentialId: '' }),
+    ]
+    const { environment, local } = await unlocked([
+      await ownRecord(
+        '00000000-0000-4000-8000-000000000001',
+        login({
+          passkeys: [...broken.map((kept) => ({ ...kept, relyingPartyId: 'broken.test' })), passkey],
+        }),
+      ),
+    ])
+    await withOpenedKeys(environment, async (keys) => {
+      const logins = loginsOf(await openItems(environment, keys))
+      // Asking for the credentials of a site that is not broken never throws,
+      // and a broken passkey is neither listed nor counted.
+      expect(passkeysForRelyingParty(logins, 'broken.test', [], credentialIdOf)).toEqual([])
+      expect(passkeysForRelyingParty(logins, 'example.com', [], credentialIdOf)).toHaveLength(1)
+      expect(summaryOf(logins[0]).passkeyCount).toBe(1)
+    })
+    // The relying party of a broken passkey is not a known site either, so a
+    // locked sign-in on it is left to the browser.
+    expect(await isPasskeySiteKnown(environment, 'broken.test')).toBe(false)
+    expect(await isPasskeySiteKnown(environment, 'example.com')).toBe(true)
+    expect(JSON.stringify(local.contents)).not.toContain('broken')
+  })
+
+  it('keeps a passkey with no user handle', async () => {
+    const withoutHandle: PasskeyFields = { ...passkey, userHandle: '' }
+    const { environment } = await unlocked([
+      await ownRecord('00000000-0000-4000-8000-000000000001', login({ passkeys: [withoutHandle] })),
+    ])
+    await withOpenedKeys(environment, async (keys) => {
+      const logins = loginsOf(await openItems(environment, keys))
+      expect(passkeysForRelyingParty(logins, 'example.com', [], credentialIdOf)).toHaveLength(1)
+    })
   })
 
   it('finds passkeys for a relying party, narrowed to the credentials a site allows', async () => {

@@ -1,7 +1,7 @@
 // @vitest-environment-options {"url": "https://shop.example.test/sign-in"}
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { inPage } from './inPage'
 import { giveLayout } from './passwords/testLayout'
 
@@ -108,6 +108,49 @@ describe('the snapshot of the person’s tab', () => {
     expect(text).not.toContain('second-secret')
     expect(text).not.toContain('4000000000001234')
     expect(text.match(/\(holds a secret\)/g)).toHaveLength(3)
+  })
+})
+
+describe('the snapshot of the person’s tab and a masked text input', () => {
+  // A card field drawn as dots with -webkit-text-security is a text input
+  // with no hint in its name. jsdom draws no such style, so the computed
+  // style is what the browser would answer.
+  function maskWith(maskedIds: string[]): void {
+    const real = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((node: Element, pseudo?: string | null) => {
+      const style = real(node, pseudo)
+      const mask = maskedIds.includes(node.id) ? 'disc' : 'none'
+      return new Proxy(style, {
+        get(target, property) {
+          if (property === 'getPropertyValue') {
+            return (name: string) => (name === '-webkit-text-security' ? mask : target.getPropertyValue(name))
+          }
+          const value = Reflect.get(target, property)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+    })
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('does not show the value of a masked input, and shows an unmasked one', async () => {
+    document.body.innerHTML = `<input id="masked" type="text" name="field-one" value="4000-masked-value">
+      <input id="shown" type="text" name="field-two" value="visible-value">`
+    maskWith(['masked'])
+    const text = await tabSnapshot()
+    expect(text).not.toContain('4000-masked-value')
+    expect(text).toContain('visible-value')
+    expect(text.match(/\(filled, value not shown\)/g)).toHaveLength(1)
+  })
+
+  it('does not read a masked input into the name of a field', async () => {
+    document.body.innerHTML = '<input id="masked" type="text" value="4000-masked-value">'
+    maskWith(['masked'])
+    const text = await tabSnapshot()
+    expect(text).not.toContain('4000-masked-value')
   })
 })
 

@@ -8,9 +8,9 @@
 // screen while it is open.
 
 import { DEFAULT_PASSWORD_OPTIONS, generatePassword, MAXIMUM_PASSWORD_LENGTH } from '../../../src/passwords/generator'
-import { PopupState, SearchAnswer } from './messages'
+import { FillInTabAnswer, OtherSiteQuestion, PopupState, SearchAnswer } from './messages'
 import { ask, AskError, clear, element, errorText } from './pageDom'
-import type { LoginSummary } from './openedKeys'
+import type { LoginSummary, OwnerKeyChangeAnswer } from './openedKeys'
 
 const root = document.getElementById('app') as HTMLElement
 const parameters = new URLSearchParams(window.location.search)
@@ -131,6 +131,10 @@ function showUnlock() {
 // --- the logins ------------------------------------------------------------
 
 async function showLogins(popupState: PopupState) {
+  frameNote =
+    popupState.isFrameCrossOrigin && popupState.frameHost
+      ? `The sign-in form is in a frame from ${popupState.frameHost}. The page around it is ${popupState.topHost || 'another site'}.`
+      : ''
   if (popupState.pendingSave) root.append(pendingSaveCard(popupState.pendingSave))
   if (popupState.isFrameCrossOrigin && popupState.frameHost) {
     root.append(
@@ -170,7 +174,8 @@ async function showLogins(popupState: PopupState) {
         loginList(answer.others, popupState),
       )
     }
-    if (answer.ownerKeyChangedCount > 0) {
+    for (const change of answer.ownerKeyChanges) listArea.append(ownerKeyChangeCard(change, loadList))
+    if (answer.ownerKeyChanges.length === 0 && answer.ownerKeyChangedCount > 0) {
       listArea.append(
         element(
           'div',
@@ -188,6 +193,51 @@ async function showLogins(popupState: PopupState) {
     }
   }
   await loadList()
+}
+
+// ownerKeyChangeCard is the comparison the dashboard offers when the owner of
+// shared logins has a key other than the one this browser kept: both safety
+// codes, and a button that trusts the new key after the person compared. The
+// owner's logins stay closed until then.
+function ownerKeyChangeCard(change: OwnerKeyChangeAnswer, reload: () => Promise<void>): HTMLElement {
+  const name = change.ownerName || 'The person who shared logins with you'
+  const trust = element('button', { type: 'button', className: 'primary' }, 'Trust the new key')
+  trust.addEventListener('click', () => {
+    trust.disabled = true
+    void guarded(async () => {
+      try {
+        await ask({
+          type: 'passwords:trust-owner-key',
+          ownerUserId: change.ownerUserId,
+          newPublicKey: change.newPublicKey,
+        })
+      } catch (error) {
+        trust.disabled = false
+        throw error
+      }
+      say('The new key is trusted.', 'good')
+      await reload()
+    })
+  })
+  return element(
+    'div',
+    { className: 'card', role: 'alert' },
+    element('strong', {}, `${name}'s key changed`),
+    element(
+      'p',
+      { className: 'muted' },
+      `${name} shared logins with you, and their key is not the one this browser saw before. It changes when they set Passwords up again, but it could also be somebody else. Ask ${name} to open Passwords settings on their own device and read you their safety code. Trust the new key only if it matches. Their logins stay closed until you do.`,
+    ),
+    element('div', {}, element('span', { className: 'muted' }, 'Safety code before '), codeText(change.oldSafetyCode)),
+    element('div', {}, element('span', { className: 'muted' }, 'Safety code now '), codeText(change.newSafetyCode)),
+    element('div', { className: 'actions' }, trust),
+  )
+}
+
+function codeText(safetyCode: string): HTMLElement {
+  return safetyCode === ''
+    ? element('span', { className: 'muted' }, 'could not be read')
+    : element('span', { className: 'code' }, safetyCode)
 }
 
 function pendingSaveCard(pending: { host: string; userName: string }): HTMLElement {
@@ -244,6 +294,8 @@ function loginRow(login: LoginSummary, popupState: PopupState): HTMLElement {
     { className: 'row' },
     element('div', { className: 'name' }, login.name || login.siteAddress),
     login.userName ? element('div', { className: 'detail' }, login.userName) : null,
+    // A login somebody else owns says whose it is.
+    login.sharedByText ? element('div', { className: 'detail' }, login.sharedByText) : null,
   )
   const actions = element('div', { className: 'actions' })
   const codeArea = element('div', {})
@@ -264,19 +316,29 @@ function loginRow(login: LoginSummary, popupState: PopupState): HTMLElement {
 
 // fillInTab fills the page the window was opened for. A form that sends what
 // is typed to another host than the page's own is filled only after the
-// person is told so and presses the button that says to go on.
-async function fillInTab(login: LoginSummary, fillPart: 'login' | 'oneTimeCode', isForeignActionConfirmed: boolean) {
-  const answer = await ask<{ filledCount: number; foreignActionHost: string }>({
+// person is told so and presses the button that says to go on. A login that
+// is not saved for the page is filled only after the person is asked and says
+// yes, for that very page (confirmedOtherSiteOrigin).
+async function fillInTab(
+  login: LoginSummary,
+  fillPart: 'login' | 'oneTimeCode',
+  isForeignActionConfirmed: boolean,
+  confirmedOtherSiteOrigin?: string,
+) {
+  const answer = await ask<FillInTabAnswer>({
     type: 'passwords:fill-in-tab',
     itemId: login.id,
     fillPart,
     isForeignActionConfirmed,
+    confirmedOtherSiteOrigin,
     tabId,
     frameId: frameId ?? 0,
   })
+  forgetOtherSiteQuestion()
+  if (answer.otherSite) return askAboutOtherSite(login, fillPart, answer.otherSite)
   if (answer.foreignActionHost) {
     const goOn = element('button', { type: 'button', className: 'primary' }, 'Fill anyway')
-    goOn.addEventListener('click', () => void guarded(() => fillInTab(login, fillPart, true)))
+    goOn.addEventListener('click', () => void guarded(() => fillInTab(login, fillPart, true, confirmedOtherSiteOrigin)))
     statusLine.className = 'status bad'
     statusLine.textContent = `This form sends what you type to ${answer.foreignActionHost}, not to the page's own host. Nothing was filled.`
     statusLine.append(' ', goOn)
@@ -292,6 +354,46 @@ async function fillInTab(login: LoginSummary, fillPart: 'login' | 'oneTimeCode',
   }
   say('Filled.', 'good')
   setTimeout(() => window.close(), 500)
+}
+
+let otherSiteCard: HTMLElement | null = null
+// frameNote says where the form is when it is in a frame from another site
+// than the page around it, for the questions that name where a login goes.
+let frameNote = ''
+
+function forgetOtherSiteQuestion() {
+  otherSiteCard?.remove()
+  otherSiteCard = null
+}
+
+// askAboutOtherSite asks what the iPhone asks before it fills a login into a
+// page the login is not saved for: "Fill <name> into <site>? It is saved for
+// <its sites>." Nothing is filled until the person presses Fill.
+function askAboutOtherSite(login: LoginSummary, fillPart: 'login' | 'oneTimeCode', question: OtherSiteQuestion) {
+  say('')
+  const fill = element('button', { type: 'button', className: 'primary' }, 'Fill')
+  fill.addEventListener('click', () => {
+    fill.disabled = true
+    void guarded(() => fillInTab(login, fillPart, false, question.origin))
+  })
+  const cancel = element('button', { type: 'button' }, 'Cancel')
+  cancel.addEventListener('click', forgetOtherSiteQuestion)
+  const details = [
+    question.savedSites.length > 0
+      ? `It is saved for ${question.savedSites.join(', ')}.`
+      : 'It is not saved for any site.',
+  ]
+  if (!question.isPageEncrypted) details.push('This page is not encrypted.')
+  if (frameNote !== '') details.push(frameNote)
+  const card = element(
+    'div',
+    { className: 'card', role: 'alert' },
+    element('strong', {}, `Fill ${question.loginName} into ${question.requestedSite}?`),
+    element('div', { className: 'muted' }, details.join(' ')),
+    element('div', { className: 'actions' }, fill, cancel),
+  )
+  otherSiteCard = card
+  statusLine.before(card)
 }
 
 async function copy(itemId: string, copiedField: 'password' | 'userName' | 'oneTimeCode') {

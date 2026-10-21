@@ -4,8 +4,6 @@
 // page that hides a user name or password field and waits for a manager to
 // fill it is the oldest trick against managers.
 
-import { normalizeHost } from './hosts'
-
 export type FieldRole = 'userName' | 'currentPassword' | 'newPassword' | 'oneTimeCode'
 
 const TEXT_LIKE_TYPES = new Set(['', 'text', 'email', 'tel', 'number', 'url'])
@@ -252,18 +250,21 @@ export function formActionAttributes(document: Document, form: HTMLFormElement):
   return attributes
 }
 
-// foreignFormActionHost is the host the form around a field sends to when that
-// is not the host of the page the form is on, else an empty text. A form on a
-// secure page that sends to a plain-text address counts too, whatever the host
-// (it is named with "not encrypted" after it). The addresses are those
-// formActionAttributes reads.
+// foreignFormActionHost is the host (with its port, when it names one) the
+// form around a field sends to when that is not the origin of the page the
+// form is on, else an empty text. An origin is the scheme, host and port taken
+// exactly as the browser reads them, with nothing dropped: another port, a
+// "www." in front, or the other scheme is another place. A form on a secure
+// page that sends to a plain-text address counts too, and is named with "not
+// encrypted" after it. The addresses are those formActionAttributes reads.
+// fillInPage in agentFill.ts makes the same decision and has to stay the same
+// (formActionParity.test.ts runs one list of cases against both).
 export function foreignFormActionHost(input: HTMLInputElement): string {
   const form = input.form
   if (!form) return ''
   const document = input.ownerDocument
-  const pageUrl = document.location?.href ?? ''
-  const pageHost = normalizeHost(pageUrl)
-  const isPageSecure = /^https:/i.test(pageUrl)
+  const pageOrigin = document.location?.origin ?? ''
+  const isPageSecure = document.location?.protocol === 'https:'
   for (const attribute of formActionAttributes(document, form)) {
     if (attribute === null || attribute.trim() === '') continue
     let resolved: URL
@@ -272,10 +273,11 @@ export function foreignFormActionHost(input: HTMLInputElement): string {
     } catch {
       continue
     }
-    const host = normalizeHost(resolved.href)
-    if (host === '') continue
-    if (host !== pageHost) return host
-    if (isPageSecure && resolved.protocol === 'http:') return `${host} (not encrypted)`
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') continue
+    if (resolved.host === '') continue
+    if (resolved.origin === pageOrigin) continue
+    const host = resolved.host
+    return isPageSecure && resolved.protocol === 'http:' ? `${host} (not encrypted)` : host
   }
   return ''
 }

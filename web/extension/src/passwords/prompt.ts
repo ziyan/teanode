@@ -122,10 +122,25 @@ function showChoice(info: PromptInfo) {
       radio.addEventListener('change', () => {
         chosenCredentialId = choice.credentialId
       })
-      choices.append(element('label', { className: 'row choice-row' }, radio, element('span', {}, choice.label)))
+      choices.append(
+        element(
+          'label',
+          { className: 'row choice-row' },
+          radio,
+          element('span', {}, choice.label),
+          choice.sharedByText ? element('span', { className: 'muted' }, choice.sharedByText) : null,
+        ),
+      )
     })
   } else if (info.ceremonyKind === 'get' && info.choices.length === 1) {
-    choices.append(element('div', { className: 'row' }, element('div', { className: 'name' }, info.choices[0].label)))
+    choices.append(
+      element(
+        'div',
+        { className: 'row' },
+        element('div', { className: 'name' }, info.choices[0].label),
+        info.choices[0].sharedByText ? element('div', { className: 'detail' }, info.choices[0].sharedByText) : null,
+      ),
+    )
   }
   const allow = element(
     'button',

@@ -123,6 +123,24 @@ describe('the suggestion page', () => {
     expect(kinds()).toContain('size')
   })
 
+  it('says who owns a login that somebody shared, and nothing under one the person owns', async () => {
+    await load()
+    await connect()
+    await render({
+      answer: {
+        suggestionState: 'logins',
+        host: 'example.test',
+        logins: [logins[0], { ...logins[1], isOwnedByMe: false, ownerName: 'Grace', sharedByText: 'Shared by Grace' }],
+      },
+      host: 'example.test',
+      ...sameSite,
+    })
+    const choices = Array.from(document.querySelectorAll('button.choice'))
+    expect(choices[0].textContent).not.toContain('Shared by')
+    expect(choices[1].textContent).toContain('Shared by Grace')
+    expect(choices[1].textContent).toContain('grace')
+  })
+
   it('takes the first channel that arrives from the window around it, and no other', async () => {
     await load()
     // Not from the window around the frame, and with no port: neither is taken.

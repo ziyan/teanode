@@ -69,6 +69,8 @@ function render(data: RenderData) {
               : 'One-time code'
             : login.userName,
         ),
+        // A login somebody else owns says whose it is.
+        login.sharedByText ? element('span', { className: 'detail' }, login.sharedByText) : null,
       )
       onTrustedActivate(choice, page.isClickAllowed, () => {
         if (doesNeedConfirmation(data)) askBeforeFilling(list, data, login.id, login.userName || login.name)

@@ -11,11 +11,13 @@ import { PasswordsError, PasswordsErrorCode } from '../../../src/passwords/passw
 import { LoginItem } from '../../../src/pages/passwords/passwordsProtocol'
 import { CapturedLogins } from './capturedLogins'
 import { CLEAR_CLIPBOARD_ALARM, clearClipboardIfUnchanged, copySecret } from './clipboard'
-import { isWebPage, normalizeHost, originOf } from './hosts'
+import { isSecureContextPage, isWebPage, normalizeHost, originOf } from './hosts'
 import {
   BarOffer,
   ContentRequest,
   FillFieldsMessage,
+  FillInTabAnswer,
+  OtherSiteQuestion,
   PopupRequest,
   PopupState,
   PromptInfo,
@@ -28,6 +30,7 @@ import { NOT_ALLOWED_REPLY, PasskeyPrompts, PendingPrompt, PROMPT_LIFETIME_MILLI
 import { callServer, isSignedIn, readServerOrigin, ServerCallError } from './serverCall'
 import {
   currentOneTimeCode,
+  describeOwnerKeyChanges,
   forgetPasskeySites,
   isPasskeySiteKnown,
   loginsForPage,
@@ -42,9 +45,11 @@ import {
   releaseItems,
   saveCapturedLogin,
   savePasskey,
+  sharedByTextOf,
   sortLogins,
   StoredPasskey,
   summaryOf,
+  trustOwnerKey,
   unlockPasswords,
   PasswordsEnvironment,
   whatToDoWithCapturedLogin,
@@ -716,6 +721,7 @@ async function promptInfo(promptId: string): Promise<PromptInfo | { error: strin
           return passkeyChoices(items, request.relyingPartyId, request.allowedCredentialIds).map((choice) => ({
             label: choiceLabel(choice),
             credentialId: credentialIdOf(choice.passkey),
+            sharedByText: sharedByTextOf(choice.login),
           }))
         } finally {
           releaseItems(items)
@@ -920,7 +926,7 @@ async function popupState(tabId: number | undefined, frameId: number | undefined
 async function search(query: string, tabId: number | undefined, frameId: number | undefined): Promise<SearchAnswer> {
   const target = await frameTargetState(tabId, frameId)
   return withOpenedKeys(environment, async (keys) => {
-    const report: OpenReport = { ownerKeyChangedCount: 0 }
+    const report: OpenReport = { ownerKeyChangedCount: 0, ownerKeyChanges: [] }
     const items = await openItems(environment, keys, report)
     try {
       const logins = loginsOf(items)
@@ -937,6 +943,7 @@ async function search(query: string, tabId: number | undefined, frameId: number 
         forThisSite: forThisSite.map(summaryOf),
         others: others.slice(0, 100).map(summaryOf),
         ownerKeyChangedCount: report.ownerKeyChangedCount,
+        ownerKeyChanges: await describeOwnerKeyChanges(report.ownerKeyChanges),
       }
     } finally {
       releaseItems(items)
@@ -957,25 +964,43 @@ async function readLogin<Result>(itemId: string, read: (login: LoginItem) => Pro
   })
 }
 
-async function fillInTab(message: Extract<PopupRequest, { type: 'passwords:fill-in-tab' }>) {
+async function fillInTab(message: Extract<PopupRequest, { type: 'passwords:fill-in-tab' }>): Promise<FillInTabAnswer> {
   const url = await describeFrame(message.tabId, message.frameId)
   if (!url) throw new Error('There is no page to fill here.')
   if (await isOwnPasswordsPage(url)) throw new Error(OWN_PAGE_REFUSAL.error)
+  const pageOrigin = originOf(url)
   const fill = await readLogin(message.itemId, async (login) => {
-    if (!loginsForPage([login], url).length) throw new Error('This login is not saved for this site.')
+    // A login that is not saved for the page is filled into it only after the
+    // person is asked (the question names the page and the login's sites) and
+    // says yes for this very origin. A page that moved since the question was
+    // asked has another origin and is asked about again.
+    if (!loginsForPage([login], url).length && message.confirmedOtherSiteOrigin !== pageOrigin) {
+      const question: OtherSiteQuestion = {
+        loginName: login.fields.name || login.fields.userName,
+        requestedSite: normalizeHost(url),
+        origin: pageOrigin,
+        savedSites: login.fields.sites.map((site) => normalizeHost(site)).filter((host) => host !== ''),
+        isPageEncrypted: isSecureContextPage(url),
+      }
+      return { question }
+    }
     const currentCode = message.fillPart === 'oneTimeCode' ? await currentOneTimeCode(login, Date.now()) : null
     if (message.fillPart === 'oneTimeCode' && !currentCode) throw new Error('This login has no one-time code.')
     return {
+      question: null,
       userName: message.fillPart === 'login' ? login.fields.userName : '',
       password: message.fillPart === 'login' ? login.fields.password : '',
       oneTimeCode: currentCode ? currentCode.oneTimeCode : '',
     }
   })
+  if (fill.question) return { filledCount: 0, foreignActionHost: '', otherSite: fill.question }
   const fields: FillFieldsMessage = {
     type: 'passwords:fill-fields',
-    origin: originOf(url),
+    origin: pageOrigin,
     isForeignActionConfirmed: message.isForeignActionConfirmed === true,
-    ...fill,
+    userName: fill.userName ?? '',
+    password: fill.password ?? '',
+    oneTimeCode: fill.oneTimeCode ?? '',
   }
   const answer = await chrome.tabs.sendMessage(message.tabId, fields, { frameId: message.frameId })
   return {
@@ -1026,6 +1051,14 @@ async function handlePageRequest(message: PopupRequest): Promise<unknown> {
       return fillInTab(message)
     case 'passwords:save-pending':
       return saveCaptured(message.tabId)
+    case 'passwords:trust-owner-key':
+      // The person compared the safety codes in the window and pressed the
+      // button. Every list built from the old key is dropped with it.
+      await withOpenedKeys(environment, (keys) =>
+        trustOwnerKey(environment, keys, message.ownerUserId, message.newPublicKey),
+      )
+      suggestionCache.clear()
+      return { isDone: true }
     case 'passwords:open-dashboard': {
       const origin = await readServerOrigin()
       if (origin) await chrome.tabs.create({ url: `${origin}/passwords` })
@@ -1058,8 +1091,15 @@ const CONTENT_TYPES = new Set([
   'passwords:passkey-cancel',
 ])
 
+// Messages with the passwords: prefix that another part of the service worker
+// (background.js) answers. This listener leaves them alone: the first answer
+// to a message is the one the sender gets, so answering "Unknown request." here
+// would hide the real one.
+const ANSWERED_ELSEWHERE = new Set(['passwords:clear-scripted-origins'])
+
 chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (answer: unknown) => void) => {
   if (!message || typeof message.type !== 'string' || !message.type.startsWith('passwords:')) return false
+  if (ANSWERED_ELSEWHERE.has(message.type)) return false
   let work: Promise<unknown>
   if (CONTENT_TYPES.has(message.type)) {
     const frame = contentFrameOf(sender)

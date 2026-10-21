@@ -18,6 +18,16 @@ describe('normalizeHost', () => {
     expect(normalizeHost('https://example.com.')).toBe('example.com')
   })
 
+  it('drops every dot at the end of the host, in a short time however many there are', () => {
+    expect(normalizeHost('https://example.com...')).toBe('example.com')
+    expect(normalizeHost('https://example.com.:8443/')).toBe('example.com')
+    expect(normalizeHost('https://...')).toBe('')
+    const started = performance.now()
+    expect(normalizeHost(`https://example.com${'.'.repeat(100_000)}`)).toBe('example.com')
+    expect(normalizeHost(`https://${'.'.repeat(100_000)}x`)).not.toBe('example.com')
+    expect(performance.now() - started).toBeLessThan(2000)
+  })
+
   it('keeps www. when nothing is left of the name without it', () => {
     expect(normalizeHost('https://www.test')).toBe('www.test')
   })

@@ -1,6 +1,13 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { encodeBase64Url } from '../../../src/passwords/crypto'
-import { PendingSetUp } from '../../../src/pages/passwords/passwordsProtocol'
+import {
+  encodeBase64,
+  encodeBase64Url,
+  generatePersonKeyPair,
+  PersonKeyPair,
+  safetyCode,
+} from '../../../src/passwords/crypto'
+import { PasswordItemRecord } from '../../../src/pages/passwords/passwordsApi'
+import { PendingSetUp, sealItemKeyFor } from '../../../src/pages/passwords/passwordsProtocol'
 import { createFakeServer, FakeServer, makeFixture, makeLogin, memoryArea, ownRecord, PASSPHRASE } from './testServer'
 
 const EXTENSION = 'chrome-extension://ext'
@@ -193,6 +200,19 @@ describe('who may send what', () => {
         expect(await send(message, sandboxed), `${message.type} ${origin}`).toEqual({ error: 'Not a page.' })
       }
     }
+  })
+
+  it('leaves a message that background.js answers to background.js', async () => {
+    const { listeners } = await start()
+    const answered = vi.fn()
+    expect(
+      listeners['runtime.onMessage'](
+        { type: 'passwords:clear-scripted-origins' },
+        ownPageSender('options.html'),
+        answered,
+      ),
+    ).toBe(false)
+    expect(answered).not.toHaveBeenCalled()
   })
 
   it('ignores a message that is not about Passwords', async () => {
@@ -1299,6 +1319,79 @@ describe('what the service worker remembers of a list', () => {
   })
 })
 
+describe('the changed key of the owner of shared logins', () => {
+  const SHARED_ID = '00000000-0000-4000-8000-0000000000aa'
+
+  async function sharedRecord(ownerPair: PersonKeyPair): Promise<PasswordItemRecord> {
+    const itemKey = crypto.getRandomValues(new Uint8Array(32))
+    const { sealItemFields, serializeSealed } = await import('../../../src/passwords/crypto')
+    return {
+      ...(await ownRecord(fixture, SHARED_ID, makeLogin({}))),
+      ownerUserId: 'owner-b',
+      ownerName: 'Bo',
+      ownerPublicKey: encodeBase64(ownerPair.publicKey),
+      isSharedWithMe: true,
+      encryptedFields: serializeSealed(
+        await sealItemFields(itemKey, makeLogin({ name: 'Shared', sites: ['example.com'] }), SHARED_ID, 'login'),
+      ),
+      itemKey: await sealItemKeyFor(itemKey, ownerPair, fixture.input.publicKey, SHARED_ID, 'owner-b', 'person-a'),
+    }
+  }
+
+  it('is offered with both safety codes, and trusting the new key opens the logins again', async () => {
+    const oldPair = await generatePersonKeyPair()
+    const newPair = await generatePersonKeyPair()
+    const context = await start({ records: [await sharedRecord(oldPair)] })
+    await context.unlock()
+    expect((await context.send({ type: 'passwords:search', query: '' }, ownPageSender())).others).toHaveLength(1)
+
+    context.server.records = [await sharedRecord(newPair)]
+    const closed = await context.send({ type: 'passwords:search', query: '' }, ownPageSender())
+    expect(closed.others).toEqual([])
+    expect(closed.ownerKeyChangedCount).toBe(1)
+    expect(closed.ownerKeyChanges).toEqual([
+      {
+        ownerUserId: 'owner-b',
+        ownerName: 'Bo',
+        oldSafetyCode: await safetyCode('owner-b', oldPair.publicKey),
+        newSafetyCode: await safetyCode('owner-b', newPair.publicKey),
+        newPublicKey: encodeBase64(newPair.publicKey),
+      },
+    ])
+
+    // A page cannot trust a key; only the extension's own window can.
+    const message = {
+      type: 'passwords:trust-owner-key',
+      ownerUserId: 'owner-b',
+      newPublicKey: encodeBase64(newPair.publicKey),
+    }
+    expect(await context.send(message, pageSender('https://example.com/'))).toEqual({ error: 'Not allowed from here.' })
+    expect(await context.send(message, ownPageSender())).toEqual({ isDone: true })
+    const opened = await context.send({ type: 'passwords:search', query: '' }, ownPageSender())
+    expect(opened.others.map((login: { name: string }) => login.name)).toEqual(['Shared'])
+    expect(opened.ownerKeyChanges).toEqual([])
+  })
+
+  it('does not trust a key other than the one the server shows', async () => {
+    const oldPair = await generatePersonKeyPair()
+    const newPair = await generatePersonKeyPair()
+    const context = await start({ records: [await sharedRecord(oldPair)] })
+    await context.unlock()
+    await context.send({ type: 'passwords:search', query: '' }, ownPageSender())
+    context.server.records = [await sharedRecord(newPair)]
+    const answer = await context.send(
+      {
+        type: 'passwords:trust-owner-key',
+        ownerUserId: 'owner-b',
+        newPublicKey: encodeBase64((await generatePersonKeyPair()).publicKey),
+      },
+      ownPageSender(),
+    )
+    expect(answer.error).toMatch(/changed again/)
+    expect((await context.send({ type: 'passwords:search', query: '' }, ownPageSender())).others).toEqual([])
+  })
+})
+
 describe('filling from the window', () => {
   it('tells the page the origin the login was approved for, and passes on a form that sends elsewhere', async () => {
     const context = await start({ records: await exampleRecords() })
@@ -1336,6 +1429,105 @@ describe('filling from the window', () => {
       expect.objectContaining({ isForeignActionConfirmed: true }),
       { frameId: 0 },
     )
+  })
+
+  describe('a login that is not saved for the page', () => {
+    const OTHER_ID = '00000000-0000-4000-8000-000000000002'
+    const fillOther = (extra: Record<string, unknown> = {}) => ({
+      type: 'passwords:fill-in-tab',
+      itemId: OTHER_ID,
+      fillPart: 'login',
+      tabId: 5,
+      frameId: 0,
+      ...extra,
+    })
+
+    it('asks first, naming the login, the page and the sites it is saved for, and types nothing', async () => {
+      const context = await start({ records: await exampleRecords() })
+      await context.unlock()
+      const answer = await context.send(fillOther(), ownPageSender())
+      expect(answer).toEqual({
+        filledCount: 0,
+        foreignActionHost: '',
+        otherSite: {
+          loginName: 'Other',
+          requestedSite: 'example.com',
+          origin: 'https://example.com',
+          savedSites: ['other.test'],
+          isPageEncrypted: true,
+        },
+      })
+      expect(context.tabs.sendMessage).not.toHaveBeenCalled()
+      // Nothing of the login is in the question.
+      expect(JSON.stringify(answer)).not.toContain('other-plaintext')
+    })
+
+    it('fills after a yes for that very origin, and still lets the page ask about a form that sends elsewhere', async () => {
+      const context = await start({ records: await exampleRecords() })
+      await context.unlock()
+      context.tabs.sendMessage.mockResolvedValueOnce({
+        filledCount: 0,
+        foreignActionHost: 'collect.example.test',
+      } as any)
+      const answer = await context.send(fillOther({ confirmedOtherSiteOrigin: 'https://example.com' }), ownPageSender())
+      expect(answer).toEqual({ filledCount: 0, foreignActionHost: 'collect.example.test' })
+      expect(context.tabs.sendMessage).toHaveBeenCalledWith(
+        5,
+        expect.objectContaining({
+          origin: 'https://example.com',
+          isForeignActionConfirmed: false,
+          password: 'other-plaintext',
+        }),
+        { frameId: 0 },
+      )
+    })
+
+    it('asks again when the page moved since the yes, and for a page on the plain-text twin', async () => {
+      const context = await start({ records: await exampleRecords() })
+      await context.unlock()
+      const moved = await context.send(
+        fillOther({ confirmedOtherSiteOrigin: 'https://elsewhere.test' }),
+        ownPageSender(),
+      )
+      expect(moved.otherSite.origin).toBe('https://example.com')
+      expect(context.tabs.sendMessage).not.toHaveBeenCalled()
+      context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: 'http://example.com/' }])
+      const plain = await context.send(fillOther({ confirmedOtherSiteOrigin: 'https://example.com' }), ownPageSender())
+      expect(plain.otherSite).toMatchObject({ origin: 'http://example.com', isPageEncrypted: false })
+      expect(context.tabs.sendMessage).not.toHaveBeenCalled()
+    })
+
+    it('asks for a one-time code as well, and refuses while locked', async () => {
+      const context = await start({ records: await exampleRecords() })
+      expect(await context.send(fillOther(), ownPageSender())).toMatchObject({
+        error: expect.stringContaining('locked'),
+      })
+      await context.unlock()
+      const answer = await context.send(fillOther({ fillPart: 'oneTimeCode' }), ownPageSender())
+      expect(answer.otherSite.loginName).toBe('Other')
+      context.tabs.sendMessage.mockResolvedValueOnce({ filledCount: 1 } as any)
+      await context.send(
+        fillOther({ fillPart: 'oneTimeCode', confirmedOtherSiteOrigin: 'https://example.com' }),
+        ownPageSender(),
+      )
+      expect(context.tabs.sendMessage).toHaveBeenCalledWith(
+        5,
+        expect.objectContaining({ oneTimeCode: expect.stringMatching(/^\d{6}$/), password: '' }),
+        { frameId: 0 },
+      )
+    })
+
+    it('still refuses a sandboxed document and the dashboard page, asked or not', async () => {
+      const context = await start({ records: await exampleRecords() })
+      await context.unlock()
+      context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: '' }])
+      expect(
+        await context.send(fillOther({ confirmedOtherSiteOrigin: 'https://example.com' }), ownPageSender()),
+      ).toEqual({
+        error: 'There is no page to fill here.',
+      })
+      expect(context.tabs.sendMessage).not.toHaveBeenCalled()
+    })
   })
 
   it('does not fill a login saved for another port or for the plain-text twin of the page', async () => {

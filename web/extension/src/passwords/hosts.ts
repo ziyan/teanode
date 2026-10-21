@@ -41,6 +41,15 @@ const SCHEME_WITH_SLASHES_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i
 // "mailto:"), which is not a host and a port ("localhost:8080").
 const SCHEME_WITHOUT_SLASHES_PATTERN = /^[a-z][a-z0-9+.-]*:(?!\d+(?:[/?#]|$))/i
 
+// withoutTrailingDots drops the dots at the end of a host. A loop from the
+// end, because a pattern such as /\.+$/ tries every start in a long run of
+// dots and takes time that grows with the square of the run in some engines.
+function withoutTrailingDots(host: string): string {
+  let end = host.length
+  while (end > 0 && host.charCodeAt(end - 1) === 0x2e) end--
+  return host.slice(0, end)
+}
+
 function parseSite(site: string): ParsedSite | null {
   const text = site.trim()
   if (text === '' || hasBackslashOrControl(text)) return null
@@ -57,7 +66,7 @@ function parseSite(site: string): ParsedSite | null {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
   const scheme = url.protocol === 'https:' ? 'https' : 'http'
-  const host = url.hostname.toLowerCase().replace(/\.+$/, '')
+  const host = withoutTrailingDots(url.hostname.toLowerCase())
   if (host === '') return null
   const port = url.port === '' ? (scheme === 'https' ? 443 : 80) : Number(url.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null

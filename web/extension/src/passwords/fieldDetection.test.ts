@@ -214,10 +214,10 @@ describe('isFieldVisible', () => {
 })
 
 describe('foreignFormActionHost', () => {
-  it("is empty for a form that sends to the page's own host, a relative address, none, or a field with no form", () => {
+  it("is empty for a form that sends to the page's own origin, a relative address, none, or a field with no form", () => {
     page(`
       <form id="relative" action="/session"><input id="a"></form>
-      <form id="same" action="https://www.example.test/session"><input id="b"></form>
+      <form id="same" action="https://example.test/session"><input id="b"></form>
       <form id="none"><input id="c"></form>
       <form id="script" action="javascript:void(0)"><input id="d"></form>
       <input id="loose">
@@ -232,8 +232,22 @@ describe('foreignFormActionHost', () => {
       <form action="/ok"><input id="c"><button type="submit" formaction="https://collect.example.test/other">Go</button></form>
     `)
     expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')
-    expect(foreignFormActionHost(field('#b'))).toBe('collect.example.test')
+    expect(foreignFormActionHost(field('#b'))).toBe('collect.example.test:8443')
     expect(foreignFormActionHost(field('#c'))).toBe('collect.example.test')
+  })
+
+  it("counts another port, a www. in front and a sibling subdomain of the page's host as another place", () => {
+    page(`
+      <form action="https://example.test:8443/session"><input id="a"></form>
+      <form action="https://www.example.test/session"><input id="b"></form>
+      <form action="https://other.example.test/session"><input id="c"></form>
+      <form action="https://example.test:443/session"><input id="d"></form>
+    `)
+    expect(foreignFormActionHost(field('#a'))).toBe('example.test:8443')
+    expect(foreignFormActionHost(field('#b'))).toBe('www.example.test')
+    expect(foreignFormActionHost(field('#c'))).toBe('other.example.test')
+    // The default port written out is the same origin.
+    expect(foreignFormActionHost(field('#d'))).toBe('')
   })
 
   it('finds the address of a button outside the form that names it with its form attribute', () => {

@@ -103,7 +103,7 @@ function fillInPage(origin: string, fields: FieldToFill[]): { isFilled: boolean;
     }
     return true
   }
-  // A form that sends what is typed to another host than the page's own is
+  // A form that sends what is typed to another origin than the page's own is
   // not filled for the agent: nobody can be asked here. The addresses are
   // those formActionAttributes in fieldDetection.ts reads, written out again
   // because nothing of that file is in scope here.
@@ -125,8 +125,10 @@ function fillInPage(origin: string, fields: FieldToFill[]): { isFilled: boolean;
       try {
         const target = new URL(attribute, document.baseURI)
         if (target.protocol !== 'http:' && target.protocol !== 'https:') return false
-        // Another host, or a secure page sending to a plain-text address.
-        return target.host !== location.host || (location.protocol === 'https:' && target.protocol === 'http:')
+        // Another origin: scheme, host and port taken exactly as the browser
+        // reads them, with nothing dropped. foreignFormActionHost in
+        // fieldDetection.ts decides the same way.
+        return target.origin !== location.origin
       } catch {
         return false
       }

@@ -19,6 +19,7 @@ import {
   parseRecoveryKey,
   parseSealedValue,
   PersonKeyPair,
+  safetyCode,
 } from '../../../src/passwords/crypto'
 import { emptyLoginFields, LoginFields, PasskeyFields } from '../../../src/passwords/fields'
 import { oneTimeCode, oneTimeCodeSecondsLeft, parseOneTimeCodeUri } from '../../../src/passwords/oneTimeCode'
@@ -289,6 +290,40 @@ async function pinOwnerKey(environment: PasswordsEnvironment, userId: string, ow
   await environment.local.set({ [PINS_PREFIX + userId]: { ...pins, [ownerUserId]: publicKey } })
 }
 
+// trustOwnerKey makes the key the server now shows for an owner the one this
+// device checks their shared items against, after the person compared the
+// safety codes. It records the key only if the server still shows this very
+// key and an item of that owner opens with it (the same rule as the first key
+// seen), so a key swapped in again since the codes were shown is not trusted
+// on the strength of the earlier look.
+export async function trustOwnerKey(
+  environment: PasswordsEnvironment,
+  keys: OpenedKeys,
+  ownerUserId: string,
+  newPublicKey: string,
+): Promise<void> {
+  const list = (await environment.call(LIST_PASSWORD_ITEMS, { sinceRevision: null }))
+    .ListPasswordItems as PasswordItemList
+  const records = list.items.filter(
+    (record) => record.isSharedWithMe && record.ownerUserId === ownerUserId && record.ownerPublicKey === newPublicKey,
+  )
+  if (records.length === 0) {
+    throw new Error('Their key changed again. Close this window, open it again and compare the new safety code.')
+  }
+  for (const record of records) {
+    // Opened with no key kept for the owner, so that it opens with the one
+    // the server sent; the result decides whether that key is theirs.
+    const item = await openPasswordItem(record, keys.accountKey, keys.keyPair, keys.userId, null)
+    const isOpened = item !== null && !item.isUnreadable
+    item?.itemKey?.fill(0)
+    if (isOpened) {
+      await pinOwnerKey(environment, keys.userId, ownerUserId, newPublicKey)
+      return
+    }
+  }
+  throw new Error('None of their shared logins opened with that key, so it was not trusted.')
+}
+
 // ---------------------------------------------------------------------------
 // Reading
 
@@ -312,9 +347,22 @@ export async function openItems(
     const item = await openPasswordItem(record, keys.accountKey, keys.keyPair, keys.userId, pinned)
     if (item !== null && item.deletedAt === null && item.ownerKeyChange !== null && report) {
       report.ownerKeyChangedCount += 1
+      const isListed = report.ownerKeyChanges.some(
+        (change) =>
+          change.ownerUserId === item.ownerUserId && change.newPublicKey === item.ownerKeyChange?.newPublicKey,
+      )
+      if (!isListed) {
+        report.ownerKeyChanges.push({
+          ownerUserId: item.ownerUserId,
+          ownerName: item.ownerName,
+          oldPublicKey: item.ownerKeyChange.oldPublicKey,
+          newPublicKey: item.ownerKeyChange.newPublicKey,
+        })
+      }
     }
     if (item === null || item.deletedAt !== null || item.isUnreadable) continue
     opened.push(item)
+    if ((record as { needsNewKey?: unknown }).needsNewKey === true) itemsNeedingNewKey.add(item)
     if (record.isSharedWithMe && pinned === null && pins[record.ownerUserId] === undefined) {
       pins[record.ownerUserId] = record.ownerPublicKey
       await pinOwnerKey(environment, keys.userId, record.ownerUserId, record.ownerPublicKey)
@@ -324,11 +372,68 @@ export async function openItems(
   return opened
 }
 
+// The server marks an item whose access narrowed (a person or the agent lost
+// it, a member left a circle) as needing a new key, until a device that has
+// the keys of everyone it is still shared with makes one (needsNewKey on the
+// item the server sends; an answer without it means no). Saving over such an
+// item with the old key would leave the key that was meant to be retired in
+// place, so the extension refuses and says where to go first.
+const itemsNeedingNewKey = new WeakSet<object>()
+
+export const NEEDS_NEW_KEY_WORDS =
+  'Open Passwords on the dashboard or in the iPhone app first: this item needs a new key.'
+
+export function doesItemNeedNewKey(item: PasswordItem): boolean {
+  return itemsNeedingNewKey.has(item)
+}
+
 // OpenReport collects what openItems leaves out and the person should hear
 // of: a shared login is not opened when its owner's key is not the one this
 // device kept, and is counted here instead of dropped without a word.
 export interface OpenReport {
   ownerKeyChangedCount: number
+  // ownerKeyChanges names each owner whose key changed (once per new key), so
+  // the window can show both safety codes and offer to trust the new key.
+  ownerKeyChanges: OwnerKeyChangeNotice[]
+}
+
+export interface OwnerKeyChangeNotice {
+  ownerUserId: string
+  ownerName: string
+  oldPublicKey: string
+  newPublicKey: string
+}
+
+// OwnerKeyChangeAnswer is what the window shows of an owner's changed key: the
+// safety code of the key this device kept and of the key the server shows now.
+// The codes are those of the dashboard's comparison (the owner's user id and
+// public key), and an empty text for the one before means it could not be read.
+export interface OwnerKeyChangeAnswer {
+  ownerUserId: string
+  ownerName: string
+  oldSafetyCode: string
+  newSafetyCode: string
+  newPublicKey: string
+}
+
+async function safetyCodeOrEmpty(ownerUserId: string, publicKey: string): Promise<string> {
+  try {
+    return await safetyCode(ownerUserId, decodeBase64(publicKey))
+  } catch {
+    return ''
+  }
+}
+
+export async function describeOwnerKeyChanges(changes: OwnerKeyChangeNotice[]): Promise<OwnerKeyChangeAnswer[]> {
+  return Promise.all(
+    changes.map(async (change) => ({
+      ownerUserId: change.ownerUserId,
+      ownerName: change.ownerName,
+      oldSafetyCode: await safetyCodeOrEmpty(change.ownerUserId, change.oldPublicKey),
+      newSafetyCode: await safetyCodeOrEmpty(change.ownerUserId, change.newPublicKey),
+      newPublicKey: change.newPublicKey,
+    })),
+  )
 }
 
 // releaseItems overwrites the item keys of items that are no longer needed.
@@ -354,6 +459,19 @@ export interface LoginSummary {
   hasOneTimeCode: boolean
   passkeyCount: number
   isOwnedByMe: boolean
+  // ownerName is the name of the person who owns the login. For a login the
+  // person owns it is their own name.
+  ownerName: string
+  // sharedByText is "Shared by <owner name>" for a login somebody else owns,
+  // else empty, so that a shared login never looks like the person's own.
+  sharedByText: string
+}
+
+// sharedByTextOf is the line a list draws under a login somebody else owns.
+export function sharedByTextOf(item: { isOwnedByMe: boolean; ownerName: string }): string {
+  if (item.isOwnedByMe) return ''
+  const ownerName = item.ownerName.trim()
+  return ownerName === '' ? 'Shared by another person' : `Shared by ${ownerName}`
 }
 
 // summaryOf is what a list shows of a login: never the password, the code
@@ -366,8 +484,10 @@ export function summaryOf(login: LoginItem): LoginSummary {
     siteAddress: login.fields.sites[0] ?? '',
     hasPassword: login.fields.password !== '',
     hasOneTimeCode: login.fields.oneTimeCodeUri !== '',
-    passkeyCount: login.fields.passkeys.length,
+    passkeyCount: login.fields.passkeys.filter(isPasskeyReadable).length,
     isOwnedByMe: login.isOwnedByMe,
+    ownerName: login.ownerName,
+    sharedByText: sharedByTextOf(login),
   }
 }
 
@@ -386,6 +506,32 @@ export async function currentOneTimeCode(
   const settings = parseOneTimeCodeUri(login.fields.oneTimeCodeUri)
   const seconds = Math.floor(nowMilliseconds / 1000)
   return { oneTimeCode: await oneTimeCode(settings, seconds), secondsLeft: oneTimeCodeSecondsLeft(settings, seconds) }
+}
+
+// ---------------------------------------------------------------------------
+// Passkeys that can be used
+
+// isCanonicalBase64 says the text is standard base64 with its padding, the
+// form every client writes (decodeBase64 refuses anything else).
+function isCanonicalBase64(text: string): boolean {
+  try {
+    decodeBase64(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// isPasskeyReadable says a passkey's credential id, user handle and private
+// key are the canonical base64 a signature needs. Whoever shared a login can
+// seal anything in it, so a passkey that is not readable is left out of every
+// list, choice and known site rather than failing the sign-in of a site that
+// has a good passkey beside it. The login itself is kept as it is, so that
+// saving it does not drop the passkey.
+export function isPasskeyReadable(passkey: PasskeyFields): boolean {
+  if (passkey.credentialId === '' || passkey.privateKey === '') return false
+  if (!isCanonicalBase64(passkey.credentialId) || !isCanonicalBase64(passkey.privateKey)) return false
+  return passkey.userHandle === '' || isCanonicalBase64(passkey.userHandle)
 }
 
 // ---------------------------------------------------------------------------
@@ -438,7 +584,9 @@ export async function rememberPasskeySites(
     const random = crypto.getRandomValues(new Uint8Array(16))
     salt = Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')
   }
-  const relyingPartyIds = new Set(logins.flatMap((login) => login.fields.passkeys.map((kept) => kept.relyingPartyId)))
+  const relyingPartyIds = new Set(
+    logins.flatMap((login) => login.fields.passkeys.filter(isPasskeyReadable).map((kept) => kept.relyingPartyId)),
+  )
   const hashes = (await Promise.all([...relyingPartyIds].map((id) => hashRelyingPartyId(salt, id)))).sort()
   if (before && before.userId === userId && before.salt === salt && before.hashes.join() === hashes.join()) return
   await environment.local.set({ [PASSKEY_SITES_KEY]: { userId, salt, hashes } satisfies StoredPasskeySites })
@@ -494,6 +642,7 @@ async function saveLoginFields(
   fields: LoginFields,
   existing: LoginItem | null,
 ): Promise<void> {
+  if (existing !== null && doesItemNeedNewKey(existing)) throw new Error(NEEDS_NEW_KEY_WORDS)
   const sealed = await sealPasswordItem(keys.accountKey, itemId, 'login', fields, existing?.itemKey ?? null)
   await environment.call(SAVE_PASSWORD_ITEM, {
     input: {
@@ -600,6 +749,7 @@ export function passkeysForRelyingParty(
   for (const login of logins) {
     for (const passkey of login.fields.passkeys) {
       if (passkey.relyingPartyId !== relyingPartyId) continue
+      if (!isPasskeyReadable(passkey)) continue
       if (allowedCredentialIds.length > 0 && !allowedCredentialIds.includes(credentialIdOf(passkey))) continue
       found.push({ login, passkey })
     }

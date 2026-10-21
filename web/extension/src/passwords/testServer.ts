@@ -57,6 +57,7 @@ export async function ownRecord(
     encryptedFields: sealed.encryptedFields,
     itemKey: sealed.itemKey,
     isSharedWithMe: false,
+    needsNewKey: false,
     revision,
     isUsableByAgent: false,
     lastUsedByAgentAt: null,

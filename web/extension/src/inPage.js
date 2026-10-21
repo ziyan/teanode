@@ -27,10 +27,23 @@ export async function inPage(action, args) {
   // may be typed: a password the person has already filled in is not read
   // back into the conversation, where it would be kept and sent onward.
   // Typing into one is their agent's business and goes ahead.
+  // A text input a page draws as dots with -webkit-text-security (how a card
+  // number or a code is masked without a password input) holds a secret too,
+  // whatever its type and name say. A style that cannot be read is taken to
+  // be masked.
+  const isMasked = (node) => {
+    try {
+      const style = window.getComputedStyle(node)
+      const mask = style.getPropertyValue('-webkit-text-security') || style.webkitTextSecurity || ''
+      return mask !== '' && mask !== 'none'
+    } catch {
+      return true
+    }
+  }
   const sensitive = (node) => {
     const type = (node.type || '').toLowerCase()
     const hint = ((node.autocomplete || '') + ' ' + (node.name || '') + ' ' + (node.id || '') + ' ' + (node.getAttribute('aria-label') || '')).toLowerCase()
-    return type === 'password' || /cc-|card|cvc|cvv|iban|account-?number|routing|ssn|pass/.test(hint)
+    return type === 'password' || /cc-|card|cvc|cvv|iban|account-?number|routing|ssn|pass/.test(hint) || isMasked(node)
   }
   // A field a password, or a code the page asked for as one, is typed into:
   // its value is never read into a name or a snapshot, whoever put it there.
@@ -44,7 +57,7 @@ export async function inPage(action, args) {
     } catch {
       return true
     }
-    return (node.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || '')
+    return (node.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || '') || isMasked(node)
   }
   const nameOf = (node) => {
     const label = node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
