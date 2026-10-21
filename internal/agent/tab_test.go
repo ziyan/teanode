@@ -106,6 +106,34 @@ func TestABrowserConnectsWithoutATab(t *testing.T) {
 	}
 }
 
+// The browser tool refuses to drive TeaNode's own pages by the host the
+// browser reached the server by and by the tabs it listed; both belong to
+// the connection they came on, and go with it.
+func TestTheHostAndTheTabsTheBrowserListedAreKeptForTheTool(t *testing.T) {
+	worker := &Agent{}
+	first := &fakeTab{agent: worker, agentId: "a1", answers: func(string, json.RawMessage) (bool, string) { return true, "{}" }}
+	second := &fakeTab{agent: worker, agentId: "a1", answers: func(string, json.RawMessage) (bool, string) { return true, "{}" }}
+	worker.ConnectBrowser("a1", first, "A shop", "https://shop.example.org/", true)
+	worker.SetBrowserServerHost("a1", first, "mail.example.com:8443")
+	worker.UpdateTabList("a1", []TabListing{{Tab: "7", Title: "A shop", URL: "https://shop.example.org/", IsOwn: true, IsCurrent: true}})
+	tab := tools.Tab(worker.tabFor("a1"))
+	if tab.ServerHost() != "mail.example.com:8443" {
+		t.Errorf("the host is %q", tab.ServerHost())
+	}
+	if listed := tab.ListedTabs(); len(listed) != 1 || listed[0].Tab != "7" || listed[0].URL != "https://shop.example.org/" || !listed[0].IsOwn || !listed[0].IsCurrent {
+		t.Errorf("the tabs are %+v", listed)
+	}
+	// A host said by a connection that has been replaced is nobody's.
+	worker.ConnectBrowser("a1", second, "A shop", "https://shop.example.org/", true)
+	worker.SetBrowserServerHost("a1", first, "stale.example.org")
+	if host := worker.tabFor("a1").ServerHost(); host != "" {
+		t.Errorf("a replaced connection set the host %q", host)
+	}
+	if listed := (&attachedTab{}).ListedTabs(); listed != nil {
+		t.Errorf("a tab with no agent listed %+v", listed)
+	}
+}
+
 // heldTab is the extension's side of the relay that answers only when the
 // test says: what it was sent comes out of sent.
 type heldTab struct {

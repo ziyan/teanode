@@ -48,6 +48,10 @@ type attachedTab struct {
 	// currentTab is the number the extension gave the tab the actions go to.
 	currentTab atomic.Value
 
+	// serverHost is the host the browser reached this server by, from the
+	// request that opened the socket (a string).
+	serverHost atomic.Value
+
 	// hasTab says there is a tab the actions go to: the person's own,
 	// attached, or one the agent opened. Read by the tool while the socket
 	// says otherwise.
@@ -136,6 +140,18 @@ func (self *Agent) SetBrowserCanFillPasswords(agentId string, connection TabConn
 		return
 	}
 	tab.canFillPasswords.Store(canFillPasswords)
+}
+
+// SetBrowserServerHost records the host the person's browser reached this
+// server by, taken from the request that opened its socket. The browser
+// tool refuses to drive a tab on that host, whatever name the configuration
+// gives the server.
+func (self *Agent) SetBrowserServerHost(agentId string, connection TabConnection, host string) {
+	tab := self.tabFor(agentId)
+	if tab == nil || (connection != nil && tab.connection != connection) {
+		return
+	}
+	tab.serverHost.Store(host)
 }
 
 // reconnectedTab waits up to wait for a person's browser to be connected
@@ -267,4 +283,28 @@ func (self *attachedTab) NoteCurrentTab(tab string) {
 // dashboard: the agent may read it but not act in it.
 func (self *attachedTab) IsTakenOver() bool {
 	return self.agent != nil && self.agent.IsTabTakenOver(self.agentId)
+}
+
+// ServerHost is the host the browser reached this server by, or "".
+func (self *attachedTab) ServerHost() string {
+	host, _ := self.serverHost.Load().(string)
+	return host
+}
+
+// ListedTabs are the tabs the extension last listed, with their addresses.
+func (self *attachedTab) ListedTabs() []tools.TabAddress {
+	if self.agent == nil {
+		return nil
+	}
+	room := self.agent.existingRoom(self.agentId)
+	if room == nil {
+		return nil
+	}
+	room.mutex.Lock()
+	defer room.mutex.Unlock()
+	listed := make([]tools.TabAddress, 0, len(room.tabs))
+	for _, tab := range room.tabs {
+		listed = append(listed, tools.TabAddress{Tab: tab.Tab, Title: tab.Title, URL: tab.URL, IsOwn: tab.IsOwn, IsCurrent: tab.IsCurrent})
+	}
+	return listed
 }

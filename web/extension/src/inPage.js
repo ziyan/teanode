@@ -6,7 +6,19 @@
 //
 // inPage runs inside the page. It is self-contained: nothing from this
 // file is in scope there.
-export async function inPage(action, args) {
+export async function inPage(action, args, ownHostname, ownPagesRefusal, panel, panelWords) {
+  // The check that was made on the tab's address a moment ago, made again
+  // where the script runs: a page can go to TeaNode in between.
+  if (/^(chrome|moz)-extension:$/.test(location.protocol) || (ownHostname && location.hostname.replace(/\.$/, '').toLowerCase() === ownHostname)) {
+    return { ok: false, error: ownPagesRefusal }
+  }
+  // Whether an element is under the person's TeaNode panel, which is where
+  // the agent does not act.
+  const isUnderPanel = (node) => {
+    if (!panel || !panel.isOpen) return false
+    const box = node.getBoundingClientRect()
+    return box.left <= panel.right && box.right >= panel.left && box.top <= panel.bottom && box.bottom >= panel.top
+  }
   const refs = (window.__teanodeRefs = window.__teanodeRefs || new Map())
   let next = window.__teanodeNextRef || 1
   const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label'])
@@ -128,6 +140,7 @@ export async function inPage(action, args) {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
       node.scrollIntoView({ block: 'center' })
+      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       node.click()
       await new Promise((resolve) => setTimeout(resolve, 300))
       return { ok: true, data: { clicked: nameOf(node), now: { url: location.href, title: document.title } } }
@@ -135,12 +148,14 @@ export async function inPage(action, args) {
     case 'hover': {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches' }
+      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
       return { ok: true, data: { hovered: nameOf(node) } }
     }
     case 'type': {
       const node = find()
       if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
+      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       node.focus()
       if (args.clear_first) node.value = ''
       if ('value' in node) {
@@ -158,6 +173,7 @@ export async function inPage(action, args) {
     case 'select': {
       const node = find()
       if (!node || node.tagName.toLowerCase() !== 'select') return { ok: false, error: 'not a select' }
+      if (isUnderPanel(node)) return { ok: false, error: panelWords }
       let picked = null
       for (const option of node.options) if (option.value === args.value || option.text.trim() === args.value) picked = option
       if (!picked && typeof args.index === 'number') picked = node.options[args.index]
@@ -208,6 +224,7 @@ export async function inPage(action, args) {
       try {
         const target = new URL(args.url || '', location.href)
         if (target.origin !== location.origin) return { ok: false, error: 'fetch is limited to the attached page’s own site' }
+        if (ownHostname && target.hostname.replace(/\.$/, '').toLowerCase() === ownHostname) return { ok: false, error: ownPagesRefusal }
         // Following a redirect would take the person's cookies off this
       // site: any open redirect on it would otherwise read any site they
       // are signed into.

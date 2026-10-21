@@ -68,6 +68,23 @@ type Tab interface {
 	// NoteCurrentTab records that an answer of the extension said the
 	// actions now go to this tab, without waiting for its next update.
 	NoteCurrentTab(tab string)
+	// ServerHost is the host, with its port, that the person's browser
+	// reached this server by when it connected: a name the person is signed
+	// in to, whatever the configuration calls the server.
+	ServerHost() string
+	// ListedTabs are the tabs the person's browser last listed as ones the
+	// agent may act in, each with the address it shows.
+	ListedTabs() []TabAddress
+}
+
+// TabAddress is one tab the person's browser listed: its number, as the
+// browser tool names it, and what it shows.
+type TabAddress struct {
+	Tab       string
+	Title     string
+	URL       string
+	IsOwn     bool
+	IsCurrent bool
 }
 
 // TakeOverAsker is a turn that can ask the person to take their browser tab

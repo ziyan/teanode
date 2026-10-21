@@ -34,9 +34,11 @@ The agent acts in the tab as you would, with your session, and the
 extension does not refuse things on your behalf: filling in a form,
 including a password or a card number, is what you attached it for. What
 it does hold is the edge of the tab itself — fetching only from the site
-the tab is on, reading only that site's storage, and refusing the few
-DevTools methods that reach past this tab into the whole browser, such as
-every site's cookies. One thing is kept out of the conversation rather
+the tab is on, reading only that site's storage, sending only DevTools
+methods on a list of exact names (nothing that reaches past this tab into
+the whole browser, such as every site's cookies, and nothing that puts a
+file of yours into a page), and never driving TeaNode itself or this
+extension's own pages in your browser. One thing is kept out of the conversation rather
 than out of your hands: a password already filled in on the page is
 marked in a snapshot and its value left out, because a value read into
 the conversation is a value stored and sent onward. A password or a

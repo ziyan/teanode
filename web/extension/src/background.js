@@ -43,6 +43,24 @@ import { SCRIPTED_ORIGIN_REFUSAL, lockedActionRefusal, lockedMethodRefusal } fro
 // What the agent's actions do inside the page (snapshot, click, type ...).
 import { inPage } from './inPage'
 
+import {
+  OWN_PAGES_REFUSAL,
+  PANEL_ELEMENT_REFUSAL,
+  addressRefusal,
+  cdpParametersRefusal,
+  cdpRefusal,
+  fetchRefusal,
+  handOverToken,
+  hiddenRequestIds,
+  isOwnPage,
+  isPanelFrame,
+  pageRefusal,
+  panelProbe,
+  panelRefusal,
+  serverHostname,
+  withoutServerRequests,
+} from './reach.js'
+
 const PROTOCOL = 5
 
 void restrictStorageToTrustedContexts()
@@ -512,65 +530,18 @@ const DEBUGGER_PROTOCOL = '1.3'
 const EVENTS_KEPT = 500
 const DEBUGGER_IDLE = 10 * 60 * 1000
 
-// What the protocol may be asked for, as a list of what is allowed.
-//
-// The line is not "the agent is trusted" -- it is their agent and their tab --
-// but what attaching one tab is: everything that tab's own origin can reach,
-// plus real input and what the page asks the network for. Anything that
-// reaches past the tab into the browser is not that.
-//
-// Written as a list of refusals it kept losing, because the protocol grows
-// every release and a refusal only covers what somebody thought of. Three
-// methods with exactly the reach the list describes were outside it:
-// Page.setDownloadBehavior -- the deprecated twin of the Browser. one, which
-// was refused -- writes a file of the caller's choosing to a directory of its
-// choosing, and Network.clearBrowserCookies, Network.clearBrowserCache and
-// Storage.clearDataForOrigin are the whole browser rather than this page. A
-// list of what is allowed cannot lose that way: something new is refused
-// until somebody decides otherwise.
-const CDP_ALLOWED = [
-  // Real input, which is what driving a page is.
-  'Input.',
-  // Watching what the page asks the network for, and reading a response
-  // back. Not a request's body (Network.getRequestPostData, and the body is
-  // taken out of the events kept): a form's request is where a typed
-  // password travels, and nothing the agent does needs it. Not
-  // Network.setCookie and friends, which are every site's cookies, and not
-  // the clearBrowser* pair, which are the whole browser.
-  'Network.enable',
-  'Network.disable',
-  'Network.getResponseBody',
-  'Network.setCacheDisabled',
-  'Network.setExtraHTTPHeaders',
-  // The page itself: what it is, what it looks like, where it is going.
-  'Page.enable',
-  'Page.disable',
-  'Page.navigate',
-  'Page.reload',
-  'Page.captureSnapshot',
-  'Page.getLayoutMetrics',
-  'Page.getFrameTree',
-  'Page.getNavigationHistory',
-  // Reading and running in the page's own world, which evaluate already is.
-  'Runtime.',
-  'DOM.',
-  'DOMSnapshot.',
-  'CSS.',
-  'Accessibility.',
-  'Emulation.setEmulatedMedia',
-  'Log.',
-]
+// What the protocol may be asked for is a list of exact method names, and
+// what the agent may reach in the browser, TeaNode's own pages included, is
+// decided in reach.js; the server holds the same lines and refuses first.
 
-function cdpRefusal(method, params) {
-  const asked = String(method || '').trim()
-  if (!/^[A-Z][A-Za-z]*\.[a-zA-Z][A-Za-z0-9]*$/.test(asked)) {
-    return 'a method is written Domain.method, for example Input.dispatchMouseEvent'
-  }
-  // A javascript: address given to Page.navigate runs script in the document
-  // the tab is showing (a filled one included), and Page.reload can be asked
-  // to run a script on load. The navigate and open actions already take only
-  // http and https addresses; the same holds here.
-  if (asked === 'Page.navigate') {
+// navigationRefusal is why a page-moving DevTools method is not sent with the
+// parameters it was given, or ''. A javascript: address given to Page.navigate
+// runs script in the document the tab is showing (a filled one included), and
+// Page.reload can be asked to run a script on load. The navigate and open
+// actions already take only http and https addresses; the same holds here, and
+// the address is also held to reach.js's lines where the call is made.
+function navigationRefusal(method, params) {
+  if (method === 'Page.navigate') {
     let address = null
     try {
       address = new URL(String(params && params.url))
@@ -581,15 +552,11 @@ function cdpRefusal(method, params) {
       return 'Page.navigate takes an http or https address in url'
     }
   }
-  if (asked === 'Page.reload') {
+  if (method === 'Page.reload') {
     const extra = Object.keys(params || {}).filter((name) => name !== 'ignoreCache')
     if (extra.length > 0) return 'Page.reload takes only ignoreCache'
   }
-  for (const allowed of CDP_ALLOWED) {
-    const matches = allowed.endsWith('.') ? asked.startsWith(allowed) : asked === allowed
-    if (matches) return ''
-  }
-  return `${asked} is not one of the methods an attached tab answers: driving it (Input.), reading it (DOM., Runtime., CSS., Accessibility.), watching what it fetches (Network.enable, Network.getResponseBody; never a request's body) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser, which attaching one tab does not allow`
+  return ''
 }
 
 // agentUsing are the tabs whose debugger the agent's cdp action uses,
@@ -1023,14 +990,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true
 })
 
+// panelIn is where the person's TeaNode panel is in a tab now, read from the
+// page: see panelProbe. A page the extension cannot run a script in cannot
+// have the panel on it either, since the panel is put there by a script.
+async function panelIn(tabId) {
+  try {
+    const [probed] = await chrome.scripting.executeScript({ target: { tabId }, func: panelProbe })
+    return (probed && probed.result) || { isOpen: false }
+  } catch {
+    return { isOpen: false }
+  }
+}
+
 // act does one action in the attached tab: navigation here, everything
 // else in the page through the content script; fetch through the tab's
 // own session.
 async function act(action, args) {
   await restored
   try {
+    // Where TeaNode is: its pages, and the extension's own, are not driven
+    // in the person's browser, whatever the address the agent was given.
+    const origin = await serverOrigin()
     if (action === 'open') {
-      if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
+      const unwelcome = addressRefusal(args.url, origin)
+      if (unwelcome) return { ok: false, error: unwelcome }
       // Beside the tab the actions go to, or, with none, in the window the
       // person last used; a browser with no window gets one.
       const beside = attached.tabId === null ? null : await chrome.tabs.get(attached.tabId).catch(() => null)
@@ -1062,6 +1045,10 @@ async function act(action, args) {
     if (args.expectedTab !== undefined && args.expectedTab !== null && args.expectedTab !== '' && String(args.expectedTab) !== String(tab.id)) {
       return { ok: false, error: 'the tab the actions go to has changed since this was asked for; call tabs to see which it is now' }
     }
+    // Where the tab is now, not where it was when it was attached or last
+    // reported: a page may have gone to TeaNode since.
+    const unreachable = pageRefusal(action, tab, origin)
+    if (unreachable) return { ok: false, error: unreachable }
     // A tab that shows a document the agent filled a password or code into is
     // not read back, whatever the server has been told yet: a page restored
     // from the history's cache is that same document.
@@ -1071,7 +1058,8 @@ async function act(action, args) {
       if (lockedRefusal) return { ok: false, error: lockedRefusal }
     }
     if (action === 'navigate') {
-      if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
+      const unwelcome = addressRefusal(args.url, origin)
+      if (unwelcome) return { ok: false, error: unwelcome }
       await chrome.tabs.update(tab.id, { url: args.url })
       await waitForLoad(tab.id)
       const updated = await chrome.tabs.get(tab.id)
@@ -1085,6 +1073,8 @@ async function act(action, args) {
       // back to the person's own tab.
       const wanted = await pickTab(args, attached.ownTabId)
       if (!wanted) return { ok: false, error: 'not a tab of this conversation: the person\'s own, or one you opened; tabs lists them' }
+      const chosen = await chrome.tabs.get(wanted).catch(() => null)
+      if (chosen && (isOwnPage(chosen.url, origin) || isOwnPage(chosen.pendingUrl, origin))) return { ok: false, error: OWN_PAGES_REFUSAL }
       await chrome.tabs.update(wanted, { active: true })
       await useTab(wanted)
       return { ok: true, data: await current() }
@@ -1124,16 +1114,38 @@ async function act(action, args) {
       return { ok: true, data: image }
     }
     if (action === 'cdp') {
-      if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
-      const refusal = cdpRefusal(args.method, args.params)
+      const refusal = cdpRefusal(args.method) || cdpParametersRefusal(args.method, args.params) || navigationRefusal(args.method, args.params)
       if (refusal) return { ok: false, error: refusal }
+      // The stricter of the two: a tab showing a filled document answers fewer
+      // methods than any other tab does.
       if (isFilledDocument) {
         const lockedRefusal = lockedMethodRefusal(args.method, args.params)
         if (lockedRefusal) return { ok: false, error: lockedRefusal }
       }
+      // A request to the server is not shown, so nor is its body.
+      if (args.method === 'Network.getResponseBody') {
+        const watched = debugging.get(tab.id)
+        if (watched && hiddenRequestIds(watched.events, origin).has(args.params && args.params.requestId)) {
+          return { ok: false, error: OWN_PAGES_REFUSAL }
+        }
+      }
+      // Page.navigate is the navigate action by another name.
+      if (args.method === 'Page.navigate') {
+        const unwelcome = addressRefusal(args.params && args.params.url, origin)
+        if (unwelcome) return { ok: false, error: unwelcome }
+      }
       const sendProtocolCommand = async () => {
         agentUsing.add(tab.id)
         await debuggerFor(tab.id)
+        // Attaching takes a moment, in which the page may have gone to TeaNode.
+        const unreachableNow = pageRefusal(action, await chrome.tabs.get(tab.id), origin)
+        if (unreachableNow) return { ok: false, error: unreachableNow }
+        // Input dispatched where the panel is would be a click in TeaNode
+        // itself, as the person's hand. Read as late as it can be.
+        if (args.method.startsWith('Input.')) {
+          const covered = panelRefusal(args.method, args.params, await panelIn(tab.id))
+          if (covered) return { ok: false, error: covered }
+        }
         const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
         return { ok: true, data: { result: answer === undefined ? null : answer } }
       }
@@ -1147,7 +1159,9 @@ async function act(action, args) {
       if (!state) return { ok: false, error: 'nothing is being watched on this tab; send a cdp command such as Network.enable first' }
       state.until = Date.now() + DEBUGGER_IDLE
       const wanted = String(args.method || '').trim()
-      const kept = wanted ? state.events.filter((event) => event.method.startsWith(wanted)) : state.events
+      // Requests to the server are not shown: see withoutServerRequests.
+      const visible = withoutServerRequests(state.events, origin)
+      const kept = wanted ? visible.filter((event) => event.method.startsWith(wanted)) : visible
       const most = Number(args.limit) > 0 ? Number(args.limit) : 100
       const shown = kept.slice(-most)
       if (args.forget) state.events = []
@@ -1188,13 +1202,22 @@ async function act(action, args) {
       await rememberDocuments().catch(() => {})
       return { ok: true, data: { ...answer.data, tab: tab.id, commitCount: documents.countOf(tab.id) } }
     }
+    // The page's session goes with a fetch: where it goes is held to the same
+    // lines as where a tab goes.
+    if (action === 'fetch') {
+      const unwelcome = fetchRefusal(args.url, tab.url, origin)
+      if (unwelcome) return { ok: false, error: unwelcome }
+    }
+    // An element the panel covers is not clicked, hovered, typed into or
+    // chosen in: the person would see it happen under the panel.
+    const panel = ['click', 'hover', 'type', 'select'].includes(action) ? await panelIn(tab.id) : { isOpen: false }
     const runInPage = async () => {
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: inPage,
         // Whether the tab shows a filled document is the worker's to say, never
         // the caller's: it is set after whatever came with the action.
-        args: [action, { ...args, isFilledDocument }],
+        args: [action, { ...args, isFilledDocument }, serverHostname(origin), OWN_PAGES_REFUSAL, panel, PANEL_ELEMENT_REFUSAL],
       })
       return { answer: result?.result || { ok: false, error: 'the page did not answer' }, documentId: result?.documentId || '' }
     }
@@ -1317,13 +1340,54 @@ function isPanelGeometry(value) {
   )
 }
 
+// handedNonces are the panels whose frame has been handed the token: once
+// each.
+const handedNonces = new Set()
+
+// handToken hands the person's token to the panel's frame, in the frame's own
+// world, and says whether it took it. See reach.js for why the frame is found
+// by a nonce and the token is in no address. The frame may still be starting,
+// so it is looked for and asked for a few seconds.
+async function handToken(tabId, nonce) {
+  if (typeof nonce !== 'string' || nonce.length < 16 || handedNonces.has(nonce)) return false
+  const [origin, secret] = await Promise.all([serverOrigin(), token()])
+  let own
+  try {
+    own = new URL(origin).origin
+  } catch {
+    return false
+  }
+  if (!secret) return false
+  handedNonces.add(nonce)
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      const found = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: isPanelFrame, args: [own, nonce] })
+      const match = found.find((one) => one.result === true)
+      if (match) {
+        const [handed] = await chrome.scripting.executeScript({
+          target: { tabId, frameIds: [match.frameId] },
+          world: 'MAIN',
+          func: handOverToken,
+          args: [secret, own, nonce],
+        })
+        if (handed && handed.result === true) return true
+      }
+    } catch {
+      // A frame that is not there yet, or a page that cannot be scripted.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  handedNonces.delete(nonce)
+  return false
+}
+
 // What the panel asks of this worker.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const type = message && message.type
   if (typeof type !== 'string' || !type.startsWith('panel:')) return false
   const tab = sender.tab
   isPanelSender(sender, type === 'panel:token').then(async (isAllowed) => {
-    if (!isAllowed) return sendResponse({ error: 'Not allowed from here.' })
+    if (!isAllowed) return sendResponse(type === 'panel:handoff' ? false : { error: 'Not allowed from here.' })
     switch (type) {
       case 'panel:token': {
         const [server, secret, { username }] = await Promise.all([
@@ -1331,8 +1395,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           token(),
           chrome.storage.local.get('username'),
         ])
-        return sendResponse({ server, token: secret, username: username || '', attached: attached.ownTabId === tab.id })
+        // The token itself stays here: the panel gets only whether there is one.
+        return sendResponse({ server, isSignedIn: !!secret, username: username || '', attached: attached.ownTabId === tab.id })
       }
+      case 'panel:handoff':
+        return sendResponse(await handToken(tab.id, message.nonce))
       case 'panel:options':
         chrome.runtime.openOptionsPage()
         return sendResponse({})

@@ -239,6 +239,8 @@ func (self *fakeTab) Filled() *devtools.FilledValues { return &self.filled }
 func (self *fakeTab) CanFillPasswords() bool         { return self.canFillPasswords }
 func (self *fakeTab) CurrentTabID() string           { return self.tabID }
 func (self *fakeTab) NoteCurrentTab(tab string)      { self.tabID = tab }
+func (self *fakeTab) ServerHost() string             { return "" }
+func (self *fakeTab) ListedTabs() []tools.TabAddress { return nil }
 
 func (self *fakeTab) actions() []askedOfTab {
 	self.mutex.Lock()

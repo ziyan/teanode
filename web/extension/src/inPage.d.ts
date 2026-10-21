@@ -5,4 +5,11 @@ export interface InPageAnswer {
   error?: string
 }
 
-export function inPage(action: string, args: Record<string, unknown>): Promise<InPageAnswer>
+export function inPage(
+  action: string,
+  args: Record<string, unknown>,
+  ownHostname?: string,
+  ownPagesRefusal?: string,
+  panel?: { isOpen: boolean; left?: number; right?: number; top?: number; bottom?: number },
+  panelWords?: string,
+): Promise<InPageAnswer>

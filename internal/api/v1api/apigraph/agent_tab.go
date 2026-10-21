@@ -277,6 +277,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			if message.CurrentTab != nil {
 				worker.SetCurrentTab(found.ID, strconv.FormatInt(*message.CurrentTab, 10))
 			}
+			worker.SetBrowserServerHost(found.ID, socket, request.Host)
 			// Signed in, it may send pictures of a tab, which are larger
 			// than anything said before the hello.
 			conn.SetReadLimit(tabFrameReadLimit)

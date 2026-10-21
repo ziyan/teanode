@@ -99,7 +99,7 @@ describe('the token for the panel', () => {
     expect(executeScript).toHaveBeenCalledWith({ target: { tabId: 11 }, files: ['panel.js'] })
     expect(await ask({ type: 'panel:token' }, fromPanel(11))).toEqual({
       server: 'https://tea.example.test',
-      token: 'secret-token',
+      isSignedIn: true,
       username: 'ada',
       attached: false,
     })

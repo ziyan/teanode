@@ -14,7 +14,7 @@
     return
   }
   chrome.runtime.sendMessage({ type: 'panel:token' }, (answer) => {
-    if (!answer || !answer.server || !answer.token) {
+    if (!answer || !answer.server || !answer.isSignedIn) {
       chrome.runtime.sendMessage({ type: 'panel:options' })
       return
     }
@@ -73,12 +73,17 @@
     close.setAttribute('aria-label', 'Close')
     bar.append(mark, name, attach, close)
     const frame = document.createElement('iframe')
-    // The token goes in the frame's address, in the fragment: the server
-    // never sees it, and neither does the page around the frame, which
-    // cannot read a cross-origin frame's address and cannot see into a
-    // closed shadow root. A message would not do — the page around the
-    // frame is its parent as much as this script is.
-    frame.src = origin + '/drawer#token=' + encodeURIComponent(answer.token)
+    // The frame is told who this is, in the worker's own words, and not by
+    // its address: an address is readable, here by the element's src
+    // attribute through the shadow root, and so would a token be. What is in
+    // the address is a nonce, made here, which the worker uses to find this
+    // frame among those on the page and hand it the token inside its own
+    // origin, where the page around it cannot reach. A message would not do
+    // either: the page around the frame is its parent as much as this script
+    // is.
+    // getRandomValues, which a page served over plain http has, unlike randomUUID.
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+    frame.src = origin + '/drawer?handoff=' + nonce
     frame.title = 'Your agent'
     const grip = document.createElement('div')
     grip.className = 'grip'
@@ -86,6 +91,10 @@
     panel.append(bar, frame, grip)
     shadow.append(style, panel)
     document.documentElement.append(host)
+    // Kept in the extension's own world, which the page cannot reach, so that
+    // the worker finds the panel by this and not only by its id, which the
+    // page can change: it is where the agent must not click.
+    window.__teanodePanel = host
 
     // Where the panel sits and how big it is, remembered per site. The
     // place is kept as a fraction of the window so that a panel put in a
@@ -213,6 +222,7 @@
     notice.className = 'name'
     frame.addEventListener('load', () => {
       loaded = true
+      chrome.runtime.sendMessage({ type: 'panel:handoff', nonce })
     })
     setTimeout(() => {
       if (loaded) return
