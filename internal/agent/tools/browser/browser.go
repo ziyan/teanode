@@ -47,7 +47,7 @@ func init() {
 					"for":            tools.EnumProperty("for wait: what to wait for", "selector", "navigation", "network_idle", "timeout"),
 					"timeout_ms":     tools.IntegerProperty("for wait: how long, 30000 by default"),
 					"expression":     tools.StringProperty("for evaluate: a JavaScript expression; its JSON value comes back"),
-					"method":         tools.StringProperty("for cdp: the DevTools method, for example Input.dispatchMouseEvent, Input.dispatchKeyEvent, Network.enable or Page.captureSnapshot"),
+					"method":         tools.StringProperty("for cdp: the DevTools method, for example Input.dispatchMouseEvent, Input.dispatchKeyEvent, Network.enable or Page.getLayoutMetrics"),
 					"params":         map[string]any{"type": "object", "description": "for cdp: the method's own parameters"},
 					"limit":          tools.IntegerProperty("for cdp_events: how many of the newest to show, 100 by default"),
 					"forget":         tools.BooleanProperty("for cdp_events: clear what has been kept after reading it"),
@@ -143,6 +143,9 @@ type browserArguments struct {
 	TimeoutMs     int               `json:"timeout_ms"`
 	Expression    string            `json:"expression"`
 	Steps         []json.RawMessage `json:"steps"`
+
+	// For switch and close: the tab, by the number tabs gave.
+	Tab *int64 `json:"tab,omitempty"`
 
 	// For the DevTools protocol, on the person's own tab: the method to
 	// send and what to send with it, and, for reading back what the page
@@ -364,6 +367,13 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	default:
 		return nil, fmt.Errorf("%q is not an action a tab does", arguments.Action)
 	}
+	// The person's session must not be put to work on TeaNode itself, and
+	// no file of theirs may be put into a page: refused here, before the
+	// extension is asked, so that a server deploy closes it without anyone
+	// reloading the extension.
+	if refusal := tabReachRefusal(run.Configuration(), tab, arguments); refusal != "" {
+		return nil, errors.New(refusal)
+	}
 	part := snapshotPartOf(arguments.Offset, arguments.MaxCharacters)
 	if arguments.Action == "snapshot" {
 		arguments.MaxCharacters = part.readCharacters()
@@ -372,7 +382,12 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	if err != nil {
 		return nil, err
 	}
+	if refusal := answerReachRefusal(run.Configuration(), tab, arguments.Action, data); refusal != "" {
+		return nil, errors.New(refusal)
+	}
 	switch arguments.Action {
+	case "cdp_events":
+		data = hideOwnRequests(data, ownHostnames(run.Configuration(), tab))
 	case "snapshot":
 		data = part.cutTabAnswer(data)
 	case "tabs":
