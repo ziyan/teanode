@@ -126,6 +126,18 @@ What stands between an item and a page:
   before the writer was recorded at all, counts as the person's. A subagent is
   its parent's. The passwords tool's `list` and
   `read_note` keep the same rule.
+
+  Three more edges are closed. A turn that carries on an answer given to a card
+  after the turn that raised it had ended is the person's only if the turn that
+  raised it was: the card keeps that in `agent_interaction.is_started_by_person`
+  (a card from before it was recorded is not the person's), so a question a chat
+  app or an MCP program raised and the person answered later does not become
+  theirs. A message written while the person's turn runs is handed to that turn
+  only when it is itself one the person wrote (`AskRun.IsStartedByPerson`); a
+  message from MCP or a chat app that names the same conversation waits for its
+  own turn. And a schedule made or reworded from the command line is recorded as
+  the agent's, since the agent's shell holds the same token: only a tap on the
+  dashboard or in the phone app (`Principal.IsPersonsTap`) writes `person`.
 - **The rest of the browser tool's rules.** None of the three is a reading
   action, so a tab the person has taken over refuses them like a click. Each is
   a write for the approval setting. In a run with nobody present, the person's
@@ -302,6 +314,78 @@ current loader id and locks the page again if it is a document that was filled
 are refused rather than guessed at. `back` itself now returns only once the
 history has moved to the earlier entry, and checks again.
 
+**A page the agent scripted is not filled.** The lock looks at a page after the
+fill, so it cannot tell that a script the agent ran earlier left a listener that
+sends every input value to another site, or changed the form's address. So the
+document a script ran in is marked (`FilledValues.NoteScripted`, in
+`internal/browser/filled.go`), and `fill_login`, `fill_one_time_code` and
+`passkey_sign_in` are refused on it with "This page has run the agent's script, so
+it is not filled. Open the sign-in page again (navigate) and fill it before
+running any script." What counts as running script on a document:
+
+- `evaluate`, in either browser; and a `navigate` to a `javascript:` or `data:`
+  address.
+- Any `cdp` method that is not on a short list of ones that only look or give
+  input (`internal/agent/tools/browser/script.go`): `Input.*`, `Page.navigate`
+  to a web address, `Page.reload`, `Page.captureScreenshot`, `DOM.getDocument`
+  and the other `DOM` reads, `DOMSnapshot.*`, `Accessibility.*` and a few more.
+  Everything else counts, which is `Runtime.*`, `DOM.set*`, `DOM.remove*`,
+  `DOM.insert*`, `Page.setDocumentContent`, `Emulation.setScriptExecutionDisabled`
+  and whatever the protocol adds. The list names what is harmless, not what is
+  not, so a new method fails closed.
+- `Page.addScriptToEvaluateOnNewDocument`, `Runtime.addBinding`, `Debugger.*`,
+  `Fetch.*` and `Network.setRequestInterception` put something in every page the
+  tab loads from then on, which a navigation does not undo. A tab that ever got
+  one is never filled again ("This tab was given a script that runs in every page
+  it loads, so nothing is filled in it. Open a new tab (open) and fill the sign-in
+  page there before running any script."). A tab opened later is a different tab.
+
+The mark belongs to the document, the way the lock does, in the other direction.
+In the headless browser it is exact: the loader id of the document the script ran
+in is kept, and the fill asks `Page.getFrameTree` which document the page shows
+now, so a reload or a new page is filled and a page restored from the history's
+cache is not. If the browser does not say which document a script ran in, the
+page counts as scripted for good. For the person's tab the server knows the
+document by the commits the extension reports: a new document that is not a move
+through the history ends the mark, and the scripted document coming back keeps
+it. A script that ran before the server heard the tab's number marks every tab
+until the unnamed tab commits. The check is in the server for both browsers;
+the extension fills a tab it is asked to fill, and cannot see what the agent ran.
+
+**A form that sends to another site is not filled.** The headless fill checks it
+in the same script that types, the way the extension does (`isFormSendingElsewhere`):
+the form's `action` and the `formaction` of every control that submits it, which
+includes an image input and a control outside the form that names it with
+`form=`, resolved against the page's base address. They are read with the
+browser's own getters, not from `form.action` or `form.elements`, which a field
+named `action` or `elements` replaces. An address on another host or port, or a
+secure page sending to a plain-text address, refuses the fill ("the form around
+that field sends to another site than this page"). A form with no `action`, a
+relative one on the same site, and a field outside any form are filled. A
+listener the site's own script adds is the site's, and is not looked for.
+
+**The session is not read back.** Signing in leaves cookies and storage that
+are the site's session. Once the agent has filled a password or a one-time code
+into a host in a tab, then for the rest of that tab's life (not only until the
+next document) the browser tool refuses, for that host, the `storage` action
+(the page's cookies and storage), and, in that tab, the DevTools methods that
+return cookies, storage or the requests the page makes with them:
+`Network.getCookies`, `Network.getAllCookies`, `Network.enable` (its events carry
+the `Cookie` and `Set-Cookie` headers), `Storage.*`, `DOMStorage.*`,
+`IndexedDB.*`, `CacheStorage.*`, `Page.getCookies` and `Fetch.*`. The methods
+can name other sites, so they are closed in the whole tab. The headless browser
+has no `storage` or `cdp` action. A user name alone is not a session.
+
+*What this does not stop.* A script in the page still reads `document.cookie` and
+`localStorage` and `sessionStorage` once the lock has ended (a new document), and
+`evaluate` is allowed then. A cookie the site marked `HttpOnly` is not in
+`document.cookie`, which is what the site's own defense is for, but a session
+kept in `localStorage` or in a cookie without `HttpOnly` is readable by script,
+and the scrubbing only hides the exact password and code, not the session token
+the site hands back. Signing in for the agent therefore gives the agent the
+session on that site for the rest of the tab, the way the person's own sign-in
+would; it does not give it the password.
+
 ## The rules
 
 - **Only what the person turned on.** The tool lists items with
@@ -347,14 +431,28 @@ history has moved to the earlier entry, and checks again.
   a run a mail steered cannot read a note or a made-up password out of the
   person's chat. What the person wrote stays. It does not reach text the person
   or the agent repeats later; the tool's guidance tells the agent not to copy
-  Passwords into notes, memory or messages. The conversation tool's `search`
-  still matches words in the agent's earlier answers and says only which
-  conversations they are in.
+  Passwords into notes, memory or messages.
+
+  The same filter applies wherever else the conversation is read. A run the
+  person did not start (a chat app, a mail, a goal, a schedule the agent wrote,
+  a command left running, a program speaking MCP, a card answered after one of
+  those, the agent speaking first) is given the marker where a private turn was
+  when its history is loaded (`historyForRun`), and the person's own runs get the
+  whole history so they can go on talking about the note. A compaction writes its
+  note from the history with private turns replaced by the marker, so neither the
+  note nor the runs that hold each chunk's prompt contain them. The filing runs
+  judge a turn by the whole conversation, not only by the part after their mark.
+  The conversation tool's `search` and `search_everything`, and the command
+  line's search, leave every message of a private turn out
+  (`SearchAgentConversations`, flag `isPrivateIncluded`, `internal/agent/privateturn`);
+  only a tap on the dashboard or the phone app searches them. The lock-screen
+  notification for the answer of a private turn says "Your answer is ready".
 - **This computer's files.** `teanode passwords unlock` keeps the opened account
   key and private key, in the clear, in a file only the person can read
-  (`passwords-unlock-<profile>.json`, in `$XDG_RUNTIME_DIR/teanode` or the
-  configuration directory) for up to 8 hours, and `passwords-keys-<profile>.json`
-  holds the public keys of the people shared with. The agent's computer tools run
+  (`passwords-unlock-<profile>.json`, only in `$XDG_RUNTIME_DIR/teanode`, which
+  is not on disk; without it `unlock` refuses) for up to 8 hours, and
+  `passwords-keys-<profile>.json` holds the confirmed and seen public keys of
+  the people shared with. The agent's computer tools run
   as the person, so the file and `teanode passwords show --reveal` would open
   every item whatever "Let the agent use this" says. Two guards stop the obvious
   routes (`internal/passwords/localfiles.go` names the files and the mark once):
@@ -372,6 +470,71 @@ history has moved to the earlier entry, and checks again.
   The guard stops the obvious routes, not a determined program; the way to keep
   an unlocked computer from the agent is `teanode passwords lock` when you are
   done, or not unlocking on a computer the agent can run commands on.
+- **A terminal the person attached.** The terminal tool can read the screen of a
+  terminal the person attached as well as type into it. A command typed there is
+  unmarked, and the output of `teanode passwords show --reveal` in that terminal
+  is on the screen the model can read. The person should not reveal an item in a
+  terminal they have attached to the agent.
 - **The person switches, the agent does not.** Turning "Let the agent use this"
   on or off, sharing, erasing and every change to an item need the person's
   device; the server cannot read an item, so the agent has nothing to change.
+
+## What the server limits
+
+The server cannot read an item, so what it can do is bound how much and how
+fast, and keep a history that a program with a token cannot erase.
+
+- **Size.** An item's sealed fields are at most 512 KB and any sealed key 8 KB.
+  A person has at most 20,000 items (deleted ones included, until they are swept
+  after 30 days) and at most 64 MiB of sealed text in the items that are not
+  deleted (the fields and the keys). A save, a re-key or a restore that would go
+  past it is refused with "Passwords is full: delete items or make notes
+  shorter." A change that does not make an item larger is always allowed, so a
+  person who is over can shorten things. A list answers every item at once, so
+  this bounds what one request costs the server; paging is a follow-up in the
+  plan.
+- **Earlier versions of an item.** A save or a re-key keeps the version it
+  replaces in `password_item_version` only when the item has no kept version
+  younger than one hour. A program with a token needs no tap to save an item, so
+  25 saves of garbage in a row keep the content from before the first one and
+  nothing else. Versions are kept 30 days, at most 60 for an item; when there are
+  more, the one just before the newest goes, so the oldest within 30 days stays.
+  Nothing in the API reads them: an operator puts one back from the database.
+- **Writes.** A person may make 5,000 writes to Passwords in a row (save, re-key,
+  delete, restore, share, share keys, "Let the agent use this") and gets 5,000
+  an hour back, so that importing a few thousand items fits and one person cannot
+  wear out the revision counter that everybody's items share. Their own taps
+  (the dashboard and the iPhone app) and every other credential (a command line
+  token, the extension, an OAuth grant) have separate counts, so a stolen token
+  cannot use up what the person does on their dashboard. The count is in memory,
+  for each server instance. The agent recording that it used an item is not
+  counted.
+- **Unlock tries.** 10 wrong proofs in a row, 30 an hour given back, counted
+  separately for the person's taps and for other credentials, so a stolen token
+  guessing the passphrase runs out of tries without locking the person out of
+  their own dashboard. Every wrong try and every try turned away is in the audit
+  log.
+- **How long a device stays unlocked.** Making it longer needs the person's tap;
+  making it shorter does not.
+- **A new item key when access narrows.** Turning "Let the agent use this" off or
+  taking somebody out of an item's shares makes the owner's device seal the item
+  again under a new item key (`RekeyPasswordItem`), so that a copy of the old
+  sealed key opens nothing that is saved later. It needs no tap, because it
+  widens nothing. The versions kept from before are still sealed under the old
+  key.
+
+### Limits, plainly
+
+- **Changing the passphrase or the recovery key does not change the account
+  key.** Each only seals the same account key again. Anyone who holds an older
+  copy of the database and the old passphrase (or the old recovery key) can open
+  the account key from it, and with it the item keys of items saved afterwards
+  when they also get those items. Changing a secret protects against a copy made
+  after the change, not against one made before. Rotating the account key means
+  sealing every item key again; it is a follow-up in the plan.
+- **The audit log names the host the agent signed in to.** When the agent signs
+  in with an item, the `password_item` "used by the agent" event holds the item's
+  id and kind and the host of the page (never a path, a user name or a
+  password). Anyone who may read the audit log, an operator for one, can see
+  which sites the agent used a person's items on.
+
