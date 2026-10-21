@@ -1275,3 +1275,65 @@ func chatActionsForTest() []string {
 	}
 	return actions
 }
+
+// What a turn that listed or read something in Passwords (or used Health)
+// said, and what its tools answered, is not read back by another run: a note's
+// text, a made-up password and the names of the items stay in the person's own
+// conversation. What the person wrote stays, and so does an ordinary turn.
+func TestConversationDoesNotReadBackAPrivateTurn(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &fakeRun{database: database}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "carol", Name: "Carol Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if run.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		append := func(role, content, name string, calls ...models.AgentToolCall) {
+			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: run.conversation.ID, Role: role, Content: content, Name: name, ToolCalls: calls}); err != nil {
+				t.Fatalf("AppendAgentMessage: %s", err)
+			}
+		}
+		append("user", "read me the shed note", "")
+		append("assistant", "", "", models.AgentToolCall{ID: "c1", Name: "passwords", Arguments: `{"action":"read_note","item_id":"x"}`})
+		append("tool", `{"note_text":"the padlock opens with 0000"}`, "passwords")
+		append("assistant", "It says the padlock opens with 0000.", "")
+		append("user", "and a new password for the gate", "")
+		append("assistant", "", "", models.AgentToolCall{ID: "c2", Name: "passwords_generate", Arguments: `{}`})
+		append("tool", `{"generated":"Zq7-invented-gate-pass"}`, "passwords_generate")
+		append("assistant", "Here is Zq7-invented-gate-pass.", "")
+		append("user", "list what you may use", "")
+		append("assistant", "", "", models.AgentToolCall{ID: "c3", Name: "passwords", Arguments: `{"action":"list"}`})
+		append("tool", `{"items":[{"item_name":"Example Shop","user_name":"carol@example.test"}]}`, "passwords")
+		append("assistant", "One login, Example Shop.", "")
+		append("user", "what is the weather", "")
+		append("assistant", "", "", models.AgentToolCall{ID: "c4", Name: "weather", Arguments: `{"action":"today"}`})
+		append("tool", `{"forecast":"sunny with light wind"}`, "weather")
+		append("assistant", "Sunny.", "")
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	result, err := find(t, "conversation").Run(ctx, &tools.Call{ID: "c1", Arguments: json.RawMessage(`{"action":"read","conversation_id":"` + run.conversation.ID + `","limit":50}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"0000", "padlock", "invented-gate-pass", "Example Shop", "carol@example.test", "item_name"} {
+		if strings.Contains(result.Content, secret) {
+			t.Errorf("%q was read back: %s", secret, result.Content)
+		}
+	}
+	for _, kept := range []string{"read me the shed note", "and a new password for the gate", "list what you may use", "sunny with light wind", "Sunny."} {
+		if !strings.Contains(result.Content, kept) {
+			t.Errorf("%q was not read: %s", kept, result.Content)
+		}
+	}
+	if strings.Count(result.Content, "[hidden: from a turn that used Health or Passwords]") != 6 {
+		t.Errorf("expected the three tool results and the three answers after them to be marked hidden, got: %s", result.Content)
+	}
+}

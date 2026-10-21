@@ -63,7 +63,7 @@ func TestAskQueuesASecondTurnBehindTheFirst(t *testing.T) {
 	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}, {Permission: models.PermissionMailWrite}})}
 
 	// The first turn stops at a card and stays there.
-	first, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: "delete it for good", Surface: "cli"})
+	first, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: "delete it for good", Surface: "cli", IsPersonsTap: true})
 	if err != nil {
 		t.Fatalf("Ask: %s", err)
 	}
@@ -196,7 +196,7 @@ func TestAMessageWrittenMidTurnIsReadAtTheNextRound(t *testing.T) {
 	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionMailRead}, {Permission: models.PermissionMailWrite}})}
 
 	// The first turn is in the middle of a tool call: held at its card.
-	first, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: "delete it for good", Surface: "cli"})
+	first, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: "delete it for good", Surface: "cli", IsPersonsTap: true})
 	if err != nil {
 		t.Fatalf("Ask: %s", err)
 	}
@@ -215,11 +215,11 @@ func TestAMessageWrittenMidTurnIsReadAtTheNextRound(t *testing.T) {
 	}
 
 	// Two messages written meanwhile; the second is taken back.
-	second, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: "and what about the invoice?", Surface: "cli"})
+	second, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: "and what about the invoice?", Surface: "cli", IsPersonsTap: true})
 	if err != nil {
 		t.Fatalf("Ask: %s", err)
 	}
-	third, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: "never mind", Surface: "cli"})
+	third, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: "never mind", Surface: "cli", IsPersonsTap: true})
 	if err != nil {
 		t.Fatalf("Ask: %s", err)
 	}

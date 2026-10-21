@@ -228,7 +228,7 @@ func (self *AskRun) judgeDepth() depthJudgement {
 		if err != nil {
 			return err
 		}
-		for _, message := range stored {
+		for _, message := range withoutPrivateTurns(stored) {
 			var who string
 			switch message.Role {
 			case string(llm.RoleUser):

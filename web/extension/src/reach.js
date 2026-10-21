@@ -49,12 +49,12 @@ export const CDP_ALLOWED = [
   'Input.synthesizeScrollGesture',
   'Input.synthesizeTapGesture',
   // Watching what the page asks the network for, and reading a body back.
-  // Not Network.setCookie and friends, which are every site's cookies, and
+  // Not a request's body (Network.getRequestPostData): a form's request is
+  // where a typed password travels. Not Network.setCookie and friends, which are every site's cookies, and
   // not the clearBrowser* pair, which are the whole browser.
   'Network.enable',
   'Network.disable',
   'Network.getResponseBody',
-  'Network.getRequestPostData',
   'Network.setCacheDisabled',
   'Network.setExtraHTTPHeaders',
   // The page itself: what it is, what it looks like, where it is going.

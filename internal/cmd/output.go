@@ -113,7 +113,7 @@ func printTable(headers []string, rows [][]string) error {
 	for _, row := range rows {
 		cells := make([]string, len(row))
 		for index, cell := range row {
-			cells[index] = forTerminal(cell)
+			cells[index] = forTableCell(cell)
 		}
 		_, _ = fmt.Fprintln(writer, strings.Join(cells, "\t"))
 	}
@@ -141,6 +141,17 @@ func forTerminal(text string) string {
 	}
 	return builder.String()
 }
+
+// forTableCell is forTerminal for one cell of a table, where a tab or a line
+// break would also do something: a tab starts the next column and a line
+// break starts a row, so a name somebody else chose (an item shared with you)
+// could write a row of its own with whatever columns it likes. Each is shown
+// as its escape instead.
+func forTableCell(text string) string {
+	return forTerminal(cellEscapes.Replace(text))
+}
+
+var cellEscapes = strings.NewReplacer("\n", `\n`, "\r", `\r`, "\t", `\t`)
 
 // isTerminalControl is a character a terminal would act on: the C0 controls
 // other than tab and newline, delete, and the C1 controls, which include a

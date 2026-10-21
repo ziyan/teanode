@@ -15,6 +15,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/passwords"
 )
 
 // Talking to the agent from a terminal: one question, or a conversation
@@ -315,9 +316,27 @@ func addressedAgentsNamed(ctx context.Context, command *cli.Command, connection 
 	return agentIds, nil
 }
 
+// agentCommandSurface is the surface a turn is started on when the agent's own
+// shell ran the command. The server counts a turn from "cli" as the person's
+// (typed at their terminal), so a command the agent ran would otherwise be
+// able to start a turn that may use Passwords. This surface is not on the
+// server's list of the person's, and the server keeps it as given.
+const agentCommandSurface = "agent_command"
+
+// terminalSurface is the surface to send for a turn asked from a terminal:
+// "cli" when the person runs the command, and agentCommandSurface when the
+// computer program marked it as the agent's (passwords.AgentCommandEnvironmentName).
+func terminalSurface(surface string) string {
+	if surface == "cli" && passwords.IsAgentCommand() {
+		return agentCommandSurface
+	}
+	return surface
+}
+
 // askOnce says one thing and follows the run to its end, answering
 // confirmation cards on the terminal.
 func askOnce(ctx context.Context, command *cli.Command, connection *client.Client, request *client.AskAgentRequest, asJson, quiet bool) error {
+	request.Surface = terminalSurface(request.Surface)
 	turn, err := client.AskAgentWith(ctx, connection, request)
 	if err != nil {
 		return describeError(command, err)

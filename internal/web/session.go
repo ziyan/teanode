@@ -214,6 +214,10 @@ type CredentialStore interface {
 	// nobody approved, alongside the sessions and tokens swept here.
 	ScavengeOAuth(now time.Time) (int64, error)
 
+	// ScavengePasswordItems removes items deleted before the time, the last
+	// day a person could still restore them.
+	ScavengePasswordItems(before time.Time) (int64, error)
+
 	// TransactionContext is for the two writes to the user table made here:
 	// claiming a fresh server, and a person changing their own password.
 	TransactionContext(ctx context.Context, function func(db.Transaction) error) error
@@ -974,9 +978,15 @@ func (self *authenticator) Scavenge() error {
 	if err != nil {
 		return err
 	}
-	if sessions > 0 || tokens > 0 || programs > 0 {
-		log.Noticef("removed %d expired sessions, %d expired tokens and %d unused program registrations or approvals",
-			sessions, tokens, programs)
+	// A deleted password item can be restored for PasswordItemDeletedDays;
+	// after that nothing could ask for it.
+	passwordItems, err := self.database.ScavengePasswordItems(now.AddDate(0, 0, -models.PasswordItemDeletedDays))
+	if err != nil {
+		return err
+	}
+	if sessions > 0 || tokens > 0 || programs > 0 || passwordItems > 0 {
+		log.Noticef("removed %d expired sessions, %d expired tokens, %d unused program registrations or approvals and %d deleted password items",
+			sessions, tokens, programs, passwordItems)
 	}
 	return nil
 }

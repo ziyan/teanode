@@ -6,6 +6,7 @@ package schedule
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -72,6 +73,29 @@ type scheduleArguments struct {
 	Deliver    string `json:"deliver"`
 	Enabled    *bool  `json:"enabled"`
 	ScheduleID string `json:"schedule_id"`
+}
+
+// passwordsNotice is said to the model when it makes or rewords a schedule
+// whose prompt is about signing in, so that it tells the person. A schedule the
+// agent wrote cannot use Passwords; one the person saves themselves can.
+const passwordsNotice = "This schedule was written by the agent, so its runs cannot use Passwords. Tell the person: they can open the schedule on the dashboard or in the app (Agent, Schedules) and save it themselves to let its runs use Passwords."
+
+// signingInWords matches a prompt that is about signing in, a password, a
+// passkey, a login or a one-time code.
+var signingInWords = regexp.MustCompile(`(?i)\b(sign(s|ed|ing)?[ -]?in(to)?|log(s|ged|ging)?[ -]?(ins?|into)|passwords?|passkeys?|one-time codes?)\b`)
+
+// mentionsSigningIn says whether a schedule's prompt is about signing in.
+func mentionsSigningIn(prompt string) bool {
+	return signingInWords.MatchString(prompt)
+}
+
+// described is the schedule as the model reads it, with passwordsNotice added
+// when the agent wrote a schedule that is about signing in.
+func described(row map[string]any, schedule *models.AgentSchedule) map[string]any {
+	if schedule.WrittenBy != models.WrittenByPerson && mentionsSigningIn(schedule.Prompt) {
+		row["passwords_notice"] = passwordsNotice
+	}
+	return row
 }
 
 func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -150,7 +174,7 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		}); err != nil {
 			return nil, err
 		}
-		result, err := tools.JSONResult(describe(created))
+		result, err := tools.JSONResult(described(describe(created), created))
 		if err != nil {
 			return nil, err
 		}
@@ -180,15 +204,25 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				if arguments.Name != "" {
 					schedule.Name = arguments.Name
 				}
+				// Anything the agent changes about when a schedule runs, what
+				// it says, where its answer goes or whether it runs makes it
+				// the agent's schedule from then on: its prompt then arrives as
+				// a note the agent wrote for itself, and a run it wakes is not
+				// the person asking. Otherwise the agent could take a schedule
+				// the person wrote, change what it does, and have it keep
+				// running with the person's authority.
 				if arguments.Prompt != "" {
 					schedule.Prompt = arguments.Prompt
+					schedule.WrittenBy = models.WrittenByAgent
 				}
 				// One that belongs to a goal keeps answering there.
 				if arguments.Deliver != "" && !isGoalsSchedule(tx, schedule) {
 					schedule.Deliver = arguments.Deliver
+					schedule.WrittenBy = models.WrittenByAgent
 				}
 				if arguments.Enabled != nil {
 					schedule.Enabled = *arguments.Enabled
+					schedule.WrittenBy = models.WrittenByAgent
 				}
 				if arguments.Cron != "" {
 					cron, err := tools.ResolveRelative(arguments.Cron, time.Now(), location)
@@ -196,6 +230,7 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 						return err
 					}
 					schedule.Cron = cron
+					schedule.WrittenBy = models.WrittenByAgent
 				}
 				if arguments.Cron != "" || (arguments.Enabled != nil && *arguments.Enabled) {
 					next, err := tools.NextCron(schedule.Cron, time.Now(), location)
@@ -210,7 +245,7 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		}); err != nil {
 			return nil, err
 		}
-		return tools.JSONResult(describe(updated))
+		return tools.JSONResult(described(describe(updated), updated))
 	case "remove":
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
 			if _, err := own(tx); err != nil {

@@ -22,6 +22,7 @@ import (
 // the request waited.
 type fakeLink struct {
 	isDropped bool
+	filled    browser.FilledValues
 
 	// address is where the tab is, and answer what it says to an action,
 	// when the test says otherwise than the defaults; serverHost is the
@@ -67,6 +68,10 @@ func (self *fakeLink) Title() string                  { return "A shop" }
 func (self *fakeLink) HasTab() bool                   { return true }
 func (self *fakeLink) IsTakenOver() bool              { return false }
 func (self *fakeLink) IsWatchable() bool              { return true }
+func (self *fakeLink) Filled() *browser.FilledValues  { return &self.filled }
+func (self *fakeLink) CanFillPasswords() bool         { return true }
+func (self *fakeLink) CurrentTabID() string           { return "" }
+func (self *fakeLink) NoteCurrentTab(string)          {}
 func (self *fakeLink) ServerHost() string             { return self.serverHost }
 func (self *fakeLink) ListedTabs() []tools.TabAddress { return self.listed }
 func (self *fakeLink) WatchedRequests() *tools.RequestLedger {

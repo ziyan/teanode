@@ -49,6 +49,7 @@ type agentInteractionModel struct {
 	CreatedAt          time.Time      `gorm:"column:created_at"`
 	ResolvedAt         *time.Time     `gorm:"column:resolved_at"`
 	InteractionAnswer  string         `gorm:"column:interaction_answer"`
+	IsStartedByPerson  bool           `gorm:"column:is_started_by_person"`
 }
 
 func (agentInteractionModel) TableName() string { return "agent_interaction" }
@@ -63,6 +64,7 @@ func (self *agentInteractionModel) toModel() *models.AgentInteraction {
 		InteractionKind: models.InteractionKind(self.InteractionKind), ToolName: self.ToolName, ToolArguments: self.ToolArguments,
 		InteractionText: self.InteractionText, InteractionChoices: choices, ToolRisk: self.ToolRisk,
 		CreatedAt: self.CreatedAt.In(time.Local), ResolvedAt: localTime(self.ResolvedAt), InteractionAnswer: self.InteractionAnswer,
+		IsStartedByPerson: self.IsStartedByPerson,
 	}
 }
 
@@ -76,6 +78,7 @@ func (self *transaction) CreateAgentInteraction(interaction *models.AgentInterac
 		CallID: interaction.CallID, InteractionKind: string(interaction.InteractionKind), ToolName: interaction.ToolName,
 		ToolArguments: interaction.ToolArguments, InteractionText: interaction.InteractionText,
 		InteractionChoices: pq.StringArray(choices), ToolRisk: interaction.ToolRisk, CreatedAt: time.Now(),
+		IsStartedByPerson: interaction.IsStartedByPerson,
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err

@@ -931,6 +931,11 @@ type AgentInteraction struct {
 	CreatedAt         time.Time  `json:"createdAt"`
 	ResolvedAt        *time.Time `json:"resolvedAt,omitempty" graphapi:"nullable"`
 	InteractionAnswer string     `json:"interactionAnswer"`
+
+	// IsStartedByPerson says the turn that raised the card was one the person
+	// started. The turn that carries on a late answer is the person's only
+	// when this is true. Not sent to a client.
+	IsStartedByPerson bool `json:"-"`
 }
 
 // suggestedRepliesPattern is the hidden line a dashboard answer may end

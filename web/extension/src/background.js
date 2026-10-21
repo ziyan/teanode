@@ -23,6 +23,26 @@
 // picture comes back here as input, while they hold it. Their screen does
 // not change for it.
 
+// Passwords: the service worker's half (messages from the content scripts and
+// the extension's own pages, the keys held in the session storage, the lock
+// time), and the agent's fill_login and fill_one_time_code. Written in
+// TypeScript with the dashboard's own encryption; see passwords/.
+import './passwords/background'
+// The token and the other storage the extension keeps are closed to its
+// content scripts (the part of it that runs inside web pages).
+import { restrictStorageToTrustedContexts } from './storageAccess'
+import { serverAddressProblem } from './serverAddress'
+import { agentActivity } from './agentActivity'
+import { fillLoginForAgent, fillOneTimeCodeForAgent } from './passwords/agentFill'
+// Which document each of the agent's tabs shows and which the agent filled a
+// password or code into: the server locks a filled tab until it commits a new
+// document, and is told when one does.
+import { SCRIPTED_ORIGINS_KEY, ScriptedOrigins, TabDocuments, withoutRequestBodies } from './tabDocuments'
+// What is refused on its own for a tab showing a document the agent filled.
+import { SCRIPTED_ORIGIN_REFUSAL, lockedActionRefusal, lockedMethodRefusal } from './lockedTab'
+// What the agent's actions do inside the page (snapshot, click, type ...).
+import { inPage } from './inPage'
+
 import {
   OWN_PAGES_REFUSAL,
   PANEL_ELEMENT_REFUSAL,
@@ -44,9 +64,20 @@ import {
   serverHostname,
 } from './reach.js'
 
-const PROTOCOL = 4
+const PROTOCOL = 5
+
+void restrictStorageToTrustedContexts()
 
 let socket = null
+const documents = new TabDocuments()
+// scriptedOrigins are the sites the agent ran a script on in this browser: no
+// fill is done on them until the person allows them again. The record is kept
+// in chrome.storage.local (origins only), read back before an action is done.
+const scriptedOrigins = new ScriptedOrigins()
+const scriptedOriginsRestored = chrome.storage.local
+  .get(SCRIPTED_ORIGINS_KEY)
+  .then((stored) => scriptedOrigins.replace(stored && stored[SCRIPTED_ORIGINS_KEY]))
+  .catch(() => {})
 // attached is the tab the actions go to and the person's own tab, either of
 // which may be none: ownTabId is theirs, attached through the panel, and
 // tabId the one actions go to -- theirs, or one the agent opened.
@@ -65,8 +96,11 @@ const opened = new Set()
 // while the worker was still reading what it had before it stopped: what
 // it read is from before, and is not put back.
 let isStoredTabOverruled = false
-const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'tabId']).then(async ({ opened: kept, groups: keptGroups, ownTabId, tabId }) => {
+const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'tabId', 'documents']).then(async ({ opened: kept, groups: keptGroups, ownTabId, tabId, documents: keptDocuments }) => {
   for (const id of kept || []) opened.add(id)
+  // Which document each tab shows and which were filled, so that a worker
+  // started again still keeps nothing of a tab that shows a filled document.
+  documents.restore(keptDocuments)
   for (const [windowId, groupId] of keptGroups || []) groups.set(Number(windowId), groupId)
   // The tab the actions went to, if the worker was stopped with one and it
   // is still there. Kept in memory only, it was forgotten whenever the
@@ -92,6 +126,7 @@ const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'ta
   }
 })
 const rememberOpened = () => chrome.storage.session.set({ opened: [...opened] })
+const rememberDocuments = () => chrome.storage.session.set({ documents: documents.keep() })
 const rememberGroups = () => chrome.storage.session.set({ groups: [...groups] })
 const rememberOwn = () => chrome.storage.session.set({ ownTabId: attached.ownTabId })
 // useTab makes a tab, or none, the one the actions go to, and keeps that
@@ -144,7 +179,7 @@ function connectIfSignedIn() {
       if (socket) return
       const origin = await serverOrigin()
       const secret = await token()
-      if (!origin || !secret || !/^https?:\/\//i.test(origin)) return
+      if (!origin || !secret || serverAddressProblem(origin) !== '') return
       connect(origin, secret)
     })().finally(() => {
       connecting = null
@@ -158,9 +193,10 @@ function connectIfSignedIn() {
 async function attach(tab) {
   const origin = await serverOrigin()
   const secret = await token()
-  if (!origin || !secret || !/^https?:\/\//i.test(origin)) {
+  if (!origin || !secret || serverAddressProblem(origin) !== '') {
     // Typed without a scheme, the address builds a WebSocket URL that
-    // throws, and the button did nothing with nothing said.
+    // throws, and the button did nothing with nothing said. An http address
+    // to another computer is refused the same way: the token would go in the clear.
     chrome.runtime.openOptionsPage()
     return
   }
@@ -226,11 +262,16 @@ function disconnect() {
 function tellServer() {
   if (!socket || socket.readyState !== WebSocket.OPEN) return
   const sending = socket
-  const update = { type: 'update', title: attached.title, url: attached.url, hasTab: attached.tabId !== null }
+  const update = { type: 'update', title: attached.title, url: attached.url, hasTab: attached.tabId !== null, currentTab: attached.tabId }
   void listTabs()
     .catch(() => undefined)
     .then((tabs) => {
-      if (sending.readyState === WebSocket.OPEN) sending.send(JSON.stringify({ ...update, ...(tabs ? { tabs } : {}) }))
+      if (sending.readyState !== WebSocket.OPEN) return
+      // The documents the agent's tabs committed since the last update ride
+      // along, taken only now that they are sent: one that could not be sent
+      // is sent with the next.
+      const commits = documents.takeReports()
+      sending.send(JSON.stringify({ ...update, ...(tabs ? { tabs } : {}), ...(commits.length > 0 ? { commits } : {}) }))
     })
 }
 
@@ -286,7 +327,8 @@ function connect(origin, secret) {
       }
     }
     const tabs = await listTabs().catch(() => [])
-    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null, tabs }))
+    await scriptedOriginsRestored
+    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null, currentTab: attached.tabId, tabs, scriptedOrigins: scriptedOrigins.list() }))
     // A word every so often keeps this worker, and the socket, alive
     // while nothing else is said.
     clearInterval(pings)
@@ -310,6 +352,8 @@ function connect(origin, secret) {
       attempt = 0
       showState()
       tellPanels()
+      // What the tabs committed while the server was away.
+      tellServer()
       return
     }
     if (message.type === 'refused') {
@@ -367,6 +411,10 @@ function connect(origin, secret) {
 void connectIfSignedIn()
 chrome.runtime.onStartup.addListener(() => void connectIfSignedIn())
 chrome.runtime.onInstalled.addListener(() => void connectIfSignedIn())
+// The options page may change the list itself (allowing sites again).
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[SCRIPTED_ORIGINS_KEY]) scriptedOrigins.replace(changes[SCRIPTED_ORIGINS_KEY].newValue)
+})
 chrome.storage.onChanged.addListener((changes, area) => {
   if (!(area === 'local' && changes.token) && !(area === 'sync' && changes.server)) return
   disconnect()
@@ -489,6 +537,31 @@ const DEBUGGER_IDLE = 10 * 60 * 1000
 // what the agent may reach in the browser, TeaNode's own pages included, is
 // decided in reach.js; the server holds the same lines and refuses first.
 
+// navigationRefusal is why a page-moving DevTools method is not sent with the
+// parameters it was given, or ''. A javascript: address given to Page.navigate
+// runs script in the document the tab is showing (a filled one included), and
+// Page.reload can be asked to run a script on load. The navigate and open
+// actions already take only http and https addresses; the same holds here, and
+// the address is also held to reach.js's lines where the call is made.
+function navigationRefusal(method, params) {
+  if (method === 'Page.navigate') {
+    let address = null
+    try {
+      address = new URL(String(params && params.url))
+    } catch {
+      address = null
+    }
+    if (!address || (address.protocol !== 'http:' && address.protocol !== 'https:')) {
+      return 'Page.navigate takes an http or https address in url'
+    }
+  }
+  if (method === 'Page.reload') {
+    const extra = Object.keys(params || {}).filter((name) => name !== 'ignoreCache')
+    if (extra.length > 0) return 'Page.reload takes only ignoreCache'
+  }
+  return ''
+}
+
 // agentUsing are the tabs whose debugger the agent's cdp action uses,
 // marked before it waits for the attachment, so a stream's start or stop
 // meanwhile never lets the debugger go from under it.
@@ -560,7 +633,11 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   }
   const state = source.tabId !== undefined && debugging.get(source.tabId)
   if (!state) return
-  state.events.push({ at: Date.now(), method, params })
+  // Nothing is kept of a document the agent filled a password or a code into
+  // (a page logs, posts and echoes what it was given), and nothing of a
+  // request's body in any.
+  if (documents.isShowingFilledDocument(source.tabId)) return
+  state.events.push({ at: Date.now(), method, params: withoutRequestBodies(params) })
   // Learned as it arrives, not from the window: see networkEventsShown.
   noteRequestEvent(state.requests, method, params)
   if (state.events.length > EVENTS_KEPT) state.events.splice(0, state.events.length - EVENTS_KEPT)
@@ -787,6 +864,8 @@ const BUTTONS_HELD = { left: 1, right: 2, middle: 4 }
 async function dispatchInput(message) {
   const tabId = message.tab
   if (!casting.has(tabId) || !isListed(tabId)) return
+  // The person is holding the tab: what they click is theirs to fill.
+  agentActivity.notePersonInput(tabId)
   const target = { tabId }
   const modifiers = Number(message.modifiers) || 0
   try {
@@ -836,6 +915,100 @@ async function dispatchInput(message) {
   }
 }
 
+// stopWatchingNetwork turns off what the debugger keeps of the tab's network
+// events and forgets what it kept, before the agent fills a password or a code
+// into the tab.
+async function stopWatchingNetwork(tabId) {
+  const state = debugging.get(tabId)
+  if (!state) return
+  await chrome.debugger.sendCommand({ tabId }, 'Network.disable').catch(() => {})
+  state.events = []
+}
+
+// keepScriptedOrigins writes the list of scripted sites to the storage.
+const keepScriptedOrigins = () => chrome.storage.local.set({ [SCRIPTED_ORIGINS_KEY]: scriptedOrigins.list() })
+
+// clearScriptedOrigins lets the agent fill on every site again. The options
+// page asks for it with the message passwords:clear-scripted-origins.
+async function clearScriptedOrigins() {
+  await scriptedOriginsRestored
+  scriptedOrigins.clear()
+  await keepScriptedOrigins()
+}
+
+// frameState is what the browser says the tab's main frame shows now: its
+// address and document, read together.
+async function frameState(tabId) {
+  try {
+    if (chrome.webNavigation && typeof chrome.webNavigation.getFrame === 'function') {
+      const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 })
+      if (frame) return { url: frame.url || '', documentId: frame.documentId || '' }
+    }
+  } catch {
+    // Fall back to the tab's own address.
+  }
+  const tab = await chrome.tabs.get(tabId).catch(() => null)
+  return { url: (tab && tab.url) || '', documentId: '' }
+}
+
+// markScriptedSites notes the sites a script ran, or is running, on: the one
+// the tab shows now, the ones it committed since its count of commits was
+// countBefore (a script that waits can run in several documents), and those of
+// the windows the tab opened (a window outlives the page that opened it).
+async function markScriptedSites(tabId, countBefore, addresses) {
+  await scriptedOriginsRestored
+  const found = [...addresses, (await frameState(tabId)).url, ...documents.originsSince(tabId, countBefore)]
+  const opened = await chrome.tabs.query({}).catch(() => [])
+  for (const other of opened) {
+    if (other && other.openerTabId === tabId) found.push(other.pendingUrl || other.url)
+  }
+  let isNews = false
+  for (const address of found) isNews = scriptedOrigins.add(address) || isNews
+  if (isNews) await keepScriptedOrigins().catch(() => {})
+}
+
+// runAsScript does an action that runs script in the page, or changes it. The
+// sites are marked before, and again after, however it ends: the page can move
+// to another document meanwhile, and the script runs in the one the browser
+// finds when it gets there. The answer names the document the script ran in,
+// for the server's own mark; the model is given the value alone.
+// work answers { answer, documentId }, the documentId being empty when the
+// browser did not say.
+async function runAsScript(tab, work) {
+  const countBefore = documents.countOf(tab.id)
+  await markScriptedSites(tab.id, Number.POSITIVE_INFINITY, [tab.url])
+  let done
+  try {
+    done = await work()
+  } finally {
+    await markScriptedSites(tab.id, countBefore, []).catch(() => {})
+  }
+  if (!done.answer.ok) return done.answer
+  const documentId = done.documentId || (await frameState(tab.id)).documentId
+  return { ...done.answer, data: { scriptRun: { documentId }, value: done.answer.data } }
+}
+
+// isOptionsPage says a message comes from the extension's own options page.
+function isOptionsPage(sender) {
+  if (!sender || sender.id !== chrome.runtime.id || (sender.frameId !== undefined && sender.frameId !== 0)) return false
+  const prefix = chrome.runtime.getURL('')
+  const url = typeof sender.url === 'string' ? sender.url : ''
+  return url.startsWith(prefix) && '/' + url.slice(prefix.length).split(/[?#]/)[0] === '/options.html'
+}
+
+// What the options page asks about the sites the agent ran a script on.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const type = message && message.type
+  if (type !== 'passwords:clear-scripted-origins' && type !== 'passwords:scripted-origins') return false
+  if (!isOptionsPage(sender)) {
+    sendResponse({ error: 'Not allowed from here.' })
+    return false
+  }
+  const work = type === 'passwords:scripted-origins' ? scriptedOriginsRestored.then(() => ({ origins: scriptedOrigins.list() })) : clearScriptedOrigins().then(() => ({}))
+  work.then(sendResponse, () => sendResponse({ error: 'Something went wrong.' }))
+  return true
+})
+
 // panelIn is where the person's TeaNode panel is in a tab now, read from the
 // page: see panelProbe. A page the extension cannot run a script in cannot
 // have the panel on it either, since the panel is put there by a script.
@@ -870,6 +1043,7 @@ async function act(action, args) {
       }
       const made = await chrome.tabs.create({ url: args.url, windowId, active: true })
       opened.add(made.id)
+      agentActivity.noteAgentCommand(made.id)
       await rememberOpened()
       await groupFor(windowId, made.id)
       await useTab(made.id)
@@ -881,10 +1055,27 @@ async function act(action, args) {
     }
     if (attached.tabId === null) return { ok: false, error: 'no tab is open for you in this browser yet; open one first' }
     const tab = await chrome.tabs.get(attached.tabId)
+    // Noted before anything is done: the agent's real input here looks like
+    // the person's to the page, and Passwords does not fill a tab the agent
+    // is working in (see agentActivity.ts).
+    agentActivity.noteAgentCommand(tab.id)
+    // The server checked a lock on one tab before it sent this; if the actions
+    // go to another by now, it is not done there.
+    if (args.expectedTab !== undefined && args.expectedTab !== null && args.expectedTab !== '' && String(args.expectedTab) !== String(tab.id)) {
+      return { ok: false, error: 'the tab the actions go to has changed since this was asked for; call tabs to see which it is now' }
+    }
     // Where the tab is now, not where it was when it was attached or last
     // reported: a page may have gone to TeaNode since.
     const unreachable = pageRefusal(action, tab, origin)
     if (unreachable) return { ok: false, error: unreachable }
+    // A tab that shows a document the agent filled a password or code into is
+    // not read back, whatever the server has been told yet: a page restored
+    // from the history's cache is that same document.
+    const isFilledDocument = documents.isShowingFilledDocument(tab.id)
+    if (isFilledDocument) {
+      const lockedRefusal = lockedActionRefusal(action, args)
+      if (lockedRefusal) return { ok: false, error: lockedRefusal }
+    }
     if (action === 'navigate') {
       const unwelcome = addressRefusal(args.url, origin)
       if (unwelcome) return { ok: false, error: unwelcome }
@@ -942,8 +1133,14 @@ async function act(action, args) {
       return { ok: true, data: image }
     }
     if (action === 'cdp') {
-      const refusal = cdpRefusal(args.method) || cdpParametersRefusal(args.method, args.params)
+      const refusal = cdpRefusal(args.method) || cdpParametersRefusal(args.method, args.params) || navigationRefusal(args.method, args.params)
       if (refusal) return { ok: false, error: refusal }
+      // The stricter of the two: a tab showing a filled document answers fewer
+      // methods than any other tab does.
+      if (isFilledDocument) {
+        const lockedRefusal = lockedMethodRefusal(args.method, args.params)
+        if (lockedRefusal) return { ok: false, error: lockedRefusal }
+      }
       // Only a request that may be shown has its body read: not one to the
       // server, and not one whose creation was never seen.
       if (args.method === 'Network.getResponseBody' || args.method === 'Network.getRequestPostData') {
@@ -957,19 +1154,25 @@ async function act(action, args) {
         const unwelcome = addressRefusal(args.params && args.params.url, origin)
         if (unwelcome) return { ok: false, error: unwelcome }
       }
-      agentUsing.add(tab.id)
-      await debuggerFor(tab.id)
-      // Attaching takes a moment, in which the page may have gone to TeaNode.
-      const unreachableNow = pageRefusal(action, await chrome.tabs.get(tab.id), origin)
-      if (unreachableNow) return { ok: false, error: unreachableNow }
-      // Input dispatched where the panel is would be a click in TeaNode
-      // itself, as the person's hand. Read as late as it can be.
-      if (args.method.startsWith('Input.')) {
-        const covered = panelRefusal(args.method, args.params, await panelIn(tab.id))
-        if (covered) return { ok: false, error: covered }
+      const sendProtocolCommand = async () => {
+        agentUsing.add(tab.id)
+        await debuggerFor(tab.id)
+        // Attaching takes a moment, in which the page may have gone to TeaNode.
+        const unreachableNow = pageRefusal(action, await chrome.tabs.get(tab.id), origin)
+        if (unreachableNow) return { ok: false, error: unreachableNow }
+        // Input dispatched where the panel is would be a click in TeaNode
+        // itself, as the person's hand. Read as late as it can be.
+        if (args.method.startsWith('Input.')) {
+          const covered = panelRefusal(args.method, args.params, await panelIn(tab.id))
+          if (covered) return { ok: false, error: covered }
+        }
+        const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
+        return { ok: true, data: { result: answer === undefined ? null : answer } }
       }
-      const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
-      return { ok: true, data: { result: answer === undefined ? null : answer } }
+      // The server says whether the command runs script in the page or changes
+      // it; one it does not say anything about is taken to.
+      if (args.isScript === false) return await sendProtocolCommand()
+      return await runAsScript(tab, async () => ({ answer: await sendProtocolCommand(), documentId: '' }))
     }
     if (action === 'cdp_events') {
       const state = debugging.get(tab.id)
@@ -1000,6 +1203,26 @@ async function act(action, args) {
       await letDebuggerGo(tab.id)
       return { ok: true, data: { stopped: true } }
     }
+    // The server builds these arguments after checking the item is one the
+    // person let the agent use and that the tab is on one of its sites; the
+    // extension checks the tab's address again and never echoes a value.
+    if (action === 'fill_login' || action === 'fill_one_time_code') {
+      // A site the agent ran a script on is not filled, in any page of it.
+      await scriptedOriginsRestored
+      if (scriptedOrigins.has(tab.url) || scriptedOrigins.has((await frameState(tab.id)).url)) {
+        return { ok: false, error: SCRIPTED_ORIGIN_REFUSAL }
+      }
+      // What the page asks of the network is not kept from here on, and what
+      // was kept before is let go: a form's request carries the password.
+      await stopWatchingNetwork(tab.id)
+      const answer = await (action === 'fill_login' ? fillLoginForAgent(tab.id, args) : fillOneTimeCodeForAgent(tab.id, args))
+      if (!answer.ok) return answer
+      // Which document it went into, and where the tab's commits stand, for
+      // the server's lock.
+      documents.markFilled(tab.id, answer.data.documentId)
+      await rememberDocuments().catch(() => {})
+      return { ok: true, data: { ...answer.data, tab: tab.id, commitCount: documents.countOf(tab.id) } }
+    }
     // The page's session goes with a fetch: where it goes is held to the same
     // lines as where a tab goes.
     if (action === 'fetch') {
@@ -1009,12 +1232,18 @@ async function act(action, args) {
     // An element the panel covers is not clicked, hovered, typed into or
     // chosen in: the person would see it happen under the panel.
     const panel = ['click', 'hover', 'type', 'select'].includes(action) ? await panelIn(tab.id) : { isOpen: false }
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: inPage,
-      args: [action, args, serverHostname(origin), OWN_PAGES_REFUSAL, panel, PANEL_ELEMENT_REFUSAL],
-    })
-    return result?.result || { ok: false, error: 'the page did not answer' }
+    const runInPage = async () => {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: inPage,
+        // Whether the tab shows a filled document is the worker's to say, never
+        // the caller's: it is set after whatever came with the action.
+        args: [action, { ...args, isFilledDocument }, serverHostname(origin), OWN_PAGES_REFUSAL, panel, PANEL_ELEMENT_REFUSAL],
+      })
+      return { answer: result?.result || { ok: false, error: 'the page did not answer' }, documentId: result?.documentId || '' }
+    }
+    if (action === 'evaluate') return await runAsScript(tab, runInPage)
+    return (await runInPage()).answer
   } catch (error) {
     return { ok: false, error: String(error && error.message ? error.message : error) }
   }
@@ -1043,219 +1272,58 @@ function waitForLoad(tabId) {
   })
 }
 
-// inPage runs inside the page. It is self-contained: nothing from this
-// file is in scope there.
-async function inPage(action, args, ownHostname, ownPagesRefusal, panel, panelWords) {
-  // The check that was made on the tab's address a moment ago, made again
-  // where the script runs: a page can go to TeaNode in between.
-  if (/^(chrome|moz)-extension:$/.test(location.protocol) || (ownHostname && location.hostname.replace(/\.$/, '').toLowerCase() === ownHostname)) {
-    return { ok: false, error: ownPagesRefusal }
+// The panel's script runs inside the page the person pressed the button on:
+// it is a content script, not a page of the extension, so what it asks of this
+// worker is not told from what it says. It is told by where it comes from and
+// when: the worker itself put the script into that tab, and only just, when
+// the button was pressed. The token goes to a tab only in the few seconds after
+// that, once; the other requests (attach, detach, the place the panel was left
+// at) only from a tab that has the panel in its current page. Any other
+// content script, and any frame of a page, is refused.
+const PANEL_TOKEN_GRANT_MILLISECONDS = 10000
+const PANEL_STORAGE_KEY = 'panelTabs'
+
+async function readPanelTabs() {
+  const stored = (await chrome.storage.session.get(PANEL_STORAGE_KEY))[PANEL_STORAGE_KEY]
+  return {
+    tabs: stored && Array.isArray(stored.tabs) ? stored.tabs.filter((id) => typeof id === 'number') : [],
+    grants: stored && stored.grants && typeof stored.grants === 'object' ? stored.grants : {},
   }
-  // Whether an element is under the person's TeaNode panel, which is where
-  // the agent does not act.
-  const isUnderPanel = (node) => {
-    if (!panel || !panel.isOpen) return false
-    const box = node.getBoundingClientRect()
-    return box.left <= panel.right && box.right >= panel.left && box.top <= panel.bottom && box.bottom >= panel.top
-  }
-  const refs = (window.__teanodeRefs = window.__teanodeRefs || new Map())
-  let next = window.__teanodeNextRef || 1
-  const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label'])
-  const find = () => {
-    // A ref comes back through a tool call, where it may be a string.
-    if (args.ref) return refs.get(Number(args.ref)) || refs.get(args.ref) || null
-    if (args.selector) return document.querySelector(args.selector)
-    return null
-  }
-  // Which fields hold a secret. It decides what a snapshot says, not what
-  // may be typed: a password the person has already filled in is not read
-  // back into the conversation, where it would be kept and sent onward.
-  // Typing into one is their agent's business and goes ahead.
-  const sensitive = (node) => {
-    const type = (node.type || '').toLowerCase()
-    const hint = ((node.autocomplete || '') + ' ' + (node.name || '') + ' ' + (node.id || '') + ' ' + (node.getAttribute('aria-label') || '')).toLowerCase()
-    return type === 'password' || /cc-|card|cvc|cvv|iban|account-?number|routing|ssn|passport/.test(hint)
-  }
-  const nameOf = (node) => {
-    const label = node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
-    if (label) return label.trim()
-    return ((node.innerText || node.value || node.textContent || '').trim().replace(/\s+/g, ' ')).slice(0, 120)
-  }
-  const refFor = (node) => {
-    for (const [ref, candidate] of refs) if (candidate === node) return ref
-    const ref = next++
-    refs.set(ref, node)
-    window.__teanodeNextRef = next
-    return ref
-  }
-  switch (action) {
-    case 'snapshot': {
-      const maximum = args.max_characters || 20000
-      if (args.mode === 'text') {
-        const text = document.body ? document.body.innerText : ''
-        return { ok: true, data: { title: document.title, url: location.href, text: text.slice(0, maximum), truncated: text.length > maximum } }
-      }
-      const lines = []
-      let total = 0
-      const walk = (node, depth) => {
-        if (total > maximum) return
-        if (node.nodeType === Node.TEXT_NODE) {
-          const text = node.textContent.trim().replace(/\s+/g, ' ')
-          if (text) {
-            lines.push('  '.repeat(depth) + text.slice(0, 200))
-            total += text.length
-          }
-          return
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE) return
-        const tag = node.tagName.toLowerCase()
-        if (['script', 'style', 'noscript', 'svg', 'template', 'head'].includes(tag)) return
-        const style = window.getComputedStyle(node)
-        if (style.display === 'none' || style.visibility === 'hidden') return
-        if (interactive.has(tag) || (node.getAttribute('role') && /button|link|checkbox|radio|textbox|combobox|tab|menuitem/.test(node.getAttribute('role')))) {
-          const ref = refFor(node)
-          let description = node.getAttribute('role') || tag
-          if (tag === 'input') description = 'input(' + (node.type || 'text') + ')'
-          let extra = ''
-          if (tag === 'a' && node.getAttribute('href')) extra = ' href=' + node.getAttribute('href')
-          if ((tag === 'input' || tag === 'textarea') && node.value && !sensitive(node)) extra = ' value=' + JSON.stringify(node.value.slice(0, 80))
-          if (sensitive(node)) extra = ' (holds a secret)'
-          lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + ' "' + nameOf(node) + '"' + extra)
-          total += 40
-          if (tag === 'select') {
-            for (const option of node.options) lines.push('  '.repeat(depth + 1) + '- option ' + JSON.stringify(option.text) + (option.selected ? ' (selected)' : ''))
-          }
-          if (['a', 'button', 'label', 'option', 'select'].includes(tag)) return
-        } else if (/^h[1-6]$/.test(tag)) {
-          lines.push('  '.repeat(depth) + tag + ': ' + (node.innerText || '').trim().slice(0, 200))
-          return
-        }
-        for (const child of node.childNodes) walk(child, depth + (['div', 'span', 'section', 'main', 'article', 'body', 'html', 'p'].includes(tag) ? 0 : 1))
-      }
-      walk(document.documentElement, 0)
-      return { ok: true, data: { title: document.title, url: location.href, text: lines.join('\n'), truncated: total > maximum } }
-    }
-    case 'click': {
-      const node = find()
-      if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
-      node.scrollIntoView({ block: 'center' })
-      if (isUnderPanel(node)) return { ok: false, error: panelWords }
-      node.click()
-      await new Promise((resolve) => setTimeout(resolve, 300))
-      return { ok: true, data: { clicked: nameOf(node), now: { url: location.href, title: document.title } } }
-    }
-    case 'hover': {
-      const node = find()
-      if (!node) return { ok: false, error: 'nothing matches' }
-      if (isUnderPanel(node)) return { ok: false, error: panelWords }
-      node.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-      return { ok: true, data: { hovered: nameOf(node) } }
-    }
-    case 'type': {
-      const node = find()
-      if (!node) return { ok: false, error: 'nothing matches; take a snapshot first' }
-      if (isUnderPanel(node)) return { ok: false, error: panelWords }
-      node.focus()
-      if (args.clear_first) node.value = ''
-      if ('value' in node) {
-        node.value = (node.value || '') + (args.text || '')
-        node.dispatchEvent(new Event('input', { bubbles: true }))
-        node.dispatchEvent(new Event('change', { bubbles: true }))
-      } else if (node.isContentEditable) {
-        document.execCommand('insertText', false, args.text || '')
-      }
-      if (args.submit && node.form) {
-        node.form.requestSubmit ? node.form.requestSubmit() : node.form.submit()
-      }
-      return { ok: true, data: { typed: (args.text || '').length } }
-    }
-    case 'select': {
-      const node = find()
-      if (!node || node.tagName.toLowerCase() !== 'select') return { ok: false, error: 'not a select' }
-      if (isUnderPanel(node)) return { ok: false, error: panelWords }
-      let picked = null
-      for (const option of node.options) if (option.value === args.value || option.text.trim() === args.value) picked = option
-      if (!picked && typeof args.index === 'number') picked = node.options[args.index]
-      if (!picked) return { ok: false, error: 'no such option' }
-      node.value = picked.value
-      node.dispatchEvent(new Event('change', { bubbles: true }))
-      return { ok: true, data: { selected: picked.text } }
-    }
-    case 'press': {
-      const active = document.activeElement || document.body
-      for (const kind of ['keydown', 'keypress', 'keyup']) active.dispatchEvent(new KeyboardEvent(kind, { key: args.key, bubbles: true }))
-      if (args.key === 'Enter' && active.form) active.form.requestSubmit ? active.form.requestSubmit() : active.form.submit()
-      return { ok: true, data: { pressed: args.key } }
-    }
-    case 'scroll': {
-      const node = find() || window
-      const height = (node === window ? window.innerHeight : node.clientHeight) * (args.amount || 1) * (args.direction === 'up' ? -1 : 1)
-      node.scrollBy({ top: height })
-      return { ok: true, data: { scrolled: args.direction || 'down' } }
-    }
-    case 'wait': {
-      const timeout = args.timeout_ms || 30000
-      const started = Date.now()
-      while (Date.now() - started < timeout) {
-        if (args.for === 'selector' && document.querySelector(args.selector)) return { ok: true, data: { ended_by: 'selector' } }
-        if ((args.for === 'navigation' || !args.for) && document.readyState === 'complete') return { ok: true, data: { ended_by: 'load' } }
-        if (args.for === 'timeout') {
-        // Waiting out the whole time is the point of asking for it.
-        await new Promise((resolve) => setTimeout(resolve, Math.min(250, timeout)))
-        continue
-      }
-        await new Promise((resolve) => setTimeout(resolve, 250))
-      }
-      return { ok: true, data: { ended_by: 'timeout' } }
-    }
-    case 'evaluate': {
-      try {
-        const value = await Promise.resolve(new Function('return (' + args.expression + ')')())
-        return { ok: true, data: JSON.parse(JSON.stringify(value === undefined ? null : value)) }
-      } catch (error) {
-        return { ok: false, error: String(error) }
-      }
-    }
-    case 'fetch': {
-      // With the tab's own session: the primitive for "download my
-      // statement". Same origin only, so a page cannot be used to reach
-      // another site the person is signed into.
-      try {
-        const target = new URL(args.url || '', location.href)
-        if (target.origin !== location.origin) return { ok: false, error: 'fetch is limited to the attached page’s own site' }
-        if (ownHostname && target.hostname.replace(/\.$/, '').toLowerCase() === ownHostname) return { ok: false, error: ownPagesRefusal }
-        // Following a redirect would take the person's cookies off this
-      // site: any open redirect on it would otherwise read any site they
-      // are signed into.
-      const response = await fetch(target.toString(), { credentials: 'include', redirect: 'manual' })
-      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
-        return { ok: false, error: 'that address redirects off this site, which is not followed with the page\'s session' }
-      }
-        const type = response.headers.get('content-type') || ''
-        if (/^text\/|json|xml/.test(type)) {
-          const text = await response.text()
-          return { ok: true, data: { status: response.status, content_type: type, text: text.slice(0, args.max_characters || 20000) } }
-        }
-        const bytes = await response.arrayBuffer()
-        if (bytes.byteLength > 5 * 1024 * 1024) return { ok: false, error: 'the file is over five megabytes' }
-        let binary = ''
-        for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte)
-        return { ok: true, data: { status: response.status, content_type: type, base64: btoa(binary), bytes: bytes.byteLength } }
-      } catch (error) {
-        return { ok: false, error: String(error) }
-      }
-    }
-    case 'storage': {
-      // Only the attached site's own storage, and never another's.
-      const entries = {}
-      for (let index = 0; index < localStorage.length; index++) {
-        const key = localStorage.key(index)
-        entries[key] = (localStorage.getItem(key) || '').slice(0, 500)
-      }
-      return { ok: true, data: { origin: location.origin, localStorage: entries } }
-    }
-  }
-  return { ok: false, error: 'unknown action ' + action }
+}
+
+async function writePanelTabs(panel) {
+  await chrome.storage.session.set({ [PANEL_STORAGE_KEY]: panel })
+}
+
+async function markPanelPressed(tabId) {
+  const panel = await readPanelTabs()
+  if (!panel.tabs.includes(tabId)) panel.tabs.push(tabId)
+  panel.grants[tabId] = Date.now()
+  await writePanelTabs(panel)
+}
+
+async function forgetPanelTab(tabId) {
+  const panel = await readPanelTabs()
+  if (!panel.tabs.includes(tabId) && !(tabId in panel.grants)) return
+  panel.tabs = panel.tabs.filter((id) => id !== tabId)
+  delete panel.grants[tabId]
+  await writePanelTabs(panel)
+}
+
+// isPanelSender says whether a message is from the panel script in the top
+// frame of a tab that has it. With wantsToken it must also be within the few
+// seconds after the button was pressed, and the grant is used up.
+async function isPanelSender(sender, wantsToken) {
+  if (!sender || sender.id !== chrome.runtime.id || !sender.tab || typeof sender.tab.id !== 'number') return false
+  if (sender.frameId !== undefined && sender.frameId !== 0) return false
+  const panel = await readPanelTabs()
+  if (!panel.tabs.includes(sender.tab.id)) return false
+  if (!wantsToken) return true
+  const pressedAt = panel.grants[sender.tab.id]
+  if (typeof pressedAt !== 'number' || Date.now() - pressedAt > PANEL_TOKEN_GRANT_MILLISECONDS) return false
+  delete panel.grants[sender.tab.id]
+  await writePanelTabs(panel)
+  return true
 }
 
 // The button opens the agent's panel on the page: the dashboard's own
@@ -1263,11 +1331,35 @@ async function inPage(action, args, ownHostname, ownPagesRefusal, panel, panelWo
 // dashboard. Where nothing can be put on the page, the options open.
 chrome.action.onClicked.addListener(async (tab) => {
   try {
+    await markPanelPressed(tab.id)
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['panel.js'] })
   } catch {
+    await forgetPanelTab(tab.id).catch(() => {})
     chrome.runtime.openOptionsPage()
   }
 })
+
+// A tab that loads a new page no longer has the panel in it.
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === 'loading') void forgetPanelTab(tabId).catch(() => {})
+})
+
+const PANEL_GEOMETRY_PREFIX = 'panel:geometry:'
+
+function panelGeometryKey(sender) {
+  try {
+    return PANEL_GEOMETRY_PREFIX + new URL(sender.url).origin
+  } catch {
+    return null
+  }
+}
+
+function isPanelGeometry(value) {
+  return (
+    !!value &&
+    ['across', 'down', 'width', 'height'].every((name) => typeof value[name] === 'number' && Number.isFinite(value[name]))
+  )
+}
 
 // handedNonces are the panels whose frame has been handed the token: once
 // each.
@@ -1312,29 +1404,49 @@ async function handToken(tabId, nonce) {
 
 // What the panel asks of this worker.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const type = message && message.type
+  if (typeof type !== 'string' || !type.startsWith('panel:')) return false
   const tab = sender.tab
-  switch (message && message.type) {
-    case 'panel:token':
-      Promise.all([serverOrigin(), token(), chrome.storage.local.get('username')]).then(([server, secret, { username }]) => {
+  isPanelSender(sender, type === 'panel:token').then(async (isAllowed) => {
+    if (!isAllowed) return sendResponse(type === 'panel:handoff' ? false : { error: 'Not allowed from here.' })
+    switch (type) {
+      case 'panel:token': {
+        const [server, secret, { username }] = await Promise.all([
+          serverOrigin(),
+          token(),
+          chrome.storage.local.get('username'),
+        ])
         // The token itself stays here: the panel gets only whether there is one.
-        sendResponse({ server, isSignedIn: !!secret, username: username || '', attached: !!tab && attached.ownTabId === tab.id })
-      })
-      return true
-    case 'panel:handoff':
-      if (tab) handToken(tab.id, message.nonce).then(sendResponse)
-      else sendResponse(false)
-      return true
-    case 'panel:options':
-      chrome.runtime.openOptionsPage()
-      return false
-    case 'panel:attach':
-      if (tab) attach(tab).then(() => sendResponse({ attached: attached.ownTabId === tab.id }))
-      return true
-    case 'panel:detach':
-      detach().then(() => sendResponse({ attached: false }))
-      return true
-  }
-  return false
+        return sendResponse({ server, isSignedIn: !!secret, username: username || '', attached: attached.ownTabId === tab.id })
+      }
+      case 'panel:handoff':
+        return sendResponse(await handToken(tab.id, message.nonce))
+      case 'panel:options':
+        chrome.runtime.openOptionsPage()
+        return sendResponse({})
+      case 'panel:attach':
+        await attach(tab)
+        return sendResponse({ attached: attached.ownTabId === tab.id })
+      case 'panel:detach':
+        await detach()
+        return sendResponse({ attached: false })
+      case 'panel:geometry-read': {
+        const key = panelGeometryKey(sender)
+        const stored = key ? (await chrome.storage.local.get(key))[key] : null
+        return sendResponse({ geometry: isPanelGeometry(stored) ? stored : null })
+      }
+      case 'panel:geometry-write': {
+        const key = panelGeometryKey(sender)
+        if (key && isPanelGeometry(message.geometry)) {
+          const { across, down, width, height } = message.geometry
+          await chrome.storage.local.set({ [key]: { across, down, width, height } })
+        }
+        return sendResponse({})
+      }
+    }
+    return sendResponse({ error: 'Unknown request.' })
+  }).catch(() => sendResponse({ error: 'Something went wrong.' }))
+  return true
 })
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
@@ -1348,8 +1460,30 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   }
 })
 
+// A tab committing a document is what ends the server's lock on a tab the
+// agent filled a password into. Only the main frame counts, and not a change
+// that keeps the document (history.pushState, a fragment).
+if (chrome.webNavigation) {
+  chrome.webNavigation.onCommitted.addListener(async (details) => {
+    // A commit that wakes the worker waits for what it kept (the tabs the
+    // agent may act in, the documents it filled) to be read back first.
+    await restored.catch(() => {})
+    const report = documents.committed(details, isListed(details.tabId))
+    void rememberDocuments().catch(() => {})
+    if (report) tellServer()
+  })
+}
+
 chrome.tabs.onRemoved.addListener((tabId) => {
+  void forgetPanelTab(tabId).catch(() => {})
   forgetCast(tabId)
+  documents.forget(tabId)
+  // A worker that was asleep reads back what it kept, which still holds this
+  // tab: it is forgotten again once that is read.
+  void restored.catch(() => {}).then(() => {
+    documents.forget(tabId)
+    return rememberDocuments()
+  }).catch(() => {})
   if (opened.has(tabId)) tellSoon()
   if (opened.delete(tabId)) rememberOpened()
   // Their own tab, closed: it is detached, and the connection stays.
@@ -1366,3 +1500,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     }).catch(() => {})
   }
 })
+
+// act and clearScriptedOrigins are exported for the tests, which drive them as
+// the socket and the options page do.
+export { act, clearScriptedOrigins }

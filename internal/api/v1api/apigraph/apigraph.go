@@ -114,6 +114,10 @@ type graph struct {
 	// how fast it may make places (location_limits.go).
 	locationLimitsOnce  sync.Once
 	locationLimitsValue *locationRateLimits
+
+	// passwordsLimits bound the wrong proofs one person gives to unlock
+	// Passwords and how fast they change it (passwords.go).
+	passwordsLimits passwordsLimiters
 }
 
 // New builds the GraphQL component, generating the schema by reflection over

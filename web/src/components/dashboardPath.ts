@@ -85,7 +85,16 @@ export const FINANCE_LINK_PATH = '/finance/link'
 // list).
 const HEALTH_SETTINGS_PATH = '/health?tab=settings'
 
-const SHOWN_PREFIXES = ['/knowledge', '/mailbox', '/settings/agent', '/settings', '/finance', '/location', '/health']
+const SHOWN_PREFIXES = [
+  '/knowledge',
+  '/mailbox',
+  '/settings/agent',
+  '/settings',
+  '/finance',
+  '/location',
+  '/health',
+  '/passwords',
+]
 
 // shownPath is a path the agent asked the dashboard to show, or null: under
 // one of the prefixes above, in segments of letters, digits and -._~, so no

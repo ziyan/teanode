@@ -324,6 +324,11 @@ func translateCircleError(err error) error {
 	if errors.Is(err, db.ErrCircleNeedsAdmin) {
 		return fmt.Errorf("%w: a circle needs an admin; make somebody else an admin first, or delete the circle", api.ErrInvalidArguments)
 	}
+	if errors.Is(err, db.ErrPasswordsBusy) {
+		// Ending the shares of Passwords that only the circle made possible
+		// waited for a lock and gave up; the member is still in.
+		return passwordsFailure(err)
+	}
 	return translateError(err)
 }
 
@@ -461,7 +466,7 @@ func (self *graph) DeleteCircle(ctx context.Context, arguments DeleteCircleArgum
 		return false, err
 	}
 	if err := tx.DeleteCircle(arguments.CircleID); err != nil {
-		return false, translateError(err)
+		return false, translateCircleError(err)
 	}
 	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
 		return false, err

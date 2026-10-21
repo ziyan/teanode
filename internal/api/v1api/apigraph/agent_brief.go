@@ -26,7 +26,7 @@ import (
 // BriefName is what the schedule the switch writes is called. Found by name,
 // because a person who renames it has made it theirs and the switch should
 // leave it alone.
-const BriefName = "Daily brief"
+const BriefName = agent.BriefScheduleName
 
 // SetAgentBriefArguments say when the brief arrives, or that it should not.
 type SetAgentBriefArguments struct {
@@ -79,8 +79,11 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 			Prompt: agent.BriefPrompt(found, principal.User),
 			// The person's own words, because the person pressed the
 			// switch: a schedule the agent writes for itself arrives as a
-			// note about what to do rather than as an instruction.
-			WrittenBy: models.WrittenByPerson,
+			// note about what to do rather than as an instruction. Recorded
+			// as built in, not as the person's: the brief reads the inbox,
+			// so a run it wakes does not count as the person asking for
+			// Passwords.
+			WrittenBy: models.WrittenByBuiltIn,
 			Deliver:   deliver, Enabled: true,
 		}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())

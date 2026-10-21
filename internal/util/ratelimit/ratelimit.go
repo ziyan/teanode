@@ -168,6 +168,22 @@ func (self *Bucket) takeAvailable(now time.Time, count int64) int64 {
 	return count
 }
 
+// Give puts tokens back, up to the capacity: for a token taken for something
+// that turned out not to count.
+func (self *Bucket) Give(count int64) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+
+	if count <= 0 {
+		return
+	}
+	self.adjust(self.currentTick(time.Now()))
+	self.tokens += count
+	if self.tokens > self.capacity {
+		self.tokens = self.capacity
+	}
+}
+
 // Allow takes one token if one is there, and reports whether it was.
 func (self *Bucket) Allow() bool {
 	return self.TakeAvailable(1) == 1

@@ -78,6 +78,45 @@ type AskSettings struct {
 	// Surface is where the answer goes: drawer, phone, cli, api or mail.
 	Surface string
 
+	// IsPersonsTap says the request that started the turn was the person's
+	// own tap on a screen: the dashboard's session or the phone app's token
+	// (access.Principal.IsPersonsTap). The surface a client names is only a
+	// claim, so a turn counts as typed by the person (IsStartedByPerson) only
+	// when this is set; a command line token, an app password, OAuth, the
+	// extension's token and a program that speaks MCP never set it.
+	IsPersonsTap bool
+
+	// IsOperatorActingAsPerson says an operator, not the person, made the
+	// request: signed in as the person, or speaking into the person's
+	// conversation with agent:act. Such a turn is never the person's own.
+	IsOperatorActingAsPerson bool
+
+	// IsPersonsSchedule says a turn of the schedule surface was woken by a
+	// schedule the person wrote, not one the agent wrote for itself and not a
+	// built-in one (the daily brief), which reads content the person did not
+	// write.
+	IsPersonsSchedule bool
+
+	// IsAgentsSchedule says a turn of the schedule surface was woken by a
+	// schedule the agent wrote (or one of unknown origin), not one the person
+	// wrote and not a built-in one. Passwords is closed to it, and says so in
+	// words that tell the person how to open it (IsWokenByAgentsSchedule).
+	IsAgentsSchedule bool
+
+	// IsAnswerToCard says the turn carries on an answer given to a card after
+	// the turn that raised it had ended (see ResumeInteraction), and
+	// IsCardRaisedByPerson that the turn that raised it was one the person
+	// started. The answer is the person's, but it is not typed into a chat
+	// app or a program: the turn counts as the person's only if the one it
+	// carries on did, and only if the answer itself was the person's own tap
+	// on a screen (IsAnswerFromPersonsTap, as IsPersonsTap is for a typed
+	// turn). A late answer made with a command line token, an app password or
+	// by an operator acting as the person carries the card on, but not as the
+	// person's run.
+	IsAnswerToCard         bool
+	IsCardRaisedByPerson   bool
+	IsAnswerFromPersonsTap bool
+
 	// DrawerID names the open drawer that sent the turn: the browser a
 	// location call asks, rather than any other the person has open. Empty
 	// for a turn no drawer sent, such as one begun after a card was
@@ -397,6 +436,12 @@ type AskRun struct {
 	// lastAnswer is the newest answer the turn gave, for the phone
 	// notification sent when the turn finishes; see isAnswerForPhone.
 	lastAnswer string
+
+	// hasMadePrivateCall says the turn called a private tool (see
+	// tools.IsPrivateToolCall): the person's Health, or a list, a note or a
+	// made-up password from Passwords. Its answer is not put on a lock
+	// screen.
+	hasMadePrivateCall bool
 	// lastWroteAt is when the person last wrote to the turn: when they
 	// asked it, or when a message of theirs was handed to it as it ran.
 	// It stands in for a presence report, which typing does not send.
@@ -626,7 +671,7 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	// handed to that turn instead, which reads it at its next round; the
 	// running turn stays the latest, so a third message goes to it too.
 	if previous := self.latest[settings.Conversation.ID]; previous != nil && !previous.isFinished() {
-		if isSteerable(settings) && isSteerable(previous.settings) && previous.steer(run) {
+		if isSteerable(settings) && run.IsStartedByPerson() && isSteerable(previous.settings) && previous.steer(run) {
 			run.steeredInto = previous
 		} else {
 			run.previous = previous
@@ -750,6 +795,54 @@ func (self *AskRun) Database() db.Database                { return self.agent.se
 func (self *AskRun) Configuration() *config.Configuration { return self.agent.settings.Configuration() }
 func (self *AskRun) Surface() string                      { return self.settings.Surface }
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
+
+// IsStartedByPerson says the person started this run: they typed or spoke the
+// turn with their own tap on a screen (the dashboard or the phone app, whatever
+// surface name the request carried), a schedule they wrote themselves woke it,
+// or it carries on a card from such a run (tools.PersonStarting). A subagent is
+// its parent's. Anything else is not: a turn woken by an inbound mail, a chat
+// app, a goal, a dream, a command left running, a program that speaks MCP, a
+// built-in schedule or a schedule the agent wrote for itself is steered by
+// content the person did not write; a request made with the command line's
+// token, an app password, OAuth, the extension's token or by an operator acting
+// as the person is not their tap whatever surface it names; and a surface this
+// does not know is taken not to be theirs.
+func (self *AskRun) IsStartedByPerson() bool {
+	if parent := self.settings.confirmVia; parent != nil {
+		return parent.IsStartedByPerson()
+	}
+	if self.settings.isUnattended {
+		return false
+	}
+	switch self.settings.Surface {
+	case "schedule", "mail":
+		return self.settings.IsPersonsSchedule
+	case "drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api":
+		if self.settings.IsAnswerToCard {
+			// The answer to a card starts nothing of its own: the turn is
+			// theirs only if the one that raised the card was (the card keeps
+			// that) and the answer came from their own tap, not from a
+			// token or an operator acting as them.
+			return self.settings.IsCardRaisedByPerson && self.settings.IsAnswerFromPersonsTap && !self.settings.Headless && !models.IsOwnTurn(self.settings.Message)
+		}
+		if !self.settings.IsPersonsTap || self.settings.IsOperatorActingAsPerson {
+			return false
+		}
+		return !self.settings.Headless && !models.IsOwnTurn(self.settings.Message)
+	}
+	return false
+}
+
+// IsWokenByAgentsSchedule says a schedule the agent wrote woke this run, so that
+// Passwords can tell the person to open the schedule and save it themselves.
+// A subagent is its parent's.
+func (self *AskRun) IsWokenByAgentsSchedule() bool {
+	if parent := self.settings.confirmVia; parent != nil {
+		return parent.IsWokenByAgentsSchedule()
+	}
+	return self.settings.IsAgentsSchedule && !self.IsStartedByPerson()
+}
+
 func (self *AskRun) CanAsk() bool {
 	if self.settings.isUnattended {
 		return false
@@ -1627,6 +1720,13 @@ func (self *AskRun) turn() error {
 		// each answered is kept in the model's order whatever order they
 		// finished in.
 		var lookingAt []llm.ContentPart
+		for _, toolCall := range answer.ToolCalls {
+			if tools.IsPrivateToolCall(models.AgentToolCall{ID: toolCall.ID, Name: toolCall.Name, Arguments: toolCall.Arguments}) {
+				self.mutex.Lock()
+				self.hasMadePrivateCall = true
+				self.mutex.Unlock()
+			}
+		}
 		for _, batch := range self.roundBatches(configuration, sent, answer.ToolCalls) {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -2262,13 +2362,17 @@ func (self *AskRun) takeCardSlot(ctx context.Context) (release func(), err error
 // loadHistory is the conversation as the model gets it.
 func (self *AskRun) loadHistory(tx db.Transaction) ([]llm.ChatMessage, error) {
 	if self.settings.Chat != nil {
-		return self.loadChatHistory(tx)
+		history, err := self.loadChatHistory(tx)
+		if err != nil {
+			return nil, err
+		}
+		return self.historyForRun(history), nil
 	}
 	stored, err := tx.ListAgentMessages(self.settings.Conversation.ID, nil)
 	if err != nil {
 		return nil, err
 	}
-	return historyOf(stored, self.settings.Conversation.CompactedThrough), nil
+	return self.historyForRun(historyOf(stored, self.settings.Conversation.CompactedThrough)), nil
 }
 
 // repairHistory drops a tool message whose call is not in the history and

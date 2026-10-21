@@ -50,10 +50,11 @@ var cdpAllowedMethods = map[string]bool{
 	"Input.synthesizeScrollGesture": true,
 	"Input.synthesizeTapGesture":    true,
 	// Watching what the page asks the network for, and reading a body back.
+	// Not a request's body (Network.getRequestPostData): a form's request is
+	// where a typed password travels.
 	"Network.enable":              true,
 	"Network.disable":             true,
 	"Network.getResponseBody":     true,
-	"Network.getRequestPostData":  true,
 	"Network.setCacheDisabled":    true,
 	"Network.setExtraHTTPHeaders": true,
 	// The page itself: what it is, what it looks like, where it is going.

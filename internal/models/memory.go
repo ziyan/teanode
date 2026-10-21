@@ -147,9 +147,10 @@ type AgentSchedule struct {
 	Cron   string `json:"cron"`
 	Prompt string `json:"prompt"`
 
-	// WrittenBy is who wrote that prompt: the person, or the agent through
-	// a tool. A schedule runs with nobody watching and its prompt arrives
-	// as the user turn, which is the most trusted thing in a conversation
+	// WrittenBy is who wrote that prompt: the person, the agent through a
+	// tool, or TeaNode itself for the schedules a switch makes (the daily
+	// brief, the asset estimates). A schedule runs with nobody watching and
+	// its prompt arrives as the user turn, which is the most trusted thing in a conversation
 	// -- right for the person's own standing instruction, and wrong for one
 	// the agent wrote on the strength of something it read.
 	WrittenBy string `json:"writtenBy,omitempty"`
@@ -172,6 +173,11 @@ type AgentSchedule struct {
 const (
 	WrittenByPerson = "person"
 	WrittenByAgent  = "agent"
+	// WrittenByBuiltIn is a schedule TeaNode wrote because the person pressed
+	// a switch. Its prompt is handed to the run as the person's words, but
+	// the run reads untrusted content (the brief reads the inbox), so it
+	// does not count as the person asking for Passwords.
+	WrittenByBuiltIn = "built_in"
 )
 
 // Where a schedule's answer goes.
@@ -180,13 +186,15 @@ const (
 	AgentDeliverDrawer = "drawer"
 )
 
-// KnownWriter is one of those two, or empty for anything else.
+// KnownWriter is one of those three, or empty for anything else.
 func KnownWriter(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case WrittenByPerson:
 		return WrittenByPerson
 	case WrittenByAgent:
 		return WrittenByAgent
+	case WrittenByBuiltIn:
+		return WrittenByBuiltIn
 	}
 	return ""
 }

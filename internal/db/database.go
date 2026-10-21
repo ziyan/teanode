@@ -317,7 +317,13 @@ type transaction struct {
 
 	isNested    bool
 	rollbackErr error
-	afterCommit []func()
+
+	// isPasswordsBusy says a change of Passwords in this transaction gave up
+	// waiting for a lock. The rest of the transaction's changes of Passwords
+	// are refused at once, because the lock is still held by someone else and
+	// each would wait the whole time again. See withPasswordsSavepoint.
+	isPasswordsBusy bool
+	afterCommit     []func()
 }
 
 func (self *database) Transaction(f func(Transaction) error) error {

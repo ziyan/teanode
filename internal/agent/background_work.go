@@ -330,7 +330,7 @@ func (self *Agent) backgroundSubagent(ctx context.Context, run *Run, work *model
 	if err != nil {
 		return "", runIds, err
 	}
-	answer, _, err := followSubagent(ctx, turn, conversation.ID, backgroundWorkLongest)
+	answer, _, _, err := followSubagent(ctx, turn, conversation.ID, backgroundWorkLongest)
 	return answer, runIds, err
 }
 

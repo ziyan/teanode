@@ -229,11 +229,13 @@ func TestAScheduleTheAgentWroteIsNotThePersonSpeaking(t *testing.T) {
 	if got := scheduledMessage(theirs); got != written {
 		t.Fatalf("the person's own instruction is theirs: %q", got)
 	}
-	// One made before this was recorded is the person's too: it could only
-	// have come from the dashboard or the command line.
-	older := &models.AgentSchedule{Prompt: written}
-	if got := scheduledMessage(older); got != written {
-		t.Fatalf("an older schedule is the person's: %q", got)
+	// One whose writer is not recorded is not known to be the person's, so
+	// it is marked like the agent's. (The database stores the person for
+	// every schedule made before the writer was recorded, so this is only a
+	// row that says something else.)
+	unrecorded := &models.AgentSchedule{Prompt: written}
+	if got := scheduledMessage(unrecorded); got == written || !strings.Contains(got, untrustedOpen) {
+		t.Fatalf("a schedule with no recorded writer is marked: %q", got)
 	}
 
 	// What the agent wrote for itself arrives marked.
@@ -308,8 +310,10 @@ func TestTheCatalogStaysShort(t *testing.T) {
 	// question across all of them (the person's words, looked for in nine
 	// places at once, a few results from each); each area's own tool finds
 	// more of its area, and this is the tool a model reaches for first when it
-	// does not know which that is.
-	if count := len(catalog.All()); count > 70 {
+	// does not know which that is. 71 since passwords, a new thing with its own
+	// permission: the items the person let the agent use, whose verbs (list,
+	// read a note, make up a password) no other tool has.
+	if count := len(catalog.All()); count > 71 {
 		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
 	}
 

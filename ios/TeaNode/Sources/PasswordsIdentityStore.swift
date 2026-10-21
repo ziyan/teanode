@@ -1,0 +1,90 @@
+import AuthenticationServices
+import Foundation
+import TeaNodeKit
+
+/// PasswordsIdentityStore tells the system what Passwords can fill, so that
+/// QuickType suggests a login above the keyboard and a passkey in a sign-in
+/// sheet without opening TeaNode first. What it gives the system is the site,
+/// the user name and the passkey's identifiers, never a password or a key; the
+/// AutoFill extension is asked for those when the person picks one.
+enum PasswordsIdentityStore {
+    /// Replaces what the system knows with the logins and passkeys given. Does
+    /// nothing when the person has not turned TeaNode on in Settings, General,
+    /// AutoFill & Passwords: the store refuses writes then.
+    static func replace(with records: PasswordsIdentityRecords) async {
+        let store = ASCredentialIdentityStore.shared
+        guard await isEnabled(store) else { return }
+        var identities: [any ASCredentialIdentity] = []
+        for record in records.passwordIdentities {
+            let service = ASCredentialServiceIdentifier(identifier: record.serviceDomain, type: .domain)
+            identities.append(ASPasswordCredentialIdentity(serviceIdentifier: service, user: record.userName, recordIdentifier: record.itemId))
+        }
+        for record in records.passkeyIdentities {
+            identities.append(
+                ASPasskeyCredentialIdentity(
+                    relyingPartyIdentifier: record.relyingPartyId, userName: record.userName, credentialID: record.credentialId,
+                    userHandle: record.userHandle, recordIdentifier: record.itemId))
+        }
+        await replaceAll(identities, in: store)
+    }
+
+    /// Forgets everything, when Passwords is erased or the phone signs out.
+    static func removeAll() async {
+        let store = ASCredentialIdentityStore.shared
+        guard await isEnabled(store) else { return }
+        await removeAll(in: store)
+    }
+
+    /// Replaces what the system knows. Written with the completion handler,
+    /// which is the form the documentation gives; a failure is not told to
+    /// the person, since the system asks the extension for anything missing.
+    private static func replaceAll(_ identities: [any ASCredentialIdentity], in store: ASCredentialIdentityStore) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            store.replaceCredentialIdentities(identities) { _, _ in
+                continuation.resume()
+            }
+        }
+    }
+
+    private static func removeAll(in store: ASCredentialIdentityStore) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            store.removeAllCredentialIdentities { _, _ in
+                continuation.resume()
+            }
+        }
+    }
+
+    private static func isEnabled(_ store: ASCredentialIdentityStore) async -> Bool {
+        await withCheckedContinuation { continuation in
+            store.getState { state in
+                continuation.resume(returning: state.isEnabled)
+            }
+        }
+    }
+}
+
+/// PasswordsAccountStorage removes what Passwords keeps on this iPhone for a
+/// sign-in that is gone: the encrypted copy of its items, the account key
+/// behind Face ID, and the choice to use it. The keys pinned for other people and
+/// what the iPhone remembers about each item are kept per server and signed-in person
+/// and go only when the person removed the account from the iPhone, not when the
+/// server ended the sign-in (`PasswordsSignInEnd`).
+enum PasswordsAccountStorage {
+    static func accountWasRemoved(signInAccountKey: String, isInUse: Bool, end: PasswordsSignInEnd) async {
+        let group = Bundle.main.object(forInfoDictionaryKey: "TeaNodeAppGroup") as? String
+        let isKeepingPins = !end.isForgettingKeysAndItemMemories
+        if let group, let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) {
+            PasswordsLocation.removeCopy(groupContainer: container, signInAccountKey: signInAccountKey, isKeepingPins: isKeepingPins)
+        }
+        if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            PasswordsLocation.removeCopy(groupContainer: support, signInAccountKey: signInAccountKey, isKeepingPins: isKeepingPins)
+        }
+        // The keys pinned for other people are in the keychain, not in the folder removed above.
+        if end.isForgettingKeysAndItemMemories {
+            try? PasswordsKeychainPinStore.forThisBundle(signInAccountKey: signInAccountKey).removeAll()
+        }
+        UserDefaults.standard.removeObject(forKey: "passwordsFaceID.\(signInAccountKey)")
+        try? await PasswordsKeychainKeyStore.forThisBundle().delete(signInAccountKey: signInAccountKey)
+        if isInUse { await PasswordsIdentityStore.removeAll() }
+    }
+}

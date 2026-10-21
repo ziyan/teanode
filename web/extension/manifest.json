@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "TeaNode agent tab",
-  "version": "4.0.0",
-  "description": "Your TeaNode agent on any page: talk to it, let it open tabs in your browser, or attach the tab you are looking at so it can act there with your session while you watch.",
+  "version": "5.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Your TeaNode agent on any page: talk to it, let it open tabs in your browser, or attach the tab you are looking at so it can act there with your session while you watch. Also fills your logins and passkeys from TeaNode Passwords.",
   "permissions": [
     "debugger",
     "activeTab",
@@ -10,10 +11,48 @@
     "storage",
     "tabs",
     "tabGroups",
-    "identity"
+    "webNavigation",
+    "identity",
+    "contextMenus",
+    "alarms",
+    "offscreen",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "<all_urls>"
+  ],
+  "commands": {
+    "fill-login": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "Fill from TeaNode Passwords"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "mainWorld.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
   ],
   "action": {
     "default_title": "Your TeaNode agent",
@@ -37,7 +76,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "icons/*"
+        "suggestion.html",
+        "bar.html"
       ],
       "matches": [
         "<all_urls>"

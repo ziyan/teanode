@@ -15,6 +15,14 @@ import {
 
 const serverOrigin = 'https://mail.example.com'
 
+// Passwords' half of the worker is tested on its own (see agentTabActions.test.ts
+// and the files in passwords/); here it is stood in for.
+vi.mock('./passwords/background', () => ({}))
+vi.mock('./passwords/agentFill', () => ({
+  fillLoginForAgent: vi.fn(),
+  fillOneTimeCodeForAgent: vi.fn(),
+}))
+
 class FakeSocket {
   static OPEN = 1
   static instances = []
@@ -46,15 +54,28 @@ async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen:
   )
   const calls = { debuggerSent: [], debuggerAttached: [], scripts: [], created: [], updated: [] }
   globalThis.WebSocket = FakeSocket
+  // The session storage keeps what the worker puts in it. The button has just
+  // been pressed on the person's own tab, which is what lets that tab's panel
+  // speak to the worker (see isPanelSender).
+  const session = {
+    ownTabId: tabs[0].id,
+    tabId: current,
+    opened,
+    panelTabs: { tabs: [tabs[0].id], grants: { [tabs[0].id]: Date.now() } },
+  }
+  const local = {}
   globalThis.chrome = {
     storage: {
       session: {
-        get: vi.fn(async () => ({ ownTabId: tabs[0].id, tabId: current, opened })),
-        set: vi.fn(async () => {}),
+        get: vi.fn(async () => ({ ...session })),
+        set: vi.fn(async (values) => void Object.assign(session, values)),
         remove: vi.fn(async () => {}),
       },
       sync: { get: vi.fn(async () => ({ server: serverOrigin })) },
-      local: { get: vi.fn(async () => ({ token: 'a-token' })) },
+      local: {
+        get: vi.fn(async () => ({ token: 'a-token', ...local })),
+        set: vi.fn(async (values) => void Object.assign(local, values)),
+      },
       onChanged: listenerSet(),
     },
     action: { setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn(), onClicked: listenerSet() },
@@ -63,6 +84,7 @@ async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen:
       onInstalled: listenerSet(),
       onMessage: listenerSet(),
       openOptionsPage: vi.fn(),
+      id: 'extension-id',
     },
     tabs: {
       get: vi.fn(async (id) => {
@@ -117,7 +139,7 @@ async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen:
   await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
   const socket = FakeSocket.instances[0]
   await socket.onopen()
-  await socket.onmessage({ data: JSON.stringify({ type: 'welcome', protocol: 4 }) })
+  await socket.onmessage({ data: JSON.stringify({ type: 'welcome', protocol: 5 }) })
   let next = 1
   const ask = async (action, args = {}) => {
     const id = next++
@@ -130,7 +152,16 @@ async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen:
   // What the panel's content script says to the worker, answered on the callback.
   const fromPanel = (message, tab = { id: tabs[0].id }) =>
     new Promise((resolve) => {
-      const keepsOpen = globalThis.chrome.runtime.onMessage.addListener.mock.calls[0][0](message, { tab }, resolve)
+      const sender = { id: 'extension-id', frameId: 0, tab: tab || undefined }
+      // The worker has more than one listener for messages; the one that
+      // answers keeps the channel open.
+      let keepsOpen = false
+      for (const [listener] of globalThis.chrome.runtime.onMessage.addListener.mock.calls) {
+        if (listener(message, sender, resolve) === true) {
+          keepsOpen = true
+          break
+        }
+      }
       if (!keepsOpen) resolve(undefined)
     })
   return { ask, calls, chrome: globalThis.chrome, socket, fromPanel }
@@ -540,9 +571,11 @@ describe("what reaches into the panel's frame", () => {
     expect(await ask('cdp', { method: 'Network.getResponseBody', params: { requestId: '1.1' } })).toEqual(
       expect.objectContaining({ ok: false, error: REQUEST_BODY_REFUSAL }),
     )
-    expect(await ask('cdp', { method: 'Network.getRequestPostData', params: { requestId: '9.9' } })).toEqual(
-      expect.objectContaining({ ok: false, error: REQUEST_BODY_REFUSAL }),
-    )
+    // The body a page sent is never read, shown request or not: a form's request
+    // is where a typed password travels, so the method is not one that is answered.
+    const postData = await ask('cdp', { method: 'Network.getRequestPostData', params: { requestId: '2.2' } })
+    expect(postData.ok).toBe(false)
+    expect(postData.error).toContain('is not one of the methods')
     expect(await ask('cdp', { method: 'Network.getResponseBody', params: { requestId: '2.2' } })).toMatchObject({
       ok: true,
     })

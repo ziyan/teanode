@@ -89,6 +89,7 @@ func main() {
 			cmd.NewCalendarCommand(),
 			cmd.NewLocationCommand(),
 			cmd.NewHealthCommand(),
+			cmd.NewPasswordsCommand(),
 			cmd.NewCircleCommand(),
 			cmd.NewReminderCommand(),
 			cmd.NewNoteCommand(),

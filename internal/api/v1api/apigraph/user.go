@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/photo"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -473,19 +474,25 @@ func (self *graph) DeleteUser(ctx context.Context, arguments DeleteUserArguments
 	// store that no row will name once the account's rows go. They are listed
 	// now, while the rows say what they are, and deleted after the account is,
 	// best effort: an account whose deletion fails or is rolled back keeps
-	// them. The photos' files are blobs, which the cleanup of unreferenced
-	// blobs deletes.
+	// them, so the deletion is registered only once the account is deleted. The
+	// photos' files are blobs, which the cleanup of unreferenced blobs deletes.
+	var photoStore *photo.Store
+	var photoObjectIds []string
 	if self.config != nil && self.storage != nil {
-		if photoStore, err := self.photoStore(); err == nil {
-			objectIds, err := photoStore.AccountObjects(ctx, user.ID)
+		if store, err := self.photoStore(); err == nil {
+			photoStore = store
+			photoObjectIds, err = store.AccountObjects(ctx, user.ID)
 			if err != nil {
 				log.Warningf("cannot list the photo objects of the account %q to delete them: %s", user.Username, err)
 			}
-			tx.AfterCommit(func() { photoStore.DeleteObjects(context.WithoutCancel(ctx), objectIds) })
 		}
 	}
 	if err := tx.DeleteUser(user.ID); err != nil {
-		return translateError(err)
+		// Passwords busy gets its own sentence, as for leaving a circle.
+		return translateCircleError(err)
+	}
+	if photoStore != nil {
+		tx.AfterCommit(func() { photoStore.DeleteObjects(context.WithoutCancel(ctx), photoObjectIds) })
 	}
 	// The picture's bytes: no row names them any more.
 	avatarFileId := user.AvatarFileID

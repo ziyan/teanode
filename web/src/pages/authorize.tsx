@@ -27,6 +27,7 @@ const REQUEST = `
       username
       registered
       isWholeAccount
+      isTeaNodeApp
     }
   }`
 
@@ -51,6 +52,10 @@ type AuthorizationRequest = {
   // An app installed on a device signing in to the whole account, as the
   // TeaNode app does, rather than a program asking for the agent tools.
   isWholeAccount: boolean
+  // The program is registered as the TeaNode app itself. Its return address
+  // is a scheme another app on the same phone can also claim, so the page asks
+  // the reader to approve only a sign-in they just started in the app.
+  isTeaNodeApp: boolean
 }
 
 type Phase = 'reading' | 'asking' | 'working' | 'sending'
@@ -238,6 +243,7 @@ export function AuthorizePage() {
       <p className="authorize-grant muted">
         {request.isWholeAccount ? t('authorize.grantWholeAccount') : t('authorize.grant')}
       </p>
+      {request.isTeaNodeApp && <p className="authorize-grant">{t('authorize.approveOnlyIfJustStarted')}</p>}
 
       <ErrorMessage error={error} />
 

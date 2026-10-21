@@ -214,8 +214,16 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		return nil, agent.ErrUnavailable
 	}
 	tx := self.transaction(ctx)
+	// The schedule is the person's, and its runs may use Passwords, only when
+	// the person tapped save on a screen. The command line holds a token the
+	// agent's own shell can use too, so a schedule made from there is
+	// recorded as the agent's.
+	writtenBy := models.WrittenByAgent
+	if principal.IsPersonsTap() {
+		writtenBy = models.WrittenByPerson
+	}
 	if arguments.ScheduleID == "" {
-		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: models.WrittenByPerson, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
+		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: writtenBy, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {
 			return nil, translateError(err)
@@ -241,14 +249,35 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		if arguments.Cron != "" {
 			schedule.Cron = strings.TrimSpace(arguments.Cron)
 		}
-		if arguments.Prompt != "" {
-			schedule.Prompt = strings.TrimSpace(arguments.Prompt)
+		// A save the person made with a tap on a screen that includes the prompt
+		// is theirs, whether or not the prompt changed: pressing Save in the
+		// editor on the dashboard or in the app is how a person takes over a
+		// schedule the agent wrote. A tap that sends no prompt (the on and off
+		// switch) has not read what the schedule says, so it leaves the writer
+		// as it was. A caller that
+		// is not a tap (the command line holds a token the agent's own shell
+		// can use too) makes the schedule the agent's by changing its words,
+		// when it runs, where its answer goes or whether it runs, as the
+		// agent's own schedule tool does: otherwise the agent could move a
+		// schedule the person wrote and have it keep running with the
+		// person's authority. Saving the same prompt again from there, or
+		// renaming, leaves the writer as it was.
+		if prompt := strings.TrimSpace(arguments.Prompt); prompt != "" && prompt != strings.TrimSpace(schedule.Prompt) {
+			schedule.Prompt = prompt
+			schedule.WrittenBy = writtenBy
 		}
 		if arguments.Deliver != "" {
 			schedule.Deliver = arguments.Deliver
 		}
 		if arguments.Enabled != nil {
 			schedule.Enabled = *arguments.Enabled
+		}
+		if principal.IsPersonsTap() {
+			if strings.TrimSpace(arguments.Prompt) != "" {
+				schedule.WrittenBy = models.WrittenByPerson
+			}
+		} else if arguments.Cron != "" || arguments.Deliver != "" || arguments.Enabled != nil {
+			schedule.WrittenBy = models.WrittenByAgent
 		}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {

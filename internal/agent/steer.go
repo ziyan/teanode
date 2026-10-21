@@ -28,7 +28,11 @@ import (
 // as a queued turn always did.
 
 // isSteerable says whether a turn is one a person is typing into: not a
-// run with nobody present, and not a turn a background command woke.
+// run with nobody present, and not a turn a background command woke. A
+// message is steered into a running turn only when it is also one the person
+// started (AskRun.IsStartedByPerson): a program that speaks MCP, or a chat
+// app, names the same conversation, and what it says would otherwise be read
+// as the person's own words inside a turn that counts as theirs.
 func isSteerable(settings *AskSettings) bool {
 	// In a chat a message is for the people in it, and one that addresses
 	// the agent again is a turn of its own, after the one running.

@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode, as the dashboard's sidebar has them: a
 /// tab of the tab bar, a row of the More tab, or a row of the iPad's sidebar.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, goals, ideas, mail, calendar, contacts, photos, location, health, knowledge, finance, recordings, coding, settings
+    case agent, goals, ideas, mail, calendar, contacts, photos, location, health, passwords, knowledge, finance, recordings, coding, settings
 
     var id: String { rawValue }
 
@@ -20,6 +20,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .calendar: String(localized: "Calendar")
         case .location: String(localized: "Location")
         case .health: HealthWords.title
+        case .passwords: PasswordsWords.title
         case .contacts: String(localized: "Contacts")
         case .photos: String(localized: "Photos")
         case .knowledge: String(localized: "Knowledge")
@@ -39,6 +40,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .calendar: "calendar"
         case .location: "location"
         case .health: "heart.text.square"
+        case .passwords: "key"
         case .contacts: "person"
         case .photos: "photo.on.rectangle"
         case .knowledge: "brain"
@@ -87,6 +89,8 @@ struct MainView: View {
     @State private var locationSegment = LocationSegment.visits
     /// The photo library, held here so a link can open it on a filter.
     @State private var photos: PhotosModel
+    /// Passwords, held here so it stays open between visits to the part, and so it can be brought up to date when the app comes to the front.
+    @State private var passwords: PasswordsModel
     @State private var composing: ComposeStart?
     /// Whether the services, the agent's identity and the chats have been
     /// read once. Until then it is not known whether the agent is on, and
@@ -99,6 +103,7 @@ struct MainView: View {
         _mail = State(initialValue: MailModel(connection: connection, username: username))
         _finance = State(initialValue: FinanceModel(connection: connection))
         _photos = State(initialValue: PhotosModel.start(connection: connection))
+        _passwords = State(initialValue: PasswordsModel(connection: connection))
     }
 
     var body: some View {
@@ -118,6 +123,15 @@ struct MainView: View {
             // computer never holds up the mail above.
             .task(id: "\(scenePhase)-\(app.account?.accountKey ?? "")") {
                 await refreshCodingPresenceSlowly()
+            }
+            // Passwords that is open stays covered while the app is away, locks if its time is up (before the
+            // cover comes off, so no frame of the items shows), and is brought up to date when the app comes back.
+            .onChange(of: scenePhase) { _, current in
+                if current == .active {
+                    Task { await passwords.sceneDidBecomeActive() }
+                } else {
+                    Task { await passwords.sceneDidResignActive() }
+                }
             }
     }
 
@@ -478,7 +492,7 @@ struct MainView: View {
     /// Whether the server has yet to say if the account has a part.
     private func isStillUnknown(_ section: AppSection) -> Bool {
         switch section {
-        case .location, .health: !app.hasReadPermissions
+        case .location, .health, .passwords: !app.hasReadPermissions
         case .coding: false
         default: app.services == nil
         }
@@ -578,6 +592,18 @@ struct MainView: View {
                 HealthNotAllowedView()
                     .toolbar { MoreBackButton() }
             }
+        } else if section == .passwords, !app.hasReadPermissions {
+            // Whether the account may use Passwords is read with the chats, as
+            // Health's is.
+            NavigationStack {
+                ServicesLoadingView(isWaitingForPermissions: true)
+                    .toolbar { MoreBackButton() }
+            }
+        } else if section == .passwords, !app.canUsePasswords {
+            NavigationStack {
+                PasswordsNotAllowedView()
+                    .toolbar { MoreBackButton() }
+            }
         } else if !app.isSectionAvailable(section) {
             NavigationStack {
                 ServiceOffView(section: section, connection: connection)
@@ -603,6 +629,8 @@ struct MainView: View {
             LocationScreen(connection: connection, segment: $locationSegment)
         case .health:
             HealthScreen(connection: connection)
+        case .passwords:
+            PasswordsScreen(model: passwords)
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:
@@ -858,6 +886,18 @@ struct LocationNotAllowedView: View {
             Label("Location is not available to you", systemImage: AppSection.location.systemImage)
         } description: {
             Text("Your account is not allowed to record or share where you go. Whoever manages your TeaNode server can allow it.")
+        }
+    }
+}
+
+/// PasswordsNotAllowedView is what Passwords says to an account that may not
+/// use it: that is a permission, not a service the server has turned off.
+struct PasswordsNotAllowedView: View {
+    var body: some View {
+        ContentUnavailableView {
+            Label("Passwords is not available to you", systemImage: AppSection.passwords.systemImage)
+        } description: {
+            Text("Your account is not allowed to keep passwords. Whoever manages your TeaNode server can allow it.")
         }
     }
 }

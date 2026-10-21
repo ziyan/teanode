@@ -294,6 +294,10 @@ func (self *memoryStore) ScavengeOAuth(now time.Time) (int64, error) {
 	return 0, nil
 }
 
+func (self *memoryStore) ScavengePasswordItems(before time.Time) (int64, error) {
+	return 0, nil
+}
+
 func (self *memoryStore) RevokeTokensByUser(userId string, at time.Time) (int64, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()

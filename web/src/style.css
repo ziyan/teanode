@@ -21445,3 +21445,200 @@ button.person-row:focus-visible {
     display: flex;
   }
 }
+
+/* --- Passwords ---------------------------------------------------------------
+   The toolbar over the list, the table (a table-surface, so it scrolls
+   sideways on a phone and stays a table), one item's fields, and the parts the
+   dialogs share. */
+.passwords-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.passwords-search {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.passwords-marks {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.passwords-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.passwords-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+
+/* Whom an item is shared with, and the button that changes it, on one line
+   that wraps under the words on a phone. */
+.passwords-shared-with {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.passwords-shared-with p {
+  margin: 0;
+}
+
+.passwords-fields {
+  margin: 0;
+}
+
+.passwords-field {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.passwords-field:last-child {
+  border-bottom: none;
+}
+
+.passwords-field dt {
+  font-size: var(--text-label);
+}
+
+.passwords-field dd {
+  margin: 2px 0 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.passwords-sites,
+.passwords-passkeys {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.passwords-multiline {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.passwords-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-title);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+}
+
+.passwords-code-seconds {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.passwords-switch-note {
+  display: block;
+}
+
+.passwords-strength {
+  margin-top: calc(var(--space-2) * -1);
+}
+
+.passwords-recovery-key {
+  font-size: 15px;
+  user-select: all;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.passwords-masked {
+  /* A card number or security code typed in a text field, hidden by the
+     browser's own mask so that it is not taken for a password to save. */
+  -webkit-text-security: disc;
+}
+
+.passwords-generator {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+
+.passwords-generator-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.passwords-new-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.passwords-share {
+  position: relative;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+
+.passwords-share-remove {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+}
+
+.passwords-recipients {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.passwords-recipients li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+/* A recipient whose key is not the one kept for them: the warning, the code
+   from before and the button that trusts the new one, under their row. */
+.passwords-key-changed {
+  flex-basis: 100%;
+}
+
+.passwords-key-changed p {
+  margin: 0 0 var(--space-1);
+}
+
+.passwords-safety-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A thumb has to hit the icon actions on this page: 44px where the pointer is
+   coarse, as the other buttons on a phone are. Only here, since the 28px
+   icon-action is shared with rows that are not about passwords. */
+@media (pointer: coarse) {
+  .passwords-page .icon-action,
+  .passwords-share-remove {
+    width: 44px;
+    height: 44px;
+  }
+}

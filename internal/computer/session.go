@@ -166,10 +166,7 @@ func (self *sessions) start(ctx context.Context, options *Options, arguments *Se
 	}
 	command := exec.Command(arguments.Command, arguments.Arguments...)
 	command.Dir = directory
-	command.Env = os.Environ()
-	for key, value := range arguments.Environment {
-		command.Env = append(command.Env, key+"="+value)
-	}
+	command.Env = agentEnvironment(arguments.Environment)
 
 	if kind == "pty" {
 		return self.startTerminal(reserved, release, command, arguments, ended)

@@ -1,0 +1,1163 @@
+{
+  "description": "Shared cases for reading an otpauth address. internal/passwords (onetimecode_test.go) and the dashboard and extension (web/src/passwords/oneTimeCode.ts, oneTimeCode.test.ts) both read this file and must give the same answers; the iPhone reads it as well. The reading is strict: the host is exactly totp (no user name, no port), the query has no malformed percent escape and no semicolon, a control character anywhere is refused, only ASCII white space is trimmed from the ends, the secret is base32 letters with spaces and hyphens ignored and \"=\" only at the end, and the digit count and the period are plain ASCII digits with a period of at most 2147483647. Every secret is the invented text Hello! followed by the bytes deadbeef (JBSWY3DPEHPK3PXP) or a short variant of it; every name is invented. expectedCodes are the codes at each of unixSeconds.",
+  "unixSeconds": [
+    0,
+    59,
+    1111111109,
+    1234567890,
+    2000000000,
+    4102444800
+  ],
+  "cases": [
+    {
+      "name": "a label with an issuer and an account",
+      "address": "otpauth://totp/Example:ada@example.test?secret=JBSWY3DPEHPK3PXP&issuer=Example",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "Example",
+      "accountName": "ada@example.test",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with A",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXPA",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with AA",
+      "address": "otpauth://totp/x?secret=JBSW%20Y3DP%20EHPK%203PXP%20AA",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef00",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=JBSW%20Y3DP%20EHPK%203PXP",
+      "address": "otpauth://totp/x?secret=JBSW%20Y3DP%20EHPK%203PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=jbswy3dpehpk3pxp",
+      "address": "otpauth://totp/x?secret=jbswy3dpehpk3pxp",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with ====",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP====",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "an equals sign inside the secret is refused",
+      "address": "otpauth://totp/x?secret=JBSWY3DP=EHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "a tab inside the secret is refused",
+      "address": "otpauth://totp/x?secret=JBSWY3DP%09EHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=JBSW-Y3DP-EHPK-3PXP",
+      "address": "otpauth://totp/x?secret=JBSW-Y3DP-EHPK-3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads OTPAUTH://TOTP/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "OTPAUTH://TOTP/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with &algorithm=sha256",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=sha256",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA256",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "023015",
+        "344551",
+        "650964",
+        "488545",
+        "916370",
+        "422911"
+      ]
+    },
+    {
+      "name": "reads the same secret with &algorithm=SHA512&digits=8&period=60",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=SHA512&digits=8&period=60",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA512",
+      "digitCount": 8,
+      "periodSeconds": 60,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "46582788",
+        "46582788",
+        "03185872",
+        "46606127",
+        "27198270",
+        "71533690"
+      ]
+    },
+    {
+      "name": "refuses the same secret with &period=0",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=0",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &period=-5",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=-5",
+      "isValid": false
+    },
+    {
+      "name": "a plus sign before the period is refused",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=%2B5",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &period=30%20",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=30%20",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &digits=07",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=07",
+      "isValid": false
+    },
+    {
+      "name": "a plus sign before the digit count is refused",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=%2B8",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with &digits=",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with &period=",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=AAAA&secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/x?secret=AAAA&secret=JBSWY3DPEHPK3PXP",
+      "isValid": true,
+      "secretHex": "0000",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "328482",
+        "812658",
+        "743009",
+        "712049",
+        "543824",
+        "155191"
+      ]
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=&secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/x?secret=&secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?issuer=a",
+      "address": "otpauth://totp/x?issuer=a",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://hotp/x?secret=JBSWY3DPEHPK3PXP&counter=1",
+      "address": "otpauth://hotp/x?secret=JBSWY3DPEHPK3PXP&counter=1",
+      "isValid": false
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=MZXW6YQ",
+      "address": "otpauth://totp/x?secret=MZXW6YQ",
+      "isValid": true,
+      "secretHex": "666f6f62",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "819306",
+        "087780",
+        "144362",
+        "273780",
+        "233782",
+        "855325"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=MZXW6YR",
+      "address": "otpauth://totp/x?secret=MZXW6YR",
+      "isValid": true,
+      "secretHex": "666f6f62",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "819306",
+        "087780",
+        "144362",
+        "273780",
+        "233782",
+        "855325"
+      ]
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=M",
+      "address": "otpauth://totp/x?secret=M",
+      "isValid": false
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=MZ",
+      "address": "otpauth://totp/x?secret=MZ",
+      "isValid": true,
+      "secretHex": "66",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "531249",
+        "300412",
+        "669050",
+        "452364",
+        "648451",
+        "126190"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=MZXW6",
+      "address": "otpauth://totp/x?secret=MZXW6",
+      "isValid": true,
+      "secretHex": "666f6f",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "937425",
+        "398408",
+        "352179",
+        "252675",
+        "215058",
+        "150884"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=MZXW6YQ=",
+      "address": "otpauth://totp/x?secret=MZXW6YQ=",
+      "isValid": true,
+      "secretHex": "666f6f62",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "819306",
+        "087780",
+        "144362",
+        "273780",
+        "233782",
+        "855325"
+      ]
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=0189",
+      "address": "otpauth://totp/x?secret=0189",
+      "isValid": false
+    },
+    {
+      "name": "a period too large for any language is refused",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=99999999999999999999",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &period=4294967296",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=4294967296",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with &period=1",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=1",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 1,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "663767",
+        "735827",
+        "796981",
+        "650077",
+        "449070"
+      ]
+    },
+    {
+      "name": "reads  otpauth://totp/x?secret=JBSWY3DPEHPK3PXP ",
+      "address": " otpauth://totp/x?secret=JBSWY3DPEHPK3PXP ",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses otpauth://totp/x?SECRET=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/x?SECRET=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "reads otpauth://totp?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp?secret=JBSWY3DPEHPK3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses otpauth://TOTP.example/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://TOTP.example/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "a port in the host is refused",
+      "address": "otpauth://totp:80/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "reads otpauth://totp/Example%3Aada%40example.test?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/Example%3Aada%40example.test?secret=JBSWY3DPEHPK3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "Example",
+      "accountName": "ada@example.test",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/Example:%20ada%20?secret=JBSWY3DPEHPK3PXP&issuer=Other",
+      "address": "otpauth://totp/Example:%20ada%20?secret=JBSWY3DPEHPK3PXP&issuer=Other",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "Other",
+      "accountName": "ada",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/ada@example.test?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/ada@example.test?secret=JBSWY3DPEHPK3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "ada@example.test",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/%E2%82%AC:ada?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/%E2%82%AC:ada?secret=JBSWY3DPEHPK3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "\u20ac",
+      "accountName": "ada",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses otpauth://totp/a%zz?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/a%zz?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with &issuer=Ex%20ample",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&issuer=Ex%20ample",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "Ex ample",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with &issuer=Ex+ample",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&issuer=Ex+ample",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "Ex ample",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses the same secret with &issuer=%zz",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&issuer=%zz",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &digits=%zz",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=%zz",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &issuer=a;b",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&issuer=a;b",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with \tAA",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP\tAA",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=JBSWY3DP\nEHPK3PXP",
+      "address": "otpauth://totp/x?secret=JBSWY3DP\nEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=JBSWY3DP%0AEHPK3PXP",
+      "address": "otpauth://totp/x?secret=JBSWY3DP%0AEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=JBSWY3DP%0DEHPK3PXP",
+      "address": "otpauth://totp/x?secret=JBSWY3DP%0DEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=JBSWY3DP%00EHPK3PXP",
+      "address": "otpauth://totp/x?secret=JBSWY3DP%00EHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=JBSWY3DP%C2%A0EHPK3PXP",
+      "address": "otpauth://totp/x?secret=JBSWY3DP%C2%A0EHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "reads otpauth://totp/x?secret=JBSWY3DP+EHPK3PXP",
+      "address": "otpauth://totp/x?secret=JBSWY3DP+EHPK3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with =",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP=",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with ==",
+      "address": "otpauth://totp/x?secret=JBSW%20Y3DP%20EHPK%203PXP==",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret==JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/x?secret==JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=====",
+      "address": "otpauth://totp/x?secret=====",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with =%20=",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP=%20=",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=JBSW%20Y3DP%20EHPK%203PX1",
+      "address": "otpauth://totp/x?secret=JBSW%20Y3DP%20EHPK%203PX1",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=JBSW%20Y3DP%20EHPK%203PX8",
+      "address": "otpauth://totp/x?secret=JBSW%20Y3DP%20EHPK%203PX8",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=JBSWY3DP.EHPK3PXP",
+      "address": "otpauth://totp/x?secret=JBSWY3DP.EHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret=%E2%85%A7",
+      "address": "otpauth://totp/x?secret=%E2%85%A7",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with &period=2147483647",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=2147483647",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 2147483647,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "282760",
+        "282760",
+        "282760",
+        "282760",
+        "996554"
+      ]
+    },
+    {
+      "name": "refuses the same secret with &period=2147483648",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=2147483648",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with &period=0030",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=0030",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses the same secret with &period=3e1",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=3e1",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &period=30.0",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=30.0",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &period=%E0%A5%A9%E0%A5%A6",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=%E0%A5%A9%E0%A5%A6",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with &digits=8",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=8",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 8,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "63282760",
+        "41996554",
+        "33071271",
+        "94742275",
+        "28890699",
+        "04573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with &digits=6",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=6",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses the same secret with &digits=9",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=9",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &digits=-8",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=-8",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &digits=8%20",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=8%20",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &algorithm=MD5",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=MD5",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with &algorithm=Sha1",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=Sha1",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with &algorithm=",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses the same secret with &algorithm=__proto__",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=__proto__",
+      "isValid": false
+    },
+    {
+      "name": "refuses the same secret with &algorithm=constructor",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=constructor",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp./x?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp./x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "a user name in front of the host is refused",
+      "address": "otpauth://user@totp/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "an empty port in the host is refused",
+      "address": "otpauth://totp:/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth:/totp/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth:/totp/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth:totp/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth:totp/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth-migration://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth-migration://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses https://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "https://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with #fragment",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP#fragment",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/x/y?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/x/y?secret=JBSWY3DPEHPK3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x/y",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp?secret=JBSWY3DPEHPK3PXP&issuer=Example",
+      "address": "otpauth://totp?secret=JBSWY3DPEHPK3PXP&issuer=Example",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "Example",
+      "accountName": "",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads otpauth://totp/?secret=JBSWY3DPEHPK3PXP",
+      "address": "otpauth://totp/?secret=JBSWY3DPEHPK3PXP",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses \u00a0otpauth://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "\u00a0otpauth://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses \u0085otpauth://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "\u0085otpauth://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses \ufeffotpauth://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "address": "\ufeffotpauth://totp/x?secret=JBSWY3DPEHPK3PXP",
+      "isValid": false
+    },
+    {
+      "name": "refuses \u3000otpauth://totp/x?secret=JBSWY3DPEHPK3PXP\u2003",
+      "address": "\u3000otpauth://totp/x?secret=JBSWY3DPEHPK3PXP\u2003",
+      "isValid": false
+    },
+    {
+      "name": "reads the same secret with &secret=AAAA",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&secret=AAAA",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with &&issuer=a",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&&issuer=a",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "a",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with &issuer",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&issuer",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "reads the same secret with &=1",
+      "address": "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&=1",
+      "isValid": true,
+      "secretHex": "48656c6c6f21deadbeef",
+      "algorithm": "SHA1",
+      "digitCount": 6,
+      "periodSeconds": 30,
+      "issuer": "",
+      "accountName": "x",
+      "expectedCodes": [
+        "282760",
+        "996554",
+        "071271",
+        "742275",
+        "890699",
+        "573258"
+      ]
+    },
+    {
+      "name": "refuses otpauth://totp/x?secret",
+      "address": "otpauth://totp/x?secret",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x?",
+      "address": "otpauth://totp/x?",
+      "isValid": false
+    },
+    {
+      "name": "refuses otpauth://totp/x",
+      "address": "otpauth://totp/x",
+      "isValid": false
+    },
+    {
+      "name": "refuses an empty address",
+      "address": "",
+      "isValid": false
+    }
+  ]
+}

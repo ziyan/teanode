@@ -33,6 +33,7 @@ func checkGraphWork(schema *graphql.Schema, document *ast.Document, operation *a
 		}
 	}
 	workCount := 0
+	var passwordCounts passwordsDocumentCounts
 	var walkSelections func(*ast.SelectionSet, graphql.Type, int) error
 	walkSelections = func(selections *ast.SelectionSet, parentType graphql.Type, multiplier int) error {
 		if selections == nil {
@@ -41,6 +42,11 @@ func checkGraphWork(schema *graphql.Schema, document *ast.Document, operation *a
 		for _, selection := range selections.Selections {
 			switch selected := selection.(type) {
 			case *ast.Field:
+				// Passwords operations are not paged work, so the work count
+				// below does not see them (see passwordsDocumentCounts).
+				if err := passwordCounts.count(schema, parentType, selected.Name.Value); err != nil {
+					return err
+				}
 				field := graphFieldDefinition(parentType, selected.Name.Value)
 				pageSize, err := graphPageSize(field, selected, variables, limits.MaximumListItemCount)
 				if err != nil {

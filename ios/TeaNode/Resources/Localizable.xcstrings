@@ -4997,6 +4997,22 @@
         }
       }
     },
+    "Open Passwords in TeaNode first: this login needs a new key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にTeaNodeで「パスワード」を開いてください。このログインには新しいキーが必要です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在TeaNode中打开“密码”：此登录需要新的密钥"
+          }
+        }
+      }
+    },
     "Repeat by": {
       "localizations": {
         "ja": {
@@ -8253,6 +8269,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "给你的助手留句话"
+          }
+        }
+      }
+    },
+    "Add a one-time code to a login in TeaNode Passwords and it shows up here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode のパスワードのログイン情報にワンタイムコードを追加すると、ここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 TeaNode 密码的登录信息中添加一次性验证码后，它会显示在这里。"
           }
         }
       }
@@ -19185,6 +19217,22 @@
         }
       }
     },
+    "Fill your logins from TeaNode Passwords.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode のパスワードからログイン情報を入力します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 TeaNode 密码填充你的登录信息。"
+          }
+        }
+      }
+    },
     "Filter": {
       "localizations": {
         "ja": {
@@ -30033,6 +30081,38 @@
         }
       }
     },
+    "Open TeaNode and set up Passwords to see your logins here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode を開いてパスワードを設定すると、ここにログイン情報が表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请打开 TeaNode 并设置密码，登录信息就会显示在这里。"
+          }
+        }
+      }
+    },
+    "Open TeaNode and unlock Passwords once, then try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode を開いてパスワードのロックを一度解除してから、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请打开 TeaNode 解锁一次密码，然后重试。"
+          }
+        }
+      }
+    },
     "Open a conversation": {
       "localizations": {
         "ja": {
@@ -35991,6 +36071,22 @@
         }
       }
     },
+    "Save a passkey": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスキーを保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存通行密钥"
+          }
+        }
+      }
+    },
     "Save draft": {
       "localizations": {
         "ja": {
@@ -36595,6 +36691,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索邮件列表"
+          }
+        }
+      }
+    },
+    "Search logins": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン情報を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索登录信息"
           }
         }
       }
@@ -42250,6 +42362,22 @@
         }
       }
     },
+    "The passkey is saved with your logins in TeaNode Passwords.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスキーは、TeaNode のパスワードにあるログイン情報と一緒に保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通行密钥会与你的登录信息一起保存在 TeaNode 密码中。"
+          }
+        }
+      }
+    },
     "The password was shown once, when the credential was made, and cannot be shown again.": {
       "localizations": {
         "ja": {
@@ -43462,6 +43590,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "这个列表没有提供退订方式"
+          }
+        }
+      }
+    },
+    "This login changed on another device. Open TeaNode to refresh it, then try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このログイン情報は別のデバイスで変更されました。TeaNode を開いて更新してから、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个登录信息已在另一台设备上更改。请打开 TeaNode 刷新后重试。"
           }
         }
       }
@@ -52698,6 +52842,22 @@
         }
       }
     },
+    "Passkey": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通行密钥"
+          }
+        }
+      }
+    },
     "Processed passages": {
       "localizations": {
         "zh-Hans": {
@@ -54290,6 +54450,22 @@
         }
       }
     },
+    "Safari, Chrome and other apps can now offer your TeaNode logins, passkeys and one-time codes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari、Chrome などの App で、TeaNode のログイン情報、パスキー、ワンタイムコードを使えるようになりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari、Chrome 和其他 App 现在可以提供你的 TeaNode 登录信息、通行密钥和一次性验证码。"
+          }
+        }
+      }
+    },
     "Access for this device": {
       "localizations": {
         "ja": {
@@ -55576,6 +55752,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法继续录制。请打开 TeaNode。"
+          }
+        }
+      }
+    },
+    "Could not save the passkey": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスキーを保存できませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存通行密钥"
           }
         }
       }
@@ -60306,6 +60498,22 @@
         }
       }
     },
+    "No one-time codes yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワンタイムコードはまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有一次性验证码"
+          }
+        }
+      }
+    },
     "You do not share a circle with anyone yet. Invite people to a circle, then message them from here.": {
       "localizations": {
         "ja": {
@@ -61854,6 +62062,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存原件"
+          }
+        }
+      }
+    },
+    "Save passkey": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスキーを保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存通行密钥"
           }
         }
       }
@@ -63448,6 +63672,22 @@
         }
       }
     },
+    "Somebody who shares with you, or checks your key, can ask you to read them this code. It is made from your key, so it is the same on every device.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたと共有する人やあなたのキーを確認する人が、このコードの読み上げを求めることがあります。コードはあなたのキーから作られるため、どのデバイスでも同じです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你共享项目或核对你密钥的人可能会请你读出这个安全码。它由你的密钥生成，所以在每台设备上都一样。"
+          }
+        }
+      }
+    },
     "Your agent asked to run %@ with %@’s %@ skill": {
       "localizations": {
         "ja": {
@@ -64258,6 +64498,22 @@
         }
       }
     },
+    "No logins yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン情報はまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有登录信息"
+          }
+        }
+      }
+    },
     "Your agent is off.": {
       "localizations": {
         "ja": {
@@ -64370,6 +64626,22 @@
         }
       }
     },
+    "All logins": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのログイン情報"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有登录信息"
+          }
+        }
+      }
+    },
     "Places near you stay listed until you search.": {
       "localizations": {
         "ja": {
@@ -64462,6 +64734,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "TeaNode 无法向你的服务器查询此账户可以使用的功能。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
+    "TeaNode could not read this item. Open TeaNode, unlock Passwords, and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode がこの項目を読み取れませんでした。TeaNode を開いてパスワードのロックを解除してから、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法读取这个项目。请打开 TeaNode，解锁密码后重试。"
+          }
+        }
+      }
+    },
+    "TeaNode could not save the passkey, so it was not created. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode がパスキーを保存できなかったため、作成されませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 未能保存通行密钥，因此没有创建。请检查网络连接后重试。"
           }
         }
       }
@@ -65086,6 +65390,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "TeaNode 还没有获准知道您的位置。"
+          }
+        }
+      }
+    },
+    "TeaNode is on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はオンです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 已开启"
           }
         }
       }
@@ -70868,6 +71188,22 @@
         }
       }
     },
+    "Site": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网站"
+          }
+        }
+      }
+    },
     "step-parent": {
       "localizations": {
         "ja": {
@@ -74196,6 +74532,134 @@
         }
       }
     },
+    "Could not fill this login": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このログイン情報を入力できませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法填充这个登录信息"
+          }
+        }
+      }
+    },
+    "Fill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填充"
+          }
+        }
+      }
+    },
+    "Fill %@ into %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を%@に入力しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要将%@填充到%@吗？"
+          }
+        }
+      }
+    },
+    "It is saved for %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@用に保存されています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它保存的网站是%@。"
+          }
+        }
+      }
+    },
+    "It is not saved for any site.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どのサイトにも保存されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它没有保存给任何网站。"
+          }
+        }
+      }
+    },
+    "Removed. The item could not be given a new key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除しました。項目に新しいキーを設定できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除。无法为该项目生成新密钥。"
+          }
+        }
+      }
+    },
+    "The item was given a new key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目に新しいキーを設定しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已为该项目生成新密钥。"
+          }
+        }
+      }
+    },
+    "The item could not be given a new key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目に新しいキーを設定できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法为该项目生成新密钥。"
+          }
+        }
+      }
+    },
     "Erase %@": {
       "localizations": {
         "ja": {
@@ -74858,6 +75322,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存照片图库，并把设备备份到其中"
+          }
+        }
+      }
+    },
+    "Keep passwords, passkeys, cards and notes that only your devices can read, and share some of them": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのデバイスだけが読めるパスワード、パスキー、カード、メモを保存し、その一部を共有する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存只有你的设备才能读取的密码、通行密钥、银行卡和备忘，并分享其中一部分"
           }
         }
       }
@@ -77370,6 +77850,3476 @@
         }
       }
     },
+    "%@ copied.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@をコピーしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制%@。"
+          }
+        }
+      }
+    },
+    "%@ shared this with you. Only %@ can change it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんがこの項目を共有しました。変更できるのは%@さんだけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@与你共享了此项目。只有%@能修改它。"
+          }
+        }
+      }
+    },
+    "%@ was deleted. It stays in Recently deleted for 30 days.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を削除しました。30日間は「最近削除した項目」に残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除%@。它会在“最近删除”中保留 30 天。"
+          }
+        }
+      }
+    },
+    "%@ was restored.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を戻しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复%@。"
+          }
+        }
+      }
+    },
+    "%@ was saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を保存しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存%@。"
+          }
+        }
+      }
+    },
+    "1 day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 天"
+          }
+        }
+      }
+    },
+    "1 hour": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 小时"
+          }
+        }
+      }
+    },
+    "1 minute": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 分钟"
+          }
+        }
+      }
+    },
+    "1 week": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1週間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 周"
+          }
+        }
+      }
+    },
+    "15 minutes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 分钟"
+          }
+        }
+      }
+    },
+    "30 minutes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 分钟"
+          }
+        }
+      }
+    },
+    "4 hours": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4 小时"
+          }
+        }
+      }
+    },
+    "5 minutes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 分钟"
+          }
+        }
+      }
+    },
+    "A card cannot be used by the agent.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カードはエージェントに使わせることはできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行卡不能交给助手使用。"
+          }
+        }
+      }
+    },
+    "A card is kept and shown here. Nothing fills it into other apps.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カードはここに保存して表示するだけで、ほかのアプリには自動入力されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行卡只在这里保存和显示，不会自动填入其他 App。"
+          }
+        }
+      }
+    },
+    "Add a login": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログインを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加登录信息"
+          }
+        }
+      }
+    },
+    "Add a login, a card or a note. Only your devices can read them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン、カード、メモを追加します。読めるのはあなたのデバイスだけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加登录信息、银行卡或备忘。只有你的设备能读取它们。"
+          }
+        }
+      }
+    },
+    "All items": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての項目"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部项目"
+          }
+        }
+      }
+    },
+    "An item cannot change from a login to a note or a card.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログインをメモやカードに変えることはできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目的类型不能从登录信息改为备忘或银行卡。"
+          }
+        }
+      }
+    },
+    "Another password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のパスワード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换一个密码"
+          }
+        }
+      }
+    },
+    "AutoFill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动填充"
+          }
+        }
+      }
+    },
+    "Card": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行卡"
+          }
+        }
+      }
+    },
+    "Card brand": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カードブランド"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行卡品牌"
+          }
+        }
+      }
+    },
+    "Card number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード番号"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行卡号"
+          }
+        }
+      }
+    },
+    "Cards": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行卡"
+          }
+        }
+      }
+    },
+    "Change passphrase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改口令"
+          }
+        }
+      }
+    },
+    "Change the passphrase, or make a new recovery key. Your items stay as they are.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを変更するか、新しいリカバリーキーを作成します。項目はそのままです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改口令，或生成新的恢复密钥。你的项目保持不变。"
+          }
+        }
+      }
+    },
+    "Choose a circle or a person. Only you can change an item you share.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルまたは人を選びます。共有した項目を変更できるのはあなただけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个圈子或一个人。只有你能修改你共享的项目。"
+          }
+        }
+      }
+    },
+    "Choose a passphrase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを決める"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置口令"
+          }
+        }
+      }
+    },
+    "Choose at least one kind of character.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字の種類を少なくとも1つ選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少选择一种字符。"
+          }
+        }
+      }
+    },
+    "Copies it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピーします"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制此内容"
+          }
+        }
+      }
+    },
+    "Copy card number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード番号をコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制银行卡号"
+          }
+        }
+      }
+    },
+    "Copy recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制恢复密钥"
+          }
+        }
+      }
+    },
+    "Copy user name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ユーザー名をコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制用户名"
+          }
+        }
+      }
+    },
+    "Current passphrase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のパスフレーズ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前口令"
+          }
+        }
+      }
+    },
+    "Deleted %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除于 %@"
+          }
+        }
+      }
+    },
+    "Deletes every item, share and key from this server.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーからすべての項目、共有、キーを削除します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从此服务器删除所有项目、共享和密钥。"
+          }
+        }
+      }
+    },
+    "Digits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数字"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数字"
+          }
+        }
+      }
+    },
+    "Edit card": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カードを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑银行卡"
+          }
+        }
+      }
+    },
+    "Edit login": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログインを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑登录信息"
+          }
+        }
+      }
+    },
+    "Edit note": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑备忘"
+          }
+        }
+      }
+    },
+    "Erase Passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除密码"
+          }
+        }
+      }
+    },
+    "Erase all of Passwords?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードをすべて消去しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除全部密码？"
+          }
+        }
+      }
+    },
+    "Erase everything": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部清除"
+          }
+        }
+      }
+    },
+    "Every login, card, note and passkey, every share, and your passphrase and recovery key are deleted from this server. This cannot be undone. If you lost both your passphrase and your recovery key, this is the only way to start again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーから、すべてのログイン、カード、メモ、パスキー、すべての共有、そしてパスフレーズとリカバリーキーが削除されます。この操作は取り消せません。パスフレーズとリカバリーキーの両方をなくした場合は、これが最初からやり直す唯一の方法です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器上的所有登录信息、银行卡、备忘和通行密钥、所有共享，以及你的口令和恢复密钥都会被删除。此操作无法撤销。如果你同时丢失了口令和恢复密钥，这是重新开始的唯一办法。"
+          }
+        }
+      }
+    },
+    "Expires": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有効期限"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有效期"
+          }
+        }
+      }
+    },
+    "Expiry month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有効期限（月）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有效期（月）"
+          }
+        }
+      }
+    },
+    "Expiry year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有効期限（年）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有效期（年）"
+          }
+        }
+      }
+    },
+    "Face ID could not be set up. You can still use your passphrase.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID を設定できませんでした。パスフレーズは引き続き使えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法设置 Face ID。你仍可使用口令。"
+          }
+        }
+      }
+    },
+    "Face ID could not open Passwords. Type your passphrase instead.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID でパスワードを開けませんでした。代わりにパスフレーズを入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID 未能打开“密码”。请改为输入口令。"
+          }
+        }
+      }
+    },
+    "Face ID did not open Passwords. Type your passphrase instead.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID でパスワードを開けませんでした。代わりにパスフレーズを入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID 未能打开“密码”。请改为输入口令。"
+          }
+        }
+      }
+    },
+    "Face ID did not unlock Passwords. Try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID でパスワードのロックを解除できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID 未能解锁密码。请重试。"
+          }
+        }
+      }
+    },
+    "Face ID is not set up on this iPhone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone では Face ID が設定されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部 iPhone 上尚未设置 Face ID。"
+          }
+        }
+      }
+    },
+    "Face ID opens Passwords on this iPhone without the passphrase. Only this iPhone keeps the key, and it is removed if you change the faces or fingers Face ID knows.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID で、この iPhone ではパスフレーズなしでパスワードを開けます。キーはこの iPhone だけに保存され、Face ID の登録を変更すると削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID 可在这部 iPhone 上免输口令打开“密码”。密钥只保存在这部 iPhone 上，如果你更改了 Face ID 识别的面容，它会被移除。"
+          }
+        }
+      }
+    },
+    "Face ID opens Passwords on this iPhone, so you type the passphrase only on other devices.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID でこの iPhone のパスワードを開くので、パスフレーズの入力はほかのデバイスだけで済みます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID 会在这部 iPhone 上打开“密码”，所以只有在其他设备上才需要输入口令。"
+          }
+        }
+      }
+    },
+    "Face ID will open Passwords on this iPhone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone で Face ID によりパスワードを開けるようになりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID 现在可在这部 iPhone 上打开“密码”。"
+          }
+        }
+      }
+    },
+    "Fair. A few more characters would make it strong.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まずまずです。あと数文字で強くなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一般。再多几个字符就足够强了。"
+          }
+        }
+      }
+    },
+    "Generate a password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを生成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成密码"
+          }
+        }
+      }
+    },
+    "Generated password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成されたパスワード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成的密码"
+          }
+        }
+      }
+    },
+    "Hide %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を隠す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏%@"
+          }
+        }
+      }
+    },
+    "Hide password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを隠す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏密码"
+          }
+        }
+      }
+    },
+    "I saved my recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーを保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我已保存恢复密钥"
+          }
+        }
+      }
+    },
+    "If you forget your passphrase, this key opens Passwords instead. It is shown only now. Copy it or share it, and keep it somewhere safe that is not this iPhone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを忘れたときは、このキーでパスワードを開けます。表示されるのは今回だけです。コピーまたは共有して、この iPhone 以外の安全な場所に保管してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果你忘记了口令，可以用此密钥打开“密码”。它只显示这一次。请复制或分享它，并保存在这部 iPhone 以外的安全地方。"
+          }
+        }
+      }
+    },
+    "If you lose both your passphrase and your recovery key, your Passwords cannot be recovered. The only way out is to erase them and start again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズとリカバリーキーの両方をなくすと、パスワードは復元できません。消去して最初からやり直すしかありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果你同时丢失了口令和恢复密钥，你的密码将无法找回。唯一的办法是清除它们并重新开始。"
+          }
+        }
+      }
+    },
+    "If you lost both your passphrase and your recovery key, you can erase Passwords in its settings and start again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズとリカバリーキーの両方をなくした場合は、パスワードの設定で消去して最初からやり直せます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果你同时丢失了口令和恢复密钥，可以在“密码”的设置里清除它并重新开始。"
+          }
+        }
+      }
+    },
+    "It may have been deleted, or it is no longer shared with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除されたか、共有が終了した可能性があります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它可能已被删除，或不再与你共享。"
+          }
+        }
+      }
+    },
+    "It moves to Recently deleted for 30 days. People it is shared with lose it now, and the agent can no longer use it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30日間は「最近削除した項目」に移ります。共有相手はすぐに使えなくなり、エージェントも使えなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它会在“最近删除”中保留 30 天。与之共享的人会立即失去它，助手也不能再使用它。"
+          }
+        }
+      }
+    },
+    "Item name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称"
+          }
+        }
+      }
+    },
+    "Items you delete stay here for 30 days. Then they are gone for good.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除した項目は30日間ここに残り、その後は完全に削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除的项目会在这里保留 30 天，之后将被永久删除。"
+          }
+        }
+      }
+    },
+    "Keep logins, passkeys, cards and notes that only your devices can read. They are encrypted on your device before they reach the server. If you lose both your passphrase and your recovery key, they are gone for good.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのデバイスだけが読めるログイン、パスキー、カード、メモを保存します。サーバーに届く前にデバイス上で暗号化されます。パスフレーズとリカバリーキーの両方をなくすと、二度と取り戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存只有你的设备才能读取的登录信息、通行密钥、银行卡和备忘。它们在到达服务器之前就已在你的设备上加密。如果你同时丢失了口令和恢复密钥，它们将永远无法找回。"
+          }
+        }
+      }
+    },
+    "Keep your passwords here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードをここで管理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把密码保存在这里"
+          }
+        }
+      }
+    },
+    "Last used by the agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが最後に使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手上次使用"
+          }
+        }
+      }
+    },
+    "Leave out look-alike characters": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "紛らわしい文字を除く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不使用易混淆的字符"
+          }
+        }
+      }
+    },
+    "Length: %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "長さ：%lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长度：%lld"
+          }
+        }
+      }
+    },
+    "Let the agent use this": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントにこの項目を使わせる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让助手使用此项目"
+          }
+        }
+      }
+    },
+    "Letters": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "英字"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "字母"
+          }
+        }
+      }
+    },
+    "Lock": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "锁定"
+          }
+        }
+      }
+    },
+    "Lock after": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロックまでの時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多久后锁定"
+          }
+        }
+      }
+    },
+    "Lock now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐロック"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即锁定"
+          }
+        }
+      }
+    },
+    "Lock time saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロックまでの時間を保存しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "锁定时间已保存。"
+          }
+        }
+      }
+    },
+    "Login": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录信息"
+          }
+        }
+      }
+    },
+    "Logins": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录信息"
+          }
+        }
+      }
+    },
+    "Logins you save in TeaNode Passwords show up here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode のパスワードに保存したログイン情報がここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你保存在 TeaNode 密码中的登录信息会显示在这里。"
+          }
+        }
+      }
+    },
+    "Name on card": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード名義"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "持卡人姓名"
+          }
+        }
+      }
+    },
+    "New card": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいカード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建银行卡"
+          }
+        }
+      }
+    },
+    "New item": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい項目"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建项目"
+          }
+        }
+      }
+    },
+    "New login": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいログイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建登录信息"
+          }
+        }
+      }
+    },
+    "New note": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいメモ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建备忘"
+          }
+        }
+      }
+    },
+    "New passphrase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいパスフレーズ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新口令"
+          }
+        }
+      }
+    },
+    "No passwords yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードはまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有密码"
+          }
+        }
+      }
+    },
+    "Nobody else is in this circle yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサークルにはまだほかの人がいません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个圈子里还没有其他人。"
+          }
+        }
+      }
+    },
+    "Not shared": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有していません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未共享"
+          }
+        }
+      }
+    },
+    "Not shared with anyone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "誰とも共有していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有与任何人共享。"
+          }
+        }
+      }
+    },
+    "Nothing here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここには何もありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里什么也没有。"
+          }
+        }
+      }
+    },
+    "Nothing was deleted lately": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近削除した項目はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近没有删除任何项目"
+          }
+        }
+      }
+    },
+    "One address on each line": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1行に1つのアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每行一个网址"
+          }
+        }
+      }
+    },
+    "One-time code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワンタイムコード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次性验证码"
+          }
+        }
+      }
+    },
+    "Only the person who owns an item can change it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を変更できるのは、その持ち主だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有项目的所有者才能修改它。"
+          }
+        }
+      }
+    },
+    "Open AutoFill settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動入力の設定を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开自动填充设置"
+          }
+        }
+      }
+    },
+    "Open Passwords to change its lock time, passphrase or recovery key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを開くと、ロックまでの時間、パスフレーズ、リカバリーキーを変更できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开“密码”后，才能更改锁定时间、口令或恢复密钥。"
+          }
+        }
+      }
+    },
+    "Open with Face ID": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID で開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 Face ID 打开"
+          }
+        }
+      }
+    },
+    "Open your passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开你的密码"
+          }
+        }
+      }
+    },
+    "Opened with your recovery key. You can choose a new passphrase in Settings.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーで開きました。設定で新しいパスフレーズを選べます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已用恢复密钥打开。你可以在设置中选择新口令。"
+          }
+        }
+      }
+    },
+    "Optional. Items in the same folder can be shown together.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意です。同じフォルダの項目をまとめて表示できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选。同一文件夹中的项目可以一起显示。"
+          }
+        }
+      }
+    },
+    "Options": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オプション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选项"
+          }
+        }
+      }
+    },
+    "Passphrase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口令"
+          }
+        }
+      }
+    },
+    "Passphrase and recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズとリカバリーキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口令和恢复密钥"
+          }
+        }
+      }
+    },
+    "Password generator": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードジェネレーター"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码生成器"
+          }
+        }
+      }
+    },
+    "Passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码"
+          }
+        }
+      }
+    },
+    "Passwords could not be brought up to date. What this iPhone has is shown.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを最新にできませんでした。この iPhone にある内容を表示しています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法更新“密码”，显示的是这部 iPhone 上已有的内容。"
+          }
+        }
+      }
+    },
+    "Passwords could not be erased.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを消去できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法清除“密码”。"
+          }
+        }
+      }
+    },
+    "Passwords could not be opened with that passphrase.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのパスフレーズではパスワードを開けませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法用该口令打开“密码”。"
+          }
+        }
+      }
+    },
+    "Passwords could not be opened with that recovery key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのリカバリーキーではパスワードを開けませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法用该恢复密钥打开“密码”。"
+          }
+        }
+      }
+    },
+    "Passwords could not be set up.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを設定できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法设置“密码”。"
+          }
+        }
+      }
+    },
+    "Passwords is already set up.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードはすでに設定されています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“密码”已设置。"
+          }
+        }
+      }
+    },
+    "Passwords is locked": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードはロックされています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“密码”已锁定"
+          }
+        }
+      }
+    },
+    "Passwords is locked.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードはロックされています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“密码”已锁定。"
+          }
+        }
+      }
+    },
+    "Passwords is not available to you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードは利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你无法使用“密码”"
+          }
+        }
+      }
+    },
+    "Passwords is not ready": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードの準備ができていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码尚未就绪"
+          }
+        }
+      }
+    },
+    "Passwords is not set up.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードは設定されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未设置“密码”。"
+          }
+        }
+      }
+    },
+    "Passwords is set up and open.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを設定し、開きました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“密码”已设置并已打开。"
+          }
+        }
+      }
+    },
+    "Passwords locks itself after this long without use. It asks for your passphrase or Face ID again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この時間使わないと、パスワードは自動でロックされます。再び開くにはパスフレーズか Face ID が必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "闲置这么久后“密码”会自动锁定，再次使用时需要输入口令或使用 Face ID。"
+          }
+        }
+      }
+    },
+    "Passwords settings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードの設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“密码”设置"
+          }
+        }
+      }
+    },
+    "Passwords was erased.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを消去しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“密码”已清除。"
+          }
+        }
+      }
+    },
+    "Passwords will ask for your passphrase on this iPhone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone では、パスワードを開くときにパスフレーズを求めます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这部 iPhone 上，“密码”将需要输入口令。"
+          }
+        }
+      }
+    },
+    "Paste the otpauth address or the secret key the site showed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイトに表示された otpauth アドレスまたはシークレットキーを貼り付けてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴网站显示的 otpauth 地址或密钥。"
+          }
+        }
+      }
+    },
+    "Recently deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近削除した項目"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近删除"
+          }
+        }
+      }
+    },
+    "Recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复密钥"
+          }
+        }
+      }
+    },
+    "Replace recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーを再作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更换恢复密钥"
+          }
+        }
+      }
+    },
+    "Search items": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索项目"
+          }
+        }
+      }
+    },
+    "Security code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セキュリティコード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "银行卡安全码"
+          }
+        }
+      }
+    },
+    "Set up Passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置“密码”"
+          }
+        }
+      }
+    },
+    "Share %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享%@"
+          }
+        }
+      }
+    },
+    "Share recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーを共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享恢复密钥"
+          }
+        }
+      }
+    },
+    "Sharing could not be saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を保存できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存共享设置。"
+          }
+        }
+      }
+    },
+    "Sharing saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を保存しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享设置已保存。"
+          }
+        }
+      }
+    },
+    "Show %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示%@"
+          }
+        }
+      }
+    },
+    "Show password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示密码"
+          }
+        }
+      }
+    },
+    "Sites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网站"
+          }
+        }
+      }
+    },
+    "Strong.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "強いです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "很强。"
+          }
+        }
+      }
+    },
+    "Symbols": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記号"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "符号"
+          }
+        }
+      }
+    },
+    "TeaNode Passwords recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode パスワードのリカバリーキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 密码恢复密钥"
+          }
+        }
+      }
+    },
+    "That is not a one-time code. Paste the otpauth address or the secret key the site showed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワンタイムコードではありません。サイトに表示された otpauth アドレスまたはシークレットキーを貼り付けてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是一次性验证码。请粘贴网站显示的 otpauth 地址或密钥。"
+          }
+        }
+      }
+    },
+    "That is not a recovery key. It is 52 letters and digits, in groups of four.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーではありません。52文字の英数字で、4文字ずつに区切られています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是恢复密钥。恢复密钥由 52 个字母和数字组成，每四个一组。"
+          }
+        }
+      }
+    },
+    "That item is not here any more.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その項目はもうありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该项目已不在这里。"
+          }
+        }
+      }
+    },
+    "That passphrase is not right.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズが違います。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口令不正确。"
+          }
+        }
+      }
+    },
+    "That recovery key is not right.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーが違います。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复密钥不正确。"
+          }
+        }
+      }
+    },
+    "The agent can no longer use this item.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントはこの項目を使えなくなりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手不能再使用此项目。"
+          }
+        }
+      }
+    },
+    "The agent can read this note, and so can the model behind it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントはこのメモを読めます。その背後のモデルも読めます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手可以读取这条备忘，它背后的模型也可以。"
+          }
+        }
+      }
+    },
+    "The agent can use this item now.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントがこの項目を使えるようになりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手现在可以使用此项目。"
+          }
+        }
+      }
+    },
+    "The agent setting could not be changed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの設定を変更できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法更改助手的设置。"
+          }
+        }
+      }
+    },
+    "The agent signs in with this login on its sites and never sees the password.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントはこのログインでサイトにサインインしますが、パスワードを見ることはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手会在它的网站上用此登录信息登录，并且永远看不到密码。"
+          }
+        }
+      }
+    },
+    "The item could not be deleted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を削除できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法删除该项目。"
+          }
+        }
+      }
+    },
+    "The item could not be restored.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を戻せませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法恢复该项目。"
+          }
+        }
+      }
+    },
+    "The item could not be saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を保存できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存该项目。"
+          }
+        }
+      }
+    },
+    "The passphrase could not be changed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを変更できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法修改口令。"
+          }
+        }
+      }
+    },
+    "The passphrase opens Passwords on each device. It is separate from your TeaNode sign-in, and the server never sees it. A long phrase is better than a short, odd one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズは、各デバイスでパスワードを開くためのものです。TeaNode のサインインとは別で、サーバーには送られません。短くて変わった文字列より、長い文章のほうが安全です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "口令用于在每台设备上打开“密码”。它与你的 TeaNode 登录无关，服务器永远不会看到它。一段较长的短语比短而古怪的口令更好。"
+          }
+        }
+      }
+    },
+    "The people in that share could not be read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その共有に含まれる人を読み込めませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取该共享涉及的人员。"
+          }
+        }
+      }
+    },
+    "The recovery key could not be replaced.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーを再作成できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法更换恢复密钥。"
+          }
+        }
+      }
+    },
+    "The server asked for a passphrase check that is too weak. Passwords stays closed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーが求めたパスフレーズの確認が弱すぎるため、パスワードは開きません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器要求的口令校验强度过低，“密码”保持关闭。"
+          }
+        }
+      }
+    },
+    "The server sent something this app cannot read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーから、このアプリで読めないデータが届きました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器发回了此 App 无法读取的内容。"
+          }
+        }
+      }
+    },
+    "The setting could not be saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を保存できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存该设置。"
+          }
+        }
+      }
+    },
+    "The sites this login is for. AutoFill and the agent use it only on these sites.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このログインを使うサイトです。自動入力とエージェントは、これらのサイトでだけ使います。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此登录信息适用的网站。自动填充和助手只会在这些网站上使用它。"
+          }
+        }
+      }
+    },
+    "The two passphrases are not the same.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2つのパスフレーズが一致しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "两次输入的口令不一致。"
+          }
+        }
+      }
+    },
+    "This iPhone cannot keep the key behind Face ID. Set a passcode and Face ID in Settings first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone ではキーを Face ID の背後に保管できません。先に「設定」でパスコードと Face ID を設定してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部 iPhone 无法把密钥保存在 Face ID 之后。请先在“设置”中设置锁屏密码和 Face ID。"
+          }
+        }
+      }
+    },
+    "This item changed on another device. Open it again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目は別のデバイスで変更されました。もう一度開いてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目在另一台设备上已更改。请重新打开。"
+          }
+        }
+      }
+    },
+    "This item is not here any more": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目はもうありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目已不在这里"
+          }
+        }
+      }
+    },
+    "This item is of a kind this version cannot open. Update the app.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目の種類は、このバージョンでは開けません。アプリを更新してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目的类型当前版本无法打开。请更新 App。"
+          }
+        }
+      }
+    },
+    "This one-time code could not be read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このワンタイムコードを読み込めませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取此一次性验证码。"
+          }
+        }
+      }
+    },
+    "To fill logins, passkeys and one-time codes in Safari and other apps, open Settings, General, AutoFill & Passwords, then turn on TeaNode.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Safari などのアプリでログイン、パスキー、ワンタイムコードを自動入力するには、「設定」、「一般」、「自動入力とパスワード」の順に開き、TeaNode をオンにしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要在 Safari 和其他 App 中填充登录信息、通行密钥和一次性验证码，请打开“设置”、“通用”、“自动填充与密码”，然后开启 TeaNode。"
+          }
+        }
+      }
+    },
+    "Type it again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再输入一次"
+          }
+        }
+      }
+    },
+    "Type your passphrase once so this iPhone can keep the key behind Face ID.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを1回入力すると、この iPhone がキーを Face ID の背後に保管できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入一次口令，这部 iPhone 才能把密钥保存在 Face ID 之后。"
+          }
+        }
+      }
+    },
+    "Type your passphrase to make a new recovery key. The old one stops working once you finish.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを入力して新しいリカバリーキーを作成します。完了すると、古いキーは使えなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入口令以生成新的恢复密钥。完成后，旧的恢复密钥将失效。"
+          }
+        }
+      }
+    },
+    "Type your passphrase to open Passwords.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを入力してパスワードを開きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入口令以打开“密码”。"
+          }
+        }
+      }
+    },
+    "Type your passphrase to open it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを入力して開きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入口令以打开。"
+          }
+        }
+      }
+    },
+    "Type your recovery key to open it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーを入力して開きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入恢复密钥以打开。"
+          }
+        }
+      }
+    },
+    "Unlock": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロック解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解锁"
+          }
+        }
+      }
+    },
+    "Unlock Passwords with Face ID to fill your logins, passkeys and one-time codes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID でパスワードのロックを解除すると、ログイン情報、パスキー、ワンタイムコードを入力できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 Face ID 解锁密码，即可填充你的登录信息、通行密钥和一次性验证码。"
+          }
+        }
+      }
+    },
+    "Unlock with Face ID": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID でロック解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 Face ID 解锁"
+          }
+        }
+      }
+    },
+    "Use Face ID": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face ID を使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 Face ID"
+          }
+        }
+      }
+    },
+    "Use Face ID next time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次回から Face ID を使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下次使用 Face ID"
+          }
+        }
+      }
+    },
+    "Use the passphrase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用口令"
+          }
+        }
+      }
+    },
+    "Use the recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用恢复密钥"
+          }
+        }
+      }
+    },
+    "Used by the agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが使う項目"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手可用的项目"
+          }
+        }
+      }
+    },
+    "Waiting until they set up Passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手がパスワードを設定するまで待機中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等对方设置“密码”后"
+          }
+        }
+      }
+    },
+    "Weak. Add more words or characters.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "弱いです。単語や文字を増やしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "较弱。请多加一些词或字符。"
+          }
+        }
+      }
+    },
+    "Your account is not allowed to keep passwords. Whoever manages your TeaNode server can allow it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントにはパスワードを保管する権限がありません。TeaNode サーバーの管理者が許可できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的账户无权保存密码。管理 TeaNode 服务器的人可以为你开启。"
+          }
+        }
+      }
+    },
+    "Your items could not be opened.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を開けませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开你的项目。"
+          }
+        }
+      }
+    },
+    "Your passphrase was changed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスフレーズを変更しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的口令已修改。"
+          }
+        }
+      }
+    },
+    "Your recovery key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのリカバリーキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的恢复密钥"
+          }
+        }
+      }
+    },
+    "Your recovery key was replaced.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リカバリーキーを再作成しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的恢复密钥已更换。"
+          }
+        }
+      }
+    },
+    "Your safety code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの安全コード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的安全码"
+          }
+        }
+      }
+    },
+    "%lld items could not be opened on this iPhone. They may have been saved by a newer version of TeaNode.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld item could not be opened on this iPhone. It may have been saved by a newer version of TeaNode."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld items could not be opened on this iPhone. They may have been saved by a newer version of TeaNode."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目をこの iPhone で開けませんでした。新しいバージョンの TeaNode で保存された可能性があります。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个项目无法在这部 iPhone 上打开。它们可能由更新版本的 TeaNode 保存。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Changes in %lld seconds": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Changes in %lld second"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Changes in %lld seconds"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 秒後に変わります"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 秒後に変わります"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 秒后更换"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 秒后更换"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Gave %lld people access to the items you shared, now that they set up Passwords.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Gave %lld person access to the items you shared, now that they set up Passwords."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Gave %lld people access to the items you shared, now that they set up Passwords."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスワードを設定した %lld 人に、共有した項目へのアクセスを許可しました。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "パスワードを設定した %lld 人に、共有した項目へのアクセスを許可しました。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已为 %lld 位刚设置“密码”的成员开放你共享的项目。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已为 %lld 位刚设置“密码”的成员开放你共享的项目。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Use at least 12 characters. Longer is better.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "12文字以上にしてください。長いほど安全です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "至少使用 12 个字符，越长越好。"
+          }
+        }
+      }
+    },
+    "The server asked for a passphrase check that is far too slow. Passwords stays closed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーが求めたパスフレーズの確認が遅すぎるため、パスワードは開きません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器要求的口令验证慢得离谱，因此“密码”保持锁定。"
+          }
+        }
+      }
+    },
+    "Use": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用"
+          }
+        }
+      }
+    },
+    "%@, %lld waiting": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、%lld 人が待機中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，%lld 人等待中"
+          }
+        }
+      }
+    },
+    "Too short. Use at least %lld characters.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短すぎます。%lld文字以上にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "太短了。至少使用 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "Face ID is not set up on this iPhone any more. Turn this off to go back to your passphrase.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone では Face ID が設定されていません。オフにすると、パスフレーズで開けるようになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 iPhone 上已没有设置 Face ID。关闭此项即可改用口令。"
+          }
+        }
+      }
+    },
+    "Use the current passphrase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のパスフレーズを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用当前口令"
+          }
+        }
+      }
+    },
+    "Use the recovery key instead": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代わりにリカバリーキーを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改用恢复密钥"
+          }
+        }
+      }
+    },
+    "Type the recovery key you saved when you set up Passwords. It stands in for the passphrase you forgot.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを設定したときに保存したリカバリーキーを入力してください。忘れたパスフレーズの代わりになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入设置“密码”时保存的恢复密钥。它可以代替你忘记的口令。"
+          }
+        }
+      }
+    },
+    "Erase all of Passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードをすべて消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除全部密码"
+          }
+        }
+      }
+    },
+    "Too many attempts. Wait a while and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "試行回数が多すぎます。しばらく待ってからもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尝试次数过多。请稍等片刻再试。"
+          }
+        }
+      }
+    },
+    "This item changed on another device, but it could not be read again. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目は別のデバイスで変更されましたが、再読み込みできませんでした。接続を確認してもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目已在另一台设备上更改，但无法重新读取。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
+    "This item changed on another device. Your changes are kept. Check them, then save again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目は別のデバイスで変更されました。あなたの変更は残っています。確認してから、もう一度保存してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目已在另一台设备上更改。你的修改仍然保留。请检查后再次保存。"
+          }
+        }
+      }
+    },
+    "Related sites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "関連するサイト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相关网站"
+          }
+        }
+      }
+    },
     "Lists who is here, to choose one": {
       "localizations": {
         "ja": {
@@ -77382,6 +81332,1500 @@
           "stringUnit": {
             "state": "translated",
             "value": "列出在这里的人，供你选择"
+          }
+        }
+      }
+    },
+    "Sharing for this item could not be checked. Set sharing again first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目の共有を確認できませんでした。先に共有を設定し直してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法验证此项目的共享设置。请先重新设置共享。"
+          }
+        }
+      }
+    },
+    "This item needs a new key, but one was given a moment ago. Try again in a few minutes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目には新しいキーが必要ですが、先ほど設定したばかりです。数分後にもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目需要新密钥，但刚刚已生成过一个。请几分钟后再试。"
+          }
+        }
+      }
+    },
+    "Sharing could not be checked": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を確認できませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法验证共享设置"
+          }
+        }
+      }
+    },
+    "The server also lists %@, but you did not share this item with them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーには%@も共有相手として載っていますが、この項目をその相手と共有した覚えはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器还列出了%@，但你并没有与其共享此项目。"
+          }
+        }
+      }
+    },
+    "This item needs a new key. This iPhone gave it one a moment ago, so it waits before giving another.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目には新しいキーが必要です。この iPhone は先ほど設定したばかりなので、しばらく待ってから次を設定します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目需要新密钥。这部 iPhone 刚刚生成过一个，所以要等一会儿再生成下一个。"
+          }
+        }
+      }
+    },
+    "Nobody gets this item and the agent cannot use it until you set sharing again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を設定し直すまで、誰もこの項目を受け取れず、エージェントも使えません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你重新设置共享之前，任何人都无法获得此项目，助手也不能使用它。"
+          }
+        }
+      }
+    },
+    "This item's sharing was changed back by the server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目の共有がサーバーによって元に戻されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目的共享设置被服务器改回了旧状态"
+          }
+        }
+      }
+    },
+    "Nothing is done with the older sharing. Set sharing again to choose who has this item.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "古い共有設定では何も行いません。共有を設定し直して、この項目を持つ相手を選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不会按旧的共享设置执行任何操作。请重新设置共享，选择谁可以使用此项目。"
+          }
+        }
+      }
+    },
+    "Set sharing again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を設定し直す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新设置共享"
+          }
+        }
+      }
+    },
+    "Delete %@ forever?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を完全に削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "永久删除 %@？"
+          }
+        }
+      }
+    },
+    "It is removed from Passwords and from this iPhone, and cannot be brought back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードとこの iPhone から削除され、元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它会从“密码”和这部 iPhone 中移除，且无法恢复。"
+          }
+        }
+      }
+    },
+    "%@ was deleted forever.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を完全に削除しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已永久删除%@。"
+          }
+        }
+      }
+    },
+    "The item could not be deleted forever.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を完全に削除できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法永久删除该项目。"
+          }
+        }
+      }
+    },
+    "Delete forever?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完全に削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "永久删除？"
+          }
+        }
+      }
+    },
+    "%@ is removed from Passwords and from this iPhone, and cannot be brought back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はパスワードとこの iPhone から削除され、元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@会从“密码”和这部 iPhone 中移除，且无法恢复。"
+          }
+        }
+      }
+    },
+    "Choose who has this item and save. That sets sharing again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を持つ相手を選んで保存してください。それで共有が設定し直されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择谁可以使用此项目并保存，即可重新设置共享。"
+          }
+        }
+      }
+    },
+    "Saving removes them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存すると削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存后会将其移除。"
+          }
+        }
+      }
+    },
+    "%@'s key changed. This happens when they erase Passwords and set it up again. If you did not expect it, compare safety codes with them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のキーが変わりました。これは、相手が「パスワード」を消去して設定し直したときに起こります。心当たりがない場合は、安全コードを相手と照らし合わせてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的密钥已更改。对方抹掉“密码”后重新设置时会出现这种情况。如果这不在你的预期之内，请与对方核对安全码。"
+          }
+        }
+      }
+    },
+    "Compare codes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを照合"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对安全码"
+          }
+        }
+      }
+    },
+    "Codes compared": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを照合済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全码已核对"
+          }
+        }
+      }
+    },
+    "Codes compared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを照合済みにしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已标记为安全码已核对。"
+          }
+        }
+      }
+    },
+    "Someone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方"
+          }
+        }
+      }
+    },
+    "Their safety code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手の安全コード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方的安全码"
+          }
+        }
+      }
+    },
+    "The codes match": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードが一致しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全码一致"
+          }
+        }
+      }
+    },
+    "Comparing is optional. Sharing and opening items work either way.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照合は任意です。照合しなくても、共有や項目を開くことはできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对是可选的。不核对也可以共享和打开项目。"
+          }
+        }
+      }
+    },
+    "Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only. Only you can change the item.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「パスワード」を設定した人には、この iPhone でその人のキー専用に封じたこの項目のキーが渡されます。項目を変更できるのはあなただけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每位已设置“密码”的成员都会获得此项目的密钥，由这部 iPhone 仅针对其密钥加密封存。只有你可以更改此项目。"
+          }
+        }
+      }
+    },
+    "The notice could not be dismissed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知を閉じられませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法忽略此提示。"
+          }
+        }
+      }
+    },
+    "That could not be saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存。"
+          }
+        }
+      }
+    },
+    "That person's key changed while you were sharing. Open the share again and save it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有中に相手のキーが変わりました。共有をもう一度開いて保存してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你共享时对方的密钥已更改。请重新打开共享并保存。"
+          }
+        }
+      }
+    },
+    "Sharing saved. %lld people will get access when they set up Passwords.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Sharing saved. %lld person will get access when they set up Passwords."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Sharing saved. %lld people will get access when they set up Passwords."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "共有を保存しました。%lld 人は、パスワードを設定するとアクセスできます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "共有を保存しました。%lld 人は、パスワードを設定するとアクセスできます。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "共享设置已保存。%lld 位成员设置“密码”后即可访问。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "共享设置已保存。%lld 位成员设置“密码”后即可访问。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Open this item to finish sharing it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を開いて共有を完了してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开此项目以完成共享。"
+          }
+        }
+      }
+    },
+    "Some people are waiting for this item, or it needs a new key. This iPhone has not shared it before, so it waits for you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を待っている人がいるか、新しいキーが必要です。この iPhone はこの項目をまだ共有していないため、あなたの操作を待っています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有人在等待此项目，或者它需要新的密钥。这部 iPhone 以前没有共享过它，所以要等你来操作。"
+          }
+        }
+      }
+    },
+    "Finish sharing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を完了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成共享"
+          }
+        }
+      }
+    },
+    "Finished sharing %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の共有を完了しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成共享“%@”。"
+          }
+        }
+      }
+    },
+    "The sharing could not be finished.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を完了できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法完成共享。"
+          }
+        }
+      }
+    },
+    "%@ got %@ through %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ が %3$@ 経由で %2$@ を受け取りました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 通过 %3$@ 获得了“%2$@”。"
+          }
+        }
+      }
+    },
+    "Finish sharing %lld items": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finish sharing %lld item"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finish sharing %lld items"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "完成 %lld 个项目的共享"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "完成 %lld 个项目的共享"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Finishing sharing: %lld of %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を完了中: %lld / %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在完成共享：%lld / %lld"
+          }
+        }
+      }
+    },
+    "Finished sharing %lld items.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finished sharing %lld item."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finished sharing %lld items."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已完成 %lld 个项目的共享。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已完成 %lld 个项目的共享。"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了しました。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了しました。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Sharing could not be finished for some items. Try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一部の項目の共有を完了できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分项目的共享未能完成。请重试。"
+          }
+        }
+      }
+    },
+    "More are waiting: finish these first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待機中の共有がほかにもあります。まずこれらを完了してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还有其他共享在等待：请先完成这些。"
+          }
+        }
+      }
+    },
+    "%@ has too much shared with them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんに共有されている内容が多すぎます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有过多内容与%@共享。"
+          }
+        }
+      }
+    },
+    "Press Save to stop sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有をやめるには「保存」を押してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按“保存”以停止共享。"
+          }
+        }
+      }
+    },
+    "Their code before": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手の以前の安全コード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方更改前的安全码"
+          }
+        }
+      }
+    },
+    "Ask %@ to open Passwords settings on their own device and read you their safety code. It should match “Their safety code” below. They can check “Your safety code” the same way.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんに、ご自身のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。下の「相手の安全コード」と一致するはずです。相手も「あなたの安全コード」を同じ方法で確認できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请%@在自己的设备上打开“密码”设置，并向你读出安全码。它应与下方的“对方的安全码”一致。对方也可以用同样的方式核对“你的安全码”。"
+          }
+        }
+      }
+    },
+    "Ask %@ to open Passwords settings on their own device and read you their safety code. It should match “Their safety code” below, not “Their code before”. They can check “Your safety code” the same way.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんに、ご自身のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。下の「相手の安全コード」と一致するはずで、「相手の以前の安全コード」とは異なります。相手も「あなたの安全コード」を同じ方法で確認できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请%@在自己的设备上打开“密码”设置，并向你读出安全码。它应与下方的“对方的安全码”一致，而不是“对方更改前的安全码”。对方也可以用同样的方式核对“你的安全码”。"
+          }
+        }
+      }
+    },
+    "Earlier versions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前のバージョン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史版本"
+          }
+        }
+      }
+    },
+    "The versions this item had before you changed it are kept for 30 days.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を変更する前のバージョンは30日間保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个项目在你修改之前的版本会保留 30 天。"
+          }
+        }
+      }
+    },
+    "No earlier versions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前のバージョンはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有历史版本"
+          }
+        }
+      }
+    },
+    "When you change this item, the version it had is kept here for 30 days.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を変更すると、変更前のバージョンが30日間ここに保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改这个项目后，修改前的版本会在这里保留 30 天。"
+          }
+        }
+      }
+    },
+    "%lld versions could not be opened.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld version could not be opened."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld versions could not be opened."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件のバージョンを開けませんでした。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件のバージョンを開けませんでした。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个版本无法打开。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个版本无法打开。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "The earlier versions could not be read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前のバージョンを読み込めませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取历史版本。"
+          }
+        }
+      }
+    },
+    "This version is not here any more": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバージョンはもうありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本已不在这里"
+          }
+        }
+      }
+    },
+    "Go back to the list of earlier versions to see what is kept.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前のバージョンの一覧に戻って、保存されているものを確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回历史版本列表，查看保留的内容。"
+          }
+        }
+      }
+    },
+    "Restore this version": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバージョンに戻す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复此版本"
+          }
+        }
+      }
+    },
+    "Restore this version?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバージョンに戻しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要恢复此版本吗？"
+          }
+        }
+      }
+    },
+    "This item goes back to how it was on %@, but who it is shared with stays as it is now, and it gets a new key. What it is now stays here as an earlier version.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を%@の状態に戻しますが、共有先は今のまま変わらず、項目にはすぐ新しい鍵が付きます。現在の内容は以前のバージョンとしてここに残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个项目会恢复到 %@ 时的样子，但共享对象保持现状，并且会换上新密钥。现在的内容会作为历史版本保留在这里。"
+          }
+        }
+      }
+    },
+    "Restored the version from %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のバージョンに戻しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复到 %@ 的版本。"
+          }
+        }
+      }
+    },
+    "The version could not be restored.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョンを戻せませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法恢复该版本。"
+          }
+        }
+      }
+    },
+    "Saved by you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたが保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由你保存"
+          }
+        }
+      }
+    },
+    "Saved by another device or program": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のデバイスまたはプログラムが保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由其他设备或程序保存"
+          }
+        }
+      }
+    },
+    "Earlier version": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前のバージョン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史版本"
+          }
+        }
+      }
+    },
+    "Finish sharing %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」の共有を完了しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要完成“%@”的共享吗？"
+          }
+        }
+      }
+    },
+    "Finish sharing %lld items?": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finish sharing %lld item?"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finish sharing %lld items?"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了しますか？"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了しますか？"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "要完成 %lld 个项目的共享吗？"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "要完成 %lld 个项目的共享吗？"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Gives a key for this item to %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目のキーを%@に渡します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将把这个项目的密钥交给 %@。"
+          }
+        }
+      }
+    },
+    "This item gets a new key.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目に新しいキーを設定します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个项目会换上新密钥。"
+          }
+        }
+      }
+    },
+    "The agent can use this item again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントがこの項目をもう一度使えるようになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手将可以再次使用这个项目。"
+          }
+        }
+      }
+    },
+    "People who get keys, and for how many items:": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーを受け取る人と、その項目数:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会拿到密钥的人，以及项目数："
+          }
+        }
+      }
+    },
+    "%lld items get a new key.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld item gets a new key."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld items get a new key."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目に新しいキーを設定します。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目に新しいキーを設定します。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个项目会换上新密钥。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 个项目会换上新密钥。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "The agent can use %lld items again.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The agent can use %lld item again."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "The agent can use %lld items again."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "エージェントが %lld 件の項目をもう一度使えるようになります。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "エージェントが %lld 件の項目をもう一度使えるようになります。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "助手将可以再次使用 %lld 个项目。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "助手将可以再次使用 %lld 个项目。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "People it is shared with who are waiting get a key. Nothing else changes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待っている共有先の人にキーを渡します。ほかは変わりません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待的共享对象会拿到密钥，其他不变。"
+          }
+        }
+      }
+    },
+    "The server answered about another item.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーが別の項目について回答しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器回答的是另一个项目。"
+          }
+        }
+      }
+    },
+    "The server restored something else.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーが別の内容を復元しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器恢复的是别的内容。"
+          }
+        }
+      }
+    },
+    "That item was not in what you confirmed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目は確認した内容に含まれていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该项目不在你确认的范围内。"
+          }
+        }
+      }
+    },
+    "Sharing for that item changed after you confirmed. Review who gets it and finish again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認後にこの項目の共有が変わりました。共有先を確認して、もう一度完了してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认之后该项目的共享发生了变化。请重新查看共享对象，然后再次完成。"
           }
         }
       }

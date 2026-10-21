@@ -55,6 +55,19 @@ type Tab interface {
 	// IsWatchable says the person can watch and take the tab over from the
 	// dashboard: their extension is new enough.
 	IsWatchable() bool
+	// CanFillPasswords says the extension can fill a login, a one-time code
+	// or a passkey that the server builds the arguments for (protocol 5).
+	CanFillPasswords() bool
+	// Filled is what the agent's sign-in put into the person's browser, kept
+	// in memory: the values to hide from the model and which tabs are
+	// locked against what could read a field back.
+	Filled() *browser.FilledValues
+	// CurrentTabID is the number the extension gave the tab the actions go
+	// to, or empty when it did not say. A lock is kept for a tab by it.
+	CurrentTabID() string
+	// NoteCurrentTab records that an answer of the extension said the
+	// actions now go to this tab, without waiting for its next update.
+	NoteCurrentTab(tab string)
 	// ServerHost is the host, with its port, that the person's browser
 	// reached this server by when it connected: a name the person is signed
 	// in to, whatever the configuration calls the server.

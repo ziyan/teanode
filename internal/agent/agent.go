@@ -19,6 +19,7 @@ import (
 
 	"github.com/op/go-logging"
 
+	"github.com/ziyan/teanode/internal/browser"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/finance/rates"
@@ -178,6 +179,10 @@ type Agent struct {
 	// headless browser contexts in use under the operator's cap.
 	tabsMutex sync.Mutex
 	tabs      map[string]*attachedTab
+	// filledByAgent is what the agent's sign-ins put into each person's
+	// browser, by agent: kept across the browser's connections, so that a
+	// connection that drops and comes back is not a way to unlock a page.
+	filledByAgent map[string]*browser.FilledValues
 	// tabsConnected is closed, and made anew, each time a browser
 	// connects, for whoever waits on one coming back.
 	tabsConnected chan struct{}

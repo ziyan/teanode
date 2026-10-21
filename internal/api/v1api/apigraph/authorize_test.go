@@ -90,6 +90,11 @@ var authorizing = map[string]bool{
 	// call is about, and which categories of it, is then settled by
 	// reachHealth, the one place that decides.
 	"requireHealthPerson": true,
+	// requirePermission(passwords:use), plus the caller's account. What an
+	// item is, and whom it reaches, is then settled by the database, which
+	// answers not found for anything that is not the caller's or shared with
+	// them.
+	"requirePasswordsPerson": true,
 	// requirePermission(circle:use), plus the caller's account and its agent,
 	// made switched off for a person who has none; the chat their
 	// conversation is for, refused unless the caller is, or was, in it; and

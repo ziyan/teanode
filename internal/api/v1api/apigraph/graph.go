@@ -134,6 +134,11 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 	ctx = api.ContextWithResponse(ctx, response)
 	ctx = api.ContextWithAuthenticatedUsername(ctx, username)
 	ctx = db.ContextWithAuditPrincipal(ctx, self.auditPrincipal(request, user, impersonator))
+	// What a resolver holds until its answer is written (the one list of
+	// Passwords a person may have in memory at a time) is let go when this
+	// request is done, whichever way it ends.
+	ctx, afterResponse := contextWithAfterResponse(ctx)
+	defer afterResponse.run()
 
 	operation, err := selectGraphOperation(prepared.AST, prepared.OperationName)
 	if err == nil && (operation.Operation == "query" || hasOnlyTransactionFreeMutations(operation)) {

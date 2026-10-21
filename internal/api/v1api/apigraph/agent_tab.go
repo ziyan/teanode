@@ -14,6 +14,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/browser"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -30,9 +31,10 @@ import (
 // there is a tab to act in, so the agent can open one in the person's
 // browser when none is attached; 4 also streams a tab's picture and takes
 // the person's input, for the dashboard's browser page, and lists its tabs
-// with each update. An extension still speaking 2 or 3 is welcomed in its
-// own, and only cannot be watched.
-const tabProtocol = 4
+// with each update; 5 also fills a login or a one-time code the server hands
+// it, for the agent's sign-in with Passwords. An extension still speaking 2,
+// 3 or 4 is welcomed in its own, and only cannot be watched or fill.
+const tabProtocol = 5
 
 // tabProtocolOldest is the oldest version still taken.
 const tabProtocolOldest = 2
@@ -223,9 +225,15 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			Error    string          `json:"error"`
 			// What protocol 4 adds: the tabs with an update, and a
 			// picture of a streamed tab with the page's size.
-			Tabs     *[]extensionTabListing `json:"tabs"`
-			Tab      int64                  `json:"tab"`
-			Metadata struct {
+			Tabs *[]extensionTabListing `json:"tabs"`
+			Tab  int64                  `json:"tab"`
+			// What protocol 5 adds to hello and update: the number of the
+			// tab the actions go to, and the documents the browser's tabs
+			// committed since the last update, which end the lock on a
+			// tab the agent filled a password into.
+			CurrentTab *int64               `json:"currentTab"`
+			Commits    []extensionTabCommit `json:"commits"`
+			Metadata   struct {
 				DeviceWidth  float64 `json:"deviceWidth"`
 				DeviceHeight float64 `json:"deviceHeight"`
 			} `json:"metadata"`
@@ -265,6 +273,10 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			hasTab := message.HasTab == nil || *message.HasTab
 			worker.ConnectBrowser(found.ID, socket, message.Title, message.URL, hasTab)
 			worker.SetBrowserCanCast(found.ID, socket, message.Protocol >= 4)
+			worker.SetBrowserCanFillPasswords(found.ID, socket, message.Protocol >= 5)
+			if message.CurrentTab != nil {
+				worker.SetCurrentTab(found.ID, strconv.FormatInt(*message.CurrentTab, 10))
+			}
 			worker.SetBrowserServerHost(found.ID, socket, request.Host)
 			// Signed in, it may send pictures of a tab, which are larger
 			// than anything said before the hello.
@@ -283,6 +295,14 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 		case "update":
 			if attached {
 				worker.UpdateTab(found.ID, message.Title, message.URL)
+				if message.CurrentTab != nil {
+					worker.SetCurrentTab(found.ID, strconv.FormatInt(*message.CurrentTab, 10))
+				}
+				for _, commit := range message.Commits {
+					worker.TabCommitted(found.ID, socket, strconv.FormatInt(commit.Tab, 10), browser.Commit{
+						DocumentID: commit.DocumentID, Address: commit.URL, IsBackForward: commit.IsBackForward, Count: commit.Count,
+					})
+				}
 				if message.HasTab != nil {
 					worker.SetTabHeld(found.ID, *message.HasTab)
 				}
@@ -314,6 +334,18 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			return
 		}
 	}
+}
+
+// extensionTabCommit is a tab committing a document, as the extension
+// reports it (chrome.webNavigation.onCommitted, main frame): which document,
+// at which address, whether it was a move back or forward through the history,
+// and the tab's count of commits, which orders the reports.
+type extensionTabCommit struct {
+	Tab           int64  `json:"tab"`
+	DocumentID    string `json:"documentId"`
+	URL           string `json:"url"`
+	IsBackForward bool   `json:"isBackForward"`
+	Count         int64  `json:"count"`
 }
 
 // extensionTabListing is one tab as the extension lists it, numbered.

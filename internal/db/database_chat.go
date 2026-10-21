@@ -835,12 +835,28 @@ func leaveEveryChat(tx *gorm.DB, userId, name string, now time.Time) error {
 }
 
 func (self *transaction) SyncChatsOf(userId string) error {
-	var circleIds []string
-	if err := self.tx.Raw(`SELECT "circle_member"."circle_id" FROM "circle_member"
-		WHERE "circle_member"."user_id" = ?
-		  AND NOT EXISTS (SELECT 1 FROM "chat" WHERE "chat"."circle_id" = "circle_member"."circle_id")
-		ORDER BY "circle_member"."circle_id"`, userId).Scan(&circleIds).Error; err != nil {
+	circlesWithoutChat := func() (circleIds []string, err error) {
+		err = self.tx.Raw(`SELECT "circle_member"."circle_id" FROM "circle_member"
+			WHERE "circle_member"."user_id" = ?
+			  AND NOT EXISTS (SELECT 1 FROM "chat" WHERE "chat"."circle_id" = "circle_member"."circle_id")
+			ORDER BY "circle_member"."circle_id"`, userId).Scan(&circleIds).Error
+		return circleIds, err
+	}
+	circleIds, err := circlesWithoutChat()
+	if err != nil {
 		return err
+	}
+	if len(circleIds) > 0 {
+		// The circle membership lock comes before the circles' rows (see
+		// circleMembershipLockKey), taken only when there is a chat to make,
+		// since this runs on every sign-in. The circles are read again once it
+		// is held: one may have gone, or got its chat, while this waited.
+		if err := lockCircleMembership(self.tx); err != nil {
+			return err
+		}
+		if circleIds, err = circlesWithoutChat(); err != nil {
+			return err
+		}
 	}
 	for _, circleId := range circleIds {
 		var locked circleModel

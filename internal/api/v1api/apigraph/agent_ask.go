@@ -626,7 +626,7 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 	if query := strings.TrimSpace(arguments.Query); query != "" {
 		matched := []*models.AgentConversation{}
 		if hasAgent && (kind == "" || kind != models.AgentConversationChat) {
-			if matched, err = tx.SearchAgentConversations(found.ID, query, 50); err != nil {
+			if matched, err = tx.SearchAgentConversations(found.ID, query, 50, principal.IsPersonsTap()); err != nil {
 				return nil, err
 			}
 			if kind != "" {
@@ -1091,6 +1091,13 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		Viewing:      arguments.Viewing,
 		Surface:      surface,
 		DrawerID:     drawerId,
+
+		// The surface is only what the client says. Whether the person
+		// tapped is judged from how the request signed in, and an operator
+		// who speaks into another person's conversation, or is signed in as
+		// them, is never the person (agent.AskRun.IsStartedByPerson).
+		IsPersonsTap:             principal.IsPersonsTap() && other == nil,
+		IsOperatorActingAsPerson: other != nil || principal.IsImpersonation(),
 
 		InterruptedAnswer: arguments.InterruptedAnswer,
 		ReadOnly:          arguments.ReadOnly,

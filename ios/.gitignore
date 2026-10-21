@@ -21,3 +21,6 @@ xcuserdata/
 /TeaNodeShare/Info.plist
 /TeaNodeWidgets/*.entitlements
 /TeaNodeWidgets/Info.plist
+/TeaNodeAutoFill/*.entitlements
+/TeaNodeAutoFill/Info.plist
+/TeaNodeKit/Package.resolved

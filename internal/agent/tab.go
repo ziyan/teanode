@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/browser"
 )
 
 // The tab relay: the person's own browser tab, attached through the
@@ -37,6 +38,15 @@ type attachedTab struct {
 	// canCast says the extension can stream a tab's picture and take the
 	// person's input (protocol 4).
 	canCast atomic.Bool
+	// canFillPasswords says the extension fills a login or a one-time code
+	// from arguments the server builds (protocol 5).
+	canFillPasswords atomic.Bool
+	// filled is what the agent's sign-ins put into the person's browser.
+	// It belongs to the agent, not to this connection: see
+	// Agent.filledByAgent.
+	filled *browser.FilledValues
+	// currentTab is the number the extension gave the tab the actions go to.
+	currentTab atomic.Value
 
 	// serverHost is the host the browser reached this server by, from the
 	// request that opened the socket (a string).
@@ -71,7 +81,9 @@ func (self *Agent) ConnectBrowser(agentId string, connection TabConnection, titl
 	if previous := self.tabs[agentId]; previous != nil {
 		previous.drop()
 	}
-	connected := &attachedTab{deviceLink: newDeviceLink("the person's browser", connection), title: title, url: url, agent: self, agentId: agentId}
+	connected := &attachedTab{deviceLink: newDeviceLink("the person's browser", connection), title: title, url: url, agent: self, agentId: agentId, filled: self.filledValuesLocked(agentId)}
+	// A browser that connects numbers its commits from the start again.
+	connected.filled.ResetCommitCounts()
 	connected.hasTab.Store(hasTab)
 	self.tabs[agentId] = connected
 	if self.tabsConnected != nil {
@@ -80,6 +92,36 @@ func (self *Agent) ConnectBrowser(agentId string, connection TabConnection, titl
 	self.tabsConnected = make(chan struct{})
 	// Whoever watches is told the browser is back, after the lock.
 	go self.tellViewers(agentId)
+}
+
+// filledValuesLocked is what the agent's sign-ins put into this person's
+// browser, made when there is none. The caller holds tabsMutex.
+func (self *Agent) filledValuesLocked(agentId string) *browser.FilledValues {
+	if self.filledByAgent == nil {
+		self.filledByAgent = map[string]*browser.FilledValues{}
+	}
+	if self.filledByAgent[agentId] == nil {
+		self.filledByAgent[agentId] = &browser.FilledValues{}
+	}
+	return self.filledByAgent[agentId]
+}
+
+// SetCurrentTab is the browser saying which of its tabs the actions go to.
+func (self *Agent) SetCurrentTab(agentId string, tab string) {
+	if found := self.tabFor(agentId); found != nil {
+		found.NoteCurrentTab(tab)
+	}
+}
+
+// TabCommitted is the browser on this connection saying a tab committed a new
+// document, which is what ends a lock on a tab the agent filled a password
+// into (see browser.FilledValues).
+func (self *Agent) TabCommitted(agentId string, connection TabConnection, tab string, commit browser.Commit) {
+	found := self.tabFor(agentId)
+	if found == nil || (connection != nil && found.connection != connection) {
+		return
+	}
+	found.filled.Committed(tab, commit)
 }
 
 // SetBrowserCanCast is the browser on this connection saying it can stream
@@ -91,6 +133,17 @@ func (self *Agent) SetBrowserCanCast(agentId string, connection TabConnection, c
 	}
 	tab.canCast.Store(canCast)
 	self.castAgain(agentId)
+}
+
+// SetBrowserCanFillPasswords is the browser on this connection saying it
+// fills a login or a one-time code the server hands it, which the agent's
+// sign-in with Passwords in the person's tab needs.
+func (self *Agent) SetBrowserCanFillPasswords(agentId string, connection TabConnection, canFillPasswords bool) {
+	tab := self.tabFor(agentId)
+	if tab == nil || (connection != nil && tab.connection != connection) {
+		return
+	}
+	tab.canFillPasswords.Store(canFillPasswords)
 }
 
 // SetBrowserServerHost records the host the person's browser reached this
@@ -205,6 +258,29 @@ func (self *attachedTab) HasTab() bool {
 // and take the person's input there: an extension of protocol 4.
 func (self *attachedTab) IsWatchable() bool {
 	return self.canCast.Load()
+}
+
+// CanFillPasswords says whether the browser fills a login or a one-time code
+// the server hands it: an extension of protocol 5.
+func (self *attachedTab) CanFillPasswords() bool {
+	return self.canFillPasswords.Load()
+}
+
+// Filled is what the agent's sign-ins put into the person's browser.
+func (self *attachedTab) Filled() *browser.FilledValues {
+	return self.filled
+}
+
+// CurrentTabID is the number of the tab the actions go to, as the extension
+// last said, or empty.
+func (self *attachedTab) CurrentTabID() string {
+	tab, _ := self.currentTab.Load().(string)
+	return tab
+}
+
+// NoteCurrentTab records the tab the actions now go to.
+func (self *attachedTab) NoteCurrentTab(tab string) {
+	self.currentTab.Store(tab)
 }
 
 // IsTakenOver says whether the person has taken their tab over from the

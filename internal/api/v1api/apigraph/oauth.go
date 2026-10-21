@@ -69,6 +69,13 @@ type OAuthAuthorizationRequest struct {
 
 	// IsWholeAccount says approving gives the whole account, not only the agent tools: an app installed on a device signing in, as a connect code would sign it in
 	IsWholeAccount bool `json:"isWholeAccount"`
+
+	// IsTeaNodeApp says the program is registered as the TeaNode phone app
+	// (and approving signs it in as the whole account). The page then tells
+	// the reader to approve only a sign-in they just started in that app,
+	// because its return address is a private-use scheme that another app on
+	// the same phone can also claim.
+	IsTeaNodeApp bool `json:"isTeaNodeApp"`
 }
 
 type ApproveOAuthAuthorizationArguments struct {
@@ -171,6 +178,7 @@ func (self *graph) ReadOAuthAuthorizationRequest(ctx context.Context, arguments 
 		Username:       principal.User.Username,
 		Registered:     client.CreatedAt,
 		IsWholeAccount: isWholeAccount,
+		IsTeaNodeApp:   isWholeAccount && isTeaNodeApp(client),
 	}, nil
 }
 
@@ -208,12 +216,16 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 	}
 
 	// The app's own sign-in is marked as such only when the approval was a
-	// person's tap, on the dashboard or in the app. An approval made with a
-	// command line token could have been made by a program on the person's
-	// computer, which would then hold an app's token and with it the right
-	// to approve a call that spends money. It still gets its token, unmarked.
+	// person's tap, on the dashboard or in the app, and the program is the
+	// TeaNode app itself. An approval made with a command line token could
+	// have been made by a program on the person's computer, which would then
+	// hold an app's token and with it the right to approve a call that
+	// spends money. And any other app that registers an address of its own
+	// and asks for the API is signed in as the whole account, but its token
+	// is not a person's tap: the person approved that program, not the
+	// TeaNode app. Either still gets its token, unmarked.
 	var clientKind models.TokenClientKind
-	if isWholeAccount && principal.IsPersonsTap() {
+	if isWholeAccount && principal.IsPersonsTap() && isTeaNodeApp(client) {
 		clientKind = models.ClientKindApp
 	}
 
@@ -252,6 +264,17 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 
 	log.Noticef("%s authorized the client %s (%q)", principal.User.Username, client.ID, client.Name)
 	return &OAuthApproval{RedirectURL: redirect.String()}, nil
+}
+
+// teaNodeAppRedirectAddress is the only return address of the TeaNode phone
+// app. A phone hands an address in this scheme to the app that claimed it, so
+// an approval that returns here reaches the TeaNode app and no other.
+const teaNodeAppRedirectAddress = api.TeaNodeAppRedirectAddress
+
+// isTeaNodeApp says the client registered as the TeaNode phone app, and
+// nothing else.
+func isTeaNodeApp(client *models.OAuthClient) bool {
+	return api.IsTeaNodeAppClient(client.RedirectURIs)
 }
 
 // tokenResource is what an approved token will be good for, and whether that

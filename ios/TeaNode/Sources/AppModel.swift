@@ -307,6 +307,10 @@ final class AppModel {
                 openedFinancePart = part
             }
             openedSection = .finance
+        case "passwords":
+            // Only the part: an item's address would say which item, and an
+            // address is no reason to open one.
+            openedSection = .passwords
         case "settings":
             openedSection = .settings
             if segments.count >= 3, segments[1] == "mailbox", segments[2] == "devices" {
@@ -568,6 +572,10 @@ final class AppModel {
     /// at it (the server's health:use), as far as the server has said.
     private(set) var canUseHealth = false
 
+    /// Whether the account may keep passwords, passkeys, cards and notes (the
+    /// server's passwords:use), as far as the server has said.
+    private(set) var canUsePasswords = false
+
     /// Whether the permissions of the account in use have been read once
     /// (`canUseLocation` and `canChat` are only true after that). Until
     /// then, a screen that needs one of them is not known to be refused.
@@ -588,6 +596,7 @@ final class AppModel {
         if let session {
             canUseLocation = session.holds("location:use")
             canUseHealth = session.holds("health:use")
+            canUsePasswords = session.holds("passwords:use")
             hasReadPermissions = true
         }
         let canUseCircles = session?.holds("circle:use") ?? false
@@ -627,6 +636,7 @@ final class AppModel {
                 connection = Connection(account: DemoServer.account, transport: transport)
                 canUseLocation = true
                 canUseHealth = true
+                canUsePasswords = true
                 hasReadPermissions = true
                 return
             }
@@ -653,6 +663,7 @@ final class AppModel {
         canChat = false
         canUseLocation = false
         canUseHealth = false
+        canUsePasswords = false
         hasReadPermissions = false
         hasPermissionReadFailed = false
         unreadChatCount = 0
@@ -696,6 +707,10 @@ final class AppModel {
         agentName = ""
         phone = nil
         use(chosen)
+        // The suggestions above the keyboard were made from the account that was in use: they would
+        // offer its logins on the other account's screens. The other account's own are put back
+        // when its Passwords is opened.
+        await PasswordsIdentityStore.removeAll()
         await setUpNotifications()
     }
 
@@ -1006,6 +1021,10 @@ final class AppModel {
             forgetProfile(accountKey: account.accountKey)
             LocationRecorder.shared.accountWasRemoved(accountKey: account.accountKey)
             HealthSync.shared.accountWasRemoved(accountKey: account.accountKey)
+            // A sign-in the server ended (`signedOutText`) leaves what Passwords remembers about keys and
+            // items; only the person removing the account from the iPhone clears it.
+            await PasswordsAccountStorage.accountWasRemoved(
+                signInAccountKey: account.accountKey, isInUse: true, end: signedOutText == nil ? .removedByPerson : .endedByServer)
         }
         try? store.delete()
         phone = nil
@@ -1055,6 +1074,7 @@ final class AppModel {
         ConversationDraft.forget(accountKey: other.accountKey)
         LocationRecorder.shared.accountWasRemoved(accountKey: other.accountKey)
         HealthSync.shared.accountWasRemoved(accountKey: other.accountKey)
+        await PasswordsAccountStorage.accountWasRemoved(signInAccountKey: other.accountKey, isInUse: false, end: .removedByPerson)
         try? store.remove(other.accountKey)
         accounts = (try? store.accounts().accounts) ?? accounts
     }
@@ -1198,6 +1218,7 @@ extension AppModel {
         case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .location: return canUseLocation
         case .health: return canUseHealth
+        case .passwords: return canUsePasswords
         case .coding: return services.isAssistantEnabled && hasCodingComputers
         case .settings: return true
         }

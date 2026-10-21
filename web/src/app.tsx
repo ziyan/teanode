@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { RedirectKeepingQuery } from './components/redirectKeepingQuery'
 
@@ -15,6 +15,7 @@ import { SETTINGS_LANDING } from './pages/settings/nav'
 import { Loading } from './components/common'
 import { FINANCE_LINK_PATH } from './components/dashboardPath'
 import { lazyPage } from './lazyPage'
+import { lockPasswords } from './pages/passwords/passwordsLock'
 import { ThemeToggle } from './components/theme'
 import { LanguagePicker, useTranslation } from './i18n/i18n'
 import { AccountMenu } from './components/accountMenu'
@@ -32,6 +33,7 @@ import { NavigationShortcuts } from './components/navigationShortcuts'
 import { RecordingBar } from './recording/recordingBar'
 import { MailboxesProvider } from './mailboxes'
 import { homePath } from './services'
+import { RouteErrorBoundary } from './components/errorBoundary'
 import { ServiceGate } from './components/serviceGate'
 import { Tooltip } from './components/tooltip'
 
@@ -68,6 +70,9 @@ const LocationPage = lazyPage(async () => ({
 }))
 const HealthPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "health" */ './pages/health/healthPage')).HealthPage,
+}))
+const PasswordsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "passwords" */ './pages/passwords/passwordsPage')).PasswordsPage,
 }))
 const MailDetailPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "operations" */ './pages/mailDetail')).MailDetailPage,
@@ -300,6 +305,15 @@ export function App() {
     window.parent.postMessage({ teanode: 'signedIn', username: session.username }, parentOrigin)
   }, [framed, session])
 
+  // Passwords is closed whenever the signed-in person changes or signs out, so
+  // what one person had open is never there for the next one on this browser.
+  const signedInUserId = session?.authenticated ? (session.userId ?? '') : ''
+  const lastSignedInUserId = useRef(signedInUserId)
+  useEffect(() => {
+    if (lastSignedInUserId.current !== signedInUserId) lockPasswords()
+    lastSignedInUserId.current = signedInUserId
+  }, [signedInUserId])
+
   useEffect(() => {
     const refreshVisible = () => {
       if (document.visibilityState === 'visible') void refresh()
@@ -460,6 +474,7 @@ export function App() {
                     collapsed={desktop && collapsed}
                     onToggleSidebar={desktop ? toggleSidebar : undefined}
                     onLogout={async () => {
+                      lockPasswords()
                       await logout()
                       await refresh()
                     }}
@@ -529,6 +544,14 @@ export function App() {
                       <Route path="/reminders" element={<CalendarPage />} />
                       <Route path="/location" element={<LocationPage />} />
                       <Route path="/health" element={<HealthPage />} />
+                      <Route
+                        path="/passwords"
+                        element={
+                          <RouteErrorBoundary>
+                            <PasswordsPage />
+                          </RouteErrorBoundary>
+                        }
+                      />
                       <Route path="/mailbox/contacts" element={<AddressBookPage />} />
                       <Route path="/mailbox/calendar" element={<CalendarPage />} />
                       <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
