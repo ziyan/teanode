@@ -222,17 +222,24 @@ export function setFieldValue(input: HTMLInputElement, value: string): void {
 }
 
 // foreignFormActionHost is the host the form around a field sends to when that
-// is not the host of the page the form is on, else an empty text. The form's
-// "action" and any button's "formaction" are read as attributes: a field named
-// "action" inside the form would stand in for the form's action property.
+// is not the host of the page the form is on, else an empty text. A form on a
+// secure page that sends to a plain-text address counts too, whatever the host
+// (it is named with "not encrypted" after it). The form's "action" and any
+// control's "formaction" are read as attributes: a field named "action" inside
+// the form would stand in for the form's action property. The controls are all
+// those that belong to the form (form.elements), which includes a button
+// outside the form that names it with its form attribute, and leaves out a
+// button inside it that names another form.
 export function foreignFormActionHost(input: HTMLInputElement): string {
   const form = input.form
   if (!form) return ''
   const document = input.ownerDocument
-  const pageHost = normalizeHost(document.location?.href ?? '')
+  const pageUrl = document.location?.href ?? ''
+  const pageHost = normalizeHost(pageUrl)
+  const isPageSecure = /^https:/i.test(pageUrl)
   const attributes = [
     form.getAttribute('action'),
-    ...Array.from(form.querySelectorAll('[formaction]')).map((button) => button.getAttribute('formaction')),
+    ...Array.from(form.elements).map((control) => control.getAttribute('formaction')),
   ]
   for (const attribute of attributes) {
     if (attribute === null || attribute.trim() === '') continue
@@ -243,7 +250,9 @@ export function foreignFormActionHost(input: HTMLInputElement): string {
       continue
     }
     const host = normalizeHost(resolved.href)
-    if (host !== '' && host !== pageHost) return host
+    if (host === '') continue
+    if (host !== pageHost) return host
+    if (isPageSecure && resolved.protocol === 'http:') return `${host} (not encrypted)`
   }
   return ''
 }

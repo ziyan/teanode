@@ -119,3 +119,39 @@ describe('withoutRequestBodies', () => {
     expect(withoutRequestBodies(undefined)).toBeUndefined()
   })
 })
+
+describe('TabDocuments between runs of the worker', () => {
+  it('keeps and restores the count, the current document and the filled ones', () => {
+    const before = new TabDocuments()
+    before.committed({ tabId: 7, frameId: 0, documentId: 'doc-1', url: 'https://shop.example.test/sign-in' }, true)
+    before.markFilled(7, 'doc-1')
+    const kept = JSON.parse(JSON.stringify(before.keep()))
+
+    const after = new TabDocuments()
+    after.restore(kept)
+    expect(after.isShowingFilledDocument(7)).toBe(true)
+    expect(after.countOf(7)).toBe(1)
+    // The next commit goes on counting, and leaves the filled document.
+    after.committed({ tabId: 7, frameId: 0, documentId: 'doc-2', url: 'https://shop.example.test/account' }, true)
+    expect(after.countOf(7)).toBe(2)
+    expect(after.isShowingFilledDocument(7)).toBe(false)
+  })
+
+  it('keeps no address or value, and leaves out what is not in the shape it makes', () => {
+    const documents = new TabDocuments()
+    documents.committed({ tabId: 7, frameId: 0, documentId: 'doc-1', url: 'https://shop.example.test/secret' }, true)
+    expect(JSON.stringify(documents.keep())).not.toContain('shop.example.test')
+    const restored = new TabDocuments()
+    restored.restore({ counts: 'x', current: [['seven', 'doc']], filled: [[7, [1, 'doc-1']]] })
+    restored.restore(null)
+    expect(restored.countOf(7)).toBe(0)
+    expect(restored.isShowingFilledDocument(7)).toBe(false)
+  })
+
+  it('does not overwrite what this run already knows with the older saved record', () => {
+    const documents = new TabDocuments()
+    documents.committed({ tabId: 7, frameId: 0, documentId: 'doc-9', url: 'https://shop.example.test/' }, true)
+    documents.restore({ counts: [[7, 1]], current: [[7, 'doc-1']], filled: [[7, ['doc-1']]] })
+    expect(documents.isShowingFilledDocument(7)).toBe(false)
+  })
+})

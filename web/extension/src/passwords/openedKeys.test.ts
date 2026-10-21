@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   encodeBase64,
   generatePersonKeyPair,
@@ -19,6 +19,7 @@ import {
   isPasskeySiteKnown,
   loginsForPage,
   loginsOf,
+  lockIfIdle,
   lockPasswords,
   openItems,
   passkeysForRelyingParty,
@@ -154,6 +155,107 @@ describe('unlocking and locking', () => {
       expect(held.some((byte) => byte !== 0)).toBe(true)
     })
     expect(held!.every((byte) => byte === 0)).toBe(true)
+  })
+})
+
+describe('dropping the keys', () => {
+  it('runs the environment cleanup whichever way the keys go: by hand, by the lock time, by a step, or by a look', async () => {
+    const made = await unlocked()
+    const onLock = vi.fn()
+    const environment = { ...made.environment, onLock }
+    await lockPasswords(environment)
+    expect(onLock).toHaveBeenCalledTimes(1)
+
+    await unlockPasswords(environment, { secretText: PASSPHRASE, isRecoveryKey: false })
+    made.advance(6)
+    expect((await readPasswordsState(environment)).isUnlocked).toBe(false)
+    expect(onLock).toHaveBeenCalledTimes(2)
+
+    await unlockPasswords(environment, { secretText: PASSPHRASE, isRecoveryKey: false })
+    made.advance(6)
+    await expect(withOpenedKeys(environment, async () => 1)).rejects.toMatchObject({ code: 'locked' })
+    expect(onLock).toHaveBeenCalledTimes(3)
+
+    await unlockPasswords(environment, { secretText: PASSPHRASE, isRecoveryKey: false })
+    made.advance(6)
+    expect(await lockIfIdle(environment)).toBe(true)
+    expect(onLock).toHaveBeenCalledTimes(4)
+    // Nothing to drop, nothing to clean up.
+    expect(await lockIfIdle(environment)).toBe(false)
+    expect(onLock).toHaveBeenCalledTimes(4)
+  })
+
+  it('does not bring the keys back when a lock comes between reading them and writing the time of use', async () => {
+    const { environment, session } = await unlocked()
+    let reads = 0
+    const racing = {
+      ...environment,
+      session: {
+        ...session,
+        get: async (keys: string | string[]) => {
+          const found = await session.get(keys)
+          reads += 1
+          // The first read is the step's; the lock lands right after it.
+          if (reads === 1) await lockPasswords(environment)
+          return found
+        },
+      },
+    }
+    const step = vi.fn(async () => 1)
+    await expect(withOpenedKeys(racing, step)).rejects.toMatchObject({ code: 'locked' })
+    expect(step).not.toHaveBeenCalled()
+    expect(session.contents).toEqual({})
+  })
+
+  it('does not write either when the lock lands after the second look at the keys', async () => {
+    const { environment, session } = await unlocked()
+    let reads = 0
+    const racing = {
+      ...environment,
+      session: {
+        ...session,
+        get: async (keys: string | string[]) => {
+          const found = await session.get(keys)
+          reads += 1
+          if (reads === 2) await lockPasswords(environment)
+          return found
+        },
+      },
+    }
+    await expect(withOpenedKeys(racing, async () => 1)).rejects.toMatchObject({ code: 'locked' })
+    expect(session.contents).toEqual({})
+  })
+
+  it('does not write the old keys over a new unlock that came in between', async () => {
+    const made = await unlocked()
+    let reads = 0
+    const racing = {
+      ...made.environment,
+      session: {
+        ...made.session,
+        get: async (keys: string | string[]) => {
+          const found = await made.session.get(keys)
+          reads += 1
+          if (reads === 1) {
+            made.advance(1)
+            await unlockPasswords(made.environment, { secretText: PASSPHRASE, isRecoveryKey: false })
+          }
+          return found
+        },
+      },
+    }
+    await expect(withOpenedKeys(racing, async () => 1)).rejects.toMatchObject({ code: 'locked' })
+    const stored = made.session.contents.passwordsKeys as { verifiedAtMilliseconds: number }
+    expect(stored.verifiedAtMilliseconds).toBe(1_000_000 + 60_000)
+  })
+
+  it('writes the time of use when nothing came in between', async () => {
+    const made = await unlocked()
+    made.advance(2)
+    await withOpenedKeys(made.environment, async () => undefined)
+    expect((made.session.contents.passwordsKeys as { lastUsedAtMilliseconds: number }).lastUsedAtMilliseconds).toBe(
+      1_000_000 + 120_000,
+    )
   })
 })
 

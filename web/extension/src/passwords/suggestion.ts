@@ -50,9 +50,9 @@ function render(data: RenderData) {
     list.append(unlock)
   } else if (answer.suggestionState === 'generate') {
     const generate = element('button', { className: 'primary', type: 'button' }, 'Use a strong password')
-    onTrustedActivate(generate, page.isClickAllowed, () =>
-      page.tell({ frameMessageKind: 'generate', isConfirmed: !doesNeedConfirmation(data) }),
-    )
+    // A generated password is not a stored secret, so no confirmation is asked
+    // for it even in a frame from another site or a form that sends elsewhere.
+    onTrustedActivate(generate, page.isClickAllowed, () => page.tell({ frameMessageKind: 'generate' }))
     list.append(generate)
   } else if (answer.suggestionState === 'logins') {
     for (const login of answer.logins) {

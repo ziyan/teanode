@@ -108,15 +108,19 @@ function fillInPage(origin: string, fields: FieldToFill[]): { isFilled: boolean;
   const isFormSendingElsewhere = (node: HTMLInputElement): boolean => {
     const form = node.form
     if (!form) return false
+    // Every control that belongs to the form, including a button outside it
+    // that names it with its form attribute.
     const attributes = [
       form.getAttribute('action'),
-      ...Array.from(form.querySelectorAll('[formaction]')).map((button) => button.getAttribute('formaction')),
+      ...Array.from(form.elements).map((control) => control.getAttribute('formaction')),
     ]
     return attributes.some((attribute) => {
       if (attribute === null || attribute.trim() === '') return false
       try {
         const target = new URL(attribute, document.baseURI)
-        return (target.protocol === 'http:' || target.protocol === 'https:') && target.host !== location.host
+        if (target.protocol !== 'http:' && target.protocol !== 'https:') return false
+        // Another host, or a secure page sending to a plain-text address.
+        return target.host !== location.host || (location.protocol === 'https:' && target.protocol === 'http:')
       } catch {
         return false
       }

@@ -10,10 +10,17 @@ export async function inPage(action, args) {
   const refs = (window.__teanodeRefs = window.__teanodeRefs || new Map())
   let next = window.__teanodeNextRef || 1
   const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label'])
+  // isFilledDocument: the tab shows a document the agent filled a password or
+  // a code into (background.js sets it, after whatever came with the action).
+  // The value of no input or textarea is then read into a name or a snapshot,
+  // not only the filled ones: a field the filled text was copied into is not
+  // known to be a secret.
+  const isFilledDocument = args.isFilledDocument === true
+  const isTextField = (node) => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement
   const find = () => {
     // A ref comes back through a tool call, where it may be a string.
     if (args.ref) return refs.get(Number(args.ref)) || refs.get(args.ref) || null
-    if (args.selector) return document.querySelector(args.selector)
+    if (args.selector && !isFilledDocument) return document.querySelector(args.selector)
     return null
   }
   // Which fields hold a secret. It decides what a snapshot says, not what
@@ -42,6 +49,7 @@ export async function inPage(action, args) {
   const nameOf = (node) => {
     const label = node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
     if (label) return label.trim()
+    if (isFilledDocument && isTextField(node)) return ''
     const value = isSecretField(node) || sensitive(node) ? '' : node.value
     return ((node.innerText || value || node.textContent || '').trim().replace(/\s+/g, ' ')).slice(0, 120)
   }
@@ -85,7 +93,8 @@ export async function inPage(action, args) {
           // A value too long to show whole is not shown at all: its first
           // characters would be a part of whatever it is.
           if ((tag === 'input' || tag === 'textarea') && node.value && !sensitive(node)) extra = node.value.length > 80 ? ' (long value, not shown)' : ' value=' + JSON.stringify(node.value)
-          if (isSecretField(node) && node.value) extra = ' (filled, value not shown)'
+          if (isFilledDocument && isTextField(node) && node.value) extra = ' (value not shown)'
+          else if (isSecretField(node) && node.value) extra = ' (filled, value not shown)'
           else if (sensitive(node)) extra = ' (holds a secret)'
           lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + ' "' + nameOf(node) + '"' + extra)
           total += 40
@@ -160,7 +169,7 @@ export async function inPage(action, args) {
       const timeout = args.timeout_ms || 30000
       const started = Date.now()
       while (Date.now() - started < timeout) {
-        if (args.for === 'selector' && document.querySelector(args.selector)) return { ok: true, data: { ended_by: 'selector' } }
+        if (args.for === 'selector' && !isFilledDocument && document.querySelector(args.selector)) return { ok: true, data: { ended_by: 'selector' } }
         if ((args.for === 'navigation' || !args.for) && document.readyState === 'complete') return { ok: true, data: { ended_by: 'load' } }
         if (args.for === 'timeout') {
         // Waiting out the whole time is the point of asking for it.

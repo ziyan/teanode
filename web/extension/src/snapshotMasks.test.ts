@@ -110,3 +110,74 @@ describe('the snapshot of the person’s tab', () => {
     expect(text.match(/\(holds a secret\)/g)).toHaveLength(3)
   })
 })
+
+describe('the person’s tab when it shows a document the agent filled', () => {
+  // A filled value copied into an ordinary field is not known to be a secret.
+  afterEach(() => {
+    delete (Element.prototype as any).scrollIntoView
+  })
+
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = () => {}
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<input id="pasted" type="text" name="pasted"><textarea id="notes" name="notes"></textarea><button id="go">Go</button>',
+    )
+    field('pasted').value = '654321'
+    ;(document.getElementById('notes') as HTMLTextAreaElement).value = 'pasted-secret-text'
+  })
+
+  it('shows the value of no input or textarea in a snapshot', async () => {
+    const answer = await inPage('snapshot', { isFilledDocument: true })
+    const text = answer.data.text as string
+    expect(text).not.toContain('654321')
+    expect(text).not.toContain('pasted-secret-text')
+    expect(text).not.toContain('value="ada"')
+    expect(text).not.toContain('a value that is shown')
+    expect(text).toContain('(value not shown)')
+    // Buttons and links are still named.
+    expect(text).toContain('"Go"')
+  })
+
+  it('shows them as before when the document was not filled', async () => {
+    const text = (await inPage('snapshot', {})).data.text as string
+    expect(text).toContain('value="654321"')
+  })
+
+  it('names no input or textarea by its value when it is clicked or hovered', async () => {
+    document.body.insertAdjacentHTML('beforeend', '<input id="bare" type="text">')
+    field('bare').value = '135790'
+    await inPage('snapshot', { isFilledDocument: true })
+    const refs = (window as any).__teanodeRefs as Map<number, Element>
+    const bareRef = [...refs].find(([, node]) => node === field('bare'))?.[0] as number
+    expect(bareRef).toBeGreaterThan(0)
+    for (const action of ['click', 'hover']) {
+      const answer = await inPage(action, { ref: bareRef, isFilledDocument: true })
+      expect(answer.ok, action).toBe(true)
+      expect(JSON.stringify(answer), action).not.toContain('135790')
+    }
+    // Not told the document was filled, it names the field by what it holds.
+    expect(JSON.stringify(await inPage('hover', { ref: bareRef }))).toContain('135790')
+  })
+
+  it('names an unlabeled input by nothing rather than its value', async () => {
+    document.body.insertAdjacentHTML('beforeend', '<input id="bare" type="text">')
+    field('bare').value = '135790'
+    const text = (await inPage('snapshot', { isFilledDocument: true })).data.text as string
+    expect(text).not.toContain('135790')
+    const plain = (await inPage('snapshot', {})).data.text as string
+    expect(plain).toContain('135790')
+  })
+
+  it('answers no selector, and takes refs', async () => {
+    const snapshot = (await inPage('snapshot', { isFilledDocument: true })).data.text as string
+    const goRef = Number(/\[ref=(\d+)\] button "Go"/.exec(snapshot)?.[1])
+    expect((await inPage('click', { selector: '#go', isFilledDocument: true })).ok).toBe(false)
+    expect((await inPage('hover', { selector: '#go', isFilledDocument: true })).ok).toBe(false)
+    expect((await inPage('click', { ref: goRef, isFilledDocument: true })).ok).toBe(true)
+    expect((await inPage('click', { selector: '#go' })).ok).toBe(true)
+    const waited = await inPage('wait', { for: 'selector', selector: '#go', timeout_ms: 300, isFilledDocument: true })
+    expect(waited.data.ended_by).toBe('timeout')
+    expect((await inPage('wait', { for: 'selector', selector: '#go', timeout_ms: 300 })).data.ended_by).toBe('selector')
+  })
+})

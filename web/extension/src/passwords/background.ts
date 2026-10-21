@@ -64,6 +64,15 @@ const environment: PasswordsEnvironment = {
   local: chrome.storage.local,
   call: callServer,
   now: () => Date.now(),
+  // Whichever way the keys are dropped (by hand, by the lock time, by a change
+  // of sign-in, at browser start), what is kept beside them goes too: the
+  // login waiting to be saved holds a password, and the cache and the alarm
+  // are only for open keys.
+  onLock: async () => {
+    capturedLogins.forgetAll()
+    suggestionCache.clear()
+    await chrome.alarms.clear(LOCK_ALARM)
+  },
 }
 
 const LOCK_ALARM = 'passwords-lock'
@@ -131,14 +140,11 @@ function contentFrameOf(sender: any): ContentFrame | null {
   if (!sender || sender.id !== chrome.runtime.id || !sender.tab || typeof sender.tab.id !== 'number') return null
   const url = typeof sender.url === 'string' ? sender.url : ''
   if (!isWebPage(url)) return null
-  let origin = typeof sender.origin === 'string' ? sender.origin : ''
-  if (origin === '' || origin === 'null') {
-    try {
-      origin = new URL(url).origin
-    } catch {
-      return null
-    }
-  }
+  // A sandboxed document (a user's upload served with a sandbox policy, say)
+  // has an opaque origin that says nothing of the site that serves it, even
+  // though its address is that site's. It is offered and given nothing.
+  const origin = typeof sender.origin === 'string' ? sender.origin : ''
+  if (origin === '' || origin === 'null') return null
   return { tabId: sender.tab.id, frameId: sender.frameId ?? 0, url, origin, isIncognito: sender.tab.incognito === true }
 }
 
@@ -188,22 +194,26 @@ async function startLockAlarm() {
   await chrome.alarms.create(LOCK_ALARM, { periodInMinutes: 1 })
 }
 
+// lockEverything drops the keys; environment.onLock clears the rest.
 async function lockEverything() {
-  // The login waiting to be saved goes first, and at once: it holds a password.
-  capturedLogins.forgetAll()
-  suggestionCache.clear()
   await lockPasswords(environment)
-  await chrome.alarms.clear(LOCK_ALARM)
 }
 
 // ---------------------------------------------------------------------------
 // Frames
 
+// addressOfThisFrame runs inside the frame. A sandboxed document (opaque
+// origin) has no address that stands for a site: it answers with none, and is
+// offered and given nothing.
+function addressOfThisFrame(): string {
+  return window.origin === 'null' ? '' : location.href
+}
+
 async function describeFrame(tabId: number, frameId: number): Promise<string | null> {
   try {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId, frameIds: [frameId] },
-      func: () => location.href,
+      func: addressOfThisFrame,
     })
     return result && typeof result.result === 'string' && isWebPage(result.result) ? result.result : null
   } catch {
@@ -259,7 +269,7 @@ chrome.windows.onRemoved.addListener((windowId: number) => {
   const prompt = passkeyPrompts.findByWindow(windowId)
   if (prompt) {
     prompt.windowId = null
-    passkeyPrompts.settle(prompt.id, NOT_ALLOWED_REPLY)
+    settlePrompt(prompt.id, NOT_ALLOWED_REPLY)
   }
 })
 
@@ -391,7 +401,39 @@ async function saveCaptured(
   return { saveOutcome }
 }
 
+// isOwnPasswordsPage says the address is a page of the TeaNode dashboard's
+// own Passwords: its passphrase and item-editor fields are not logins, so
+// nothing is offered, filled or remembered there. Signing in to the dashboard
+// itself, anywhere else on the server, is an ordinary login.
+async function isOwnPasswordsPage(pageUrl: string): Promise<boolean> {
+  const serverOrigin = await readServerOrigin()
+  if (serverOrigin === '') return false
+  try {
+    const page = new URL(pageUrl)
+    return (
+      page.origin === new URL(serverOrigin).origin &&
+      (page.pathname === '/passwords' || page.pathname.startsWith('/passwords/'))
+    )
+  } catch {
+    return false
+  }
+}
+
+const OWN_PAGE_REFUSAL = { error: 'Passwords does not fill its own page.' }
+
 async function handleContentRequest(frame: ContentFrame, message: ContentRequest): Promise<unknown> {
+  if (
+    (message.type === 'passwords:suggest' ||
+      message.type === 'passwords:fill' ||
+      message.type === 'passwords:fill-code' ||
+      message.type === 'passwords:generate' ||
+      message.type === 'passwords:captured') &&
+    (await isOwnPasswordsPage(frame.url))
+  ) {
+    if (message.type === 'passwords:suggest') return { suggestionState: 'none' }
+    if (message.type === 'passwords:captured') return {}
+    return OWN_PAGE_REFUSAL
+  }
   switch (message.type) {
     case 'passwords:suggest':
       return suggest(frame, message.role)
@@ -472,18 +514,38 @@ async function readTabUrl(tabId: number): Promise<string | null> {
   }
 }
 
-// readIsTabActive: the tab is the one the person is looking at in its window.
-async function readIsTabActive(tabId: number): Promise<boolean> {
+// readShouldFocusPrompt: the tab is the one the person is looking at in its
+// window, and that window has the keyboard focus. A tab that is active in a
+// window behind another one is not being looked at.
+async function readShouldFocusPrompt(tabId: number): Promise<boolean> {
   try {
-    return (await chrome.tabs.get(tabId)).active === true
+    const tab = await chrome.tabs.get(tabId)
+    if (tab.active !== true || typeof tab.windowId !== 'number') return false
+    return (await chrome.windows.get(tab.windowId)).focused === true
   } catch {
     return false
   }
 }
 
+// After a question for a tab is refused or closed without an answer, the tab
+// is not asked about again for a few seconds: a page cannot open the window
+// over and over by asking over and over.
+const PASSKEY_REFUSAL_PAUSE_MILLISECONDS = 3000
+const passkeyPausedUntilMilliseconds = new Map<number, number>()
+
+// settlePrompt ends a question with the reply the page gets. A refusal (the
+// window closed, the time ran out, the page went away) starts the pause.
+function settlePrompt(promptId: string, reply: PasskeyReply): PendingPrompt | null {
+  const settled = passkeyPrompts.settle(promptId, reply)
+  if (settled && reply === NOT_ALLOWED_REPLY) {
+    passkeyPausedUntilMilliseconds.set(settled.tabId, Date.now() + PASSKEY_REFUSAL_PAUSE_MILLISECONDS)
+  }
+  return settled
+}
+
 // endPrompt answers the page and closes the question's window.
 function endPrompt(promptId: string, reply: PasskeyReply) {
-  const settled = passkeyPrompts.settle(promptId, reply)
+  const settled = settlePrompt(promptId, reply)
   if (settled) void closeWindow(settled.windowId)
 }
 
@@ -538,19 +600,20 @@ async function startPrompt(
       ...details,
     }
     prompt.timer = setTimeout(() => {
-      const timedOut = passkeyPrompts.settle(id, NOT_ALLOWED_REPLY)
+      const timedOut = settlePrompt(id, NOT_ALLOWED_REPLY)
       if (timedOut) void closeWindow(timedOut.windowId)
     }, PROMPT_LIFETIME_MILLISECONDS)
     passkeyPrompts.add(prompt)
   })
   try {
     // The window takes the keyboard focus only when the page that asked is the
-    // tab the person is looking at; otherwise it opens without it, and a page
-    // in the background cannot pull the person's typing into a window.
+    // tab the person is looking at, in a window that has the focus; otherwise
+    // it opens without it, and a page in the background cannot pull the
+    // person's typing into a window.
     const made = await chrome.windows.create({
       url: chrome.runtime.getURL(`prompt.html?id=${id}`),
       type: 'popup',
-      focused: await readIsTabActive(frame.tabId),
+      focused: await readShouldFocusPrompt(frame.tabId),
       ...PROMPT_SIZE,
     })
     const prompt = passkeyPrompts.get(id)
@@ -570,9 +633,10 @@ async function handlePasskey(
   // A frame inside a page of another origin is the browser's to ask about:
   // whether it may use passkeys at all is a permission policy of the page
   // around it, which the browser enforces and this extension cannot see.
-  if (message.isCrossOrigin || frame.isIncognito || !(await isPasswordsAvailable())) {
-    return { replyOutcome: 'fallback' }
-  }
+  if (message.isCrossOrigin || frame.isIncognito) return { replyOutcome: 'fallback' }
+  // The tab just had a question refused or closed: the browser answers for now.
+  if ((passkeyPausedUntilMilliseconds.get(frame.tabId) ?? 0) > askedAtMilliseconds) return { replyOutcome: 'fallback' }
+  if (!(await isPasswordsAvailable())) return { replyOutcome: 'fallback' }
   // The person already sent this site to the browser in this session.
   if ((await readBrowserSites()).includes(frame.origin)) return { replyOutcome: 'fallback' }
   const context: PageContext = { pageUrl: frame.url, origin: frame.origin, isCrossOrigin: false }
@@ -874,6 +938,7 @@ async function readLogin<Result>(itemId: string, read: (login: LoginItem) => Pro
 async function fillInTab(message: Extract<PopupRequest, { type: 'passwords:fill-in-tab' }>) {
   const url = await describeFrame(message.tabId, message.frameId)
   if (!url) throw new Error('There is no page to fill here.')
+  if (await isOwnPasswordsPage(url)) throw new Error(OWN_PAGE_REFUSAL.error)
   const fill = await readLogin(message.itemId, async (login) => {
     if (!loginsForPage([login], url).length) throw new Error('This login is not saved for this site.')
     const currentCode = message.fillPart === 'oneTimeCode' ? await currentOneTimeCode(login, Date.now()) : null
@@ -990,6 +1055,7 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
 // answer later; a tab that is closed or navigated away ends its question.
 chrome.tabs.onRemoved.addListener((tabId: number) => {
   capturedLogins.forget(tabId)
+  passkeyPausedUntilMilliseconds.delete(tabId)
   for (const key of cancelledAtMilliseconds.keys()) {
     if (key.startsWith(`${tabId}:`)) cancelledAtMilliseconds.delete(key)
   }
@@ -1026,9 +1092,7 @@ chrome.tabs.onUpdated.addListener(async (tabId: number, changeInfo: { status?: s
 
 chrome.alarms.onAlarm.addListener((alarm: { name: string }) => {
   if (alarm.name === LOCK_ALARM) {
-    void lockIfIdle(environment).then(async (didLock) => {
-      if (didLock) await lockEverything()
-    })
+    void lockIfIdle(environment)
   } else if (alarm.name === CLEAR_CLIPBOARD_ALARM) {
     void clearClipboardIfUnchanged().catch(() => {})
   }

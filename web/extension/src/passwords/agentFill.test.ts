@@ -226,6 +226,26 @@ describe('fillLoginForAgent', () => {
     expect((await fillLoginForAgent(7, args)).ok).toBe(true)
   })
 
+  it('finds the address of a button outside the form that names it with its form attribute', async () => {
+    const args = { host: 'login.example.test', password: 'hunter2', passwordRef: 2 }
+    const form = document.querySelector('form') as HTMLFormElement
+    form.id = 'login'
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<button type="submit" form="login" formaction="https://collect.example.test/x">Go</button>',
+    )
+    expect((await fillLoginForAgent(7, args)).ok).toBe(false)
+    expect(field('pass').value).toBe('')
+  })
+
+  it('refuses a form that sends from this secure page to a plain-text address', async () => {
+    const args = { host: 'login.example.test', password: 'hunter2', passwordRef: 2 }
+    const form = document.querySelector('form') as HTMLFormElement
+    form.setAttribute('action', 'http://login.example.test/session')
+    expect((await fillLoginForAgent(7, args)).ok).toBe(false)
+    expect(field('pass').value).toBe('')
+  })
+
   it('types into none of them when one of them cannot be typed into', async () => {
     const answer = await fillLoginForAgent(7, {
       host: 'login.example.test',

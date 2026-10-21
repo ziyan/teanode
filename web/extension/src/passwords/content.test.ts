@@ -408,3 +408,96 @@ describe('passkey requests from the page', () => {
     expect(countOf('passwords:passkey-cancel')).toBe(0)
   })
 })
+
+describe('a user gesture for a passkey request', () => {
+  function post(data: Record<string, unknown>) {
+    window.dispatchEvent(new MessageEvent('message', { source: window, data: { channel: PASSKEY_CHANNEL, ...data } }))
+  }
+
+  it('is needed: with no key or click just made, the browser handles the request and the service worker hears nothing', async () => {
+    const replies: Record<string, unknown>[] = []
+    const listener = (event: MessageEvent) => {
+      if (event.data?.direction === 'reply') replies.push(event.data)
+    }
+    window.addEventListener('message', listener)
+    isActive = false
+    post({ direction: 'request', id: 'a', ceremonyKind: 'get', options: {} })
+    await settle()
+    window.removeEventListener('message', listener)
+    expect(countOf('passwords:passkey')).toBe(0)
+    expect(replies).toEqual([
+      { channel: PASSKEY_CHANNEL, direction: 'reply', id: 'a', reply: { replyOutcome: 'fallback' } },
+    ])
+    isActive = true
+    post({ direction: 'request', id: 'b', ceremonyKind: 'create', options: {} })
+    await settle()
+    expect(countOf('passwords:passkey')).toBe(1)
+  })
+})
+
+describe('a sandboxed document', () => {
+  // Its origin is "null" whatever site serves it.
+  beforeEach(() => {
+    Object.defineProperty(window, 'origin', { configurable: true, value: 'null' })
+  })
+
+  afterEach(() => {
+    delete (window as any).origin
+  })
+
+  it('is offered nothing, and remembers no sign-in', async () => {
+    field('user').focus()
+    await settle()
+    expect(countOf('passwords:suggest')).toBe(0)
+    expect(document.documentElement.querySelector(':scope > div')).toBeNull()
+    field('user').value = 'ada'
+    field('pass').value = 'hunter2-plaintext'
+    field('login').dispatchEvent(new Event('submit', { bubbles: true }))
+    expect(countOf('passwords:captured')).toBe(0)
+  })
+
+  it('is filled with nothing, even when the address is the one a login was approved for', async () => {
+    const answer = await new Promise<any>((resolve) =>
+      runtimeListener(
+        {
+          type: 'passwords:fill-fields',
+          origin: 'https://shop.example.test',
+          isForeignActionConfirmed: false,
+          userName: 'ada',
+          password: 'hunter2-plaintext',
+          oneTimeCode: '',
+        },
+        { id: 'ext' },
+        resolve,
+      ),
+    )
+    expect(answer).toEqual({ filledCount: 0 })
+    expect(field('pass').value).toBe('')
+  })
+
+  it('sends no passkey request on', async () => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: window,
+        data: { channel: PASSKEY_CHANNEL, direction: 'request', id: 'a', ceremonyKind: 'get', options: {} },
+      }),
+    )
+    await settle()
+    expect(countOf('passwords:passkey')).toBe(0)
+  })
+})
+
+describe('a generated password', () => {
+  it('is let through without the confirmation a stored login needs, in a form that sends elsewhere', async () => {
+    field('login').setAttribute('action', 'https://collect.example.test/session')
+    await showSuggestion()
+    sendMessage.mockImplementation(async (message: Record<string, unknown>) =>
+      message.type === 'passwords:generate' ? { password: 'generated-example' } : answerFor(message),
+    )
+    contentEnd?.postMessage({ frameMessageKind: 'generate' })
+    await settle()
+    await settle()
+    expect(countOf('passwords:generate')).toBe(1)
+    expect(field('user').value).toBe('generated-example')
+  })
+})

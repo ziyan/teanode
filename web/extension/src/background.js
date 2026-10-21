@@ -36,6 +36,8 @@ import { fillLoginForAgent, fillOneTimeCodeForAgent } from './passwords/agentFil
 // password or code into: the server locks a filled tab until it commits a new
 // document, and is told when one does.
 import { TabDocuments, withoutRequestBodies } from './tabDocuments'
+// What is refused on its own for a tab showing a document the agent filled.
+import { lockedActionRefusal, lockedMethodRefusal } from './lockedTab'
 // What the agent's actions do inside the page (snapshot, click, type ...).
 import { inPage } from './inPage'
 
@@ -63,8 +65,11 @@ const opened = new Set()
 // while the worker was still reading what it had before it stopped: what
 // it read is from before, and is not put back.
 let isStoredTabOverruled = false
-const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'tabId']).then(async ({ opened: kept, groups: keptGroups, ownTabId, tabId }) => {
+const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'tabId', 'documents']).then(async ({ opened: kept, groups: keptGroups, ownTabId, tabId, documents: keptDocuments }) => {
   for (const id of kept || []) opened.add(id)
+  // Which document each tab shows and which were filled, so that a worker
+  // started again still keeps nothing of a tab that shows a filled document.
+  documents.restore(keptDocuments)
   for (const [windowId, groupId] of keptGroups || []) groups.set(Number(windowId), groupId)
   // The tab the actions went to, if the worker was stopped with one and it
   // is still there. Kept in memory only, it was forgotten whenever the
@@ -90,6 +95,7 @@ const restored = chrome.storage.session.get(['opened', 'groups', 'ownTabId', 'ta
   }
 })
 const rememberOpened = () => chrome.storage.session.set({ opened: [...opened] })
+const rememberDocuments = () => chrome.storage.session.set({ documents: documents.keep() })
 const rememberGroups = () => chrome.storage.session.set({ groups: [...groups] })
 const rememberOwn = () => chrome.storage.session.set({ ownTabId: attached.ownTabId })
 // useTab makes a tab, or none, the one the actions go to, and keeps that
@@ -949,6 +955,14 @@ async function act(action, args) {
     if (args.expectedTab !== undefined && args.expectedTab !== null && args.expectedTab !== '' && String(args.expectedTab) !== String(tab.id)) {
       return { ok: false, error: 'the tab the actions go to has changed since this was asked for; call tabs to see which it is now' }
     }
+    // A tab that shows a document the agent filled a password or code into is
+    // not read back, whatever the server has been told yet: a page restored
+    // from the history's cache is that same document.
+    const isFilledDocument = documents.isShowingFilledDocument(tab.id)
+    if (isFilledDocument) {
+      const lockedRefusal = lockedActionRefusal(action, args)
+      if (lockedRefusal) return { ok: false, error: lockedRefusal }
+    }
     if (action === 'navigate') {
       if (!/^https?:\/\//i.test(args.url || '')) return { ok: false, error: 'only http and https addresses' }
       await chrome.tabs.update(tab.id, { url: args.url })
@@ -1006,6 +1020,10 @@ async function act(action, args) {
       if (!args.method) return { ok: false, error: 'a method is needed, for example Input.dispatchMouseEvent or Network.enable' }
       const refusal = cdpRefusal(args.method, args.params)
       if (refusal) return { ok: false, error: refusal }
+      if (isFilledDocument) {
+        const lockedRefusal = lockedMethodRefusal(args.method, args.params)
+        if (lockedRefusal) return { ok: false, error: lockedRefusal }
+      }
       agentUsing.add(tab.id)
       await debuggerFor(tab.id)
       const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
@@ -1049,12 +1067,15 @@ async function act(action, args) {
       // Which document it went into, and where the tab's commits stand, for
       // the server's lock.
       documents.markFilled(tab.id, answer.data.documentId)
+      await rememberDocuments().catch(() => {})
       return { ok: true, data: { ...answer.data, tab: tab.id, commitCount: documents.countOf(tab.id) } }
     }
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: inPage,
-      args: [action, args],
+      // Whether the tab shows a filled document is the worker's to say, never
+      // the caller's: it is set after whatever came with the action.
+      args: [action, { ...args, isFilledDocument }],
     })
     return result?.result || { ok: false, error: 'the page did not answer' }
   } catch (error) {
@@ -1233,8 +1254,13 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 // agent filled a password into. Only the main frame counts, and not a change
 // that keeps the document (history.pushState, a fragment).
 if (chrome.webNavigation) {
-  chrome.webNavigation.onCommitted.addListener((details) => {
-    if (documents.committed(details, isListed(details.tabId))) tellServer()
+  chrome.webNavigation.onCommitted.addListener(async (details) => {
+    // A commit that wakes the worker waits for what it kept (the tabs the
+    // agent may act in, the documents it filled) to be read back first.
+    await restored.catch(() => {})
+    const report = documents.committed(details, isListed(details.tabId))
+    void rememberDocuments().catch(() => {})
+    if (report) tellServer()
   })
 }
 
@@ -1242,6 +1268,12 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void forgetPanelTab(tabId).catch(() => {})
   forgetCast(tabId)
   documents.forget(tabId)
+  // A worker that was asleep reads back what it kept, which still holds this
+  // tab: it is forgotten again once that is read.
+  void restored.catch(() => {}).then(() => {
+    documents.forget(tabId)
+    return rememberDocuments()
+  }).catch(() => {})
   if (opened.has(tabId)) tellSoon()
   if (opened.delete(tabId)) rememberOpened()
   // Their own tab, closed: it is detached, and the connection stays.

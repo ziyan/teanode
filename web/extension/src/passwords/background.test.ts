@@ -46,15 +46,23 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
   const registrar = (name: string) => ({
     addListener: (listener: (...args: any[]) => any) => (listeners[name] = listener),
   })
+  const scripting = { executeScript: vi.fn(async () => [{ frameId: 0, result: 'https://example.com/' }]) }
+  const alarms = {
+    create: vi.fn(async () => undefined),
+    clear: vi.fn(async () => undefined),
+    onAlarm: registrar('alarms.onAlarm'),
+  }
   const windows = {
     create: vi.fn(async () => ({ id: 77 })),
     remove: vi.fn(async () => undefined),
+    get: vi.fn(async (windowId: number) => ({ id: windowId, focused: tabState.isWindowFocused })),
     onRemoved: registrar('windows.onRemoved'),
   }
-  // Where the tab is, and whether the person is looking at it; a test moves it.
-  const tabState = { url: 'https://example.com/', isActive: true }
+  // Where the tab is, whether the person is looking at it and whether its
+  // window has the keyboard focus; a test moves them.
+  const tabState = { url: 'https://example.com/', isActive: true, isWindowFocused: true }
   const tabs = {
-    get: vi.fn(async (tabId: number) => ({ id: tabId, url: tabState.url, active: tabState.isActive })),
+    get: vi.fn(async (tabId: number) => ({ id: tabId, windowId: 1, url: tabState.url, active: tabState.isActive })),
     query: vi.fn(async () => []),
     create: vi.fn(async () => ({})),
     sendMessage: vi.fn(async () => ({ hasPasswordField: false })),
@@ -72,16 +80,12 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
       getContexts: vi.fn(async () => []),
     },
     storage: { session, local, sync, onChanged: registrar('storage.onChanged') },
-    alarms: {
-      create: vi.fn(async () => undefined),
-      clear: vi.fn(async () => undefined),
-      onAlarm: registrar('alarms.onAlarm'),
-    },
+    alarms,
     windows,
     tabs,
     contextMenus: { removeAll: vi.fn(), create: vi.fn(), onClicked: registrar('contextMenus.onClicked') },
     commands: { onCommand: registrar('commands.onCommand') },
-    scripting: { executeScript: vi.fn(async () => [{ frameId: 0, result: 'https://example.com/' }]) },
+    scripting,
     offscreen: { createDocument: vi.fn(async () => undefined), closeDocument: vi.fn(async () => undefined) },
   })
   vi.stubGlobal(
@@ -103,7 +107,7 @@ async function start(options: { records?: Awaited<ReturnType<typeof ownRecord>>[
       if (isAsync === false) resolve(undefined)
     })
   const unlock = () => send({ type: 'passwords:unlock', secretText: PASSPHRASE, isRecoveryKey: false }, ownPageSender())
-  return { server, session, local, listeners, windows, tabs, tabState, send, unlock }
+  return { server, session, local, listeners, windows, alarms, scripting, tabs, tabState, send, unlock }
 }
 
 async function exampleRecords() {
@@ -173,6 +177,22 @@ describe('who may send what', () => {
     expect(
       await send({ type: 'passwords:suggest', role: 'currentPassword' }, pageSender('chrome://settings/')),
     ).toEqual({ error: 'Not a page.' })
+  })
+
+  it('offers and fills nothing to a sandboxed document, whatever address it has', async () => {
+    const { send, unlock } = await start({ records: await exampleRecords() })
+    await unlock()
+    for (const origin of ['null', '', undefined]) {
+      const sandboxed = { ...pageSender('https://example.com/upload/1'), origin }
+      for (const message of [
+        { type: 'passwords:suggest', role: 'currentPassword' },
+        { type: 'passwords:fill', itemId: EXAMPLE_ID },
+        { type: 'passwords:generate' },
+        { type: 'passwords:captured', userName: 'ada', password: 'x', isNewPassword: false },
+      ]) {
+        expect(await send(message, sandboxed), `${message.type} ${origin}`).toEqual({ error: 'Not a page.' })
+      }
+    }
   })
 
   it('ignores a message that is not about Passwords', async () => {
@@ -274,6 +294,120 @@ describe('suggestions and filling', () => {
     expect(JSON.stringify(answer)).not.toContain('plaintext')
     const searched = await send({ type: 'passwords:search', query: 'grace', tabId: 5, frameId: 0 }, ownPageSender())
     expect(searched.others.map((login: { name: string }) => login.name)).toEqual(['Other'])
+  })
+})
+
+describe('the window for a sandboxed document', () => {
+  afterEach(() => {
+    delete (window as any).origin
+  })
+
+  it('reads the address of a frame as none when its origin is opaque, so no login is listed or filled for it', async () => {
+    const context = await start({ records: await exampleRecords() })
+    await context.unlock()
+    await context.send({ type: 'passwords:state', tabId: 5, frameId: 3 }, ownPageSender())
+    const call = context.scripting.executeScript.mock.calls[0] as unknown as [{ func: () => string }]
+    const addressOfFrame = call[0].func
+    expect(addressOfFrame()).toBe(window.location.href)
+    Object.defineProperty(window, 'origin', { configurable: true, value: 'null' })
+    expect(addressOfFrame()).toBe('')
+
+    // What the worker does with that answer: nothing listed for the page, nothing filled.
+    context.scripting.executeScript.mockResolvedValue([{ frameId: 3, result: '' }])
+    const state = await context.send({ type: 'passwords:state', tabId: 5, frameId: 3 }, ownPageSender())
+    expect(state.frameHost).toBe('')
+    const found = await context.send({ type: 'passwords:search', query: '', tabId: 5, frameId: 3 }, ownPageSender())
+    expect(found.forThisSite).toEqual([])
+    expect(
+      await context.send(
+        { type: 'passwords:fill-in-tab', tabId: 5, frameId: 3, itemId: EXAMPLE_ID, fillPart: 'login' },
+        ownPageSender(),
+      ),
+    ).toEqual({ error: 'There is no page to fill here.' })
+    expect(context.tabs.sendMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe("the dashboard's own Passwords page", () => {
+  // The server is https://tea.example.test (see start). A login for it is
+  // saved, so signing in to the dashboard itself is still offered.
+  async function recordsWithDashboardLogin() {
+    return [
+      await ownRecord(
+        fixture,
+        '00000000-0000-4000-8000-000000000009',
+        makeLogin({ name: 'Dashboard', userName: 'ada', password: 'dash-plaintext', sites: ['tea.example.test'] }),
+      ),
+    ]
+  }
+
+  it('is offered, filled and generated for nothing, and remembers nothing typed on it', async () => {
+    const { send, unlock } = await start({ records: await recordsWithDashboardLogin() })
+    await unlock()
+    for (const path of ['/passwords', '/passwords/', '/passwords/items/abc?x=1']) {
+      const page = pageSender(`https://tea.example.test${path}`)
+      expect(await send({ type: 'passwords:suggest', role: 'currentPassword' }, page), path).toEqual({
+        suggestionState: 'none',
+      })
+      expect(await send({ type: 'passwords:suggest', role: 'newPassword' }, page), path).toEqual({
+        suggestionState: 'none',
+      })
+      expect(
+        await send({ type: 'passwords:fill', itemId: '00000000-0000-4000-8000-000000000009' }, page),
+        path,
+      ).toEqual({ error: 'Passwords does not fill its own page.' })
+      expect(await send({ type: 'passwords:generate' }, page), path).toEqual({
+        error: 'Passwords does not fill its own page.',
+      })
+      expect(
+        await send(
+          { type: 'passwords:captured', userName: 'ada', password: 'typed-passphrase', isNewPassword: false },
+          page,
+        ),
+      ).toEqual({})
+    }
+    // Nothing was kept, so no bar is offered after it.
+    expect(
+      await send(
+        { type: 'passwords:page-ready', hasPasswordField: false },
+        pageSender('https://tea.example.test/dashboard'),
+      ),
+    ).toEqual({ offer: null })
+  })
+
+  it('does not fill from the window either', async () => {
+    const context = await start({ records: await recordsWithDashboardLogin() })
+    await context.unlock()
+    context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: 'https://tea.example.test/passwords' }])
+    const answer = await context.send(
+      {
+        type: 'passwords:fill-in-tab',
+        tabId: 5,
+        frameId: 0,
+        itemId: '00000000-0000-4000-8000-000000000009',
+        fillPart: 'login',
+      },
+      ownPageSender(),
+    )
+    expect(answer).toEqual({ error: 'Passwords does not fill its own page.' })
+    expect(context.tabs.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('still offers a login for signing in to the dashboard itself, and for a page that only starts alike', async () => {
+    const { send, unlock } = await start({ records: await recordsWithDashboardLogin() })
+    await unlock()
+    for (const path of ['/', '/sign-in', '/settings/passwords', '/passwordless']) {
+      const answer = await send(
+        { type: 'passwords:suggest', role: 'currentPassword' },
+        pageSender(`https://tea.example.test${path}`),
+      )
+      expect(answer.suggestionState, path).toBe('logins')
+    }
+    // Another site with the same path is not the dashboard.
+    expect(
+      (await send({ type: 'passwords:suggest', role: 'newPassword' }, pageSender('https://other.test/passwords')))
+        .suggestionState,
+    ).toBe('generate')
   })
 })
 
@@ -410,6 +544,57 @@ describe('locking', () => {
     expect(
       await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home')),
     ).toEqual({ offer: null })
+  })
+
+  it('clears the waiting login and the alarm when the lock time runs out, not only when the person locks', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const { send, unlock, alarms, session } = await start({ records: await exampleRecords() })
+      await unlock()
+      await send(
+        { type: 'passwords:captured', userName: 'grace', password: 'new-secret', isNewPassword: false },
+        pageSender('https://new.test/sign-in'),
+      )
+      alarms.clear.mockClear()
+      // Longer than the lock time; a look at the state is what drops the keys.
+      vi.setSystemTime(Date.now() + 6 * 60_000)
+      expect((await send({ type: 'passwords:state' }, ownPageSender())).isUnlocked).toBe(false)
+      expect(session.contents.passwordsKeys).toBeUndefined()
+      expect(alarms.clear).toHaveBeenCalledWith('passwords-lock')
+      // Unlocked again, the login that waited is not offered.
+      await unlock()
+      expect(
+        await send({ type: 'passwords:page-ready', hasPasswordField: false }, pageSender('https://new.test/home')),
+      ).toEqual({ offer: null })
+      expect(await send({ type: 'passwords:state', tabId: 5, frameId: 0 }, ownPageSender())).toMatchObject({
+        hasPendingSave: false,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears them when the alarm finds the lock time over', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const { send, unlock, alarms, listeners, session } = await start()
+      await unlock()
+      await send(
+        { type: 'passwords:captured', userName: 'grace', password: 'new-secret', isNewPassword: false },
+        pageSender('https://new.test/sign-in'),
+      )
+      alarms.clear.mockClear()
+      vi.setSystemTime(Date.now() + 6 * 60_000)
+      listeners['alarms.onAlarm']({ name: 'passwords-lock' })
+      await vi.waitFor(() => expect(session.contents.passwordsKeys).toBeUndefined())
+      await vi.waitFor(() => expect(alarms.clear).toHaveBeenCalledWith('passwords-lock'))
+      await unlock()
+      expect(await send({ type: 'passwords:state', tabId: 5, frameId: 0 }, ownPageSender())).toMatchObject({
+        hasPendingSave: false,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('locks by hand', async () => {
@@ -756,6 +941,70 @@ describe('passkey ceremonies and the person', () => {
     })
   })
 
+  describe('asking over and over', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    async function refuse(context: Context) {
+      const { answer } = await ask(context, 'create', creation)
+      context.listeners['windows.onRemoved'](77)
+      expect(await answer).toMatchObject({ replyOutcome: 'error', errorName: 'NotAllowedError' })
+    }
+
+    it('gets the browser instead for a few seconds after the person closed the window, in that tab only', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const context = await start()
+      await refuse(context)
+      context.windows.create.mockClear()
+      for (let turn = 0; turn < 3; turn++) {
+        expect(
+          await context.send(
+            { type: 'passwords:passkey', ceremonyKind: 'create', options: creation, isCrossOrigin: false },
+            sender,
+          ),
+        ).toEqual({ replyOutcome: 'fallback' })
+      }
+      expect(context.windows.create).not.toHaveBeenCalled()
+      // Another tab is not paused.
+      const other = ask(context, 'create', creation, pageSender('https://login.example.com/start', { tabId: 6 }))
+      await other.then(async ({ answer }) => {
+        context.listeners['windows.onRemoved'](77)
+        await answer
+      })
+      // Asked again after the pause.
+      vi.setSystemTime(Date.now() + 3_100)
+      const again = await ask(context, 'create', creation)
+      context.listeners['windows.onRemoved'](77)
+      await again.answer
+    })
+
+    it('starts the pause when the page goes to another address and the question ends', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const context = await start()
+      const { answer } = await ask(context, 'create', creation)
+      context.tabState.url = 'https://login.example.com/elsewhere'
+      await context.listeners['tabs.onUpdated'](5, { url: 'https://login.example.com/elsewhere' })
+      expect(await answer).toMatchObject({ errorName: 'NotAllowedError' })
+      expect(
+        await context.send(
+          { type: 'passwords:passkey', ceremonyKind: 'create', options: creation, isCrossOrigin: false },
+          sender,
+        ),
+      ).toEqual({ replyOutcome: 'fallback' })
+    })
+
+    it('is forgotten when the tab is closed', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      const context = await start()
+      await refuse(context)
+      context.listeners['tabs.onRemoved'](5)
+      const again = await ask(context, 'create', creation)
+      context.listeners['windows.onRemoved'](77)
+      await again.answer
+    })
+  })
+
   describe('the window', () => {
     it('names the page that asked, which can be a host under the relying party', async () => {
       const context = await start()
@@ -775,11 +1024,32 @@ describe('passkey ceremonies and the person', () => {
       context.listeners['windows.onRemoved'](77)
       await visible.answer
 
+      // Pause over, so the next question is asked at all.
+      vi.setSystemTime(Date.now() + 4000)
       context.tabState.isActive = false
       const hidden = await ask(context, 'create', creation)
       expect(context.windows.create).toHaveBeenLastCalledWith(expect.objectContaining({ focused: false }))
       context.listeners['windows.onRemoved'](77)
       await hidden.answer
+    })
+
+    it('does not take the keyboard focus when the tab is the active one of a window that is behind another', async () => {
+      const context = await start()
+      context.tabState.isWindowFocused = false
+      const { answer, promptId } = await ask(context, 'create', creation)
+      expect(context.windows.get).toHaveBeenCalledWith(1)
+      expect(context.windows.create).toHaveBeenLastCalledWith(expect.objectContaining({ focused: false }))
+      await decide(context, promptId, 'browser')
+      await answer
+    })
+
+    it('does not take it either when the window cannot be looked at', async () => {
+      const context = await start()
+      context.windows.get.mockRejectedValueOnce(new Error('No window with id: 1.'))
+      const { answer, promptId } = await ask(context, 'create', creation)
+      expect(context.windows.create).toHaveBeenLastCalledWith(expect.objectContaining({ focused: false }))
+      await decide(context, promptId, 'browser')
+      await answer
     })
   })
 

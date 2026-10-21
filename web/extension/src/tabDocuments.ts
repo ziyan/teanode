@@ -33,6 +33,15 @@ export interface CommitDetails {
 // reportsKept is the most reports held while the server cannot be told.
 const reportsKept = 100
 
+// KeptDocuments is what the class keeps of itself between one run of the
+// service worker and the next (chrome.storage.session): ids and counts, never
+// an address or a value.
+export interface KeptDocuments {
+  counts: [number, number][]
+  current: [number, string][]
+  filled: [number, string[]][]
+}
+
 export class TabDocuments {
   private counts = new Map<number, number>()
   private current = new Map<number, string>()
@@ -58,6 +67,40 @@ export class TabDocuments {
     this.pending.push(report)
     if (this.pending.length > reportsKept) this.pending.splice(0, this.pending.length - reportsKept)
     return report
+  }
+
+  // keep is what to save so that a worker started again still knows which
+  // document each tab shows and which of them were filled.
+  keep(): KeptDocuments {
+    return {
+      counts: [...this.counts],
+      current: [...this.current],
+      filled: [...this.filled].map(([tabId, documentIds]) => [tabId, [...documentIds]]),
+    }
+  }
+
+  // restore puts back what keep saved. A tab already noted in this run keeps
+  // what this run knows of it (the saved record is older), and anything that
+  // is not in the shape keep makes is left out.
+  restore(kept: unknown): void {
+    if (typeof kept !== 'object' || kept === null) return
+    const record = kept as Partial<KeptDocuments>
+    for (const entry of Array.isArray(record.counts) ? record.counts : []) {
+      if (Array.isArray(entry) && typeof entry[0] === 'number' && typeof entry[1] === 'number') {
+        if (!this.counts.has(entry[0])) this.counts.set(entry[0], entry[1])
+      }
+    }
+    for (const entry of Array.isArray(record.current) ? record.current : []) {
+      if (Array.isArray(entry) && typeof entry[0] === 'number' && typeof entry[1] === 'string') {
+        if (!this.current.has(entry[0])) this.current.set(entry[0], entry[1])
+      }
+    }
+    for (const entry of Array.isArray(record.filled) ? record.filled : []) {
+      if (!Array.isArray(entry) || typeof entry[0] !== 'number' || !Array.isArray(entry[1])) continue
+      const documents = this.filled.get(entry[0]) ?? new Set<string>()
+      for (const documentId of entry[1]) if (typeof documentId === 'string') documents.add(documentId)
+      this.filled.set(entry[0], documents)
+    }
   }
 
   // takeReports hands over the reports not yet sent, oldest first.

@@ -236,6 +236,29 @@ describe('foreignFormActionHost', () => {
     expect(foreignFormActionHost(field('#c'))).toBe('collect.example.test')
   })
 
+  it('finds the address of a button outside the form that names it with its form attribute', () => {
+    page(`
+      <form id="login" action="/ok"><input id="a"></form>
+      <button type="submit" form="login" formaction="https://collect.example.test/other">Go</button>
+      <form id="second" action="/ok"><input id="b"></form>
+      <form id="third" action="/ok"><input id="c"><button type="submit" form="second" formaction="https://collect.example.test/x">Go</button></form>
+    `)
+    expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')
+    // A button of another form is not this form's, even inside it.
+    expect(foreignFormActionHost(field('#c'))).toBe('')
+  })
+
+  it('counts a secure page sending to a plain-text address as sending elsewhere, even to its own host', () => {
+    page(`
+      <form action="http://example.test/session"><input id="a"></form>
+      <form action="/ok"><input id="b"><button type="submit" formaction="http://example.test/x">Go</button></form>
+      <form action="https://example.test/session"><input id="c"></form>
+    `)
+    expect(foreignFormActionHost(field('#a'))).toBe('example.test (not encrypted)')
+    expect(foreignFormActionHost(field('#b'))).toBe('example.test (not encrypted)')
+    expect(foreignFormActionHost(field('#c'))).toBe('')
+  })
+
   it("reads the attribute, not a field called action that stands in for the form's property", () => {
     page('<form action="https://collect.example.test/session"><input name="action" value="/ok"><input id="a"></form>')
     expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')

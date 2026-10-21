@@ -44,6 +44,13 @@ async function send<Answer = any>(message: Record<string, unknown>): Promise<Ans
 
 const isTopFrame = window === window.top
 
+// isOpaqueOrigin: the document is sandboxed (a user's upload served with a
+// sandbox policy, say), so its origin is "null" whatever site serves it. It
+// is not that site's page: nothing is offered, filled or remembered in it.
+function isOpaqueOrigin(): boolean {
+  return window.origin === 'null'
+}
+
 // frameFacts says whether some page above this frame has another origin, and
 // the host of the page at the top. The browser's own list of ancestor
 // origins is used; a frame whose parent cannot be read is cross-origin.
@@ -97,6 +104,7 @@ function isRoleOffered(role: FieldRole): boolean {
 
 async function showSuggestion(field: HTMLInputElement, role: FieldRole) {
   closeSuggestion()
+  if (isOpaqueOrigin()) return
   const turn = suggestionCount
   const answer = await send<SuggestionAnswer>({ type: 'passwords:suggest', role })
   // The focus moved on while the service worker was thinking.
@@ -173,8 +181,10 @@ async function onSuggestionMessage(
   // A frame on another origin than its page, or a form that sends to another
   // host than the page's own, is filled only after the frame asked the person
   // and they said yes. The form is looked at again now: it may have changed.
+  // A password the generator makes is not a stored secret and goes only into
+  // the focused new-password field, so it needs no confirmation.
   const needsConfirmation = facts.isCrossOrigin || foreignFormActionHost(field) !== ''
-  if (needsConfirmation && message.isConfirmed !== true) return
+  if (needsConfirmation && frameMessageKind !== 'generate' && message.isConfirmed !== true) return
   if (frameMessageKind === 'choose' && typeof message.itemId === 'string') {
     const isCode = role === 'oneTimeCode'
     const secrets = await send<{ userName?: string; password?: string; oneTimeCode?: string; error?: string }>({
@@ -300,7 +310,7 @@ function closeBar() {
 }
 
 async function showBar(offer: BarOffer) {
-  if (!isTopFrame) return
+  if (!isTopFrame || isOpaqueOrigin()) return
   closeBar()
   const hosted = new HostedFrame(document, {
     page: 'bar.html',
@@ -364,7 +374,7 @@ function captureSubmission(scope: ParentNode, focused?: HTMLInputElement) {
   // A page's script can send a form, or click its own button, without anybody
   // touching anything. Only a sign-in sent right after a key or a click the
   // person made is remembered as theirs.
-  if (!isUserActive()) return
+  if (!isUserActive() || isOpaqueOrigin()) return
   const submitted = readSubmittedLogin(scope, focused)
   if (!submitted) return
   void send({
@@ -424,6 +434,11 @@ document.addEventListener(
 
 chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (answer: unknown) => void) => {
   if (!message || sender.id !== chrome.runtime.id) return false
+  // A sandboxed document is answered with nothing done.
+  if (isOpaqueOrigin()) {
+    sendResponse(message.type === 'passwords:fill-fields' ? { filledCount: 0 } : {})
+    return false
+  }
   if (message.type === 'passwords:probe') {
     sendResponse({
       hasPasswordField: Array.from(document.querySelectorAll('input[type="password"]')).some((input) =>
@@ -494,6 +509,12 @@ window.addEventListener('message', async (event) => {
     return
   }
   if (data.direction !== 'request' || (data.ceremonyKind !== 'create' && data.ceremonyKind !== 'get')) return
+  // Only a request made right after a key or a click the person made is asked
+  // about; a page's script asking on its own gets the browser's own handling.
+  if (isOpaqueOrigin() || !isUserActive()) {
+    postToPage({ direction: 'reply', id: data.id, reply: { replyOutcome: 'fallback' } })
+    return
+  }
   // The origin and the frame facts are the browser's, added here. Whatever
   // the page's script said about them is not read.
   const answer = await send({

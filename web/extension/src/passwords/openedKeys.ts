@@ -58,6 +58,10 @@ export interface PasswordsEnvironment {
   local: StorageArea
   call: GraphqlCall
   now: () => number
+  // onLock runs every time the opened keys are dropped, whatever the reason
+  // (the person locked, the lock time ran out, the sign-in changed), so what
+  // the worker keeps beside the keys goes with them.
+  onLock?: () => void | Promise<void>
 }
 
 const KEYS_STORAGE_KEY = 'passwordsKeys'
@@ -116,9 +120,19 @@ async function readStoredKeys(environment: PasswordsEnvironment): Promise<Stored
   }
 }
 
-// lockPasswords drops the opened keys.
+// lockCount is how many times the keys were dropped by this worker. A step
+// that read the keys before a lock and is about to write them back sees the
+// number has moved and writes nothing.
+let lockCount = 0
+
+// lockPasswords drops the opened keys. It is the only place that does, so the
+// worker's own cleanup (environment.onLock) runs whichever way the keys went:
+// first and at once, because what it clears holds a password.
 export async function lockPasswords(environment: PasswordsEnvironment): Promise<void> {
+  lockCount += 1
+  const cleanup = Promise.resolve(environment.onLock?.())
   await environment.session.remove(KEYS_STORAGE_KEY)
+  await cleanup
 }
 
 export interface PasswordsState {
@@ -213,6 +227,12 @@ export async function unlockPasswords(environment: PasswordsEnvironment, input: 
   await environment.session.set({ [KEYS_STORAGE_KEY]: stored })
 }
 
+// isSameUnlock says two readings of the stored keys are of one unlock: the
+// same account key, opened at the same time.
+function isSameUnlock(first: StoredKeys, second: StoredKeys): boolean {
+  return first.accountKey === second.accountKey && first.verifiedAtMilliseconds === second.verifiedAtMilliseconds
+}
+
 // withOpenedKeys runs a step with the opened keys and puts the lock off.
 // The keys are copies made for the step and are overwritten after it.
 export async function withOpenedKeys<Result>(
@@ -220,6 +240,7 @@ export async function withOpenedKeys<Result>(
   step: (keys: OpenedKeys) => Promise<Result>,
   options: { isUse: boolean } = { isUse: true },
 ): Promise<Result> {
+  const lockCountBefore = lockCount
   const stored = await readStoredKeys(environment)
   if (stored === null) throw new PasswordsError('locked')
   if (isLockTimeOver(stored, environment.now())) {
@@ -227,7 +248,15 @@ export async function withOpenedKeys<Result>(
     throw new PasswordsError('locked')
   }
   if (options.isUse) {
-    await environment.session.set({ [KEYS_STORAGE_KEY]: { ...stored, lastUsedAtMilliseconds: environment.now() } })
+    // The keys are written back with a new time only if they are still the
+    // ones read: a lock in between, or a new unlock, must not be undone by
+    // this step's write. The count is checked in the same turn as the write,
+    // so a lock after the check is ordered after the write.
+    const latest = await readStoredKeys(environment)
+    if (latest === null || !isSameUnlock(latest, stored) || lockCount !== lockCountBefore) {
+      throw new PasswordsError('locked')
+    }
+    await environment.session.set({ [KEYS_STORAGE_KEY]: { ...latest, lastUsedAtMilliseconds: environment.now() } })
   }
   const keys: OpenedKeys = {
     userId: stored.userId,

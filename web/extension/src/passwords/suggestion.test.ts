@@ -258,10 +258,19 @@ describe('the suggestion page', () => {
       role: 'newPassword',
     })
     await click(document.querySelector('button.primary') as Element, true)
-    expect(sent.find((message) => message.frameMessageKind === 'generate')).toEqual({
-      frameMessageKind: 'generate',
-      isConfirmed: true,
+    expect(sent.find((message) => message.frameMessageKind === 'generate')).toEqual({ frameMessageKind: 'generate' })
+    // Nor is it asked for in a frame from another site or a form that sends elsewhere.
+    sent.length = 0
+    await render({
+      answer: { suggestionState: 'generate', host: 'example.test' },
+      host: 'example.test',
+      ...sameSite,
+      isCrossOrigin: true,
+      formActionHost: 'collect.example.test',
+      role: 'newPassword',
     })
+    await click(document.querySelector('button.primary') as Element, true)
+    expect(sent.find((message) => message.frameMessageKind === 'generate')).toEqual({ frameMessageKind: 'generate' })
   })
 })
 

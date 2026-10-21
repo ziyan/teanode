@@ -189,7 +189,7 @@ describe('what is kept of the network', () => {
 
     // A new document of the tab: events are kept again, still without bodies.
     for (const listener of listeners['webNavigation.onCommitted']) {
-      listener({
+      await listener({
         tabId: 7,
         frameId: 0,
         documentId: 'doc-2',
@@ -207,14 +207,14 @@ describe('what is kept of the network', () => {
     fillLogin.mockResolvedValue({ ok: true, data: { isFilled: true, documentId: 'doc-5' } })
     await act('fill_login', { host: 'shop.example.test', passwordRef: 2, password: 'hunter2' })
     for (const listener of listeners['webNavigation.onCommitted']) {
-      listener({
+      await listener({
         tabId: 7,
         frameId: 0,
         documentId: 'doc-6',
         url: 'https://shop.example.test/account',
         transitionQualifiers: [],
       })
-      listener({
+      await listener({
         tabId: 7,
         frameId: 0,
         documentId: 'doc-5',
@@ -242,5 +242,112 @@ describe('what a fill answers', () => {
       ok: false,
       error: 'the password field is not a password input',
     })
+  })
+})
+
+describe('a tab showing a document the agent filled', () => {
+  const commit = async (documentId: string, transitionQualifiers: string[] = []) => {
+    for (const listener of listeners['webNavigation.onCommitted']) {
+      await listener({
+        tabId: 7,
+        frameId: 0,
+        documentId,
+        url: 'https://shop.example.test/page',
+        transitionQualifiers,
+      })
+    }
+  }
+
+  async function fillDocument(documentId: string) {
+    fillLogin.mockResolvedValue({ ok: true, data: { isFilled: true, documentId } })
+    expect((await act('fill_login', { host: 'shop.example.test', passwordRef: 2, password: 'hunter2' })).ok).toBe(true)
+  }
+
+  it('is not read back, whatever the server has been told', async () => {
+    await commit('doc-20')
+    expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
+    await fillDocument('doc-20')
+    for (const action of ['evaluate', 'screenshot', 'storage']) {
+      const answer = await act(action, { expression: '1' })
+      expect(answer.ok, action).toBe(false)
+      expect(answer.error, action).toContain('filled with a password or code')
+    }
+    const readers = [
+      ['Runtime.evaluate', { expression: 'document.body.innerText' }],
+      ['DOM.getDocument', {}],
+      ['Page.captureSnapshot', {}],
+      ['Network.getResponseBody', { requestId: '1' }],
+      ['Input.dispatchDragEvent', { type: 'drop', x: 1, y: 1, data: { items: [] } }],
+    ] as const
+    for (const [method, params] of readers) {
+      expect((await act('cdp', { method, params })).ok, method).toBe(false)
+    }
+    expect(sendCommand.mock.calls.filter(([, method]) => method !== 'Network.disable')).toHaveLength(0)
+  })
+
+  it('takes plain input and refuses a key event that copies or pastes', async () => {
+    await commit('doc-21')
+    await fillDocument('doc-21')
+    sendCommand.mockClear()
+    expect(
+      (await act('cdp', { method: 'Input.dispatchKeyEvent', params: { type: 'keyDown', key: 'a', text: 'a' } })).ok,
+    ).toBe(true)
+    expect(
+      (await act('cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', button: 'left' } })).ok,
+    ).toBe(true)
+    expect(sendCommand.mock.calls.map(([, method]) => method)).toEqual([
+      'Input.dispatchKeyEvent',
+      'Input.dispatchMouseEvent',
+    ])
+    sendCommand.mockClear()
+    for (const [method, params] of [
+      ['Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', commands: ['selectAll', 'copy', 'paste'] }],
+      ['Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'v', modifiers: 2 }],
+      ['Input.dispatchMouseEvent', { type: 'mouseMoved', button: 'left', buttons: 1, x: 5, y: 5 }],
+    ] as const) {
+      const answer = await act('cdp', { method, params })
+      expect(answer.ok, JSON.stringify(params)).toBe(false)
+      expect(answer.error).toContain('Copying')
+    }
+    expect(sendCommand).not.toHaveBeenCalled()
+  })
+
+  it('answers a selector with a refusal and a ref with the page, and tells the page it is filled', async () => {
+    await commit('doc-22')
+    await fillDocument('doc-22')
+    executeScript.mockClear()
+    for (const [action, args] of [
+      ['click', { selector: 'input[type=password][value^="a"]' }],
+      ['wait', { for: 'selector', selector: 'input[value^="a"]', timeout_ms: 10 }],
+    ] as const) {
+      const answer = await act(action, args)
+      expect(answer.ok, action).toBe(false)
+      expect(answer.error, action).toContain('only refs')
+    }
+    expect(executeScript).not.toHaveBeenCalled()
+    expect((await act('snapshot', {})).ok).toBe(true)
+    // What the worker says about the document is not what the caller says.
+    expect((await act('click', { ref: 4, isFilledDocument: false })).ok).toBe(true)
+    const sentArgs = executeScript.mock.calls.map(
+      (call) => (call as unknown as [{ args: [string, Record<string, unknown>] }])[0].args[1],
+    )
+    expect(sentArgs.map((each) => each.isFilledDocument)).toEqual([true, true])
+  })
+
+  it('is read again once the tab shows another document, but not when it comes back from the history', async () => {
+    await commit('doc-23')
+    await fillDocument('doc-23')
+    expect((await act('evaluate', { expression: '1' })).ok).toBe(false)
+    await commit('doc-24')
+    expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
+    expect((await act('click', { selector: 'button' })).ok).toBe(true)
+    // Back to the filled one: refused at once, before the server could say so.
+    await commit('doc-23', ['forward_back'])
+    for (const action of ['evaluate', 'screenshot', 'storage']) {
+      expect((await act(action, { expression: '1' })).ok, action).toBe(false)
+    }
+    expect((await act('cdp', { method: 'Runtime.evaluate', params: { expression: '1' } })).ok).toBe(false)
+    await commit('doc-25')
+    expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
   })
 })
