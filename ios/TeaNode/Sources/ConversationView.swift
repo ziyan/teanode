@@ -211,7 +211,14 @@ struct ConversationView: View {
                     guard DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("conversation-long-message"), model.isLoaded
                     else { return }
                     try? await Task.sleep(for: .seconds(2))
-                    scrollPosition.scrollTo(edge: .top)
+                    // Again once the lazy list has measured the long message:
+                    // it is drawn at an estimated height first, and the bottom
+                    // anchor for size changes pulls the view back down by the
+                    // difference, which left its first line out of sight.
+                    for _ in 0..<3 {
+                        scrollPosition.scrollTo(edge: .top)
+                        try? await Task.sleep(for: .milliseconds(500))
+                    }
                     if screen == "conversation-long-message-read" {
                         model.readingText = model.transcript.lines.first(where: { $0.kind == .person })?.text
                     }
