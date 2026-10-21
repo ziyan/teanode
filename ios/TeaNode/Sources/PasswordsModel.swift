@@ -48,6 +48,13 @@ final class PasswordsModel {
     /// person or the person shared with them. The new key was accepted and nothing waits on it: each
     /// has a notice until the person dismisses it.
     private(set) var keyChanges: [PasswordsKeyChange] = []
+    /// The people this iPhone sealed an item for through a circle for the first time ("<name> got
+    /// <item> through <circle>"). Each stays until the person dismisses it; nothing waits on it.
+    private(set) var circleShareNotices: [PasswordsCircleShareNotice] = []
+    /// The items this iPhone left for the person to finish sharing (it has no memory of them from
+    /// before, or somebody waiting is a person it never sealed for): the list says "Open this item
+    /// to finish sharing it" and the item's screen has the button (`finishSharing`).
+    private(set) var itemIdsNeedingYou: Set<String> = []
     /// The person's items the server marked as needing a new item key (somebody was removed, the
     /// agent was turned off, a member left a circle) that could not be given one yet: the item's
     /// screen says so and offers a retry.
@@ -55,8 +62,8 @@ final class PasswordsModel {
     /// The items among those that this iPhone did not give a new key by itself: one was given a
     /// moment ago, or it has given the most it gives in a session. The item's screen says so.
     private(set) var itemIdsNeedingAttention: Set<String> = []
-    /// The person's own safety code, made from the key pair this iPhone opened and the person's own
-    /// user id; nil while locked. Other people compare it before they trust the person's key.
+    /// The person's own safety code, made from the key pair this iPhone opened; nil while locked.
+    /// Anybody who wants to check the person's key can compare it. Nothing waits on it.
     private(set) var ownSafetyCode: String?
     private(set) var isSyncing = false
     /// Whether the account key waits behind Face ID on this iPhone.
@@ -386,6 +393,7 @@ final class PasswordsModel {
             var givenItemIds: [String] = []
             if !isDemo { givenItemIds = await session.giveNewKeysToMarkedItems() }
             if !givenItemIds.isEmpty { await reload() }
+            itemIdsNeedingYou = await session.itemIdsNeedingYou
             itemIdsNeedingAttention = await session.itemIdsNeedingAttention
             await giveWaitingRecipientsTheirKeys()
         } catch {
@@ -426,6 +434,8 @@ final class PasswordsModel {
         deletedItems = []
         unreadableItemCount = 0
         keyChanges = []
+        circleShareNotices = []
+        itemIdsNeedingYou = []
         ownSafetyCode = nil
         phase = closedPhase
     }
@@ -440,6 +450,8 @@ final class PasswordsModel {
             deletedItems = opened.items.filter { $0.isDeleted }.sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
             unreadableItemCount = opened.unreadableItemIds.count
             keyChanges = await session.keyChanges()
+            circleShareNotices = await session.circleShareNotices()
+            itemIdsNeedingYou = await session.itemIdsNeedingYou
             itemIdsNeedingNewKey = await session.itemIdsNeedingNewKey
             itemIdsNeedingAttention = await session.itemIdsNeedingAttention
             ownSafetyCode = try? await session.ownSafetyCode()
@@ -452,13 +464,16 @@ final class PasswordsModel {
     }
 
     /// The people who set up Passwords after an item was shared with them get the item's key now,
-    /// sealed for the key the server gives. Nothing is asked: a key this iPhone has not seen is
-    /// recorded as theirs, and one that differs from the known key is accepted with a notice
-    /// (`keyChanges`).
+    /// sealed for the key the server gives, but only for items this iPhone remembers and people it
+    /// sealed the item for before. The rest is listed in `itemIdsNeedingYou` for the person to
+    /// finish. Nothing is asked about a key: one this iPhone has not seen is recorded as theirs, and
+    /// one that differs from the known key is accepted with a notice (`keyChanges`).
     private func giveWaitingRecipientsTheirKeys() async {
         guard let session, !isDemo else { return }
         guard let completed = try? await session.completeWaitingShares() else { return }
         keyChanges = await session.keyChanges()
+        circleShareNotices = await session.circleShareNotices()
+        itemIdsNeedingYou = await session.itemIdsNeedingYou
         if completed.addedKeyCount > 0 {
             let givenCount = completed.addedKeyCount
             doneText = String(localized: "Gave \(givenCount) people access to the items you shared, now that they set up Passwords.")
@@ -535,6 +550,30 @@ final class PasswordsModel {
         await reload()
         // Turning the agent off gives the item a new key; the people who had no key before get theirs now.
         if !isUsable { await giveWaitingRecipientsTheirKeys() }
+    }
+
+    /// Finishes the sharing of an item the person opened: gives it a new key when it needs one, and a
+    /// key to everybody waiting whom the item's own record reaches.
+    func finishSharing(_ item: PasswordItem) async {
+        guard let session else { return }
+        do {
+            try await session.finishSharing(itemId: item.id)
+            doneText = String(localized: "Finished sharing \(item.name).")
+            await reload()
+        } catch {
+            report(error, orSay: String(localized: "The sharing could not be finished."))
+        }
+    }
+
+    /// Hides the notice that somebody got an item through a circle.
+    func dismissCircleShareNotice(_ notice: PasswordsCircleShareNotice) async {
+        guard let session else { return }
+        do {
+            try await session.dismissCircleShareNotice(itemId: notice.itemId, recipientUserId: notice.recipientUserId)
+            circleShareNotices = await session.circleShareNotices()
+        } catch {
+            report(error, orSay: String(localized: "The notice could not be dismissed."))
+        }
     }
 
     /// Tries again to give an item a new key, after a removal whose re-key failed.
@@ -687,8 +726,8 @@ final class PasswordsModel {
                 (try? await setShares(of: item, grantees: grantees, recipients: recipients)) != nil
             else { return }
             PasswordsDemoStore.shared.changeKey(of: alexUserId)
-            // Alex's items wait for the new key; this iPhone seals for it at once and notes the change.
-            _ = try? await session?.completeWaitingShares()
+            // Alex's items wait for the new key; finishing the sharing seals for it and notes the change.
+            _ = try? await session?.finishSharing(itemId: item.id)
             await sync(isFull: true)
         }
     #endif

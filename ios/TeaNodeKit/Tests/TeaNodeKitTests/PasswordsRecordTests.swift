@@ -457,24 +457,43 @@ final class PasswordsRecordTests: XCTestCase {
         directories.append(directory)
         let fileURL = directory.appendingPathComponent("pins.json")
         let first = PasswordsFilePinStore(fileURL: fileURL)
-        try first.raiseRecordVersion(userId: "user-ada", itemId: "item-1", version: 5)
-        try first.raiseRecordVersion(userId: "user-ada", itemId: "item-1", version: 3)
-        try first.recordKeyHolders(userId: "user-ada", itemId: "item-1", keyHolderUserIds: ["user-ben", "user-ben", "user-carol"], hadAgentCopy: true)
-        try first.raiseRecordVersion(userId: "user-ada", itemId: "item-1", version: 4)
+        try first.recordSeenRecord(userId: "user-ada", itemId: "item-1", version: 5, mac: "mac-five")
+        try first.recordSeenRecord(userId: "user-ada", itemId: "item-1", version: 3, mac: "mac-three")
+        try first.recordSeenRecord(userId: "user-ada", itemId: "item-1", version: 5, mac: "mac-other")
+        try first.recordSealed(
+            userId: "user-ada", itemId: "item-1",
+            change: PasswordsSealedChange(userIds: ["user-ben", "user-ben", "user-carol"], isReplacing: false, didMakeAgentCopy: true))
+        try first.recordSeenRecord(userId: "user-ada", itemId: "item-1", version: 4, mac: "mac-four")
         let second = PasswordsFilePinStore(fileURL: fileURL)
         let pins = try second.loadPins(userId: "user-ada")
         XCTAssertEqual(
             pins.itemMemories["item-1"],
-            PasswordsItemMemory(highestRecordVersion: 5, keyHolderUserIds: ["user-ben", "user-carol"], hadAgentCopy: true))
+            PasswordsItemMemory(
+                highestRecordVersion: 5, highestRecordMac: "mac-five", sealedForUserIds: ["user-ben", "user-carol"], didMakeAgentCopy: true))
         // Another person's memory is not this person's.
         XCTAssertTrue(try second.loadPins(userId: "user-grace").itemMemories.isEmpty)
 
         let memory = PasswordsMemoryPinStore()
-        try memory.raiseRecordVersion(userId: "user-ada", itemId: "item-1", version: 2)
-        try memory.raiseRecordVersion(userId: "user-ada", itemId: "item-1", version: 1)
+        try memory.recordSeenRecord(userId: "user-ada", itemId: "item-1", version: 2, mac: nil)
+        try memory.recordSeenRecord(userId: "user-ada", itemId: "item-1", version: 1, mac: "mac-one")
         XCTAssertEqual(try memory.loadPins(userId: "user-ada").itemMemories["item-1"]?.highestRecordVersion, 2)
+        // A version remembered without its mac takes the mac of the next record seen at that version.
+        try memory.recordSeenRecord(userId: "user-ada", itemId: "item-1", version: 2, mac: "mac-two")
+        XCTAssertEqual(try memory.loadPins(userId: "user-ada").itemMemories["item-1"]?.highestRecordMac, "mac-two")
         try memory.removeAll()
         XCTAssertTrue(try memory.loadPins(userId: "user-ada").itemMemories.isEmpty)
+    }
+
+    func testARecordWithTheRememberedVersionAndAnotherMacIsAReplayAndAMemoryOfAnEarlierBuildStillReads() throws {
+        let memory = PasswordsItemMemory(highestRecordVersion: 3, highestRecordMac: "mac-three")
+        XCTAssertFalse(memory.isReplay(version: 3, mac: "mac-three"))
+        XCTAssertTrue(memory.isReplay(version: 3, mac: "mac-other"))
+        XCTAssertTrue(memory.isReplay(version: 2, mac: "mac-three"))
+        XCTAssertFalse(memory.isReplay(version: 4, mac: "mac-four"))
+        // The first build kept only a version and the people it saw holding a key.
+        let earlier = #"{"highestRecordVersion":4,"keyHolderUserIds":["user-ben"],"hadAgentCopy":true}"#
+        let decoded = try JSONDecoder().decode(PasswordsItemMemory.self, from: Data(earlier.utf8))
+        XCTAssertEqual(decoded, PasswordsItemMemory(highestRecordVersion: 4))
     }
 
     func testPinsWrittenBeforeItemsHadAMemoryStillRead() throws {

@@ -40,13 +40,13 @@ public protocol PasswordsPinStore: Sendable {
     func recordCompared(userId: String, otherUserId: String, publicKey: String) throws
     /// Dismisses the changed-key notice of a person.
     func dismissKeyChange(userId: String, otherUserId: String) throws
-    /// Remembers that an owned item's access record was seen with this version and a valid
-    /// signature. Never lowers what is remembered.
-    func raiseRecordVersion(userId: String, itemId: String, version: Int) throws
-    /// Replaces who held a key for an owned item, and whether it had an agent copy, as this
-    /// device last saw it. Does not touch the remembered record version.
-    func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws
-    /// Forgets every pinned key and item memory of the sign-in.
+    /// Changes the memory kept for one owned item: reads it (an empty one when there is none),
+    /// applies `change` and writes the result. Nothing is written when the change leaves it as it
+    /// was. The three named operations below are built on this.
+    func updateItemMemory(userId: String, itemId: String, change: (PasswordsItemMemory) -> PasswordsItemMemory) throws
+    /// Forgets every pinned key and item memory of the sign-in. Only the person removing the
+    /// account from the phone, or starting Passwords over, does this; a sign-in the server ended
+    /// leaves them.
     func removeAll() throws
 }
 
@@ -81,20 +81,87 @@ extension PasswordsPins {
     }
 }
 
-extension PasswordsItemMemory {
-    /// The memory with a version raised (never lowered).
-    func raised(to version: Int) -> PasswordsItemMemory {
-        var raised = self
-        raised.highestRecordVersion = max(highestRecordVersion, version)
-        return raised
+/// PasswordsSealedChange is what a device records after it sealed an item key itself.
+public struct PasswordsSealedChange: Equatable, Sendable {
+    /// The people sealed for.
+    public var userIds: [String]
+    /// Whether the people sealed for replace the ones remembered (a new item key was made, so only
+    /// they hold it) or are added to them (a key was added for them beside the others).
+    public var isReplacing: Bool
+    /// Whether this device made the agent's copy; nil leaves what is remembered.
+    public var didMakeAgentCopy: Bool?
+    /// The people the person named directly as grantees on this device, replacing those remembered;
+    /// nil leaves what is remembered.
+    public var chosenUserIds: [String]?
+    /// People sealed for through a circle for the first time, to be shown as a notice.
+    public var circleShares: [PasswordsCircleShare]
+
+    public init(
+        userIds: [String], isReplacing: Bool, didMakeAgentCopy: Bool? = nil, chosenUserIds: [String]? = nil,
+        circleShares: [PasswordsCircleShare] = []
+    ) {
+        self.userIds = userIds
+        self.isReplacing = isReplacing
+        self.didMakeAgentCopy = didMakeAgentCopy
+        self.chosenUserIds = chosenUserIds
+        self.circleShares = circleShares
+    }
+}
+
+extension PasswordsPinStore {
+    public func recordSeenRecord(userId: String, itemId: String, version: Int, mac: String?) throws {
+        try updateItemMemory(userId: userId, itemId: itemId) { $0.seeingRecord(version: version, mac: mac) }
     }
 
-    /// The memory with its key holders and agent copy replaced; holders are sorted and capped.
-    func holding(keyHolderUserIds: [String], hadAgentCopy: Bool) -> PasswordsItemMemory {
-        var replaced = self
-        replaced.keyHolderUserIds = Array(Set(keyHolderUserIds).sorted().prefix(Self.mostKeyHolderUserIds))
-        replaced.hadAgentCopy = hadAgentCopy
-        return replaced
+    public func recordSealed(userId: String, itemId: String, change: PasswordsSealedChange) throws {
+        try updateItemMemory(userId: userId, itemId: itemId) { $0.sealing(change) }
+    }
+
+    public func dismissCircleShare(userId: String, itemId: String, recipientUserId: String) throws {
+        try updateItemMemory(userId: userId, itemId: itemId) {
+            var dismissed = $0
+            dismissed.circleShares.removeAll { $0.recipientUserId == recipientUserId }
+            return dismissed
+        }
+    }
+}
+
+extension PasswordsItemMemory {
+    /// The memory after a record with a valid signature was seen. The version only goes up. At the
+    /// version already remembered, the mac is filled in when it was not known and otherwise kept.
+    func seeingRecord(version: Int, mac: String?) -> PasswordsItemMemory {
+        var seen = self
+        if version > highestRecordVersion {
+            seen.highestRecordVersion = version
+            seen.highestRecordMac = mac
+        } else if version == highestRecordVersion, highestRecordMac == nil {
+            seen.highestRecordMac = mac
+        }
+        return seen
+    }
+
+    /// Whether a record with a valid signature is older than the newest this device saw, or has the
+    /// same version and another mac (the server showed another record than the one seen).
+    func isReplay(version: Int, mac: String?) -> Bool {
+        if version < highestRecordVersion { return true }
+        guard version == highestRecordVersion, let highestRecordMac else { return false }
+        return mac != highestRecordMac
+    }
+
+    /// The memory after this device sealed an item key itself; the people are sorted and capped.
+    func sealing(_ change: PasswordsSealedChange) -> PasswordsItemMemory {
+        var sealed = self
+        let people = change.isReplacing ? Set(change.userIds) : Set(sealedForUserIds).union(change.userIds)
+        sealed.sealedForUserIds = Array(people.sorted().prefix(Self.mostSealedForUserIds))
+        if let didMakeAgentCopy = change.didMakeAgentCopy { sealed.didMakeAgentCopy = didMakeAgentCopy }
+        if let chosenUserIds = change.chosenUserIds {
+            sealed.chosenUserIds = Array(Set(chosenUserIds).sorted().prefix(Self.mostSealedForUserIds))
+        }
+        for circleShare in change.circleShares where !sealed.circleShares.contains(where: { $0.recipientUserId == circleShare.recipientUserId }) {
+            sealed.circleShares.append(circleShare)
+        }
+        sealed.circleShares = Array(sealed.circleShares.suffix(Self.mostCircleShares))
+        return sealed
     }
 }
 
@@ -140,20 +207,11 @@ public final class PasswordsMemoryPinStore: PasswordsPinStore, @unchecked Sendab
         }
     }
 
-    public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
+    public func updateItemMemory(userId: String, itemId: String, change: (PasswordsItemMemory) -> PasswordsItemMemory) throws {
         update(userId: userId) {
-            var raised = $0
-            raised.itemMemories[itemId] = ($0.itemMemories[itemId] ?? PasswordsItemMemory()).raised(to: version)
-            return raised
-        }
-    }
-
-    public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
-        update(userId: userId) {
-            var holding = $0
-            holding.itemMemories[itemId] = ($0.itemMemories[itemId] ?? PasswordsItemMemory()).holding(
-                keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy)
-            return holding
+            var changed = $0
+            changed.itemMemories[itemId] = change($0.itemMemories[itemId] ?? PasswordsItemMemory())
+            return changed
         }
     }
 
@@ -217,16 +275,12 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         try write(pins)
     }
 
-    public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
+    public func updateItemMemory(userId: String, itemId: String, change: (PasswordsItemMemory) -> PasswordsItemMemory) throws {
         var pins = try read(userId: userId)
-        pins.itemMemories[itemId] = (pins.itemMemories[itemId] ?? PasswordsItemMemory()).raised(to: version)
-        try write(pins)
-    }
-
-    public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
-        var pins = try read(userId: userId)
-        pins.itemMemories[itemId] = (pins.itemMemories[itemId] ?? PasswordsItemMemory()).holding(
-            keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy)
+        let current = pins.itemMemories[itemId] ?? PasswordsItemMemory()
+        let changed = change(current)
+        guard changed != current else { return }
+        pins.itemMemories[itemId] = changed
         try write(pins)
     }
 
@@ -246,8 +300,11 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
     /// extension are entitled to. The items are not synchronized, are never in a backup, and can be
     /// read once the phone has been unlocked after starting. The account of an item says what the key
     /// is for (`known`, `compared` or `changed`, the signed-in person, the other person); its data is the
-    /// public key text. An item that does not read as a public key is skipped, so one damaged item never
-    /// makes the others disappear. The first version kept `seen` and `confirmed` keys; `loadPins` moves
+    /// public key text. The service names the server and the person's sign-in name (`signInAccountKey`) and
+    /// each account carries the signed-in person's user id, so the pins of one person on one server are
+    /// never read as another's. They are removed only when the person removes the account from the phone
+    /// (`removeAll`), never because the server ended the sign-in. An item that does not read as a public key
+    /// is skipped, so one damaged item never makes the others disappear. The first version kept `seen` and `confirmed` keys; `loadPins` moves
     /// them into `known` (and `compared` for a confirmed one) once and deletes them.
     public struct PasswordsKeychainPinStore: PasswordsPinStore {
         static let servicePrefix = "com.teanode.app.passwords.pins."
@@ -445,17 +502,13 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
 
         // The memory of one item is one keychain item, changed by reading that item and writing it
         // back. The app and the AutoFill extension can both do that at the same moment; the worst
-        // that comes of it is a version raise or a key holder list that is one change behind,
-        // which only ever makes a later check stricter, never looser.
-        public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
+        // that comes of it is a version, a mac or a list of people sealed for that is one change
+        // behind, which only ever makes a later check stricter, never looser.
+        public func updateItemMemory(userId: String, itemId: String, change: (PasswordsItemMemory) -> PasswordsItemMemory) throws {
             let current = try memory(userId: userId, itemId: itemId)
-            guard version > current.highestRecordVersion else { return }
-            try write(current.raised(to: version), userId: userId, itemId: itemId)
-        }
-
-        public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
-            let current = try memory(userId: userId, itemId: itemId)
-            try write(current.holding(keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy), userId: userId, itemId: itemId)
+            let changed = change(current)
+            guard changed != current else { return }
+            try write(changed, userId: userId, itemId: itemId)
         }
 
         public func removeAll() throws {

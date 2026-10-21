@@ -414,7 +414,8 @@ final class PasswordsAccessFlowTests: XCTestCase {
     /// remember it by; the server's mark on the item is what the next launch finds.
     func testTheServersMarkSurvivesAProcessThatStoppedBetweenTheRemovalAndTheRekey() async throws {
         let server = await makeServer([("user-ada", "Ada"), ("user-ben", "Ben")])
-        let first = makeSession(server, userId: "user-ada")
+        let firstCache = makeCache()
+        let first = makeSession(server, userId: "user-ada", cache: firstCache)
         try await setUp(first, passphrase: "ada invented passphrase")
         try await setUp(makeSession(server, userId: "user-ben"), passphrase: "ben invented passphrase")
         let item = try await first.save(fields: loginFields())
@@ -430,8 +431,9 @@ final class PasswordsAccessFlowTests: XCTestCase {
         }
         await server.setRekeyRefusal(nil)
 
-        // The phone starts again with nothing of the first one's.
-        let relaunched = makeSession(server, userId: "user-ada")
+        // The phone starts again: the session is new, the pin store (the keychain) is the same, so
+        // the memory of the item from the first session is still there.
+        let relaunched = makeSession(server, userId: "user-ada", cache: firstCache)
         _ = try await relaunched.unlock(passphrase: "ada invented passphrase")
         try await relaunched.sync()
         let marked = await relaunched.itemIdsNeedingNewKey
@@ -442,33 +444,129 @@ final class PasswordsAccessFlowTests: XCTestCase {
         XCTAssertEqual(stillMarked, [])
     }
 
-    func testMarkedItemsAreGivenANewKeyAfterASyncAndPeopleThisDeviceNeverSawHoldingAKeyAreSealedForByTheWaitingShares() async throws {
+    /// A device that has nothing of the item (another phone, or one reinstalled) cannot tell an old
+    /// signed record from the newest one, so it leaves the marked item for the person, who finishes it.
+    func testAMarkedItemADeviceHasNoMemoryOfWaitsForThePersonWhoFinishesIt() async throws {
+        let server = await makeServer([("user-ada", "Ada"), ("user-ben", "Ben")])
+        let first = makeSession(server, userId: "user-ada")
+        try await setUp(first, passphrase: "ada invented passphrase")
+        try await setUp(makeSession(server, userId: "user-ben"), passphrase: "ben invented passphrase")
+        let item = try await first.save(fields: loginFields())
+        let recipients = try await first.recipients(granteeUserId: "user-ben")
+        _ = try await first.setShares(
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients)
+        await server.markNeedsNewKey(itemId: item.id)
+
+        let other = makeSession(server, userId: "user-ada")
+        _ = try await other.unlock(passphrase: "ada invented passphrase")
+        try await other.sync()
+        _ = try await other.item(id: item.id)
+        let given = await other.giveNewKeysToMarkedItems()
+        XCTAssertEqual(given, [], "looking at the item in this session is not a memory of it")
+        let needingYou = await other.itemIdsNeedingYou
+        XCTAssertEqual(needingYou, [item.id])
+        let stillMarked = await other.itemIdsNeedingNewKey
+        XCTAssertEqual(stillMarked, [item.id])
+
+        try await other.finishSharing(itemId: item.id)
+        let marked = await other.itemIdsNeedingNewKey
+        XCTAssertEqual(marked, [])
+        let needingYouAfter = await other.itemIdsNeedingYou
+        XCTAssertEqual(needingYouAfter, [])
+        let stored = await server.item(item.id)
+        XCTAssertEqual(Set(stored?.keys.keys.map { $0 } ?? []), ["user-ben"], "the person's own action seals for whom the record reaches")
+    }
+
+    func testADeviceGivesAMarkedItemANewKeyOnlyForPeopleItSealedForAndTheRestWaitForThePerson() async throws {
         let server = await makeServer([("user-ada", "Ada"), ("user-grace", "Grace"), ("user-linus", "Linus")])
         await server.setCircle("circle-one", members: ["user-ada", "user-grace", "user-linus"])
-        let first = makeSession(server, userId: "user-ada")
+        let firstCache = makeCache()
+        let first = makeSession(server, userId: "user-ada", cache: firstCache)
         try await setUp(first, passphrase: "ada invented passphrase")
         for userId in ["user-grace", "user-linus"] { try await setUp(makeSession(server, userId: userId), passphrase: "\(userId) invented passphrase") }
         let item = try await first.save(fields: loginFields())
         let recipients = try await first.recipients(granteeCircleId: "circle-one")
         _ = try await first.setShares(
             itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients)
-        // A second device of Ada has not seen anybody hold a key for the item.
+        // Grace is removed from the circle and added again: the item is marked and she has no key.
+        await server.setCircle("circle-one", members: ["user-ada", "user-linus"])
+        await server.setCircle("circle-one", members: ["user-ada", "user-grace", "user-linus"])
+
+        // The same phone in a later session (same pin store) remembers the item and sealing for both.
+        let later = makeSession(server, userId: "user-ada", cache: firstCache)
+        _ = try await later.unlock(passphrase: "ada invented passphrase")
+        try await later.sync()
+        let given = await later.giveNewKeysToMarkedItems()
+        XCTAssertEqual(given, [item.id])
+        let afterRekey = await server.item(item.id)
+        XCTAssertEqual(Set(afterRekey?.keys.keys.map { $0 } ?? []), ["user-grace", "user-linus"])
+    }
+
+    func testWaitingSharesOfAnItemADeviceHasNoMemoryOfAreFinishedByThePersonWithANoticeForTheCircleMembers() async throws {
+        let server = await makeServer([("user-ada", "Ada"), ("user-grace", "Grace")])
+        await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
+        let first = makeSession(server, userId: "user-ada")
+        try await setUp(first, passphrase: "ada invented passphrase")
+        let item = try await first.save(fields: loginFields())
+        let early = try await first.recipients(granteeCircleId: "circle-one")
+        _ = try await first.setShares(
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: early)
+        // Grace sets up Passwords afterwards: a second phone of Ada's, which never saw the item, is not to seal for her.
+        try await setUp(makeSession(server, userId: "user-grace"), passphrase: "grace invented passphrase")
         let second = makeSession(server, userId: "user-ada")
         _ = try await second.unlock(passphrase: "ada invented passphrase")
         try await second.sync()
-        // Grace is removed from the circle and added again: the item is marked, and the second device never saw her hold a key.
-        await server.setCircle("circle-one", members: ["user-ada", "user-linus"])
-        await server.setCircle("circle-one", members: ["user-ada", "user-grace", "user-linus"])
-        try await second.sync()
-        let given = await second.giveNewKeysToMarkedItems()
-        XCTAssertEqual(given, [item.id])
-        // The automatic new key did not widen anything; the waiting shares are sealed for both at once.
-        let storedAfterRekey = await server.item(item.id)
-        XCTAssertEqual(storedAfterRekey?.keys.count, 0)
         let completed = try await second.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 2)
-        let afterCompletion = await server.item(item.id)
-        XCTAssertEqual(Set(afterCompletion?.keys.keys.map { $0 } ?? []), ["user-grace", "user-linus"])
+        XCTAssertEqual(completed.addedKeyCount, 0)
+        let needingYou = await second.itemIdsNeedingYou
+        XCTAssertEqual(needingYou, [item.id])
+        let noticesBefore = await second.circleShareNotices()
+        XCTAssertEqual(noticesBefore, [])
+
+        // The person opens the item and presses the button.
+        try await second.finishSharing(itemId: item.id)
+        let stored = await server.item(item.id)
+        XCTAssertNotNil(stored?.keys["user-grace"])
+        let needingYouAfter = await second.itemIdsNeedingYou
+        XCTAssertEqual(needingYouAfter, [])
+        let notices = await second.circleShareNotices()
+        XCTAssertEqual(
+            notices,
+            [
+                PasswordsCircleShareNotice(
+                    itemId: item.id, itemName: "Example", recipientUserId: "user-grace", recipientName: "Grace", circleName: "circle-one")
+            ])
+        try await second.dismissCircleShareNotice(itemId: item.id, recipientUserId: "user-grace")
+        let noticesAfter = await second.circleShareNotices()
+        XCTAssertEqual(noticesAfter, [])
+    }
+
+    /// Sealing for a circle's member the device sealed for before shows no notice; a person the
+    /// record names itself never does.
+    func testOnlyACircleMemberTheDeviceNeverSealedForGetsANotice() async throws {
+        let server = await makeServer([("user-ada", "Ada"), ("user-ben", "Ben"), ("user-grace", "Grace")])
+        await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
+        let ada = makeSession(server, userId: "user-ada")
+        try await setUp(ada, passphrase: "ada invented passphrase")
+        for userId in ["user-ben", "user-grace"] { try await setUp(makeSession(server, userId: userId), passphrase: "\(userId) invented passphrase") }
+        let item = try await ada.save(fields: loginFields())
+        let benRecipients = try await ada.recipients(granteeUserId: "user-ben")
+        let circleRecipients = try await ada.recipients(granteeCircleId: "circle-one")
+        _ = try await ada.setShares(
+            itemId: item.id,
+            grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben"), PasswordShareGranteeInput(granteeCircleId: "circle-one")],
+            recipients: benRecipients + circleRecipients)
+        let notices = await ada.circleShareNotices()
+        XCTAssertEqual(notices.map(\.recipientUserId), ["user-grace"])
+        XCTAssertEqual(notices.first?.circleName, "circle-one")
+        // Sharing again seals for nobody new: no second notice.
+        try await ada.dismissCircleShareNotice(itemId: item.id, recipientUserId: "user-grace")
+        _ = try await ada.setShares(
+            itemId: item.id,
+            grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben"), PasswordShareGranteeInput(granteeCircleId: "circle-one")],
+            recipients: benRecipients + circleRecipients)
+        let again = await ada.circleShareNotices()
+        XCTAssertEqual(again, [])
     }
 
     // MARK: Share keys name the item key
@@ -486,9 +584,8 @@ final class PasswordsAccessFlowTests: XCTestCase {
             itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: early)
         let grace = makeSession(server, userId: "user-grace")
         try await setUp(grace, passphrase: "grace invented passphrase")
-        // Ada's device seals for Grace's key at once.
-        let completed = try await ada.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 1)
+        // Ada seals for Grace's key when she finishes the sharing of the item.
+        try await ada.finishSharing(itemId: item.id)
         let stored = await server.item(item.id)
         XCTAssertEqual(flags.addedShareKeyCalls.count, 1)
         XCTAssertEqual(flags.addedShareKeyCalls.first?.first?.itemKey, stored?.itemKeyByAccountKey)
@@ -518,8 +615,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         // Grace joins the circle later: the server lists her as waiting; the copy's shares do not list her yet.
         await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
         await server.markListCalls()
-        let completed = try await ada.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 1)
+        try await ada.finishSharing(itemId: item.id)
         let listCalls = await server.listCallsSinceMark()
         XCTAssertEqual(listCalls.filter { $0 == nil }.count, 1, "one full read")
         try await grace.sync()

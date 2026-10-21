@@ -288,6 +288,8 @@ struct PasswordsListView: View {
     private var list: some View {
         List {
             keyChangeSection
+            circleShareSection
+            needsYouSection
             Section {
                 ForEach(shownItems) { item in
                     NavigationLink(value: PasswordsDestination.item(item.id)) {
@@ -313,6 +315,39 @@ struct PasswordsListView: View {
             Section {
                 ForEach(model.keyChanges) { change in
                     PasswordsKeyChangeRow(model: model, change: change)
+                }
+            }
+        }
+    }
+
+    /// Notices of people this iPhone sealed an item for through a circle for the first time.
+    @ViewBuilder
+    private var circleShareSection: some View {
+        if !model.circleShareNotices.isEmpty {
+            Section {
+                ForEach(model.circleShareNotices) { notice in
+                    PasswordsCircleShareNoticeRow(model: model, notice: notice)
+                }
+            }
+        }
+    }
+
+    /// One line for each item this iPhone left for the person to finish sharing. It does not block
+    /// anything: the item opens as usual, and its screen has the button.
+    @ViewBuilder
+    private var needsYouSection: some View {
+        let waitingItems = model.items.filter { model.itemIdsNeedingYou.contains($0.id) }
+        if !waitingItems.isEmpty {
+            Section {
+                ForEach(waitingItems) { item in
+                    NavigationLink(value: PasswordsDestination.item(item.id)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: item.name)
+                            Text("Open this item to finish sharing it.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }

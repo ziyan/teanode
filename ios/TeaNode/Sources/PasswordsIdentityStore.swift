@@ -64,19 +64,25 @@ enum PasswordsIdentityStore {
 }
 
 /// PasswordsAccountStorage removes what Passwords keeps on this iPhone for a
-/// sign-in that was removed: the encrypted copy of its items, the keys pinned
-/// for other people, the account key behind Face ID, and the choice to use it.
+/// sign-in that is gone: the encrypted copy of its items, the account key
+/// behind Face ID, and the choice to use it. The keys pinned for other people and
+/// what the iPhone remembers about each item are kept per server and signed-in person
+/// and go only when the person removed the account from the iPhone, not when the
+/// server ended the sign-in (`PasswordsSignInEnd`).
 enum PasswordsAccountStorage {
-    static func accountWasRemoved(signInAccountKey: String, isInUse: Bool) async {
+    static func accountWasRemoved(signInAccountKey: String, isInUse: Bool, end: PasswordsSignInEnd) async {
         let group = Bundle.main.object(forInfoDictionaryKey: "TeaNodeAppGroup") as? String
+        let isKeepingPins = !end.isForgettingKeysAndItemMemories
         if let group, let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) {
-            PasswordsLocation.removeCopy(groupContainer: container, signInAccountKey: signInAccountKey)
+            PasswordsLocation.removeCopy(groupContainer: container, signInAccountKey: signInAccountKey, isKeepingPins: isKeepingPins)
         }
         if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            PasswordsLocation.removeCopy(groupContainer: support, signInAccountKey: signInAccountKey)
+            PasswordsLocation.removeCopy(groupContainer: support, signInAccountKey: signInAccountKey, isKeepingPins: isKeepingPins)
         }
         // The keys pinned for other people are in the keychain, not in the folder removed above.
-        try? PasswordsKeychainPinStore.forThisBundle(signInAccountKey: signInAccountKey).removeAll()
+        if end.isForgettingKeysAndItemMemories {
+            try? PasswordsKeychainPinStore.forThisBundle(signInAccountKey: signInAccountKey).removeAll()
+        }
         UserDefaults.standard.removeObject(forKey: "passwordsFaceID.\(signInAccountKey)")
         try? await PasswordsKeychainKeyStore.forThisBundle().delete(signInAccountKey: signInAccountKey)
         if isInUse { await PasswordsIdentityStore.removeAll() }

@@ -48,37 +48,94 @@ public struct PasswordsMergeResult: Equatable, Sendable {
     }
 }
 
-/// PasswordsItemMemory is what this device remembers about one item the person owns, from
-/// the last time it looked at the item in a state nobody was disputing. It lives with the
-/// pinned keys, in the Passwords keychain group, because what it protects is the owner's
-/// own record of who may have the item: the share extension and the widgets cannot write it.
-public struct PasswordsItemMemory: Codable, Equatable, Sendable {
-    /// The highest `recordVersion` this device has seen on the item's access record with a
-    /// valid signature. A record with a lower version is an older one the server sent back.
-    public var highestRecordVersion: Int
-    /// The user ids that held a key for the item when this device last saw it without the
-    /// server asking for a new key. An automatic new key is sealed only for these people.
-    public var keyHolderUserIds: [String]
-    /// Whether the item had a copy of its key for the agent at that time.
-    public var hadAgentCopy: Bool
+/// PasswordsCircleShare is a person this device sealed an item key for because the item is shared
+/// with a circle they are in, and had never sealed it for before. It is kept until the person
+/// dismisses the notice ("<name> got <item> through <circle>"). It holds no item name: the notice
+/// looks the item up when it is shown.
+public struct PasswordsCircleShare: Codable, Hashable, Sendable {
+    public let recipientUserId: String
+    public let recipientName: String
+    public let circleName: String
 
-    public init(highestRecordVersion: Int = 0, keyHolderUserIds: [String] = [], hadAgentCopy: Bool = false) {
+    public init(recipientUserId: String, recipientName: String, circleName: String) {
+        self.recipientUserId = recipientUserId
+        self.recipientName = recipientName
+        self.circleName = circleName
+    }
+}
+
+/// PasswordsItemMemory is what this device remembers about one item the person owns. It is filled
+/// only from what this device saw verified and did itself, never from the server's lists of who
+/// holds a key: a device that has never seen an item cannot tell an old signed record from the
+/// newest one, so it does nothing by itself for an item it has no memory of. It lives with the
+/// pinned keys, in the Passwords keychain group, because what it protects is the owner's own
+/// record of who may have the item: the share extension and the widgets cannot write it.
+public struct PasswordsItemMemory: Codable, Equatable, Sendable {
+    /// The highest `recordVersion` this device has seen on the item's access record with a valid
+    /// signature. A record with a lower version is an older one the server sent back.
+    public var highestRecordVersion: Int
+    /// The `recordMac` of the record at that version. A record with the same version and another
+    /// mac is not the one this device saw: it is a replay as well. Nil for a version remembered
+    /// before the mac was (the next record seen at that version supplies it).
+    public var highestRecordMac: String?
+    /// The user ids this device itself sealed the item key for, the last time it sealed. An
+    /// automatic new key or a completed waiting share is sealed only for these people.
+    public var sealedForUserIds: [String]
+    /// Whether this device itself made the agent's copy of the item key, the last time it sealed.
+    /// An automatic new key makes the agent copy only then.
+    public var didMakeAgentCopy: Bool
+    /// The people the person named directly (a person grantee, never a circle) the last time they
+    /// set who the item is shared with on this device. It is the person's own choice, so a waiting
+    /// share for one of them is completed by itself later, even if no key could be sealed for them
+    /// when they were chosen.
+    public var chosenUserIds: [String]
+    /// People this device sealed for through a circle for the first time, whose notice the person
+    /// has not dismissed.
+    public var circleShares: [PasswordsCircleShare]
+
+    public init(
+        highestRecordVersion: Int = 0, highestRecordMac: String? = nil, sealedForUserIds: [String] = [], didMakeAgentCopy: Bool = false,
+        chosenUserIds: [String] = [], circleShares: [PasswordsCircleShare] = []
+    ) {
         self.highestRecordVersion = highestRecordVersion
-        self.keyHolderUserIds = keyHolderUserIds
-        self.hadAgentCopy = hadAgentCopy
+        self.highestRecordMac = highestRecordMac
+        self.sealedForUserIds = sealedForUserIds
+        self.didMakeAgentCopy = didMakeAgentCopy
+        self.chosenUserIds = chosenUserIds
+        self.circleShares = circleShares
     }
 
-    /// Most key holders remembered for one item. Somebody beyond this is not sealed for by an
-    /// automatic new key, which is the safe side.
-    public static let mostKeyHolderUserIds = 1000
+    private enum CodingKeys: String, CodingKey {
+        case highestRecordVersion, highestRecordMac, sealedForUserIds, didMakeAgentCopy, chosenUserIds, circleShares
+    }
+
+    /// A memory written by an earlier build lacks the newer fields: they start empty, which is the
+    /// strict side (nothing is done by itself for somebody this device has not sealed for).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        highestRecordVersion = try container.decodeIfPresent(Int.self, forKey: .highestRecordVersion) ?? 0
+        highestRecordMac = try container.decodeIfPresent(String.self, forKey: .highestRecordMac)
+        sealedForUserIds = try container.decodeIfPresent([String].self, forKey: .sealedForUserIds) ?? []
+        didMakeAgentCopy = try container.decodeIfPresent(Bool.self, forKey: .didMakeAgentCopy) ?? false
+        chosenUserIds = try container.decodeIfPresent([String].self, forKey: .chosenUserIds) ?? []
+        circleShares = try container.decodeIfPresent([PasswordsCircleShare].self, forKey: .circleShares) ?? []
+    }
+
+    /// Most user ids remembered as sealed for, for one item. Somebody beyond this is not sealed for
+    /// by an automatic new key, which is the safe side.
+    public static let mostSealedForUserIds = 1000
+    /// Most circle notices kept for one item.
+    public static let mostCircleShares = 100
 }
 
 /// PasswordsPins are the public keys this device holds for other people, and what it
 /// remembers about each item the person owns. They are about other people and the server's
 /// past answers, not about the person's own setup, so they are kept in a pin store of their
 /// own that survives the cache being dropped (a server that answers with another public key
-/// or an older record must not be able to make the phone forget them) and goes only when the
-/// sign-in is removed.
+/// or an older record must not be able to make the phone forget them). They go only when the
+/// person removes the account from the phone or starts Passwords over, never when the server
+/// ends the sign-in. They are kept under the server and the signed-in person's user id, so one
+/// person's are never read as another's.
 public struct PasswordsPins: Codable, Equatable, Sendable {
     public static let currentFormatVersion = 2
 
@@ -550,15 +607,20 @@ public struct PasswordsCache: Sendable {
         try pinStore.dismissKeyChange(userId: userId, otherUserId: otherUserId)
     }
 
-    /// Remembers that an owned item's access record was seen at this version with a valid
-    /// signature; never lowers what is remembered.
-    public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
-        try pinStore.raiseRecordVersion(userId: userId, itemId: itemId, version: version)
+    /// Remembers that an owned item's access record was seen with this version and mac and a valid
+    /// signature; never lowers the version, and never replaces the mac of a version already seen.
+    public func recordSeenRecord(userId: String, itemId: String, version: Int, mac: String?) throws {
+        try pinStore.recordSeenRecord(userId: userId, itemId: itemId, version: version, mac: mac)
     }
 
-    /// Remembers who held a key for an owned item, and whether it had an agent copy, as of now.
-    public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
-        try pinStore.recordKeyHolders(userId: userId, itemId: itemId, keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy)
+    /// Remembers what this device itself sealed for an owned item (`PasswordsSealedChange`).
+    public func recordSealed(userId: String, itemId: String, change: PasswordsSealedChange) throws {
+        try pinStore.recordSealed(userId: userId, itemId: itemId, change: change)
+    }
+
+    /// Dismisses the notice that a person got an item through a circle.
+    public func dismissCircleShare(userId: String, itemId: String, recipientUserId: String) throws {
+        try pinStore.dismissCircleShare(userId: userId, itemId: itemId, recipientUserId: recipientUserId)
     }
 
     private func write(_ data: Data, to targetURL: URL) throws {

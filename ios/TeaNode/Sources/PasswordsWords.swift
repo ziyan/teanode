@@ -85,6 +85,7 @@ enum PasswordsWords {
         case .itemNeedsNewKey: String(localized: "Removed. The item could not be given a new key.")
         case .sharingCouldNotBeChecked: String(localized: "Sharing for this item could not be checked. Set sharing again first.")
         case .itemNeedsAttention: String(localized: "This item needs a new key, but one was given a moment ago. Try again in a few minutes.")
+        case .itemNeedsYou: String(localized: "Open this item to finish sharing it.")
         }
     }
 

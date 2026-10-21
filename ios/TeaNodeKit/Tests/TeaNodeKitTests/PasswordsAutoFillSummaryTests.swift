@@ -276,9 +276,9 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
 
         let relaunched = PasswordsSession(api: FakePasswordsAPI(server: server, userId: "user-ada"), cache: cache, userId: "user-ada")
         _ = try await relaunched.unlock(passphrase: "ada invented passphrase")
-        let completed = try await relaunched.completeWaitingShares()
-        // The planted file is not read, so the key the server gives is the first one seen, and it is the one sealed for.
-        XCTAssertEqual(completed.addedKeyCount, 1)
+        // The planted file is not read, so the key the server gives is the first one seen, and it is the one sealed for
+        // when the person finishes the sharing of the item.
+        try await relaunched.finishSharing(itemId: item.id)
         let stored = await server.item(item.id)
         XCTAssertEqual(stored?.keys["user-mallory"]?.recipientPublicKey, operatorKey)
         XCTAssertEqual(try cache.loadPins(userId: "user-ada").knownPublicKeys["user-mallory"], operatorKey)

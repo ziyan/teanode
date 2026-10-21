@@ -54,6 +54,10 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
     /// A new key is wanted but was given a moment ago, or this session already gave the most it
     /// gives by itself. The item is listed in `PasswordsSession.itemIdsNeedingAttention`.
     case itemNeedsAttention(itemId: String)
+    /// This device has no memory of the item from before this session or from something it did
+    /// itself, so it does nothing to it by itself: the person opens the item and finishes the
+    /// sharing (`PasswordsSession.finishSharing(itemId:)`).
+    case itemNeedsYou(itemId: String)
 
     public var errorDescription: String? {
         switch self {
@@ -75,6 +79,7 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
         case .itemNeedsNewKey: return "Removed. The item could not be given a new key."
         case .sharingCouldNotBeChecked: return "Sharing could not be checked. Set sharing again."
         case .itemNeedsAttention: return "This item needs a new key, but one was given a moment ago."
+        case .itemNeedsYou: return "Open this item to finish sharing it."
         }
     }
 
@@ -165,7 +170,8 @@ public enum PasswordsSharingCheck: Equatable, Sendable {
     case verified
     /// Missing, or signed by nobody who holds the account key: it reaches nobody.
     case unverified
-    /// Signed, but older than a record this device saw before: the server sent an old copy back.
+    /// Signed, but older than a record this device saw before, or the same version with another
+    /// mac than the one it saw: the server sent an old or another copy back.
     case replayed
 }
 
@@ -281,6 +287,20 @@ public struct PasswordsKeyChange: Identifiable, Hashable, Sendable {
     public var id: String { userId }
 }
 
+/// PasswordsCircleShareNotice says that this device sealed an item's key for somebody the item
+/// reaches through a circle and had never sealed it for before: "<name> got <item> through
+/// <circle>". Who is in a circle is the server's word, so the person is told. It stays until the
+/// person dismisses it (`PasswordsSession.dismissCircleShareNotice`); nothing waits on it.
+public struct PasswordsCircleShareNotice: Identifiable, Hashable, Sendable {
+    public let itemId: String
+    public let itemName: String
+    public let recipientUserId: String
+    public let recipientName: String
+    public let circleName: String
+
+    public var id: String { "\(itemId)|\(recipientUserId)" }
+}
+
 /// PasswordsCompletedShares is what `completeWaitingShares` did: how many keys it sealed for
 /// recipients who were waiting.
 public struct PasswordsCompletedShares: Equatable, Sendable {
@@ -310,21 +330,21 @@ public struct PasswordsOpener: Sendable {
     public var knownPublicKeys: [String: String]
     /// The key the person compared safety codes for, by user id. It gates nothing.
     public var comparedPublicKeys: [String: String]
-    /// The highest access record version this device has seen with a valid signature for each
-    /// item the person owns, by item id. A record with a lower version is an older one the server
-    /// sent back (`PasswordsSharingCheck.replayed`).
-    public var highestRecordVersions: [String: Int]
+    /// What this device remembers about each item the person owns, by item id. A record with a
+    /// lower version than the one remembered, or the same version and another mac, is an older or
+    /// another one the server sent back (`PasswordsSharingCheck.replayed`).
+    public var itemMemories: [String: PasswordsItemMemory]
 
     public init(
         accountKey: Data, userId: String, keyPair: PasswordsKeyPair, knownPublicKeys: [String: String] = [:],
-        comparedPublicKeys: [String: String] = [:], highestRecordVersions: [String: Int] = [:]
+        comparedPublicKeys: [String: String] = [:], itemMemories: [String: PasswordsItemMemory] = [:]
     ) {
         self.accountKey = accountKey
         self.userId = userId
         self.keyPair = keyPair
         self.knownPublicKeys = knownPublicKeys
         self.comparedPublicKeys = comparedPublicKeys
-        self.highestRecordVersions = highestRecordVersions
+        self.itemMemories = itemMemories
     }
 
     /// Opens the person's key pair with the account key. When
@@ -333,7 +353,7 @@ public struct PasswordsOpener: Sendable {
     /// seal somehow opened.
     public init(
         accountKey: Data, userId: String, privateKeyByAccountKey: String, expectedPublicKey: String? = nil,
-        knownPublicKeys: [String: String] = [:], comparedPublicKeys: [String: String] = [:], highestRecordVersions: [String: Int] = [:]
+        knownPublicKeys: [String: String] = [:], comparedPublicKeys: [String: String] = [:], itemMemories: [String: PasswordsItemMemory] = [:]
     ) throws {
         let sealed = try PasswordsSealedValue(jsonText: privateKeyByAccountKey)
         let privateKey = try PasswordsCrypto.open(sealed, key: accountKey, associatedData: PasswordsCrypto.privateKeyAssociatedData)
@@ -343,7 +363,7 @@ public struct PasswordsOpener: Sendable {
         }
         self.init(
             accountKey: accountKey, userId: userId, keyPair: keyPair, knownPublicKeys: knownPublicKeys,
-            comparedPublicKeys: comparedPublicKeys, highestRecordVersions: highestRecordVersions)
+            comparedPublicKeys: comparedPublicKeys, itemMemories: itemMemories)
     }
 
     /// Opens the cache's key pair, and keeps the cache's pinned keys.
@@ -351,8 +371,7 @@ public struct PasswordsOpener: Sendable {
         try self.init(
             accountKey: accountKey, userId: contents.userId, privateKeyByAccountKey: contents.privateKeyByAccountKey,
             expectedPublicKey: contents.publicKey, knownPublicKeys: contents.knownPublicKeys,
-            comparedPublicKeys: contents.comparedPublicKeys,
-            highestRecordVersions: contents.itemMemories.mapValues(\.highestRecordVersion))
+            comparedPublicKeys: contents.comparedPublicKeys, itemMemories: contents.itemMemories)
     }
 
     /// The safety code of a person's public key given as standard base64; empty when it is not a key.
@@ -415,7 +434,7 @@ public struct PasswordsOpener: Sendable {
             let record = PasswordsCrypto.verifyAccess(accountKey: accountKey, itemId: view.id, itemKind: itemKind, fields: fields),
             let version = record.recordVersion
         else { return .unverified }
-        return version < (highestRecordVersions[view.id] ?? 0) ? .replayed : .verified
+        return itemMemories[view.id]?.isReplay(version: version, mac: record.recordMac) == true ? .replayed : .verified
     }
 
     /// Opens many; the ones that do not open are named, not hidden.
@@ -470,6 +489,20 @@ public actor PasswordsSession {
     private var lastAutomaticRekeyAt: [String: Date] = [:]
     private var automaticRekeyCount = 0
     private var heldBackItemIds: Set<String> = []
+    /// The items this device had a memory of when the session read its pins for the first time:
+    /// from an earlier session. A memory made by looking at an item during this session does not
+    /// count, because a device that has just met an item cannot tell an old signed record from the
+    /// newest one.
+    private var itemIdsRememberedBefore: Set<String>?
+    /// The items the person changed or shared on this device during this session: this device's own
+    /// action is a memory too.
+    private var itemIdsActedOn: Set<String> = []
+    /// The marked items an automatic new key left for the person, because this device has no memory
+    /// of them (`itemIdsNeedingYou`).
+    private var keyItemIdsLeftForPerson: Set<String> = []
+    /// The items with a waiting share that completing by itself would have sealed for somebody this
+    /// device never sealed for, or for an item it has no memory of (`itemIdsNeedingYou`).
+    private var shareItemIdsLeftForPerson: Set<String> = []
 
     /// `userId` is the signed-in person's id, which the keys shared with them
     /// are bound to. `now` is the clock; only a test replaces it.
@@ -522,7 +555,7 @@ public actor PasswordsSession {
         let pins = currentPins()
         current.knownPublicKeys = pins.knownPublicKeys
         current.comparedPublicKeys = pins.comparedPublicKeys
-        current.highestRecordVersions = pins.itemMemories.mapValues(\.highestRecordVersion)
+        current.itemMemories = pins.itemMemories
         return current
     }
 
@@ -532,6 +565,9 @@ public actor PasswordsSession {
     private func currentPins() -> PasswordsPins {
         if let read = try? cache.loadPins(userId: userId) {
             lastReadPins = read
+            if itemIdsRememberedBefore == nil {
+                itemIdsRememberedBefore = Set(read.itemMemories.filter { $0.value.highestRecordVersion > 0 }.keys)
+            }
             return read
         }
         return lastReadPins ?? PasswordsPins(userId: userId)
@@ -544,7 +580,7 @@ public actor PasswordsSession {
     private func openItem(_ view: PasswordItemView, opener: inout PasswordsOpener) throws -> PasswordItem {
         let opened = try opener.open(view)
         if view.isSharedWithMe { noteKey(userId: view.ownerUserId, publicKey: view.ownerPublicKey, opener: &opener) }
-        remember(opened, view: view)
+        remember(opened)
         return opened
     }
 
@@ -564,29 +600,37 @@ public actor PasswordsSession {
         }
     }
 
-    /// Remembers what an opened item of the person's shows, in the pin store: the highest access
-    /// record version seen with a valid signature, and, while nobody disputes the item (the server
-    /// does not ask for a new key, it is not deleted), who holds a key for it and whether it has a
-    /// copy for the agent. An automatic new key is sealed only for the people and the copy
-    /// remembered here, so a record or a list of shares the server shows for the first time in a
-    /// disputed state widens nothing. Best effort: a store that cannot be written is skipped.
-    private func remember(_ item: PasswordItem, view: PasswordItemView) {
-        guard item.sharingCheck == .verified, let version = item.fields.access?.recordVersion else { return }
-        var memory = lastReadPins?.itemMemories[item.id] ?? PasswordsItemMemory()
-        if version > memory.highestRecordVersion {
-            try? cache.raiseRecordVersion(userId: userId, itemId: item.id, version: version)
-            memory = memory.raised(to: version)
-        }
-        if !view.needsNewKey, view.deletedAt == nil {
-            let holding = memory.holding(
-                keyHolderUserIds: view.shares.flatMap(\.recipients).filter(\.hasKey).map(\.userId), hadAgentCopy: view.isUsableByAgent)
-            if holding != memory {
-                try? cache.recordKeyHolders(
-                    userId: userId, itemId: item.id, keyHolderUserIds: holding.keyHolderUserIds, hadAgentCopy: holding.hadAgentCopy)
-                memory = holding
-            }
-        }
-        lastReadPins?.itemMemories[item.id] = memory
+    /// Remembers the access record an opened item of the person's shows, in the pin store: its
+    /// version and mac, once the signature is valid and it is not a replay. The version only goes
+    /// up. Nothing about who holds a key is taken from the server's lists: that is remembered only
+    /// from what this device seals itself (`recordSealed`). Best effort: a store that cannot be
+    /// written is skipped.
+    private func remember(_ item: PasswordItem) {
+        guard item.sharingCheck == .verified, let access = item.fields.access, let version = access.recordVersion else { return }
+        let current = lastReadPins?.itemMemories[item.id] ?? PasswordsItemMemory()
+        let seen = current.seeingRecord(version: version, mac: access.recordMac)
+        guard seen != current else { return }
+        try? cache.recordSeenRecord(userId: userId, itemId: item.id, version: version, mac: access.recordMac)
+        guard var pins = lastReadPins else { return }
+        pins.itemMemories[item.id] = seen
+        lastReadPins = pins
+    }
+
+    /// Whether this device may act on an item by itself (a new key given because the server marked
+    /// it, a waiting share completed): it remembered the item before this session, or the person
+    /// changed or shared it on this device in this session.
+    private func isRememberedForAutomaticAction(itemId: String) -> Bool {
+        _ = currentPins()
+        return itemIdsActedOn.contains(itemId) || (itemIdsRememberedBefore?.contains(itemId) ?? false)
+    }
+
+    /// Records what this device sealed for an item itself. Best effort, after the server took the
+    /// keys: a store that cannot be written makes a later automatic action stricter, never looser.
+    private func recordSealed(itemId: String, change: PasswordsSealedChange) {
+        try? cache.recordSealed(userId: userId, itemId: itemId, change: change)
+        guard var pins = lastReadPins else { return }
+        pins.itemMemories[itemId] = (pins.itemMemories[itemId] ?? PasswordsItemMemory()).sealing(change)
+        lastReadPins = pins
     }
 
     /// The cache as read from the file once, or as kept in memory since. A
@@ -923,9 +967,8 @@ public actor PasswordsSession {
         PasswordsIdentityRecords.records(items: try list().items)
     }
 
-    /// The person's own safety code, from the key pair this session opened at unlock and the
-    /// person's own user id, never from what the server reports. The person reads it to
-    /// somebody who wants to compare codes. `PasswordsError.locked` while locked.
+    /// The person's own safety code, from the key pair this session opened at unlock, never from
+    /// what the server reports. The person reads it to somebody who wants to compare codes. `PasswordsError.locked` while locked.
     public func ownSafetyCode() throws -> String {
         let opener = try requireOpener()
         return try PasswordsCrypto.safetyCode(publicKey: opener.keyPair.publicKey)
@@ -966,7 +1009,7 @@ public actor PasswordsSession {
                     return try await rekey(
                         itemId: id, replacing: fieldsToSeal, baseRevision: baseRevision ?? view.revision, accessEdit: .none,
                         origin: .automatic)
-                } catch PasswordsError.itemNeedsAttention, PasswordsError.sharingCouldNotBeChecked {
+                } catch PasswordsError.itemNeedsAttention, PasswordsError.sharingCouldNotBeChecked, PasswordsError.itemNeedsYou {
                     // Saved below, with the key the item has.
                 }
             }
@@ -977,6 +1020,7 @@ public actor PasswordsSession {
         } else {
             // Lower case, as the server writes it back: the id is part of what is encrypted.
             itemId = UUID().uuidString.lowercased()
+            itemIdsActedOn.insert(itemId)
             // A record that grants nobody, signed: an item with none could not be told from one
             // whose record somebody removed.
             fieldsToSeal = try PasswordsCrypto.withSignedAccess(
@@ -1054,7 +1098,7 @@ public actor PasswordsSession {
         openedItems[view.id] = nil
         let opened = try opener.open(view)
         openedItems[view.id] = opened
-        remember(opened, view: view)
+        remember(opened)
         updateSummary(for: opened, opener: opener)
         return opened
     }
@@ -1113,6 +1157,29 @@ public actor PasswordsSession {
         }
     }
 
+    /// The people among `userIds` who are reached only through a circle of the record and whom this
+    /// device never sealed the item for before: the ones the person is told about ("<name> got <item>
+    /// through <circle>"). Who is in a circle is the server's word, so this is the one place the
+    /// person is shown where it was relied on. A person the record names itself is not listed.
+    private static func circleShares(
+        sealingUserIds userIds: [String], previouslySealedUserIds: Set<String>, in view: PasswordItemView, access: PasswordsItemAccess?
+    ) -> [PasswordsCircleShare] {
+        guard let access else { return [] }
+        var circleShares: [PasswordsCircleShare] = []
+        for recipientUserId in userIds.sorted() where !previouslySealedUserIds.contains(recipientUserId) {
+            if access.grantees.contains(.person(userId: recipientUserId)) { continue }
+            for share in view.shares {
+                guard let circleId = share.granteeCircleId, access.grantees.contains(.circle(circleId: circleId)),
+                    let member = share.recipients.first(where: { $0.userId == recipientUserId })
+                else { continue }
+                circleShares.append(
+                    PasswordsCircleShare(recipientUserId: recipientUserId, recipientName: member.name, circleName: share.granteeName))
+                break
+            }
+        }
+        return circleShares
+    }
+
     /// Replaces who the item is shared with by `grantees`. The owner's own record decides who may
     /// have the item: the list of grantees is sealed inside the item's fields (`access`, signed with
     /// the account key), and a key is sealed for a person only if that record reaches them and
@@ -1148,6 +1215,8 @@ public actor PasswordsSession {
         var opener = try requireOpener()
         var view = try ownedView(itemId)
         guard view.deletedAt == nil else { throw PasswordsError.itemNotFound }
+        itemIdsActedOn.insert(itemId)
+        let previouslySealedUserIds = Set(currentPins().itemMemories[itemId]?.sealedForUserIds ?? [])
         // An item that still has the key somebody lost access to is given a new one before anything
         // else, as far as one given by itself may go.
         if view.needsNewKey, try await rekeyIfAllowed(itemId: itemId) {
@@ -1208,6 +1277,16 @@ public actor PasswordsSession {
         try recordSealedKeys(sealedKeys)
         let answered = try await call { try await api.setPasswordItemShares(itemId: itemId, grantees: chosenInputs, keys: keys) }
         let kept = try keep(answered, opener: opener)
+        recordSealed(
+            itemId: itemId,
+            change: PasswordsSealedChange(
+                userIds: Array(sealedKeys.keys), isReplacing: false,
+                chosenUserIds: newGrantees.compactMap { grantee -> String? in
+                    if case .person(let chosenUserId) = grantee { return chosenUserId }
+                    return nil
+                },
+                circleShares: Self.circleShares(
+                    sealingUserIds: Array(sealedKeys.keys), previouslySealedUserIds: previouslySealedUserIds, in: answered, access: newAccess)))
         // Somebody lost access, and they may hold the item key: it gets replaced. The person's own
         // record says so; a server that answers with the shares unchanged cannot prevent it. A mark
         // the server set on its own is followed as well, which only ever re-keys more.
@@ -1285,6 +1364,33 @@ public actor PasswordsSession {
         return changes.sorted { ($0.name, $0.userId) < ($1.name, $1.userId) }
     }
 
+    /// The people this device sealed an item for through a circle for the first time, each until the
+    /// person dismisses the notice. An item that is not in the copy any more is left out.
+    public func circleShareNotices() -> [PasswordsCircleShareNotice] {
+        let pins = currentPins()
+        guard let opener, let current = loadedContents() else { return [] }
+        var notices: [PasswordsCircleShareNotice] = []
+        for (itemId, memory) in pins.itemMemories where !memory.circleShares.isEmpty {
+            guard let view = current.item(id: itemId), view.deletedAt == nil, let opened = try? opener.open(view) else { continue }
+            for share in memory.circleShares {
+                notices.append(
+                    PasswordsCircleShareNotice(
+                        itemId: itemId, itemName: opened.name, recipientUserId: share.recipientUserId, recipientName: share.recipientName,
+                        circleName: share.circleName))
+            }
+        }
+        return notices.sorted { ($0.recipientName, $0.itemName, $0.id) < ($1.recipientName, $1.itemName, $1.id) }
+    }
+
+    /// Dismisses the notice that somebody got an item through a circle.
+    public func dismissCircleShareNotice(itemId: String, recipientUserId: String) throws {
+        _ = try requireOpener()
+        try cache.dismissCircleShare(userId: userId, itemId: itemId, recipientUserId: recipientUserId)
+        guard var pins = lastReadPins else { return }
+        pins.itemMemories[itemId]?.circleShares.removeAll { $0.recipientUserId == recipientUserId }
+        lastReadPins = pins
+    }
+
     /// Dismisses the notice of a changed key. The key stays accepted.
     public func dismissKeyChange(userId otherUserId: String) throws {
         _ = try requireOpener()
@@ -1343,13 +1449,25 @@ public actor PasswordsSession {
         var keys: [PasswordItemShareKeyInput] = []
         /// The key each recipient sealed for was given, user id to standard base64.
         var sealedKeys: [String: String] = [:]
+        /// The people sealed for in each item, by item id.
+        var sealedUserIdsByItemId: [String: [String]] = [:]
+        /// The people sealed for through a circle for the first time, by item id.
+        var circleSharesByItemId: [String: [PasswordsCircleShare]] = [:]
+        /// The items with somebody waiting that this plan did not seal for because it is not the
+        /// person's own action and this device cannot vouch for it (`itemIdsNeedingYou`).
+        var itemIdsLeftForPerson: Set<String> = []
         /// The server names an item the copy does not hold, or a person the owner's record would
         /// reach but the copy's shares do not list (they joined a circle after the copy was made).
         var isCopyBehind = false
     }
 
-    private func waitingPlan(_ waiting: [PasswordWaitingShareView], opener: PasswordsOpener) throws -> WaitingPlan {
+    /// `isByPerson` is whether the person started this (they opened the item and pressed the
+    /// button): then every waiting recipient the owner's verified record reaches is sealed for.
+    /// Otherwise the device acts by itself and seals only for an item it remembers and for people
+    /// it sealed that item for before; the rest is left for the person.
+    private func waitingPlan(_ waiting: [PasswordWaitingShareView], opener: PasswordsOpener, isByPerson: Bool) throws -> WaitingPlan {
         var plan = WaitingPlan()
+        let memories = currentPins().itemMemories
         for entry in waiting {
             let recipient = Self.recipient(entry.recipient, opener: opener)
             guard let publicKey = recipient.publicKey, recipient.userId != userId else { continue }
@@ -1375,7 +1493,18 @@ public actor PasswordsSession {
                 continue
             }
             guard let itemKey = try? opener.itemKey(for: view) else { continue }
+            let memory = memories[entry.itemId] ?? PasswordsItemMemory()
+            if !isByPerson,
+                !(isRememberedForAutomaticAction(itemId: entry.itemId)
+                    && (memory.sealedForUserIds.contains(recipient.userId) || memory.chosenUserIds.contains(recipient.userId)))
+            {
+                plan.itemIdsLeftForPerson.insert(entry.itemId)
+                continue
+            }
             plan.sealedKeys[recipient.userId] = publicKey.base64EncodedString()
+            plan.sealedUserIdsByItemId[entry.itemId, default: []].append(recipient.userId)
+            plan.circleSharesByItemId[entry.itemId, default: []] += Self.circleShares(
+                sealingUserIds: [recipient.userId], previouslySealedUserIds: Set(memory.sealedForUserIds), in: view, access: access)
             plan.keys.append(
                 try Self.itemShareKey(
                     itemKey: itemKey, itemId: entry.itemId, ownerKeyPair: opener.keyPair, ownerId: userId, recipient: recipient,
@@ -1385,31 +1514,64 @@ public actor PasswordsSession {
     }
 
     /// Seals the keys of items whose recipients were waiting (they set up
-    /// Passwords, or joined the circle, after the share was made) for their
+    /// Passwords, or set it up again with a new key, after the share was made) for their
     /// current public keys, at once, but only when the owner's sealed record reaches the recipient (a
     /// person grantee by user id, a circle grantee when the server lists them as a member). The key
     /// given for a first-seen person is recorded as their known key; one that differs from the known
-    /// key replaces it and leaves a notice (`keyChanges()`). Nobody is asked. A waiting recipient the
+    /// key replaces it and leaves a notice (`keyChanges()`). Nobody is asked about a key.
+    ///
+    /// Done by itself, this seals only for an item the device remembers from before this session or
+    /// from something it did itself, and only for people it sealed that item for before or that the
+    /// person named directly when they set who it is shared with on this device (a circle's
+    /// members are the server's word, so a member who joined later is not one of them). Everything
+    /// else is left for the person (`itemIdsNeedingYou`, `finishSharing(itemId:)`): a device that has
+    /// never seen an item cannot tell an old signed record from the newest one, and a person added
+    /// to an old record is exactly what an old record would bring back. A waiting recipient the
     /// server lists that the record does not reach is ignored. When the server names an item the
     /// copy does not hold, or somebody the record would reach but the copy's shares do not
     /// list, the copy is read in full once and the list checked again.
     @discardableResult
     public func completeWaitingShares() async throws -> PasswordsCompletedShares {
+        try await completeWaitingShares(onlyItemId: nil, isByPerson: false)
+    }
+
+    /// The same for one item, started by the person: every waiting recipient the owner's verified
+    /// record reaches gets a key, whether or not this device sealed for them before. A circle
+    /// member sealed for for the first time is shown as a notice (`circleShareNotices()`).
+    @discardableResult
+    func completeWaitingShares(onlyItemId itemId: String) async throws -> PasswordsCompletedShares {
+        itemIdsActedOn.insert(itemId)
+        return try await completeWaitingShares(onlyItemId: itemId, isByPerson: true)
+    }
+
+    private func completeWaitingShares(onlyItemId: String?, isByPerson: Bool) async throws -> PasswordsCompletedShares {
         var isFullReadDone = false
         var isRetriedAfterChange = false
         while true {
             let opener = try requireOpener()
-            let waiting = try await call { try await api.listWaitingPasswordShares() }
-            let plan = try waitingPlan(waiting, opener: opener)
+            var waiting = try await call { try await api.listWaitingPasswordShares() }
+            if let onlyItemId { waiting = waiting.filter { $0.itemId == onlyItemId } }
+            let plan = try waitingPlan(waiting, opener: opener, isByPerson: isByPerson)
             if plan.isCopyBehind && !isFullReadDone {
                 isFullReadDone = true
                 try await sync(isFull: true)
                 continue
             }
+            if let onlyItemId {
+                shareItemIdsLeftForPerson.remove(onlyItemId)
+            } else {
+                shareItemIdsLeftForPerson = plan.itemIdsLeftForPerson
+            }
             guard !plan.keys.isEmpty else { return PasswordsCompletedShares(addedKeyCount: 0) }
             try recordSealedKeys(plan.sealedKeys)
             do {
                 let addedKeyCount = try await call { try await api.addPasswordShareKeys(plan.keys) }
+                for (sealedItemId, sealedUserIds) in plan.sealedUserIdsByItemId {
+                    recordSealed(
+                        itemId: sealedItemId,
+                        change: PasswordsSealedChange(
+                            userIds: sealedUserIds, isReplacing: false, circleShares: plan.circleSharesByItemId[sealedItemId] ?? []))
+                }
                 return PasswordsCompletedShares(addedKeyCount: addedKeyCount)
             } catch PasswordsError.itemChangedOnAnotherDevice where !isRetriedAfterChange {
                 // An item got a new key since the copy was made: read it again, then seal from that.
@@ -1455,6 +1617,7 @@ public actor PasswordsSession {
         var view = try ownedView(itemId)
         // The server keeps no key for the agent on a deleted item; do not ask it to.
         guard view.deletedAt == nil else { throw PasswordsError.itemNotFound }
+        itemIdsActedOn.insert(itemId)
         if view.needsNewKey, try await rekeyIfAllowed(itemId: itemId) {
             opener = try requireOpener()
             view = try ownedView(itemId)
@@ -1493,7 +1656,9 @@ public actor PasswordsSession {
         let answered = try await call {
             try await api.setPasswordItemUsableByAgent(itemId: itemId, isUsableByAgent: true, itemKeyByAgentKey: sealedItemKey)
         }
-        return try keep(answered, opener: opener)
+        let kept = try keep(answered, opener: opener)
+        recordSealed(itemId: itemId, change: PasswordsSealedChange(userIds: [], isReplacing: false, didMakeAgentCopy: true))
+        return kept
     }
 
     /// The item key sealed for the server's agent key.
@@ -1526,9 +1691,10 @@ public actor PasswordsSession {
         (loadedContents()?.items ?? []).filter { !$0.isSharedWithMe && $0.needsNewKey && $0.deletedAt == nil }.map(\.id)
     }
 
-    /// Gives the item a new item key now: for the retry after a removal whose re-key failed. It
-    /// seals only for the people who held a key when this device last saw the item, and for the
-    /// agent only if it had a copy; anybody else is left for the person to share with again.
+    /// Gives the item a new item key now, because the person asked: the retry after a removal whose
+    /// re-key failed, or the button on an item this device would not give a key by itself
+    /// (`itemIdsNeedingYou`). It is the person's own action, so it seals for everyone the owner's
+    /// verified record reaches who has a key, and for the agent if the record says so.
     /// `PasswordsError.sharingCouldNotBeChecked` when the item's record is not the person's own.
     @discardableResult
     public func giveNewKey(itemId: String) async throws -> PasswordItem {
@@ -1536,14 +1702,36 @@ public actor PasswordsSession {
         return try await rekey(itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: .none, origin: .request)
     }
 
+    /// Finishes the sharing of one item the person opened: gives it a new key when the server
+    /// marked it, and a key to everybody waiting whom the owner's verified record reaches. This is
+    /// what "Open this item to finish sharing it" asks for (`itemIdsNeedingYou`).
+    public func finishSharing(itemId: String) async throws {
+        let view = try ownedView(itemId)
+        guard view.deletedAt == nil else { throw PasswordsError.itemNotFound }
+        if view.needsNewKey { try await giveNewKey(itemId: itemId) }
+        try await completeWaitingShares(onlyItemId: itemId)
+        keyItemIdsLeftForPerson.remove(itemId)
+        shareItemIdsLeftForPerson.remove(itemId)
+    }
+
+    /// The items an automatic action left for the person, because this device has no memory of them
+    /// from before this session or from something it did itself, or because a waiting person is
+    /// somebody it never sealed for: the screen says "Open this item to finish sharing it" for
+    /// each, and `finishSharing(itemId:)` does it.
+    public var itemIdsNeedingYou: Set<String> {
+        keyItemIdsLeftForPerson.intersection(itemIdsNeedingNewKey).union(shareItemIdsLeftForPerson)
+    }
+
     /// Gives a new key to every one of the person's items the server marked, after a sync, as far
-    /// as a new key given by itself may go: only to people who held a key when this device last saw
-    /// the item and are in the record it checked, at most once in ten minutes for an item and
+    /// as a new key given by itself may go: only for an item this device remembers from before this
+    /// session or from something it did itself, only to people this device sealed it for before who
+    /// are still in the record it checked, at most once in ten minutes for an item and
     /// `mostAutomaticRekeysPerSession` in a session. Returns the ids of those that got one; an item
     /// that could not is left marked for the next time (`itemIdsNeedingAttention` names the ones
-    /// held back by the wait or the limit).
+    /// held back by the wait or the limit, `itemIdsNeedingYou` the ones left for the person).
     public func giveNewKeysToMarkedItems() async -> [String] {
         var givenItemIds: [String] = []
+        keyItemIdsLeftForPerson = []
         for itemId in itemIdsNeedingNewKey {
             if (try? await rekey(itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: .none, origin: .automatic)) != nil {
                 givenItemIds.append(itemId)
@@ -1559,7 +1747,7 @@ public actor PasswordsSession {
         do {
             _ = try await rekey(itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: .none, origin: .automatic)
             return true
-        } catch PasswordsError.itemNeedsAttention, PasswordsError.sharingCouldNotBeChecked {
+        } catch PasswordsError.itemNeedsAttention, PasswordsError.sharingCouldNotBeChecked, PasswordsError.itemNeedsYou {
             return false
         }
     }
@@ -1578,11 +1766,13 @@ public actor PasswordsSession {
         /// The person chose who has access (they removed somebody, or turned the agent off): the
         /// key is sealed for everyone the new record reaches who has a key.
         case choice
-        /// The person asked for a new key without choosing who (the retry button, restoring an
-        /// item): sealed only for people who held a key when this device last saw the item.
+        /// The person asked for a new key without choosing who (the button on the item, the retry
+        /// after a removal, restoring an item): sealed for everyone the verified record reaches who
+        /// has a key, as the record is the person's own word.
         case request
-        /// Nobody asked (the server marked the item, a save found it marked): like `request`, and
-        /// at most once in ten minutes for an item and 20 in a session.
+        /// Nobody asked (the server marked the item, a save found it marked): only for an item this
+        /// device remembers, only for people this device sealed for before, and at most once in
+        /// ten minutes for an item and 20 in a session.
         case automatic
     }
 
@@ -1592,12 +1782,12 @@ public actor PasswordsSession {
     /// owner's record still reaches and who has a key, and the
     /// agent's copy when the record says the agent may use the item.
     ///
-    /// For an origin other than `choice` the new key never reaches further than the old one did:
-    /// a recipient also has to have held a key when this device last saw the item without the server
-    /// asking for a new key (`PasswordsItemMemory`), and the agent copy is made only if it had one,
-    /// and only from a record that is the person's own. Anybody else is not sealed for here: only a
-    /// share the person makes widens who holds the item. One the
-    /// record does not reach gets nothing, whatever the server's list of shares says. When the server
+    /// For the automatic origin the new key never reaches further than what this device did itself:
+    /// the item has to be one the device remembers, a recipient has to be somebody this device
+    /// sealed the item for before (`PasswordsItemMemory.sealedForUserIds`), and the agent copy is
+    /// made only if this device made one (`didMakeAgentCopy`) and only from a record that is the
+    /// person's own. Anybody else waits for the person. One the record does not reach gets
+    /// nothing, whatever the server's list of shares says. When the server
     /// says the item changed on another device and the change was not based on a revision the caller
     /// gave, the copy is brought up to date and this is tried once more.
     private func rekey(
@@ -1608,6 +1798,11 @@ public actor PasswordsSession {
             // use up a slot.
             guard try requireOpener().open(try ownedView(itemId)).sharingCheck == .verified else {
                 throw PasswordsError.sharingCouldNotBeChecked(itemId: itemId)
+            }
+            // An item this device has no memory of is left for the person.
+            guard isRememberedForAutomaticAction(itemId: itemId) else {
+                keyItemIdsLeftForPerson.insert(itemId)
+                throw PasswordsError.itemNeedsYou(itemId: itemId)
             }
             try reserveAutomaticRekey(itemId: itemId)
         }
@@ -1671,6 +1866,7 @@ public actor PasswordsSession {
                 highestVersionSeen: highestRecordVersion(of: opened))
         }
         let memory = currentPins().itemMemories[itemId] ?? PasswordsItemMemory()
+        if origin != .automatic { itemIdsActedOn.insert(itemId) }
         let newItemKey = PasswordsCrypto.makeKey()
         let sealedFields = try PasswordsCrypto.sealItemFields(fields, itemKey: newItemKey, itemId: itemId)
         let sealedItemKey = try PasswordsCrypto.seal(
@@ -1683,7 +1879,7 @@ public actor PasswordsSession {
             let circleIds = Self.circleIds(listing: recipientView.userId, in: view)
             guard PasswordsItemAccess.isReachedByAccess(fields.access, recipientUserId: recipientView.userId, circleIdsOfRecipient: circleIds)
             else { continue }
-            if origin != .choice, !memory.keyHolderUserIds.contains(recipientView.userId) { continue }
+            if origin == .automatic, !memory.sealedForUserIds.contains(recipientView.userId) { continue }
             let recipient = Self.recipient(recipientView, opener: opener)
             guard let publicKey = recipient.publicKey else { continue }
             sealedKeys[recipient.userId] = publicKey.base64EncodedString()
@@ -1693,7 +1889,7 @@ public actor PasswordsSession {
                     recipientPublicKey: publicKey))
         }
         var agentCopyText: String?
-        let isAgentCopyAllowed = origin == .choice || memory.hadAgentCopy
+        let isAgentCopyAllowed = origin != .automatic || memory.didMakeAgentCopy
         if isAgentCopyAllowed && fields.access?.isUsableByAgent == true && view.isUsableByAgent
             && view.itemKind != PasswordsItemKind.card.rawValue
         {
@@ -1704,7 +1900,16 @@ public actor PasswordsSession {
             id: itemId, baseRevision: baseRevision ?? view.revision, encryptedFields: sealedFields.jsonText, itemKey: sealedItemKey.jsonText,
             shareKeys: shareKeys, itemKeyByAgentKey: agentCopyText)
         let answered = try await call { try await api.rekeyPasswordItem(input) }
-        return try keep(answered, opener: opener)
+        let kept = try keep(answered, opener: opener)
+        recordSealed(
+            itemId: itemId,
+            change: PasswordsSealedChange(
+                userIds: Array(sealedKeys.keys), isReplacing: true, didMakeAgentCopy: agentCopyText != nil,
+                circleShares: Self.circleShares(
+                    sealingUserIds: Array(sealedKeys.keys), previouslySealedUserIds: Set(memory.sealedForUserIds), in: view,
+                    access: fields.access)))
+        keyItemIdsLeftForPerson.remove(itemId)
+        return kept
     }
 
     // MARK: Settings

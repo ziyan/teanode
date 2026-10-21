@@ -204,7 +204,11 @@ struct PasswordsItemScreen: View {
             }
         } else {
             if item.itemKind != .card { agentSection(item) }
-            if model.itemIdsNeedingNewKey.contains(item.id) { newKeySection(item) }
+            if model.itemIdsNeedingYou.contains(item.id) {
+                finishSharingSection(item)
+            } else if model.itemIdsNeedingNewKey.contains(item.id) {
+                newKeySection(item)
+            }
             sharingNoticeSection(item)
             shareSection(item)
             deleteSection(item)
@@ -234,6 +238,19 @@ struct PasswordsItemScreen: View {
             } else {
                 Text("The agent signs in with this login on its sites and never sees the password.")
             }
+        }
+    }
+
+    /// Shown when this iPhone left the item for the person: it has no memory of the item from before,
+    /// or somebody waiting is a person it never sealed the item for. One button does what it would
+    /// have done by itself, for everybody the item's own record reaches.
+    private func finishSharingSection(_ item: PasswordItem) -> some View {
+        Section {
+            Text("Some people are waiting for this item, or it needs a new key. This iPhone has not shared it before, so it waits for you.")
+                .foregroundStyle(.primary)
+            Button("Finish sharing", systemImage: "person.badge.plus") { Task { await finishSharing(item) } }
+                .actionColor()
+                .disabled(isWorking)
         }
     }
 
@@ -356,6 +373,12 @@ struct PasswordsItemScreen: View {
         } catch {
             model.report(error, orSay: String(localized: "The agent setting could not be changed."))
         }
+    }
+
+    private func finishSharing(_ item: PasswordItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        await model.finishSharing(item)
     }
 
     private func giveNewKey(_ item: PasswordItem) async {

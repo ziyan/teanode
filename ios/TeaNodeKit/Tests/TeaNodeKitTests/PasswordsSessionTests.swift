@@ -391,9 +391,13 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(waiting.first?.recipient.userId, "user-grace")
         XCTAssertEqual(waiting.first?.recipient.keyTrust, .new)
 
-        // Ada's device has never seen Grace's key, and seals for it at once without asking.
-        let completed = try await ada.session.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 1)
+        // Ada's device has never seen Grace's key. By itself it seals for nobody it never sealed for; when
+        // Ada finishes the sharing of the item it seals for the key the server gives, without asking.
+        let byItself = try await ada.session.completeWaitingShares()
+        XCTAssertEqual(byItself.addedKeyCount, 0)
+        let needingYou = await ada.session.itemIdsNeedingYou
+        XCTAssertEqual(needingYou, [item.id])
+        try await ada.session.finishSharing(itemId: item.id)
         let stored = await server.item(item.id)
         XCTAssertNotNil(stored?.keys["user-grace"])
         let graceKey = await server.publicKey(of: "user-grace")
@@ -560,8 +564,12 @@ final class PasswordsSessionTests: XCTestCase {
         let grace = makeDevice(server, userId: "user-grace")
         _ = try await grace.session.setUp(passphrase: "grace invented passphrase", iterationCount: iterationCount)
 
-        let completed = try await ada.session.completeWaitingShares()
-        XCTAssertEqual(completed.addedKeyCount, 2)
+        let byItself = try await ada.session.completeWaitingShares()
+        XCTAssertEqual(byItself.addedKeyCount, 0)
+        let needingYou = await ada.session.itemIdsNeedingYou
+        XCTAssertEqual(needingYou, Set([first.id, second.id]))
+        try await ada.session.finishSharing(itemId: first.id)
+        try await ada.session.finishSharing(itemId: second.id)
         try await grace.session.sync()
         let opened = try await grace.session.list()
         XCTAssertEqual(opened.items.map(\.name), ["First", "Second"])
@@ -575,8 +583,11 @@ final class PasswordsSessionTests: XCTestCase {
         let second = try await world.ada.session.save(fields: loginFields(name: "Second"))
         _ = try await world.ada.session.setShares(
             itemId: second.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: [])
+        // Ada named Grace for the item herself on this device, so the waiting share completes by itself.
         let completed = try await world.ada.session.completeWaitingShares()
         XCTAssertEqual(completed.addedKeyCount, 1)
+        let needingYou = await world.ada.session.itemIdsNeedingYou
+        XCTAssertEqual(needingYou, [])
         try await world.grace.session.sync()
         let opened = try await world.grace.session.item(id: second.id)
         XCTAssertEqual(opened.fields.withAccess(nil), loginFields(name: "Second"))

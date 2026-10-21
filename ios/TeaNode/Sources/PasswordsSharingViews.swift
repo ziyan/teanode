@@ -272,8 +272,8 @@ struct PasswordsSafetyCodeLines: View {
 }
 
 /// PasswordsRecipientRow is one person an item reaches: their name, that they are
-/// waiting to set up Passwords, or whether the codes were compared, with "Compare
-/// codes" to check the key with them. Nothing here has to be done before sharing.
+/// waiting to set up Passwords, or that the codes were compared, or "Compare codes" to
+/// check the key with them (hidden once compared). Nothing here has to be done before sharing.
 struct PasswordsRecipientRow: View {
     let recipient: PasswordRecipient
     /// Called by "Compare codes", which only a person with a key has.
@@ -291,12 +291,13 @@ struct PasswordsRecipientRow: View {
                     Label("Codes compared", systemImage: "checkmark.circle.fill")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                } else {
+                    Button(action: compare) {
+                        Label("Compare codes", systemImage: "checkmark.shield")
+                    }
+                    .buttonStyle(.borderless)
+                    .actionColor()
                 }
-                Button(action: compare) {
-                    Label("Compare codes", systemImage: "checkmark.shield")
-                }
-                .buttonStyle(.borderless)
-                .actionColor()
             }
         }
         .accessibilityElement(children: .contain)
@@ -421,5 +422,26 @@ struct PasswordsKeyChangeRow: View {
         .sheet(isPresented: $isComparing) {
             PasswordsCompareCodesSheet(model: model, target: PasswordsCompareTarget(change: change))
         }
+    }
+}
+
+/// PasswordsCircleShareNoticeRow is the notice that this iPhone sealed an item's key for somebody
+/// the item reaches through a circle and had never sealed it for before. Who is in a circle is the
+/// server's word, so the person is told. Nothing waits on it, and it stays until it is dismissed.
+struct PasswordsCircleShareNoticeRow: View {
+    let model: PasswordsModel
+    let notice: PasswordsCircleShareNotice
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(notice.recipientName) got \(notice.itemName) through \(notice.circleName).")
+                .font(.footnote)
+            Button { Task { await model.dismissCircleShareNotice(notice) } } label: {
+                Label("Dismiss", systemImage: "xmark")
+                    .actionColor()
+            }
+            .buttonStyle(.borderless)
+        }
+        .accessibilityElement(children: .contain)
     }
 }

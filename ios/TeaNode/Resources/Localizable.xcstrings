@@ -81905,6 +81905,102 @@
           }
         }
       }
+    },
+    "Open this item to finish sharing it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を開いて共有を完了してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开此项目以完成共享。"
+          }
+        }
+      }
+    },
+    "Some people are waiting for this item, or it needs a new key. This iPhone has not shared it before, so it waits for you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を待っている人がいるか、新しいキーが必要です。この iPhone はこの項目をまだ共有していないため、あなたの操作を待っています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有人在等待此项目，或者它需要新的密钥。这部 iPhone 以前没有共享过它，所以要等你来操作。"
+          }
+        }
+      }
+    },
+    "Finish sharing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を完了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成共享"
+          }
+        }
+      }
+    },
+    "Finished sharing %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の共有を完了しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成共享“%@”。"
+          }
+        }
+      }
+    },
+    "The sharing could not be finished.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を完了できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法完成共享。"
+          }
+        }
+      }
+    },
+    "%@ got %@ through %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ が %3$@ 経由で %2$@ を受け取りました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 通过 %3$@ 获得了“%2$@”。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

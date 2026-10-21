@@ -1021,7 +1021,10 @@ final class AppModel {
             forgetProfile(accountKey: account.accountKey)
             LocationRecorder.shared.accountWasRemoved(accountKey: account.accountKey)
             HealthSync.shared.accountWasRemoved(accountKey: account.accountKey)
-            await PasswordsAccountStorage.accountWasRemoved(signInAccountKey: account.accountKey, isInUse: true)
+            // A sign-in the server ended (`signedOutText`) leaves what Passwords remembers about keys and
+            // items; only the person removing the account from the iPhone clears it.
+            await PasswordsAccountStorage.accountWasRemoved(
+                signInAccountKey: account.accountKey, isInUse: true, end: signedOutText == nil ? .removedByPerson : .endedByServer)
         }
         try? store.delete()
         phone = nil
@@ -1071,7 +1074,7 @@ final class AppModel {
         ConversationDraft.forget(accountKey: other.accountKey)
         LocationRecorder.shared.accountWasRemoved(accountKey: other.accountKey)
         HealthSync.shared.accountWasRemoved(accountKey: other.accountKey)
-        await PasswordsAccountStorage.accountWasRemoved(signInAccountKey: other.accountKey, isInUse: false)
+        await PasswordsAccountStorage.accountWasRemoved(signInAccountKey: other.accountKey, isInUse: false, end: .removedByPerson)
         try? store.remove(other.accountKey)
         accounts = (try? store.accounts().accounts) ?? accounts
     }

@@ -84,7 +84,7 @@ final class PasswordsPinTests: XCTestCase {
     /// An item the server plants in the list opens with nothing, so the key it carries is not recorded.
     /// A waiting member of the circle the owner's record reaches is sealed for at once, with the key the
     /// server gives, and that key is recorded as the known one.
-    func testAPlantedItemRecordsNoKeyAndAWaitingMemberTheRecordReachesIsSealedForAtOnce() async throws {
+    func testAPlantedItemRecordsNoKeyAndAWaitingMemberTheRecordReachesIsSealedForWhenThePersonFinishesTheSharing() async throws {
         let server = FakePasswordsServer()
         await server.addPerson(userId: "user-ada", name: "Ada")
         await server.addPerson(userId: "user-mallory", name: "Mallory")
@@ -114,9 +114,13 @@ final class PasswordsPinTests: XCTestCase {
         let plantedNoticeCount = await ada.keyChanges().count
         XCTAssertEqual(plantedNoticeCount, 0)
 
-        // The record reaches the circle, so Mallory's waiting share is sealed at once for the key the server gives.
-        let result = try await ada.completeWaitingShares()
-        XCTAssertEqual(result.addedKeyCount, 1)
+        // Ada never sealed this item for Mallory, so nothing is done by itself; the item waits for her.
+        let byItself = try await ada.completeWaitingShares()
+        XCTAssertEqual(byItself.addedKeyCount, 0)
+        let needingYou = await ada.itemIdsNeedingYou
+        XCTAssertEqual(needingYou, [item.id])
+        // The record reaches the circle, so when Ada finishes the sharing Mallory is sealed for the key the server gives.
+        try await ada.finishSharing(itemId: item.id)
         XCTAssertEqual(try XCTUnwrap(try adaCache.load()).knownPublicKeys["user-mallory"], malloryKey)
         let stored = await server.item(item.id)
         XCTAssertEqual(stored?.keys["user-mallory"]?.recipientPublicKey, malloryKey)
