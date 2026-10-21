@@ -278,7 +278,8 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
         _ = try await relaunched.unlock(passphrase: "ada invented passphrase")
         // The planted file is not read, so the key the server gives is the first one seen, and it is the one sealed for
         // when the person finishes the sharing of the item.
-        try await relaunched.finishSharing(itemId: item.id)
+        try await relaunched.sync(isFull: true)
+        try await relaunched.finishSharing(itemId: item.id, plan: await relaunched.finishPlan(itemIds: [item.id]))
         let stored = await server.item(item.id)
         XCTAssertEqual(stored?.keys["user-mallory"]?.recipientPublicKey, operatorKey)
         XCTAssertEqual(try cache.loadPins(userId: "user-ada").knownPublicKeys["user-mallory"], operatorKey)

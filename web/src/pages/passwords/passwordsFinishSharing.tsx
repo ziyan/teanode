@@ -2,11 +2,12 @@ import { useMemo } from 'react'
 
 import { ConfirmDialog } from '../../components/dialog'
 import { useTranslation } from '../../i18n/i18n'
-import { passwordsSession, usePasswordsSession } from './passwordsSession'
+import { FinishSharingPlan, passwordsSession, usePasswordsSession } from './passwordsSession'
 
 // FinishSharingDialog says who finishing the sharing of some items gives a key
 // before anything is sealed: the people and circles by name for each set of
-// items, and the agent. Nothing is given until the person confirms.
+// items, and the agent. Nothing is given until the person confirms, and what
+// is given is the plan on the screen when they do: onConfirm hands it back.
 export function FinishSharingDialog({
   itemIds,
   busy,
@@ -15,7 +16,7 @@ export function FinishSharingDialog({
 }: {
   itemIds: string[]
   busy?: boolean
-  onConfirm: () => void
+  onConfirm: (plan: FinishSharingPlan) => void
   onClose: () => void
 }) {
   const { t, plural } = useTranslation()
@@ -79,7 +80,7 @@ export function FinishSharingDialog({
       confirmLabel={t('passwords.finishConfirmButton')}
       busy={busy}
       onClose={onClose}
-      onConfirm={onConfirm}
+      onConfirm={() => onConfirm(plan)}
     />
   )
 }

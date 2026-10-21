@@ -82400,18 +82400,18 @@
         }
       }
     },
-    "This item goes back to how it was on %@, including who it is shared with and whether the agent may use it. What it is now stays here as an earlier version.": {
+    "This item goes back to how it was on %@, but who it is shared with stays as it is now, and it gets a new key. What it is now stays here as an earlier version.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この項目を%@の状態に戻します。共有先やエージェントの利用許可も、そのときの状態に戻ります。現在の内容は以前のバージョンとしてここに残ります。"
+            "value": "この項目を%@の状態に戻しますが、共有先は今のまま変わらず、項目にはすぐ新しい鍵が付きます。現在の内容は以前のバージョンとしてここに残ります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这个项目会恢复到 %@ 时的样子，包括共享给了谁，以及助手是否可以使用它。现在的内容会作为历史版本保留在这里。"
+            "value": "这个项目会恢复到 %@ 时的样子，但共享对象保持现状，并且会换上新密钥。现在的内容会作为历史版本保留在这里。"
           }
         }
       }
@@ -82778,6 +82778,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器回答的是另一个项目。"
+          }
+        }
+      }
+    },
+    "The server restored something else.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーが別の内容を復元しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器恢复的是别的内容。"
+          }
+        }
+      }
+    },
+    "That item was not in what you confirmed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目は確認した内容に含まれていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该项目不在你确认的范围内。"
           }
         }
       }

@@ -431,6 +431,14 @@ actor FakePasswordsServer {
         items[itemId] = changed
     }
 
+    /// Takes one person's key to an item away without anything else changing, so that person waits for a key.
+    func removeKey(itemId: String, userId: String) {
+        guard var changed = items[itemId] else { return }
+        changed.keys[userId] = nil
+        changed.revision = nextRevision()
+        items[itemId] = changed
+    }
+
     func setShares(userId: String, itemId: String, grantees: [PasswordShareGranteeInput], keys: [PasswordShareKeyInput]) throws
         -> PasswordItemView
     {

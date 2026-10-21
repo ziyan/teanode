@@ -594,9 +594,12 @@ final class PasswordsModel {
         if !isUsable { await giveWaitingRecipientsTheirKeys() }
     }
 
-    /// What finishing the sharing of these items would do, for the question asked first.
+    /// What finishing the sharing of these items would do, for the question asked first. The copy is
+    /// brought up to date first, so the plan names the people the server lists now; what the person
+    /// confirms is then exactly what is sealed.
     func finishPlan(itemIds: [String]) async -> PasswordsFinishPlan {
         guard let session else { return PasswordsFinishPlan(itemCount: 0, people: [], newKeyItemCount: 0, agentItemCount: 0) }
+        await sync(isFull: true)
         return await session.finishPlan(itemIds: itemIds)
     }
 
@@ -615,7 +618,8 @@ final class PasswordsModel {
         }
     }
 
-    /// Puts an earlier version back as the item's own. The item is given a new key at once.
+    /// Puts an earlier version's content back as the item's own. Who it is shared with stays as it is
+    /// now, and the item is given a new key at once.
     func restoreVersion(_ version: PasswordItemVersion, of item: PasswordItem) async throws {
         let session = try requireSession()
         do {
@@ -633,12 +637,13 @@ final class PasswordsModel {
         versionsByItemId[itemId] = nil
     }
 
-    /// Finishes the sharing of an item the person opened: gives it a new key when it needs one, and a
-    /// key to everybody waiting whom the item's own record reaches.
-    func finishSharing(_ item: PasswordItem) async {
+    /// Finishes the sharing of an item the person opened, as the plan they confirmed says: gives it a
+    /// new key when it needs one, and a key to the people the plan names whom the item's own record
+    /// reaches, and nobody else.
+    func finishSharing(_ item: PasswordItem, plan: PasswordsFinishPlan) async {
         guard let session else { return }
         do {
-            try await session.finishSharing(itemId: item.id)
+            try await session.finishSharing(itemId: item.id, plan: plan)
             doneText = String(localized: "Finished sharing \(item.name).")
             await reload()
         } catch {
@@ -646,13 +651,14 @@ final class PasswordsModel {
         }
     }
 
-    /// Finishes the sharing of every item this iPhone left for the person, one after the other, on
-    /// the person's one tap. `sharingProgress` says how far it has got, and a count is said when it
-    /// is done. The server lists at most 2000 waiting shares at once, so the shares that were not
-    /// listed show once these are finished (`hasMoreSharesWaiting`).
-    func finishSharingEveryItem() async {
+    /// Finishes the sharing of the items the person confirmed (`ask.itemIds`, with the people and
+    /// the agent in `ask.plan`), one after the other, on the person's one tap. `sharingProgress`
+    /// says how far it has got, and a count is said when it is done. The server lists at most 2000
+    /// waiting shares at once, so the shares that were not listed show once these are finished
+    /// (`hasMoreSharesWaiting`).
+    func finishSharingEveryItem(_ ask: PasswordsFinishAsk) async {
         guard let session, sharingProgress == nil else { return }
-        let waitingItems = items.filter { itemIdsNeedingYou.contains($0.id) }
+        let waitingItems = items.filter { ask.itemIds.contains($0.id) }
         guard !waitingItems.isEmpty else { return }
         let totalCount = waitingItems.count
         var finishedCount = 0
@@ -660,7 +666,7 @@ final class PasswordsModel {
         sharingProgress = PasswordsSharingProgress(doneCount: 0, totalCount: totalCount)
         for (index, item) in waitingItems.enumerated() {
             do {
-                try await session.finishSharing(itemId: item.id)
+                try await session.finishSharing(itemId: item.id, plan: ask.plan)
                 finishedCount += 1
             } catch {
                 lastError = error
@@ -840,7 +846,10 @@ final class PasswordsModel {
             else { return }
             PasswordsDemoStore.shared.changeKey(of: alexUserId)
             // Alex's items wait for the new key; finishing the sharing seals for it and notes the change.
-            _ = try? await session?.finishSharing(itemId: item.id)
+            if let session {
+                let plan = await session.finishPlan(itemIds: [item.id])
+                _ = try? await session.finishSharing(itemId: item.id, plan: plan)
+            }
             await sync(isFull: true)
         }
     #endif

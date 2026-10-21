@@ -7191,6 +7191,8 @@ export const en = {
   'passwords.finishAllFailedOne': '{count} item could not be finished. Open it and try again.',
   'passwords.finishAllFailed': '{count} items could not be finished. Open them and try again.',
   'passwords.errorAnsweredAboutAnotherItem': 'The server answered about another item.',
+  'passwords.errorRestoredAnotherVersion': 'The server restored something else.',
+  'passwords.errorItemNotInSharingPlan': 'That item was not in what you confirmed.',
   'passwords.finishConfirmTitle': 'Finish sharing?',
   'passwords.finishConfirmBody':
     'Keys are given only after you confirm. A person or the agent who is given a key can open the item.',
@@ -7218,7 +7220,7 @@ export const en = {
   'passwords.versionRestore': 'Restore this version',
   'passwords.versionRestoreTitle': 'Restore the version from {date}?',
   'passwords.versionRestoreBody':
-    'The item goes back to how it was then, and what it holds now is kept as an earlier version. The people it is shared with and the agent lose access until this device gives them a new key, which it does right after.',
+    'The item goes back to how it was then, and what it holds now is kept as an earlier version. Who it is shared with stays as it is now, and the item gets a new key at once. If the agent was using it, Finish sharing turns that back on.',
   'passwords.versionRestoreConfirm': 'Restore',
   'passwords.versionRestored': 'The earlier version was restored.',
   'passwords.versionRestoreFailed': 'The version could not be restored.',

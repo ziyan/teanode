@@ -22,7 +22,7 @@ import {
   PasswordsList,
 } from './passwordsList'
 import { PasswordItem } from './passwordsProtocol'
-import { passwordsSession, usePasswordsSession } from './passwordsSession'
+import { FinishSharingPlan, passwordsSession, usePasswordsSession } from './passwordsSession'
 
 // The unlocked Items tab: the list with its search and filters, or one item,
 // with the editor over either. Which item, the editor, the kind and Recently
@@ -126,14 +126,13 @@ export function PasswordsItems({
 
   // finishAll finishes the sharing of the items the person confirmed (the
   // dialog lists who gets a key first), and says how many it finished.
-  async function finishAll(itemIds: string[]) {
+  async function finishAll(plan: FinishSharingPlan) {
     if (finishProgress !== null) return
     setItemIdsToConfirm(null)
-    setFinishProgress({ doneCount: 0, totalCount: itemIds.length })
+    setFinishProgress({ doneCount: 0, totalCount: plan.items.length })
     try {
-      const { finishedCount, failedCount } = await passwordsSession.finishAllSharing(
-        (doneCount, totalCount) => setFinishProgress({ doneCount, totalCount }),
-        itemIds,
+      const { finishedCount, failedCount } = await passwordsSession.finishAllSharing(plan, (doneCount, totalCount) =>
+        setFinishProgress({ doneCount, totalCount }),
       )
       if (finishedCount > 0) {
         toast.done(plural(finishedCount, { one: 'passwords.finishAllDoneOne', other: 'passwords.finishAllDone' }))
@@ -263,7 +262,7 @@ export function PasswordsItems({
         <FinishSharingDialog
           itemIds={itemIdsToConfirm}
           onClose={() => setItemIdsToConfirm(null)}
-          onConfirm={() => void finishAll(itemIdsToConfirm)}
+          onConfirm={(plan) => void finishAll(plan)}
         />
       )}
 

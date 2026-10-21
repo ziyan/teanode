@@ -87,6 +87,8 @@ enum PasswordsWords {
         case .itemNeedsAttention: String(localized: "This item needs a new key, but one was given a moment ago. Try again in a few minutes.")
         case .itemNeedsYou: String(localized: "Open this item to finish sharing it.")
         case .answeredAboutAnotherItem: String(localized: "The server answered about another item.")
+        case .restoredAnotherVersion: String(localized: "The server restored something else.")
+        case .itemNotInSharingPlan: String(localized: "That item was not in what you confirmed.")
         }
     }
 

@@ -397,7 +397,8 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(byItself.addedKeyCount, 0)
         let needingYou = await ada.session.itemIdsNeedingYou
         XCTAssertEqual(needingYou, [item.id])
-        try await ada.session.finishSharing(itemId: item.id)
+        try await ada.session.sync(isFull: true)
+        try await ada.session.finishSharing(itemId: item.id, plan: await ada.session.finishPlan(itemIds: [item.id]))
         let stored = await server.item(item.id)
         XCTAssertNotNil(stored?.keys["user-grace"])
         let graceKey = await server.publicKey(of: "user-grace")
@@ -568,8 +569,9 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(byItself.addedKeyCount, 0)
         let needingYou = await ada.session.itemIdsNeedingYou
         XCTAssertEqual(needingYou, Set([first.id, second.id]))
-        try await ada.session.finishSharing(itemId: first.id)
-        try await ada.session.finishSharing(itemId: second.id)
+        try await ada.session.sync(isFull: true)
+        try await ada.session.finishSharing(itemId: first.id, plan: await ada.session.finishPlan(itemIds: [first.id]))
+        try await ada.session.finishSharing(itemId: second.id, plan: await ada.session.finishPlan(itemIds: [second.id]))
         try await grace.session.sync()
         let opened = try await grace.session.list()
         XCTAssertEqual(opened.items.map(\.name), ["First", "Second"])

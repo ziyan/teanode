@@ -6860,6 +6860,8 @@ export const zh: Catalog = {
   'passwords.finishAllFailedOne': '有 {count} 个项目无法完成。请打开它再试一次。',
   'passwords.finishAllFailed': '有 {count} 个项目无法完成。请打开它们再试一次。',
   'passwords.errorAnsweredAboutAnotherItem': '服务器回答的是另一个项目。',
+  'passwords.errorRestoredAnotherVersion': '服务器恢复的是别的内容。',
+  'passwords.errorItemNotInSharingPlan': '该项目不在你确认的范围内。',
   'passwords.finishConfirmTitle': '完成共享？',
   'passwords.finishConfirmBody': '只有在你确认后才会发放密钥。拿到密钥的人或助手可以打开该项目。',
   'passwords.finishConfirmPeopleOne': '把密钥给 {names}，涉及 {count} 个项目。',
@@ -6885,7 +6887,7 @@ export const zh: Catalog = {
   'passwords.versionRestore': '恢复此版本',
   'passwords.versionRestoreTitle': '恢复 {date} 的版本？',
   'passwords.versionRestoreBody':
-    '项目会回到当时的样子，现在的内容会作为早期版本保留。与其共享的人和助手会先失去访问权限，直到此设备为他们换上新密钥，这会紧接着完成。',
+    '项目会回到当时的样子，现在的内容会作为早期版本保留。共享对象保持现状，项目会立即换上新密钥。如果助手原本在使用它，需要通过“完成共享”重新开启。',
   'passwords.versionRestoreConfirm': '恢复',
   'passwords.versionRestored': '已恢复早期版本。',
   'passwords.versionRestoreFailed': '无法恢复此版本。',

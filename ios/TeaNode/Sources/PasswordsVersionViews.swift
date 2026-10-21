@@ -129,7 +129,7 @@ struct PasswordsVersionScreen: View {
                     Button("Restore this version") { Task { await restore(item, version: version) } }
                 } message: {
                     Text(
-                        "This item goes back to how it was on \(dateText), including who it is shared with and whether the agent may use it. What it is now stays here as an earlier version."
+                        "This item goes back to how it was on \(dateText), but who it is shared with stays as it is now, and it gets a new key. What it is now stays here as an earlier version."
                     )
                 }
         }
@@ -153,14 +153,14 @@ struct PasswordsVersionScreen: View {
 extension View {
     /// The question asked before sharing is finished, attached to the button that asks it (on iOS 26
     /// a confirmation points at its control): what would happen, then "Finish sharing". `confirm`
-    /// runs when the person says yes.
-    func passwordsFinishSharingDialog(_ ask: Binding<PasswordsFinishAsk?>, confirm: @escaping () -> Void) -> some View {
+    /// runs when the person says yes, with the question as it was shown: what is sealed is that plan.
+    func passwordsFinishSharingDialog(_ ask: Binding<PasswordsFinishAsk?>, confirm: @escaping (PasswordsFinishAsk) -> Void) -> some View {
         confirmationDialog(
             ask.wrappedValue?.title ?? "",
             isPresented: Binding(get: { ask.wrappedValue != nil }, set: { isShown in if !isShown { ask.wrappedValue = nil } }),
             titleVisibility: .visible, presenting: ask.wrappedValue
-        ) { _ in
-            Button("Finish sharing", action: confirm)
+        ) { shown in
+            Button("Finish sharing") { confirm(shown) }
         } message: { shown in
             Text(verbatim: PasswordsWords.finishConfirmationLines(shown.plan, isOneItem: shown.isOneItem).joined(separator: "\n"))
         }

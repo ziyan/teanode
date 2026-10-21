@@ -7136,6 +7136,8 @@ export const ja: Catalog = {
   'passwords.finishAllFailedOne': '{count}件の項目を完了できませんでした。項目を開いてもう一度試してください。',
   'passwords.finishAllFailed': '{count}件の項目を完了できませんでした。項目を開いてもう一度試してください。',
   'passwords.errorAnsweredAboutAnotherItem': 'サーバーが別の項目について応答しました。',
+  'passwords.errorRestoredAnotherVersion': 'サーバーが別の内容を復元しました。',
+  'passwords.errorItemNotInSharingPlan': 'この項目は確認した内容に含まれていません。',
   'passwords.finishConfirmTitle': '共有を完了しますか？',
   'passwords.finishConfirmBody':
     '確認するまで鍵は渡されません。鍵を受け取った人やエージェントは、その項目を開けるようになります。',
@@ -7163,7 +7165,7 @@ export const ja: Catalog = {
   'passwords.versionRestore': 'このバージョンを復元',
   'passwords.versionRestoreTitle': '{date} のバージョンを復元しますか？',
   'passwords.versionRestoreBody':
-    '項目が当時の状態に戻り、現在の内容は以前のバージョンとして保管されます。共有相手とエージェントは、この端末が新しい鍵を渡すまでアクセスできなくなりますが、鍵はすぐに渡されます。',
+    '項目が当時の状態に戻り、現在の内容は以前のバージョンとして保管されます。共有相手は今のまま変わらず、項目にはすぐ新しい鍵が付きます。エージェントが使っていた場合は、「共有を完了」で再び有効になります。',
   'passwords.versionRestoreConfirm': '復元',
   'passwords.versionRestored': '以前のバージョンを復元しました。',
   'passwords.versionRestoreFailed': 'バージョンを復元できませんでした。',

@@ -385,7 +385,7 @@ struct PasswordsListView: View {
                 Label("Finish sharing \(count) items", systemImage: "person.badge.plus")
                     .actionColor()
             }
-            .passwordsFinishSharingDialog($finishAsk) { Task { await model.finishSharingEveryItem() } }
+            .passwordsFinishSharingDialog($finishAsk) { ask in Task { await model.finishSharingEveryItem(ask) } }
         }
     }
 

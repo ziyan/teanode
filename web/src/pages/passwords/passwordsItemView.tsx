@@ -15,7 +15,7 @@ import { KIND_WORDS } from './passwordsList'
 import { PasswordShare } from './passwordsApi'
 import { isAgentAllowed, PasswordItem, splitSharesByRecord } from './passwordsProtocol'
 import { useRekeyFailedToast } from './passwordsRekey'
-import { passwordsSession, usePasswordsSession } from './passwordsSession'
+import { FinishSharingPlan, passwordsSession, usePasswordsSession } from './passwordsSession'
 import { PasswordsShareDialog } from './passwordsShare'
 import { PasswordsVersionsDialog } from './passwordsVersions'
 
@@ -111,11 +111,11 @@ export function PasswordsItemView({
     }
   }
 
-  async function finishSharing() {
+  async function finishSharing(plan: FinishSharingPlan) {
     if (isBusy) return
     setIsBusy(true)
     try {
-      await passwordsSession.finishSharing(item.id)
+      await passwordsSession.finishSharing(item.id, plan)
       toast.done(t('passwords.finishSharingDone'))
     } catch (failure) {
       reportFailure(failure, t('passwords.finishSharingFailed'))
@@ -301,7 +301,7 @@ export function PasswordsItemView({
           itemIds={[item.id]}
           busy={isBusy}
           onClose={() => setIsConfirmingFinish(false)}
-          onConfirm={() => void finishSharing()}
+          onConfirm={(plan) => void finishSharing(plan)}
         />
       )}
       {isSharing && <PasswordsShareDialog item={item} onClose={() => setIsSharing(false)} />}

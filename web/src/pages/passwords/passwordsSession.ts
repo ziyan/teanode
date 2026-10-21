@@ -174,6 +174,17 @@ export type FinishSharingPlan = {
   groups: { people: FinishSharingPerson[]; itemCount: number }[]
   agentItemCount: number
   onlyYouItemCount: number
+  items: FinishSharingItemPlan[]
+}
+
+// FinishSharingItemPlan is what the person confirms for one item: the people
+// (by user id) who would get the key and whether the agent would get a copy.
+// Finishing seals for these people and no one else, whatever the server lists
+// by then.
+export type FinishSharingItemPlan = {
+  itemId: string
+  recipientUserIds: string[]
+  isAgentIncluded: boolean
 }
 
 // ShareTarget is one person or circle the owner chose in the share dialog,
@@ -227,10 +238,12 @@ function keyOfShare(share: PasswordShare): string {
 
 // KeepOptions say how an answer is kept. isOwnAction is true for the answer to
 // something the person did on this device (it signed or wrote the record, so
-// the record is remembered even when the item is marked). isRestoredVersion is
-// true for the answer to restoring an earlier version, whose access record is
-// older than the highest this device remembers by the person's own choice.
-type KeepOptions = { isOwnAction?: boolean; isRestoredVersion?: boolean }
+// the record is remembered even when the item is marked). keptAccess is given
+// for the answer to restoring an earlier version: that version's own access
+// record is an old one and is never consulted, and the record this device held
+// before the restore is the one the item keeps (who it is shared with and
+// whether the agent may use it do not come back with the content).
+type KeepOptions = { isOwnAction?: boolean; keptAccess?: ItemAccess }
 
 // refuseOtherItem is the first thing done with a server answer to a change of
 // one item: an answer about another item than the one asked for is refused,
@@ -291,6 +304,10 @@ export class PasswordsSession {
   // rekeysUnderWay are the re-keys started because the server marked an item,
   // so opening the item while the page re-keys it does not make a second one.
   private rekeysUnderWay = new Map<string, Promise<PasswordItem>>()
+  // listedVersions are the sealed texts of the earlier versions the server
+  // listed for each item, by item id and version id: what the person looked at,
+  // so a restore can check the server restored that and nothing else.
+  private listedVersions = new Map<string, Map<string, { encryptedFields: string; itemKey: string }>>()
   // lastAutomaticRekeyAtMilliseconds is when each item last had an automatic
   // new key tried, and automaticRekeyCount how many were tried since unlocking.
   private lastAutomaticRekeyAtMilliseconds = new Map<string, number>()
@@ -364,6 +381,7 @@ export class PasswordsSession {
     this.unshowableItemIds = new Set()
     this.rereadForWaiting = new Set()
     this.rekeysUnderWay = new Map()
+    this.listedVersions = new Map()
     this.lastAutomaticRekeyAtMilliseconds = new Map()
     this.automaticRekeyCount = 0
     this.itemsSeenThisSession = new Set()
@@ -469,11 +487,20 @@ export class PasswordsSession {
     accountKey: Uint8Array,
     options: KeepOptions = {},
   ): Promise<PasswordItem> {
+    if (options.keptAccess !== undefined) {
+      // The restored content carries an old version's record. It is replaced by
+      // the record this device held, which it already remembers.
+      return {
+        ...item,
+        fields: { ...item.fields, access: options.keptAccess },
+        verifiedAccess: options.keptAccess,
+      } as PasswordItem
+    }
     const verified = await verifyAccess(accountKey, item.id, item.itemKind, item.fields)
     if (verified === null) return { ...item, accessProblem: 'notVerified' } as PasswordItem
     const version = verified.recordVersion ?? 0
     const mac = verified.recordMac ?? ''
-    if (options.isRestoredVersion !== true && isReplayedRecord(item.id, version, mac)) {
+    if (isReplayedRecord(item.id, version, mac)) {
       return { ...item, accessProblem: 'replayed' } as PasswordItem
     }
     if (!this.itemsSeenThisSession.has(item.id)) {
@@ -1246,9 +1273,19 @@ export class PasswordsSession {
       LIST_PASSWORD_ITEM_VERSIONS,
       { itemId },
     )
-    return [...(answer.ListPasswordItemVersions ?? [])].sort(
+    const listed = [...(answer.ListPasswordItemVersions ?? [])].sort(
       (first, second) => Date.parse(second.savedAt) - Date.parse(first.savedAt),
     )
+    this.listedVersions.set(
+      itemId,
+      new Map(
+        listed.map((version) => [
+          version.versionId,
+          { encryptedFields: version.encryptedFields, itemKey: version.itemKey },
+        ]),
+      ),
+    )
+    return listed
   }
 
   // openItemVersion opens the fields of one earlier version with the account
@@ -1272,13 +1309,25 @@ export class PasswordsSession {
     }
   }
 
-  // restoreItemVersion puts an earlier version back: the server makes its
-  // fields and item key current, drops the keys it had given other people and
-  // the agent, and marks the item. This is the person's own action, so the item
-  // is then given a new key at once, from the access record inside the restored
-  // fields (an older record than this device remembers is expected here, and
-  // the new record is signed above the highest this device has seen). When that
-  // new key fails the restore stands and hasRekeyFailed is true.
+  // restoreItemVersion puts the content of an earlier version back, and only
+  // the content: who the item is shared with and whether the agent may use it
+  // stay as they are now, whatever the old version said.
+  //
+  // - The version has to be one the server listed for this item in this session
+  //   (listItemVersions), and the item needs a verified access record now; with
+  //   either missing nothing is sent.
+  // - The server's answer has to carry exactly the sealed fields and item key
+  //   that were listed. Anything else is refused (restoredAnotherVersion) and
+  //   nothing more is done with the answer.
+  // - The item then keeps the access record this device held before the
+  //   restore, and is given a new key at once as the person's action (the
+  //   server dropped every key it had given out): the fields are written with
+  //   that record signed above the highest version this device has seen, the
+  //   key is sealed for the people that record reaches, and the agent gets a
+  //   copy only if that record allows it and the server still lists the item as
+  //   usable by the agent. The old version's own record is never used.
+  //
+  // When that new key fails the restore stands and hasRekeyFailed is true.
   async restoreItemVersion(
     itemId: string,
     versionId: string,
@@ -1286,6 +1335,10 @@ export class PasswordsSession {
     this.keys()
     const held = this.ownedItem(this.heldItem(itemId))
     if (held.deletedAt !== null) throw new PasswordsError('itemUnknown')
+    const listed = this.listedVersions.get(itemId)?.get(versionId)
+    if (listed === undefined) throw new PasswordsError('itemUnknown')
+    const currentAccess = held.accessProblem === null ? held.verifiedAccess : null
+    if (currentAccess === null) throw new PasswordsAccessError('accessNotVerified')
     let answer: { RestorePasswordItemVersion: PasswordItemRecord }
     try {
       answer = await graphql<{ RestorePasswordItemVersion: PasswordItemRecord }>(RESTORE_PASSWORD_ITEM_VERSION, {
@@ -1299,12 +1352,13 @@ export class PasswordsSession {
       }
       throw failure
     }
-    refuseOtherItem(answer.RestorePasswordItemVersion, itemId)
-    const restored = await this.keepOwnAnswer(answer.RestorePasswordItemVersion, itemId, true, {
-      isRestoredVersion: true,
-    })
+    const record = refuseOtherItem(answer.RestorePasswordItemVersion, itemId)
+    if (record.encryptedFields !== listed.encryptedFields || record.itemKey !== listed.itemKey) {
+      throw new PasswordsAccessError('restoredAnotherVersion')
+    }
+    const restored = await this.keepOwnAnswer(record, itemId, true, { keptAccess: currentAccess })
     try {
-      return { item: await this.giveNewKey(itemId), hasRekeyFailed: false }
+      return { item: await this.giveNewKey(itemId, { access: currentAccess }), hasRekeyFailed: false }
     } catch {
       return { item: restored, hasRekeyFailed: true }
     }
@@ -1352,6 +1406,11 @@ export class PasswordsSession {
   // The record is signed with one version above the highest this device
   // remembers or was just shown, whoever asked.
   //
+  // plan is what the person confirmed on Finish sharing: only the people it
+  // names get a key and the agent a copy only if it says so. Whatever the
+  // server lists later, even after the item is read again because another
+  // device changed it, can only take people away from that, never add.
+  //
   // With no baseRevision the item's revision is the one this session holds,
   // and when another device changed the item first it is read again and this
   // is tried once more. A save passes the revision its fields were based on,
@@ -1364,6 +1423,7 @@ export class PasswordsSession {
       baseRevision?: number
       shouldPublish?: boolean
       isAutomatic?: boolean
+      plan?: FinishSharingItemPlan
     } = {},
   ): Promise<PasswordItem> {
     if (options.isAutomatic === true) {
@@ -1396,6 +1456,7 @@ export class PasswordsSession {
       baseRevision?: number
       shouldPublish?: boolean
       isAutomatic?: boolean
+      plan?: FinishSharingItemPlan
     },
   ): Promise<PasswordItem> {
     const { accountKey, keyPair } = this.keys()
@@ -1438,6 +1499,8 @@ export class PasswordsSession {
       // An automatic new key leaves out somebody this device did not seal for
       // before; the person's own action gives it to them (see the note above).
       if (isAutomatic && !memory.sealedForUserIds.includes(recipient.userId)) continue
+      // A key sealed for a confirmed plan goes only to the people the plan names.
+      if (options.plan !== undefined && !options.plan.recipientUserIds.includes(recipient.userId)) continue
       recipientNames.set(recipient.userId, personName(recipient))
       shareKeys.push({
         itemId: item.id,
@@ -1454,7 +1517,13 @@ export class PasswordsSession {
       })
     }
     let itemKeyByAgentKey: string | null = null
-    if (access.isUsableByAgent && item.isUsableByAgent && (!isAutomatic || memory.hasMadeAgentCopy)) {
+    const isAgentAllowedByPlan = options.plan === undefined || options.plan.isAgentIncluded
+    if (
+      access.isUsableByAgent &&
+      item.isUsableByAgent &&
+      isAgentAllowedByPlan &&
+      (!isAutomatic || memory.hasMadeAgentCopy)
+    ) {
       const agentKey = await graphql<{ ReadPasswordsAgentKey: string }>(READ_PASSWORDS_AGENT_KEY)
       itemKeyByAgentKey = await sealItemKeyFor(
         newItemKey,
@@ -1572,8 +1641,14 @@ export class PasswordsSession {
   // item. A circle member this device never sealed for before is named in a
   // notice. An item whose record could not be checked is refused: the person
   // sets sharing again there.
-  async finishSharing(itemId: string): Promise<PasswordItem> {
+  //
+  // plan is what the person confirmed (planFinishSharing): keys are sealed only
+  // for the people it names for this item, and the agent is turned on only if
+  // it says so. An item the plan does not name is refused.
+  async finishSharing(itemId: string, plan: FinishSharingPlan): Promise<PasswordItem> {
     const { keyPair } = this.keys()
+    const itemPlan = plan.items.find((each) => each.itemId === itemId)
+    if (itemPlan === undefined) throw new PasswordsAccessError('itemNotInSharingPlan')
     const held = this.itemsById.get(itemId)
     if (held === undefined || held.deletedAt !== null) throw new PasswordsError('itemUnknown')
     let current = this.ownedItem(held)
@@ -1583,7 +1658,7 @@ export class PasswordsSession {
     const record = current.verifiedAccess
     const sealedBefore = memoryOf(current.id).sealedForUserIds
     if (current.needsNewKey) {
-      current = this.ownedItem(await this.giveNewKey(current.id))
+      current = this.ownedItem(await this.giveNewKey(current.id, { plan: itemPlan }))
     } else {
       const keys: WaitingShareKeyInput[] = []
       const recipientNames = new Map<string, string>()
@@ -1591,6 +1666,7 @@ export class PasswordsSession {
       for (const recipient of current.shares.flatMap((share) => share.recipients)) {
         if (recipient.publicKey === null || recipient.hasKey || recipient.userId === this.userId) continue
         if (recipient.hasTooMuchShared || publicKeys.has(recipient.userId)) continue
+        if (!itemPlan.recipientUserIds.includes(recipient.userId)) continue
         if (!isReachedByAccess(record, recipient.userId, circleIdsOf(recipient.userId, current.shares))) continue
         publicKeys.set(recipient.userId, recipient.publicKey)
         recipientNames.set(recipient.userId, personName(recipient))
@@ -1632,7 +1708,7 @@ export class PasswordsSession {
       }
       this.trustedItemIds.add(current.id)
     }
-    if (current.verifiedAccess?.isUsableByAgent === true && !current.isUsableByAgent) {
+    if (itemPlan.isAgentIncluded && current.verifiedAccess?.isUsableByAgent === true && !current.isUsableByAgent) {
       current = await this.setUsableByAgent(current, true)
     }
     this.publish()
@@ -1651,6 +1727,7 @@ export class PasswordsSession {
     let agentItemCount = 0
     let onlyYouItemCount = 0
     let itemCount = 0
+    const itemPlans: FinishSharingItemPlan[] = []
     for (const itemId of itemIds) {
       const item = this.itemsById.get(itemId)
       const record = item?.verifiedAccess
@@ -1658,6 +1735,7 @@ export class PasswordsSession {
       itemCount += 1
       const peopleByShare = new Map<string, FinishSharingPerson>()
       const seenUserIds = new Set<string>()
+      const plannedUserIds: string[] = []
       // People named directly come before circles, so somebody in both is
       // listed once, by name.
       const sharesInOrder = [
@@ -1671,6 +1749,7 @@ export class PasswordsSession {
           if (!item.needsNewKey && recipient.hasKey) continue
           if (!isReachedByAccess(record, recipient.userId, circleIdsOf(recipient.userId, item.shares))) continue
           seenUserIds.add(recipient.userId)
+          plannedUserIds.push(recipient.userId)
           const key = keyOfShare(share)
           const person = peopleByShare.get(key) ?? {
             name: share.granteeName,
@@ -1691,27 +1770,27 @@ export class PasswordsSession {
       const isAgentGiven = record.isUsableByAgent && (item.needsNewKey || !item.isUsableByAgent)
       if (isAgentGiven) agentItemCount += 1
       if (people.length === 0 && !isAgentGiven) onlyYouItemCount += 1
+      itemPlans.push({ itemId, recipientUserIds: plannedUserIds, isAgentIncluded: isAgentGiven })
     }
-    return { itemCount, groups: [...groups.values()], agentItemCount, onlyYouItemCount }
+    return { itemCount, groups: [...groups.values()], agentItemCount, onlyYouItemCount, items: itemPlans }
   }
 
-  // finishAllSharing is the person's one tap on every item waiting for them
-  // (itemIdsToFinish): finishSharing for each, one after another. An item that
+  // finishAllSharing is the person's one tap on every item in the plan they
+  // confirmed (planFinishSharing): finishSharing for each, one after another,
+  // each sealed only for the people the plan names. An item that
   // fails is counted and the rest go on; a locked session stops it. onProgress
   // is told how many are done (finished or failed) out of how many there are.
   async finishAllSharing(
+    plan: FinishSharingPlan,
     onProgress?: (doneCount: number, totalCount: number) => void,
-    onlyItemIds?: string[],
   ): Promise<FinishAllResult> {
     this.keys()
-    const itemIds = this.snapshot.itemIdsToFinish.filter(
-      (itemId) => onlyItemIds === undefined || onlyItemIds.includes(itemId),
-    )
+    const itemIds = plan.items.map((each) => each.itemId)
     let finishedCount = 0
     let failedCount = 0
     for (const itemId of itemIds) {
       try {
-        await this.finishSharing(itemId)
+        await this.finishSharing(itemId, plan)
         finishedCount += 1
       } catch (failure) {
         if (failure instanceof PasswordsError && failure.code === 'locked') throw failure

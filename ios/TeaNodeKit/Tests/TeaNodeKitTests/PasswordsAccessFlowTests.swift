@@ -475,7 +475,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let stillMarked = await other.itemIdsNeedingNewKey
         XCTAssertEqual(stillMarked, [item.id])
 
-        try await other.finishSharing(itemId: item.id)
+        try await other.finishSharing(itemId: item.id, plan: await other.finishPlan(itemIds: [item.id]))
         let marked = await other.itemIdsNeedingNewKey
         XCTAssertEqual(marked, [])
         let needingYouAfter = await other.itemIdsNeedingYou
@@ -531,7 +531,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         XCTAssertEqual(noticesBefore, [])
 
         // The person opens the item and presses the button.
-        try await second.finishSharing(itemId: item.id)
+        try await second.finishSharing(itemId: item.id, plan: await second.finishPlan(itemIds: [item.id]))
         let stored = await server.item(item.id)
         XCTAssertNotNil(stored?.keys["user-grace"])
         let needingYouAfter = await second.itemIdsNeedingYou
@@ -592,7 +592,8 @@ final class PasswordsAccessFlowTests: XCTestCase {
         let grace = makeSession(server, userId: "user-grace")
         try await setUp(grace, passphrase: "grace invented passphrase")
         // Ada seals for Grace's key when she finishes the sharing of the item.
-        try await ada.finishSharing(itemId: item.id)
+        try await ada.sync(isFull: true)
+        try await ada.finishSharing(itemId: item.id, plan: await ada.finishPlan(itemIds: [item.id]))
         let stored = await server.item(item.id)
         XCTAssertEqual(flags.addedShareKeyCalls.count, 1)
         XCTAssertEqual(flags.addedShareKeyCalls.first?.first?.itemKey, stored?.itemKeyByAccountKey)
@@ -622,7 +623,8 @@ final class PasswordsAccessFlowTests: XCTestCase {
         // Grace joins the circle later: the server lists her as waiting; the copy's shares do not list her yet.
         await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
         await server.markListCalls()
-        try await ada.finishSharing(itemId: item.id)
+        try await ada.sync(isFull: true)
+        try await ada.finishSharing(itemId: item.id, plan: await ada.finishPlan(itemIds: [item.id]))
         let listCalls = await server.listCallsSinceMark()
         XCTAssertEqual(listCalls.filter { $0 == nil }.count, 1, "one full read")
         try await grace.sync()

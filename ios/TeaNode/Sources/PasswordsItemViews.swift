@@ -117,7 +117,7 @@ struct PasswordsItemScreen: View {
             Button("Finish sharing", systemImage: "person.badge.plus") { Task { await askToFinishSharing(item) } }
                 .actionColor()
                 .disabled(isWorking)
-                .passwordsFinishSharingDialog($finishAsk) { Task { await finishSharing(item) } }
+                .passwordsFinishSharingDialog($finishAsk) { ask in Task { await finishSharing(item, plan: ask.plan) } }
         }
     }
 
@@ -261,10 +261,10 @@ struct PasswordsItemScreen: View {
         }
     }
 
-    private func finishSharing(_ item: PasswordItem) async {
+    private func finishSharing(_ item: PasswordItem, plan: PasswordsFinishPlan) async {
         isWorking = true
         defer { isWorking = false }
-        await model.finishSharing(item)
+        await model.finishSharing(item, plan: plan)
     }
 
     private func giveNewKey(_ item: PasswordItem) async {

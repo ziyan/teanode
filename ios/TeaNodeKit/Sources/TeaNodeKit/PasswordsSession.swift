@@ -61,6 +61,11 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
     /// The server answered a request about one item with another item (another id). Nothing is
     /// done with the answer: no copy kept, nothing sealed, nothing remembered under either id.
     case answeredAboutAnotherItem
+    /// The server answered a restore of an earlier version with other sealed fields or another
+    /// item key than the version the person listed and opened. Nothing is done with the answer.
+    case restoredAnotherVersion
+    /// The item is not in the sharing plan the person confirmed (`PasswordsFinishPlan.items`).
+    case itemNotInSharingPlan
 
     public var errorDescription: String? {
         switch self {
@@ -84,6 +89,8 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
         case .itemNeedsAttention: return "This item needs a new key, but one was given a moment ago."
         case .itemNeedsYou: return "Open this item to finish sharing it."
         case .answeredAboutAnotherItem: return "The server answered about another item."
+        case .restoredAnotherVersion: return "The server restored something else."
+        case .itemNotInSharingPlan: return "That item was not in what you confirmed."
         }
     }
 
@@ -219,7 +226,8 @@ public struct PasswordsOpenedVersions: Equatable, Sendable {
 
 /// PasswordsFinishPlan is what "Finish sharing" would do for some items, worked out from the phone's
 /// copy before anything is sealed: who gets a key for how many items, how many items get a new key,
-/// and for how many the agent's copy is made again. The person confirms it first.
+/// and for how many the agent's copy is made again. The person confirms it first, and finishing
+/// seals for the people and the agent this plan names (`items`) and for no one else.
 public struct PasswordsFinishPlan: Equatable, Sendable {
     /// A person who would get keys, and for how many of the items.
     public struct Person: Identifiable, Equatable, Sendable {
@@ -238,6 +246,25 @@ public struct PasswordsFinishPlan: Equatable, Sendable {
     public var newKeyItemCount: Int
     /// The items whose record says the agent may use them but that have no copy for it.
     public var agentItemCount: Int
+    /// What is confirmed for each of those items: who gets a key and whether the agent gets a copy.
+    public var items: [Item]
+
+    /// What the person confirms for one item: the people (by user id) who would get a key and
+    /// whether the agent would get a copy. Whatever the server lists by the time finishing runs,
+    /// nobody else is sealed for.
+    public struct Item: Equatable, Sendable {
+        public let itemId: String
+        public let recipientUserIds: [String]
+        public let isAgentIncluded: Bool
+    }
+
+    public init(itemCount: Int, people: [Person], newKeyItemCount: Int, agentItemCount: Int, items: [Item] = []) {
+        self.itemCount = itemCount
+        self.people = people
+        self.newKeyItemCount = newKeyItemCount
+        self.agentItemCount = agentItemCount
+        self.items = items
+    }
 
     public var isEmpty: Bool { itemCount == 0 }
 }
@@ -578,6 +605,15 @@ public actor PasswordsSession {
     /// The items the person changed or shared on this device during this session: this device's own
     /// action is a memory too.
     private var itemIdsActedOn: Set<String> = []
+    /// The sealed fields and item key of each earlier version the server listed for an item
+    /// (`versions(of:)`), by item id and version id: what the person looked at, so a restore can
+    /// check the server restored that and nothing else. Memory only; locking forgets it.
+    private var listedVersionTextsByItemId: [String: [String: ListedVersionText]] = [:]
+
+    private struct ListedVersionText: Equatable {
+        let encryptedFields: String
+        let itemKey: String
+    }
     /// The marked items an automatic new key left for the person, because this device has no memory
     /// of them (`itemIdsNeedingYou`).
     private var keyItemIdsLeftForPerson: Set<String> = []
@@ -615,6 +651,7 @@ public actor PasswordsSession {
     public func lock() {
         opener = nil
         openedItems = [:]
+        listedVersionTextsByItemId = [:]
         lastUsedAt = nil
     }
 
@@ -1194,6 +1231,9 @@ public actor PasswordsSession {
         let view = try ownedView(itemId)
         guard view.deletedAt == nil, let itemKind = PasswordsItemKind(rawValue: view.itemKind) else { throw PasswordsError.itemNotFound }
         let listed = try await call { try await api.listPasswordItemVersions(itemId: itemId) }
+        listedVersionTextsByItemId[itemId] = Dictionary(
+            listed.map { ($0.versionId, ListedVersionText(encryptedFields: $0.encryptedFields, itemKey: $0.itemKey)) },
+            uniquingKeysWith: { first, _ in first })
         var versions: [PasswordItemVersion] = []
         var unreadableVersionCount = 0
         var seenVersionIds = Set<String>()
@@ -1208,41 +1248,48 @@ public actor PasswordsSession {
         return PasswordsOpenedVersions(versions: versions, unreadableVersionCount: unreadableVersionCount)
     }
 
-    /// Puts an earlier version's fields back as the item's own, on the person's tap. The server
-    /// makes that version's item key current as well, drops the keys sealed for the item's
-    /// recipients and the agent's copy, and marks the item. The restore is the person's own action,
-    /// so the restored access record is not a replay: when its signature still verifies under this
-    /// account key, it is signed again one version above the highest this device saw (or the
-    /// restored version, if higher) with the same grantees and agent switch, saved, and the item is
-    /// given a new key at once, sealed for the people that record reaches and, when it lets the
-    /// agent use the item, with the agent's copy. If the restored record does not verify, nothing is
-    /// sealed for anybody and the item says "Sharing could not be checked" until the person sets
-    /// sharing again. If a step after the restore fails, the restored item is returned and
-    /// `giveNewKey` or the next save tries again.
+    /// Puts an earlier version's content back as the item's own, on the person's tap, and only the
+    /// content: who the item is shared with and whether the agent may use it stay as they are now.
+    ///
+    /// - The version has to be one `versions(of:)` listed in this session, and the item's record has
+    ///   to be the person's own now (`sharingCouldNotBeChecked`); with either missing nothing is sent.
+    /// - The server's answer has to carry exactly the sealed fields and item key that were listed;
+    ///   anything else is `restoredAnotherVersion` and nothing more is done with the answer.
+    /// - The restored fields are then written with the record this device held before the restore
+    ///   (its grantees and agent switch), signed one version above the highest this device has seen,
+    ///   and the item is given a new key at once as the person's action, sealed for the people that
+    ///   record reaches. The server ended the agent's copy with the restore, so the agent gets one
+    ///   again only if that record allows it and the server still lists the item as usable by the
+    ///   agent; otherwise `itemIdsWithLostAgentCopy` offers it on "Finish sharing". The restored
+    ///   version's own record is never used.
+    ///
+    /// If a step after the restore fails, the restored item is returned and `giveNewKey` or the
+    /// next save tries again.
     public func restoreVersion(itemId: String, versionId: String) async throws -> PasswordItem {
         let opener = try requireOpener()
         let view = try ownedView(itemId)
         guard view.deletedAt == nil else { throw PasswordsError.itemNotFound }
+        guard let listed = listedVersionTextsByItemId[itemId]?[versionId] else { throw PasswordsError.itemNotFound }
+        let before = try opener.open(view)
+        guard before.sharingCheck == .verified, let currentAccess = before.verifiedAccess else {
+            throw PasswordsError.sharingCouldNotBeChecked(itemId: itemId)
+        }
+        let highestVersion = highestRecordVersion(of: before)
         let answered = try await call {
             try await api.restorePasswordItemVersion(itemId: itemId, versionId: versionId, baseRevision: view.revision)
         }
+        guard answered.id == itemId else { throw PasswordsError.answeredAboutAnotherItem }
+        guard ListedVersionText(encryptedFields: answered.encryptedFields, itemKey: answered.itemKey) == listed else {
+            throw PasswordsError.restoredAnotherVersion
+        }
         let kept = try keep(answered, forItemId: itemId, opener: opener)
         itemIdsActedOn.insert(itemId)
-        guard let restoredRecord = PasswordsCrypto.verifyAccess(
-            accountKey: opener.accountKey, itemId: itemId, itemKind: kept.itemKind, fields: kept.fields)
-        else { return kept }
         do {
-            let highestVersion = max(currentPins().itemMemories[itemId]?.highestRecordVersion ?? 0, restoredRecord.recordVersion ?? 0)
-            let access = PasswordsItemAccess(
-                isUsableByAgent: restoredRecord.isUsableByAgent && kept.itemKind != .card, grantees: restoredRecord.grantees)
             let signed = try PasswordsCrypto.withSignedAccess(
-                accountKey: opener.accountKey, itemId: itemId, itemKind: kept.itemKind, fields: kept.fields, access: access,
+                accountKey: opener.accountKey, itemId: itemId, itemKind: kept.itemKind, fields: kept.fields, access: currentAccess,
                 highestVersionSeen: highestVersion)
             _ = try await saveFields(signed, of: try ownedView(itemId), opener: opener)
             _ = try await rekey(itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: .none, origin: .request)
-            if access.isUsableByAgent {
-                _ = try await setUsableByAgent(itemId: itemId, isUsable: true)
-            }
         } catch PasswordsError.locked {
             throw PasswordsError.locked
         } catch {
@@ -1711,7 +1758,7 @@ public actor PasswordsSession {
     /// list, the copy is read in full once and the list checked again.
     @discardableResult
     public func completeWaitingShares() async throws -> PasswordsCompletedShares {
-        try await completeWaitingShares(onlyItemId: nil, isByPerson: false)
+        try await completeWaitingShares(onlyItemId: nil, onlyUserIds: nil, isByPerson: false)
     }
 
     /// The same for one item, started by the person: every waiting recipient the owner's verified
@@ -1720,10 +1767,20 @@ public actor PasswordsSession {
     @discardableResult
     func completeWaitingShares(onlyItemId itemId: String) async throws -> PasswordsCompletedShares {
         itemIdsActedOn.insert(itemId)
-        return try await completeWaitingShares(onlyItemId: itemId, isByPerson: true)
+        return try await completeWaitingShares(onlyItemId: itemId, onlyUserIds: nil, isByPerson: true)
     }
 
-    private func completeWaitingShares(onlyItemId: String?, isByPerson: Bool) async throws -> PasswordsCompletedShares {
+    /// The same for the people a confirmed plan names (`finishSharing(itemId:plan:)`): a waiting
+    /// recipient the plan does not name is left alone, whoever the server lists.
+    @discardableResult
+    private func completeWaitingShares(onlyItemId itemId: String, onlyUserIds: Set<String>) async throws -> PasswordsCompletedShares {
+        itemIdsActedOn.insert(itemId)
+        return try await completeWaitingShares(onlyItemId: itemId, onlyUserIds: onlyUserIds, isByPerson: true)
+    }
+
+    private func completeWaitingShares(onlyItemId: String?, onlyUserIds: Set<String>?, isByPerson: Bool) async throws
+        -> PasswordsCompletedShares
+    {
         var isFullReadDone = false
         var isRetriedAfterChange = false
         while true {
@@ -1731,6 +1788,7 @@ public actor PasswordsSession {
             var waiting = try await call { try await api.listWaitingPasswordShares() }
             let hasMoreWaiting = waiting.contains { $0.hasMoreWaiting }
             if let onlyItemId { waiting = waiting.filter { $0.itemId == onlyItemId } }
+            if let onlyUserIds { waiting = waiting.filter { onlyUserIds.contains($0.recipient.userId) } }
             let plan = try waitingPlan(waiting, opener: opener, isByPerson: isByPerson)
             let tooMuchSharedNames = plan.tooMuchSharedNames.sorted()
             if plan.isCopyBehind && !isFullReadDone {
@@ -1890,17 +1948,30 @@ public actor PasswordsSession {
         return try await rekey(itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: .none, origin: .request)
     }
 
+    /// The same as part of finishing a plan the person confirmed: sealed only for the people the
+    /// plan names for the item, and the agent's copy only if it says so.
+    private func giveNewKey(itemId: String, plan: PasswordsFinishPlan.Item) async throws {
+        _ = try ownedView(itemId)
+        _ = try await rekey(itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: .none, origin: .request, plan: plan)
+    }
+
     /// Finishes the sharing of one item the person opened: gives it a new key when the server
     /// marked it, a key to everybody waiting whom the owner's verified record reaches, and the
     /// agent's copy again when the record says the agent may use the item and the server has none.
     /// This is what "Open this item to finish sharing it" asks for (`itemIdsNeedingYou`). The
-    /// screen shows `finishPlan(itemIds:)` and asks first.
-    public func finishSharing(itemId: String) async throws {
+    /// screen shows `finishPlan(itemIds:)` and asks first, and passes that plan here: keys are
+    /// sealed only for the people it names for this item (whoever the server lists by now), and
+    /// the agent's copy is made only if it says so. An item the plan does not name is refused
+    /// (`itemNotInSharingPlan`).
+    public func finishSharing(itemId: String, plan: PasswordsFinishPlan) async throws {
+        guard let itemPlan = plan.items.first(where: { $0.itemId == itemId }) else { throw PasswordsError.itemNotInSharingPlan }
         let view = try ownedView(itemId)
         guard view.deletedAt == nil else { throw PasswordsError.itemNotFound }
-        if view.needsNewKey { try await giveNewKey(itemId: itemId) }
-        try await completeWaitingShares(onlyItemId: itemId)
-        if itemIdsWithLostAgentCopy.contains(itemId) { _ = try await setUsableByAgent(itemId: itemId, isUsable: true) }
+        if view.needsNewKey { try await giveNewKey(itemId: itemId, plan: itemPlan) }
+        try await completeWaitingShares(onlyItemId: itemId, onlyUserIds: Set(itemPlan.recipientUserIds))
+        if itemPlan.isAgentIncluded, itemIdsWithLostAgentCopy.contains(itemId) {
+            _ = try await setUsableByAgent(itemId: itemId, isUsable: true)
+        }
         keyItemIdsLeftForPerson.remove(itemId)
         shareItemIdsLeftForPerson.remove(itemId)
     }
@@ -1939,6 +2010,12 @@ public actor PasswordsSession {
             if view.needsNewKey { plan.newKeyItemCount += 1 }
             if isAgentCopyLost { plan.agentItemCount += 1 }
             for recipientUserId in userIds { countsByUserId[recipientUserId, default: 0] += 1 }
+            // The new key keeps the agent's copy of an item the agent already uses, so that copy is in the plan too.
+            let isAgentCopyKept =
+                view.needsNewKey && view.isUsableByAgent && access.isUsableByAgent && view.itemKind != PasswordsItemKind.card.rawValue
+            plan.items.append(
+                PasswordsFinishPlan.Item(
+                    itemId: itemId, recipientUserIds: userIds.sorted(), isAgentIncluded: isAgentCopyLost || isAgentCopyKept))
         }
         plan.people = countsByUserId.map {
             PasswordsFinishPlan.Person(userId: $0.key, name: namesByUserId[$0.key] ?? "", itemCount: $0.value)
@@ -2051,9 +2128,13 @@ public actor PasswordsSession {
     /// person's own. Anybody else waits for the person. One the record does not reach gets
     /// nothing, whatever the server's list of shares says. When the server
     /// says the item changed on another device and the change was not based on a revision the caller
-    /// gave, the copy is brought up to date and this is tried once more.
+    /// gave, the copy is brought up to date and this is tried once more. With a `plan` (what the
+    /// person confirmed on "Finish sharing") only the people it names get a key and the agent a copy
+    /// only if it says so, also on that second try: what the server lists after the copy is brought
+    /// up to date can take people away from the plan, never add to it.
     private func rekey(
-        itemId: String, replacing: PasswordsItemFields?, baseRevision: Int64?, accessEdit: AccessEdit, origin: RekeyOrigin
+        itemId: String, replacing: PasswordsItemFields?, baseRevision: Int64?, accessEdit: AccessEdit, origin: RekeyOrigin,
+        plan: PasswordsFinishPlan.Item? = nil
     ) async throws -> PasswordItem {
         if origin == .automatic {
             // An item whose record is not the person's own is not given a key by itself, and does not
@@ -2069,10 +2150,12 @@ public actor PasswordsSession {
             try reserveAutomaticRekey(itemId: itemId)
         }
         do {
-            return try await rekeyOnce(itemId: itemId, replacing: replacing, baseRevision: baseRevision, accessEdit: accessEdit, origin: origin)
+            return try await rekeyOnce(
+                itemId: itemId, replacing: replacing, baseRevision: baseRevision, accessEdit: accessEdit, origin: origin, plan: plan)
         } catch PasswordsError.itemChangedOnAnotherDevice where baseRevision == nil && !isLoadingItemsOnDemand {
             try await sync()
-            return try await rekeyOnce(itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: accessEdit, origin: origin)
+            return try await rekeyOnce(
+                itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: accessEdit, origin: origin, plan: plan)
         }
     }
 
@@ -2095,7 +2178,8 @@ public actor PasswordsSession {
     }
 
     private func rekeyOnce(
-        itemId: String, replacing: PasswordsItemFields?, baseRevision: Int64?, accessEdit: AccessEdit, origin: RekeyOrigin
+        itemId: String, replacing: PasswordsItemFields?, baseRevision: Int64?, accessEdit: AccessEdit, origin: RekeyOrigin,
+        plan: PasswordsFinishPlan.Item? = nil
     ) async throws -> PasswordItem {
         let opener = try requireOpener()
         let view = try ownedView(itemId)
@@ -2145,6 +2229,8 @@ public actor PasswordsSession {
             guard PasswordsItemAccess.isReachedByAccess(fields.access, recipientUserId: recipientView.userId, circleIdsOfRecipient: circleIds)
             else { continue }
             if origin.isLimitedToWhatThisDeviceSealed, !memory.sealedForUserIds.contains(recipientView.userId) { continue }
+            // A key sealed for a confirmed plan goes only to the people the plan names.
+            if let plan, !plan.recipientUserIds.contains(recipientView.userId) { continue }
             let recipient = Self.recipient(recipientView, opener: opener)
             guard let publicKey = recipient.publicKey else { continue }
             sealedKeys[recipient.userId] = publicKey.base64EncodedString()
@@ -2154,7 +2240,7 @@ public actor PasswordsSession {
                     recipientPublicKey: publicKey))
         }
         var agentCopyText: String?
-        let isAgentCopyAllowed = !origin.isLimitedToWhatThisDeviceSealed || memory.didMakeAgentCopy
+        let isAgentCopyAllowed = (!origin.isLimitedToWhatThisDeviceSealed || memory.didMakeAgentCopy) && (plan?.isAgentIncluded ?? true)
         if isAgentCopyAllowed && fields.access?.isUsableByAgent == true && view.isUsableByAgent
             && view.itemKind != PasswordsItemKind.card.rawValue
         {

@@ -253,8 +253,9 @@ final class PasswordsAnswerChecksTests: XCTestCase {
         _ = try await makeSession(server, userId: "user-ben").setUp(passphrase: "ben invented passphrase", iterationCount: iterationCount)
 
         swap.addedKeyCountOverride = 7
+        try await phone.sync(isFull: true)
         do {
-            try await phone.finishSharing(itemId: item.id)
+            try await phone.finishSharing(itemId: item.id, plan: await phone.finishPlan(itemIds: [item.id]))
             XCTFail("a count of seven keys for one key sent was accepted")
         } catch PasswordsError.invalidServerAnswer {
             // refused
@@ -306,7 +307,7 @@ final class PasswordsAnswerChecksTests: XCTestCase {
         XCTAssertTrue(needingYou.contains(item.id))
 
         // The person finishes it: Ben gets his key.
-        try await two.finishSharing(itemId: item.id)
+        try await two.finishSharing(itemId: item.id, plan: await two.finishPlan(itemIds: [item.id]))
         let finished = await server.item(item.id)
         XCTAssertNotNil(finished?.keys["user-ben"])
     }
@@ -405,7 +406,8 @@ final class PasswordsAnswerChecksTests: XCTestCase {
         XCTAssertEqual(plan.newKeyItemCount, 0)
         XCTAssertTrue(plan.people.isEmpty)
 
-        try await second.finishSharing(itemId: item.id)
+        try await second.sync(isFull: true)
+        try await second.finishSharing(itemId: item.id, plan: await second.finishPlan(itemIds: [item.id]))
         try await second.sync(isFull: true)
         let finished = try await second.item(id: item.id)
         XCTAssertTrue(finished.isUsableByAgent, "Finish sharing put the agent back")
@@ -526,15 +528,16 @@ final class PasswordsAnswerChecksTests: XCTestCase {
         let storedItem = try XCTUnwrap(stored)
         XCTAssertFalse(storedItem.needsNewKey, "the restore was followed by a new key")
         XCTAssertNotEqual(storedItem.itemKeyByAccountKey, keyBefore, "it is not the key of the version any more")
-        XCTAssertNotNil(storedItem.keys["user-ben"], "the restored fields' own record names Ben, so he gets the new key")
+        XCTAssertNotNil(storedItem.keys["user-ben"], "the record held before the restore names Ben, so he gets the new key")
         // The replaced content stays as a version of its own.
         let versionsAfter = try await phone.versions(of: created.id)
         XCTAssertGreaterThan(versionsAfter.versions.count, opened.versions.count)
     }
 
-    /// The restore is the person's own action: a restored record older than one this device saw is signed
-    /// again above the highest seen, so it is not a replay and nothing waits for the person.
-    func testRestoringAVersionWithAnOlderSharingRecordSignsItAgainAboveTheHighestSeen() async throws {
+    /// The restore brings back the content only: the record this device held before is written into the
+    /// restored fields, signed above the highest seen, so who the item is shared with stays as it is now,
+    /// it is not a replay and nothing waits for the person.
+    func testRestoringAVersionWithAnOlderSharingRecordKeepsTheRecordHeldBeforeSignedAboveTheHighestSeen() async throws {
         let server = FakePasswordsServer()
         try await adaAndBen(server)
         let phone = makeSession(server, userId: "user-ada")
@@ -553,14 +556,16 @@ final class PasswordsAnswerChecksTests: XCTestCase {
         let restored = try await phone.restoreVersion(itemId: created.id, versionId: oldest.id)
         XCTAssertEqual(restored.sharingCheck, .verified, "a restore is not a replay")
         XCTAssertEqual(restored.fields.access?.recordVersion, highestBefore + 1)
-        XCTAssertEqual(restored.fields.access?.grantees, [], "the restored record names nobody")
+        XCTAssertEqual(restored.fields.access?.grantees, [.person(userId: "user-ben")], "the restored record named nobody, the one held before names Ben")
         let stored = await server.item(created.id)
-        XCTAssertNil(stored?.keys["user-ben"])
+        XCTAssertNotNil(stored?.keys["user-ben"], "Ben is shared with now, so he gets the new key")
         XCTAssertEqual(stored?.needsNewKey, false, "the item was given a new key at once")
     }
 
-    /// The restored record's agent switch is followed: the agent's copy is made again.
-    func testRestoringAVersionWhoseRecordLetsTheAgentUseTheItemMakesTheAgentCopy() async throws {
+    /// The server ended the agent's use with the restore, so the agent's copy is not made again by the
+    /// restore, whatever the restored version's record said. The record held before still allows it,
+    /// so "Finish sharing" offers it back.
+    func testRestoringAVersionDoesNotTurnTheAgentOnAndOffersTheCopyOnFinishSharing() async throws {
         let server = FakePasswordsServer()
         try await adaAndBen(server)
         let phone = makeSession(server, userId: "user-ada")
@@ -579,16 +584,23 @@ final class PasswordsAnswerChecksTests: XCTestCase {
 
         let restored = try await phone.restoreVersion(itemId: created.id, versionId: version.id)
         XCTAssertEqual(restored.sharingCheck, .verified)
-        XCTAssertTrue(restored.isUsableByAgent, "the agent has its copy again")
+        XCTAssertFalse(restored.isUsableByAgent, "the restore does not turn the agent on")
         let stored = await server.item(created.id)
-        XCTAssertNotNil(stored?.itemKeyByAgentKey)
+        XCTAssertNil(stored?.itemKeyByAgentKey)
         XCTAssertNotNil(stored?.keys["user-ben"])
         XCTAssertEqual(stored?.needsNewKey, false)
+        let lostAgentCopyItemIds = await phone.itemIdsWithLostAgentCopy
+        XCTAssertTrue(lostAgentCopyItemIds.contains(created.id), "the record still allows the agent, so Finish sharing offers it")
+        let plan = await phone.finishPlan(itemIds: [created.id])
+        XCTAssertEqual(plan.items.map(\.isAgentIncluded), [true])
+        try await phone.finishSharing(itemId: created.id, plan: plan)
+        let afterOptional = await server.item(created.id)
+        XCTAssertEqual(afterOptional?.isUsableByAgent, true)
     }
 
-    /// A restored record whose signature does not verify under this account key reaches nobody: the
-    /// item says sharing could not be checked and stays marked.
-    func testRestoringAVersionWhoseRecordDoesNotVerifyLeavesTheSharingToBeSetAgain() async throws {
+    /// The record the item has now has to be the person's own: with one that does not verify, a restore
+    /// is refused before the server is asked, and nothing changes.
+    func testRestoringAVersionOfAnItemWhoseCurrentRecordDoesNotVerifyIsRefusedBeforeAskingTheServer() async throws {
         let server = FakePasswordsServer()
         try await adaAndBen(server)
         let phone = makeSession(server, userId: "user-ada")
@@ -612,14 +624,18 @@ final class PasswordsAnswerChecksTests: XCTestCase {
         let current = try await phone.item(id: created.id)
         _ = try await phone.save(fields: loginFields("Example", password: "later"), id: created.id, baseRevision: current.revision)
         let opened = try await phone.versions(of: created.id)
-        let version = try XCTUnwrap(opened.versions.first { $0.fields.access?.recordVersion == 9 })
+        let version = try XCTUnwrap(opened.versions.first)
+        let revisionBefore = await server.item(created.id)?.revision
 
-        let restored = try await phone.restoreVersion(itemId: created.id, versionId: version.id)
-        XCTAssertEqual(restored.sharingCheck, .unverified)
+        do {
+            _ = try await phone.restoreVersion(itemId: created.id, versionId: version.id)
+            XCTFail("a restore on a record that cannot be checked went through")
+        } catch PasswordsError.sharingCouldNotBeChecked {
+            // refused
+        }
         let after = await server.item(created.id)
-        XCTAssertNil(after?.keys["user-ben"], "nothing is sealed from a record that does not verify")
-        let isMarked = await phone.needsNewKey(itemId: created.id)
-        XCTAssertTrue(isMarked, "the item stays marked until the person sets sharing again")
+        XCTAssertEqual(after?.revision, revisionBefore, "the server was not asked")
+        XCTAssertNil(after?.keys["user-ben"])
     }
 
     func testAVersionRestoreAnsweredWithAnotherItemIsRefused() async throws {

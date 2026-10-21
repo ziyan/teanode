@@ -16,10 +16,18 @@ export type { PasswordsErrorCode } from '../../passwords/passwordsError'
 // answered a change of sharing with a record older than the one just written
 // (sharingNotKept), or the server answered about another item than the one
 // asked for (answeredAboutAnotherItem, and nothing more is done with that
-// answer). The first needs the person to set sharing again, the second a tap
-// on Try again, the third and fourth another try.
+// answer), or answered a restore with other content than the version the
+// person chose (restoredAnotherVersion, same), or the item was not in the
+// sharing plan the person confirmed (itemNotInSharingPlan). The first needs the
+// person to set sharing again, the second a tap on Try again, the others
+// another try.
 export type PasswordsAccessErrorCode =
-  'accessNotVerified' | 'rekeyLimited' | 'sharingNotKept' | 'answeredAboutAnotherItem'
+  | 'accessNotVerified'
+  | 'rekeyLimited'
+  | 'sharingNotKept'
+  | 'answeredAboutAnotherItem'
+  | 'restoredAnotherVersion'
+  | 'itemNotInSharingPlan'
 
 export class PasswordsAccessError extends Error {
   readonly code: PasswordsAccessErrorCode
@@ -36,6 +44,8 @@ const ACCESS_ERROR_WORDS: Record<PasswordsAccessErrorCode, Key> = {
   rekeyLimited: 'passwords.errorRekeyLimited',
   sharingNotKept: 'passwords.errorSharingNotKept',
   answeredAboutAnotherItem: 'passwords.errorAnsweredAboutAnotherItem',
+  restoredAnotherVersion: 'passwords.errorRestoredAnotherVersion',
+  itemNotInSharingPlan: 'passwords.errorItemNotInSharingPlan',
 }
 
 const ERROR_WORDS: Record<PasswordsErrorCode, Key> = {

@@ -69,7 +69,7 @@ final class PasswordsSharingFollowUpTests: XCTestCase {
         let before = try await ada.item(id: item.id)
         XCTAssertEqual(before.shares.flatMap(\.recipients).map(\.hasKey), [false])
 
-        try await ada.finishSharing(itemId: item.id)
+        try await ada.finishSharing(itemId: item.id, plan: await ada.finishPlan(itemIds: [item.id]))
         let after = try await ada.item(id: item.id)
         XCTAssertEqual(after.shares.flatMap(\.recipients).map(\.hasKey), [true], "the copy was read again after the key was added")
     }
@@ -112,7 +112,15 @@ final class PasswordsSharingFollowUpTests: XCTestCase {
         let completed = try await ada.completeWaitingShares()
         XCTAssertEqual(completed.addedKeyCount, 0)
         XCTAssertEqual(completed.tooMuchSharedNames, ["Grace"])
-        try await ada.finishSharing(itemId: item.id)
+        // She has no room, so the plan has nothing to give her and finishing is refused.
+        let plan = await ada.finishPlan(itemIds: [item.id])
+        XCTAssertEqual(plan.items, [])
+        do {
+            try await ada.finishSharing(itemId: item.id, plan: plan)
+            XCTFail("finished an item the plan did not name")
+        } catch PasswordsError.itemNotInSharingPlan {
+            // refused
+        }
         XCTAssertEqual(flags.addedShareKeyCalls.count, 0, "no key is sealed for somebody the server stores none for")
         let needingYou = await ada.itemIdsNeedingYou
         XCTAssertEqual(needingYou, [])
@@ -124,7 +132,8 @@ final class PasswordsSharingFollowUpTests: XCTestCase {
 
         // Once she has room again, the next completion seals for her.
         await server.setHasTooMuchShared("user-grace", false)
-        try await ada.finishSharing(itemId: item.id)
+        try await ada.sync(isFull: true)
+        try await ada.finishSharing(itemId: item.id, plan: await ada.finishPlan(itemIds: [item.id]))
         XCTAssertEqual(flags.addedShareKeyCalls.count, 1)
     }
 

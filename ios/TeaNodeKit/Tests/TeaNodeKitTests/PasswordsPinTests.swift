@@ -126,7 +126,7 @@ final class PasswordsPinTests: XCTestCase {
         let needingYou = await ada.itemIdsNeedingYou
         XCTAssertEqual(needingYou, [item.id])
         // The record reaches the circle, so when Ada finishes the sharing Mallory is sealed for the key the server gives.
-        try await ada.finishSharing(itemId: item.id)
+        try await ada.finishSharing(itemId: item.id, plan: await ada.finishPlan(itemIds: [item.id]))
         XCTAssertEqual(try XCTUnwrap(try adaCache.load()).knownPublicKeys["user-mallory"], malloryKey)
         let stored = await server.item(item.id)
         XCTAssertEqual(stored?.keys["user-mallory"]?.recipientPublicKey, malloryKey)
