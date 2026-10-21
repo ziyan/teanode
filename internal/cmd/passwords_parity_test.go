@@ -46,6 +46,14 @@ func TestPasswordsParity(test *testing.T) {
 		"SetPasswordItemUsableByAgent": {"agent"},
 		"RekeyPasswordItem":            {"agent", "unshare", "rekey"},
 	}
+	// The operations on earlier versions need the person's tap, which a command
+	// line never has, so `versions` is refused at once and sends neither. They
+	// are listed under it once the API has them.
+	for _, operation := range []string{"ListPasswordItemVersions", "RestorePasswordItemVersion"} {
+		if operations[operation] {
+			table[operation] = []string{"versions"}
+		}
+	}
 	for operation := range operations {
 		if _, isListed := table[operation]; !isListed {
 			test.Errorf("the table does not list the operation %s", operation)
@@ -74,6 +82,7 @@ func TestPasswordsParity(test *testing.T) {
 		"lock":     "forgets the keys kept on this computer",
 		"generate": "makes a password on this computer",
 		"export":   "reads the items the list operation returns and writes a file",
+		"versions": "needs the person's tap, which a command line never has, so it says where it is done",
 		"code":     "works out the safety code of the key that unlocking opened, on this computer",
 	}
 	for name := range commands {

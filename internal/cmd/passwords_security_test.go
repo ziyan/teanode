@@ -377,10 +377,12 @@ func TestPasswordsUnshareGivesTheItemANewKey(test *testing.T) {
 	}
 }
 
-// A remaining person this computer never sealed the item for is not given the
-// new key by a re-key nobody asked for. The command says so in one line that
-// names rekey, share --waiting leaves them too, and rekey, which the person
-// runs on purpose, gives them the key.
+// Taking somebody off is the person's own command, so the people who remain get
+// the new key even when this computer never sealed the item for them. A re-key
+// nobody asked for (an edit of an item the server marked) does not give the key
+// to a person this computer never sealed for. The command says so in one line
+// that names rekey, share --waiting leaves them too, and rekey, which the
+// person runs on purpose, gives them the key.
 func TestPasswordsRekeyLeavesAPersonThisComputerNeverSealedForToThePerson(test *testing.T) {
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
@@ -401,11 +403,26 @@ func TestPasswordsRekeyLeavesAPersonThisComputerNeverSealedForToThePerson(test *
 	fake.unlockAs(testToken)
 	notices.forget()
 	fake.mustRun(testToken, "", "unshare", "example.com", "cora")
-	if !strings.Contains(notices.text.String(), "needs you: teanode passwords rekey "+itemID) || !strings.Contains(notices.text.String(), "Ben") {
-		test.Errorf("unshare did not say Ben is left to the person:\n%s", notices.text.String())
+	if fake.rekeyCount != 1 || fake.lastRekeyKeyCount != 1 {
+		test.Fatalf("%d re-keys carrying %d recipient keys, want 1 and 1", fake.rekeyCount, fake.lastRekeyKeyCount)
 	}
-	if fake.rekeyCount != 1 || fake.lastRekeyKeyCount != 0 {
-		test.Fatalf("%d re-keys carrying %d recipient keys, want 1 and 0", fake.rekeyCount, fake.lastRekeyKeyCount)
+	fake.unlockAs(benToken)
+	if output := strings.TrimSpace(fake.mustRun(benToken, "", "copy", "example.com")); output != "shared-secret-example" {
+		test.Fatalf("Ben copies %q after the person took Cora off", output)
+	}
+
+	// The server marks the item again, and this computer has sealed for nobody.
+	fake.unlockAs(testToken)
+	rewriteRememberedItem(test, itemID, func(known *passwordsKnownItem) { known.SealedForUserIDs = nil })
+	fake.items[itemID].needsNewKey = true
+	notices.forget()
+	rekeysBefore := fake.rekeyCount
+	fake.mustRun(testToken, "", "edit", "example.com", "--user-name", "ada")
+	if !strings.Contains(notices.text.String(), "needs you: teanode passwords rekey "+itemID) || !strings.Contains(notices.text.String(), "Ben") {
+		test.Errorf("the edit did not say Ben is left to the person:\n%s", notices.text.String())
+	}
+	if fake.rekeyCount != rekeysBefore+1 || fake.lastRekeyKeyCount != 0 {
+		test.Fatalf("%d re-keys carrying %d recipient keys, want one more and 0", fake.rekeyCount, fake.lastRekeyKeyCount)
 	}
 	fake.unlockAs(benToken)
 	if len(fake.list(benToken, "")) != 0 {

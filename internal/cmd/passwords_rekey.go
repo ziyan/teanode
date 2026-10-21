@@ -76,7 +76,8 @@ const (
 	// --waiting) does it first.
 	rekeyAutomatic rekeyKind = iota
 	// rekeyNarrowing is the second step of taking somebody, or the agent, off
-	// the item (unshare, agent off).
+	// the item (unshare, agent off), which the person asked for: the new key
+	// goes to everyone the signed record still reaches.
 	rekeyNarrowing
 	// rekeyByPerson is `teanode passwords rekey`, which the person ran for this
 	// item on purpose.
@@ -100,15 +101,16 @@ const automaticRekeyLimit = 20
 // for the public key recorded for them (the same rule as sharing: nobody is
 // asked); the ones with no key yet wait, and are given back so that the command
 // can say so. A person the server lists
-// but the record does not reach is given no key. Unless the person ran rekey,
-// the new key reaches only the people this computer itself sealed the item for
-// before, and the agent only if the record says it may use the item, the
-// server agrees, and this computer itself made the agent's copy: a re-key the
-// person did not ask for never widens who can open the item. Whoever is left
-// out is told in one line that names the command (rekey) that gives them the
-// key. When the item moved on since it was read the item is read again and the
-// new key is made once more. The item is updated in place to the new key and
-// revision.
+// but the record does not reach is given no key. The agent keeps a copy of the
+// new key if the record still lets it use the item and the server agrees.
+// When the person ran the command (rekey, unshare, agent off) that is all. A
+// re-key the person did not ask for (rekeyAutomatic) never widens who can open
+// the item: it reaches only the people this computer itself sealed the item
+// for before, and the agent only if this computer itself made the agent's
+// copy. Whoever is left out is told in one line that names the command
+// (rekey) that gives them the key. When the item moved on since it was read
+// the item is read again and the new key is made once more. The item is
+// updated in place to the new key and revision.
 func (self *passwordsSession) rekeyItem(item *passwordsItem, changeAccess func(*passwords.PasswordAccess) *passwords.PasswordAccess, kind rekeyKind) ([]*client.PasswordRecipientView, error) {
 	if changeAccess == nil {
 		if err := item.refuseWithoutVerifiedAccess("cannot give the item a new key"); err != nil {
@@ -188,10 +190,13 @@ func (self *passwordsSession) rekeyItemOnce(item *passwordsItem, changeAccess fu
 	// The agent keeps a copy of the new key only when the owner's own signed
 	// record lets it use the item and the server agrees. A record that says yes
 	// where the server says no is left as it is: a device never cuts the
-	// record on the server's word. Unless the person ran rekey, the agent also
-	// needs to have held a copy when this computer last saw the item.
+	// record on the server's word. Only a re-key the person did not ask for
+	// also needs the agent to have held a copy when this computer last saw the
+	// item: unshare and agent off are the person's own narrowing, and keep the
+	// agent's copy when the record still allows it, as the dashboard and the
+	// iPhone do.
 	isAgentWanted := signed.IsUsableByAgent && item.View.IsUsableByAgent
-	isAgentKept := isAgentWanted && (kind == rekeyByPerson || item.HasMadeAgentCopy)
+	isAgentKept := isAgentWanted && (kind != rekeyAutomatic || item.HasMadeAgentCopy)
 	previousAccess := item.Access()
 	item.setAccess(signed)
 	waiting, err := self.rekeyItemWithAccess(item, isAgentWanted, isAgentKept, kind)
@@ -228,9 +233,10 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentWa
 			continue
 		case recipient.PublicKey == "":
 			waiting = append(waiting, recipient)
-		case kind != rekeyByPerson && !slices.Contains(item.SealedForUserIDs, recipient.UserID):
-			// Somebody this computer never gave the item key to is not given
-			// one here: the person gives it to them with rekey.
+		case kind == rekeyAutomatic && !slices.Contains(item.SealedForUserIDs, recipient.UserID):
+			// A re-key nobody asked for does not give the item key to somebody
+			// this computer never gave it to: the person gives it to them with
+			// rekey.
 			notSealedFor = append(notSealedFor, recipient)
 		default:
 			reached = append(reached, recipient)
@@ -288,6 +294,9 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentWa
 	}
 	view, err := client.RekeyPasswordItem(self.ctx, self.connection, input)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseAnswerAboutAnotherItem(item.View.ID, view); err != nil {
 		return nil, err
 	}
 	item.View = view

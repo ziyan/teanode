@@ -36,6 +36,7 @@ const (
 	passwordsEraseTapSentence            = "Erasing Passwords" + passwordsTapPlace + "."
 	passwordsPurgeTapSentence            = "Removing an item for good" + passwordsTapPlace + ", but moving it to recently deleted works here."
 	passwordsRestoreTapSentence          = "Bringing an item back from recently deleted" + passwordsTapPlace + "."
+	passwordsVersionsTapSentence         = "Earlier versions of an item (listing them, reading one and restoring one)" + passwordsTapPlace + ": open the item and choose Earlier versions."
 	passwordsShareTapSentence            = "Sharing with someone new" + passwordsTapPlace + ", but taking someone away works here."
 )
 
@@ -192,6 +193,7 @@ func NewPasswordsCommand() *cli.Command {
 					&cli.BoolFlag{Name: "forever", Usage: "remove an item that is already deleted for good, which needs your tap in the dashboard or the iPhone app"}},
 				Action: runPasswordsDelete,
 			},
+			{Name: "versions", Usage: "earlier versions of an item (needs your tap: done in the dashboard or the iPhone app)", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsVersions},
 			{Name: "restore", Usage: "bring back an item deleted in the last 30 days (needs your tap: done in the dashboard or the iPhone app)", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsRestore},
 			{
 				Name:      "share",
@@ -496,6 +498,14 @@ func (self *tapRequiredError) Unwrap() error {
 	return self.err
 }
 
+// passwordsSentenceError is an error that is one whole sentence for the person,
+// with its capital letter and full stop.
+type passwordsSentenceError string
+
+func (self passwordsSentenceError) Error() string {
+	return string(self)
+}
+
 // describeTapRequired replaces an error that says only the person's tap may do
 // this with the sentence for the command that was refused.
 func describeTapRequired(err error, sentence string) error {
@@ -751,19 +761,23 @@ func runPasswordsLock(ctx context.Context, command *cli.Command) error {
 
 // passwordsItemSummary is an item as list and show tell it, without a secret.
 type passwordsItemSummary struct {
-	ID              string     `json:"id"`
-	ItemKind        string     `json:"itemKind"`
-	Name            string     `json:"name"`
-	UserName        string     `json:"userName"`
-	Sites           []string   `json:"sites"`
-	Folder          string     `json:"folder"`
-	IsShared        bool       `json:"isShared"`
-	IsSharedWithMe  bool       `json:"isSharedWithMe"`
-	OwnerName       string     `json:"ownerName"`
-	IsUsableByAgent bool       `json:"isUsableByAgent"`
-	NeedsNewKey     bool       `json:"needsNewKey"`
-	DeletedAt       *time.Time `json:"deletedAt"`
-	Revision        int64      `json:"revision"`
+	ID              string   `json:"id"`
+	ItemKind        string   `json:"itemKind"`
+	Name            string   `json:"name"`
+	UserName        string   `json:"userName"`
+	Sites           []string `json:"sites"`
+	Folder          string   `json:"folder"`
+	IsShared        bool     `json:"isShared"`
+	IsSharedWithMe  bool     `json:"isSharedWithMe"`
+	OwnerName       string   `json:"ownerName"`
+	IsUsableByAgent bool     `json:"isUsableByAgent"`
+	NeedsNewKey     bool     `json:"needsNewKey"`
+
+	// HasLostAgentCopy is whether the owner's signed record lets the agent use
+	// the item while the server has no copy of its key for the agent.
+	HasLostAgentCopy bool       `json:"hasLostAgentCopy"`
+	DeletedAt        *time.Time `json:"deletedAt"`
+	Revision         int64      `json:"revision"`
 
 	// SharingCheckVerdict is whether the owner's devices signed the record of
 	// who may have the item: "checked", "notChecked" (missing, unsigned or
@@ -783,7 +797,7 @@ func summarizeItem(item *passwordsItem) passwordsItemSummary {
 		// The agent uses an item only if the server says so and the owner's
 		// own signed record says so too: the server's flag alone is not shown.
 		IsUsableByAgent: item.View.IsUsableByAgent && item.isUsableByAgentBySealedAccess(),
-		NeedsNewKey:     item.View.NeedsNewKey, DeletedAt: item.View.DeletedAt, Revision: item.View.Revision,
+		NeedsNewKey:     item.View.NeedsNewKey, HasLostAgentCopy: item.hasLostAgentCopy(), DeletedAt: item.View.DeletedAt, Revision: item.View.Revision,
 		SharingCheckVerdict: item.sharingCheckVerdict(),
 	}
 }
@@ -792,6 +806,12 @@ func summarizeItem(item *passwordsItem) passwordsItemSummary {
 // new key.
 func needsNewKeyWords(itemID string) string {
 	return "needs a new key: run teanode passwords rekey " + itemID
+}
+
+// lostAgentCopyWords tell what to run for an item the owner's record lets the
+// agent use but whose agent copy the server no longer has.
+func lostAgentCopyWords(itemID string) string {
+	return "the agent has no copy of its key: run teanode passwords rekey " + itemID
 }
 
 // itemMarkers are the short words that go after an item in a list.
@@ -807,6 +827,9 @@ func itemMarkers(summary passwordsItemSummary) string {
 	}
 	if summary.NeedsNewKey {
 		markers = append(markers, "needs a new key")
+	}
+	if summary.HasLostAgentCopy {
+		markers = append(markers, "agent copy lost")
 	}
 	switch summary.SharingCheckVerdict {
 	case "notChecked":
@@ -875,6 +898,9 @@ func runPasswordsList(ctx context.Context, command *cli.Command) error {
 	for index, summary := range summaries {
 		if summary.NeedsNewKey {
 			fmt.Printf("%s: %s\n", forTerminal(summary.Name), needsNewKeyWords(summary.ID))
+		}
+		if summary.HasLostAgentCopy {
+			fmt.Printf("%s: %s\n", forTerminal(summary.Name), lostAgentCopyWords(summary.ID))
 		}
 		if words := shownItems[index].sharingCheckWords(); words != "" {
 			fmt.Printf("%s: %s\n", forTerminal(summary.Name), words)
@@ -1481,12 +1507,26 @@ func runPasswordsDelete(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
+	if err := refuseAnswerAboutAnotherItem(item.View.ID, view); err != nil {
+		return err
+	}
 	item.View = view
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
 	fmt.Printf("deleted %s; %s\n", forTerminal(item.Name()), passwordsRestoreWords)
 	return nil
+}
+
+// runPasswordsVersions would list the earlier versions of an item. The server
+// lists them only to the person's own tap, which a command line never has, so
+// it is refused at once, before the passphrase is asked for, and says where it
+// is done.
+func runPasswordsVersions(ctx context.Context, command *cli.Command) error {
+	if _, err := itemFindingArgument(command, "usage: teanode passwords versions <item>"); err != nil {
+		return err
+	}
+	return &describedError{passwordsSentenceError(passwordsVersionsTapSentence)}
 }
 
 // runPasswordsPurge removes an item that is already deleted for good. It needs
@@ -1553,6 +1593,9 @@ func runPasswordsRestore(ctx context.Context, command *cli.Command) error {
 	view, err := client.RestorePasswordItem(ctx, session.connection, item.View.ID)
 	if err != nil {
 		return describeTapRequired(describeError(command, err), passwordsRestoreTapSentence)
+	}
+	if err := refuseAnswerAboutAnotherItem(item.View.ID, view); err != nil {
+		return err
 	}
 	item.View = view
 	if command.Bool("json") {
@@ -1743,6 +1786,9 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 	if err != nil {
 		return describeTapRequired(describeError(command, err), passwordsShareTapSentence)
 	}
+	if err := refuseAnswerAboutAnotherItem(item.View.ID, view); err != nil {
+		return err
+	}
 	item.View = view
 	circleNotices := item.circleMemberLines(newAccess, newlyReached, circleIDs, circleNames)
 	var actedForUserIDs []string
@@ -1840,6 +1886,9 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 	})
 	if err != nil {
 		return describeError(command, err)
+	}
+	if err := refuseAnswerAboutAnotherItem(item.View.ID, view); err != nil {
+		return err
 	}
 	item.View = view
 	// The people taken off may hold a sealed copy of the item key. A new key
@@ -2056,6 +2105,9 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeTapRequired(describeError(command, err), passwordsAgentTapSentence)
 	}
+	if err := refuseAnswerAboutAnotherItem(item.View.ID, view); err != nil {
+		return err
+	}
 	item.View = view
 	session.rememberAgentCopy(item, true)
 	if command.Bool("json") {
@@ -2109,7 +2161,17 @@ func runPasswordsRekey(ctx context.Context, command *cli.Command) error {
 	if !item.IsOwner() {
 		return fmt.Errorf("%s is shared with you by %s, and only its owner gives it a new key", item.Name(), item.View.OwnerName)
 	}
-	waiting, err := session.rekeyItem(item, nil, rekeyByPerson)
+	// An item whose record lets the agent use it while the server has no copy
+	// for the agent is given a record that says what the server has: the agent
+	// cannot use the item, and rekey never widens access.
+	var changeAccess func(*passwords.PasswordAccess) *passwords.PasswordAccess
+	hasLostAgentCopy := item.hasLostAgentCopy()
+	if hasLostAgentCopy {
+		changeAccess = func(access *passwords.PasswordAccess) *passwords.PasswordAccess {
+			return passwords.AccessWithAgentUse(access, false)
+		}
+	}
+	waiting, err := session.rekeyItem(item, changeAccess, rekeyByPerson)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -2117,6 +2179,9 @@ func runPasswordsRekey(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(summarizeItem(item))
 	}
 	fmt.Printf("%s has a new key\n", forTerminal(item.Name()))
+	if hasLostAgentCopy {
+		fmt.Println("the agent could not use it and still cannot; letting it use the item again" + passwordsTapPlace)
+	}
 	printWaitingRecipients(waiting)
 	return nil
 }

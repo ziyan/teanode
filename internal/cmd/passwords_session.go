@@ -603,6 +603,14 @@ func (self *passwordsItem) isUsableByAgentBySealedAccess() bool {
 	return self.VerifiedAccess != nil && self.VerifiedAccess.IsUsableByAgent
 }
 
+// hasLostAgentCopy is whether the owner's own signed record lets the agent use
+// the item while the server holds no copy of its key for the agent (the copy
+// was dropped, or letting the agent use the item was left half done). The agent
+// cannot use it, and rekey makes the record say what the server has.
+func (self *passwordsItem) hasLostAgentCopy() bool {
+	return self.IsOwner() && self.View.DeletedAt == nil && self.isUsableByAgentBySealedAccess() && !self.View.IsUsableByAgent
+}
+
 // Fields are the fields to seal, whichever the kind.
 func (self *passwordsItem) Fields() any {
 	switch {
@@ -875,6 +883,9 @@ func (self *passwordsSession) saveNewItem(kind passwords.ItemKind, fields any) (
 	if err != nil {
 		return nil, err
 	}
+	if err := refuseAnswerAboutAnotherItem(itemID, view); err != nil {
+		return nil, err
+	}
 	self.rememberRecord(itemID, access)
 	return view, nil
 }
@@ -888,13 +899,35 @@ func (self *passwordsSession) saveChangedItem(item *passwordsItem) (*client.Pass
 		return nil, err
 	}
 	baseRevision := item.View.Revision
-	return client.SavePasswordItem(self.ctx, self.connection, &client.SavePasswordItemInput{
+	view, err := client.SavePasswordItem(self.ctx, self.connection, &client.SavePasswordItemInput{
 		ID:              item.View.ID,
 		ItemKind:        string(item.Kind),
 		EncryptedFields: encryptedFields,
 		ItemKey:         item.View.ItemKey,
 		BaseRevision:    &baseRevision,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := refuseAnswerAboutAnotherItem(item.View.ID, view); err != nil {
+		return nil, err
+	}
+	return view, nil
+}
+
+// errPasswordsAnsweredAboutAnotherItem is why a command stops when the server
+// answers a change with the view of an item other than the one it was asked to
+// change. Nothing more is done with the answer: no key is sealed from it and
+// nothing is written down under it.
+var errPasswordsAnsweredAboutAnotherItem error = passwordsSentenceError("The server answered about another item.")
+
+// refuseAnswerAboutAnotherItem is nil when the view the server answered a
+// change with is of the item that was asked about.
+func refuseAnswerAboutAnotherItem(requestedItemID string, view *client.PasswordItemView) error {
+	if view == nil || view.ID != requestedItemID {
+		return errPasswordsAnsweredAboutAnotherItem
+	}
+	return nil
 }
 
 // saveItemWithAccess saves the item's fields sealed with a new access record,
