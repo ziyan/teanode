@@ -561,32 +561,16 @@ func TestPasswordsShare(test *testing.T) {
 	fake.setUpAs(benToken, "ben passphrase example")
 	fake.mustRun(testToken, testPassphrase+"\n", "unlock", "--passphrase-stdin")
 
-	// Without --force and without a terminal the safety codes cannot be asked
-	// about, so nothing is sealed.
-	_, err := fake.run(testToken, "", "share", "example.com", "ben")
-	if err == nil || !strings.Contains(err.Error(), "safety code") || !strings.Contains(err.Error(), "ben") {
-		test.Fatalf("no safety code was shown before sharing: %v", err)
-	}
-	// The code shown is the code of the key Ben set up.
-	benKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
-	if !strings.Contains(err.Error(), passwords.SafetyCode(benKey)) {
-		test.Errorf("the safety code of Ben's key %s is not in:\n%s", passwords.SafetyCode(benKey), err)
-	}
-	if _, err := fake.run(testToken, "", "share", "--waiting"); err == nil || !strings.Contains(err.Error(), "safety code") {
-		test.Errorf("sealing for the waiting without checking safety codes: %v", err)
-	}
-	if fake.items[firstItemID(fake)].keys["user-ben"] != nil {
-		test.Fatal("a key was sealed for Ben before the safety code was confirmed")
-	}
-	// The person at a terminal compares the safety code and says yes.
-	questions := recordKeyQuestions(test)
-	questions.isYes = true
+	// Nobody is asked about Ben's key, and there is no terminal: sharing
+	// --waiting seals for the key the server gives, with one line saying it is
+	// the first key for him.
+	notices := recordKeyNotices(test)
 	fake.mustRun(testToken, "", "share", "--waiting")
 	if fake.items[firstItemID(fake)].keys["user-ben"] == nil {
 		test.Fatal("no key was sealed for Ben")
 	}
-	if len(questions.warnings) != 1 || !strings.Contains(questions.warnings[0], passwords.SafetyCode(benKey)) {
-		test.Errorf("the question about Ben's key: %q", questions.warnings)
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "first key for ben recorded" {
+		test.Errorf("notices: %q", lines)
 	}
 	fake.mustRun(testToken, "", "lock")
 
@@ -606,7 +590,7 @@ func TestPasswordsShare(test *testing.T) {
 	fake.mustRun(benToken, "", "lock")
 
 	// The public key of Ben is written down, in a file only the owner reads,
-	// once the safety code was confirmed; the file holds nothing secret.
+	// when it is first seen; the file holds nothing secret.
 	knownFiles, _ := filepath.Glob(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "teanode", "passwords-keys-*.json"))
 	if len(knownFiles) != 1 {
 		test.Fatalf("known keys files: %v", knownFiles)
@@ -652,31 +636,24 @@ func TestPasswordsShare(test *testing.T) {
 		test.Errorf("keys sent: first %d then %d, want 1 then 0", sentBefore, fake.lastSetKeyCount)
 	}
 
-	// Ben erases Passwords and sets it up again: a new key. Sealing for it is
-	// shown with both safety codes and needs a yes, which no terminal gives.
-	oldBenKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
+	// Ben erases Passwords and sets it up again: a new key. Sealing for it
+	// needs no answer: the new key is used, with one line saying it changed.
 	fake.mustRun(benToken, "", "erase", "--force")
 	fake.setUpAs(benToken, "ben passphrase example")
-	newBenKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
 	// Both people use one profile here, so locking Ben locked Ada too.
 	fake.mustRun(testToken, testPassphrase+"\n", "unlock", "--passphrase-stdin")
-	questions.isYes = false
-	_, err = fake.run(testToken, "", "share", "--waiting")
-	if err == nil || !strings.Contains(err.Error(), "KEY CHANGED") || !strings.Contains(err.Error(), passwords.SafetyCode(oldBenKey)) || !strings.Contains(err.Error(), passwords.SafetyCode(newBenKey)) {
-		test.Fatalf("a changed key was not shown with both safety codes:\n%v", err)
-	}
-	if key := fake.items[firstItemID(fake)].keys["user-ben"]; key.RecipientPublicKey == fake.users[benToken].setup.PublicKey {
-		test.Fatal("a key was sealed for a key nobody confirmed")
-	}
-	questions.isYes = true
+	notices.forget()
 	fake.mustRun(testToken, "", "share", "--waiting")
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "ben's key changed (they set Passwords up again): compare codes with them; your code: teanode passwords code" {
+		test.Fatalf("notices: %q", lines)
+	}
 	if key := fake.items[firstItemID(fake)].keys["user-ben"]; key.RecipientPublicKey != fake.users[benToken].setup.PublicKey {
-		test.Fatal("a confirmed new key was not sealed for")
+		test.Fatal("the new key was not sealed for")
 	}
 }
 
 // A key the server planted, sealed by anybody but the owner, does not open,
-// and an owner whose key changed is not trusted without a yes.
+// and an owner whose key changed opens with the new key.
 func TestPasswordsSharedItemsOpenOnlyFromTheirOwner(test *testing.T) {
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
@@ -684,7 +661,7 @@ func TestPasswordsSharedItemsOpenOnlyFromTheirOwner(test *testing.T) {
 	fake.setUpAs(benToken, "ben passphrase example")
 	fake.mustRun(testToken, testPassphrase+"\n", "unlock", "--passphrase-stdin")
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
-	recordKeyQuestions(test).isYes = true
+	recordKeyNotices(test)
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
 	itemID := firstItemID(fake)
 	adaSession := fake.sessionAs(testToken, testPassphrase)
@@ -716,8 +693,7 @@ func TestPasswordsSharedItemsOpenOnlyFromTheirOwner(test *testing.T) {
 		test.Fatal("the genuine key stopped opening")
 	}
 
-	// The owner's key is the one Ben saw; one that differs is not trusted
-	// without a yes, which no terminal gives. Nothing is changed by refusing.
+	// The owner's key is the one Ben recorded; one that differs is accepted.
 	benSession := fake.sessionAs(benToken, "ben passphrase example")
 	view := &client.PasswordItemView{ID: itemID, OwnerUserID: "user-ada", OwnerName: "Ada", OwnerPublicKey: fake.users[testToken].setup.PublicKey, IsSharedWithMe: true}
 	if _, err := benSession.checkedOwnerKey(view); err != nil {
@@ -725,7 +701,7 @@ func TestPasswordsSharedItemsOpenOnlyFromTheirOwner(test *testing.T) {
 	}
 	otherKeyPair, _ := passwords.GenerateKeyPair()
 	view.OwnerPublicKey = base64.StdEncoding.EncodeToString(otherKeyPair.PublicKey())
-	if _, err := benSession.checkedOwnerKey(view); err == nil || !strings.Contains(err.Error(), "changed") {
+	if _, err := benSession.checkedOwnerKey(view); err != nil {
 		test.Fatalf("a changed owner key: %v", err)
 	}
 	view.OwnerPublicKey = "not a key"

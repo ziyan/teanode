@@ -138,15 +138,13 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 		}
 	}
 
-	// Sharing with Ben shows his safety code and needs a tap, and he opens it.
-	// The unlock is kept for the server, not for the sign-in, so the session
-	// uses what the token's unlock opened.
-	if _, err := run("ada-session", "", "share", "example.com", world.ben.Username); err == nil || !strings.Contains(err.Error(), "safety code") {
-		test.Fatalf("sharing without checking the safety code: %v", err)
-	}
-	// With no terminal the key is confirmed by comparing his safety code, which
-	// Ben would read off his own screen; here it is worked out from his public
-	// key. A wrong code records nothing, so sharing still refuses.
+	// Sharing with Ben needs a tap, and he opens it. Nobody is asked about his
+	// key. The unlock is kept for the server, not for the sign-in, so the
+	// session uses what the token's unlock opened.
+	//
+	// Marking his key as compared is optional: his safety code, which Ben would
+	// read off his own screen, is worked out here from his public key. A wrong
+	// code records nothing.
 	var benSettings struct {
 		Setup struct {
 			PublicKey string `json:"publicKey"`
@@ -163,11 +161,8 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if _, err := run("ada-token", "", "trust", world.ben.Username, "0000 0000 0000 0000 0000 0000 0000 0001"); err == nil || !strings.Contains(err.Error(), "nothing was recorded") {
 		test.Fatalf("trust with a wrong code: %v", err)
 	}
-	if _, err := run("ada-session", "", "share", "example.com", world.ben.Username); err == nil || !strings.Contains(err.Error(), "safety code") {
-		test.Fatalf("sharing after a refused trust: %v", err)
-	}
-	// Confirming his safety code writes his key down, even though the server
-	// then refuses a token for want of a tap.
+	// The right code marks his key as compared, even though the server then
+	// refuses a token for want of a tap.
 	mustRun("ada-token", benSafetyCode+"\n", "trust", world.ben.Username, "--code-stdin")
 	if _, err := run("ada-token", "", "share", "example.com", world.ben.Username); !isTapRefusal(err) {
 		test.Fatalf("sharing from a token: %v", err)
@@ -219,9 +214,9 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 		test.Fatalf("code printed:\n%s", output)
 	}
 
-	// Cora has not set Passwords up, so she waits. Once she has, and her safety
-	// code is confirmed, share --waiting seals the item key for her naming the
-	// item key it opened, which the server compares with the item's own.
+	// Cora has not set Passwords up, so she waits. Once she has, share --waiting
+	// seals the item key for her at once, naming the item key it opened, which
+	// the server compares with the item's own.
 	world.join(test, world.ada, world.home, world.cora)
 	mustRun("ada-session", "", "share", "example.com", world.cora.Username)
 	mustRun("cora-session", coraPassphrase+"\n", "setup", "--passphrase-stdin")
@@ -233,13 +228,11 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if err := json.Unmarshal([]byte(mustRun("cora-session", "", "settings", "--json")), &coraSettings); err != nil {
 		test.Fatal(err)
 	}
-	coraPublicKey, err := base64.StdEncoding.DecodeString(coraSettings.Setup.PublicKey)
-	if err != nil || len(coraPublicKey) == 0 {
-		test.Fatalf("Cora's public key: %v", err)
+	if coraSettings.Setup.PublicKey == "" {
+		test.Fatal("Cora's public key is empty")
 	}
 	mustRun("cora-session", "", "lock")
 	mustRun("ada-session", adaPassphrase+"\n", "unlock", "--passphrase-stdin")
-	mustRun("ada-session", "", "trust", world.cora.Username, passwords.SafetyCode(coraPublicKey))
 	if output := mustRun("ada-session", "", "share", "--waiting"); !strings.Contains(output, "sealed 1 item") {
 		test.Fatalf("share --waiting said:\n%s", output)
 	}

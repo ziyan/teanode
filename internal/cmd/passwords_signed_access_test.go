@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/urfave/cli/v3"
-
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/passwords"
 )
@@ -485,10 +483,11 @@ func TestPasswordsShareKeysCarryTheItemKey(test *testing.T) {
 	}
 }
 
-// A confirmed key for an owner is the only key accepted for them: the older
-// key seen before it is not accepted again once the new one is confirmed.
-func TestPasswordsOldSeenKeyIsNotAcceptedAfterConfirmingTheNewOne(test *testing.T) {
-	fake, _, _ := agentFake(test)
+// A key the server shows for an owner that differs from the one used before is
+// accepted whichever it is, an older one shown again included: it is recorded
+// as the key for the owner, with a line each time saying it changed.
+func TestPasswordsAnOwnerKeyThatDiffersIsAcceptedEachTime(test *testing.T) {
+	fake, _, notices := agentFake(test)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "secret-example")
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
 	adaKey := fake.users[testToken].setup.PublicKey
@@ -502,44 +501,36 @@ func TestPasswordsOldSeenKeyIsNotAcceptedAfterConfirmingTheNewOne(test *testing.
 		test.Fatal(err)
 	}
 	// Ben once saw Ada's old key; Ada then set Passwords up again.
-	if err := known.rememberSeen("user-ada", "Ada", oldKey); err != nil {
+	if _, err := known.rememberKey("user-ada", "Ada", "Ada", oldKey); err != nil {
 		test.Fatal(err)
 	}
-	original := confirmOwnerKeyChange
-	test.Cleanup(func() { confirmOwnerKeyChange = original })
-	confirmOwnerKeyChange = func(*cli.Command, string) (bool, error) { return true, nil }
+	notices.forget()
 	if len(fake.list(benToken, "")) != 1 {
-		test.Fatal("a yes did not read the item")
+		test.Fatal("the item was not read with the owner's new key")
 	}
-	record := knownRecord(test, "user-ada")
-	if record.ConfirmedPublicKey != adaKey || record.SeenPublicKey != adaKey {
-		test.Fatalf("a yes records the new key as confirmed and as seen: %+v", record)
+	if record := knownRecord(test, "user-ada"); record.PublicKey != adaKey {
+		test.Fatalf("the new key was not recorded: %+v", record)
+	}
+	if lines := notices.lines(); len(lines) != 1 || !strings.Contains(lines[0], "Ada's key changed") {
+		test.Fatalf("notices: %q", lines)
 	}
 
 	// The server now presents an item whose owner key is the old one: it is
-	// asked about again, and a no stops it.
-	var asked string
-	confirmOwnerKeyChange = func(_ *cli.Command, warning string) (bool, error) {
-		asked = warning
-		return true, errDeclined
-	}
+	// accepted as the key for the owner, and said again.
+	notices.forget()
 	fresh := fake.sessionAs(benToken, benPassphrase)
-	_, err = fresh.checkedOwnerKey(&client.PasswordItemView{OwnerUserID: "user-ada", OwnerName: "Ada", OwnerPublicKey: oldKey})
-	if err == nil || asked == "" {
-		test.Fatalf("the old key was accepted after the new one was confirmed (asked %q, error %v)", asked, err)
+	view := &client.PasswordItemView{OwnerUserID: "user-ada", OwnerName: "Ada", OwnerPublicKey: oldKey}
+	if _, err := fresh.checkedOwnerKey(view); err != nil {
+		test.Fatalf("an owner's key that differs was refused: %v", err)
 	}
-	oldKeyBytes, _ := base64.StdEncoding.DecodeString(oldKey)
-	adaKeyBytes, _ := base64.StdEncoding.DecodeString(adaKey)
-	if !strings.Contains(asked, "safety code now:    "+passwords.SafetyCode(oldKeyBytes)) || !strings.Contains(asked, "safety code before: "+passwords.SafetyCode(adaKeyBytes)) {
-		test.Errorf("the question compares with the key that was confirmed:\n%s", asked)
+	fresh.recordOwnerKey(view)
+	if record := knownRecord(test, "user-ada"); record.PublicKey != oldKey {
+		test.Fatalf("the key shown last was not recorded: %+v", record)
+	}
+	if lines := notices.lines(); len(lines) != 1 || !strings.Contains(lines[0], "Ada's key changed") {
+		test.Fatalf("notices: %q", lines)
 	}
 }
-
-var errDeclined = &declinedError{}
-
-type declinedError struct{}
-
-func (self *declinedError) Error() string { return "declined" }
 
 // The agent flag shown is the server's flag and the owner's signed record
 // together.

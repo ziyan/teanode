@@ -50,7 +50,7 @@ import {
   sortLogins,
   StoredPasskey,
   summaryOf,
-  confirmOwnerKey,
+  dismissOwnerKeyNotice,
   unlockPasswords,
   PasswordsEnvironment,
   whatToDoWithCapturedLogin,
@@ -949,7 +949,7 @@ async function popupState(tabId: number | undefined, frameId: number | undefined
 async function search(query: string, tabId: number | undefined, frameId: number | undefined): Promise<SearchAnswer> {
   const target = await frameTargetState(tabId, frameId)
   return withOpenedKeys(environment, async (keys) => {
-    const report: OpenReport = { ownerKeyChangedCount: 0, ownerKeyChanges: [] }
+    const report: OpenReport = { ownerKeyChanges: [] }
     const items = await openItems(environment, keys, report)
     try {
       const logins = loginsOf(items)
@@ -965,8 +965,7 @@ async function search(query: string, tabId: number | undefined, frameId: number 
       return {
         forThisSite: forThisSite.map(summaryOf),
         others: others.slice(0, 100).map(summaryOf),
-        ownerKeyChangedCount: report.ownerKeyChangedCount,
-        ownerKeyChanges: await describeOwnerKeyChanges(report.ownerKeyChanges),
+        ownerKeyChanges: await describeOwnerKeyChanges(report.ownerKeyChanges, keys.keyPair.publicKey),
       }
     } finally {
       releaseItems(items)
@@ -1073,13 +1072,10 @@ async function handlePageRequest(message: PopupRequest): Promise<unknown> {
       return fillInTab(message)
     case 'passwords:save-pending':
       return saveCaptured(message.tabId)
-    case 'passwords:confirm-owner-key':
-      // The person compared the safety codes in the window and pressed the
-      // button. Every list built from the old key is dropped with it.
-      await withOpenedKeys(environment, (keys) =>
-        confirmOwnerKey(environment, keys, message.ownerUserId, message.newPublicKey),
-      )
-      suggestionCache.clear()
+    case 'passwords:dismiss-owner-key':
+      // The person dismissed the notice about an owner's changed key in the
+      // window. The key stays the one used for the owner.
+      await withOpenedKeys(environment, (keys) => dismissOwnerKeyNotice(environment, keys.userId, message.ownerUserId))
       return { isDone: true }
     case 'passwords:open-dashboard': {
       const origin = await readServerOrigin()

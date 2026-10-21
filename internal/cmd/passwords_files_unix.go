@@ -63,7 +63,7 @@ func lockPrivateFile(path string) (release func(), err error) {
 func checkPrivateFile(path string, information os.FileInfo) error {
 	if permissions := information.Mode().Perm(); permissions&0o077 != 0 {
 		return fmt.Errorf("%s can be read or changed by other people (mode %04o); if only you could have touched it, 'chmod 600 %s' fixes that, "+
-			"otherwise remove it and treat what it held as seen ('teanode passwords lock' removes the keys that unlock kept, and nothing else)", path, permissions, path)
+			"otherwise remove it, and the keys it held are recorded again as they are seen ('teanode passwords lock' removes the keys that unlock kept, and nothing else)", path, permissions, path)
 	}
 	if status, isStatus := information.Sys().(*syscall.Stat_t); isStatus && int(status.Uid) != os.Getuid() {
 		return fmt.Errorf("%s belongs to another user; remove it ('teanode passwords lock' removes the keys that unlock kept, and nothing else)", path)

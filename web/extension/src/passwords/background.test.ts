@@ -1334,7 +1334,7 @@ describe('the changed key of the owner of shared logins', () => {
     }
   }
 
-  it('is offered with both safety codes, and confirming the new key opens the logins again', async () => {
+  it('is accepted: the logins open with the new key, and a notice with both safety codes and the own one stays until dismissed', async () => {
     const oldPair = await generatePersonKeyPair()
     const newPair = await generatePersonKeyPair()
     const context = await start({ records: [await sharedRecord(oldPair)] })
@@ -1342,49 +1342,29 @@ describe('the changed key of the owner of shared logins', () => {
     expect((await context.send({ type: 'passwords:search', query: '' }, ownPageSender())).others).toHaveLength(1)
 
     context.server.records = [await sharedRecord(newPair)]
-    const closed = await context.send({ type: 'passwords:search', query: '' }, ownPageSender())
-    expect(closed.others).toEqual([])
-    expect(closed.ownerKeyChangedCount).toBe(1)
-    expect(closed.ownerKeyChanges).toEqual([
+    const changed = await context.send({ type: 'passwords:search', query: '' }, ownPageSender())
+    expect(changed.others.map((login: { name: string }) => login.name)).toEqual(['Shared'])
+    expect(changed.ownerKeyChanges).toEqual([
       {
         ownerUserId: 'owner-b',
         ownerName: 'Bo',
         oldSafetyCode: await safetyCode(oldPair.publicKey),
         newSafetyCode: await safetyCode(newPair.publicKey),
-        newPublicKey: encodeBase64(newPair.publicKey),
+        ownSafetyCode: expect.stringMatching(/^\d{4}( \d{4}){7}$/),
       },
     ])
+    // The notice is still there on the next look.
+    expect((await context.send({ type: 'passwords:search', query: '' }, ownPageSender())).ownerKeyChanges).toHaveLength(
+      1,
+    )
 
-    // A page cannot confirm a key; only the extension's own window can.
-    const message = {
-      type: 'passwords:confirm-owner-key',
-      ownerUserId: 'owner-b',
-      newPublicKey: encodeBase64(newPair.publicKey),
-    }
+    // A page cannot dismiss it; only the extension's own window can.
+    const message = { type: 'passwords:dismiss-owner-key', ownerUserId: 'owner-b' }
     expect(await context.send(message, pageSender('https://example.com/'))).toEqual({ error: 'Not allowed from here.' })
     expect(await context.send(message, ownPageSender())).toEqual({ isDone: true })
-    const opened = await context.send({ type: 'passwords:search', query: '' }, ownPageSender())
-    expect(opened.others.map((login: { name: string }) => login.name)).toEqual(['Shared'])
-    expect(opened.ownerKeyChanges).toEqual([])
-  })
-
-  it('does not confirm a key other than the one the server shows', async () => {
-    const oldPair = await generatePersonKeyPair()
-    const newPair = await generatePersonKeyPair()
-    const context = await start({ records: [await sharedRecord(oldPair)] })
-    await context.unlock()
-    await context.send({ type: 'passwords:search', query: '' }, ownPageSender())
-    context.server.records = [await sharedRecord(newPair)]
-    const answer = await context.send(
-      {
-        type: 'passwords:confirm-owner-key',
-        ownerUserId: 'owner-b',
-        newPublicKey: encodeBase64((await generatePersonKeyPair()).publicKey),
-      },
-      ownPageSender(),
-    )
-    expect(answer.error).toMatch(/changed again/)
-    expect((await context.send({ type: 'passwords:search', query: '' }, ownPageSender())).others).toEqual([])
+    const dismissed = await context.send({ type: 'passwords:search', query: '' }, ownPageSender())
+    expect(dismissed.others.map((login: { name: string }) => login.name)).toEqual(['Shared'])
+    expect(dismissed.ownerKeyChanges).toEqual([])
   })
 })
 

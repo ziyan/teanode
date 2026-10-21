@@ -31,7 +31,7 @@ import {
   saveCapturedLogin,
   savePasskey,
   summaryOf,
-  confirmOwnerKey,
+  dismissOwnerKeyNotice,
   unlockPasswords,
   PasswordsEnvironment,
   whatToDoWithCapturedLogin,
@@ -360,16 +360,16 @@ describe('reading logins', () => {
     const encryptedFields = serializeSealed(
       await sealItemFields(itemKey, login({ name: 'Shared', sites: ['example.com'] }), id, 'login'),
     )
-    const shared: PasswordItemRecord = {
+    const sealedBy = async (pair: PersonKeyPair): Promise<PasswordItemRecord> => ({
       ...(await ownRecord(id, login({}))),
       ownerUserId: 'owner-b',
       ownerName: 'Bo',
-      ownerPublicKey: encodeBase64(ownerKeyPair.publicKey),
+      ownerPublicKey: encodeBase64(pair.publicKey),
       isSharedWithMe: true,
       encryptedFields,
-      itemKey: await sealItemKeyFor(itemKey, ownerKeyPair, fixture.input.publicKey, id, 'owner-b', USER_ID),
-    }
-    const { environment, local, server } = await unlocked([shared])
+      itemKey: await sealItemKeyFor(itemKey, pair, fixture.input.publicKey, id, 'owner-b', USER_ID),
+    })
+    const { environment, local, server } = await unlocked([await sealedBy(ownerKeyPair)])
     await withOpenedKeys(environment, async (keys) => {
       const items = await openItems(environment, keys)
       expect(items.map((item) => [item.fields.name, item.isOwnedByMe])).toEqual([['Shared', false]])
@@ -383,15 +383,16 @@ describe('reading logins', () => {
     expect(local.contents['passwordsPins:' + USER_ID]).toEqual({ 'owner-b': encodeBase64(ownerKeyPair.publicKey) })
     expect(JSON.stringify(local.contents)).not.toContain('Shared')
 
-    // The owner's key changes: the item is no longer opened.
+    // The owner's key changes: the item still opens, with the new key, and a
+    // notice says the key changed.
     const otherKeyPair = await generatePersonKeyPair()
-    server.records = [{ ...shared, ownerPublicKey: encodeBase64(otherKeyPair.publicKey) }]
+    server.records = [await sealedBy(otherKeyPair)]
     await withOpenedKeys(environment, async (keys) => {
-      const report: OpenReport = { ownerKeyChangedCount: 0, ownerKeyChanges: [] }
-      expect(await openItems(environment, keys, report)).toEqual([])
-      // Not dropped without a word: it is counted, for the window to say so.
+      const report: OpenReport = { ownerKeyChanges: [] }
+      const items = await openItems(environment, keys, report)
+      expect(items.map((item) => item.fields.name)).toEqual(['Shared'])
+      releaseItems(items)
       expect(report).toEqual({
-        ownerKeyChangedCount: 1,
         ownerKeyChanges: [
           {
             ownerUserId: 'owner-b',
@@ -405,7 +406,7 @@ describe('reading logins', () => {
   })
 })
 
-describe('trusting the changed key of the owner of shared logins', () => {
+describe('the changed key of the owner of shared logins', () => {
   const id = '00000000-0000-4000-8000-0000000000aa'
 
   // A login shared by owner-b. It is sealed by sealingPair; the record names
@@ -428,71 +429,105 @@ describe('trusting the changed key of the owner of shared logins', () => {
     return (local.contents['passwordsPins:' + USER_ID] as Record<string, string> | undefined)?.['owner-b']
   }
 
-  it('keeps the new key as the owner key, once an item of theirs opens with it', async () => {
-    const newPair = await generatePersonKeyPair()
-    const { environment, local, server } = await unlocked([await sharedRecord(ownerKeyPair, ownerKeyPair)])
-    await withOpenedKeys(environment, async (keys) => releaseItems(await openItems(environment, keys)))
-    expect(await readPin(local)).toBe(encodeBase64(ownerKeyPair.publicKey))
-
-    server.records = [await sharedRecord(newPair, newPair)]
-    await withOpenedKeys(environment, async (keys) => {
-      expect(await openItems(environment, keys)).toEqual([])
-      await confirmOwnerKey(environment, keys, 'owner-b', encodeBase64(newPair.publicKey))
-    })
-    expect(await readPin(local)).toBe(encodeBase64(newPair.publicKey))
-    await withOpenedKeys(environment, async (keys) => {
-      const items = await openItems(environment, keys)
-      expect(items.map((item) => item.fields.name)).toEqual(['Shared'])
+  async function read(environment: Parameters<typeof openItems>[0]) {
+    return withOpenedKeys(environment, async (keys) => {
+      const report: OpenReport = { ownerKeyChanges: [] }
+      const items = await openItems(environment, keys, report)
+      const names = items.map((item) => item.fields.name)
       releaseItems(items)
+      return { names, report }
     })
-  })
+  }
 
-  it('confirms nothing the server no longer shows, and nothing that does not open', async () => {
+  it('is accepted once an item of theirs opens with the new key, and the notice stays until dismissed', async () => {
     const newPair = await generatePersonKeyPair()
-    const otherPair = await generatePersonKeyPair()
     const { environment, local, server } = await unlocked([await sharedRecord(ownerKeyPair, ownerKeyPair)])
-    await withOpenedKeys(environment, async (keys) => releaseItems(await openItems(environment, keys)))
-    // The server shows a different key than the one that was compared.
-    server.records = [await sharedRecord(newPair, newPair)]
-    await withOpenedKeys(environment, async (keys) => {
-      await expect(confirmOwnerKey(environment, keys, 'owner-b', encodeBase64(otherPair.publicKey))).rejects.toThrow(
-        /changed again/,
-      )
-      // Another owner's id does not do either.
-      await expect(confirmOwnerKey(environment, keys, 'owner-c', encodeBase64(newPair.publicKey))).rejects.toThrow(
-        /changed again/,
-      )
-    })
-    // A key the server shows, on an item that was not sealed by it.
-    server.records = [await sharedRecord(otherPair, newPair)]
-    await withOpenedKeys(environment, async (keys) => {
-      await expect(confirmOwnerKey(environment, keys, 'owner-b', encodeBase64(newPair.publicKey))).rejects.toThrow(
-        /did not open|None of their/,
-      )
-    })
+    expect((await read(environment)).report.ownerKeyChanges).toEqual([])
     expect(await readPin(local)).toBe(encodeBase64(ownerKeyPair.publicKey))
-  })
 
-  it('works out the safety codes of both keys for the owner, and leaves one that cannot be read empty', async () => {
-    const newPair = await generatePersonKeyPair()
-    const [answer, unreadable] = await describeOwnerKeyChanges([
+    server.records = [await sharedRecord(newPair, newPair)]
+    const changed = await read(environment)
+    expect(changed.names).toEqual(['Shared'])
+    expect(changed.report.ownerKeyChanges).toHaveLength(1)
+    expect(await readPin(local)).toBe(encodeBase64(newPair.publicKey))
+
+    // The notice stays on the next reading, with the key from before the change.
+    const again = await read(environment)
+    expect(again.names).toEqual(['Shared'])
+    expect(again.report.ownerKeyChanges).toEqual([
       {
         ownerUserId: 'owner-b',
         ownerName: 'Bo',
         oldPublicKey: encodeBase64(ownerKeyPair.publicKey),
         newPublicKey: encodeBase64(newPair.publicKey),
       },
+    ])
+
+    // Dismissing removes it, and the key stays the new one.
+    await withOpenedKeys(environment, (keys) => dismissOwnerKeyNotice(environment, keys.userId, 'owner-b'))
+    const dismissed = await read(environment)
+    expect(dismissed.names).toEqual(['Shared'])
+    expect(dismissed.report.ownerKeyChanges).toEqual([])
+    expect(await readPin(local)).toBe(encodeBase64(newPair.publicKey))
+  })
+
+  it('does not keep a key that does not open the owner shared logins', async () => {
+    const newPair = await generatePersonKeyPair()
+    const otherPair = await generatePersonKeyPair()
+    const { environment, local, server } = await unlocked([await sharedRecord(ownerKeyPair, ownerKeyPair)])
+    await read(environment)
+    // A key the server shows, on an item that was not sealed by it.
+    server.records = [await sharedRecord(otherPair, newPair)]
+    const refused = await read(environment)
+    expect(refused.names).toEqual([])
+    expect(refused.report.ownerKeyChanges).toEqual([])
+    expect(await readPin(local)).toBe(encodeBase64(ownerKeyPair.publicKey))
+  })
+
+  it('keeps the key from before the first change when it changes again, and drops the notice on a change back', async () => {
+    const secondPair = await generatePersonKeyPair()
+    const thirdPair = await generatePersonKeyPair()
+    const { environment, server } = await unlocked([await sharedRecord(ownerKeyPair, ownerKeyPair)])
+    await read(environment)
+    server.records = [await sharedRecord(secondPair, secondPair)]
+    await read(environment)
+    server.records = [await sharedRecord(thirdPair, thirdPair)]
+    expect((await read(environment)).report.ownerKeyChanges).toEqual([
       {
         ownerUserId: 'owner-b',
         ownerName: 'Bo',
-        oldPublicKey: 'not a key',
-        newPublicKey: encodeBase64(newPair.publicKey),
+        oldPublicKey: encodeBase64(ownerKeyPair.publicKey),
+        newPublicKey: encodeBase64(thirdPair.publicKey),
       },
     ])
+    server.records = [await sharedRecord(ownerKeyPair, ownerKeyPair)]
+    expect((await read(environment)).report.ownerKeyChanges).toEqual([])
+  })
+
+  it('works out the safety codes of both keys and the own one, and leaves one that cannot be read empty', async () => {
+    const newPair = await generatePersonKeyPair()
+    const ownPair = await generatePersonKeyPair()
+    const [answer, unreadable] = await describeOwnerKeyChanges(
+      [
+        {
+          ownerUserId: 'owner-b',
+          ownerName: 'Bo',
+          oldPublicKey: encodeBase64(ownerKeyPair.publicKey),
+          newPublicKey: encodeBase64(newPair.publicKey),
+        },
+        {
+          ownerUserId: 'owner-b',
+          ownerName: 'Bo',
+          oldPublicKey: 'not a key',
+          newPublicKey: encodeBase64(newPair.publicKey),
+        },
+      ],
+      ownPair.publicKey,
+    )
     expect(answer.oldSafetyCode).toBe(await safetyCode(ownerKeyPair.publicKey))
     expect(answer.newSafetyCode).toBe(await safetyCode(newPair.publicKey))
+    expect(answer.ownSafetyCode).toBe(await safetyCode(ownPair.publicKey))
     expect(answer.oldSafetyCode).not.toBe(answer.newSafetyCode)
-    expect(answer.newPublicKey).toBe(encodeBase64(newPair.publicKey))
     expect(unreadable.oldSafetyCode).toBe('')
     expect(unreadable.newSafetyCode).not.toBe('')
   })

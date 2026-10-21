@@ -115,11 +115,9 @@ export interface FillInTabAnswer {
 export interface SearchAnswer {
   forThisSite: LoginSummary[]
   others: LoginSummary[]
-  // ownerKeyChangedCount is how many shared logins were left out because
-  // their owner's key is not the one this device kept.
-  ownerKeyChangedCount: number
-  // ownerKeyChanges are those owners, with the safety code before and now, for
-  // the window to ask whether the new key matches.
+  // ownerKeyChanges are the owners whose key changed and whose notice was not
+  // dismissed, with the safety code before and now and the person's own, for
+  // the window to show. Their shared logins are listed like any other.
   ownerKeyChanges: OwnerKeyChangeAnswer[]
 }
 
@@ -141,7 +139,7 @@ export type PopupRequest =
       confirmedOtherSiteOrigin?: string
     } & FrameTarget)
   | ({ type: 'passwords:save-pending' } & Pick<FrameTarget, 'tabId'>)
-  | { type: 'passwords:confirm-owner-key'; ownerUserId: string; newPublicKey: string }
+  | { type: 'passwords:dismiss-owner-key'; ownerUserId: string }
   | { type: 'passwords:open-dashboard' }
   | { type: 'passwords:open-popup-window' }
   | { type: 'passwords:prompt-info'; promptId: string }

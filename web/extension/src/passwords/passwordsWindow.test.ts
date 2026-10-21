@@ -50,7 +50,6 @@ beforeEach(() => {
     'passwords:search': () => ({
       forThisSite: [OWN_LOGIN, SHARED_LOGIN],
       others: [OTHER_LOGIN],
-      ownerKeyChangedCount: 0,
       ownerKeyChanges: [],
     }),
   }
@@ -197,62 +196,62 @@ describe("a shared login's owner whose key changed", () => {
     ownerName: 'Grace',
     oldSafetyCode: '0123 4567 8901 2345 6789 0123 4567 8901',
     newSafetyCode: '1111 2222 3333 4444 5555 6666 7777 8888',
-    newPublicKey: 'new-key',
+    ownSafetyCode: '9999 8888 7777 6666 5555 4444 3333 2222',
   }
 
   beforeEach(() => {
     answers['passwords:search'] = () => ({
       forThisSite: [],
-      others: [],
-      ownerKeyChangedCount: 2,
+      others: [OTHER_LOGIN],
       ownerKeyChanges: [change],
     })
   })
 
-  it('shows both safety codes, in the words of the dashboard, and confirms nothing until the button', async () => {
+  it('is a notice next to the logins, which are listed, and shows no codes until asked', async () => {
     await load()
     const card = document.querySelector('.card[role="alert"]') as HTMLElement
     expect(card.textContent).toContain("Grace's key changed")
+    expect(card.textContent).toContain('This happens when they set Passwords up again')
+    expect(card.textContent).not.toMatch(/new device/i)
+    expect(card.textContent).not.toContain('0123 4567')
+    expect(document.querySelector('.list')?.textContent).toContain(OTHER_LOGIN.name)
+    // Nothing is a button that gates use, and nothing is sent until one is pressed.
+    expect(card.textContent).not.toMatch(/confirm/i)
+    expect(sent.some((message) => message.type === 'passwords:dismiss-owner-key')).toBe(false)
+  })
+
+  it('shows both codes of the owner and the own one with Compare codes', async () => {
+    await load()
+    const card = document.querySelector('.card[role="alert"]') as HTMLElement
+    buttonIn(card, 'Compare codes').click()
     expect(card.textContent).toContain('Safety code before 0123 4567 8901 2345 6789 0123 4567 8901')
     expect(card.textContent).toContain('Safety code now 1111 2222 3333 4444 5555 6666 7777 8888')
+    expect(card.textContent).toContain('Your safety code 9999 8888 7777 6666 5555 4444 3333 2222')
     expect(card.textContent).toContain('Ask Grace to open Passwords settings on their own device')
-    expect(card.textContent).toContain('Confirm only if it matches')
-    expect(card.textContent).not.toMatch(/trust/i)
-    expect(sent.some((message) => message.type === 'passwords:confirm-owner-key')).toBe(false)
+    expect(sent.some((message) => message.type === 'passwords:dismiss-owner-key')).toBe(false)
   })
 
-  it('confirms the very key it showed and reads the list again', async () => {
-    answers['passwords:confirm-owner-key'] = () => ({ isDone: true })
+  it('is dismissed with Dismiss, and the list is read again', async () => {
+    answers['passwords:dismiss-owner-key'] = () => ({ isDone: true })
     await load()
     const searchesBefore = sent.filter((message) => message.type === 'passwords:search').length
-    buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'The new safety code matches').click()
+    buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'Dismiss').click()
     await settle()
-    expect(sent.find((message) => message.type === 'passwords:confirm-owner-key')).toEqual({
-      type: 'passwords:confirm-owner-key',
+    expect(sent.find((message) => message.type === 'passwords:dismiss-owner-key')).toEqual({
+      type: 'passwords:dismiss-owner-key',
       ownerUserId: 'owner-b',
-      newPublicKey: 'new-key',
     })
     expect(sent.filter((message) => message.type === 'passwords:search').length).toBe(searchesBefore + 1)
-  })
-
-  it('says so when the key changed again, and does not confirm it', async () => {
-    answers['passwords:confirm-owner-key'] = () => ({ error: 'Their key changed again.' })
-    await load()
-    buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'The new safety code matches').click()
-    await settle()
-    expect(document.querySelector('.status')?.textContent).toBe('Their key changed again.')
-    const button = buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'The new safety code matches')
-    expect(button.disabled).toBe(false)
   })
 
   it('says "could not be read" for a code that cannot be worked out', async () => {
     answers['passwords:search'] = () => ({
       forThisSite: [],
       others: [],
-      ownerKeyChangedCount: 1,
       ownerKeyChanges: [{ ...change, oldSafetyCode: '' }],
     })
     await load()
+    buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'Compare codes').click()
     expect(document.querySelector('.card[role="alert"]')?.textContent).toContain('Safety code before could not be read')
   })
 })

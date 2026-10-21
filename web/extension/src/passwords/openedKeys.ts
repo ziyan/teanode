@@ -67,6 +67,7 @@ export interface PasswordsEnvironment {
 
 const KEYS_STORAGE_KEY = 'passwordsKeys'
 const PINS_PREFIX = 'passwordsPins:'
+const NOTICES_PREFIX = 'passwordsKeyNotices:'
 const PASSKEY_SITES_KEY = 'passwordsPasskeySites'
 const SESSION_QUERY = 'query { GetSession { userId } }'
 
@@ -273,7 +274,7 @@ export async function withOpenedKeys<Result>(
 }
 
 // ---------------------------------------------------------------------------
-// Known keys (an owner's first key is kept on first use; a changed one is confirmed by the person)
+// Known keys (an owner's first key is kept on first use; a changed one is accepted and told to the person)
 
 async function readPins(environment: PasswordsEnvironment, userId: string): Promise<Record<string, string>> {
   const stored = (await environment.local.get(PINS_PREFIX + userId))[PINS_PREFIX + userId]
@@ -290,38 +291,70 @@ async function pinOwnerKey(environment: PasswordsEnvironment, userId: string, ow
   await environment.local.set({ [PINS_PREFIX + userId]: { ...pins, [ownerUserId]: publicKey } })
 }
 
-// confirmOwnerKey makes the key the server now shows for an owner the one this
-// device checks their shared items against, after the person compared the
-// safety codes and said they match. It records the key only if the server still shows this very
-// key and an item of that owner opens with it (the same rule as the first key
-// seen), so a key swapped in again since the codes were shown is not confirmed
-// on the strength of the earlier look.
-export async function confirmOwnerKey(
-  environment: PasswordsEnvironment,
-  keys: OpenedKeys,
-  ownerUserId: string,
-  newPublicKey: string,
-): Promise<void> {
-  const list = (await environment.call(LIST_PASSWORD_ITEMS, { sinceRevision: null }))
-    .ListPasswordItems as PasswordItemList
-  const records = list.items.filter(
-    (record) => record.isSharedWithMe && record.ownerUserId === ownerUserId && record.ownerPublicKey === newPublicKey,
-  )
-  if (records.length === 0) {
-    throw new Error('Their key changed again. Close this window, open it again and compare the new safety code.')
-  }
-  for (const record of records) {
-    // Opened with no key kept for the owner, so that it opens with the one
-    // the server sent; the result decides whether that key is theirs.
-    const item = await openPasswordItem(record, keys.accountKey, keys.keyPair, keys.userId, null)
-    const isOpened = item !== null && !item.isUnreadable
-    item?.itemKey?.fill(0)
-    if (isOpened) {
-      await pinOwnerKey(environment, keys.userId, ownerUserId, newPublicKey)
-      return
+// The notices about an owner's changed key are kept in this browser until the
+// person dismisses them: for each owner, the key this device used before and
+// the key now. They gate nothing; shared logins from the owner open with the
+// new key.
+async function readKeyNotices(environment: PasswordsEnvironment, userId: string): Promise<OwnerKeyChangeNotice[]> {
+  const stored = (await environment.local.get(NOTICES_PREFIX + userId))[NOTICES_PREFIX + userId]
+  if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return []
+  const notices: OwnerKeyChangeNotice[] = []
+  for (const [ownerUserId, each] of Object.entries(stored)) {
+    const notice = each as Partial<OwnerKeyChangeNotice> | null
+    if (
+      notice !== null &&
+      typeof notice === 'object' &&
+      typeof notice.ownerName === 'string' &&
+      typeof notice.oldPublicKey === 'string' &&
+      typeof notice.newPublicKey === 'string'
+    ) {
+      notices.push({
+        ownerUserId,
+        ownerName: notice.ownerName,
+        oldPublicKey: notice.oldPublicKey,
+        newPublicKey: notice.newPublicKey,
+      })
     }
   }
-  throw new Error('None of their shared logins opened with that key, so it was not confirmed.')
+  return notices
+}
+
+async function writeKeyNotices(environment: PasswordsEnvironment, userId: string, notices: OwnerKeyChangeNotice[]) {
+  const stored: Record<string, Omit<OwnerKeyChangeNotice, 'ownerUserId'>> = {}
+  for (const { ownerUserId, ...rest } of notices) stored[ownerUserId] = rest
+  await environment.local.set({ [NOTICES_PREFIX + userId]: stored })
+}
+
+// rememberOwnerKeyChange keeps a notice for an owner whose key changed, until
+// the person dismisses it. A second change before then keeps the key from
+// before the first, so the notice compares what the person last knew with now;
+// a change back to that key removes the notice.
+async function rememberOwnerKeyChange(
+  environment: PasswordsEnvironment,
+  userId: string,
+  change: OwnerKeyChangeNotice,
+): Promise<void> {
+  const notices = await readKeyNotices(environment, userId)
+  const existing = notices.find((notice) => notice.ownerUserId === change.ownerUserId)
+  const rest = notices.filter((notice) => notice.ownerUserId !== change.ownerUserId)
+  const oldPublicKey = existing ? existing.oldPublicKey : change.oldPublicKey
+  if (oldPublicKey !== change.newPublicKey) rest.push({ ...change, oldPublicKey })
+  await writeKeyNotices(environment, userId, rest)
+}
+
+// dismissOwnerKeyNotice removes the notice about an owner's changed key. The
+// key stays the one this device uses for them.
+export async function dismissOwnerKeyNotice(
+  environment: PasswordsEnvironment,
+  userId: string,
+  ownerUserId: string,
+): Promise<void> {
+  const notices = await readKeyNotices(environment, userId)
+  await writeKeyNotices(
+    environment,
+    userId,
+    notices.filter((notice) => notice.ownerUserId !== ownerUserId),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -330,9 +363,11 @@ export async function confirmOwnerKey(
 // openItems reads every item the person can open and opens it with the held
 // keys. The caller releases the result (releaseItems) when done with it. An
 // item that would not open is left out: a login the extension cannot read
-// cannot be filled. A shared item opens only with the owner key this device
-// already knows; the first key seen for an owner is kept once an item of
-// theirs has opened with it.
+// cannot be filled. A shared item opens with the owner key the server shows,
+// and nobody is asked about it: the first key seen for an owner is kept once
+// an item of theirs has opened with it, and a key that differs from the one
+// kept replaces it once an item has opened with it, with a notice (see
+// OwnerKeyChangeNotice) the person dismisses.
 export async function openItems(
   environment: PasswordsEnvironment,
   keys: OpenedKeys,
@@ -345,29 +380,25 @@ export async function openItems(
   for (const record of list.items) {
     const pinned = record.isSharedWithMe ? (pins[record.ownerUserId] ?? null) : null
     const item = await openPasswordItem(record, keys.accountKey, keys.keyPair, keys.userId, pinned)
-    if (item !== null && item.deletedAt === null && item.ownerKeyChange !== null && report) {
-      report.ownerKeyChangedCount += 1
-      const isListed = report.ownerKeyChanges.some(
-        (change) =>
-          change.ownerUserId === item.ownerUserId && change.newPublicKey === item.ownerKeyChange?.newPublicKey,
-      )
-      if (!isListed) {
-        report.ownerKeyChanges.push({
+    if (item === null || item.deletedAt !== null || item.isUnreadable) continue
+    opened.push(item)
+    if ((record as { needsNewKey?: unknown }).needsNewKey === true) itemsNeedingNewKey.add(item)
+    if (record.isSharedWithMe && pins[record.ownerUserId] !== record.ownerPublicKey) {
+      // The owner's key opened this item, so it is the key to use for them
+      // from now on, whether it is the first seen or replaces another.
+      if (item.ownerKeyChange !== null) {
+        await rememberOwnerKeyChange(environment, keys.userId, {
           ownerUserId: item.ownerUserId,
           ownerName: item.ownerName,
           oldPublicKey: item.ownerKeyChange.oldPublicKey,
           newPublicKey: item.ownerKeyChange.newPublicKey,
         })
       }
-    }
-    if (item === null || item.deletedAt !== null || item.isUnreadable) continue
-    opened.push(item)
-    if ((record as { needsNewKey?: unknown }).needsNewKey === true) itemsNeedingNewKey.add(item)
-    if (record.isSharedWithMe && pinned === null && pins[record.ownerUserId] === undefined) {
       pins[record.ownerUserId] = record.ownerPublicKey
       await pinOwnerKey(environment, keys.userId, record.ownerUserId, record.ownerPublicKey)
     }
   }
+  if (report) report.ownerKeyChanges = await readKeyNotices(environment, keys.userId)
   await rememberPasskeySites(environment, keys.userId, loginsOf(opened))
   return opened
 }
@@ -387,16 +418,15 @@ export function doesItemNeedNewKey(item: PasswordItem): boolean {
   return itemsNeedingNewKey.has(item)
 }
 
-// OpenReport collects what openItems leaves out and the person should hear
-// of: a shared login is not opened when its owner's key is not the one this
-// device kept, and is counted here instead of dropped without a word.
+// OpenReport collects what openItems found that the person should hear of:
+// the owners whose key changed and whose notice has not been dismissed.
 export interface OpenReport {
-  ownerKeyChangedCount: number
-  // ownerKeyChanges names each owner whose key changed (once per new key), so
-  // the window can show both safety codes and offer to confirm the new key.
   ownerKeyChanges: OwnerKeyChangeNotice[]
 }
 
+// OwnerKeyChangeNotice is an owner whose key is not the one this device used
+// before. Their shared logins open with the new key; the notice only tells the
+// person, so they can compare safety codes with the owner.
 export interface OwnerKeyChangeNotice {
   ownerUserId: string
   ownerName: string
@@ -405,15 +435,15 @@ export interface OwnerKeyChangeNotice {
 }
 
 // OwnerKeyChangeAnswer is what the window shows of an owner's changed key: the
-// safety code of the key this device kept and of the key the server shows now.
-// The codes are those of the dashboard's comparison (the owner's user id and
-// public key), and an empty text for the one before means it could not be read.
+// safety code of the key this device used before and of the key now, and the
+// person's own, to read out. An empty text for the one before means it could
+// not be read.
 export interface OwnerKeyChangeAnswer {
   ownerUserId: string
   ownerName: string
   oldSafetyCode: string
   newSafetyCode: string
-  newPublicKey: string
+  ownSafetyCode: string
 }
 
 async function safetyCodeOrEmpty(publicKey: string): Promise<string> {
@@ -424,14 +454,18 @@ async function safetyCodeOrEmpty(publicKey: string): Promise<string> {
   }
 }
 
-export async function describeOwnerKeyChanges(changes: OwnerKeyChangeNotice[]): Promise<OwnerKeyChangeAnswer[]> {
+export async function describeOwnerKeyChanges(
+  changes: OwnerKeyChangeNotice[],
+  ownPublicKey: Uint8Array,
+): Promise<OwnerKeyChangeAnswer[]> {
+  const ownSafetyCode = await safetyCode(ownPublicKey)
   return Promise.all(
     changes.map(async (change) => ({
       ownerUserId: change.ownerUserId,
       ownerName: change.ownerName,
       oldSafetyCode: await safetyCodeOrEmpty(change.oldPublicKey),
       newSafetyCode: await safetyCodeOrEmpty(change.newPublicKey),
-      newPublicKey: change.newPublicKey,
+      ownSafetyCode,
     })),
   )
 }

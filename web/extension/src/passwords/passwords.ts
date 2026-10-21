@@ -175,18 +175,7 @@ async function showLogins(popupState: PopupState) {
       )
     }
     for (const change of answer.ownerKeyChanges) listArea.append(ownerKeyChangeCard(change, loadList))
-    if (answer.ownerKeyChanges.length === 0 && answer.ownerKeyChangedCount > 0) {
-      listArea.append(
-        element(
-          'div',
-          { className: 'card muted' },
-          answer.ownerKeyChangedCount === 1
-            ? "A shared login is not shown. Its owner's key changed; open Passwords on the dashboard to check it."
-            : `${answer.ownerKeyChangedCount} shared logins are not shown. Their owners' keys changed; open Passwords on the dashboard to check them.`,
-        ),
-      )
-    }
-    if (answer.forThisSite.length === 0 && answer.others.length === 0 && answer.ownerKeyChangedCount === 0) {
+    if (answer.forThisSite.length === 0 && answer.others.length === 0) {
       listArea.append(element('p', { className: 'muted' }, query ? 'Nothing matches.' : 'There are no logins yet.'))
     } else if (query && answer.others.length === 0) {
       listArea.append(element('p', { className: 'muted' }, 'No other logins match.'))
@@ -195,27 +184,44 @@ async function showLogins(popupState: PopupState) {
   await loadList()
 }
 
-// ownerKeyChangeCard is the comparison the dashboard offers when the owner of
-// shared logins has a key other than the one this browser kept: both safety
-// codes, and a button that confirms the new key after the person compared
-// them, in the words of the dashboard. The owner's logins stay closed until then.
+// ownerKeyChangeCard is the notice about an owner of shared logins who has a
+// key other than the one this browser used before. Nothing waits on it: their
+// logins are listed and fill as usual. "Compare codes" shows both of their
+// codes and the person's own, to compare with the owner; "Dismiss" removes the
+// notice.
 function ownerKeyChangeCard(change: OwnerKeyChangeAnswer, reload: () => Promise<void>): HTMLElement {
   const name = change.ownerName || 'The person who shared logins with you'
-  const confirm = element('button', { type: 'button', className: 'primary' }, 'The new safety code matches')
-  confirm.addEventListener('click', () => {
-    confirm.disabled = true
+  const compare = element('button', { type: 'button' }, 'Compare codes')
+  const dismiss = element('button', { type: 'button' }, 'Dismiss')
+  const codes = element('div', {})
+  compare.addEventListener('click', () => {
+    clear(codes)
+    codes.append(
+      element(
+        'div',
+        {},
+        element('span', { className: 'muted' }, `Safety code before `),
+        codeText(change.oldSafetyCode),
+      ),
+      element('div', {}, element('span', { className: 'muted' }, `Safety code now `), codeText(change.newSafetyCode)),
+      element('div', {}, element('span', { className: 'muted' }, 'Your safety code '), codeText(change.ownSafetyCode)),
+      element(
+        'p',
+        { className: 'muted' },
+        `Ask ${name} to open Passwords settings on their own device and read you their safety code. It should match the one now.`,
+      ),
+    )
+    compare.disabled = true
+  })
+  dismiss.addEventListener('click', () => {
+    dismiss.disabled = true
     void guarded(async () => {
       try {
-        await ask({
-          type: 'passwords:confirm-owner-key',
-          ownerUserId: change.ownerUserId,
-          newPublicKey: change.newPublicKey,
-        })
+        await ask({ type: 'passwords:dismiss-owner-key', ownerUserId: change.ownerUserId })
       } catch (error) {
-        confirm.disabled = false
+        dismiss.disabled = false
         throw error
       }
-      say('You confirmed this key.', 'good')
       await reload()
     })
   })
@@ -226,16 +232,10 @@ function ownerKeyChangeCard(change: OwnerKeyChangeAnswer, reload: () => Promise<
     element(
       'p',
       { className: 'muted' },
-      `${name} shared logins with you, and their key is not the one you saw before. It changes when they set Passwords up again, but it could also be somebody else. Their logins stay closed until you confirm the new key.`,
+      'This happens when they set Passwords up again. If you did not expect it, compare safety codes with them.',
     ),
-    element(
-      'p',
-      { className: 'muted' },
-      `Ask ${name} to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.`,
-    ),
-    element('div', {}, element('span', { className: 'muted' }, 'Safety code before '), codeText(change.oldSafetyCode)),
-    element('div', {}, element('span', { className: 'muted' }, 'Safety code now '), codeText(change.newSafetyCode)),
-    element('div', { className: 'actions' }, confirm),
+    codes,
+    element('div', { className: 'actions' }, compare, dismiss),
   )
 }
 

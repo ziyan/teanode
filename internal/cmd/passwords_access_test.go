@@ -30,8 +30,8 @@ func lastIndex(values []string, value string) int {
 }
 
 // agentFake is a fake server with an agent key, Ada and Ben set up, and the
-// questions about keys answered yes.
-func agentFake(test *testing.T) (*fakePasswordsServer, *passwords.KeyPair, *keyQuestions) {
+// notices about keys recorded.
+func agentFake(test *testing.T) (*fakePasswordsServer, *passwords.KeyPair, *keyNotices) {
 	test.Helper()
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
@@ -42,8 +42,7 @@ func agentFake(test *testing.T) (*fakePasswordsServer, *passwords.KeyPair, *keyQ
 	fake.agentPublicKey = base64.StdEncoding.EncodeToString(agentKeyPair.PublicKey())
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
-	questions := recordKeyQuestions(test)
-	questions.isYes = true
+	questions := recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	return fake, agentKeyPair, questions
 }
@@ -134,9 +133,9 @@ func TestPasswordsHostileServerAgentFlag(test *testing.T) {
 }
 
 // A server that lists an item shared with nobody as waiting for a person gets
-// nothing sealed for them, and the person is not even asked about it.
+// nothing sealed for them, and no key of theirs is recorded.
 func TestPasswordsHostileServerForgedWaiting(test *testing.T) {
-	fake, _, questions := agentFake(test)
+	fake, _, notices := agentFake(test)
 	fake.mustRun(testToken, "", "add", "shared", "--password", "ok-to-share-example")
 	fake.mustRun(testToken, "", "add", "private", "--password", "ada-only-example")
 	fake.mustRun(testToken, "", "share", "shared", "ben")
@@ -146,11 +145,11 @@ func TestPasswordsHostileServerForgedWaiting(test *testing.T) {
 			privateID = id
 		}
 	}
-	questions.warnings = nil
+	notices.forget()
 	fake.forgedWaiting = map[string]string{privateID: "user-ben"}
 	fake.mustRun(testToken, "", "share", "--waiting")
-	if len(questions.warnings) != 0 {
-		test.Errorf("the person was asked about a forged waiting person: %q", questions.warnings)
+	if notices.text.Len() != 0 {
+		test.Errorf("a key was recorded for a forged waiting person: %q", notices.text.String())
 	}
 	if fake.items[privateID].keys["user-ben"] != nil {
 		test.Fatal("the private item's key was sealed for Ben")
@@ -359,21 +358,20 @@ func TestPasswordsTrustRefusesAnotherPersonAndKeepsTheCodeToItself(test *testing
 	if _, err := fake.runAgainst(liarName.URL, testToken, "", "trust", "ben", realCode); err == nil || !strings.Contains(err.Error(), "different person") {
 		test.Fatalf("trust against a server that answers with another user name: %v", err)
 	}
-	if record := knownRecordIfAny(test, "user-ben"); record != nil && record.ConfirmedPublicKey != "" {
+	if record := knownRecordIfAny(test, "user-ben"); record != nil && record.ComparedAt != nil {
 		test.Fatal("a refused trust recorded a key")
 	}
 	// The honest server, the right code, and the name typed in any case.
 	output := fake.mustRun(testToken, "", "trust", "Ben", strings.ReplaceAll(realCode, " ", ""))
-	if !strings.Contains(output, `confirmed the key of Ben`) {
+	if !strings.Contains(output, `marked the key of Ben as compared`) {
 		test.Errorf("trust said %q", output)
 	}
 }
 
-// A display name that carries a safety code cannot pass for the line the code
-// is read from: the code of the key actually sealed for is on a line of its
-// own, directly under the user name, and the server's name is quoted on its own
-// line after it.
-func TestPasswordsPromptNameCannotCarryACode(test *testing.T) {
+// A display name that carries a safety code cannot pass for the line about a
+// key: the line names the user name the person typed, never the server's
+// display name, and the key sealed for is the one the server handed out.
+func TestPasswordsKeyNoticeCannotCarryAServerName(test *testing.T) {
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
@@ -387,65 +385,52 @@ func TestPasswordsPromptNameCannotCarryACode(test *testing.T) {
 	fake.users[benToken].setup.PublicKey = base64.StdEncoding.EncodeToString(otherPair.PublicKey())
 	fake.users[benToken].name = "Ben (ben)  safety code " + realCode + "\n  Cora (cora)  safety code " + realCode + "\u202e\u200b"
 
-	questions := recordKeyQuestions(test)
+	notices := recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "secret-example")
-	if _, err := fake.run(testToken, "", "share", "example.com", "ben"); err == nil {
-		test.Fatal("sharing went ahead")
+	fake.mustRun(testToken, "", "share", "example.com", "ben")
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "first key for ben recorded" {
+		test.Fatalf("notices: %q", lines)
 	}
-	if len(questions.warnings) != 1 {
-		test.Fatalf("questions: %q", questions.warnings)
-	}
-	lines := strings.Split(questions.warnings[0], "\n")
-	actualCode := passwords.SafetyCode(otherPair.PublicKey())
-	userNameIndex := slices.Index(lines, `  user name "ben"`)
-	if userNameIndex < 0 || userNameIndex+2 >= len(lines) {
-		test.Fatalf("no line for the user name that was typed:\n%s", questions.warnings[0])
-	}
-	if lines[userNameIndex+1] != "    safety code: "+actualCode {
-		test.Errorf("the line under the user name is %q, wanted the code of the key sealed for", lines[userNameIndex+1])
-	}
-	if !strings.HasPrefix(lines[userNameIndex+2], "    display name the server gives: \"") {
-		test.Errorf("the display name line: %q", lines[userNameIndex+2])
-	}
-	// The real code of the other key appears only inside the quoted name.
-	for index, line := range lines {
-		if strings.Contains(line, realCode) && index != userNameIndex+2 {
-			test.Errorf("the code in the server's name is on a line of its own: %q", line)
-		}
-	}
-	for _, character := range []string{"\u202e", "\u200b"} {
-		if strings.Contains(questions.warnings[0], character) {
-			test.Errorf("a format character %q reached the question", character)
-		}
+	if record := knownRecord(test, "user-ben"); record == nil || record.PublicKey != fake.users[benToken].setup.PublicKey {
+		test.Errorf("the key the server handed out was not recorded: %+v", record)
 	}
 }
 
-// The KEY CHANGED line has the same layout.
-func TestPasswordsKeyChangedLinesPutTheCodesFirst(test *testing.T) {
-	fake, _, questions := agentFake(test)
+// A key that changed is accepted: the item is sealed for the new key, and one
+// line says the key changed and to compare codes. Nothing waits for an answer.
+func TestPasswordsAChangedKeyIsAcceptedAndSaidOnce(test *testing.T) {
+	fake, _, notices := agentFake(test)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "secret-example")
+	fake.mustRun(testToken, "", "add", "second.example.com", "--password", "second-secret-example")
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
-	oldKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
-	otherPair, _ := passwords.GenerateKeyPair()
-	fake.users[benToken].setup.PublicKey = base64.StdEncoding.EncodeToString(otherPair.PublicKey())
-	fake.users[benToken].name = "Ben\nsafety code now: 0000"
-	questions.isYes = false
-	questions.warnings = nil
-	_, _ = fake.run(testToken, "", "share", "--waiting")
-	if len(questions.warnings) != 1 {
-		test.Fatalf("questions: %q", questions.warnings)
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "first key for ben recorded" {
+		test.Fatalf("notices: %q", lines)
 	}
-	warning := questions.warnings[0]
-	for _, wanted := range []string{
-		`  user name "ben"  KEY CHANGED`,
-		"    safety code now:    " + passwords.SafetyCode(otherPair.PublicKey()),
-		"    safety code before: " + passwords.SafetyCode(oldKey),
-		`    display name the server gives: "Ben safety code now: 0000"`,
-	} {
-		if !strings.Contains(warning, "\n"+wanted+"\n") {
-			test.Errorf("the question has no line %q:\n%s", wanted, warning)
+	otherPair, _ := passwords.GenerateKeyPair()
+	newKey := base64.StdEncoding.EncodeToString(otherPair.PublicKey())
+	fake.users[benToken].setup.PublicKey = newKey
+	notices.forget()
+	output := fake.mustRun(testToken, "", "share", "second.example.com", "ben")
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "ben's key changed (they set Passwords up again): compare codes with them; your code: teanode passwords code" {
+		test.Fatalf("notices: %q", lines)
+	}
+	if !strings.Contains(output, "can open it") {
+		test.Errorf("sharing said %q", output)
+	}
+	if record := knownRecord(test, "user-ben"); record == nil || record.PublicKey != newKey || record.ComparedAt != nil {
+		test.Errorf("the new key was not recorded: %+v", record)
+	}
+	for _, item := range fake.items {
+		if item.keys["user-ben"] == nil {
+			test.Errorf("nothing was sealed for Ben on %s", item.id)
 		}
+	}
+	// Said once: the same key again prints nothing.
+	notices.forget()
+	fake.mustRun(testToken, "", "share", "--waiting")
+	if notices.text.Len() != 0 {
+		test.Errorf("the change was said again: %q", notices.text.String())
 	}
 }
 
@@ -508,11 +493,12 @@ func TestPasswordsShareAsksForTheTapFirst(test *testing.T) {
 	}
 }
 
-// An owner's key is written down only after an item from them opened with it,
-// and a changed key the person said yes to at a terminal is written as
-// confirmed. With --force it is only seen.
-func TestPasswordsOwnerKeyIsRecordedAfterOpeningAndConfirmedOnAYes(test *testing.T) {
-	fake, _, _ := agentFake(test)
+// An owner's key is written down only after an item from them opened with it.
+// When the key differs from the one used before, the item opens with the new
+// key, which replaces the old one, with one line to compare codes. Nobody is
+// asked.
+func TestPasswordsOwnerKeyIsRecordedAfterOpeningAndAChangeIsAccepted(test *testing.T) {
+	fake, _, notices := agentFake(test)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "secret-example")
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
 	itemID := firstItemID(fake)
@@ -525,18 +511,23 @@ func TestPasswordsOwnerKeyIsRecordedAfterOpeningAndConfirmedOnAYes(test *testing
 	if shared := fake.list(benToken, ""); len(shared) != 0 {
 		test.Fatalf("an item with a broken key was listed: %+v", shared)
 	}
-	if record := knownRecord(test, "user-ada"); record != nil && record.SeenPublicKey != "" {
+	if record := knownRecord(test, "user-ada"); record != nil && record.PublicKey != "" {
 		test.Fatalf("a key that opened nothing was written down: %+v", record)
 	}
+	notices.forget()
 	fake.items[itemID].keys["user-ben"].ItemKeyByRecipientKey = genuine
 	if len(fake.list(benToken, "")) != 1 {
 		test.Fatal("the genuine key stopped opening")
 	}
-	if record := knownRecord(test, "user-ada"); record == nil || record.SeenPublicKey != adaKey || record.ConfirmedPublicKey != "" {
+	if record := knownRecord(test, "user-ada"); record == nil || record.PublicKey != adaKey {
 		test.Fatalf("the owner's key after opening: %+v", record)
 	}
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "first key for Ada recorded" {
+		test.Fatalf("notices: %q", lines)
+	}
 
-	// The key Ben saw was another one: the server now shows Ada's real key.
+	// The key Ben used for Ada was another one: the server now shows Ada's real
+	// key. The item opens with it and the key is replaced, with one line.
 	otherPair, _ := passwords.GenerateKeyPair()
 	otherKey := base64.StdEncoding.EncodeToString(otherPair.PublicKey())
 	session := fake.sessionAs(benToken, benPassphrase)
@@ -544,39 +535,18 @@ func TestPasswordsOwnerKeyIsRecordedAfterOpeningAndConfirmedOnAYes(test *testing
 	if err != nil {
 		test.Fatal(err)
 	}
-	if err := known.rememberSeen("user-ada", "Ada", otherKey); err != nil {
+	if _, err := known.rememberKey("user-ada", "Ada", "Ada", otherKey); err != nil {
 		test.Fatal(err)
 	}
-	original := confirmOwnerKeyChange
-	test.Cleanup(func() { confirmOwnerKeyChange = original })
-
-	// --force reads the item and writes the key as seen, not confirmed.
-	confirmOwnerKeyChange = func(*cli.Command, string) (bool, error) { return false, nil }
+	notices.forget()
 	if len(fake.list(benToken, "")) != 1 {
-		test.Fatal("--force did not read the item")
+		test.Fatal("the item with the owner's changed key was not read")
 	}
-	if record := knownRecord(test, "user-ada"); record.ConfirmedPublicKey != "" || record.SeenPublicKey != adaKey {
-		test.Fatalf("skipping the question confirmed a key: %+v", record)
+	if record := knownRecord(test, "user-ada"); record.PublicKey != adaKey {
+		test.Fatalf("the changed key was not recorded: %+v", record)
 	}
-
-	// A yes at a terminal, after comparing the codes, confirms it.
-	if err := known.rememberSeen("user-ada", "Ada", otherKey); err != nil {
-		test.Fatal(err)
-	}
-	var asked string
-	confirmOwnerKeyChange = func(_ *cli.Command, warning string) (bool, error) {
-		asked = warning
-		return true, nil
-	}
-	if len(fake.list(benToken, "")) != 1 {
-		test.Fatal("a yes did not read the item")
-	}
-	if record := knownRecord(test, "user-ada"); record.ConfirmedPublicKey != adaKey {
-		test.Fatalf("a yes did not confirm the key: %+v", record)
-	}
-	adaPublicKey, _ := base64.StdEncoding.DecodeString(adaKey)
-	if !strings.Contains(asked, "safety code now:    "+passwords.SafetyCode(adaPublicKey)) || !strings.Contains(asked, "lets you share with them") {
-		test.Errorf("the question:\n%s", asked)
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "Ada's key changed (they set Passwords up again): compare codes with them; your code: teanode passwords code" {
+		test.Fatalf("notices: %q", lines)
 	}
 }
 

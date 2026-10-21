@@ -190,24 +190,21 @@ func NewPasswordsCommand() *cli.Command {
 				Usage:     "share an item with a person or a circle",
 				ArgsUsage: "<item> <username|circle>",
 				Description: "Seals the item's key for each person it newly reaches, with the public key they\n" +
-					"set up. It seals only for a key you confirmed: one you confirmed before (kept in a\n" +
-					"file in the configuration directory) or one you confirm now by its safety code,\n" +
-					"which it prints and asks you to check with the person (in person, or on a call you\n" +
-					"trust): ask them to open Passwords settings on their own device and read you their\n" +
-					"safety code ('teanode passwords code' prints yours). With no terminal, compare the\n" +
-					"code with them, then run 'teanode passwords trust <username> <code>' and share\n" +
-					"again. A server that swapped their key for its own could otherwise read what you\n" +
-					"share. A key you only saw on an item they shared with you does not count as\n" +
-					"confirmed. When a person's key has changed it shows the code you confirmed and the\n" +
-					"new one. Confirming needs you at a terminal: without one the command refuses, and\n" +
-					"--force does not skip it. The item's own sealed record of who may have it is\n" +
-					"updated first, and a key is sealed only for somebody that record reaches, never\n" +
-					"for somebody the server alone says is a recipient. A person who has not set\n" +
-					"Passwords up yet waits, and 'teanode passwords share --waiting' seals for them once\n" +
-					"they have. People who already have the item keep the key they have. The people it\n" +
-					"reaches can use the item; only you change it. Adding somebody new is done on the\n" +
-					"Passwords page of the dashboard or in the iPhone app; a command line cannot do\n" +
-					"this, and says so before it asks for anything. Taking somebody away works here.",
+					"set up, and asks nothing about it. The first key this computer sees for a person\n" +
+					"is recorded (in a file in the configuration directory) and printed as one line;\n" +
+					"when the server later gives another key for the same person, that key is used and\n" +
+					"one line says their key changed, which means they set Passwords up again or a\n" +
+					"server put a key of its own in their place. Then compare safety codes with them\n" +
+					"(in person, or on a call you trust): ask them to open Passwords settings on their\n" +
+					"own device and read you their safety code ('teanode passwords code' prints yours).\n" +
+					"The item's own sealed record of who may have it is updated first, and a key is\n" +
+					"sealed only for somebody that record reaches, never for somebody the server alone\n" +
+					"says is a recipient. A person who has not set Passwords up yet waits, and\n" +
+					"'teanode passwords share --waiting' seals for them once they have. People who\n" +
+					"already have the item keep the key they have. The people it reaches can use the\n" +
+					"item; only you change it. Adding somebody new is done on the Passwords page of the\n" +
+					"dashboard or in the iPhone app; a command line cannot do this, and says so before\n" +
+					"it asks for anything. Taking somebody away works here.",
 				Flags: []cli.Flag{
 					JSONFlag(), passphraseFlag(),
 					&cli.BoolFlag{Name: "waiting", Usage: "instead, seal your items for the people who have set Passwords up since you shared them"},
@@ -216,19 +213,18 @@ func NewPasswordsCommand() *cli.Command {
 			},
 			{
 				Name:      "trust",
-				Usage:     "confirm a person's key by its safety code, without a terminal",
+				Usage:     "mark a person's key as compared, after comparing safety codes with them",
 				ArgsUsage: "<username> [safety code]",
-				Description: "Reads the person's current Passwords public key from the server, works out its\n" +
-					"safety code, and records the key as confirmed only if the code you give matches\n" +
-					"it (spaces are optional; it is 32 digits). Otherwise it refuses and records\n" +
-					"nothing, and does not tell you the code it expected. It refuses too when the\n" +
-					"server answers with another person than the user name you typed. This is for a\n" +
-					"script or a session with no terminal: the code must still come from the person\n" +
-					"(in person or on a call you trust, read off their own screen in Passwords\n" +
-					"settings, or from their 'teanode passwords code'), not from this computer, or it\n" +
-					"proves nothing. --code-stdin reads the code from a line of standard input so it\n" +
-					"is not in the process list. A confirmed key is what 'share' and 'unshare' seal\n" +
-					"for.\n\n" +
+				Description: "Optional: sharing never waits for it. Reads the person's current Passwords public\n" +
+					"key from the server, works out its safety code, and marks the key as compared\n" +
+					"only if the code you give matches it (spaces are optional; it is 32 digits).\n" +
+					"Otherwise it refuses and records nothing, and does not tell you the code it\n" +
+					"expected. It refuses too when the server answers with another person than the\n" +
+					"user name you typed. The code must come from the person (in person or on a call\n" +
+					"you trust, read off their own screen in Passwords settings, or from their\n" +
+					"'teanode passwords code'), not from this computer, or it proves nothing.\n" +
+					"--code-stdin reads the code from a line of standard input so it is not in the\n" +
+					"process list.\n\n" +
 					"  teanode passwords trust ben 0412 9930 0007 5121 8800 3341 0562 7719\n" +
 					"  echo 04129930000751218800334105627719 | teanode passwords trust ben --code-stdin",
 				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "code-stdin", Usage: "read the safety code from a line of standard input"}},
@@ -241,14 +237,12 @@ func NewPasswordsCommand() *cli.Command {
 				Description: "Makes a new key for the item and seals its fields and the key again, so that\n" +
 					"a copy of the old key, held by somebody who is no longer shared with or by a\n" +
 					"copy of the database, opens nothing saved from now on. The new key is sealed for\n" +
-					"each person your own record of the item still reaches whose key you confirmed\n" +
-					"(you are asked about the others at a terminal; until you answer they wait, and\n" +
-					"'teanode passwords share --waiting' seals for them), and for the agent only if\n" +
+					"each person your own record of the item still reaches, and for the agent only if\n" +
 					"you let it use the item. 'list' and 'show' say when an item needs this; 'edit',\n" +
 					"'share' and 'agent on' do it first on such an item, but only for people your\n" +
 					"computer last saw holding a key for it (and the agent only if it held a copy); this\n" +
-					"command, which you run on purpose, seals for everyone your record reaches whose key\n" +
-					"you confirmed. An item whose record of who may have it was not signed by your devices,\n" +
+					"command, which you run on purpose, seals for everyone your record reaches. An item\n" +
+					"whose record of who may have it was not signed by your devices,\n" +
 					"or is an old one the server showed again, is left alone: set it again with 'unshare'\n" +
 					"and then 'share'.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
@@ -258,9 +252,9 @@ func NewPasswordsCommand() *cli.Command {
 				Name:  "code",
 				Usage: "your own safety code, for the people who share with you to compare",
 				Description: "Prints the safety code of your own key, worked out on this computer from the key\n" +
-					"pair that unlocking opened and from your user id, not from anything the server\n" +
-					"reports. The people you share with compare it with the one their device shows\n" +
-					"for you (in person or on a call you trust) before they confirm your key.",
+					"pair that unlocking opened and from nothing else, not from your user id or anything\n" +
+					"the server reports. The people you share with can compare it with the one their\n" +
+					"device shows for you (in person or on a call you trust).",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
 				Action: runPasswordsCode,
 			},
@@ -271,9 +265,7 @@ func NewPasswordsCommand() *cli.Command {
 				Description: "With no person or circle it stops sharing the item with everyone. It then gives\n" +
 					"the item a new key (and seals a narrower record of who may have it inside the\n" +
 					"item), so that the key the people you removed held opens nothing saved\n" +
-					"later: the new key is sealed for each person who still has the item, if you\n" +
-					"confirmed their key (you are asked about the others at a terminal; until you answer\n" +
-					"they wait, and 'teanode passwords share --waiting' seals for them). If the new key\n" +
+					"later: the new key is sealed for each person who still has the item. If the new key\n" +
 					"cannot be made the command says so, and running it again makes it.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
 				Action: runPasswordsUnshare,
@@ -291,7 +283,7 @@ func NewPasswordsCommand() *cli.Command {
 					"cannot do this, and says so before it asks for anything. Turning it off works\n" +
 					"here, and gives the item a new key so that a copy of the old key the agent\n" +
 					"could open (in a copy of the database, say) opens nothing saved later; the new\n" +
-					"key is sealed again for the people it is shared with whose keys you confirmed.",
+					"key is sealed again for the people it is shared with.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag(), ForceFlag()},
 				Action: runPasswordsAgent,
 			},
@@ -1666,13 +1658,13 @@ func existingRecipients(view *client.PasswordItemView) []*client.PasswordRecipie
 }
 
 // setItemShares widens who the item is shared with, in the order that keeps the
-// sealed record from ever being wider than what the person chose: the person
-// confirms the keys, the item's fields are saved with the new access record,
-// and only then does the server learn of the new share. A key is sealed only
-// for a recipient who has Passwords set up and has no key for the item yet, who
-// the new record reaches, and whose public key is known to this computer or
-// confirmed now by its safety code. People who already have a key keep it:
-// nothing is sealed again for them.
+// sealed record from ever being wider than what the person chose: the keys are
+// recorded, the item's fields are saved with the new access record, and only
+// then does the server learn of the new share. A key is sealed only for a
+// recipient who has Passwords set up and has no key for the item yet, and who
+// the new record reaches, for the public key this computer records for them
+// (nobody is asked about it). People who already have a key keep it: nothing is
+// sealed again for them.
 func setItemShares(ctx context.Context, command *cli.Command, session *passwordsSession, item *passwordsItem, newAccess *passwords.PasswordAccess,
 	grantees []*client.PasswordShareGranteeInput, recipients []*client.PasswordRecipientView, circleIDs map[string][]string, typedUserNames map[string]string, doing string) error {
 	var newlyReached, waiting []*client.PasswordRecipientView
@@ -1696,7 +1688,7 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 			newlyReached = append(newlyReached, recipient)
 		}
 	}
-	if err := session.confirmRecipientKeys(newlyReached, typedUserNames); err != nil {
+	if err := session.recordRecipientKeys(newlyReached, typedUserNames); err != nil {
 		return err
 	}
 	keys := []*client.PasswordShareKeyInput{}
@@ -1881,7 +1873,7 @@ func runPasswordsShareWaiting(ctx context.Context, command *cli.Command) error {
 			recipients = append(recipients, each.Recipient)
 		}
 	}
-	if err := session.confirmRecipientKeys(recipients, nil); err != nil {
+	if err := session.recordRecipientKeys(recipients, nil); err != nil {
 		return err
 	}
 	keys := []*client.PasswordItemShareKeyInput{}
@@ -1986,7 +1978,7 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 // key in the same call, whose fields carry a record that no longer lets the
 // agent use it, so that a copy of the old key the agent could open (from a copy
 // of the database taken while it could) opens nothing saved later. People the
-// item is shared with keep access if their keys are confirmed. An item that
+// item is shared with keep access. An item that
 // neither the server nor the owner's own record let the agent use already has
 // nothing to turn off.
 func turnOffAgentUse(command *cli.Command, session *passwordsSession, item *passwordsItem) error {

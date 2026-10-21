@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -24,28 +25,30 @@ const (
 	hostilePassword = "pw\x1b]52;c;ZXZpbA==\x07"
 )
 
-// keyQuestions stands in for the person at a terminal who is asked about a
-// key: a test has no terminal. It records each warning shown and answers yes
-// when isYes is set and no otherwise.
-type keyQuestions struct {
-	warnings []string
-	isYes    bool
+// keyNotices records the lines printed when a key is recorded for the first
+// time or has changed.
+type keyNotices struct {
+	text bytes.Buffer
 }
 
-// recordKeyQuestions replaces the question about keys for the test.
-func recordKeyQuestions(test *testing.T) *keyQuestions {
+// lines are the lines printed so far.
+func (self *keyNotices) lines() []string {
+	return strings.Split(strings.TrimSpace(self.text.String()), "\n")
+}
+
+// forget drops what was printed so far.
+func (self *keyNotices) forget() {
+	self.text.Reset()
+}
+
+// recordKeyNotices replaces where the key notices are printed for the test.
+func recordKeyNotices(test *testing.T) *keyNotices {
 	test.Helper()
-	questions := &keyQuestions{}
-	original := askAboutKeys
-	askAboutKeys = func(warning string) error {
-		questions.warnings = append(questions.warnings, warning)
-		if !questions.isYes {
-			return errors.New(warning + "\nthe answer was no")
-		}
-		return nil
-	}
-	test.Cleanup(func() { askAboutKeys = original })
-	return questions
+	notices := &keyNotices{}
+	original := keyNoticeOutput
+	keyNoticeOutput = &notices.text
+	test.Cleanup(func() { keyNoticeOutput = original })
+	return notices
 }
 
 // addCora adds a third person to the fake server, set up with Passwords.
@@ -91,65 +94,61 @@ func containsTerminalControl(text string) bool {
 
 // A server can set up Passwords for an account of its own and share one item
 // "from" it, which puts that account's key in front of the person. The key is
-// only seen, so sharing with that account still asks, and seals nothing until
-// the person says yes at a terminal.
-func TestPasswordsAKeySeenOnAnItemIsNotConfirmed(test *testing.T) {
+// the first one seen, so it is recorded and used for sharing with that account
+// without a question, and what is sealed is sealed for exactly that key. A key
+// that no command recorded is still refused by sealing itself.
+func TestPasswordsAKeySeenOnAnItemIsUsedWithoutAsking(test *testing.T) {
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
+	fake.addCora()
 
 	// Ben is the server's account. He shares one planted item with Ada.
-	questions := recordKeyQuestions(test)
-	questions.isYes = true
+	notices := recordKeyNotices(test)
 	fake.unlockAs(benToken)
 	fake.mustRun(benToken, "", "add", "planted.example.com", "--password", "planted-example")
 	fake.mustRun(benToken, "", "share", "planted.example.com", "ada")
-	questions.isYes = false
 
-	// Ada opens it: the owner's key is written down as seen, not confirmed.
+	// Ada opens it: the owner's key is written down, with one line.
+	notices.forget()
 	fake.unlockAs(testToken)
 	if listed := fake.list(testToken, ""); len(listed) != 1 || !listed[0].IsSharedWithMe {
 		test.Fatalf("Ada's list: %+v", listed)
 	}
-	if record := knownRecord(test, "user-ben"); record == nil || record.SeenPublicKey != fake.users[benToken].setup.PublicKey || record.ConfirmedPublicKey != "" {
-		test.Fatalf("the key seen on an item was written as confirmed: %+v", record)
+	if record := knownRecord(test, "user-ben"); record == nil || record.PublicKey != fake.users[benToken].setup.PublicKey || record.ComparedAt != nil {
+		test.Fatalf("the key seen on an item: %+v", record)
+	}
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "first key for Ben recorded" {
+		test.Fatalf("notices: %q", lines)
 	}
 
-	// Ada then shares a real item with Ben. No terminal answers yes.
+	// Ada then shares a real item with Ben, with nobody at a terminal: it is
+	// sealed at once for the key already recorded, and nothing more is said.
+	notices.forget()
 	fake.mustRun(testToken, "", "add", "bank.example.com", "--password", "real-secret-example")
-	_, err := fake.run(testToken, "", "share", "bank.example.com", "ben")
-	if err == nil || !strings.Contains(err.Error(), "safety code") {
-		test.Fatalf("sharing with a key that was only seen: %v", err)
+	fake.mustRun(testToken, "", "share", "bank.example.com", "ben")
+	if notices.text.Len() != 0 {
+		test.Errorf("a key already known was said again: %q", notices.text.String())
 	}
-	if len(questions.warnings) == 0 {
-		test.Fatal("nobody was asked about Ben's key")
-	}
+	sealedCount := 0
 	for _, item := range fake.items {
-		if item.ownerUserID == "user-ada" && (len(item.keys) != 0 || len(item.grantees) != 0) {
-			test.Fatalf("the item was shared with the planted account: %+v", item)
+		if item.ownerUserID == "user-ada" && item.keys["user-ben"] != nil {
+			sealedCount++
 		}
 	}
-	// Sealing itself refuses a key that is not confirmed.
+	if sealedCount != 1 {
+		test.Fatalf("%d items sealed for Ben, want 1", sealedCount)
+	}
+
+	// Sealing itself refuses a key that no command recorded.
 	session := fake.sessionAs(testToken, testPassphrase)
-	recipients, err := listRecipientsOf(session, "user-ben")
+	recipients, err := listRecipientsOf(session, "user-cora")
 	if err != nil {
 		test.Fatal(err)
 	}
-	if _, err := session.sealItemKeyFor("item", make([]byte, passwords.KeyLength), "", recipients); err == nil || !strings.Contains(err.Error(), "not one you confirmed") {
-		test.Errorf("sealing for a key that was not confirmed: %v", err)
-	}
-
-	// Said yes at a terminal, it is confirmed and sharing seals.
-	questions.isYes = true
-	fake.mustRun(testToken, "", "share", "bank.example.com", "ben")
-	for _, item := range fake.items {
-		if item.ownerUserID == "user-ada" && item.keys["user-ben"] == nil {
-			test.Fatal("nothing was sealed after the person said yes")
-		}
-	}
-	if record := knownRecord(test, "user-ben"); record == nil || record.ConfirmedPublicKey != fake.users[benToken].setup.PublicKey {
-		test.Errorf("the confirmed key was not written down: %+v", record)
+	if _, err := session.sealItemKeyFor("item", make([]byte, passwords.KeyLength), "", recipients); err == nil || !strings.Contains(err.Error(), "not the one recorded") {
+		test.Errorf("sealing for a key that was not recorded: %v", err)
 	}
 }
 
@@ -190,9 +189,9 @@ func knownKeysFile(test *testing.T) string {
 	return files[0]
 }
 
-// A known keys file from an earlier version cannot say whether a key was
-// confirmed, so none counts: the person is asked once more.
-func TestPasswordsKeysFromAnEarlierVersionAreOnlySeen(test *testing.T) {
+// A known keys file from an earlier version is read as the key known for the
+// person: sharing seals for it at once and says nothing, since it is not new.
+func TestPasswordsKeysFromAnEarlierVersionAreUsed(test *testing.T) {
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
@@ -207,47 +206,41 @@ func TestPasswordsKeysFromAnEarlierVersionAreOnlySeen(test *testing.T) {
 		test.Fatal(err)
 	}
 	legacy := map[string]any{"servers": map[string]any{known.server: map[string]any{
-		"user-ben": map[string]any{"username": "ben", "name": "Ben", "publicKey": fake.users[benToken].setup.PublicKey, "confirmedAt": "2030-01-02T03:04:05Z"},
+		"user-ben": map[string]any{"username": "ben", "name": "Ben", "seenPublicKey": fake.users[benToken].setup.PublicKey, "seenAt": "2030-01-02T03:04:05Z"},
 	}}}
 	content, _ := json.Marshal(legacy)
 	if err := writePrivateFile(known.path, content); err != nil {
 		test.Fatal(err)
 	}
 
-	questions := recordKeyQuestions(test)
-	if _, err := fake.run(testToken, "", "share", "example.com", "ben"); err == nil {
-		test.Fatal("a key from an earlier version was sealed for without asking")
-	}
-	if len(questions.warnings) != 1 || strings.Contains(questions.warnings[0], "KEY CHANGED") {
-		test.Errorf("the question: %q", questions.warnings)
-	}
-	questions.isYes = true
+	notices := recordKeyNotices(test)
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
 	if fake.items[firstItemID(fake)].keys["user-ben"] == nil {
-		test.Fatal("nothing was sealed after the person said yes")
+		test.Fatal("nothing was sealed for the key from the earlier version")
+	}
+	if notices.text.Len() != 0 {
+		test.Errorf("a key already known was said again: %q", notices.text.String())
 	}
 }
 
-// --force and TEANODE_FORCE do not confirm a key. A script that has decided
-// to skip questions still cannot trust a person's key for the person.
-func TestPasswordsForceDoesNotConfirmAKey(test *testing.T) {
+// Nothing about a key needs a terminal, --force or TEANODE_FORCE: sharing with
+// a first-seen person seals at once, and share still takes no --force.
+func TestPasswordsSharingNeedsNoTerminalAndNoForce(test *testing.T) {
 	useConfigurationDirectory(test)
-	test.Setenv("TEANODE_FORCE", "1")
+	test.Setenv("TEANODE_FORCE", "")
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
+	notices := recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "secret-example")
 
-	_, err := fake.run(testToken, "", "share", "example.com", "ben")
-	if err == nil || !strings.Contains(err.Error(), "--force does not skip") {
-		test.Fatalf("sharing with TEANODE_FORCE set: %v", err)
+	fake.mustRun(testToken, "", "share", "example.com", "ben")
+	if lines := notices.lines(); len(lines) != 1 || lines[0] != "first key for ben recorded" {
+		test.Fatalf("notices: %q", lines)
 	}
-	if _, err := fake.run(testToken, "", "share", "--waiting"); err != nil {
-		test.Fatalf("share --waiting with nothing waiting: %v", err)
-	}
-	if fake.items[firstItemID(fake)].keys["user-ben"] != nil {
-		test.Fatal("a key was sealed with only TEANODE_FORCE")
+	if fake.items[firstItemID(fake)].keys["user-ben"] == nil {
+		test.Fatal("nothing was sealed for a first-seen person")
 	}
 	if _, err := fake.run(testToken, "", "share", "example.com", "ben", "--force"); err == nil {
 		test.Fatal("share still takes --force")
@@ -263,7 +256,7 @@ func TestPasswordsAgentOffGivesTheItemANewKey(test *testing.T) {
 	fake.agentPublicKey = base64.StdEncoding.EncodeToString(agentKeyPair.PublicKey())
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
-	recordKeyQuestions(test).isYes = true
+	recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "agent-secret-example")
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
@@ -324,7 +317,7 @@ func TestPasswordsUnshareGivesTheItemANewKey(test *testing.T) {
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
 	fake.addCora()
-	recordKeyQuestions(test).isYes = true
+	recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
@@ -384,27 +377,25 @@ func TestPasswordsUnshareGivesTheItemANewKey(test *testing.T) {
 	}
 }
 
-// A remaining person whose key was never confirmed is not sealed for. They
-// wait, the command says so, and sharing --waiting seals for them once their
-// safety code is confirmed.
-func TestPasswordsRekeyLeavesAnUnconfirmedPersonWaiting(test *testing.T) {
+// A remaining person this computer did not see holding a key for the item is
+// not given the new key by a re-key nobody asked for. They wait, the command
+// says so, and share --waiting seals for them.
+func TestPasswordsRekeyLeavesAPersonNotSeenHoldingAKeyWaiting(test *testing.T) {
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
 	fake.addCora()
-	questions := recordKeyQuestions(test)
-	questions.isYes = true
+	recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
 	fake.mustRun(testToken, "", "share", "example.com", "cora")
 
-	// Forget that Ben was ever confirmed.
+	// Forget that Ben was ever seen holding a key.
 	if err := os.Remove(knownKeysFile(test)); err != nil {
 		test.Fatal(err)
 	}
-	questions.isYes = false
 	fake.unlockAs(testToken)
 	output := fake.mustRun(testToken, "", "unshare", "example.com", "cora")
 	if !strings.Contains(output, "ben") || !strings.Contains(output, "cannot open it until") {
@@ -418,7 +409,6 @@ func TestPasswordsRekeyLeavesAnUnconfirmedPersonWaiting(test *testing.T) {
 		test.Fatal("Ben opens an item that was sealed for nobody")
 	}
 
-	questions.isYes = true
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "share", "--waiting")
 	fake.unlockAs(benToken)
@@ -437,7 +427,7 @@ func TestPasswordsRekeyFailureAndRetry(test *testing.T) {
 	fake.agentPublicKey = base64.StdEncoding.EncodeToString(agentKeyPair.PublicKey())
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
-	recordKeyQuestions(test).isYes = true
+	recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
@@ -492,7 +482,7 @@ func TestPasswordsTerminalEscapesFromAShare(test *testing.T) {
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
-	recordKeyQuestions(test).isYes = true
+	recordKeyNotices(test)
 	fake.unlockAs(testToken)
 	fake.mustRun(testToken, "", "add", hostileName, "--password", "shared-secret-example", "--user-name", "ada\x1b[31m")
 	fake.mustRun(testToken, "", "share", "Router", "ben")
@@ -765,42 +755,37 @@ func TestPasswordsTrustComparesTheSafetyCode(test *testing.T) {
 		test.Error("trust with a code both ways")
 	}
 	if matches, _ := filepath.Glob(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "teanode", "passwords-keys-*.json")); len(matches) != 0 {
-		if record := knownRecord(test, "user-ben"); record != nil && record.ConfirmedPublicKey != "" {
+		if record := knownRecord(test, "user-ben"); record != nil && record.ComparedAt != nil {
 			test.Fatal("a refused trust recorded a key")
 		}
 	}
-	// Sharing still refuses, and says how to confirm without a terminal.
-	if _, err := fake.run(testToken, "", "share", "example.com", "ben"); err == nil || !strings.Contains(err.Error(), "passwords trust") {
-		test.Fatalf("share before trust: %v", err)
-	}
-
 	// The right code, with its spaces dropped, from standard input.
 	output := fake.mustRun(testToken, strings.ReplaceAll(code, " ", "")+"\n", "trust", "ben", "--code-stdin")
-	if !strings.Contains(output, "confirmed the key of ben") {
+	if !strings.Contains(output, "marked the key of ben as compared") {
 		test.Errorf("trust said %q", output)
 	}
-	if record := knownRecord(test, "user-ben"); record == nil || record.ConfirmedPublicKey != fake.users[benToken].setup.PublicKey {
-		test.Fatalf("the key was not confirmed: %+v", record)
+	if record := knownRecord(test, "user-ben"); record == nil || record.PublicKey != fake.users[benToken].setup.PublicKey || record.ComparedAt == nil {
+		test.Fatalf("the key was not marked as compared: %+v", record)
 	}
-	// Now sharing works with no terminal and no question.
+	// Sharing works after it, as it did before it.
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
 	if fake.items[firstItemID(fake)].keys["user-ben"] == nil {
 		test.Fatal("nothing was sealed after trust")
 	}
 
 	// Ben erases Passwords and sets it up again: the key changed, the old code
-	// confirms nothing, the new one does.
+	// marks nothing, the new one does.
 	fake.unlockAs(benToken)
 	fake.mustRun(benToken, "", "erase", "--force")
 	fake.setUpAs(benToken, benPassphrase)
 	fake.unlockAs(testToken)
 	newKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
 	if _, err := fake.run(testToken, "", "trust", "ben", code); err == nil {
-		test.Fatal("the old code confirmed a new key")
+		test.Fatal("the old code marked a new key")
 	}
 	fake.mustRun(testToken, "", "trust", "ben", passwords.SafetyCode(newKey))
-	if record := knownRecord(test, "user-ben"); record.ConfirmedPublicKey != fake.users[benToken].setup.PublicKey {
-		test.Errorf("the new key was not confirmed: %+v", record)
+	if record := knownRecord(test, "user-ben"); record.PublicKey != fake.users[benToken].setup.PublicKey || record.ComparedAt == nil {
+		test.Errorf("the new key was not marked as compared: %+v", record)
 	}
 }
 

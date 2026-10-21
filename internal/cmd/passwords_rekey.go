@@ -96,10 +96,10 @@ const automaticRekeyLimit = 20
 // not nil, makes the access record that is sealed with the new fields from the
 // signed one the item has (narrowing it, for unshare and agent off); nil seals
 // the record as it is, which needs a record that is signed and is not an old
-// one shown again. Every recipient the signed record reaches keeps access if
-// their public key is one the person confirmed (the same rule as sharing: the
-// person is asked about the ones that are not, at a terminal); the others wait,
-// and are given back so that the command can say so. A person the server lists
+// one shown again. Every recipient the signed record reaches keeps access, sealed
+// for the public key recorded for them (the same rule as sharing: nobody is
+// asked); the ones with no key yet wait, and are given back so that the command
+// can say so. A person the server lists
 // but the record does not reach is given no key. Unless the person ran rekey,
 // the new key reaches only the people this computer last saw holding a key for
 // the item, and the agent only if the record says it may use the item, the
@@ -196,11 +196,11 @@ func (self *passwordsSession) rekeyItemOnce(item *passwordsItem, changeAccess fu
 }
 
 func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKept bool, kind rekeyKind) ([]*client.PasswordRecipientView, error) {
-	// The known keys decide who can be sealed for. When their file cannot be
-	// read (a bad mode, say) nobody counts as confirmed: the narrowing still
-	// happens, the people the item is still shared with wait for the new key,
-	// and the person is told how to fix the file.
-	known, knownErr := self.knownKeys()
+	// The known keys are where the key of each person is recorded. When their
+	// file cannot be read (a bad mode, say) nobody can be sealed for: the
+	// narrowing still happens, the people the item is still shared with wait for
+	// the new key, and the person is told how to fix the file.
+	_, knownErr := self.knownKeys()
 	if knownErr != nil {
 		fmt.Fprintf(os.Stderr, "note: the file of known keys cannot be used, so nobody is given the new key until it is fixed: %s\n", forTerminal(knownErr.Error()))
 	}
@@ -228,36 +228,21 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKe
 		}
 	}
 
-	// A recipient whose key was never confirmed, or changed since, is asked
-	// about now. If the person is not there to answer, or says no, the person
-	// waits for the new key instead of being sealed for a key nobody checked.
-	isConfirmed := func(recipient *client.PasswordRecipientView) bool {
-		return knownErr == nil && known.confirmedKey(recipient.UserID) == recipient.PublicKey
-	}
-	var unconfirmed []*client.PasswordRecipientView
-	for _, recipient := range reached {
-		if !isConfirmed(recipient) {
-			unconfirmed = append(unconfirmed, recipient)
-		}
-	}
-	if len(unconfirmed) > 0 && knownErr == nil {
-		if err := self.confirmRecipientKeys(unconfirmed, nil); err != nil {
-			var names []string
-			for _, recipient := range unconfirmed {
-				names = append(names, fmt.Sprintf("%q", textFromServer(recipient.Username)))
-			}
-			fmt.Fprintf(os.Stderr, "note: the key of %s is not confirmed, so they wait for the item's new key; "+
-				"run 'teanode passwords share --waiting' at a terminal to check their safety codes, or 'teanode passwords trust <username> <code>' and then 'share --waiting'\n", forTerminal(strings.Join(names, ", ")))
-		}
-	}
-
 	newItemKey, err := passwords.NewKey()
 	if err != nil {
 		return nil, err
 	}
 	shareKeys := []*client.PasswordItemShareKeyInput{}
 	for _, recipient := range reached {
-		if !isConfirmed(recipient) {
+		// The key the server gives is recorded first, as in sharing. When the
+		// file of known keys cannot be used, or the key is not a key, the
+		// person waits for the new key.
+		if knownErr != nil {
+			waiting = append(waiting, recipient)
+			continue
+		}
+		if err := self.recordRecipientKey(recipient, ""); err != nil {
+			fmt.Fprintf(os.Stderr, "note: %s waits for the item's new key: %s\n", forTerminal(textFromServer(recipient.Username)), forTerminal(err.Error()))
 			waiting = append(waiting, recipient)
 			continue
 		}
@@ -302,7 +287,7 @@ func (self *passwordsSession) rekeyItemWithAccess(item *passwordsItem, isAgentKe
 // item.
 func printWaitingRecipients(waiting []*client.PasswordRecipientView) {
 	for _, recipient := range waiting {
-		fmt.Printf("%s (%s) cannot open it until they have the new key; run 'teanode passwords share --waiting' once their key is confirmed\n",
+		fmt.Printf("%s (%s) cannot open it until they have the new key; run 'teanode passwords share --waiting' to give it to them\n",
 			forTerminal(recipient.Name), forTerminal(recipient.Username))
 	}
 }
