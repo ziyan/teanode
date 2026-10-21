@@ -306,3 +306,25 @@ it("shows the agent's request to take the tab over above the picture, and no Tak
   expect(screen.queryByText('Which color?')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Take over' })).toBeNull()
 })
+
+it("says the picture's size while the tab is held from a phone, and nothing once it is let go", async () => {
+  // jsdom lays nothing out: the picture's box is 360 wide here, in a window
+  // 800 high.
+  const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(360)
+  vi.stubGlobal('innerHeight', 800)
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query.includes('max-width'),
+    addEventListener() {},
+    removeEventListener() {},
+  }))
+  const socket = await openSocket()
+  socket.deliver(stateOf({ controller: 'person' }))
+  pictureOf(socket)
+  await waitFor(() => expect(socket.sentOfType('viewport').length).toBeGreaterThan(0))
+  expect(socket.sentOfType('viewport')[0]).toEqual({ type: 'viewport', width: 360, height: 600 })
+  socket.deliver(stateOf({ controller: 'agent' }))
+  await waitFor(() =>
+    expect(socket.sentOfType('viewport').slice(-1)[0]).toEqual({ type: 'viewport', width: 0, height: 0 }),
+  )
+  clientWidth.mockRestore()
+})

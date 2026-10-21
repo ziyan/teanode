@@ -21183,12 +21183,30 @@ button.person-row:focus-visible {
   margin-bottom: 0;
 }
 
-/* One row: who controls the tab, then what can be done about it. The hand
-   back form takes the whole row on a phone, under the words. */
+/* The box the picture is zoomed and moved in with fingers. While the tab is
+   held, or the picture zoomed, fingers on it are the page's to handle;
+   otherwise a finger scrolls the dashboard, and a mostly upright pinch may
+   be taken by the browser as a scroll too. */
+.browser-viewport {
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.browser-viewport.is-gesturing {
+  touch-action: none;
+}
+
+.browser-viewport .browser-picture {
+  transform-origin: 0 0;
+}
+
+/* The agent's request to take the tab over, above the row. */
 .browser-request {
   margin: 0 0 var(--space-2);
 }
 
+/* One row: who controls the tab, then what can be done about it. The hand
+   back form takes the whole row on a phone, under the words. */
 .browser-control {
   display: flex;
   flex-wrap: wrap;

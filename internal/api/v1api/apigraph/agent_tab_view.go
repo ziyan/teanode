@@ -161,6 +161,9 @@ type tabViewerMessage struct {
 	Type  string          `json:"type"`
 	Token string          `json:"token"`
 	Tab   json.RawMessage `json:"tab"`
+	// For viewport: the size of the page's picture, in CSS pixels.
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 	agent.TabInputMessage
 }
 
@@ -257,6 +260,8 @@ func (self *graph) tabViewerView(response http.ResponseWriter, request *http.Req
 			if worker.TakeOverTab(found.ID) {
 				log.Noticef("%s took over their browser tab from the dashboard", username)
 			}
+		case "viewport":
+			worker.SetTabViewport(found.ID, socket, message.Width, message.Height)
 		case "pointer", "wheel", "key", "text":
 			// The type is read into the outer message; the input carries it on.
 			input := message.TabInputMessage
