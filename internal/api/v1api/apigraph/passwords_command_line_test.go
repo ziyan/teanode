@@ -159,7 +159,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if err != nil || len(benPublicKey) == 0 {
 		test.Fatalf("Ben's public key: %v", err)
 	}
-	benSafetyCode := passwords.SafetyCode(world.ben.ID, benPublicKey)
+	benSafetyCode := passwords.SafetyCode(benPublicKey)
 	if _, err := run("ada-token", "", "trust", world.ben.Username, "0000 0000 0000 0000 0000 0000 0000 0001"); err == nil || !strings.Contains(err.Error(), "nothing was recorded") {
 		test.Fatalf("trust with a wrong code: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	mustRun("ada-session", adaPassphrase+"\n", "unlock", "--passphrase-stdin")
 
 	// The person's own safety code is worked out from the key that unlocking
-	// opened and their user id, and is the one the people who share compare.
+	// opened and from nothing the server reports, and is the one the people who share compare.
 	var adaSettings struct {
 		Setup struct {
 			PublicKey string `json:"publicKey"`
@@ -215,7 +215,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if err != nil || len(adaPublicKey) == 0 {
 		test.Fatalf("Ada's public key: %v", err)
 	}
-	if output := mustRun("ada-session", "", "code"); !strings.Contains(output, passwords.SafetyCode(world.ada.ID, adaPublicKey)) {
+	if output := mustRun("ada-session", "", "code"); !strings.Contains(output, passwords.SafetyCode(adaPublicKey)) || !strings.Contains(output, world.ada.Username) {
 		test.Fatalf("code printed:\n%s", output)
 	}
 
@@ -239,7 +239,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	}
 	mustRun("cora-session", "", "lock")
 	mustRun("ada-session", adaPassphrase+"\n", "unlock", "--passphrase-stdin")
-	mustRun("ada-session", "", "trust", world.cora.Username, passwords.SafetyCode(world.cora.ID, coraPublicKey))
+	mustRun("ada-session", "", "trust", world.cora.Username, passwords.SafetyCode(coraPublicKey))
 	if output := mustRun("ada-session", "", "share", "--waiting"); !strings.Contains(output, "sealed 1 item") {
 		test.Fatalf("share --waiting said:\n%s", output)
 	}
@@ -270,9 +270,39 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if listed := mustRun("ada-session", "", "list"); !strings.Contains(listed, "agent") {
 		test.Fatalf("list does not mark the agent:\n%s", listed)
 	}
+	// The access record the server stored is the one this computer signed, so
+	// the sharing is checked, and the agent flag shown is both words together.
+	var listedItems []struct {
+		Name                string `json:"name"`
+		IsUsableByAgent     bool   `json:"isUsableByAgent"`
+		SharingCheckVerdict string `json:"sharingCheckVerdict"`
+	}
+	if err := json.Unmarshal([]byte(mustRun("ada-session", "", "list", "--json")), &listedItems); err != nil || len(listedItems) == 0 {
+		test.Fatalf("list --json: %v", err)
+	}
+	for _, listedItem := range listedItems {
+		if listedItem.SharingCheckVerdict != "checked" || listedItem.IsUsableByAgent != (listedItem.Name == "example.com") {
+			test.Fatalf("list --json: %+v", listedItem)
+		}
+	}
 	mustRun("ada-token", "", "agent", "off", "example.com")
 	if listed := mustRun("ada-session", "", "list"); strings.Contains(listed, "agent") {
 		test.Fatalf("list still marks the agent:\n%s", listed)
+	}
+
+	// Removing a deleted item for good needs a tap: a token is refused at once
+	// and a session removes it, but only once it is deleted.
+	mustRun("ada-session", "", "add", "Scratch note", "--kind", "note", "--text", "nothing to keep")
+	if _, err := run("ada-session", "", "delete", "Scratch note", "--forever", "--force"); err == nil || !strings.Contains(err.Error(), "not deleted") {
+		test.Fatalf("delete --forever of a live item: %v", err)
+	}
+	mustRun("ada-session", "", "delete", "Scratch note")
+	if _, err := run("ada-token", "", "delete", "Scratch note", "--forever", "--force"); !isTapRefusal(err) {
+		test.Fatalf("delete --forever from a token: %v", err)
+	}
+	mustRun("ada-session", "", "delete", "Scratch note", "--forever", "--force")
+	if listed := mustRun("ada-session", "", "list", "--deleted"); strings.Contains(listed, "Scratch note") {
+		test.Fatalf("the item is still there after delete --forever:\n%s", listed)
 	}
 
 	// Changing the passphrase, and erasing, need a tap.

@@ -33,6 +33,7 @@ const (
 	passwordsChangePassphraseTapSentence = "Changing the passphrase" + passwordsTapPlace + "."
 	passwordsNewRecoveryKeyTapSentence   = "Replacing the recovery key" + passwordsTapPlace + "."
 	passwordsEraseTapSentence            = "Erasing Passwords" + passwordsTapPlace + "."
+	passwordsPurgeTapSentence            = "Removing an item for good" + passwordsTapPlace + ", but moving it to recently deleted works here."
 	passwordsShareTapSentence            = "Sharing with someone new" + passwordsTapPlace + ", but taking someone away works here."
 )
 
@@ -170,7 +171,19 @@ func NewPasswordsCommand() *cli.Command {
 					&cli.StringSliceFlag{Name: "add-site", Usage: "add a site to a login"}),
 				Action: runPasswordsEdit,
 			},
-			{Name: "delete", Usage: "move an item to recently deleted", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsDelete},
+			{
+				Name:      "delete",
+				Usage:     "move an item to recently deleted, or remove it for good",
+				ArgsUsage: "<item>",
+				Description: "Moves the item to recently deleted, where 'teanode passwords restore' brings it\n" +
+					"back for 30 days. With --forever, an item that is already deleted is removed at\n" +
+					"once, with its old versions, instead of after 30 days. That is done on the\n" +
+					"Passwords page of the dashboard or in the iPhone app; a command line cannot do\n" +
+					"this, and says so before it asks for the passphrase.",
+				Flags: []cli.Flag{JSONFlag(), passphraseFlag(), ForceFlag(),
+					&cli.BoolFlag{Name: "forever", Usage: "remove an item that is already deleted for good, which needs your tap in the dashboard or the iPhone app"}},
+				Action: runPasswordsDelete,
+			},
 			{Name: "restore", Usage: "bring back an item deleted in the last 30 days", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsRestore},
 			{
 				Name:      "share",
@@ -232,7 +245,12 @@ func NewPasswordsCommand() *cli.Command {
 					"(you are asked about the others at a terminal; until you answer they wait, and\n" +
 					"'teanode passwords share --waiting' seals for them), and for the agent only if\n" +
 					"you let it use the item. 'list' and 'show' say when an item needs this; 'edit',\n" +
-					"'share', 'unshare' and 'agent' do it first on such an item.",
+					"'share' and 'agent on' do it first on such an item, but only for people your\n" +
+					"computer last saw holding a key for it (and the agent only if it held a copy); this\n" +
+					"command, which you run on purpose, seals for everyone your record reaches whose key\n" +
+					"you confirmed. An item whose record of who may have it was not signed by your devices,\n" +
+					"or is an old one the server showed again, is left alone: set it again with 'unshare'\n" +
+					"and then 'share'.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
 				Action: runPasswordsRekey,
 			},
@@ -746,6 +764,12 @@ type passwordsItemSummary struct {
 	NeedsNewKey     bool       `json:"needsNewKey"`
 	DeletedAt       *time.Time `json:"deletedAt"`
 	Revision        int64      `json:"revision"`
+
+	// SharingCheckVerdict is whether the owner's devices signed the record of
+	// who may have the item: "checked", "notChecked" (missing, unsigned or
+	// wrong, so it reaches nobody) or "changedBack" (an old record the server
+	// showed again). Empty for an item shared with the person.
+	SharingCheckVerdict string `json:"sharingCheckVerdict,omitempty"`
 }
 
 func summarizeItem(item *passwordsItem) passwordsItemSummary {
@@ -756,7 +780,11 @@ func summarizeItem(item *passwordsItem) passwordsItemSummary {
 	return passwordsItemSummary{
 		ID: item.View.ID, ItemKind: string(item.Kind), Name: item.Name(), UserName: item.UserName(), Sites: sites, Folder: item.Folder(),
 		IsShared: len(item.View.Shares) > 0, IsSharedWithMe: item.View.IsSharedWithMe, OwnerName: item.View.OwnerName,
-		IsUsableByAgent: item.View.IsUsableByAgent, NeedsNewKey: item.View.NeedsNewKey, DeletedAt: item.View.DeletedAt, Revision: item.View.Revision,
+		// The agent uses an item only if the server says so and the owner's
+		// own signed record says so too: the server's flag alone is not shown.
+		IsUsableByAgent: item.View.IsUsableByAgent && item.isUsableByAgentBySealedAccess(),
+		NeedsNewKey:     item.View.NeedsNewKey, DeletedAt: item.View.DeletedAt, Revision: item.View.Revision,
+		SharingCheckVerdict: item.sharingCheckVerdict(),
 	}
 }
 
@@ -779,6 +807,12 @@ func itemMarkers(summary passwordsItemSummary) string {
 	}
 	if summary.NeedsNewKey {
 		markers = append(markers, "needs a new key")
+	}
+	switch summary.SharingCheckVerdict {
+	case "notChecked":
+		markers = append(markers, "sharing not checked")
+	case "changedBack":
+		markers = append(markers, "sharing changed back by the server")
 	}
 	if summary.DeletedAt != nil {
 		markers = append(markers, "deleted "+summary.DeletedAt.In(time.Local).Format(time.DateOnly))
@@ -803,6 +837,7 @@ func runPasswordsList(ctx context.Context, command *cli.Command) error {
 	}
 	search := strings.ToLower(strings.TrimSpace(command.Args().First()))
 	summaries := []passwordsItemSummary{}
+	var shownItems []*passwordsItem
 	for _, item := range items {
 		if command.Bool("deleted") != (item.View.DeletedAt != nil) {
 			continue
@@ -817,6 +852,7 @@ func runPasswordsList(ctx context.Context, command *cli.Command) error {
 			continue
 		}
 		summaries = append(summaries, summarizeItem(item))
+		shownItems = append(shownItems, item)
 	}
 	if command.Bool("json") {
 		return PrintJSON(summaries)
@@ -836,9 +872,12 @@ func runPasswordsList(ctx context.Context, command *cli.Command) error {
 	if err := printTable([]string{"name", "kind", "user name", "site", "folder", "", "id"}, rows); err != nil {
 		return err
 	}
-	for _, summary := range summaries {
+	for index, summary := range summaries {
 		if summary.NeedsNewKey {
 			fmt.Printf("%s: %s\n", forTerminal(summary.Name), needsNewKeyWords(summary.ID))
+		}
+		if words := shownItems[index].sharingCheckWords(); words != "" {
+			fmt.Printf("%s: %s\n", forTerminal(summary.Name), words)
 		}
 	}
 	return nil
@@ -1002,6 +1041,9 @@ func runPasswordsShow(ctx context.Context, command *cli.Command) error {
 	}
 	if summary.NeedsNewKey {
 		header = append(header, [2]string{"note", needsNewKeyWords(summary.ID)})
+	}
+	if words := item.sharingCheckWords(); words != "" {
+		header = append(header, [2]string{"note", words})
 	}
 	fields := header
 	for _, row := range rows {
@@ -1399,7 +1441,7 @@ func runPasswordsEdit(ctx context.Context, command *cli.Command) error {
 	}
 	// An item whose access narrowed gets its new key before it is changed.
 	if item.View.NeedsNewKey {
-		waiting, err := session.rekeyItem(item, nil)
+		waiting, err := session.rekeyItem(item, nil, rekeyAutomatic)
 		if err != nil {
 			return fmt.Errorf("the item needed a new key first: %w", describeError(command, err))
 		}
@@ -1421,9 +1463,12 @@ func runPasswordsEdit(ctx context.Context, command *cli.Command) error {
 }
 
 func runPasswordsDelete(ctx context.Context, command *cli.Command) error {
-	typed, err := itemFindingArgument(command, "usage: teanode passwords delete <item>")
+	typed, err := itemFindingArgument(command, "usage: teanode passwords delete <item> [--forever]")
 	if err != nil {
 		return err
+	}
+	if command.Bool("forever") {
+		return runPasswordsPurge(ctx, command, typed)
 	}
 	session, item, err := findOpenItem(ctx, command, typed, false)
 	if err != nil {
@@ -1441,6 +1486,48 @@ func runPasswordsDelete(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(summarizeItem(item))
 	}
 	fmt.Printf("deleted %s; 'teanode passwords restore %s' brings it back for 30 days\n", forTerminal(item.Name()), forTerminal(view.ID))
+	return nil
+}
+
+// runPasswordsPurge removes an item that is already deleted for good. It needs
+// the person's tap, which a command line never has, so it is refused at once,
+// before the passphrase is asked for, and says where it is done.
+func runPasswordsPurge(ctx context.Context, command *cli.Command, typed string) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := refuseWithoutPasswordsTap(ctx, command, connection, passwordsPurgeTapSentence); err != nil {
+		return err
+	}
+	session, err := openPasswordsForCommand(ctx, command)
+	if err != nil {
+		return err
+	}
+	items, err := session.loadItems(true)
+	if err != nil {
+		return describeError(command, err)
+	}
+	item, err := findItem(items, typed)
+	if err != nil {
+		return err
+	}
+	if !item.IsOwner() {
+		return fmt.Errorf("%s is shared with you by %s, and only its owner removes it", item.Name(), item.View.OwnerName)
+	}
+	if item.View.DeletedAt == nil {
+		return fmt.Errorf("%s is not deleted; 'teanode passwords delete %s' moves it to recently deleted first", forTerminal(item.Name()), forTerminal(item.View.ID))
+	}
+	if err := confirm(command, "This removes "+forTerminal(item.Name())+" and its old versions for good. Nobody can get them back, not even whoever runs this server."); err != nil {
+		return err
+	}
+	if err := client.PurgePasswordItem(ctx, session.connection, item.View.ID); err != nil {
+		return describeTapRequired(describeError(command, err), passwordsPurgeTapSentence)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"id": item.View.ID, "isPurged": true})
+	}
+	fmt.Printf("removed %s for good\n", forTerminal(item.Name()))
 	return nil
 }
 
@@ -1509,9 +1596,14 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 		}
 		typedUserNames[granteeUserID] = typed
 	}
-	// An item whose access narrowed gets its new key before anything is added.
+	// An item whose sharing cannot be believed is set again from nothing, so
+	// the server must not list anybody on it. One whose access narrowed gets
+	// its new key before anything is added.
+	if err := item.refuseWhileServerListsPeople(); err != nil {
+		return err
+	}
 	if item.View.NeedsNewKey {
-		waiting, err := session.rekeyItem(item, nil)
+		waiting, err := session.rekeyItem(item, nil, rekeyAutomatic)
 		if err != nil {
 			return fmt.Errorf("the item needed a new key first: %w", describeError(command, err))
 		}
@@ -1533,7 +1625,7 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 			circleIDs[recipient.UserID] = append(circleIDs[recipient.UserID], granteeCircleID)
 		}
 	}
-	newAccess := withGrantee(item.Access(), granteeUserID, granteeCircleID)
+	newAccess := withGrantee(item.VerifiedAccess, granteeUserID, granteeCircleID)
 	return setItemShares(ctx, command, session, item, newAccess, grantees, append(existingRecipients(item.View), newRecipients...), circleIDs, typedUserNames,
 		"sharing "+forTerminal(item.Name())+" with "+forTerminal(described))
 }
@@ -1625,6 +1717,7 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 		return describeTapRequired(describeError(command, err), passwordsShareTapSentence)
 	}
 	item.View = view
+	session.afterAccessChange(item)
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
@@ -1681,6 +1774,12 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 			doing = "stopped sharing " + forTerminal(item.Name()) + " with " + forTerminal(described)
 		}
 	}
+	// Sharing that cannot be believed cannot be narrowed to one person: the
+	// signed record starts again from nobody, so everyone is taken off.
+	if item.AccessCheck == accessCheckNotVerified || item.AccessCheck == accessCheckReplayed {
+		remaining = []*client.PasswordShareView{}
+		fmt.Fprintln(os.Stderr, "note: this item's sharing could not be believed, so everyone is taken off it; share it again with the people who should have it")
+	}
 	// Narrowing, in this order: the server stops sharing, then the item is
 	// re-keyed with the narrower record sealed in its fields. Nobody new is
 	// reached, so no key is sealed here. The server forgets the keys of the
@@ -1696,7 +1795,7 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 	item.View = view
 	// The people taken off may hold a sealed copy of the item key. A new key
 	// means the copy opens nothing saved from now on.
-	waiting, err := session.rekeyItem(item, changeAccess)
+	waiting, err := session.rekeyItem(item, changeAccess, rekeyNarrowing)
 	if err != nil {
 		return fmt.Errorf("%s: %w", passwordsRekeyFailedWords, describeError(command, err))
 	}
@@ -1744,7 +1843,11 @@ func runPasswordsShareWaiting(ctx context.Context, command *cli.Command) error {
 		if item == nil || !item.View.NeedsNewKey {
 			continue
 		}
-		if _, err := session.rekeyItem(item, nil); err != nil {
+		if err := item.refuseWithoutVerifiedAccess("left alone"); err != nil {
+			fmt.Fprintf(os.Stderr, "note: %s: %s\n", forTerminal(item.Name()), forTerminal(err.Error()))
+			continue
+		}
+		if _, err := session.rekeyItem(item, nil, rekeyAutomatic); err != nil {
 			return fmt.Errorf("%s needed a new key first: %w", forTerminal(item.Name()), describeError(command, err))
 		}
 		isRekeyed = true
@@ -1835,9 +1938,14 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	if !isOn {
 		return turnOffAgentUse(command, session, item)
 	}
-	// An item whose access narrowed gets its new key before anything is added.
+	// An item whose sharing cannot be believed is set again from nothing, so
+	// the server must not list anybody on it. One whose access narrowed gets
+	// its new key before anything is added.
+	if err := item.refuseWhileServerListsPeople(); err != nil {
+		return err
+	}
 	if item.View.NeedsNewKey {
-		waiting, err := session.rekeyItem(item, nil)
+		waiting, err := session.rekeyItem(item, nil, rekeyAutomatic)
 		if err != nil {
 			return fmt.Errorf("the item needed a new key first: %w", describeError(command, err))
 		}
@@ -1856,7 +1964,7 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	}
 	// Widening, in this order: the fields are saved with the record that lets
 	// the agent use the item, then the server is asked to let it.
-	if err := session.saveItemWithAccess(item, passwords.AccessWithAgentUse(item.Access(), true)); err != nil {
+	if err := session.saveItemWithAccess(item, passwords.AccessWithAgentUse(item.VerifiedAccess, true)); err != nil {
 		return describeError(command, err)
 	}
 	view, err := client.SetPasswordItemUsableByAgent(ctx, session.connection, &client.SetPasswordItemUsableByAgentInput{
@@ -1866,6 +1974,7 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 		return describeTapRequired(describeError(command, err), passwordsAgentTapSentence)
 	}
 	item.View = view
+	session.afterAccessChange(item)
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
@@ -1890,7 +1999,7 @@ func turnOffAgentUse(command *cli.Command, session *passwordsSession, item *pass
 	}
 	waiting, err := session.rekeyItem(item, func(access *passwords.PasswordAccess) *passwords.PasswordAccess {
 		return passwords.AccessWithAgentUse(access, false)
-	})
+	}, rekeyNarrowing)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -1917,7 +2026,7 @@ func runPasswordsRekey(ctx context.Context, command *cli.Command) error {
 	if !item.IsOwner() {
 		return fmt.Errorf("%s is shared with you by %s, and only its owner gives it a new key", item.Name(), item.View.OwnerName)
 	}
-	waiting, err := session.rekeyItem(item, nil)
+	waiting, err := session.rekeyItem(item, nil, rekeyByPerson)
 	if err != nil {
 		return describeError(command, err)
 	}

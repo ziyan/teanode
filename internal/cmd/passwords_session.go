@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -417,6 +416,13 @@ type passwordsSession struct {
 	// checkedOwnerKeys remembers, for the length of this command, what was
 	// decided about an owner's key, so that a changed key is asked about once.
 	checkedOwnerKeys map[string]*ownerKeyDecision
+
+	// isKnownKeysFaultTold is whether the file of known keys being unusable was
+	// already told, so that it is told once.
+	isKnownKeysFaultTold bool
+	// automaticRekeyCount is how many re-keys nobody asked for this command has
+	// made.
+	automaticRekeyCount int
 }
 
 // openPasswords gives the keys `unlock` kept, or asks for the passphrase when
@@ -481,6 +487,24 @@ type passwordsItem struct {
 	Login   *passwords.LoginFields
 	Card    *passwords.CardFields
 	Note    *passwords.NoteFields
+
+	// AccessCheck is what opening found out about the access record sealed in
+	// the fields of an item the person owns (see passwordsAccessCheck).
+	AccessCheck passwordsAccessCheck
+	// VerifiedAccess is the access record when the owner's devices signed it
+	// and it is not an old one shown again, and nil otherwise. Everything that
+	// decides who may have the item or the agent reads this, never Access.
+	VerifiedAccess *passwords.PasswordAccess
+	// HighestRecordVersionSeen is the highest version of the access record
+	// this computer has seen with a valid signature, which the next signed
+	// record counts up from.
+	HighestRecordVersionSeen int
+	// PreviousKeyHolderUserIDs and HadAgentCopyBefore are who held a key, and
+	// whether the agent held a copy, when this computer last saw the item
+	// before the command that opened it. A re-key nobody asked for never goes
+	// beyond them.
+	PreviousKeyHolderUserIDs []string
+	HadAgentCopyBefore       bool
 }
 
 // Name is the item's name.
@@ -541,9 +565,10 @@ func (self *passwordsItem) IsOwner() bool {
 	return !self.View.IsSharedWithMe
 }
 
-// Access is the record the owner's device sealed inside the fields: who may
-// have the item and whether the agent may use it. Nil is an item that was never
-// shared and that the agent may not use.
+// Access is the record sealed inside the fields as it is there: who may have
+// the item and whether the agent may use it, according to whoever wrote it. It
+// is not to be believed until VerifiedAccess says the owner's devices signed
+// it. Nil is no record at all.
 func (self *passwordsItem) Access() *passwords.PasswordAccess {
 	switch {
 	case self.Login != nil:
@@ -568,12 +593,11 @@ func (self *passwordsItem) setAccess(access *passwords.PasswordAccess) {
 	}
 }
 
-// isUsableByAgentBySealedAccess is whether the owner's own record lets the
-// agent use the item, which is the word of the owner's device and not the
+// isUsableByAgentBySealedAccess is whether the owner's own signed record lets
+// the agent use the item, which is the word of the owner's device and not the
 // server's.
 func (self *passwordsItem) isUsableByAgentBySealedAccess() bool {
-	access := self.Access()
-	return access != nil && access.IsUsableByAgent
+	return self.VerifiedAccess != nil && self.VerifiedAccess.IsUsableByAgent
 }
 
 // Fields are the fields to seal, whichever the kind.
@@ -682,6 +706,9 @@ func (self *passwordsSession) openItem(view *client.PasswordItemView) (*password
 		self.recordOwnerKey(view)
 	}
 	item := &passwordsItem{View: view, Kind: kind, ItemKey: itemKey}
+	if !view.IsSharedWithMe {
+		self.checkSealedAccess(item, plain)
+	}
 	switch kind {
 	case passwords.ItemKindLogin:
 		item.Login = &passwords.LoginFields{}
@@ -821,6 +848,13 @@ func (self *passwordsSession) saveNewItem(kind passwords.ItemKind, fields any) (
 	if err != nil {
 		return nil, err
 	}
+	// A new item starts with a signed record that shares it with nobody, so
+	// that "no record" can only mean a record somebody took away.
+	access, err := passwords.SignAccess(self.keys.AccountKey, itemID, kind, nil, 0)
+	if err != nil {
+		return nil, err
+	}
+	setFieldsAccess(fields, access)
 	encryptedFields, err := sealFields(itemID, kind, fields, itemKey)
 	if err != nil {
 		return nil, err
@@ -829,12 +863,17 @@ func (self *passwordsSession) saveNewItem(kind passwords.ItemKind, fields any) (
 	if err != nil {
 		return nil, err
 	}
-	return client.SavePasswordItem(self.ctx, self.connection, &client.SavePasswordItemInput{
+	view, err := client.SavePasswordItem(self.ctx, self.connection, &client.SavePasswordItemInput{
 		ID:              itemID,
 		ItemKind:        string(kind),
 		EncryptedFields: encryptedFields,
 		ItemKey:         sealedItemKey.String(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	self.rememberRecordVersion(itemID, access.RecordVersion)
+	return view, nil
 }
 
 // saveChangedItem seals the item's fields again with its own item key and
@@ -856,22 +895,29 @@ func (self *passwordsSession) saveChangedItem(item *passwordsItem) (*client.Pass
 }
 
 // saveItemWithAccess saves the item's fields sealed with a new access record,
-// based on the revision it was read at. It is the first step of widening access
-// (sharing with somebody new, letting the agent use the item): the record is
-// written down before the server is asked, so it is never narrower than what
-// the server allows. A record that is already the item's is not saved again.
+// signed with the owner's account key at one version more than the highest this
+// computer has seen, based on the revision it was read at. It is the first step
+// of widening access (sharing with somebody new, letting the agent use the
+// item): the record is written down before the server is asked, so it is never
+// narrower than what the server allows. A record that is already the item's
+// signed one is not saved again.
 func (self *passwordsSession) saveItemWithAccess(item *passwordsItem, access *passwords.PasswordAccess) error {
-	if reflect.DeepEqual(item.Access(), access) {
+	signed, err := self.signedAccessFor(item, access)
+	if err != nil {
+		return err
+	}
+	if signed == item.VerifiedAccess {
 		return nil
 	}
 	previous := item.Access()
-	item.setAccess(access)
+	item.setAccess(signed)
 	view, err := self.saveChangedItem(item)
 	if err != nil {
 		item.setAccess(previous)
 		return err
 	}
 	item.View = view
+	self.recordAccessWritten(item, signed)
 	return nil
 }
 

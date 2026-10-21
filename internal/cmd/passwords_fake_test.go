@@ -93,7 +93,7 @@ var fakePasswordsOperations = []string{
 	"ReadPasswordsSetup", "SetUpPasswords", "UnlockPasswords", "ChangePasswordsPassphrase", "ReplacePasswordsRecoveryKey",
 	"UpdatePasswordsSettings", "ErasePasswords", "ListPasswordItems", "ListPasswordRecipients", "ListWaitingPasswordShares",
 	"ReadPasswordsAgentKey", "SavePasswordItem", "DeletePasswordItem", "RestorePasswordItem", "SetPasswordItemShares",
-	"AddPasswordShareKeys", "SetPasswordItemUsableByAgent", "RekeyPasswordItem", "GetCurrentUser", "ListCirclePeople", "ListCircles",
+	"AddPasswordShareKeys", "PurgePasswordItem", "SetPasswordItemUsableByAgent", "RekeyPasswordItem", "GetCurrentUser", "ListCirclePeople", "ListCircles",
 }
 
 func passwordsOperationOf(query string) string {
@@ -227,7 +227,7 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 			}
 		}
 	}
-	isTapOperation := map[string]bool{"SetUpPasswords": true, "ChangePasswordsPassphrase": true, "ReplacePasswordsRecoveryKey": true, "ErasePasswords": true}
+	isTapOperation := map[string]bool{"PurgePasswordItem": true, "SetUpPasswords": true, "ChangePasswordsPassphrase": true, "ReplacePasswordsRecoveryKey": true, "ErasePasswords": true}
 	if isTapOperation[operation] && self.isTapRefused {
 		return nil, api.TapRequiredPhrase + ": setting up is done on the dashboard"
 	}
@@ -409,6 +409,20 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 			}
 		}
 		return self.itemView(item, user), ""
+	case "PurgePasswordItem":
+		var variables struct {
+			ID string `json:"id"`
+		}
+		decode(&variables)
+		item := self.items[variables.ID]
+		switch {
+		case item == nil || item.ownerUserID != user.id:
+			return nil, "not found"
+		case item.deletedAt == nil:
+			return nil, "Only a deleted item is removed for good."
+		}
+		delete(self.items, item.id)
+		return true, ""
 	case "SetPasswordItemShares":
 		var variables struct {
 			Input *client.SetPasswordItemSharesInput `json:"input"`
@@ -423,6 +437,9 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 			recipient := self.userByID(key.RecipientUserID)
 			if recipient == nil || recipient.setup == nil || recipient.setup.PublicKey != key.RecipientPublicKey {
 				return nil, "That person's key changed since it was read. Read their key again and seal the item for it."
+			}
+			if key.ItemKey != item.itemKey {
+				return nil, "This item changed on another device. Open it again."
 			}
 			keys[key.RecipientUserID] = key
 		}

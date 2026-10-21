@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,12 +58,39 @@ type passwordsKnownKey struct {
 	LegacyPublicKey string `json:"publicKey,omitempty"`
 }
 
+// passwordsKnownItem is what this computer remembers of one item the person
+// owns, so that a server cannot turn the item's sharing back, or widen it, by
+// showing an older or a made up state. It is written only from an item whose
+// access record was signed by the owner's devices (see passwords.VerifyAccess).
+type passwordsKnownItem struct {
+	// HighestRecordVersion is the highest recordVersion of the access record
+	// this computer has seen with a valid signature. A record with a lower
+	// version is an old one the server showed again.
+	HighestRecordVersion int `json:"highestRecordVersion,omitempty"`
+
+	// KeyHolderUserIDs are the people this computer last saw holding a key for
+	// the item, or sealed one for. A re-key nobody asked for seals only for them.
+	KeyHolderUserIDs []string `json:"keyHolderUserIds,omitempty"`
+
+	// HasAgentCopy is whether the item had a copy for the agent when this
+	// computer last saw it. A re-key nobody asked for makes one only if it had.
+	HasAgentCopy bool `json:"hasAgentCopy,omitempty"`
+
+	// LastAutomaticRekeyAt is when this computer last gave the item a new key
+	// nobody asked for, for the wait between two of them.
+	LastAutomaticRekeyAt *time.Time `json:"lastAutomaticRekeyAt,omitempty"`
+}
+
 // passwordsKnownKeysFile is what is in the file: the known keys of each server
 // by that server's name, then by user id. Keeping every server in one file means
 // a profile that is pointed at another server, and back, does not lose the keys
 // it had written down for the first.
 type passwordsKnownKeysFile struct {
 	Servers map[string]map[string]*passwordsKnownKey `json:"servers"`
+
+	// Items is what this computer remembers of each item the person owns, by
+	// server and then item id (see passwordsKnownItem).
+	Items map[string]map[string]*passwordsKnownItem `json:"items,omitempty"`
 
 	// Server and People are the file as it was first written, for one server.
 	// They are read and moved into Servers, and not written again.
@@ -95,7 +124,7 @@ func passwordsKnownKeysPath(command *cli.Command) (path, server string, err erro
 // file. A file others could have changed is an error. A file written before
 // the keys were kept by server is moved to the server it names.
 func readPasswordsKnownKeysFile(path string) (passwordsKnownKeysFile, error) {
-	empty := passwordsKnownKeysFile{Servers: map[string]map[string]*passwordsKnownKey{}}
+	empty := passwordsKnownKeysFile{Servers: map[string]map[string]*passwordsKnownKey{}, Items: map[string]map[string]*passwordsKnownItem{}}
 	content, err := readPrivateFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return empty, nil
@@ -109,6 +138,9 @@ func readPasswordsKnownKeysFile(path string) (passwordsKnownKeysFile, error) {
 	}
 	if stored.Servers == nil {
 		stored.Servers = map[string]map[string]*passwordsKnownKey{}
+	}
+	if stored.Items == nil {
+		stored.Items = map[string]map[string]*passwordsKnownItem{}
 	}
 	if stored.LegacyServer != "" && stored.LegacyPeople != nil && stored.Servers[stored.LegacyServer] == nil {
 		stored.Servers[stored.LegacyServer] = stored.LegacyPeople
@@ -175,7 +207,9 @@ func (self *passwordsKnownKeys) seenKey(userID string) string {
 }
 
 // rememberConfirmed writes down a key the person confirmed by its safety code,
-// the only kind of key an item is sealed for.
+// the only kind of key an item is sealed for. It is also the key last seen, so
+// that the key confirmed before is the only one an owner's items are compared
+// with, and an older key seen before is not accepted again.
 func (self *passwordsKnownKeys) rememberConfirmed(userID, username, name, publicKey string) error {
 	return self.update(userID, func(known *passwordsKnownKey) {
 		moment := time.Now().Truncate(time.Second)
@@ -184,6 +218,7 @@ func (self *passwordsKnownKeys) rememberConfirmed(userID, username, name, public
 		}
 		known.Name = name
 		known.ConfirmedPublicKey, known.ConfirmedAt = publicKey, &moment
+		known.SeenPublicKey, known.SeenAt = publicKey, &moment
 	})
 }
 
@@ -197,11 +232,59 @@ func (self *passwordsKnownKeys) rememberSeen(userID, name, publicKey string) err
 	})
 }
 
-// update changes one person's record. The file is read again under a lock and
-// written whole through a temporary file, so that another teanode command
-// writing a key at the same moment does not lose this one, and the other
-// servers' keys are kept.
+// item is what this computer remembers of an item the person owns, a copy
+// that is empty if nothing is.
+func (self *passwordsKnownKeys) item(itemID string) passwordsKnownItem {
+	if known := self.file.Items[self.server][itemID]; known != nil {
+		copied := *known
+		copied.KeyHolderUserIDs = slices.Clone(known.KeyHolderUserIDs)
+		return copied
+	}
+	return passwordsKnownItem{}
+}
+
+// updateItem changes what is remembered of one item. Nothing is written when
+// the change leaves it as it was.
+func (self *passwordsKnownKeys) updateItem(itemID string, change func(known *passwordsKnownItem)) error {
+	before := self.item(itemID)
+	after := self.item(itemID)
+	change(&after)
+	if reflect.DeepEqual(before, after) {
+		return nil
+	}
+	return self.mutate(func(current *passwordsKnownKeysFile) {
+		if current.Items[self.server] == nil {
+			current.Items[self.server] = map[string]*passwordsKnownItem{}
+		}
+		known := current.Items[self.server][itemID]
+		if known == nil {
+			known = &passwordsKnownItem{}
+			current.Items[self.server][itemID] = known
+		}
+		change(known)
+	})
+}
+
+// update changes one person's record.
 func (self *passwordsKnownKeys) update(userID string, change func(known *passwordsKnownKey)) error {
+	return self.mutate(func(current *passwordsKnownKeysFile) {
+		if current.Servers[self.server] == nil {
+			current.Servers[self.server] = map[string]*passwordsKnownKey{}
+		}
+		known := current.Servers[self.server][userID]
+		if known == nil {
+			known = &passwordsKnownKey{}
+			current.Servers[self.server][userID] = known
+		}
+		change(known)
+	})
+}
+
+// mutate changes the file. The file is read again under a lock and written
+// whole through a temporary file, so that another teanode command writing a
+// key at the same moment does not lose this one, and the other servers' keys
+// are kept.
+func (self *passwordsKnownKeys) mutate(change func(current *passwordsKnownKeysFile)) error {
 	release, err := lockPrivateFile(self.path)
 	if err != nil {
 		return err
@@ -211,15 +294,7 @@ func (self *passwordsKnownKeys) update(userID string, change func(known *passwor
 	if err != nil {
 		return err
 	}
-	if current.Servers[self.server] == nil {
-		current.Servers[self.server] = map[string]*passwordsKnownKey{}
-	}
-	known := current.Servers[self.server][userID]
-	if known == nil {
-		known = &passwordsKnownKey{}
-		current.Servers[self.server][userID] = known
-	}
-	change(known)
+	change(&current)
 	content, err := json.MarshalIndent(current, "", "  ")
 	if err != nil {
 		return err
@@ -317,14 +392,14 @@ func (self *passwordsSession) confirmRecipientKeys(recipients []*client.Password
 			continue
 		case "":
 			lines = append(lines, fmt.Sprintf("  user name %q", userName),
-				"    safety code: "+passwords.SafetyCode(recipient.UserID, publicKey),
+				"    safety code: "+passwords.SafetyCode(publicKey),
 				displayNameLine)
 		default:
 			isChange = true
 			confirmedKey, _ := passwords.DecodeCanonicalBase64(confirmed)
 			lines = append(lines, fmt.Sprintf("  user name %q  KEY CHANGED", userName),
-				"    safety code now:    "+passwords.SafetyCode(recipient.UserID, publicKey),
-				"    safety code before: "+passwords.SafetyCode(recipient.UserID, confirmedKey),
+				"    safety code now:    "+passwords.SafetyCode(publicKey),
+				"    safety code before: "+passwords.SafetyCode(confirmedKey),
 				displayNameLine)
 		}
 		toWrite = append(toWrite, recipient)
@@ -403,25 +478,27 @@ func (self *passwordsSession) checkedOwnerKey(view *client.PasswordItemView) ([]
 		recordSeen := func() error {
 			return known.rememberSeen(view.OwnerUserID, view.OwnerName, view.OwnerPublicKey)
 		}
+		// Once a key is confirmed it is the only one accepted: a key seen
+		// before it is the old one, which a server could show again.
+		expected := confirmed
+		if expected == "" {
+			expected = seen
+		}
 		switch {
-		case view.OwnerPublicKey == confirmed || view.OwnerPublicKey == seen:
+		case expected != "" && view.OwnerPublicKey == expected:
 			return &ownerKeyDecision{}
-		case confirmed == "" && seen == "":
+		case expected == "":
 			fmt.Fprintf(os.Stderr, "note: this is the first item shared with you by the person the server calls %q; their safety code, to check with them, is\n    %s\n",
-				ownerName, passwords.SafetyCode(view.OwnerUserID, publicKey))
+				ownerName, passwords.SafetyCode(publicKey))
 			return &ownerKeyDecision{record: recordSeen}
 		}
-		previous := confirmed
-		if previous == "" {
-			previous = seen
-		}
-		previousKey, _ := passwords.DecodeCanonicalBase64(previous)
+		previousKey, _ := passwords.DecodeCanonicalBase64(expected)
 		isAnswered, err := confirmOwnerKeyChange(self.command, fmt.Sprintf("The key of the person who shared this with you changed. The name the server gives them is %q.\n"+
 			"    safety code now:    %s\n    safety code before: %s\n"+
 			"Ask them to open Passwords settings on their own device and read you their safety code, in person or on a call you trust. "+
 			"Confirm only if it matches the one now. Either they erased Passwords and set it up again, or the server put its own key in their place; go on only if they tell you the first. "+
 			"Saying yes also lets you share with them.",
-			ownerName, passwords.SafetyCode(view.OwnerUserID, publicKey), passwords.SafetyCode(view.OwnerUserID, previousKey)))
+			ownerName, passwords.SafetyCode(publicKey), passwords.SafetyCode(previousKey)))
 		if err != nil {
 			return &ownerKeyDecision{err: fmt.Errorf("the key of its owner changed and was not confirmed: %w", err)}
 		}
@@ -555,7 +632,7 @@ func runPasswordsTrust(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("%q: %w", typed, err)
 	}
-	actualCode := passwords.SafetyCode(recipient.UserID, publicKey)
+	actualCode := passwords.SafetyCode(publicKey)
 	if actualCode != givenSafetyCode {
 		return fmt.Errorf("that is not the safety code of the key the server gives for %q; nothing was recorded. "+
 			"Ask them to read you the code on their own screen again, from Passwords settings: if it still differs from what you typed, do not share", typed)
@@ -575,9 +652,10 @@ func runPasswordsTrust(ctx context.Context, command *cli.Command) error {
 }
 
 // runPasswordsCode prints the person's own safety code, worked out on this
-// computer from the public key of the key pair that unlocking opened and from
-// the person's own user id, and not from anything the server reports about the
-// key. It is what the people who share with them compare their copy with.
+// computer from the public key of the key pair that unlocking opened, and not
+// from anything the server reports about the key (the server is asked only for
+// the user name to show beside it). It is what the people who share with them
+// compare their copy with.
 func runPasswordsCode(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() != 0 {
 		return usage("usage: teanode passwords code")
@@ -586,15 +664,23 @@ func runPasswordsCode(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	userID, err := session.currentUserID()
+	user, err := client.GetCurrentUser(ctx, session.connection)
 	if err != nil {
 		return describeError(command, err)
 	}
-	safetyCode := session.keys.KeyPair.SafetyCode(userID)
-	if command.Bool("json") {
-		return PrintJSON(map[string]any{"userId": userID, "safetyCode": safetyCode})
+	username := ""
+	if user != nil {
+		username = user.Username
 	}
-	fmt.Println("Your safety code:")
+	safetyCode := session.keys.KeyPair.SafetyCode()
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"username": username, "safetyCode": safetyCode})
+	}
+	if username != "" {
+		fmt.Printf("Your safety code (user name %s):\n", forTerminal(username))
+	} else {
+		fmt.Println("Your safety code:")
+	}
 	fmt.Println()
 	fmt.Println("    " + safetyCode)
 	fmt.Println()

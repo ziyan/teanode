@@ -56,8 +56,9 @@ func TestPasswordsSealedRecordFollowsSharesAndAgent(test *testing.T) {
 	fake, _, _ := agentFake(test)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
 	itemID := firstItemID(fake)
-	if access := fake.openedItemAccess(testToken, testPassphrase, itemID); access != nil {
-		test.Fatalf("a new item has a record: %+v", access)
+	// A new item starts with a signed record that shares it with nobody.
+	if access := fake.openedItemAccess(testToken, testPassphrase, itemID); access == nil || access.IsUsableByAgent || len(access.Grantees) != 0 || access.RecordVersion != 1 || len(access.RecordMac) == 0 {
+		test.Fatalf("a new item's record: %+v", access)
 	}
 
 	fake.mustRun(testToken, "", "share", "example.com", "ben")
@@ -180,6 +181,10 @@ func TestPasswordsRekeySealsOnlyForTheSealedRecord(test *testing.T) {
 // An item the server marks as needing a new key is told in list and show, is
 // given one by rekey, and edit, share and agent do that first.
 func TestPasswordsNeedsNewKey(test *testing.T) {
+	// The wait between two re-keys nobody asked for is tested on its own.
+	original := automaticRekeyWait
+	automaticRekeyWait = 0
+	test.Cleanup(func() { automaticRekeyWait = original })
 	fake, _, _ := agentFake(test)
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
 	itemID := firstItemID(fake)
@@ -235,23 +240,23 @@ func TestPasswordsNeedsNewKey(test *testing.T) {
 }
 
 // code prints the person's own safety code, worked out from the key pair that
-// unlocking opened and their user id.
+// unlocking opened.
 func TestPasswordsCodeIsOwnSafetyCode(test *testing.T) {
 	useConfigurationDirectory(test)
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
 	fake.unlockAs(testToken)
 	publicKey, _ := base64.StdEncoding.DecodeString(fake.users[testToken].setup.PublicKey)
-	wanted := passwords.SafetyCode("user-ada", publicKey)
+	wanted := passwords.SafetyCode(publicKey)
 
 	if output := fake.mustRun(testToken, "", "code"); !strings.Contains(output, wanted) {
 		test.Errorf("code printed:\n%s\nwanted %s", output, wanted)
 	}
 	var printed struct {
-		UserID     string `json:"userId"`
+		Username   string `json:"username"`
 		SafetyCode string `json:"safetyCode"`
 	}
-	if err := json.Unmarshal([]byte(fake.mustRun(testToken, "", "code", "--json")), &printed); err != nil || printed.SafetyCode != wanted || printed.UserID != "user-ada" {
+	if err := json.Unmarshal([]byte(fake.mustRun(testToken, "", "code", "--json")), &printed); err != nil || printed.SafetyCode != wanted || printed.Username != "ada" {
 		test.Errorf("code --json: %+v %v", printed, err)
 	}
 	// A server that reports another public key for the person changes nothing:
@@ -299,7 +304,7 @@ func TestPasswordsTrustRefusesAnotherPersonAndKeepsTheCodeToItself(test *testing
 	fake.setUpAs(benToken, benPassphrase)
 	fake.unlockAs(testToken)
 	benKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
-	realCode := passwords.SafetyCode("user-ben", benKey)
+	realCode := passwords.SafetyCode(benKey)
 
 	// A wrong code: nothing recorded, and the right one is not in the answer.
 	_, err := fake.run(testToken, "", "trust", "ben", zeroCode)
@@ -374,7 +379,7 @@ func TestPasswordsPromptNameCannotCarryACode(test *testing.T) {
 	fake.setUpAs(testToken, testPassphrase)
 	fake.setUpAs(benToken, benPassphrase)
 	realKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
-	realCode := passwords.SafetyCode("user-ben", realKey)
+	realCode := passwords.SafetyCode(realKey)
 
 	// The server hands out another key for ben, and a display name that carries
 	// ben's real code, a line break and a name with invisible characters.
@@ -392,7 +397,7 @@ func TestPasswordsPromptNameCannotCarryACode(test *testing.T) {
 		test.Fatalf("questions: %q", questions.warnings)
 	}
 	lines := strings.Split(questions.warnings[0], "\n")
-	actualCode := passwords.SafetyCode("user-ben", otherPair.PublicKey())
+	actualCode := passwords.SafetyCode(otherPair.PublicKey())
 	userNameIndex := slices.Index(lines, `  user name "ben"`)
 	if userNameIndex < 0 || userNameIndex+2 >= len(lines) {
 		test.Fatalf("no line for the user name that was typed:\n%s", questions.warnings[0])
@@ -434,8 +439,8 @@ func TestPasswordsKeyChangedLinesPutTheCodesFirst(test *testing.T) {
 	warning := questions.warnings[0]
 	for _, wanted := range []string{
 		`  user name "ben"  KEY CHANGED`,
-		"    safety code now:    " + passwords.SafetyCode("user-ben", otherPair.PublicKey()),
-		"    safety code before: " + passwords.SafetyCode("user-ben", oldKey),
+		"    safety code now:    " + passwords.SafetyCode(otherPair.PublicKey()),
+		"    safety code before: " + passwords.SafetyCode(oldKey),
 		`    display name the server gives: "Ben safety code now: 0000"`,
 	} {
 		if !strings.Contains(warning, "\n"+wanted+"\n") {
@@ -570,7 +575,7 @@ func TestPasswordsOwnerKeyIsRecordedAfterOpeningAndConfirmedOnAYes(test *testing
 		test.Fatalf("a yes did not confirm the key: %+v", record)
 	}
 	adaPublicKey, _ := base64.StdEncoding.DecodeString(adaKey)
-	if !strings.Contains(asked, "safety code now:    "+passwords.SafetyCode("user-ada", adaPublicKey)) || !strings.Contains(asked, "lets you share with them") {
+	if !strings.Contains(asked, "safety code now:    "+passwords.SafetyCode(adaPublicKey)) || !strings.Contains(asked, "lets you share with them") {
 		test.Errorf("the question:\n%s", asked)
 	}
 }

@@ -743,7 +743,7 @@ func TestPasswordsTrustComparesTheSafetyCode(test *testing.T) {
 	fake.setUpAs(benToken, benPassphrase)
 	fake.unlockAs(testToken)
 	benKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
-	code := passwords.SafetyCode("user-ben", benKey)
+	code := passwords.SafetyCode(benKey)
 
 	// A wrong code, and codes that are not codes, record nothing.
 	wrong := zeroCode
@@ -798,7 +798,7 @@ func TestPasswordsTrustComparesTheSafetyCode(test *testing.T) {
 	if _, err := fake.run(testToken, "", "trust", "ben", code); err == nil {
 		test.Fatal("the old code confirmed a new key")
 	}
-	fake.mustRun(testToken, "", "trust", "ben", passwords.SafetyCode("user-ben", newKey))
+	fake.mustRun(testToken, "", "trust", "ben", passwords.SafetyCode(newKey))
 	if record := knownRecord(test, "user-ben"); record.ConfirmedPublicKey != fake.users[benToken].setup.PublicKey {
 		test.Errorf("the new key was not confirmed: %+v", record)
 	}
