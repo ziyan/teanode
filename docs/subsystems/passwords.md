@@ -320,8 +320,11 @@ sends every input value to another site, or changed the form's address. So the
 document a script ran in is marked (`FilledValues.NoteScripted`, in
 `internal/browser/filled.go`), and `fill_login`, `fill_one_time_code` and
 `passkey_sign_in` are refused on it with "This page has run the agent's script, so
-it is not filled. Open the sign-in page again (navigate) and fill it before
-running any script." What counts as running script on a document:
+it is not filled. Sign in before you run any script on a site." Since a script
+can leave something behind that outlives its page (a window it opened, a worker,
+a handler on another page of the site), the mark now covers the whole site, as
+the section on scripted sites below says; this one describes what counts as
+running script. What counts as running script on a document:
 
 - `evaluate`, in either browser; and a `navigate` to a `javascript:` or `data:`
   address.
@@ -340,6 +343,7 @@ running any script." What counts as running script on a document:
   it loads, so nothing is filled in it. Open a new tab (open) and fill the sign-in
   page there before running any script."). A tab opened later is a different tab.
 
+The document mark below is still kept (it is what the lock's direction mirrors), but a fill is refused on any page of a site the agent scripted in that browser, so the document rules only matter on a site it has not.
 The mark belongs to the document, the way the lock does, in the other direction.
 In the headless browser it is exact: the loader id of the document the script ran
 in is kept, and the fill asks `Page.getFrameTree` which document the page shows
@@ -538,3 +542,68 @@ fast, and keep a history that a program with a token cannot erase.
   password). Anyone who may read the audit log, an operator for one, can see
   which sites the agent used a person's items on.
 
+
+### What a run the person did not start can still see
+
+- **A compaction inside a private turn.** Which messages belong to a private
+  turn is judged over the whole stored conversation before the compacted part is
+  dropped (`historyOf`), and each message carries it (`IsFromPrivateTurn`), so an
+  answer that quotes a note right after the cut is still hidden from a run the
+  person did not start and from the next compaction note.
+- **The phone push of the agent's own turns.** The answer of a turn that called
+  a private tool (a schedule the person wrote that reads a note) is sent as
+  "Your answer is ready", judged over the whole conversation like the above.
+- **The agent's shell.** The command line sends the surface `agent_command`
+  instead of `cli` when `TEANODE_AGENT_COMMAND` is set. The server keeps it as
+  given and it is not on the list of surfaces that count as the person's, so a
+  turn the agent starts from its own shell cannot use Passwords.
+- **A schedule the agent wrote.** A run it wakes is refused with words that say
+  the schedule was written by the agent and that the person can save it
+  themselves on the dashboard or in the app (Agent, Schedules) to let its runs
+  use Passwords. The schedule tool says the same when the agent adds or rewords a
+  schedule whose prompt is about signing in, a login or a password, so that the
+  agent tells the person.
+
+## A script the agent ran keeps a site from being filled (round 3, browser)
+
+This replaces "A page the agent scripted is not filled" above, which marked one
+document. The audit found two ways around that mark, both with a real Chrome:
+the page could be replaced while a script was on its way, so the script ran in
+the new document and the mark sat on the old one (14 leaks in 25 runs); and a
+window the script opened (`window.open` from a click handler it set) stays alive
+after its document and reads the sign-in page through `opener.document`.
+
+- **Marked after, too.** `Context.Evaluate` marks the document before the script,
+  listens for the main frame's commits while it runs, and marks again when it
+  returns: the document shown then and every document committed meanwhile. The
+  person's tab marks the same way: the extension names the document the script
+  ran in with its answer (`{scriptRun: {documentId}, value}`, which the server
+  unwraps so the model reads only the value) and the server marks that id.
+- **The mark is the site's.** Once a script ran on a site (scheme, host without
+  `www.`, port: `OriginOf` in Go, `originOf` in `tabDocuments.ts`), no fill, code
+  or passkey is done on any page of it. Headless: for the life of the page; the
+  new action `reset` throws it away and opens a fresh browser context (no
+  cookie, storage, window or worker from before; values already typed stay
+  hidden), and tells the model to sign in first. The person's browser: the
+  extension keeps the sites in `chrome.storage.local` under `scriptedOrigins`
+  (origins only), marks them before and after each script, and refuses
+  `fill_login` and `fill_one_time_code` on them itself, in the words of
+  `ScriptedSiteInTabWords`. The server does not keep a copy to decide on, which
+  would go stale when the person allows a site again; the list rides on the
+  `hello` message (`scriptedOrigins`) for a server that wants it.
+  The options page's button "Allow the agent to fill on these sites again" sends
+  `passwords:clear-scripted-origins`; `passwords:scripted-origins` answers the
+  list. Both are answered only for the extension's own options page.
+- **Windows.** After a script, the headless page marks the site of every other
+  target of its browser context, and every fill (and passkey) first closes every
+  target but the page. The extension marks the site of each tab whose opener is
+  the scripted tab.
+- **Which commands count** as a script in the person's tab is still the server's
+  list (`scriptRunOf`); it sends the result as `isScript` with the action (the
+  model cannot set it), and an extension that is not told treats a `cdp` command
+  as a script.
+- Tests: `internal/browser/scripted_site_test.go` (the race with the sign-in page
+  on the same site and on another, the popup, the fresh browser, windows closed
+  before a fill) against a real Chrome, and `agentTabActions.test.ts` for the
+  extension. The headless snapshot and element names also treat an input drawn
+  with `-webkit-text-security` as a secret field.

@@ -21,15 +21,15 @@ To see it working at the end: on a development server, set up Passwords on the d
 - [x] (2026-10-20) Research: Apple's AutoFill provider rules and APIs, Chrome extension filling and passkeys (Bitwarden's open source extension), end-to-end designs (Bitwarden, 1Password, Proton Pass) and their published weaknesses, the `pass` format, and what exists in the repository. Summarized in Surprises and the Decision Log.
 - [x] (2026-10-20) The maintainer answered the open questions (see the Decision Log).
 - [x] (2026-10-20) This plan written.
-- [ ] Milestone 1: the encryption format with test vectors in Go, TypeScript and Swift; storage, GraphQL, the command line and the `pass` importer.
-- [ ] Milestone 2: the dashboard's Passwords page.
-- [ ] Milestone 3: the Chrome extension fills, saves and generates.
-- [ ] Milestone 4: the Chrome extension creates and uses passkeys.
-- [ ] Milestone 5: the iPhone Passwords screen.
-- [ ] Milestone 6: the iPhone AutoFill provider.
-- [ ] Milestone 7: the agent uses the items it may use, in the headless browser and the attached tab.
-- [ ] First use on a development server, walks in Chrome at 1400 and 390 wide, light and dark, the iPhone screenshots.
-- [ ] Review rounds until a round finds nothing above low.
+- [x] (2026-10-21) Milestone 1: the encryption format with test vectors in Go, TypeScript and Swift; storage, GraphQL, the command line and the `pass` importer.
+- [x] (2026-10-21) Milestone 2: the dashboard's Passwords page.
+- [x] (2026-10-21) Milestone 3: the Chrome extension fills, saves and generates.
+- [x] (2026-10-21) Milestone 4: the Chrome extension creates and uses passkeys.
+- [x] (2026-10-21) Milestone 5: the iPhone Passwords screen.
+- [x] (2026-10-21) Milestone 6: the iPhone AutoFill provider.
+- [x] (2026-10-21) Milestone 7: the agent uses the items it may use, in the headless browser and the attached tab.
+- [x] (2026-10-21) First use on a development server, walks in Chrome at 1400 and 390 wide, light and dark, the iPhone screenshots.
+- [ ] Review rounds until a round finds nothing above low. Done so far (2026-10-21): three review rounds and three security audit rounds across every surface; the fixes are the commits after the first push of the extension.
 
 ## Surprises & Discoveries
 
@@ -136,7 +136,7 @@ To see it working at the end: on a development server, set up Passwords on the d
 
 - Ports and the address parser in TeaNodeKit. The agent's sign-in (`passwords.IsOriginOfSites`) and the extension (`doesSiteMatchPage` in `web/extension/src/passwords/hosts.ts`) now match the origin, port included, read the same way (an address with a scheme by the browser's parser, a bare host as if it began with `https://`, a backslash or control character refused), and `internal/passwords/testdata/sitematch.json` holds the cases both run. `PasswordsSiteMatch` in TeaNodeKit reads the same file in its tests and matches page addresses the same way; a domain AutoFill hands over (QuickType, an app) has no port or scheme, so it is still matched by host.
 - Saved sites with a percent-encoded, international or fullwidth host: the extension reads a site with the browser's parser, which turns them into the plain or punycode host, while `IsOriginOfSites` in Go and `PasswordsSiteMatch` take the text as written. Only sites the person saved are affected, and only so that the extension matches where the others do not; `sitematch.json` should pick one reading and hold the cases.
-- The extension keeps the old password of an updated login only as the server's own version (30 days, newest 20, no way to restore it from a client). A way to see and restore an earlier version would let the bar say "The old password is kept for 30 days."
+- The extension keeps the old password of an updated login only as the server's own version (30 days, at most one an hour and 60 in all, plus up to 20 the person saved, no way to restore it from a client). A way to see and restore an earlier version would let the bar say "The old password is kept for 30 days."
 - `relyingParty.ts` tells a public suffix from a registrable domain with the public suffix list, private section included, through `tldts` (a pinned dependency). The list is as new as the pinned version, so a hosting service added to it later is refused only after the dependency is updated.
 - A passkey the extension makes is user verified only within a minute of typing the passphrase. A faster way to verify (the browser's own prompt, a device PIN) has no extension API.
 - A turn resumed from an approved card counts as started by the person for the whole turn, if the turn that raised the card was one the person started (the card keeps that). The person's answer to a card starts it again, and nothing in it is marked as content that came from elsewhere, so a tool result read earlier in that turn can steer what follows once the card is approved. Narrowing it means marking, per tool call, whether the turn had read untrusted content before the card.
@@ -153,7 +153,7 @@ To see it working at the end: on a development server, set up Passwords on the d
 
 ## Outcomes & Retrospective
 
-Not started.
+Every surface ships in one pull request: the server, the dashboard, the command line, the Chrome extension, the iPhone app and its AutoFill provider, and the agent's sign-in. The audits changed the design in three places a first version got wrong: a key seen once is not a key the person confirmed; what the server says about who may have an item (its shares, the agent flag) is checked against a record the owner's devices seal into the item; and narrowing access gives the item a new key. A script the agent runs on a site ends its right to fill there, since what a script leaves behind outlives its page.
 
 ## Context and Orientation
 
@@ -284,7 +284,7 @@ The walk in Purpose, done on a development server, plus: a database dump grepped
 
 ## Idempotence and Recovery
 
-Saving sends the revision it was based on, so a retry or two devices racing cannot overwrite silently. Import skips an item whose kind, name, folder, first site, user name and its password (or note text) are all the same as one that exists, compared as the text itself in the command's memory for that one import (no digest of the secret is made or kept), and names what it skipped; an item that differs in any of them is kept as a second item. A save that replaces an item keeps the version it replaced for 30 days (`password_item_version`, newest 20), so a bad overwrite can be put back from the database; there is no API to restore a version, since the keys sealed for recipients and the agent belong to the item key of one version. Erasing Passwords is the only recovery when both passphrase and recovery key are lost; it says so before it asks. The tap guards erasing, not saving: a token with `passwords:use` that is not the person's tap (a command line's, say) can still save any item over with something of the right shape, which is as bad as an erase for that item, and the 30 days of versions are what bring it back.
+Saving sends the revision it was based on, so a retry or two devices racing cannot overwrite silently. Import skips an item whose kind, name, folder, first site, user name and its password (or note text) are all the same as one that exists, compared as the text itself in the command's memory for that one import (no digest of the secret is made or kept), and names what it skipped; an item that differs in any of them is kept as a second item. A save that replaces an item keeps the version it replaced for 30 days (`password_item_version`: at most one an hour and 60 in all, and every version the person saved by tap, up to 20, so no number of saves from a token pushes them out), so a bad overwrite can be put back from the database; there is no API to restore a version, since the keys sealed for recipients and the agent belong to the item key of one version. Erasing Passwords is the only recovery when both passphrase and recovery key are lost; it says so before it asks. The tap guards erasing, not saving: a token with `passwords:use` that is not the person's tap (a command line's, say) can still save any item over with something of the right shape, which is as bad as an erase for that item, and the 30 days of versions are what bring it back.
 
 ## Interfaces and Dependencies
 
@@ -293,3 +293,5 @@ Go: `crypto/ecdh`, `crypto/aes`, `crypto/cipher`, `golang.org/x/crypto/pbkdf2` a
 - A private turn made before this round is still in the stored compaction notes (`compaction` rows) and run transcripts that earlier compactions wrote, which the conversation tool's `read` shows. New ones are written from the history with the marker.
 - A terminal the person attached is not marked as the agent's (it is theirs), and the agent can type into it with the terminal tool. A command typed there runs unmarked.
 - The agent's coding agents and the herdr panes it drives start their own shells, which carry `TEANODE_AGENT_COMMAND` only when started through the computer program's shell or sessions.
+- Round 3, agent core: the private flag is judged over the whole stored list before a compaction drops its part (`historyOf`, `llm.ChatMessage.IsFromPrivateTurn`); `pushOwnTurns` sends "Your answer is ready" for a private turn; the command line sends `agent_command` when `TEANODE_AGENT_COMMAND` is set; the refusal for a run an agent-written schedule woke, and the schedule tool's reply, say the person can save the schedule themselves to let its runs use Passwords. Saving a schedule from the dashboard leaves the writer as it was when the prompt is unchanged (`agent_memory.go`), so that advice only works if the save changes the prompt or the API treats a person's tap on save as taking the schedule over.
+- Round 3 (browser): a script the agent ran now keeps its whole site from being filled, not its document: headless until the new `reset` action, the person's browser until they press "Allow the agent to fill on these sites again" in the extension's options (`scriptedOrigins` in `chrome.storage.local`, messages `passwords:clear-scripted-origins` and `passwords:scripted-origins`). The mark is also made after the script, so a page replaced meanwhile is marked. See docs/subsystems/passwords.md. Decision: the server keeps no copy of the extension's list to decide on, because a copy goes stale when the person allows a site again.
