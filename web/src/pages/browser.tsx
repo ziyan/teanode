@@ -52,6 +52,13 @@ const TEXT_PIECE = 16_000
 // at its size, so the picture is readable there.
 const PHONE_WIDE = '(max-width: 700px)'
 
+// The share of the window's height a phone's view is laid out to, the rest
+// being the page above the picture; and how long resizing must stop for
+// before the size is sent, since a phone's address bar folding away
+// resizes the window many times over.
+const VIEWPORT_HEIGHT_SHARE = 0.75
+const VIEWPORT_SETTLE_MS = 200
+
 // A finger that moves less than this far, in pixels, and lifts within
 // TAP_MS is a tap, which clicks; farther, it drags.
 const TAP_DISTANCE = 8
@@ -236,7 +243,10 @@ export function BrowserPage() {
     isDragged: boolean
   } | null>(null)
   // Whether this page has said its size for the tab to be laid out at.
-  const isViewportSaid = useRef(false)
+  const isViewportSent = useRef(false)
+  // Scrolling the tab with a finger, gathered for one message a frame.
+  const pendingScroll = useRef<{ x: number; y: number; deltaX: number; deltaY: number } | null>(null)
+  const scrollFrame = useRef<number | null>(null)
   const keyboardRef = useRef<HTMLTextAreaElement>(null)
   // The press in progress: its button and click count, kept until it is
   // released, and the one before it for counting a double click.
@@ -280,9 +290,7 @@ export function BrowserPage() {
         const response = await graphql<{
           ReadAgentWaiting: { interactions: { interactionKind: string; interactionText: string }[] }
         }>(READ_REQUESTS)
-        const asked = response.ReadAgentWaiting.interactions.find(
-          (interaction) => interaction.interactionKind === 'take_over',
-        )
+        const asked = response.ReadAgentWaiting.interactions.find((interaction) => interaction.interactionKind === 'take_over')
         if (!isStopped) setRequest(asked?.interactionText ?? '')
       } catch {
         // The picture is what matters here; a request not read is shown
@@ -341,6 +349,7 @@ export function BrowserPage() {
   useEffect(
     () => () => {
       if (moveFrame.current !== null) window.cancelAnimationFrame(moveFrame.current)
+      if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current)
     },
     [],
   )
@@ -382,34 +391,49 @@ export function BrowserPage() {
   }, [viewerState?.watching, drawnFrame?.width])
 
   // Held from a phone, the tab is laid out at the size of the picture's box
-  // here; widened, or let go, it is laid out as it is again.
+  // here; widened, or let go, it is laid out as it is again. The size goes
+  // once resizing settles, and the height is the window's, not what is left
+  // below the picture where the page is scrolled to, so the same phone says
+  // the same size.
   useEffect(() => {
     if (!isLinked) {
-      isViewportSaid.current = false
+      isViewportSent.current = false
       return
     }
     // A browser that cannot answer the question is taken for a wide one.
-    const narrow = typeof window.matchMedia === 'function' ? window.matchMedia(PHONE_WIDE) : null
-    const say = () => {
+    const phoneQuery = typeof window.matchMedia === 'function' ? window.matchMedia(PHONE_WIDE) : null
+    let settleTimer: number | undefined
+    const sendViewport = () => {
       const box = viewportRef.current
-      if (isControlling && narrow?.matches && box && viewerState?.watching) {
-        const width = Math.round(box.clientWidth)
-        const height = Math.max(320, Math.round(window.innerHeight - box.getBoundingClientRect().top - 16))
-        send({ type: 'viewport', width, height })
-        isViewportSaid.current = true
-      } else if (isViewportSaid.current) {
+      if (isControlling && phoneQuery?.matches && box && viewerState?.watching) {
+        send({ type: 'viewport', width: Math.round(box.clientWidth), height: Math.round(window.innerHeight * VIEWPORT_HEIGHT_SHARE) })
+        isViewportSent.current = true
+      } else if (isViewportSent.current) {
         send({ type: 'viewport', width: 0, height: 0 })
-        isViewportSaid.current = false
+        isViewportSent.current = false
       }
     }
-    say()
-    window.addEventListener('resize', say)
-    narrow?.addEventListener('change', say)
+    const sendWhenSettled = () => {
+      window.clearTimeout(settleTimer)
+      settleTimer = window.setTimeout(sendViewport, VIEWPORT_SETTLE_MS)
+    }
+    sendViewport()
+    window.addEventListener('resize', sendWhenSettled)
+    phoneQuery?.addEventListener('change', sendWhenSettled)
     return () => {
-      window.removeEventListener('resize', say)
-      narrow?.removeEventListener('change', say)
+      window.clearTimeout(settleTimer)
+      window.removeEventListener('resize', sendWhenSettled)
+      phoneQuery?.removeEventListener('change', sendWhenSettled)
     }
   }, [isControlling, isLinked, isPictureShown, viewerState?.watching, send])
+
+  // A picture gone (another tab, a stream ended) takes its fingers with it:
+  // one left behind would make the next tap a pinch.
+  useEffect(() => {
+    if (isPictureShown) return
+    touches.current.clear()
+    gesture.current = null
+  }, [isPictureShown])
 
   // Fingers on the picture. Two pinch to zoom and move it. One taps to
   // click, while the tab is held; drags the picture about while it is
@@ -467,14 +491,23 @@ export function BrowserPage() {
       setView(panView(current.startView, point.x - start.x, point.y - start.y, width, height))
     } else if (isControlling) {
       const inTab = pointOf(event.clientX, event.clientY)
-      if (inTab)
-        send({
-          type: 'wheel',
+      if (inTab) {
+        const pending = pendingScroll.current
+        pendingScroll.current = {
           x: inTab.x,
           y: inTab.y,
-          deltaX: current.last.x - point.x,
-          deltaY: current.last.y - point.y,
-        })
+          deltaX: (pending?.deltaX ?? 0) + current.last.x - point.x,
+          deltaY: (pending?.deltaY ?? 0) + current.last.y - point.y,
+        }
+        if (scrollFrame.current === null) {
+          scrollFrame.current = window.requestAnimationFrame(() => {
+            scrollFrame.current = null
+            const scroll = pendingScroll.current
+            pendingScroll.current = null
+            if (scroll) send({ type: 'wheel', ...scroll })
+          })
+        }
+      }
     }
     current.last = point
   }
@@ -496,19 +529,30 @@ export function BrowserPage() {
         send({ type: 'pointer', event: 'up', x: inTab.x, y: inTab.y, button: 'left', clickCount: 1, modifiers: 0 })
       }
     }
-    // A finger left of two goes on as a drag, never a tap.
-    const left = [...touches.current.values()]
-    gesture.current =
-      left.length === 1
-        ? {
-            fingers: 1,
-            startView: viewRef.current,
-            startPoints: [left[0], left[0]],
-            startAt: event.timeStamp,
-            last: left[0],
-            isDragged: true,
-          }
-        : null
+    // The fingers still down go on from where they are: one as a drag,
+    // never a tap; two, left of three, as a pinch.
+    const remainingPoints = [...touches.current.values()]
+    if (remainingPoints.length === 1) {
+      gesture.current = {
+        fingers: 1,
+        startView: viewRef.current,
+        startPoints: [remainingPoints[0], remainingPoints[0]],
+        startAt: event.timeStamp,
+        last: remainingPoints[0],
+        isDragged: true,
+      }
+    } else if (remainingPoints.length >= 2) {
+      gesture.current = {
+        fingers: 2,
+        startView: viewRef.current,
+        startPoints: [remainingPoints[0], remainingPoints[1]],
+        startAt: event.timeStamp,
+        last: remainingPoints[0],
+        isDragged: true,
+      }
+    } else {
+      gesture.current = null
+    }
   }
 
   const chooseTab = (tab: ViewerTab) => {
@@ -728,6 +772,7 @@ export function BrowserPage() {
               onPointerMove={onTouchMove}
               onPointerUp={onTouchUp}
               onPointerCancel={onTouchUp}
+              onLostPointerCapture={onTouchUp}
             >
               <img
                 ref={pictureRef}

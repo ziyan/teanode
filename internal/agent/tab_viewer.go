@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -216,8 +217,8 @@ func (self *Agent) RemoveTabViewer(agentId string, viewer TabViewer) {
 			room.lapse = nil
 			room.mutex.Unlock()
 			if isLapsed {
+				// The phone's layout ended when its view closed.
 				log.Noticef("a taken over tab went back to the agent: nobody was watching it")
-				self.endEmulation(agentId, nil)
 			}
 		})
 		room.lapse = lapse
@@ -456,9 +457,17 @@ func (self *Agent) UpdateTabList(agentId string, tabs []TabListing) {
 	self.tellViewers(agentId)
 }
 
-// mobileWidthMost is the widest view taken for a phone's: wider, the tab is
-// laid out as it is.
-const mobileWidthMost = 700
+// A phone's view is between these sizes, in CSS pixels: wider, the tab is
+// laid out as it is; a size outside them is not one a tab can be laid out
+// at. A change smaller than viewportChangeLeast, as a phone's address bar
+// folding away makes, is not worth laying the tab out again for.
+const (
+	mobileWidthMost     = 700
+	mobileWidthLeast    = 200
+	mobileHeightLeast   = 200
+	mobileHeightMost    = 4000
+	viewportChangeLeast = 8
+)
 
 // SetTabViewport is the view that holds the tab saying how big it is: one
 // as narrow as a phone's lays the tab out at its size, so the picture is
@@ -467,8 +476,7 @@ const mobileWidthMost = 700
 // watches.
 func (self *Agent) SetTabViewport(agentId string, viewer TabViewer, width, height float64) {
 	room := self.existingRoom(agentId)
-	tab := self.castingTab(agentId)
-	if room == nil || tab == nil {
+	if room == nil {
 		return
 	}
 	room.castMutex.Lock()
@@ -477,20 +485,28 @@ func (self *Agent) SetTabViewport(agentId string, viewer TabViewer, width, heigh
 	watching, isOpen := room.viewers[viewer]
 	previous := room.emulation
 	var next *tabEmulation
-	if isOpen && watching != "" && room.controller == TabControllerPerson && width > 0 && width <= mobileWidthMost && height > 0 {
-		next = &tabEmulation{viewer: viewer, tab: watching, width: width, height: height}
+	if isOpen && watching != "" && room.controller == TabControllerPerson && width >= mobileWidthLeast && width <= mobileWidthMost && height > 0 {
+		next = &tabEmulation{viewer: viewer, tab: watching, width: width, height: min(max(height, mobileHeightLeast), mobileHeightMost)}
 	}
-	// Another view's phone is not this one's to undo.
-	if next == nil && previous != nil && previous.viewer != viewer {
+	// Another view's phone is not this one's to undo, and a size barely
+	// changed is the same size.
+	if (next == nil && previous != nil && previous.viewer != viewer) || (next != nil && previous != nil && next.viewer == previous.viewer && next.tab == previous.tab &&
+		math.Abs(next.width-previous.width) < viewportChangeLeast && math.Abs(next.height-previous.height) < viewportChangeLeast) {
 		room.mutex.Unlock()
 		return
 	}
+	// Recorded whether or not the browser is there to be told: a browser
+	// that connects later is laid out as it is now (recast).
 	room.emulation = next
 	room.mutex.Unlock()
+	tab := self.castingTab(agentId)
+	if tab == nil {
+		return
+	}
 	if previous != nil && (next == nil || previous.tab != next.tab) {
 		tab.sendEmulate(previous.tab, nil)
 	}
-	if next != nil && (previous == nil || *previous != *next) {
+	if next != nil {
 		tab.sendEmulate(next.tab, next)
 	}
 }

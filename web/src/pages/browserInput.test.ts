@@ -1,6 +1,18 @@
 import { expect, it } from 'vitest'
 
-import { buttonOf, clampView, clickCountOf, keyMessage, modifiersOf, MOST_ZOOM, panView, piecesOf, pinchView, pointToTab, UNZOOMED } from './browserInput'
+import {
+  buttonOf,
+  clampView,
+  clickCountOf,
+  keyMessage,
+  modifiersOf,
+  MOST_ZOOM,
+  panView,
+  piecesOf,
+  pinchView,
+  pointToTab,
+  UNZOOMED,
+} from './browserInput'
 
 const noModifiers = { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }
 
@@ -145,7 +157,19 @@ it('keeps the zoomed picture covering its box', () => {
 it('zooms around the point between two fingers', () => {
   // Fingers 100 apart around (200, 150) spread to 200 apart around the
   // same point: twice the zoom, and that point stays where it was.
-  const view = pinchView(UNZOOMED, [{ x: 150, y: 150 }, { x: 250, y: 150 }], [{ x: 100, y: 150 }, { x: 300, y: 150 }], 400, 300)
+  const view = pinchView(
+    UNZOOMED,
+    [
+      { x: 150, y: 150 },
+      { x: 250, y: 150 },
+    ],
+    [
+      { x: 100, y: 150 },
+      { x: 300, y: 150 },
+    ],
+    400,
+    300,
+  )
   expect(view.scale).toBe(2)
   expect(view.x).toBe(-200)
   expect(view.y).toBe(-150)
