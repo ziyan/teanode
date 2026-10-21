@@ -182,6 +182,22 @@ type SetPasswordItemUsableByAgentInput struct {
 	ItemKeyByAgentKey string `json:"itemKeyByAgentKey,omitempty"`
 }
 
+// PasswordItemRekeyInput gives an item a new item key when access to it
+// narrows: the same fields sealed under the new key, the new key sealed for the
+// account key, for each recipient who keeps access (the keys AddPasswordShareKeys
+// takes, each naming the item) and, if the agent still uses the item, for the
+// agent key. ItemKeyByAgentKey nil ends the agent's use of the item, and must be
+// nil for an item the agent does not use. BaseRevision is the revision the
+// device read; a newer one is refused as changed on another device.
+type PasswordItemRekeyInput struct {
+	ID                string                       `json:"id"`
+	BaseRevision      int                          `json:"baseRevision"`
+	EncryptedFields   string                       `json:"encryptedFields"`
+	ItemKey           string                       `json:"itemKey"`
+	ShareKeys         []*PasswordItemShareKeyInput `json:"shareKeys"`
+	ItemKeyByAgentKey *string                      `json:"itemKeyByAgentKey"`
+}
+
 const (
 	passwordsSetupFields = `isSetUp passphraseSalt passphraseIterationCount publicKey lockAfterMinutes itemCount`
 
@@ -250,6 +266,10 @@ const (
 
 	DocumentAddPasswordShareKeys = `mutation ($keys: [PasswordItemShareKeyInput!]!) {
   AddPasswordShareKeys(keys: $keys)
+}`
+
+	DocumentRekeyPasswordItem = `mutation ($input: PasswordItemRekeyInput!) {
+  RekeyPasswordItem(input: $input) { ` + passwordItemFields + ` }
 }`
 
 	DocumentSetPasswordItemUsableByAgent = `mutation ($input: PasswordItemAgentUseInput!) {
@@ -508,4 +528,20 @@ func SetPasswordItemUsableByAgent(ctx context.Context, connection *Client, input
 		return nil, err
 	}
 	return result.SetPasswordItemUsableByAgent, nil
+}
+
+// RekeyPasswordItem replaces an item's fields and item key with ones sealed
+// under a new item key, and every key stored for a recipient with the given
+// ones. It never widens access, so it needs no tap.
+func RekeyPasswordItem(ctx context.Context, connection *Client, input PasswordItemRekeyInput) (*PasswordItemView, error) {
+	if input.ShareKeys == nil {
+		input.ShareKeys = []*PasswordItemShareKeyInput{}
+	}
+	var result struct {
+		RekeyPasswordItem *PasswordItemView `json:"RekeyPasswordItem"`
+	}
+	if err := connection.Execute(ctx, DocumentRekeyPasswordItem, map[string]any{"input": input}, &result); err != nil {
+		return nil, err
+	}
+	return result.RekeyPasswordItem, nil
 }

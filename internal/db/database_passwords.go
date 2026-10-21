@@ -31,6 +31,10 @@ var (
 	// ErrPasswordCardNotUsableByAgent is a card offered to the agent, which is
 	// never allowed.
 	ErrPasswordCardNotUsableByAgent = errors.New("db: a card cannot be used by the agent")
+
+	// ErrPasswordsFull is a change that would take the sealed text of the
+	// person's items that are not deleted over models.PasswordsBytesMost.
+	ErrPasswordsFull = errors.New("db: Passwords is full")
 )
 
 // PasswordsOperation stores a person's Passwords: what they set up, their
@@ -83,8 +87,24 @@ type PasswordsOperation interface {
 	// revision. ErrPasswordRevisionStale when baseRevision is not the stored
 	// revision, ErrNotFound for somebody else's item or a deleted one,
 	// ErrInvalidArguments for a change of kind, ErrLimitReached beyond
-	// PasswordItemsMost.
+	// PasswordItemsMost, ErrPasswordsFull beyond models.PasswordsBytesMost. A
+	// refused save draws no revision number.
 	SavePasswordItem(item *models.PasswordItem, baseRevision *int64) (*models.PasswordItem, error)
+
+	// RekeyPasswordItem replaces the fields and the item key of the owner's
+	// item with ones sealed under a new item key, because access to the item
+	// narrowed, in one change with one revision. Every key sealed for a
+	// recipient is deleted and the given ones are stored; each must be for a
+	// recipient the item's shares reach now and sealed for the public key they
+	// have now (ErrNotFound, ErrPasswordKeyStale as for SetPasswordItemShares).
+	// Recipients reached and not given a key wait. The agent's copy is replaced
+	// when the item is usable by the agent and a copy is given, and agent use
+	// ends when none is given; a copy for an item that is not usable by the
+	// agent is ErrInvalidArguments. ErrPasswordRevisionStale when baseRevision
+	// is not the stored revision, ErrNotFound for somebody else's item or a
+	// deleted one, ErrPasswordsFull beyond models.PasswordsBytesMost. The
+	// replaced version is kept as a save keeps it.
+	RekeyPasswordItem(ownerUserId string, rekey *models.PasswordItemRekey) (*models.PasswordItem, error)
 
 	// GetPasswordItem is the owner's item, deleted or not, with its shares.
 	// ErrNotFound for somebody else's.
@@ -96,6 +116,8 @@ type PasswordsOperation interface {
 
 	// RestorePasswordItem undoes a deletion and raises its revision. The
 	// keys that were ended are not made again: the item's recipients wait.
+	// ErrPasswordsFull when the item would take the person's items over
+	// models.PasswordsBytesMost.
 	RestorePasswordItem(ownerUserId, itemId string) (*models.PasswordItem, error)
 
 	// ListPasswordItems is what the viewer can reach now: their own items
@@ -257,15 +279,45 @@ type passwordItemVersionModel struct {
 
 func (passwordItemVersionModel) TableName() string { return "password_item_version" }
 
-// keepPasswordItemVersion stores the version a save is about to replace and
-// forgets the oldest ones beyond models.PasswordItemVersionsMost.
+// keepPasswordItemVersion stores the version a save is about to replace, if the
+// item has no kept version younger than models.PasswordItemVersionSpacing, and
+// then forgets what is too old or too many.
+//
+// A program that holds a token can save an item as often as it likes without a
+// person's tap, and a save of shape-valid garbage would push the content that
+// was there out of any count-based history in a few calls. So the history
+// answers to time first: a burst of saves keeps only the content from before
+// the burst (the first replaced version of the hour), and that version stays
+// for models.PasswordItemVersionDays days whatever is saved after it. Only
+// when more than models.PasswordItemVersionsMost versions are held, which
+// takes saves spread over many hours, are any dropped, and they are the ones
+// just before the newest, so that the oldest kept version stays.
 func keepPasswordItemVersion(tx *gorm.DB, version *passwordItemVersionModel) error {
-	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(version).Error; err != nil {
+	var recentCount int64
+	if err := tx.Model(&passwordItemVersionModel{}).
+		Where("\"item_id\" = ? AND \"replaced_at\" > ?", version.ItemID, version.ReplacedAt.Add(-models.PasswordItemVersionSpacing)).
+		Count(&recentCount).Error; err != nil {
 		return err
 	}
-	return tx.Exec(`DELETE FROM "password_item_version" WHERE "item_id" = @itemId AND "revision" NOT IN (
-		SELECT "revision" FROM "password_item_version" WHERE "item_id" = @itemId ORDER BY "revision" DESC LIMIT @most)`,
-		sql.Named("itemId", version.ItemID), sql.Named("most", models.PasswordItemVersionsMost)).Error
+	if recentCount == 0 {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(version).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Where("\"item_id\" = ? AND \"replaced_at\" < ?", version.ItemID, version.ReplacedAt.AddDate(0, 0, -models.PasswordItemVersionDays)).
+		Delete(&passwordItemVersionModel{}).Error; err != nil {
+		return err
+	}
+	var keptCount int64
+	if err := tx.Model(&passwordItemVersionModel{}).Where("\"item_id\" = ?", version.ItemID).Count(&keptCount).Error; err != nil {
+		return err
+	}
+	if keptCount <= models.PasswordItemVersionsMost {
+		return nil
+	}
+	return tx.Exec(`DELETE FROM "password_item_version" WHERE "item_id" = @itemId AND "revision" IN (
+		SELECT "revision" FROM "password_item_version" WHERE "item_id" = @itemId ORDER BY "revision" DESC OFFSET 1 LIMIT @surplus)`,
+		sql.Named("itemId", version.ItemID), sql.Named("surplus", keptCount-models.PasswordItemVersionsMost)).Error
 }
 
 type passwordShareModel struct {
@@ -595,6 +647,36 @@ func (self *transaction) loadOwnedPasswordItem(ownerUserId, itemId string, isLoc
 	return &rows[0], nil
 }
 
+// passwordItemBytes is the sealed text an item holds: its fields and its keys.
+func passwordItemBytes(row *passwordItemModel) int64 {
+	size := int64(len(row.EncryptedFields) + len(row.ItemKeyByAccountKey))
+	if row.ItemKeyByAgentKey != nil {
+		size += int64(len(*row.ItemKeyByAgentKey))
+	}
+	return size
+}
+
+// requirePasswordsRoom refuses a change that would take the sealed text of the
+// person's items that are not deleted over models.PasswordsBytesMost. oldBytes
+// is what the item holds now among them (0 for a new or a deleted item) and
+// newBytes what it will hold. A change that does not make an item larger is
+// always allowed, so that a person over the limit can shorten things.
+func (self *transaction) requirePasswordsRoom(ownerUserId string, oldBytes, newBytes int64) error {
+	if newBytes <= oldBytes {
+		return nil
+	}
+	var liveBytes int64
+	if err := self.tx.Raw(`SELECT COALESCE(SUM(octet_length("encrypted_fields") + octet_length("item_key_by_account_key") +
+		COALESCE(octet_length("item_key_by_agent_key"), 0)), 0) FROM "password_item" WHERE "owner_user_id" = ? AND "deleted_at" IS NULL`,
+		ownerUserId).Scan(&liveBytes).Error; err != nil {
+		return err
+	}
+	if liveBytes-oldBytes+newBytes > models.PasswordsBytesMost {
+		return ErrPasswordsFull
+	}
+	return nil
+}
+
 func (self *transaction) SavePasswordItem(item *models.PasswordItem, baseRevision *int64) (*models.PasswordItem, error) {
 	if item == nil || item.ID == "" || item.OwnerUserID == "" || !item.ItemKind.IsValid() ||
 		item.EncryptedFields == "" || item.ItemKeyByAccountKey == "" {
@@ -608,10 +690,8 @@ func (self *transaction) SavePasswordItem(item *models.PasswordItem, baseRevisio
 		return nil, err
 	}
 	now := time.Now()
-	revision, err := nextPasswordRevision(self.tx)
-	if err != nil {
-		return nil, err
-	}
+	// The revision number is drawn only once every check has passed: a
+	// refused save must not use up numbers, which every person's items share.
 	if len(found) == 0 {
 		if baseRevision != nil {
 			return nil, ErrPasswordRevisionStale
@@ -626,8 +706,16 @@ func (self *transaction) SavePasswordItem(item *models.PasswordItem, baseRevisio
 		row := &passwordItemModel{
 			ID: item.ID, OwnerUserID: item.OwnerUserID, ItemKind: string(item.ItemKind),
 			EncryptedFields: item.EncryptedFields, ItemKeyByAccountKey: item.ItemKeyByAccountKey,
-			Revision: revision, CreatedAt: now, UpdatedAt: now,
+			CreatedAt: now, UpdatedAt: now,
 		}
+		if err := self.requirePasswordsRoom(item.OwnerUserID, 0, passwordItemBytes(row)); err != nil {
+			return nil, err
+		}
+		revision, err := nextPasswordRevision(self.tx)
+		if err != nil {
+			return nil, err
+		}
+		row.Revision = revision
 		if err := self.applyMutation(models.AuditResourcePasswordItem, row.ID, models.AuditActionCreate, nil, auditedPasswordItem("saved", row), func(tx *gorm.DB) error {
 			return tx.Create(row).Error
 		}); err != nil {
@@ -654,7 +742,16 @@ func (self *transaction) SavePasswordItem(item *models.PasswordItem, baseRevisio
 		ItemID: current.ID, Revision: current.Revision, EncryptedFields: current.EncryptedFields,
 		ItemKeyByAccountKey: current.ItemKeyByAccountKey, ReplacedAt: now,
 	}
-	current.EncryptedFields, current.ItemKeyByAccountKey, current.Revision, current.UpdatedAt = item.EncryptedFields, item.ItemKeyByAccountKey, revision, now
+	oldBytes := passwordItemBytes(current)
+	current.EncryptedFields, current.ItemKeyByAccountKey, current.UpdatedAt = item.EncryptedFields, item.ItemKeyByAccountKey, now
+	if err := self.requirePasswordsRoom(item.OwnerUserID, oldBytes, passwordItemBytes(current)); err != nil {
+		return nil, err
+	}
+	revision, err := nextPasswordRevision(self.tx)
+	if err != nil {
+		return nil, err
+	}
+	current.Revision = revision
 	if err := self.applyMutation(models.AuditResourcePasswordItem, current.ID, models.AuditActionUpdate, before, auditedPasswordItem("saved", current), func(tx *gorm.DB) error {
 		if err := keepPasswordItemVersion(tx, &replaced); err != nil {
 			return err
@@ -720,6 +817,9 @@ func (self *transaction) RestorePasswordItem(ownerUserId, itemId string) (*model
 		return nil, err
 	}
 	if row.DeletedAt != nil {
+		if err := self.requirePasswordsRoom(ownerUserId, 0, passwordItemBytes(row)); err != nil {
+			return nil, err
+		}
 		revision, err := nextPasswordRevision(self.tx)
 		if err != nil {
 			return nil, err
@@ -1324,9 +1424,10 @@ func sortedKeys(set map[string]bool) []string {
 	return keys
 }
 
-// storePasswordShareKeys stores keys for recipients that are reached, each
-// sealed for the public key the recipient has now.
-func (self *transaction) storePasswordShareKeys(itemId string, keys []*models.PasswordShareKey, reached map[string]bool, now time.Time) error {
+// checkPasswordShareKeys refuses keys for anybody who is not reached
+// (ErrNotFound) and keys sealed for a public key that is not the recipient's
+// now (ErrPasswordKeyStale). It writes nothing.
+func (self *transaction) checkPasswordShareKeys(keys []*models.PasswordShareKey, reached map[string]bool) error {
 	userIds := []string{}
 	for _, key := range keys {
 		if !reached[key.RecipientUserID] {
@@ -1349,6 +1450,19 @@ func (self *transaction) storePasswordShareKeys(itemId string, keys []*models.Pa
 			return ErrPasswordKeyStale
 		}
 	}
+	return nil
+}
+
+// storePasswordShareKeys stores keys for recipients that are reached, each
+// sealed for the public key the recipient has now.
+func (self *transaction) storePasswordShareKeys(itemId string, keys []*models.PasswordShareKey, reached map[string]bool, now time.Time) error {
+	if err := self.checkPasswordShareKeys(keys, reached); err != nil {
+		return err
+	}
+	return self.writePasswordShareKeys(itemId, keys, now)
+}
+
+func (self *transaction) writePasswordShareKeys(itemId string, keys []*models.PasswordShareKey, now time.Time) error {
 	for _, key := range keys {
 		row := &passwordShareKeyModel{
 			ItemID: itemId, RecipientUserID: key.RecipientUserID, ItemKeyByRecipientKey: key.ItemKeyByRecipientKey,
@@ -1486,6 +1600,109 @@ func (self *transaction) ListWaitingPasswordShares(ownerUserId string) ([]*model
 		}
 	}
 	return waiting, nil
+}
+
+func (self *transaction) RekeyPasswordItem(ownerUserId string, rekey *models.PasswordItemRekey) (*models.PasswordItem, error) {
+	if rekey == nil || rekey.ItemID == "" || ownerUserId == "" || rekey.EncryptedFields == "" || rekey.ItemKeyByAccountKey == "" ||
+		(rekey.ItemKeyByAgentKey != nil && *rekey.ItemKeyByAgentKey == "") {
+		return nil, ErrInvalidArguments
+	}
+	for _, key := range rekey.ShareKeys {
+		if key == nil || key.RecipientUserID == "" || key.ItemKeyByRecipientKey == "" || key.RecipientPublicKey == "" ||
+			(key.ItemID != "" && key.ItemID != rekey.ItemID) {
+			return nil, ErrInvalidArguments
+		}
+	}
+	var item *models.PasswordItem
+	err := self.withPasswordsSavepoint(func() (err error) {
+		item, err = self.rekeyPasswordItem(ownerUserId, rekey)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (self *transaction) rekeyPasswordItem(ownerUserId string, rekey *models.PasswordItemRekey) (*models.PasswordItem, error) {
+	// Locks, in the one order: circle membership, revisions, then rows. The
+	// shares reach the people they do through circle membership, which must
+	// not change between the check of the keys and their storing.
+	if err := lockCircleMembership(self.tx); err != nil {
+		return nil, err
+	}
+	if err := lockPasswordRevisions(self.tx); err != nil {
+		return nil, err
+	}
+	row, err := self.loadOwnedPasswordItem(ownerUserId, rekey.ItemID, true)
+	if err != nil {
+		return nil, err
+	}
+	if row.DeletedAt != nil {
+		return nil, ErrNotFound
+	}
+	if rekey.BaseRevision != row.Revision {
+		return nil, ErrPasswordRevisionStale
+	}
+	// Re-keying never widens access: the agent's copy is replaced or ended,
+	// and cannot be made for an item the agent was not allowed to use.
+	if !row.IsUsableByAgent && rekey.ItemKeyByAgentKey != nil {
+		return nil, fmt.Errorf("%w: the agent does not use this item", ErrInvalidArguments)
+	}
+	reach, err := self.reachedPasswordRecipients([]string{row.ID})
+	if err != nil {
+		return nil, err
+	}
+	reached := map[string]bool{}
+	for _, reachedRow := range reach {
+		reached[reachedRow.RecipientUserID] = true
+	}
+	if err := self.checkPasswordShareKeys(rekey.ShareKeys, reached); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	before := auditedPasswordItem("rekeyed", row)
+	replaced := passwordItemVersionModel{
+		ItemID: row.ID, Revision: row.Revision, EncryptedFields: row.EncryptedFields,
+		ItemKeyByAccountKey: row.ItemKeyByAccountKey, ReplacedAt: now,
+	}
+	oldBytes := passwordItemBytes(row)
+	row.EncryptedFields, row.ItemKeyByAccountKey, row.UpdatedAt = rekey.EncryptedFields, rekey.ItemKeyByAccountKey, now
+	if row.IsUsableByAgent {
+		if rekey.ItemKeyByAgentKey == nil {
+			row.IsUsableByAgent, row.ItemKeyByAgentKey = false, nil
+		} else {
+			row.ItemKeyByAgentKey = rekey.ItemKeyByAgentKey
+		}
+	}
+	if err := self.requirePasswordsRoom(ownerUserId, oldBytes, passwordItemBytes(row)); err != nil {
+		return nil, err
+	}
+	revision, err := nextPasswordRevision(self.tx)
+	if err != nil {
+		return nil, err
+	}
+	row.Revision = revision
+	after := auditedPasswordItem("rekeyed", row)
+	after.KeyCount = len(rekey.ShareKeys)
+	if err := self.applyMutation(models.AuditResourcePasswordItem, row.ID, models.AuditActionUpdate, before, after, func(tx *gorm.DB) error {
+		if err := keepPasswordItemVersion(tx, &replaced); err != nil {
+			return err
+		}
+		if err := tx.Save(row).Error; err != nil {
+			return err
+		}
+		// Every key sealed under the old item key is gone; the given ones
+		// are for the new one.
+		return tx.Where("\"item_id\" = ?", row.ID).Delete(&passwordShareKeyModel{}).Error
+	}); err != nil {
+		return nil, err
+	}
+	if err := self.writePasswordShareKeys(row.ID, rekey.ShareKeys, now); err != nil {
+		return nil, err
+	}
+	return self.GetPasswordItem(ownerUserId, row.ID)
 }
 
 func (self *transaction) SetPasswordItemUsableByAgent(ownerUserId, itemId string, isUsable bool, itemKeyByAgentKey string) (*models.PasswordItem, error) {

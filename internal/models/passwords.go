@@ -43,15 +43,41 @@ const (
 // so how long it is kept.
 const PasswordItemDeletedDays = 30
 
-// PasswordItemVersionsMost is how many earlier versions of one item the
-// server keeps, and they are kept PasswordItemDeletedDays days, so that a
-// save that overwrote an item with a mistake can be undone by an operator
-// from the database.
-const PasswordItemVersionsMost = 20
+// Earlier versions of an item are kept so that a save that overwrote an item
+// with a mistake, or with garbage from a program that holds a token, can be
+// undone by an operator from the database. A save keeps the version it
+// replaces only when the item has no kept version younger than
+// PasswordItemVersionSpacing, so that a burst of saves keeps the content from
+// before the burst and not the burst itself. Versions are kept
+// PasswordItemVersionDays days, and at most PasswordItemVersionsMost for one
+// item; past that the one just before the newest is dropped, never the oldest.
+const (
+	PasswordItemVersionSpacing = time.Hour
+	PasswordItemVersionDays    = 30
+	PasswordItemVersionsMost   = 60
+)
 
 // PasswordItemsMost is how many items one person may keep, deleted ones
 // included.
 const PasswordItemsMost = 20000
+
+// PasswordsBytesMost is how many bytes of sealed text (the fields and the
+// sealed keys) one person's items that are not deleted may hold together. A
+// listing answers all of it, so it bounds what one request costs the server.
+const PasswordsBytesMost = 64 << 20
+
+// PasswordItemRekey is an item's fields sealed again under a new item key by
+// the owner's device, because access to the item narrowed: the new key sealed
+// for the account key, for each recipient who keeps access, and for the agent
+// key. ItemKeyByAgentKey is nil to end the agent's use of the item.
+type PasswordItemRekey struct {
+	ItemID              string
+	BaseRevision        int64
+	EncryptedFields     string
+	ItemKeyByAccountKey string
+	ShareKeys           []*PasswordShareKey
+	ItemKeyByAgentKey   *string
+}
 
 // PasswordSetup is what a person set up: their account key sealed by the key
 // their passphrase makes and by their recovery key, a hash of the proof of

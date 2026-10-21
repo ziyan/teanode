@@ -58,7 +58,7 @@ func TestListPasswordItemsSendsTheRevisionOnlyWhenGiven(test *testing.T) {
 	for name, document := range map[string]string{
 		"ListPasswordItems": DocumentListPasswordItems, "SavePasswordItem": DocumentSavePasswordItem, "DeletePasswordItem": DocumentDeletePasswordItem,
 		"RestorePasswordItem": DocumentRestorePasswordItem, "SetPasswordItemShares": DocumentSetPasswordItemShares,
-		"SetPasswordItemUsableByAgent": DocumentSetPasswordItemUsableByAgent,
+		"SetPasswordItemUsableByAgent": DocumentSetPasswordItemUsableByAgent, "RekeyPasswordItem": DocumentRekeyPasswordItem,
 	} {
 		if !strings.Contains(document, "ownerPublicKey") {
 			test.Errorf("%s does not ask for ownerPublicKey", name)
@@ -130,6 +130,32 @@ func TestPasswordSharesAreSentInTheShapeTheSchemaTakes(test *testing.T) {
 	encoded, _ = json.Marshal(waitingVariables())
 	if !strings.Contains(string(encoded), `"itemId":"a"`) {
 		test.Errorf("a waiting key sent %s", encoded)
+	}
+}
+
+// A re-key sends the agent's key as null to end the agent's use, and no keys as
+// an empty list, never null: the schema takes a list.
+func TestRekeyPasswordItemSendsTheShapeTheSchemaTakes(test *testing.T) {
+	connection, variables := passwordsServer(test, `{"RekeyPasswordItem":{"id":"a","itemKind":"login","revision":9,"shares":[]}}`)
+	view, err := RekeyPasswordItem(test.Context(), connection, PasswordItemRekeyInput{ID: "a", BaseRevision: 8, EncryptedFields: "{}", ItemKey: "{}"})
+	if err != nil || view == nil || view.Revision != 9 {
+		test.Fatalf("view=%+v, %v", view, err)
+	}
+	encoded, _ := json.Marshal(variables())
+	if want := `{"input":{"baseRevision":8,"encryptedFields":"{}","id":"a","itemKey":"{}","itemKeyByAgentKey":null,"shareKeys":[]}}`; string(encoded) != want {
+		test.Errorf("a re-key sent %s", encoded)
+	}
+	agentKey := "{}"
+	_, err = RekeyPasswordItem(test.Context(), connection, PasswordItemRekeyInput{
+		ID: "a", BaseRevision: 8, EncryptedFields: "{}", ItemKey: "{}", ItemKeyByAgentKey: &agentKey,
+		ShareKeys: []*PasswordItemShareKeyInput{{ItemID: "a", RecipientUserID: "user-ben", ItemKeyByRecipientKey: "{}", RecipientPublicKey: "key"}},
+	})
+	if err != nil {
+		test.Fatal(err)
+	}
+	encoded, _ = json.Marshal(variables())
+	if !strings.Contains(string(encoded), `"itemKeyByAgentKey":"{}"`) || !strings.Contains(string(encoded), `"recipientUserId":"user-ben"`) {
+		test.Errorf("a re-key with keys sent %s", encoded)
 	}
 }
 

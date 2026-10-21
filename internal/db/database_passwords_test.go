@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -849,40 +850,114 @@ func TestPasswordItemsCarryTheirOwnersPublicKey(test *testing.T) {
 	})
 }
 
-// A save that replaces an item keeps what it replaced for 30 days, up to 20
-// versions, and the sweep removes the older ones with the items it removes.
-func TestSavingAPasswordItemKeepsWhatItReplaced(test *testing.T) {
+// passwordItemFieldsOf is a sealed value of a given number of bytes, for the
+// tests of what a person may keep.
+func passwordItemFieldsOf(label string, size int) string {
+	return `{"sealed":"` + label + strings.Repeat("a", size) + `"}`
+}
+
+// saveChangedPasswordItem changes the item once, from the revision it holds.
+func saveChangedPasswordItem(test *testing.T, tx db.Transaction, owner *models.User, current *models.PasswordItem, fields string) *models.PasswordItem {
+	test.Helper()
+	saved, err := tx.SavePasswordItem(&models.PasswordItem{
+		ID: current.ID, OwnerUserID: owner.ID, ItemKind: current.ItemKind,
+		EncryptedFields: fields, ItemKeyByAccountKey: `{"sealed":"key"}`,
+	}, &current.Revision)
+	if err != nil {
+		test.Fatalf("SavePasswordItem: %s", err)
+	}
+	return saved
+}
+
+func lastPasswordRevision(test *testing.T, database db.Database) string {
+	test.Helper()
+	return dbtest.QueryString(test, database, `SELECT last_value FROM "password_item_revision"`)
+}
+
+// A save keeps the version it replaces only when the item has none kept in
+// the last hour, so that a burst of saves (a token needs no tap to make them)
+// keeps the content from before the burst and cannot push it out of the
+// history.
+func TestABurstOfSavesKeepsTheContentFromBeforeTheBurst(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
 
 	var itemID string
-	var firstRevision int64
+	var ada *models.User
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		world := newPasswordsWorld(test, tx)
-		current := savePasswordItemFor(test, tx, world.ada, 1, models.PasswordItemKindLogin)
-		itemID, firstRevision = current.ID, current.Revision
-		for index := 1; index <= models.PasswordItemVersionsMost+3; index++ {
-			saved, err := tx.SavePasswordItem(&models.PasswordItem{
-				ID: current.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindLogin,
-				EncryptedFields: fmt.Sprintf(`{"sealed":"fields %d"}`, index), ItemKeyByAccountKey: fmt.Sprintf(`{"sealed":"key %d"}`, index),
-			}, &current.Revision)
-			if err != nil {
-				test.Fatal(err)
-			}
-			current = saved
+		ada = world.ada
+		current := savePasswordItemFor(test, tx, ada, 1, models.PasswordItemKindLogin)
+		itemID = current.ID
+		for index := 1; index <= models.PasswordItemVersionsMost+5; index++ {
+			current = saveChangedPasswordItem(test, tx, ada, current, fmt.Sprintf(`{"sealed":"garbage %d"}`, index))
 		}
 	})
+	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version" WHERE "item_id" = '`+itemID+`'`); got != "1" {
+		test.Fatalf("%s versions are kept after a burst, want 1", got)
+	}
+	if got := dbtest.QueryString(test, database, `SELECT encrypted_fields FROM "password_item_version" WHERE "item_id" = '`+itemID+`'`); got != `{"sealed":"fields"}` {
+		test.Fatalf("the version kept is %s, not the content from before the burst", got)
+	}
+	// An hour later the next save keeps what the burst left, and the original
+	// is still there.
+	dbtest.Exec(test, database, `UPDATE "password_item_version" SET "replaced_at" = "replaced_at" - interval '2 hours'`)
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		current, err := tx.GetPasswordItem(ada.ID, itemID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		saveChangedPasswordItem(test, tx, ada, current, `{"sealed":"after the hour"}`)
+	})
+	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version" WHERE "item_id" = '`+itemID+`'`); got != "2" {
+		test.Fatalf("%s versions are kept an hour later, want 2", got)
+	}
+	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version" WHERE "item_id" = '`+itemID+`' AND encrypted_fields = '{"sealed":"fields"}'`); got != "1" {
+		test.Fatal("the original did not survive the next save")
+	}
+}
+
+// Saves spread over hours are each kept, up to PasswordItemVersionsMost; past
+// that the version before the newest goes, so the oldest stays for its 30
+// days, and the sweep and a later save forget what is older than that.
+func TestSavesSpreadOverHoursKeepTheOldestVersion(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	var itemID string
+	var ada *models.User
+	var current *models.PasswordItem
+	saveAnHourLater := func(index int) {
+		dbtest.Exec(test, database, `UPDATE "password_item_version" SET "replaced_at" = "replaced_at" - interval '2 hours'`)
+		dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+			if current == nil {
+				ada = newPasswordsWorld(test, tx).ada
+				current = savePasswordItemFor(test, tx, ada, 1, models.PasswordItemKindLogin)
+				itemID = current.ID
+			}
+			current = saveChangedPasswordItem(test, tx, ada, current, fmt.Sprintf(`{"sealed":"fields %d"}`, index))
+		})
+	}
+	for index := 0; index <= models.PasswordItemVersionsMost+10; index++ {
+		saveAnHourLater(index)
+	}
 	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version" WHERE "item_id" = '`+itemID+`'`); got != fmt.Sprint(models.PasswordItemVersionsMost) {
 		test.Fatalf("%s versions are kept, want %d", got, models.PasswordItemVersionsMost)
 	}
-	// The newest is the one just before the last save, with its own revision,
-	// and the oldest ones were forgotten, the original first.
-	newest := dbtest.QueryString(test, database, `SELECT encrypted_fields || ' ' || item_key_by_account_key FROM "password_item_version" WHERE "item_id" = '`+itemID+`' ORDER BY "revision" DESC LIMIT 1`)
-	if want := fmt.Sprintf(`{"sealed":"fields %d"} {"sealed":"key %d"}`, models.PasswordItemVersionsMost+2, models.PasswordItemVersionsMost+2); newest != want {
-		test.Fatalf("the newest kept version is %s, want %s", newest, want)
+	if got := dbtest.QueryString(test, database, `SELECT encrypted_fields FROM "password_item_version" WHERE "item_id" = '`+itemID+`' ORDER BY "revision" ASC LIMIT 1`); got != `{"sealed":"fields"}` {
+		test.Fatalf("the oldest kept version is %s, not the original", got)
 	}
-	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version" WHERE "item_id" = '`+itemID+`' AND "revision" = `+fmt.Sprint(firstRevision)); got != "0" {
-		test.Fatalf("the original was kept past the limit")
+	want := fmt.Sprintf(`{"sealed":"fields %d"}`, models.PasswordItemVersionsMost+9)
+	if got := dbtest.QueryString(test, database, `SELECT encrypted_fields FROM "password_item_version" WHERE "item_id" = '`+itemID+`' ORDER BY "revision" DESC LIMIT 1`); got != want {
+		test.Fatalf("the newest kept version is %s, want %s", got, want)
+	}
+
+	// A save forgets what was replaced more than 30 days ago, and keeps what
+	// it replaces.
+	dbtest.Exec(test, database, `UPDATE "password_item_version" SET "replaced_at" = now() - interval '31 days' WHERE "revision" IN (SELECT "revision" FROM "password_item_version" ORDER BY "revision" ASC LIMIT 5)`)
+	saveAnHourLater(1000)
+	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version" WHERE "item_id" = '`+itemID+`'`); got != fmt.Sprint(models.PasswordItemVersionsMost-5+1) {
+		test.Fatalf("%s versions are left after a save past 30 days, want %d", got, models.PasswordItemVersionsMost-5+1)
 	}
 
 	// The sweep removes versions replaced more than 30 days ago.
@@ -890,13 +965,276 @@ func TestSavingAPasswordItemKeepsWhatItReplaced(test *testing.T) {
 	if _, err := database.ScavengePasswordItems(time.Now().AddDate(0, 0, -models.PasswordItemDeletedDays)); err != nil {
 		test.Fatal(err)
 	}
-	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version"`); got != fmt.Sprint(models.PasswordItemVersionsMost-5) {
-		test.Fatalf("%s versions are left after the sweep, want %d", got, models.PasswordItemVersionsMost-5)
+	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version"`); got != fmt.Sprint(models.PasswordItemVersionsMost-5+1-5) {
+		test.Fatalf("%s versions are left after the sweep, want %d", got, models.PasswordItemVersionsMost-5+1-5)
 	}
 	// Versions go with their item.
 	dbtest.Exec(test, database, `DELETE FROM "password_item" WHERE "id" = '`+itemID+`'`)
 	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version"`); got != "0" {
 		test.Fatalf("%s versions outlived their item", got)
+	}
+}
+
+// A person's items that are not deleted hold at most PasswordsBytesMost bytes
+// of sealed text. Saving, re-keying and restoring are refused past it with
+// ErrPasswordsFull and draw no revision number; anything that does not make an
+// item larger is allowed, and deleting makes room.
+func TestPasswordsHoldAtMostABoundedNumberOfBytes(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	const thirtyMebibytes = 30 << 20
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		world := newPasswordsWorld(test, tx)
+		setUpPasswordsFor(test, tx, world.ada)
+		setUpPasswordsFor(test, tx, world.ben)
+		save := func(owner *models.User, number int, fields string) (*models.PasswordItem, error) {
+			return tx.SavePasswordItem(&models.PasswordItem{
+				ID: passwordItemIdOf(number), OwnerUserID: owner.ID, ItemKind: models.PasswordItemKindNote,
+				EncryptedFields: fields, ItemKeyByAccountKey: `{"sealed":"key"}`,
+			}, nil)
+		}
+		first, err := save(world.ada, 1, passwordItemFieldsOf("first", thirtyMebibytes))
+		if err != nil {
+			test.Fatal(err)
+		}
+		second, err := save(world.ada, 2, passwordItemFieldsOf("second", thirtyMebibytes))
+		if err != nil {
+			test.Fatal(err)
+		}
+		// Another person's items do not count against Ada.
+		if _, err := save(world.ben, 3, passwordItemFieldsOf("ben", thirtyMebibytes)); err != nil {
+			test.Fatalf("ben's first note: %v", err)
+		}
+		revisionBefore := lastPasswordRevision(test, database)
+		if _, err := save(world.ada, 4, passwordItemFieldsOf("third", 10<<20)); !errors.Is(err, db.ErrPasswordsFull) {
+			test.Fatalf("a save past the limit: %v", err)
+		}
+		bigger := &models.PasswordItem{
+			ID: second.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindNote,
+			EncryptedFields: passwordItemFieldsOf("second", thirtyMebibytes+(10<<20)), ItemKeyByAccountKey: `{"sealed":"key"}`,
+		}
+		if _, err := tx.SavePasswordItem(bigger, &second.Revision); !errors.Is(err, db.ErrPasswordsFull) {
+			test.Fatalf("a change that makes an item larger past the limit: %v", err)
+		}
+		if _, err := tx.RekeyPasswordItem(world.ada.ID, &models.PasswordItemRekey{
+			ItemID: second.ID, BaseRevision: second.Revision, EncryptedFields: bigger.EncryptedFields, ItemKeyByAccountKey: `{"sealed":"key 2"}`,
+		}); !errors.Is(err, db.ErrPasswordsFull) {
+			test.Fatalf("a re-key that makes an item larger past the limit: %v", err)
+		}
+		if got := lastPasswordRevision(test, database); got != revisionBefore {
+			test.Fatalf("refused changes drew revisions: %s then %s", revisionBefore, got)
+		}
+
+		// A smaller item still fits, and making an item smaller always does.
+		small, err := save(world.ada, 5, passwordItemFieldsOf("small", 1<<20))
+		if err != nil {
+			test.Fatalf("a small note below the limit: %v", err)
+		}
+		if _, err := tx.SavePasswordItem(&models.PasswordItem{
+			ID: first.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindNote,
+			EncryptedFields: passwordItemFieldsOf("first", 10<<20), ItemKeyByAccountKey: `{"sealed":"key"}`,
+		}, &first.Revision); err != nil {
+			test.Fatalf("a shorter note: %v", err)
+		}
+
+		// A deleted item makes room, and a restore that does not fit is refused.
+		if _, err := tx.DeletePasswordItem(world.ada.ID, second.ID); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := save(world.ada, 6, passwordItemFieldsOf("replacement", thirtyMebibytes)); err != nil {
+			test.Fatalf("a save into the room a delete made: %v", err)
+		}
+		if _, err := tx.RestorePasswordItem(world.ada.ID, second.ID); !errors.Is(err, db.ErrPasswordsFull) {
+			test.Fatalf("a restore past the limit: %v", err)
+		}
+		if _, err := tx.DeletePasswordItem(world.ada.ID, small.ID); err != nil {
+			test.Fatal(err)
+		}
+		if got, err := tx.GetPasswordItem(world.ada.ID, second.ID); err != nil || got.DeletedAt == nil {
+			test.Fatalf("a refused restore changed the item: %+v %v", got, err)
+		}
+	})
+}
+
+// A refused save draws no revision number, which every person's items share:
+// not for somebody else's item, a stale revision, a change of kind or a
+// deleted item.
+func TestRefusedPasswordChangesDrawNoRevision(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		world := newPasswordsWorld(test, tx)
+		item := savePasswordItemFor(test, tx, world.ada, 1, models.PasswordItemKindLogin)
+		deleted := savePasswordItemFor(test, tx, world.ada, 2, models.PasswordItemKindLogin)
+		if _, err := tx.DeletePasswordItem(world.ada.ID, deleted.ID); err != nil {
+			test.Fatal(err)
+		}
+		deleted, _ = tx.GetPasswordItem(world.ada.ID, deleted.ID)
+		before := lastPasswordRevision(test, database)
+		stale := item.Revision - 1
+		for name, attempt := range map[string]func() error{
+			"somebody else's item": func() error {
+				_, err := tx.SavePasswordItem(&models.PasswordItem{ID: item.ID, OwnerUserID: world.ben.ID, ItemKind: item.ItemKind,
+					EncryptedFields: `{"sealed":"f"}`, ItemKeyByAccountKey: `{"sealed":"k"}`}, nil)
+				return err
+			},
+			"a stale revision": func() error {
+				_, err := tx.SavePasswordItem(&models.PasswordItem{ID: item.ID, OwnerUserID: world.ada.ID, ItemKind: item.ItemKind,
+					EncryptedFields: `{"sealed":"f"}`, ItemKeyByAccountKey: `{"sealed":"k"}`}, &stale)
+				return err
+			},
+			"a new item that claims a revision": func() error {
+				_, err := tx.SavePasswordItem(&models.PasswordItem{ID: passwordItemIdOf(9), OwnerUserID: world.ada.ID, ItemKind: item.ItemKind,
+					EncryptedFields: `{"sealed":"f"}`, ItemKeyByAccountKey: `{"sealed":"k"}`}, &stale)
+				return err
+			},
+			"a change of kind": func() error {
+				_, err := tx.SavePasswordItem(&models.PasswordItem{ID: item.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindNote,
+					EncryptedFields: `{"sealed":"f"}`, ItemKeyByAccountKey: `{"sealed":"k"}`}, &item.Revision)
+				return err
+			},
+			"a deleted item": func() error {
+				_, err := tx.SavePasswordItem(&models.PasswordItem{ID: deleted.ID, OwnerUserID: world.ada.ID, ItemKind: deleted.ItemKind,
+					EncryptedFields: `{"sealed":"f"}`, ItemKeyByAccountKey: `{"sealed":"k"}`}, &deleted.Revision)
+				return err
+			},
+			"a re-key of somebody else's item": func() error {
+				_, err := tx.RekeyPasswordItem(world.ben.ID, &models.PasswordItemRekey{ItemID: item.ID, BaseRevision: item.Revision, EncryptedFields: `{"sealed":"f"}`, ItemKeyByAccountKey: `{"sealed":"k"}`})
+				return err
+			},
+		} {
+			if err := attempt(); err == nil {
+				test.Fatalf("%s was not refused", name)
+			}
+			if got := lastPasswordRevision(test, database); got != before {
+				test.Fatalf("%s drew a revision: %s then %s", name, before, got)
+			}
+		}
+	})
+}
+
+// A re-key replaces the fields and the item key in one change, deletes every
+// key stored for a recipient and stores the given ones for the recipients the
+// item still reaches; a recipient reached and given none waits.
+func TestRekeyingAPasswordItem(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	var itemID string
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		world := newPasswordsWorld(test, tx)
+		for _, person := range []*models.User{world.ada, world.ben, world.cora} {
+			setUpPasswordsFor(test, tx, person)
+		}
+		item := savePasswordItemFor(test, tx, world.ada, 1, models.PasswordItemKindLogin)
+		itemID = item.ID
+		// Ada shares with the circle she and ben are in, and with ben alone: ben
+		// is reached twice, and has a key.
+		mustSetPasswordItemShares(test, tx, world.ada, item.ID,
+			[]models.PasswordShareGrantee{{GranteeCircleID: world.home.ID}}, []*models.PasswordShareKey{passwordKeyFor(item, world.ben)})
+		agent, err := tx.SetPasswordItemUsableByAgent(world.ada.ID, item.ID, true, "agent copy under the old key")
+		if err != nil {
+			test.Fatal(err)
+		}
+		rekey := func(base int64, keys []*models.PasswordShareKey, agentKey *string) (*models.PasswordItem, error) {
+			return tx.RekeyPasswordItem(world.ada.ID, &models.PasswordItemRekey{
+				ItemID: item.ID, BaseRevision: base, EncryptedFields: `{"sealed":"fields under the new key"}`,
+				ItemKeyByAccountKey: `{"sealed":"new key by account key"}`, ShareKeys: keys, ItemKeyByAgentKey: agentKey,
+			})
+		}
+
+		// Refusals leave everything as it was, and draw no revision.
+		revisionBefore := lastPasswordRevision(test, database)
+		if _, err := rekey(agent.Revision-1, nil, nil); !errors.Is(err, db.ErrPasswordRevisionStale) {
+			test.Fatalf("a stale base revision: %v", err)
+		}
+		if _, err := rekey(agent.Revision, []*models.PasswordShareKey{passwordKeyFor(item, world.cora)}, nil); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("a key for a person the item does not reach: %v", err)
+		}
+		oldKey := passwordKeyFor(item, world.ben)
+		oldKey.RecipientPublicKey = "an older public key"
+		if _, err := rekey(agent.Revision, []*models.PasswordShareKey{oldKey}, nil); !errors.Is(err, db.ErrPasswordKeyStale) {
+			test.Fatalf("a key for an old public key: %v", err)
+		}
+		other := passwordKeyFor(item, world.ben)
+		other.ItemID = passwordItemIdOf(77)
+		if _, err := rekey(agent.Revision, []*models.PasswordShareKey{other}, nil); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("a key that names another item: %v", err)
+		}
+		if _, err := tx.RekeyPasswordItem(world.ben.ID, &models.PasswordItemRekey{
+			ItemID: item.ID, BaseRevision: agent.Revision, EncryptedFields: `{"sealed":"f"}`, ItemKeyByAccountKey: `{"sealed":"k"}`,
+		}); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("somebody who is not the owner: %v", err)
+		}
+		if got := lastPasswordRevision(test, database); got != revisionBefore {
+			test.Fatalf("refused re-keys drew revisions: %s then %s", revisionBefore, got)
+		}
+		untouched, err := tx.GetPasswordItem(world.ada.ID, item.ID)
+		if err != nil || untouched.Revision != agent.Revision || untouched.EncryptedFields != item.EncryptedFields ||
+			!untouched.Shares[0].Recipients[0].HasKey || untouched.ItemKeyByAgentKey != "agent copy under the old key" {
+			test.Fatalf("a refused re-key changed the item: %+v %v", untouched, err)
+		}
+
+		// A re-key that keeps the agent: a new copy replaces the old.
+		agentKey := "agent copy under the new key"
+		kept, err := rekey(agent.Revision, nil, &agentKey)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if kept.Revision <= agent.Revision || kept.EncryptedFields != `{"sealed":"fields under the new key"}` || kept.ItemKeyByAccountKey != `{"sealed":"new key by account key"}` ||
+			!kept.IsUsableByAgent || kept.ItemKeyByAgentKey != agentKey {
+			test.Fatalf("the re-keyed item: %+v", kept)
+		}
+		// Ben's old key is gone: nobody has a key, so ben waits.
+		if len(kept.Shares) != 1 || len(kept.Shares[0].Recipients) != 1 || kept.Shares[0].Recipients[0].HasKey {
+			test.Fatalf("the old key of a recipient survived: %+v", kept.Shares)
+		}
+		if waiting, err := tx.ListWaitingPasswordShares(world.ada.ID); err != nil || len(waiting) != 1 || waiting[0].Recipient.UserID != world.ben.ID {
+			test.Fatalf("the recipient without a key waits: %+v %v", waiting, err)
+		}
+		if got := mustListPasswordItems(test, tx, world.ben, 0); len(got.Items) != 0 {
+			test.Fatalf("a recipient without a key reads: %+v", got.Items)
+		}
+
+		// A re-key with a key for ben stores it, and an agent of nil ends the
+		// agent's use.
+		given := passwordKeyFor(item, world.ben)
+		given.ItemKeyByRecipientKey = "new key for ben"
+		given.ItemID = item.ID
+		again, err := rekey(kept.Revision, []*models.PasswordShareKey{given}, nil)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if again.Revision <= kept.Revision || again.IsUsableByAgent || again.ItemKeyByAgentKey != "" || !again.Shares[0].Recipients[0].HasKey {
+			test.Fatalf("the second re-key: %+v", again)
+		}
+		if usable, _ := tx.ListAgentUsablePasswordItems(world.ada.ID); len(usable) != 0 {
+			test.Fatalf("the agent still uses the item: %+v", usable)
+		}
+		read := mustListPasswordItems(test, tx, world.ben, 0)
+		if len(read.Items) != 1 || read.Items[0].ItemKeyByRecipientKey != "new key for ben" {
+			test.Fatalf("ben reads with the new key: %+v", read.Items)
+		}
+
+		// An item the agent does not use cannot be given an agent copy.
+		agentKey = "an agent copy"
+		if _, err := rekey(again.Revision, nil, &agentKey); !errors.Is(err, db.ErrInvalidArguments) {
+			test.Fatalf("an agent copy for an item the agent does not use: %v", err)
+		}
+		// A deleted item cannot be re-keyed.
+		if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID); err != nil {
+			test.Fatal(err)
+		}
+		deleted, _ := tx.GetPasswordItem(world.ada.ID, item.ID)
+		if _, err := rekey(deleted.Revision, nil, nil); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("a deleted item: %v", err)
+		}
+	})
+	// Each re-key kept what it replaced, as a save does, once in the hour.
+	if got := dbtest.QueryString(test, database, `SELECT count(*) FROM "password_item_version" WHERE "item_id" = '`+itemID+`'`); got != "1" {
+		test.Fatalf("%s versions are kept after two re-keys in one hour, want 1", got)
 	}
 }
 

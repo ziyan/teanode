@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -84,8 +85,9 @@ type PasswordsMutation interface {
 	// person's tap. Needs passwords:use.
 	ReplacePasswordsRecoveryKey(ctx context.Context, arguments ReplacePasswordsRecoveryKeyArguments) (*PasswordsSetupView, error)
 
-	// How long a device stays unlocked, from 1 minute to 10080 (a week). Needs
-	// passwords:use.
+	// How long a device stays unlocked, from 1 minute to 10080 (a week).
+	// Making it longer than it is now needs a person's tap; making it shorter
+	// does not. Needs passwords:use.
 	UpdatePasswordsSettings(ctx context.Context, arguments UpdatePasswordsSettingsArguments) (*PasswordsSetupView, error)
 
 	// Deletes the caller's setup, items, shares and keys, and the keys sealed
@@ -125,6 +127,18 @@ type PasswordsMutation interface {
 	// cannot be used by the agent. Turning it on needs a person's tap; turning
 	// it off does not. Needs passwords:use.
 	SetPasswordItemUsableByAgent(ctx context.Context, arguments SetPasswordItemUsableByAgentArguments) (*PasswordItemView, error)
+
+	// Gives an item a new item key when access to it narrows (somebody removed
+	// from its shares, or the agent no longer allowed to use it), so that a
+	// copy of the old sealed key opens nothing that is saved from now on. The
+	// device sends the fields sealed under the new key and the new key sealed
+	// for the account key, for each recipient who keeps access and, if the
+	// agent still uses the item, for the agent key. Every key stored for a
+	// recipient is replaced by the ones given; a recipient the item reaches
+	// and is given none waits. It never widens access, so it needs no tap, and
+	// it can end the agent's use of an item (a null itemKeyByAgentKey) but
+	// never begin it. Needs passwords:use.
+	RekeyPasswordItem(ctx context.Context, arguments RekeyPasswordItemArguments) (*PasswordItemView, error)
 }
 
 // PasswordsSetupView is whether the caller has set up Passwords and what a
@@ -384,6 +398,33 @@ type SetPasswordItemUsableByAgentArguments struct {
 	Input PasswordItemAgentUse `json:"input"`
 }
 
+// PasswordItemRekey is an item sealed again under a new item key
+// (PasswordItemRekeyInput in the schema).
+type PasswordItemRekey struct {
+	ID string `json:"id"`
+
+	// BaseRevision is the revision the device read the item at.
+	BaseRevision int `json:"baseRevision"`
+
+	// EncryptedFields are the same fields, sealed with the new item key.
+	EncryptedFields string `json:"encryptedFields"`
+
+	// ItemKey is the new item key, sealed with the account key.
+	ItemKey string `json:"itemKey"`
+
+	// ShareKeys are the new item key sealed for each recipient who keeps access.
+	ShareKeys []PasswordItemShareKey `json:"shareKeys"`
+
+	// ItemKeyByAgentKey is the new item key sealed for the agent key; null ends
+	// the agent's use of the item, and it must be null for an item the agent
+	// does not use.
+	ItemKeyByAgentKey *string `json:"itemKeyByAgentKey" graphapi:"nullable"`
+}
+
+type RekeyPasswordItemArguments struct {
+	Input PasswordItemRekey `json:"input"`
+}
+
 const (
 	// passwordsFieldsMostBytes bounds a sealed item: a note of a few
 	// thousand words, or a login with several passkeys, fits well within it.
@@ -399,11 +440,21 @@ const (
 	// in a row; passwordUnlockFailuresPerHour is how fast that is given back.
 	passwordUnlockFailuresBurst   = 10
 	passwordUnlockFailuresPerHour = 30
+
+	// passwordWritesPerHour is how fast a person's writes to Passwords are
+	// given back. A CSV import of a few thousand items must still fit in the
+	// burst.
+	passwordWritesPerHour = 5000
 )
+
+// passwordWritesBurst is how many writes to Passwords (saves, re-keys, deletes,
+// restores, shares and share keys, and letting the agent use an item) one
+// person may make in a row. It is a variable so that a test can lower it.
+var passwordWritesBurst int64 = 5000
 
 // passwordsOnATap is what a call is told when only a person's own tap may make
 // it. It begins with api.TapRequiredPhrase, which the command line recognizes.
-const passwordsOnATap = api.TapRequiredPhrase + ": setting up, erasing and changing the secrets of Passwords, sharing an item with someone new, and letting the agent use an item are done on the Passwords page of the dashboard or in the iPhone app, not from a command line or an API token"
+const passwordsOnATap = api.TapRequiredPhrase + ": setting up, erasing and changing the secrets of Passwords, sharing an item with someone new, letting the agent use an item, and making a device stay unlocked for longer are done on the Passwords page of the dashboard or in the iPhone app, not from a command line or an API token"
 
 // The sentences a person is told, which the clients show as they are.
 const (
@@ -412,6 +463,8 @@ const (
 	passwordsItemChangedSentence      = "This item changed on another device. Open it again."
 	passwordsKeyChangedSentence       = "That person's key changed since it was read. Read their key again and seal the item for it."
 	passwordsCardSentence             = "A card cannot be used by the agent."
+	passwordsFullSentence             = "Passwords is full: delete items or make notes shorter."
+	passwordsTooManyWritesSentence    = "Too many changes to Passwords in a short time. Try again in a few minutes."
 	passwordsAlreadySetUpSentence     = "Passwords is already set up."
 	passwordsNotSetUpSentence         = "Passwords is not set up yet."
 )
@@ -449,20 +502,58 @@ func passwordsFailure(err error) error {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsKeyChangedSentence)
 	case errors.Is(err, db.ErrPasswordCardNotUsableByAgent):
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsCardSentence)
+	case errors.Is(err, db.ErrPasswordsFull):
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsFullSentence)
 	case errors.Is(err, db.ErrAlreadyExists):
 		return fmt.Errorf("%w: %s", api.ErrAlreadyExists, passwordsAlreadySetUpSentence)
 	}
 	return locationFailure(err)
 }
 
-// passwordsUnlockLimiter bounds the wrong proofs one person gives. It is kept
-// in memory, for this instance, as the sign-in limits are.
-func (self *graph) passwordsUnlockLimiter() *ratelimit.Registry {
-	self.passwordsUnlockLimiterOnce.Do(func() {
-		self.passwordsUnlockLimiterValue = ratelimit.NewRegistry(
-			passwordUnlockFailuresPerHour/3600.0, passwordUnlockFailuresBurst, 10000, time.Hour)
+// passwordsLimiters are the limits on one person's use of Passwords, kept in
+// memory for this instance, as the sign-in limits are. Each is a bucket for
+// each person and kind of credential (passwordsLimitKey), so that what a
+// program holding a stolen token does cannot use up what the person's own
+// taps on a screen may do.
+type passwordsLimiters struct {
+	once sync.Once
+
+	// unlock holds the wrong proofs given in a row.
+	unlock *ratelimit.Registry
+
+	// writes holds the writes made.
+	writes *ratelimit.Registry
+}
+
+func (self *graph) passwordsLimiters() *passwordsLimiters {
+	self.passwordsLimits.once.Do(func() {
+		self.passwordsLimits.unlock = ratelimit.NewRegistry(
+			passwordUnlockFailuresPerHour/3600.0, passwordUnlockFailuresBurst, 20000, time.Hour)
+		self.passwordsLimits.writes = ratelimit.NewRegistry(
+			passwordWritesPerHour/3600.0, passwordWritesBurst, 20000, time.Hour)
 	})
-	return self.passwordsUnlockLimiterValue
+	return &self.passwordsLimits
+}
+
+// passwordsLimitKey is the bucket a call is counted in: one for the person's
+// own taps (the dashboard and the phone app) and one for every other way in,
+// a command line token, the extension, an OAuth grant or an operator signed in
+// as the person.
+func passwordsLimitKey(principal *api.Principal) string {
+	if principal.IsPersonsTap() {
+		return principal.User.ID + ":tap"
+	}
+	return principal.User.ID + ":other"
+}
+
+// takePasswordsWrite counts one write to Passwords, and refuses it when the
+// person has made too many. The check comes before the call is looked at, so
+// that refused calls count too: each one costs the server a transaction.
+func (self *graph) takePasswordsWrite(principal *api.Principal) error {
+	if !self.passwordsLimiters().writes.Allow(passwordsLimitKey(principal)) {
+		return fmt.Errorf("%w: %s", api.ErrTooManyRequests, passwordsTooManyWritesSentence)
+	}
+	return nil
 }
 
 // isSealedText reports whether a value is a sealed value of the format in
@@ -586,9 +677,12 @@ func requirePasswordsSetUp(tx db.Transaction, userId string) (*models.PasswordSe
 // wrong one is counted. A right proof (or a failure that says nothing about the
 // proof) gives the token back; a wrong one keeps it and is written to the audit
 // log. Without a token the caller is told to wait, and that is written to the
-// audit log too.
-func (self *graph) checkPasswordsProof(tx db.Transaction, userId, proof string, isRecoveryKey bool) error {
-	bucket := self.passwordsUnlockLimiter().For(userId)
+// audit log too. The tries are counted for the person's taps and for every
+// other credential separately, so that wrong proofs from a stolen token cannot
+// lock the person out of their own dashboard.
+func (self *graph) checkPasswordsProof(tx db.Transaction, principal *api.Principal, proof string, isRecoveryKey bool) error {
+	userId := principal.User.ID
+	bucket := self.passwordsLimiters().unlock.For(passwordsLimitKey(principal))
 	if !bucket.Allow() {
 		// A try turned away is written down too: a run of them is what a
 		// guess at the passphrase looks like from outside.
@@ -694,7 +788,7 @@ func (self *graph) UnlockPasswords(ctx context.Context, arguments UnlockPassword
 	tx := self.transaction(ctx)
 	// The audit event of a wrong proof, or of a try turned away, is written in
 	// the request's transaction, which commits whatever the answer is.
-	if err := self.checkPasswordsProof(tx, principal.User.ID, arguments.Proof, isRecoveryKey); err != nil {
+	if err := self.checkPasswordsProof(tx, principal, arguments.Proof, isRecoveryKey); err != nil {
 		return nil, err
 	}
 	if err := tx.RecordPasswordsUnlocked(principal.User.ID, isRecoveryKey); err != nil {
@@ -727,7 +821,7 @@ func (self *graph) ChangePasswordsPassphrase(ctx context.Context, arguments Chan
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	if err := self.checkPasswordsProof(tx, principal.User.ID, input.Proof, input.IsRecoveryKey != nil && *input.IsRecoveryKey); err != nil {
+	if err := self.checkPasswordsProof(tx, principal, input.Proof, input.IsRecoveryKey != nil && *input.IsRecoveryKey); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ChangePasswordsPassphrase(principal.User.ID, &models.PasswordPassphraseChange{
@@ -752,7 +846,7 @@ func (self *graph) ReplacePasswordsRecoveryKey(ctx context.Context, arguments Re
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	if err := self.checkPasswordsProof(tx, principal.User.ID, input.Proof, false); err != nil {
+	if err := self.checkPasswordsProof(tx, principal, input.Proof, false); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ReplacePasswordsRecoveryKey(principal.User.ID, input.AccountKeyByRecoveryKey, input.RecoveryKeyProofHash); err != nil {
@@ -770,8 +864,17 @@ func (self *graph) UpdatePasswordsSettings(ctx context.Context, arguments Update
 		return nil, passwordsInvalid("lockAfterMinutes is from %d to %d", models.PasswordsLockAfterMinutesLeast, models.PasswordsLockAfterMinutesMost)
 	}
 	tx := self.transaction(ctx)
-	if _, err := requirePasswordsSetUp(tx, principal.User.ID); err != nil {
+	setup, err := requirePasswordsSetUp(tx, principal.User.ID)
+	if err != nil {
 		return nil, err
+	}
+	// A longer time keeps every device unlocked for longer, which a token
+	// could do to leave one open for a week: that is a person's tap. A shorter
+	// one only asks for the passphrase sooner.
+	if arguments.LockAfterMinutes > setup.LockAfterMinutes {
+		if err := requirePasswordsTap(principal); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := tx.SetPasswordsLockAfterMinutes(principal.User.ID, arguments.LockAfterMinutes); err != nil {
 		return nil, passwordsFailure(err)
@@ -895,6 +998,9 @@ func (self *graph) SavePasswordItem(ctx context.Context, arguments SavePasswordI
 	if err != nil {
 		return nil, err
 	}
+	if err := self.takePasswordsWrite(principal); err != nil {
+		return nil, err
+	}
 	input := arguments.Input
 	if !passwordItemIdPattern.MatchString(input.ID) {
 		return nil, passwordsInvalid("id is a lower case UUID made by the device")
@@ -942,6 +1048,9 @@ func (self *graph) DeletePasswordItem(ctx context.Context, arguments PasswordIte
 	if err != nil {
 		return nil, err
 	}
+	if err := self.takePasswordsWrite(principal); err != nil {
+		return nil, err
+	}
 	deleted, err := self.transaction(ctx).DeletePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID))
 	if err != nil {
 		return nil, passwordsFailure(err)
@@ -954,6 +1063,9 @@ func (self *graph) RestorePasswordItem(ctx context.Context, arguments PasswordIt
 	if err != nil {
 		return nil, err
 	}
+	if err := self.takePasswordsWrite(principal); err != nil {
+		return nil, err
+	}
 	restored, err := self.transaction(ctx).RestorePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID))
 	if err != nil {
 		return nil, passwordsFailure(err)
@@ -964,6 +1076,9 @@ func (self *graph) RestorePasswordItem(ctx context.Context, arguments PasswordIt
 func (self *graph) SetPasswordItemShares(ctx context.Context, arguments SetPasswordItemSharesArguments) (*PasswordItemView, error) {
 	principal, err := self.requirePasswordsPerson(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := self.takePasswordsWrite(principal); err != nil {
 		return nil, err
 	}
 	input := arguments.Input
@@ -1051,6 +1166,9 @@ func (self *graph) AddPasswordShareKeys(ctx context.Context, arguments AddPasswo
 	if err != nil {
 		return 0, err
 	}
+	if err := self.takePasswordsWrite(principal); err != nil {
+		return 0, err
+	}
 	if len(arguments.Keys) > passwordShareKeysMost {
 		return 0, passwordsInvalid("at most %d keys at a time", passwordShareKeysMost)
 	}
@@ -1078,6 +1196,9 @@ func (self *graph) SetPasswordItemUsableByAgent(ctx context.Context, arguments S
 	if err != nil {
 		return nil, err
 	}
+	if err := self.takePasswordsWrite(principal); err != nil {
+		return nil, err
+	}
 	input := arguments.Input
 	itemId := strings.TrimSpace(input.ItemID)
 	itemKeyByAgentKey := ""
@@ -1098,4 +1219,59 @@ func (self *graph) SetPasswordItemUsableByAgent(ctx context.Context, arguments S
 		return nil, passwordsFailure(err)
 	}
 	return describePasswordItem(updated), nil
+}
+
+func (self *graph) RekeyPasswordItem(ctx context.Context, arguments RekeyPasswordItemArguments) (*PasswordItemView, error) {
+	principal, err := self.requirePasswordsPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.takePasswordsWrite(principal); err != nil {
+		return nil, err
+	}
+	input := arguments.Input
+	itemId := strings.TrimSpace(input.ID)
+	if !passwordItemIdPattern.MatchString(itemId) {
+		return nil, passwordsInvalid("id is the lower case UUID of the item")
+	}
+	if input.BaseRevision < 1 {
+		return nil, passwordsInvalid("baseRevision is the revision the device read")
+	}
+	if !isSealedText(input.EncryptedFields, passwordsFieldsMostBytes) {
+		return nil, passwordsInvalid("encryptedFields must be the JSON a device sealed, at most %d bytes", passwordsFieldsMostBytes)
+	}
+	if !isSealedText(input.ItemKey, passwordsKeyMostBytes) {
+		return nil, passwordsInvalid("itemKey must be the JSON a device sealed")
+	}
+	if len(input.ShareKeys) > passwordShareKeysMost {
+		return nil, passwordsInvalid("at most %d keys at a time", passwordShareKeysMost)
+	}
+	shareKeys := make([]*models.PasswordShareKey, 0, len(input.ShareKeys))
+	for _, key := range input.ShareKeys {
+		if strings.TrimSpace(key.ItemID) != itemId {
+			return nil, passwordsInvalid("every key in a re-key is for the item being re-keyed")
+		}
+		checked, err := checkedPasswordShareKey(itemId, key.RecipientUserID, key.ItemKeyByRecipientKey, key.RecipientPublicKey)
+		if err != nil {
+			return nil, err
+		}
+		shareKeys = append(shareKeys, checked)
+	}
+	if input.ItemKeyByAgentKey != nil && !isSealedForKeyPairText(*input.ItemKeyByAgentKey, passwordsKeyMostBytes) {
+		return nil, passwordsInvalid("itemKeyByAgentKey must be the JSON a device sealed for the agent key, or null")
+	}
+	tx := self.transaction(ctx)
+	if _, err := requirePasswordsSetUp(tx, principal.User.ID); err != nil {
+		return nil, err
+	}
+	rekeyed, err := tx.RekeyPasswordItem(principal.User.ID, &models.PasswordItemRekey{
+		ItemID: itemId, BaseRevision: int64(input.BaseRevision), EncryptedFields: input.EncryptedFields,
+		ItemKeyByAccountKey: input.ItemKey, ShareKeys: shareKeys, ItemKeyByAgentKey: input.ItemKeyByAgentKey,
+	})
+	if err != nil {
+		// Somebody else's item, a deleted one, a key for somebody the item
+		// does not reach: not found. A key for an old public key says so.
+		return nil, passwordsFailure(err)
+	}
+	return describePasswordItem(rekeyed), nil
 }
