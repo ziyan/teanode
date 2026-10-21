@@ -31,7 +31,7 @@ import {
   saveCapturedLogin,
   savePasskey,
   summaryOf,
-  trustOwnerKey,
+  confirmOwnerKey,
   unlockPasswords,
   PasswordsEnvironment,
   whatToDoWithCapturedLogin,
@@ -437,7 +437,7 @@ describe('trusting the changed key of the owner of shared logins', () => {
     server.records = [await sharedRecord(newPair, newPair)]
     await withOpenedKeys(environment, async (keys) => {
       expect(await openItems(environment, keys)).toEqual([])
-      await trustOwnerKey(environment, keys, 'owner-b', encodeBase64(newPair.publicKey))
+      await confirmOwnerKey(environment, keys, 'owner-b', encodeBase64(newPair.publicKey))
     })
     expect(await readPin(local)).toBe(encodeBase64(newPair.publicKey))
     await withOpenedKeys(environment, async (keys) => {
@@ -447,7 +447,7 @@ describe('trusting the changed key of the owner of shared logins', () => {
     })
   })
 
-  it('trusts nothing the server no longer shows, and nothing that does not open', async () => {
+  it('confirms nothing the server no longer shows, and nothing that does not open', async () => {
     const newPair = await generatePersonKeyPair()
     const otherPair = await generatePersonKeyPair()
     const { environment, local, server } = await unlocked([await sharedRecord(ownerKeyPair, ownerKeyPair)])
@@ -455,18 +455,18 @@ describe('trusting the changed key of the owner of shared logins', () => {
     // The server shows a different key than the one that was compared.
     server.records = [await sharedRecord(newPair, newPair)]
     await withOpenedKeys(environment, async (keys) => {
-      await expect(trustOwnerKey(environment, keys, 'owner-b', encodeBase64(otherPair.publicKey))).rejects.toThrow(
+      await expect(confirmOwnerKey(environment, keys, 'owner-b', encodeBase64(otherPair.publicKey))).rejects.toThrow(
         /changed again/,
       )
       // Another owner's id does not do either.
-      await expect(trustOwnerKey(environment, keys, 'owner-c', encodeBase64(newPair.publicKey))).rejects.toThrow(
+      await expect(confirmOwnerKey(environment, keys, 'owner-c', encodeBase64(newPair.publicKey))).rejects.toThrow(
         /changed again/,
       )
     })
     // A key the server shows, on an item that was not sealed by it.
     server.records = [await sharedRecord(otherPair, newPair)]
     await withOpenedKeys(environment, async (keys) => {
-      await expect(trustOwnerKey(environment, keys, 'owner-b', encodeBase64(newPair.publicKey))).rejects.toThrow(
+      await expect(confirmOwnerKey(environment, keys, 'owner-b', encodeBase64(newPair.publicKey))).rejects.toThrow(
         /did not open|None of their/,
       )
     })
@@ -489,8 +489,8 @@ describe('trusting the changed key of the owner of shared logins', () => {
         newPublicKey: encodeBase64(newPair.publicKey),
       },
     ])
-    expect(answer.oldSafetyCode).toBe(await safetyCode('owner-b', ownerKeyPair.publicKey))
-    expect(answer.newSafetyCode).toBe(await safetyCode('owner-b', newPair.publicKey))
+    expect(answer.oldSafetyCode).toBe(await safetyCode(ownerKeyPair.publicKey))
+    expect(answer.newSafetyCode).toBe(await safetyCode(newPair.publicKey))
     expect(answer.oldSafetyCode).not.toBe(answer.newSafetyCode)
     expect(answer.newPublicKey).toBe(encodeBase64(newPair.publicKey))
     expect(unreadable.oldSafetyCode).toBe('')

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FRAME_CONNECT_KIND, FRAME_MESSAGE_CHANNEL, originOfAddress } from './frameChannel'
+import { FRAME_CONNECT_KIND, FRAME_MESSAGE_CHANNEL, frameOriginOf, originOfAddress } from './frameChannel'
 import { FrameMessage, HostedFrame } from './hostedFrame'
 import { giveLayout } from './testLayout'
 
-// The extension's static origin, and the one its pages are reached at when
-// they are only available at a dynamic address (use_dynamic_url): the frame's
-// own address is on the second.
+// The extension's static origin, which its pages' documents have, and the
+// dynamic one chrome.runtime.getURL gives for them (use_dynamic_url): the
+// frame's address is on the second, its document on the first.
 const STATIC_ORIGIN = 'chrome-extension://abcdefghijklmnop'
 const FRAME_ORIGIN = 'chrome-extension://dynamicdynamicdy'
 
@@ -48,6 +48,7 @@ beforeEach(() => {
   giveLayout()
   vi.stubGlobal('chrome', {
     runtime: {
+      id: 'abcdefghijklmnop',
       getURL: (path: string) => (path === '' ? `${STATIC_ORIGIN}/` : `${FRAME_ORIGIN}/${path}`),
     },
   })
@@ -84,12 +85,14 @@ describe('HostedFrame', () => {
     }
   })
 
-  it("posts a channel to the frame once it has loaded, addressed to the frame's own origin", () => {
+  it("posts a channel to the frame once it has loaded, addressed to the extension's own origin", () => {
     const { message, origin, frameEnd } = load()
     expect(message).toEqual({ channel: FRAME_MESSAGE_CHANNEL, frameMessageKind: FRAME_CONNECT_KIND })
-    // Not the origin chrome.runtime.getURL('') names.
-    expect(origin).toBe(FRAME_ORIGIN)
-    expect(origin).not.toBe(STATIC_ORIGIN)
+    // The origin the frame's document has, by the extension's fixed id: not the
+    // dynamic one the frame's address names (use_dynamic_url), which would
+    // never be delivered to.
+    expect(origin).toBe(STATIC_ORIGIN)
+    expect(origin).not.toBe(FRAME_ORIGIN)
     expect(frameEnd).toBeInstanceOf(MessagePort)
   })
 
@@ -175,6 +178,23 @@ describe('HostedFrame', () => {
     expect(hosted.host.isConnected).toBe(false)
     expect(hosted.check().isShown).toBe(false)
     expect(hosted.check().failureReason).toBe('the frame is closed')
+  })
+})
+
+describe('frameOriginOf', () => {
+  it("is the extension's fixed origin, whatever address the frame was given", () => {
+    vi.stubGlobal('chrome', { runtime: { id: 'abcdefghijklmnop' } })
+    expect(frameOriginOf('chrome-extension://dynamicdynamicdy/suggestion.html')).toBe(
+      'chrome-extension://abcdefghijklmnop',
+    )
+  })
+
+  it('is the origin of the address where the extension has no id', () => {
+    vi.stubGlobal('chrome', { runtime: {} })
+    expect(frameOriginOf('chrome-extension://dynamicdynamicdy/suggestion.html')).toBe(
+      'chrome-extension://dynamicdynamicdy',
+    )
+    vi.unstubAllGlobals()
   })
 })
 

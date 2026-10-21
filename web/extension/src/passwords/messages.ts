@@ -94,11 +94,11 @@ export interface PopupState {
 // given for another.
 export interface OtherSiteQuestion {
   loginName: string
-  // requestedSite is the host of the page the window would fill into.
-  requestedSite: string
-  // origin is that page's origin (scheme, host and port).
+  // origin is the origin (scheme, host and port) of the page the window would
+  // fill into, written whole so that a different scheme or port is seen.
   origin: string
-  // savedSites are the hosts the login is saved for; none when it has no site.
+  // savedSites are the origins the login is saved for, written the same way;
+  // none when it has no site.
   savedSites: string[]
   // isPageEncrypted is false for a plain-text page that is not a local one.
   isPageEncrypted: boolean
@@ -119,7 +119,7 @@ export interface SearchAnswer {
   // their owner's key is not the one this device kept.
   ownerKeyChangedCount: number
   // ownerKeyChanges are those owners, with the safety code before and now, for
-  // the window to ask whether to trust the new key.
+  // the window to ask whether the new key matches.
   ownerKeyChanges: OwnerKeyChangeAnswer[]
 }
 
@@ -141,7 +141,7 @@ export type PopupRequest =
       confirmedOtherSiteOrigin?: string
     } & FrameTarget)
   | ({ type: 'passwords:save-pending' } & Pick<FrameTarget, 'tabId'>)
-  | { type: 'passwords:trust-owner-key'; ownerUserId: string; newPublicKey: string }
+  | { type: 'passwords:confirm-owner-key'; ownerUserId: string; newPublicKey: string }
   | { type: 'passwords:open-dashboard' }
   | { type: 'passwords:open-popup-window' }
   | { type: 'passwords:prompt-info'; promptId: string }

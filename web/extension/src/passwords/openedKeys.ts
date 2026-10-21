@@ -273,7 +273,7 @@ export async function withOpenedKeys<Result>(
 }
 
 // ---------------------------------------------------------------------------
-// Known keys (trust on first use for the owners of shared items)
+// Known keys (an owner's first key is kept on first use; a changed one is confirmed by the person)
 
 async function readPins(environment: PasswordsEnvironment, userId: string): Promise<Record<string, string>> {
   const stored = (await environment.local.get(PINS_PREFIX + userId))[PINS_PREFIX + userId]
@@ -290,13 +290,13 @@ async function pinOwnerKey(environment: PasswordsEnvironment, userId: string, ow
   await environment.local.set({ [PINS_PREFIX + userId]: { ...pins, [ownerUserId]: publicKey } })
 }
 
-// trustOwnerKey makes the key the server now shows for an owner the one this
+// confirmOwnerKey makes the key the server now shows for an owner the one this
 // device checks their shared items against, after the person compared the
-// safety codes. It records the key only if the server still shows this very
+// safety codes and said they match. It records the key only if the server still shows this very
 // key and an item of that owner opens with it (the same rule as the first key
-// seen), so a key swapped in again since the codes were shown is not trusted
+// seen), so a key swapped in again since the codes were shown is not confirmed
 // on the strength of the earlier look.
-export async function trustOwnerKey(
+export async function confirmOwnerKey(
   environment: PasswordsEnvironment,
   keys: OpenedKeys,
   ownerUserId: string,
@@ -321,7 +321,7 @@ export async function trustOwnerKey(
       return
     }
   }
-  throw new Error('None of their shared logins opened with that key, so it was not trusted.')
+  throw new Error('None of their shared logins opened with that key, so it was not confirmed.')
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +393,7 @@ export function doesItemNeedNewKey(item: PasswordItem): boolean {
 export interface OpenReport {
   ownerKeyChangedCount: number
   // ownerKeyChanges names each owner whose key changed (once per new key), so
-  // the window can show both safety codes and offer to trust the new key.
+  // the window can show both safety codes and offer to confirm the new key.
   ownerKeyChanges: OwnerKeyChangeNotice[]
 }
 
@@ -416,9 +416,9 @@ export interface OwnerKeyChangeAnswer {
   newPublicKey: string
 }
 
-async function safetyCodeOrEmpty(ownerUserId: string, publicKey: string): Promise<string> {
+async function safetyCodeOrEmpty(publicKey: string): Promise<string> {
   try {
-    return await safetyCode(ownerUserId, decodeBase64(publicKey))
+    return await safetyCode(decodeBase64(publicKey))
   } catch {
     return ''
   }
@@ -429,8 +429,8 @@ export async function describeOwnerKeyChanges(changes: OwnerKeyChangeNotice[]): 
     changes.map(async (change) => ({
       ownerUserId: change.ownerUserId,
       ownerName: change.ownerName,
-      oldSafetyCode: await safetyCodeOrEmpty(change.ownerUserId, change.oldPublicKey),
-      newSafetyCode: await safetyCodeOrEmpty(change.ownerUserId, change.newPublicKey),
+      oldSafetyCode: await safetyCodeOrEmpty(change.oldPublicKey),
+      newSafetyCode: await safetyCodeOrEmpty(change.newPublicKey),
       newPublicKey: change.newPublicKey,
     })),
   )

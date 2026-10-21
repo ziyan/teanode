@@ -133,6 +133,17 @@ export function originOf(pageUrl: string): string {
   }
 }
 
+// originOfSite is the origin a saved site stands for, written the way a page's
+// origin is (originOf): the scheme it names, or https where it names none, the
+// host as saved, and the port only where it is not the scheme's own. It is
+// empty for a site that is not an http or https address.
+export function originOfSite(site: string): string {
+  const parsed = parseSite(site)
+  if (parsed === null) return ''
+  const isDefaultPort = parsed.port === (parsed.scheme === 'https' ? 443 : 80)
+  return `${parsed.scheme}://${parsed.host}${isDefaultPort ? '' : `:${parsed.port}`}`
+}
+
 // doesHostMatch is the check an agent fill makes: the tab's address against
 // the host the server named, both read the same way.
 export function doesHostMatch(pageUrl: string, host: string): boolean {

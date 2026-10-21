@@ -204,15 +204,11 @@ describe('who may send what', () => {
 
   it('leaves a message that background.js answers to background.js', async () => {
     const { listeners } = await start()
-    const answered = vi.fn()
-    expect(
-      listeners['runtime.onMessage'](
-        { type: 'passwords:clear-scripted-origins' },
-        ownPageSender('options.html'),
-        answered,
-      ),
-    ).toBe(false)
-    expect(answered).not.toHaveBeenCalled()
+    for (const type of ['passwords:clear-scripted-origins', 'passwords:scripted-origins']) {
+      const answered = vi.fn()
+      expect(listeners['runtime.onMessage']({ type }, ownPageSender('options.html'), answered), type).toBe(false)
+      expect(answered, type).not.toHaveBeenCalled()
+    }
   })
 
   it('ignores a message that is not about Passwords', async () => {
@@ -1338,7 +1334,7 @@ describe('the changed key of the owner of shared logins', () => {
     }
   }
 
-  it('is offered with both safety codes, and trusting the new key opens the logins again', async () => {
+  it('is offered with both safety codes, and confirming the new key opens the logins again', async () => {
     const oldPair = await generatePersonKeyPair()
     const newPair = await generatePersonKeyPair()
     const context = await start({ records: [await sharedRecord(oldPair)] })
@@ -1353,15 +1349,15 @@ describe('the changed key of the owner of shared logins', () => {
       {
         ownerUserId: 'owner-b',
         ownerName: 'Bo',
-        oldSafetyCode: await safetyCode('owner-b', oldPair.publicKey),
-        newSafetyCode: await safetyCode('owner-b', newPair.publicKey),
+        oldSafetyCode: await safetyCode(oldPair.publicKey),
+        newSafetyCode: await safetyCode(newPair.publicKey),
         newPublicKey: encodeBase64(newPair.publicKey),
       },
     ])
 
-    // A page cannot trust a key; only the extension's own window can.
+    // A page cannot confirm a key; only the extension's own window can.
     const message = {
-      type: 'passwords:trust-owner-key',
+      type: 'passwords:confirm-owner-key',
       ownerUserId: 'owner-b',
       newPublicKey: encodeBase64(newPair.publicKey),
     }
@@ -1372,7 +1368,7 @@ describe('the changed key of the owner of shared logins', () => {
     expect(opened.ownerKeyChanges).toEqual([])
   })
 
-  it('does not trust a key other than the one the server shows', async () => {
+  it('does not confirm a key other than the one the server shows', async () => {
     const oldPair = await generatePersonKeyPair()
     const newPair = await generatePersonKeyPair()
     const context = await start({ records: [await sharedRecord(oldPair)] })
@@ -1381,7 +1377,7 @@ describe('the changed key of the owner of shared logins', () => {
     context.server.records = [await sharedRecord(newPair)]
     const answer = await context.send(
       {
-        type: 'passwords:trust-owner-key',
+        type: 'passwords:confirm-owner-key',
         ownerUserId: 'owner-b',
         newPublicKey: encodeBase64((await generatePersonKeyPair()).publicKey),
       },
@@ -1389,6 +1385,73 @@ describe('the changed key of the owner of shared logins', () => {
     )
     expect(answer.error).toMatch(/changed again/)
     expect((await context.send({ type: 'passwords:search', query: '' }, ownPageSender())).others).toEqual([])
+  })
+})
+
+describe('a tab the agent is working in', () => {
+  const fillMessage = { type: 'passwords:fill', itemId: EXAMPLE_ID }
+
+  async function unlockedPage() {
+    const context = await start({ records: await exampleRecords() })
+    await context.unlock()
+    const { agentActivity } = await import('../agentActivity')
+    return { ...context, agentActivity }
+  }
+
+  it('is not answered for the page: no suggestion, no secret, no generated password, nothing remembered', async () => {
+    const context = await unlockedPage()
+    const page = pageSender('https://example.com/login', { tabId: 5 })
+    // The control: the same asks are answered when the agent has not been there.
+    expect((await context.send({ type: 'passwords:suggest', role: 'currentPassword' }, page)).suggestionState).toBe(
+      'logins',
+    )
+    context.agentActivity.noteAgentCommand(5)
+    expect(await context.send({ type: 'passwords:suggest', role: 'currentPassword' }, page)).toEqual({
+      suggestionState: 'none',
+    })
+    for (const message of [
+      fillMessage,
+      { type: 'passwords:fill-code', itemId: EXAMPLE_ID },
+      { type: 'passwords:generate' },
+    ]) {
+      const answer = await context.send(message, page)
+      expect(answer.error).toMatch(/agent is working in this tab/)
+      expect(JSON.stringify(answer)).not.toContain('hunter2')
+    }
+    expect(
+      await context.send(
+        { type: 'passwords:captured', userName: 'ada', password: 'typed-plaintext', isNewPassword: false },
+        page,
+      ),
+    ).toEqual({})
+    expect(await context.send({ type: 'passwords:bar-answer', barAnswer: 'save' }, page)).toEqual({})
+    // Another tab is answered as before.
+    const other = await context.send(fillMessage, pageSender('https://example.com/login', { tabId: 6 }))
+    expect(other.password).toBe('hunter2-plaintext')
+  })
+
+  it('is answered again once the agent has been quiet for a minute', async () => {
+    const context = await unlockedPage()
+    context.agentActivity.noteAgentCommand(5, Date.now() - 61_000)
+    const answer = await context.send(fillMessage, pageSender('https://example.com/login', { tabId: 5 }))
+    expect(answer.password).toBe('hunter2-plaintext')
+  })
+
+  it('is answered while the person holds it, and refused again after the agent’s next command', async () => {
+    const context = await unlockedPage()
+    const page = pageSender('https://example.com/login', { tabId: 5 })
+    context.agentActivity.noteAgentCommand(5, Date.now() - 5000)
+    context.agentActivity.notePersonInput(5)
+    expect((await context.send(fillMessage, page)).password).toBe('hunter2-plaintext')
+    context.agentActivity.noteAgentCommand(5, Date.now() + 1)
+    expect((await context.send(fillMessage, page)).error).toMatch(/agent is working/)
+  })
+
+  it('is not told apart by the window: its own page may still fill from the list', async () => {
+    const context = await unlockedPage()
+    context.agentActivity.noteAgentCommand(5)
+    const answer = await context.send({ type: 'passwords:search', query: '', tabId: 5, frameId: 0 }, ownPageSender())
+    expect(answer.forThisSite).toHaveLength(1)
   })
 })
 
@@ -1451,9 +1514,8 @@ describe('filling from the window', () => {
         foreignActionHost: '',
         otherSite: {
           loginName: 'Other',
-          requestedSite: 'example.com',
           origin: 'https://example.com',
-          savedSites: ['other.test'],
+          savedSites: ['https://other.test'],
           isPageEncrypted: true,
         },
       })
@@ -1495,6 +1557,14 @@ describe('filling from the window', () => {
       const plain = await context.send(fillOther({ confirmedOtherSiteOrigin: 'https://example.com' }), ownPageSender())
       expect(plain.otherSite).toMatchObject({ origin: 'http://example.com', isPageEncrypted: false })
       expect(context.tabs.sendMessage).not.toHaveBeenCalled()
+    })
+
+    it('names the whole origin of the page and of the saved site, scheme and port included', async () => {
+      const context = await start({ records: await exampleRecords() })
+      await context.unlock()
+      context.scripting.executeScript.mockResolvedValue([{ frameId: 0, result: 'http://example.com:8080/sign-in' }])
+      const answer = await context.send(fillOther(), ownPageSender())
+      expect(answer.otherSite).toMatchObject({ origin: 'http://example.com:8080', savedSites: ['https://other.test'] })
     })
 
     it('asks for a one-time code as well, and refuses while locked', async () => {

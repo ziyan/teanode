@@ -7,6 +7,7 @@ import {
   isSecureContextPage,
   isWebPage,
   normalizeHost,
+  originOfSite,
 } from './hosts'
 
 describe('normalizeHost', () => {
@@ -110,6 +111,18 @@ describe('doesSiteMatchPage', () => {
   it('reads a list of sites', () => {
     expect(doSitesMatchPage(['other.test', 'example.com'], 'https://example.com/')).toBe(true)
     expect(doSitesMatchPage([], 'https://example.com/')).toBe(false)
+  })
+})
+
+describe('originOfSite', () => {
+  it('writes a saved site as an origin: its scheme, its host, and a port only where it is not the default', () => {
+    expect(originOfSite('example.test')).toBe('https://example.test')
+    expect(originOfSite('http://Example.test/path')).toBe('http://example.test')
+    expect(originOfSite('example.test:8443')).toBe('https://example.test:8443')
+    expect(originOfSite('https://example.test:443')).toBe('https://example.test')
+    expect(originOfSite('http://example.test:80')).toBe('http://example.test')
+    expect(originOfSite('javascript:alert(1)')).toBe('')
+    expect(originOfSite('')).toBe('')
   })
 })
 

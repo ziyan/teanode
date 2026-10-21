@@ -8,14 +8,14 @@
 //
 // The frame and the content script talk over a MessageChannel. Once the
 // frame has loaded, the content script posts one end of the channel to it,
-// addressed to the origin the frame's own address has (so a frame the page
-// navigated elsewhere gets nothing), and the page's window carries no other
+// addressed to the extension's own origin (so a frame the page navigated
+// elsewhere gets nothing), and the page's window carries no other
 // message of ours. A frame that does not answer through the channel within a
 // moment is closed. If a page managed to hand the frame a channel of its own
 // first, the frame would be talking to the page and not to the content
 // script, which then hears nothing, believes nothing and acts on nothing.
 
-import { FRAME_CONNECT_KIND, FRAME_MESSAGE_CHANNEL, originOfAddress } from './frameChannel'
+import { FRAME_CONNECT_KIND, FRAME_MESSAGE_CHANNEL, frameOriginOf } from './frameChannel'
 import { checkFrameShown, FrameCheck } from './frameVisibility'
 
 export interface FrameMessage {
@@ -63,10 +63,9 @@ export class HostedFrame {
     const shadow = this.host.attachShadow({ mode: 'closed' })
     this.frame = document.createElement('iframe')
     this.frame.src = chrome.runtime.getURL(options.page)
-    // The origin of the frame's own address, which is not always the one
-    // chrome.runtime.getURL('') names: a page of the extension that is only
-    // reachable at a dynamic address (use_dynamic_url) has another.
-    this.frameOrigin = originOfAddress(this.frame.src)
+    // The origin the frame's document really has: the extension's own, by its
+    // fixed id (see frameOriginOf for why the frame's address is not asked).
+    this.frameOrigin = frameOriginOf(this.frame.src)
     this.frame.title = options.title
     this.frame.setAttribute('allow', '')
     const style = document.createElement('style')

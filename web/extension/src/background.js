@@ -32,6 +32,7 @@ import './passwords/background'
 // content scripts (the part of it that runs inside web pages).
 import { restrictStorageToTrustedContexts } from './storageAccess'
 import { serverAddressProblem } from './serverAddress'
+import { agentActivity } from './agentActivity'
 import { fillLoginForAgent, fillOneTimeCodeForAgent } from './passwords/agentFill'
 // Which document each of the agent's tabs shows and which the agent filled a
 // password or code into: the server locks a filled tab until it commits a new
@@ -877,6 +878,8 @@ const BUTTONS_HELD = { left: 1, right: 2, middle: 4 }
 async function dispatchInput(message) {
   const tabId = message.tab
   if (!casting.has(tabId) || !isListed(tabId)) return
+  // The person is holding the tab: what they click is theirs to fill.
+  agentActivity.notePersonInput(tabId)
   const target = { tabId }
   const modifiers = Number(message.modifiers) || 0
   try {
@@ -1038,6 +1041,7 @@ async function act(action, args) {
       }
       const made = await chrome.tabs.create({ url: args.url, windowId, active: true })
       opened.add(made.id)
+      agentActivity.noteAgentCommand(made.id)
       await rememberOpened()
       await groupFor(windowId, made.id)
       await useTab(made.id)
@@ -1049,6 +1053,10 @@ async function act(action, args) {
     }
     if (attached.tabId === null) return { ok: false, error: 'no tab is open for you in this browser yet; open one first' }
     const tab = await chrome.tabs.get(attached.tabId)
+    // Noted before anything is done: the agent's real input here looks like
+    // the person's to the page, and Passwords does not fill a tab the agent
+    // is working in (see agentActivity.ts).
+    agentActivity.noteAgentCommand(tab.id)
     // The server checked a lock on one tab before it sent this; if the actions
     // go to another by now, it is not done there.
     if (args.expectedTab !== undefined && args.expectedTab !== null && args.expectedTab !== '' && String(args.expectedTab) !== String(tab.id)) {

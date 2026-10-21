@@ -125,7 +125,8 @@ async function connectFrame() {
   frameConnect.load()
   const [message, origin, transfer] = frameConnect.posted[0] as [Record<string, unknown>, string, MessagePort[]]
   expect(message).toEqual({ channel: FRAME_MESSAGE_CHANNEL, frameMessageKind: FRAME_CONNECT_KIND })
-  expect(origin).toBe('chrome-extension://dynamicdynamicdy')
+  // The extension's fixed origin, not the dynamic one the frame's address names.
+  expect(origin).toBe('chrome-extension://ext')
   contentEnd = transfer[0]
   contentEnd.onmessage = (event) => frameMessages.push(event.data)
   contentEnd.postMessage({ frameMessageKind: 'ready' })

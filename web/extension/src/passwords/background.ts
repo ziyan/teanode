@@ -9,9 +9,10 @@
 import { generatePassword } from '../../../src/passwords/generator'
 import { PasswordsError, PasswordsErrorCode } from '../../../src/passwords/passwordsError'
 import { LoginItem } from '../../../src/pages/passwords/passwordsProtocol'
+import { agentActivity } from '../agentActivity'
 import { CapturedLogins } from './capturedLogins'
 import { CLEAR_CLIPBOARD_ALARM, clearClipboardIfUnchanged, copySecret } from './clipboard'
-import { isSecureContextPage, isWebPage, normalizeHost, originOf } from './hosts'
+import { isSecureContextPage, isWebPage, normalizeHost, originOf, originOfSite } from './hosts'
 import {
   BarOffer,
   ContentRequest,
@@ -49,7 +50,7 @@ import {
   sortLogins,
   StoredPasskey,
   summaryOf,
-  trustOwnerKey,
+  confirmOwnerKey,
   unlockPasswords,
   PasswordsEnvironment,
   whatToDoWithCapturedLogin,
@@ -426,7 +427,29 @@ async function isOwnPasswordsPage(pageUrl: string): Promise<boolean> {
 
 const OWN_PAGE_REFUSAL = { error: 'Passwords does not fill its own page.' }
 
+// AGENT_TAB_REFUSAL is the answer to a page in a tab the agent is working in:
+// its real input looks like the person's, so what a page asks of Passwords
+// there is not answered until the agent has been quiet for a minute or the
+// person holds the tab.
+const AGENT_TAB_REFUSAL = {
+  error:
+    'The agent is working in this tab, so Passwords does not fill it. Try again in a minute, or take the tab over first.',
+}
+
 async function handleContentRequest(frame: ContentFrame, message: ContentRequest): Promise<unknown> {
+  if (
+    (message.type === 'passwords:suggest' ||
+      message.type === 'passwords:fill' ||
+      message.type === 'passwords:fill-code' ||
+      message.type === 'passwords:generate' ||
+      message.type === 'passwords:captured' ||
+      (message.type === 'passwords:bar-answer' && message.barAnswer === 'save')) &&
+    (await agentActivity.isAgentDriving(frame.tabId))
+  ) {
+    if (message.type === 'passwords:suggest') return { suggestionState: 'none' }
+    if (message.type === 'passwords:captured' || message.type === 'passwords:bar-answer') return {}
+    return AGENT_TAB_REFUSAL
+  }
   if (
     (message.type === 'passwords:suggest' ||
       message.type === 'passwords:fill' ||
@@ -977,9 +1000,8 @@ async function fillInTab(message: Extract<PopupRequest, { type: 'passwords:fill-
     if (!loginsForPage([login], url).length && message.confirmedOtherSiteOrigin !== pageOrigin) {
       const question: OtherSiteQuestion = {
         loginName: login.fields.name || login.fields.userName,
-        requestedSite: normalizeHost(url),
         origin: pageOrigin,
-        savedSites: login.fields.sites.map((site) => normalizeHost(site)).filter((host) => host !== ''),
+        savedSites: login.fields.sites.map((site) => originOfSite(site)).filter((origin) => origin !== ''),
         isPageEncrypted: isSecureContextPage(url),
       }
       return { question }
@@ -1051,11 +1073,11 @@ async function handlePageRequest(message: PopupRequest): Promise<unknown> {
       return fillInTab(message)
     case 'passwords:save-pending':
       return saveCaptured(message.tabId)
-    case 'passwords:trust-owner-key':
+    case 'passwords:confirm-owner-key':
       // The person compared the safety codes in the window and pressed the
       // button. Every list built from the old key is dropped with it.
       await withOpenedKeys(environment, (keys) =>
-        trustOwnerKey(environment, keys, message.ownerUserId, message.newPublicKey),
+        confirmOwnerKey(environment, keys, message.ownerUserId, message.newPublicKey),
       )
       suggestionCache.clear()
       return { isDone: true }
@@ -1095,7 +1117,7 @@ const CONTENT_TYPES = new Set([
 // (background.js) answers. This listener leaves them alone: the first answer
 // to a message is the one the sender gets, so answering "Unknown request." here
 // would hide the real one.
-const ANSWERED_ELSEWHERE = new Set(['passwords:clear-scripted-origins'])
+const ANSWERED_ELSEWHERE = new Set(['passwords:clear-scripted-origins', 'passwords:scripted-origins'])
 
 chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (answer: unknown) => void) => {
   if (!message || typeof message.type !== 'string' || !message.type.startsWith('passwords:')) return false
@@ -1117,6 +1139,7 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
 // answer later; a tab that is closed or navigated away ends its question.
 chrome.tabs.onRemoved.addListener((tabId: number) => {
   capturedLogins.forget(tabId)
+  agentActivity.forget(tabId)
   passkeyPausedUntilMilliseconds.delete(tabId)
   for (const key of cancelledAtMilliseconds.keys()) {
     if (key.startsWith(`${tabId}:`)) cancelledAtMilliseconds.delete(key)

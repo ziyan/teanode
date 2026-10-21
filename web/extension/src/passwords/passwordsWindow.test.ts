@@ -99,9 +99,8 @@ describe('who owns a login in the list', () => {
 describe('filling a login that is not saved for the page', () => {
   const question = {
     loginName: 'Elsewhere',
-    requestedSite: 'example.com',
     origin: 'https://example.com',
-    savedSites: ['other.test'],
+    savedSites: ['https://other.test:8443'],
     isPageEncrypted: true,
   }
 
@@ -114,8 +113,8 @@ describe('filling a login that is not saved for the page', () => {
     buttonIn(rowFor('Elsewhere'), 'Fill').click()
     await settle()
     const card = document.querySelector('.card[role="alert"]') as HTMLElement
-    expect(card.textContent).toContain('Fill Elsewhere into example.com?')
-    expect(card.textContent).toContain('It is saved for other.test.')
+    expect(card.textContent).toContain('Fill Elsewhere into https://example.com?')
+    expect(card.textContent).toContain('It is saved for https://other.test:8443.')
     expect(document.querySelector('.status')?.textContent).not.toContain('Filled')
     expect(sent.filter((message) => message.type === 'passwords:fill-in-tab')).toHaveLength(1)
     expect(sent[sent.length - 1]?.confirmedOtherSiteOrigin).toBeUndefined()
@@ -162,13 +161,13 @@ describe('filling a login that is not saved for the page', () => {
     answers['passwords:fill-in-tab'] = () => ({
       filledCount: 0,
       foreignActionHost: '',
-      otherSite: { ...question, requestedSite: 'pay.example.test', origin: 'https://pay.example.test' },
+      otherSite: { ...question, origin: 'https://pay.example.test' },
     })
     await load()
     buttonIn(rowFor('Elsewhere'), 'Fill').click()
     await settle()
     const card = document.querySelector('.card[role="alert"]') as HTMLElement
-    expect(card.textContent).toContain('Fill Elsewhere into pay.example.test?')
+    expect(card.textContent).toContain('Fill Elsewhere into https://pay.example.test?')
     expect(card.textContent).toContain('The sign-in form is in a frame from pay.example.test.')
     expect(card.textContent).toContain('The page around it is shop.example.test.')
   })
@@ -210,38 +209,39 @@ describe("a shared login's owner whose key changed", () => {
     })
   })
 
-  it('shows both safety codes, in the words of the dashboard, and trusts nothing until the button', async () => {
+  it('shows both safety codes, in the words of the dashboard, and confirms nothing until the button', async () => {
     await load()
     const card = document.querySelector('.card[role="alert"]') as HTMLElement
     expect(card.textContent).toContain("Grace's key changed")
     expect(card.textContent).toContain('Safety code before 0123 4567 8901 2345 6789 0123 4567 8901')
     expect(card.textContent).toContain('Safety code now 1111 2222 3333 4444 5555 6666 7777 8888')
     expect(card.textContent).toContain('Ask Grace to open Passwords settings on their own device')
-    expect(card.textContent).toContain('Trust the new key only if it matches')
-    expect(sent.some((message) => message.type === 'passwords:trust-owner-key')).toBe(false)
+    expect(card.textContent).toContain('Confirm only if it matches')
+    expect(card.textContent).not.toMatch(/trust/i)
+    expect(sent.some((message) => message.type === 'passwords:confirm-owner-key')).toBe(false)
   })
 
-  it('trusts the very key it showed and reads the list again', async () => {
-    answers['passwords:trust-owner-key'] = () => ({ isDone: true })
+  it('confirms the very key it showed and reads the list again', async () => {
+    answers['passwords:confirm-owner-key'] = () => ({ isDone: true })
     await load()
     const searchesBefore = sent.filter((message) => message.type === 'passwords:search').length
-    buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'Trust the new key').click()
+    buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'The new safety code matches').click()
     await settle()
-    expect(sent.find((message) => message.type === 'passwords:trust-owner-key')).toEqual({
-      type: 'passwords:trust-owner-key',
+    expect(sent.find((message) => message.type === 'passwords:confirm-owner-key')).toEqual({
+      type: 'passwords:confirm-owner-key',
       ownerUserId: 'owner-b',
       newPublicKey: 'new-key',
     })
     expect(sent.filter((message) => message.type === 'passwords:search').length).toBe(searchesBefore + 1)
   })
 
-  it('says so when the key changed again, and does not trust it', async () => {
-    answers['passwords:trust-owner-key'] = () => ({ error: 'Their key changed again.' })
+  it('says so when the key changed again, and does not confirm it', async () => {
+    answers['passwords:confirm-owner-key'] = () => ({ error: 'Their key changed again.' })
     await load()
-    buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'Trust the new key').click()
+    buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'The new safety code matches').click()
     await settle()
     expect(document.querySelector('.status')?.textContent).toBe('Their key changed again.')
-    const button = buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'Trust the new key')
+    const button = buttonIn(document.querySelector('.card[role="alert"]') as HTMLElement, 'The new safety code matches')
     expect(button.disabled).toBe(false)
   })
 

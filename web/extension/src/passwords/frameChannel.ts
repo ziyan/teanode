@@ -15,3 +15,18 @@ export function originOfAddress(address: string): string {
   const url = new URL(address)
   return url.origin === 'null' ? `${url.protocol}//${url.host}` : url.origin
 }
+
+// frameOriginOf is the origin the document of an extension page's frame has,
+// which is where the connect message is addressed: the extension's own origin,
+// by its fixed id. The frame's address is not asked, because with
+// use_dynamic_url in the manifest chrome.runtime.getURL names a dynamic id
+// that the document inside is not at, and a message addressed to the dynamic
+// origin is dropped without a word. (The manifest does not use it: in Chrome
+// 154 the debugger is detached from a tab, with "target_closed", the moment
+// such a frame opens in it, which ends a take-over's stream and the agent's
+// own debugging session.) Where there is no id, the origin of the address is
+// the best there is.
+export function frameOriginOf(address: string): string {
+  const id = typeof chrome === 'undefined' ? '' : chrome.runtime?.id
+  return typeof id === 'string' && id !== '' ? `chrome-extension://${id}` : originOfAddress(address)
+}

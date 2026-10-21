@@ -197,25 +197,25 @@ async function showLogins(popupState: PopupState) {
 
 // ownerKeyChangeCard is the comparison the dashboard offers when the owner of
 // shared logins has a key other than the one this browser kept: both safety
-// codes, and a button that trusts the new key after the person compared. The
-// owner's logins stay closed until then.
+// codes, and a button that confirms the new key after the person compared
+// them, in the words of the dashboard. The owner's logins stay closed until then.
 function ownerKeyChangeCard(change: OwnerKeyChangeAnswer, reload: () => Promise<void>): HTMLElement {
   const name = change.ownerName || 'The person who shared logins with you'
-  const trust = element('button', { type: 'button', className: 'primary' }, 'Trust the new key')
-  trust.addEventListener('click', () => {
-    trust.disabled = true
+  const confirm = element('button', { type: 'button', className: 'primary' }, 'The new safety code matches')
+  confirm.addEventListener('click', () => {
+    confirm.disabled = true
     void guarded(async () => {
       try {
         await ask({
-          type: 'passwords:trust-owner-key',
+          type: 'passwords:confirm-owner-key',
           ownerUserId: change.ownerUserId,
           newPublicKey: change.newPublicKey,
         })
       } catch (error) {
-        trust.disabled = false
+        confirm.disabled = false
         throw error
       }
-      say('The new key is trusted.', 'good')
+      say('You confirmed this key.', 'good')
       await reload()
     })
   })
@@ -226,11 +226,16 @@ function ownerKeyChangeCard(change: OwnerKeyChangeAnswer, reload: () => Promise<
     element(
       'p',
       { className: 'muted' },
-      `${name} shared logins with you, and their key is not the one this browser saw before. It changes when they set Passwords up again, but it could also be somebody else. Ask ${name} to open Passwords settings on their own device and read you their safety code. Trust the new key only if it matches. Their logins stay closed until you do.`,
+      `${name} shared logins with you, and their key is not the one you saw before. It changes when they set Passwords up again, but it could also be somebody else. Their logins stay closed until you confirm the new key.`,
+    ),
+    element(
+      'p',
+      { className: 'muted' },
+      `Ask ${name} to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.`,
     ),
     element('div', {}, element('span', { className: 'muted' }, 'Safety code before '), codeText(change.oldSafetyCode)),
     element('div', {}, element('span', { className: 'muted' }, 'Safety code now '), codeText(change.newSafetyCode)),
-    element('div', { className: 'actions' }, trust),
+    element('div', { className: 'actions' }, confirm),
   )
 }
 
@@ -388,7 +393,7 @@ function askAboutOtherSite(login: LoginSummary, fillPart: 'login' | 'oneTimeCode
   const card = element(
     'div',
     { className: 'card', role: 'alert' },
-    element('strong', {}, `Fill ${question.loginName} into ${question.requestedSite}?`),
+    element('strong', {}, `Fill ${question.loginName} into ${question.origin}?`),
     element('div', { className: 'muted' }, details.join(' ')),
     element('div', { className: 'actions' }, fill, cancel),
   )

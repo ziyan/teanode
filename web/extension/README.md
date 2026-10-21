@@ -96,7 +96,7 @@ on the dashboard, so it cannot set up, share or hand an item to the agent).
 - **Frames and messages.** The suggestion and the save bar are pages of the
   extension in a frame. The content script hands each one end of a
   `MessageChannel` once the frame has loaded (the only message that crosses the
-  page's window, addressed to the frame's own origin), and both talk through it
+  page's window, addressed to the extension's own origin), and both talk through it
   from then on, so nothing on the page can hear or forge them. A frame that does
   not answer within three seconds is closed.
 - **Saving.** After a sign-in form is sent with a password that is new, or
