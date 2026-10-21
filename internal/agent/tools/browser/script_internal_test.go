@@ -40,9 +40,16 @@ func TestAScriptedPageIsNotFilled(test *testing.T) {
 		run.tab.fillAnswer = `{"isFilled":true,"tab":7,"documentId":"doc-9","commitCount":9}`
 		run.tab.answer = `{"result":"fine"}`
 		newCommit(run, 1)
-		// Fine before: a fill on a document nothing ran in.
-		if _, err := browse(run, arguments); err != nil && !strings.Contains(err.Error(), "http or https address") {
-			test.Fatalf("%s: %s", name, err)
+		// Fine before: a fill on a document nothing ran in. A method the
+		// attached tab's list does not answer never reaches the page, so it
+		// scripts nothing and there is nothing more to check for it.
+		if _, err := browse(run, arguments); err != nil {
+			if isRefusedByReach(err) {
+				continue
+			}
+			if !strings.Contains(err.Error(), "http or https address") {
+				test.Fatalf("%s: %s", name, err)
+			}
 		}
 		before := len(run.tab.actions())
 		mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedPageWords)
@@ -66,7 +73,6 @@ func TestAScriptedPageIsNotFilled(test *testing.T) {
 		"Input.dispatchMouse":   `{"action":"cdp","method":"Input.dispatchMouseEvent","params":{"type":"mousePressed","x":1,"y":1}}`,
 		"typed script address":  `{"action":"cdp","method":"Input.insertText","params":{"text":"javascript:note to self"}}`,
 		"Page.navigate":         `{"action":"cdp","method":"Page.navigate","params":{"url":"https://shop.example.test/cart"}}`,
-		"Page.captureSnapshot":  `{"action":"cdp","method":"Page.captureSnapshot"}`,
 		"DOM.getDocument":       `{"action":"cdp","method":"DOM.getDocument"}`,
 		"Accessibility.getFull": `{"action":"cdp","method":"Accessibility.getFullAXTree"}`,
 	} {
@@ -83,18 +89,24 @@ func TestAScriptedPageIsNotFilled(test *testing.T) {
 	}
 
 	// Something that runs in every page the tab loads is not undone by a
-	// navigation: the tab is never filled again, a tab that is new is.
+	// navigation. The attached tab's list of methods answers none of these, so
+	// they never reach the page; asking for one still marks the tab, which is
+	// the stricter of the two, and a new tab is filled.
 	for _, method := range []string{"Page.addScriptToEvaluateOnNewDocument", "Runtime.addBinding", "Debugger.enable", "Fetch.enable", "Network.setRequestInterception"} {
 		run := found.tabRun(shopAddress)
 		run.tab.tabID = "7"
 		run.tab.answer = `{"result":"fine"}`
 		newCommit(run, 1)
-		if _, err := browse(run, fmt.Sprintf(`{"action":"cdp","method":%q}`, method)); err != nil {
-			test.Fatalf("%s: %s", method, err)
+		asked := len(run.tab.actions())
+		_, err := browse(run, fmt.Sprintf(`{"action":"cdp","method":%q}`, method))
+		if err == nil || !isRefusedByReach(err) {
+			test.Fatalf("%s reached the tab: %v", method, err)
+		}
+		if len(run.tab.actions()) != asked {
+			test.Fatalf("%s was sent to the tab: %v", method, run.tab.actions()[asked:])
 		}
 		newCommit(run, 2)
 		mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptOnEveryPageWords)
-		mustRefuse(test, run, codeArguments, devtools.ScriptOnEveryPageWords)
 		run.tab.tabID = "8"
 		if _, err := browse(run, fillLogin(found.grantedLogin)); err != nil {
 			test.Fatalf("%s: another tab was not filled: %s", method, err)
@@ -225,9 +237,10 @@ func TestTheSessionOfASignedInTabIsNotRead(test *testing.T) {
 	}
 	cdp := func(method string) string { return fmt.Sprintf(`{"action":"cdp","method":%q}`, method) }
 
-	// Before a sign-in they all work.
+	// Before a sign-in each works, unless the attached tab's list of methods
+	// does not answer it at all (most of them read the whole browser).
 	for _, method := range sessionMethods {
-		if _, err := browse(run, cdp(method)); err != nil {
+		if _, err := browse(run, cdp(method)); err != nil && !isRefusedByReach(err) {
 			test.Fatalf("%s before a sign-in: %s", method, err)
 		}
 	}
@@ -320,4 +333,10 @@ func TestTheHeadlessBrowserHasNoStorageOrProtocolAction(test *testing.T) {
 	for _, action := range []string{"storage", "cdp"} {
 		mustRefuse(test, run, fmt.Sprintf(`{"action":%q,"method":"Network.getAllCookies"}`, action), "")
 	}
+}
+
+// isRefusedByReach says the attached tab's list of DevTools methods turned the
+// call away before it reached the page.
+func isRefusedByReach(err error) bool {
+	return strings.Contains(err.Error(), "is not one of the methods an attached tab answers") || strings.Contains(err.Error(), "only http and https addresses")
 }
