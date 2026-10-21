@@ -328,6 +328,7 @@ struct MainView: View {
         // menu was pinned, rather than a bar of tabs along the top.
         .defaultAdaptableTabBarPlacement(.sidebar)
         .tabBarMinimizeBehavior(.onScrollDown)
+        .modifier(PhotoScaleAccessory(isShown: !isWide && app.isPhotoScaleOffered, scale: Bindable(app).photoScale))
         .environment(\.symbolVariants, .none)
     }
 
