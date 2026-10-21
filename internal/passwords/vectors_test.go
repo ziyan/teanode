@@ -81,7 +81,14 @@ type sealedVector struct {
 type personKeyVector struct {
 	PrivateKey hexBytes `json:"privateKey"`
 	PublicKey  hexBytes `json:"publicKey"`
-	SafetyCode string   `json:"safetyCode"`
+	// UserID is the user id the safety code is bound to.
+	UserID     string `json:"userId"`
+	SafetyCode string `json:"safetyCode"`
+	// TypedSafetyCodes are other spellings of the same code that every
+	// implementation reads back to SafetyCode: no spaces, extra white space.
+	TypedSafetyCodes []string `json:"typedSafetyCodes"`
+	// InvalidSafetyCodes are texts that every implementation refuses.
+	InvalidSafetyCodes []string `json:"invalidSafetyCodes"`
 }
 
 type shareVector struct {
@@ -163,6 +170,8 @@ const (
 	vectorItemID      = "00000000-0000-4000-8000-000000000001"
 	vectorRecipientID = "00000000-0000-4000-8000-000000000002"
 	vectorOwnerID     = "00000000-0000-4000-8000-000000000003"
+	vectorPersonID    = "00000000-0000-4000-8000-000000000004"
+	vectorCircleID    = "00000000-0000-4000-8000-000000000005"
 )
 
 // buildVectors computes the file from fixed inputs. Everything in it is the
@@ -216,6 +225,12 @@ func buildVectors(test *testing.T) *vectors {
 		OneTimeCodeURI: "otpauth://totp/Example:ada@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example",
 		Notes:          "Invented for the test vectors.",
 		Folder:         "web",
+		// The agent may use this login, and it is shared with a person and a
+		// circle: the record every implementation keeps through an edit.
+		Access: &PasswordAccess{
+			IsUsableByAgent: true,
+			Grantees:        []PasswordGrantee{{UserID: vectorRecipientID}, {CircleID: vectorCircleID}},
+		},
 	})
 	if err != nil {
 		test.Fatal(err)
@@ -251,10 +266,24 @@ func buildVectors(test *testing.T) *vectors {
 	if err != nil {
 		test.Fatal(err)
 	}
+	personSafetyCode := personKeyPair.SafetyCode(vectorPersonID)
 	built.PersonKey = personKeyVector{
 		PrivateKey: personKeyPair.PrivateKey(),
 		PublicKey:  personKeyPair.PublicKey(),
-		SafetyCode: personKeyPair.SafetyCode(),
+		UserID:     vectorPersonID,
+		SafetyCode: personSafetyCode,
+		TypedSafetyCodes: []string{
+			strings.ReplaceAll(personSafetyCode, " ", ""),
+			"  " + personSafetyCode + "\n",
+			personSafetyCode[:9] + personSafetyCode[10:],
+		},
+		InvalidSafetyCodes: []string{
+			"",
+			personSafetyCode[:len(personSafetyCode)-5],
+			personSafetyCode + " 1234",
+			strings.ReplaceAll(personSafetyCode, " ", "-"),
+			personSafetyCode[:len(personSafetyCode)-1] + "x",
+		},
 	}
 
 	sender, err := KeyPairFromPrivateKey(sequentialBytes(0x70, 32))
@@ -505,6 +534,21 @@ func TestVectors(test *testing.T) {
 	for _, text := range stored.RecoveryKeyInvalid {
 		if _, err := ParseRecoveryKey(text); !errors.Is(err, ErrInvalidRecoveryKey) {
 			test.Errorf("the recovery key text %q was not refused: %v", text, err)
+		}
+	}
+
+	// The safety code is bound to the user id, and a typed code reads back to it.
+	if code := SafetyCode(stored.PersonKey.UserID, stored.PersonKey.PublicKey); code != stored.PersonKey.SafetyCode {
+		test.Errorf("safety code = %q, want %q", code, stored.PersonKey.SafetyCode)
+	}
+	for _, text := range append([]string{stored.PersonKey.SafetyCode}, stored.PersonKey.TypedSafetyCodes...) {
+		if code, err := NormalizeSafetyCode(text); err != nil || code != stored.PersonKey.SafetyCode {
+			test.Errorf("the typed safety code %q reads as %q: %v", text, code, err)
+		}
+	}
+	for _, text := range stored.PersonKey.InvalidSafetyCodes {
+		if _, err := NormalizeSafetyCode(text); err == nil {
+			test.Errorf("the typed safety code %q was not refused", text)
 		}
 	}
 

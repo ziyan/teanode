@@ -35,6 +35,31 @@ function hasControlCharacter(text: string): boolean {
   return false
 }
 
+// withoutTrailingEquals drops the "=" padding at the end of a secret. A loop
+// from the end, because a pattern such as /=+$/ tries every start in a long
+// run of "=" and takes time that grows with the square of the run in some
+// engines.
+function withoutTrailingEquals(text: string): string {
+  let end = text.length
+  while (end > 0 && text.charCodeAt(end - 1) === 0x3d) end--
+  return text.slice(0, end)
+}
+
+function isAsciiWhiteSpace(code: number): boolean {
+  // Space, tab, line feed, vertical tab, form feed and carriage return.
+  return code === 0x20 || (code >= 0x09 && code <= 0x0d)
+}
+
+// trimAsciiWhiteSpace drops ASCII white space from both ends, by loops for the
+// same reason as withoutTrailingEquals.
+function trimAsciiWhiteSpace(text: string): string {
+  let start = 0
+  let end = text.length
+  while (start < end && isAsciiWhiteSpace(text.charCodeAt(start))) start++
+  while (end > start && isAsciiWhiteSpace(text.charCodeAt(end - 1))) end--
+  return text.slice(start, end)
+}
+
 // parseOneTimeCodeUri reads otpauth://totp/<label>?secret=...; counter based
 // codes (otpauth://hotp) are refused, as no site this is for uses them.
 //
@@ -52,7 +77,7 @@ export function parseOneTimeCodeUri(uri: string): OneTimeCodeSettings {
   // is refused: the address parser would drop a tab or a line break wherever
   // it is, which would let one hide inside a secret. A malformed percent
   // escape is refused, as Go's address parser does.
-  const text = uri.replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, '')
+  const text = trimAsciiWhiteSpace(uri)
   if (hasControlCharacter(text) || /%(?![0-9A-Fa-f]{2})/.test(text)) {
     throw new PasswordsCryptoError('The one-time code address is not a web address')
   }
@@ -71,7 +96,7 @@ export function parseOneTimeCodeUri(uri: string): OneTimeCodeSettings {
   // URLSearchParams keeps a semicolon as text; the Go reading refuses it.
   if (address.search.includes(';')) throw new PasswordsCryptoError('The one-time code address has a malformed query')
 
-  const secretText = (address.searchParams.get('secret') ?? '').replace(/[ -]/g, '').replace(/=+$/, '')
+  const secretText = withoutTrailingEquals((address.searchParams.get('secret') ?? '').replace(/[ -]/g, ''))
   if (!secretText) throw new PasswordsCryptoError('The one-time code address has no secret')
   if (!/^[A-Za-z2-7]+$/.test(secretText)) throw new PasswordsCryptoError('The one-time code secret is not base32')
   const secret = decodeBase32(secretText)

@@ -35,6 +35,9 @@ type LoginFields struct {
 	Notes          string         `json:"notes"`
 	Passkeys       []LoginPasskey `json:"passkeys"`
 	Folder         string         `json:"folder"`
+	// Access is who may have this item and whether the agent may use it. Nil
+	// is left out of the JSON and means nobody and not the agent.
+	Access *PasswordAccess `json:"access,omitempty"`
 }
 
 // LoginPasskey is a passkey kept inside a login. The byte values are standard
@@ -77,6 +80,9 @@ type CardFields struct {
 	Brand          string `json:"brand"`
 	Notes          string `json:"notes"`
 	Folder         string `json:"folder"`
+	// Access is who may have this card. The agent never uses a card, whatever
+	// the record says.
+	Access *PasswordAccess `json:"access,omitempty"`
 }
 
 // NoteFields is what a note holds.
@@ -84,4 +90,6 @@ type NoteFields struct {
 	Name   string `json:"name"`
 	Text   string `json:"text"`
 	Folder string `json:"folder"`
+	// Access is who may have this note and whether the agent may use it.
+	Access *PasswordAccess `json:"access,omitempty"`
 }

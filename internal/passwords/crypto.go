@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -502,23 +503,66 @@ func (self *KeyPair) PublicKey() []byte {
 	return self.privateKey.PublicKey().Bytes()
 }
 
-// SafetyCode is the short code of this key pair's public key (see SafetyCode).
-func (self *KeyPair) SafetyCode() string {
-	return SafetyCode(self.PublicKey())
+// SafetyCode is the short code of this key pair's public key for a person (see
+// SafetyCode).
+func (self *KeyPair) SafetyCode(userId string) string {
+	return SafetyCode(userId, self.PublicKey())
 }
 
-// SafetyCode is five groups of four digits made from a public key, which two
-// people can read out to each other to be sure a share goes to the key they
-// think it does. The first ten bytes of the SHA-256 of the 65 public key bytes
-// are read as five big-endian 16 bit numbers, each taken modulo 10000.
-func SafetyCode(publicKey []byte) string {
-	hash := sha256.Sum256(publicKey)
-	groups := make([]string, 0, 5)
-	for index := 0; index < 5; index++ {
+// safetyCodeLabel starts the bytes a safety code is made from, so the hash is
+// used for nothing else and a change of the recipe changes every code.
+const safetyCodeLabel = "teanode passwords safety code v2"
+
+// safetyCodeGroupCount is how many groups of four digits a safety code has.
+const safetyCodeGroupCount = 8
+
+// SafetyCode is eight groups of four digits made from a person's user id and
+// public key, which two people can read out to each other to be sure a share
+// goes to the key they think it does. It is the SHA-256 of the label, a zero
+// byte, the user id in UTF-8, a zero byte and the 65 public key bytes. The
+// first 16 bytes of the hash are read as eight big-endian 16 bit numbers, each
+// taken modulo 10000. That is about 106 bits, and binding the user id means a
+// search for a key with a wanted code only works for one person.
+func SafetyCode(userId string, publicKey []byte) string {
+	input := make([]byte, 0, len(safetyCodeLabel)+len(userId)+len(publicKey)+2)
+	input = append(input, safetyCodeLabel...)
+	input = append(input, 0)
+	input = append(input, userId...)
+	input = append(input, 0)
+	input = append(input, publicKey...)
+	hash := sha256.Sum256(input)
+	groups := make([]string, 0, safetyCodeGroupCount)
+	for index := 0; index < safetyCodeGroupCount; index++ {
 		number := binary.BigEndian.Uint16(hash[index*2:])
 		groups = append(groups, fmt.Sprintf("%04d", number%10000))
 	}
 	return strings.Join(groups, " ")
+}
+
+// NormalizeSafetyCode reads a safety code a person typed or pasted: 32 digits,
+// with spaces or other white space anywhere or nowhere. It returns the code in
+// the form SafetyCode writes, eight groups of four digits, so two codes are
+// compared as text. Anything else is an error.
+func NormalizeSafetyCode(text string) (string, error) {
+	digits := make([]byte, 0, safetyCodeGroupCount*4)
+	for _, character := range text {
+		switch {
+		case unicode.IsSpace(character):
+			continue
+		case character >= '0' && character <= '9':
+			digits = append(digits, byte(character))
+		default:
+			return "", errors.New("passwords: a safety code is 32 digits")
+		}
+	}
+	if len(digits) != safetyCodeGroupCount*4 {
+		return "", errors.New("passwords: a safety code is 32 digits")
+	}
+	groups := make([]string, 0, safetyCodeGroupCount)
+	for index := 0; index < len(digits); index += 4 {
+		groups = append(groups, string(digits[index:index+4]))
+	}
+	return strings.Join(groups, " "), nil
 }
 
 // SealedForKeyPair is a value sealed so that only the holder of a recipient's

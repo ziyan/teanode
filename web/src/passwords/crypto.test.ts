@@ -32,6 +32,7 @@ import {
   parseRecoveryKey,
   parseSealedForKeyPair,
   parseSealedValue,
+  normalizeSafetyCode,
   safetyCode,
   sealAccountKey,
   sealForKeyPair,
@@ -249,18 +250,39 @@ describe('person key pair', () => {
     expectBytes(await deriveSharedSecret(second, first.publicKey), expected)
   })
 
-  it('writes a safety code as five groups of four digits from the SHA-256 of the key', async () => {
+  it('writes a safety code as eight groups of four digits from the SHA-256 of the label, user id and key', async () => {
     const keyPair = await generatePersonKeyPair()
-    const digest = createHash('sha256').update(keyPair.publicKey).digest()
-    const expected = [0, 1, 2, 3, 4]
+    const digest = createHash('sha256')
+      .update(Buffer.concat([Buffer.from('teanode passwords safety code v2\0user-ada\0'), keyPair.publicKey]))
+      .digest()
+    const expected = [0, 1, 2, 3, 4, 5, 6, 7]
       .map((index) => String(digest.readUInt16BE(index * 2) % 10000).padStart(4, '0'))
       .join(' ')
-    expect(await safetyCode(keyPair.publicKey)).toBe(expected)
-    expect(expected).toMatch(/^\d{4}( \d{4}){4}$/)
+    expect(await safetyCode('user-ada', keyPair.publicKey)).toBe(expected)
+    expect(expected).toMatch(/^\d{4}( \d{4}){7}$/)
+    expect(await safetyCode('user-ben', keyPair.publicKey)).not.toBe(expected)
+  })
+
+  it('reads a typed safety code with or without spaces and refuses anything else', () => {
+    const code = '0123 4567 8901 2345 6789 0123 4567 8901'
+    expect(normalizeSafetyCode(code)).toBe(code)
+    expect(normalizeSafetyCode(code.replace(/ /g, ''))).toBe(code)
+    expect(normalizeSafetyCode(`  ${code}\n`)).toBe(code)
+    expect(normalizeSafetyCode('0123\u00a04567 89012345 67890123 4567 8901')).toBe(code)
+    for (const text of [
+      '',
+      '0123 4567 8901 2345 6789',
+      `${code} 2`,
+      code.replace(/ /g, '-'),
+      `${code.slice(0, -1)}x`,
+      `\u0663${code.slice(1)}`,
+    ]) {
+      expect(normalizeSafetyCode(text), JSON.stringify(text)).toBeNull()
+    }
   })
 
   it('refuses a public key that is not an uncompressed point', async () => {
-    await expect(safetyCode(new Uint8Array(33))).rejects.toThrow(/65 byte/)
+    await expect(safetyCode('user-ada', new Uint8Array(33))).rejects.toThrow(/65 byte/)
   })
 })
 

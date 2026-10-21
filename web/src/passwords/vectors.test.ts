@@ -22,12 +22,13 @@ import {
   openForKeyPair,
   openItemFields,
   openValue,
+  normalizeSafetyCode,
   parseRecoveryKey,
   safetyCode,
   type SealedForKeyPair,
   type SealedValue,
 } from './crypto'
-import type { ItemKind } from './fields'
+import { type ItemKind, parseItemFields } from './fields'
 import { oneTimeCode, parseOneTimeCodeUri } from './oneTimeCode'
 import {
   assertionAuthenticatorData,
@@ -67,7 +68,14 @@ interface Vectors {
     plaintext: string
     sealed: SealedValue
   }>
-  personKey: { privateKey: string; publicKey: string; safetyCode: string }
+  personKey: {
+    privateKey: string
+    publicKey: string
+    userId: string
+    safetyCode: string
+    typedSafetyCodes: string[]
+    invalidSafetyCodes: string[]
+  }
   share: {
     ownerId: string
     recipientId: string
@@ -183,10 +191,31 @@ describe.skipIf(!hasVectors && !isRequired)('the shared test vectors', () => {
     expect(JSON.parse(new TextDecoder().decode(bytesOf(vector!.plaintext)))).toEqual(fields)
   })
 
+  it('reads the access record of the item fields and keeps it through an edit', async () => {
+    const vector = vectors.sealed.find((candidate) => candidate.associatedData.startsWith('item:'))!
+    const [, itemId, itemKind] = vector.associatedData.split(':')
+    const opened = await openItemFields(bytesOf(vector.key), vector.sealed, itemId, itemKind as ItemKind)
+    const parsed = parseItemFields(itemKind as ItemKind, opened)
+    expect(parsed?.access).toEqual({
+      isUsableByAgent: true,
+      grantees: [{ userId: vectors.share.recipientId }, { circleId: expect.any(String) }],
+    })
+    const edited = parseItemFields(itemKind as ItemKind, JSON.parse(JSON.stringify({ ...parsed, name: 'edited' })))
+    expect(edited?.access).toEqual(parsed?.access)
+  })
+
   it('has a person key pair whose scalar, point and safety code agree', async () => {
     const vector = vectors.personKey
     const keyPair = { privateKey: bytesOf(vector.privateKey), publicKey: bytesOf(vector.publicKey) }
-    expect(await safetyCode(keyPair.publicKey)).toBe(vector.safetyCode)
+    expect(await safetyCode(vector.userId, keyPair.publicKey)).toBe(vector.safetyCode)
+    expect(await safetyCode(`${vector.userId}x`, keyPair.publicKey)).not.toBe(vector.safetyCode)
+    for (const text of [vector.safetyCode, ...vector.typedSafetyCodes]) {
+      expect(normalizeSafetyCode(text), JSON.stringify(text)).toBe(vector.safetyCode)
+    }
+    expect(vector.invalidSafetyCodes.length).toBeGreaterThan(0)
+    for (const text of vector.invalidSafetyCodes) {
+      expect(normalizeSafetyCode(text), JSON.stringify(text)).toBeNull()
+    }
     // Two key pairs agree on a shared secret only if each point belongs to its scalar.
     const other = await generatePersonKeyPair()
     expectBytes(await deriveSharedSecret(keyPair, other.publicKey), await deriveSharedSecret(other, keyPair.publicKey))

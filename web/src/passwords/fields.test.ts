@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  accessWithAgentUse,
+  accessWithGrantees,
   emptyCardFields,
   emptyLoginFields,
   emptyNoteFields,
   fillMissingFields,
+  isReachedByAccess,
   ITEM_KINDS,
+  type ItemAccess,
   parseItemFields,
 } from './fields'
 
@@ -113,5 +117,76 @@ describe('item fields', () => {
       expect(parseItemFields('card', { ...emptyCardFields(), number: 4111 })).toBeNull()
       expect(parseItemFields('note', { ...emptyNoteFields(), text: ['a'] })).toBeNull()
     })
+  })
+})
+
+describe('the access record', () => {
+  const access: ItemAccess = { isUsableByAgent: true, grantees: [{ userId: 'user-ben' }, { circleId: 'circle-1' }] }
+
+  it('is left out when there is none, and kept through parsing and an edit', () => {
+    expect('access' in parseItemFields('note', { name: 'x' })!).toBe(false)
+    expect('access' in parseItemFields('note', { name: 'x', access: null })!).toBe(false)
+    for (const itemKind of ITEM_KINDS) {
+      const parsed = parseItemFields(itemKind, { name: 'x', access })!
+      expect(parsed.access).toEqual(access)
+      const edited = parseItemFields(itemKind, JSON.parse(JSON.stringify({ ...parsed, name: 'edited' })))!
+      expect(edited.access).toEqual(access)
+      expect(edited.name).toBe('edited')
+    }
+    expect(fillMissingFields('login', { name: 'x', access }).access).toEqual(access)
+  })
+
+  it('refuses any other shape, which makes the item unreadable', () => {
+    const wrong: unknown[] = [
+      'yes',
+      5,
+      true,
+      [],
+      {},
+      { isUsableByAgent: true },
+      { grantees: [] },
+      { isUsableByAgent: 'true', grantees: [] },
+      { isUsableByAgent: true, grantees: {} },
+      { isUsableByAgent: true, grantees: null },
+      { isUsableByAgent: true, grantees: ['user-ben'] },
+      { isUsableByAgent: true, grantees: [null] },
+      { isUsableByAgent: true, grantees: [{}] },
+      { isUsableByAgent: true, grantees: [{ userId: 5 }] },
+      { isUsableByAgent: true, grantees: [{ userId: '' }] },
+      { isUsableByAgent: true, grantees: [{ circleId: null }] },
+      { isUsableByAgent: true, grantees: [{ userId: 'user-ben', circleId: 'circle-1' }] },
+      { isUsableByAgent: true, grantees: [{ groupId: 'group-1' }] },
+      { isUsableByAgent: true, grantees: [{ userId: 'user-ben', extra: true }] },
+      { isUsableByAgent: true, grantees: [], extra: true },
+    ]
+    for (const record of wrong) {
+      for (const itemKind of ITEM_KINDS) {
+        expect(parseItemFields(itemKind, { name: 'x', access: record }), JSON.stringify(record)).toBeNull()
+      }
+    }
+  })
+
+  it('says whether a recipient is reached by a person or a circle grantee', () => {
+    expect(isReachedByAccess(access, 'user-ben', [])).toBe(true)
+    expect(isReachedByAccess(access, 'user-cy', ['circle-2', 'circle-1'])).toBe(true)
+    expect(isReachedByAccess(access, 'user-cy', ['circle-2'])).toBe(false)
+    expect(isReachedByAccess(access, 'circle-1', [])).toBe(false)
+    expect(isReachedByAccess(access, '', ['circle-1'])).toBe(false)
+    expect(isReachedByAccess(undefined, 'user-ben', ['circle-1'])).toBe(false)
+    expect(isReachedByAccess({ isUsableByAgent: false, grantees: [] }, 'user-ben', ['circle-1'])).toBe(false)
+  })
+
+  it('builds a new record without changing the one it was given', () => {
+    const narrowed = accessWithGrantees(access, [])
+    expect(narrowed).toEqual({ isUsableByAgent: true, grantees: [] })
+    const agentOff = accessWithAgentUse(access, false)
+    expect(agentOff).toEqual({ isUsableByAgent: false, grantees: access.grantees })
+    agentOff.grantees[0] = { userId: 'user-cy' }
+    expect(access.grantees[0]).toEqual({ userId: 'user-ben' })
+    expect(accessWithGrantees(undefined, [{ circleId: 'circle-1' }])).toEqual({
+      isUsableByAgent: false,
+      grantees: [{ circleId: 'circle-1' }],
+    })
+    expect(accessWithAgentUse(undefined, true)).toEqual({ isUsableByAgent: true, grantees: [] })
   })
 })

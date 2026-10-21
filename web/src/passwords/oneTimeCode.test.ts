@@ -93,6 +93,30 @@ describe('parseOneTimeCodeUri', () => {
     expectBytes(settings.secret, bytesFromText(secrets.SHA1))
   })
 
+  it('drops padding at the end of the secret and white space around the address, however long the run', () => {
+    const secretText = encodeBase32(bytesFromText(secrets.SHA1)).replace(/=+$/, '')
+    const plain = parseOneTimeCodeUri(`otpauth://totp/ada?secret=${secretText}`)
+    for (const padding of ['=', '======', '='.repeat(100_000)]) {
+      expectBytes(parseOneTimeCodeUri(`otpauth://totp/ada?secret=${secretText}${padding}`).secret, plain.secret)
+    }
+    for (const white of [' ', '\t\n\r\f\v ', ' '.repeat(100_000)]) {
+      expectBytes(parseOneTimeCodeUri(`${white}otpauth://totp/ada?secret=${secretText}${white}`).secret, plain.secret)
+    }
+    // Only ASCII white space is trimmed: a no-break space stays and is refused.
+    expect(() => parseOneTimeCodeUri(`otpauth://totp/ada?secret=${secretText}\u00a0`)).toThrow()
+    // An "=" inside the secret is not padding.
+    expect(() =>
+      parseOneTimeCodeUri(`otpauth://totp/ada?secret=${secretText.slice(0, 4)}=${secretText.slice(4)}`),
+    ).toThrow('not base32')
+  })
+
+  it('refuses a long run of "=" and of spaces that does not end the text, in a short time', () => {
+    const started = performance.now()
+    expect(() => parseOneTimeCodeUri(`otpauth://totp/ada?secret=GEZDGNBV${'='.repeat(200_000)}x`)).toThrow()
+    expect(() => parseOneTimeCodeUri(` ${' '.repeat(200_000)}x otpauth://totp/ada?secret=GEZDGNBV`)).toThrow()
+    expect(performance.now() - started).toBeLessThan(2000)
+  })
+
   it('takes the issuer from the label when the address names none, and decodes the label', () => {
     const settings = parseOneTimeCodeUri('otpauth://totp/Example%20Inc:ada%40example.test?secret=GEZDGNBV')
     expect(settings.issuer).toBe('Example Inc')

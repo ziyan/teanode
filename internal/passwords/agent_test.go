@@ -56,13 +56,14 @@ func TestTheAgentOpensAGrantedLoginAndNote(test *testing.T) {
 
 	loginItem := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "login-1", ItemKindLogin, LoginFields{
 		Name: "Example shop", UserName: "ada@example.test", Password: "correct-horse-example", Sites: []string{"https://shop.example.test"},
+		Access: AccessWithAgentUse(nil, true),
 	})
 	login, err := opener.OpenLogin(loginItem)
 	if err != nil || login.Name != "Example shop" || login.UserName != "ada@example.test" || login.Password != "correct-horse-example" {
 		test.Fatalf("login = %+v, %v", login, err)
 	}
 
-	noteItem := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "note-1", ItemKindNote, NoteFields{Name: "Door code", Text: "The shed code is 0000."})
+	noteItem := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "note-1", ItemKindNote, NoteFields{Name: "Door code", Text: "The shed code is 0000.", Access: AccessWithAgentUse(nil, true)})
 	note, err := opener.OpenNote(noteItem)
 	if err != nil || note.Text != "The shed code is 0000." {
 		test.Fatalf("note = %+v, %v", note, err)
@@ -72,7 +73,7 @@ func TestTheAgentOpensAGrantedLoginAndNote(test *testing.T) {
 func TestTheAgentRefusesACard(test *testing.T) {
 	ownerKeyPair, agentKeyPair, opener := newKeyPairs(test)
 	// Even a card whose key somebody sealed for the agent does not open.
-	card := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "card-1", ItemKindCard, CardFields{Name: "Example card", Number: "4000000000000000"})
+	card := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "card-1", ItemKindCard, CardFields{Name: "Example card", Number: "4000000000000000", Access: AccessWithAgentUse(nil, true)})
 	if _, err := opener.OpenFields(card); !errors.Is(err, ErrCardNotUsableByAgent) {
 		test.Fatalf("a card: %v", err)
 	}
@@ -94,14 +95,14 @@ func TestTheAgentCannotOpenWhatWasNotSealedForIt(test *testing.T) {
 	otherKeyPair, _ := GenerateKeyPair()
 
 	// Sealed for somebody else's key pair.
-	elsewhere := grantToAgent(test, ownerKeyPair, otherKeyPair, "user-ada", "login-1", ItemKindLogin, LoginFields{Name: "Example"})
+	elsewhere := grantToAgent(test, ownerKeyPair, otherKeyPair, "user-ada", "login-1", ItemKindLogin, LoginFields{Name: "Example", Access: AccessWithAgentUse(nil, true)})
 	if _, err := opener.OpenLogin(elsewhere); !errors.Is(err, ErrCannotOpen) {
 		test.Fatalf("another key pair: %v", err)
 	}
 
 	// Sealed for the agent, but moved to another item's id, kind, owner or
 	// recipient.
-	item := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "login-1", ItemKindLogin, LoginFields{Name: "Example"})
+	item := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "login-1", ItemKindLogin, LoginFields{Name: "Example", Access: AccessWithAgentUse(nil, true)})
 	moved := item
 	moved.ID = "login-2"
 	if _, err := opener.OpenLogin(moved); !errors.Is(err, ErrCannotOpen) {
@@ -140,5 +141,61 @@ func TestTheAgentCannotOpenWhatWasNotSealedForIt(test *testing.T) {
 	}
 	if _, err := NewAgentOpener([]byte("short")); err == nil {
 		test.Fatal("a key that is not 32 bytes")
+	}
+}
+
+func TestTheAgentRefusesAnItemWhoseSealedAccessDoesNotAllowIt(test *testing.T) {
+	ownerKeyPair, agentKeyPair, opener := newKeyPairs(test)
+	people := []PasswordGrantee{{UserID: "user-ben"}, {CircleID: "circle-1"}}
+
+	cases := []struct {
+		name   string
+		fields LoginFields
+	}{
+		{"no access record", LoginFields{Name: "Example"}},
+		{"agent use off", LoginFields{Name: "Example", Access: AccessWithAgentUse(nil, false)}},
+		{"shared but agent use off", LoginFields{Name: "Example", Access: AccessWithGrantees(nil, people)}},
+	}
+	for _, testCase := range cases {
+		item := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "login-1", ItemKindLogin, testCase.fields)
+		if _, err := opener.OpenFields(item); !errors.Is(err, ErrNotUsableByAgent) {
+			test.Errorf("%s: OpenFields = %v", testCase.name, err)
+		}
+		if _, err := opener.OpenLogin(item); !errors.Is(err, ErrNotUsableByAgent) {
+			test.Errorf("%s: OpenLogin = %v", testCase.name, err)
+		}
+	}
+	note := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "note-1", ItemKindNote, NoteFields{Name: "Example"})
+	if _, err := opener.OpenNote(note); !errors.Is(err, ErrNotUsableByAgent) {
+		test.Errorf("a note without access: %v", err)
+	}
+
+	// The same item with the record on, and grantees besides, opens.
+	allowed := LoginFields{Name: "Example", Access: AccessWithAgentUse(AccessWithGrantees(nil, people), true)}
+	item := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "login-1", ItemKindLogin, allowed)
+	login, err := opener.OpenLogin(item)
+	if err != nil || login.Access == nil || !login.Access.IsUsableByAgent || len(login.Access.Grantees) != 2 {
+		test.Fatalf("login = %+v, %v", login, err)
+	}
+}
+
+func TestTheAgentRefusesAnAccessRecordOfTheWrongShape(test *testing.T) {
+	ownerKeyPair, agentKeyPair, opener := newKeyPairs(test)
+	for _, record := range []string{
+		`"yes"`,
+		`{"isUsableByAgent": "true", "grantees": []}`,
+		`{"isUsableByAgent": true}`,
+		`{"isUsableByAgent": true, "grantees": [{"userId": "user-ben", "circleId": "circle-1"}]}`,
+		`{"isUsableByAgent": true, "grantees": [{"userId": ""}]}`,
+		`{"isUsableByAgent": true, "grantees": [{}]}`,
+		`{"isUsableByAgent": true, "grantees": [{"groupId": "group-1"}]}`,
+		`{"isUsableByAgent": true, "grantees": [], "extra": 1}`,
+	} {
+		fields := json.RawMessage(`{"name": "Example", "access": ` + record + `}`)
+		item := grantToAgent(test, ownerKeyPair, agentKeyPair, "user-ada", "login-1", ItemKindLogin, fields)
+		_, err := opener.OpenFields(item)
+		if err == nil || errors.Is(err, ErrNotUsableByAgent) {
+			test.Errorf("%s: OpenFields = %v, want an unreadable record", record, err)
+		}
 	}
 }

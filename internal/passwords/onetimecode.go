@@ -75,9 +75,10 @@ func ParseOneTimeCodeURI(address string) (*OneTimeCode, error) {
 	if secretText == "" {
 		return nil, errors.New("passwords: the one-time code address has no secret")
 	}
-	if strings.IndexFunc(secretText, func(character rune) bool {
-		return !(character >= 'A' && character <= 'Z') && !(character >= 'a' && character <= 'z') && !(character >= '2' && character <= '7')
-	}) >= 0 {
+	isBase32Character := func(character rune) bool {
+		return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '2' && character <= '7')
+	}
+	if strings.IndexFunc(secretText, func(character rune) bool { return !isBase32Character(character) }) >= 0 {
 		return nil, errors.New("passwords: the one-time code secret is not base32")
 	}
 	secret, err := oneTimeCodeSecretEncoding.DecodeString(strings.ToUpper(secretText))

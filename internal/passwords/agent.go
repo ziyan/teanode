@@ -54,7 +54,10 @@ func (self *AgentOpener) OpenItemKey(item AgentItem) ([]byte, error) {
 }
 
 // OpenFields opens an item's fields and returns their JSON. It refuses a card
-// before it opens anything.
+// before it opens anything, and it refuses an item whose opened fields do not
+// carry an access record with isUsableByAgent true: that record is sealed by
+// the owner's device, so a server flag that was set without the owner cannot
+// open an item.
 func (self *AgentOpener) OpenFields(item AgentItem) ([]byte, error) {
 	if item.Kind == ItemKindCard {
 		return nil, ErrCardNotUsableByAgent
@@ -70,7 +73,18 @@ func (self *AgentOpener) OpenFields(item AgentItem) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Open(itemKey, sealed, ItemFieldsData(item.ID, item.Kind))
+	plaintext, err := Open(itemKey, sealed, ItemFieldsData(item.ID, item.Kind))
+	if err != nil {
+		return nil, err
+	}
+	access, err := ParseAccessOfFields(plaintext)
+	if err != nil {
+		return nil, fmt.Errorf("passwords: item %s: %w", item.ID, err)
+	}
+	if access == nil || !access.IsUsableByAgent {
+		return nil, ErrNotUsableByAgent
+	}
+	return plaintext, nil
 }
 
 // OpenLogin opens a login's fields. It refuses an item of another kind, a card

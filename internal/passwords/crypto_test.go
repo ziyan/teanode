@@ -2,9 +2,11 @@ package passwords
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -261,16 +263,51 @@ func TestKeyPair(test *testing.T) {
 
 func TestSafetyCode(test *testing.T) {
 	keyPair, _ := KeyPairFromPrivateKey(sequentialBytes(1, 32))
-	code := keyPair.SafetyCode()
-	if !regexp.MustCompile(`^\d{4}( \d{4}){4}$`).MatchString(code) {
+	code := keyPair.SafetyCode("user-ada")
+	if !regexp.MustCompile(`^\d{4}( \d{4}){7}$`).MatchString(code) {
 		test.Fatalf("code = %q", code)
 	}
-	if code != SafetyCode(keyPair.PublicKey()) {
+	if code != SafetyCode("user-ada", keyPair.PublicKey()) {
 		test.Fatal("the method and the function disagree")
 	}
 	other, _ := KeyPairFromPrivateKey(sequentialBytes(2, 32))
-	if code == other.SafetyCode() {
+	if code == other.SafetyCode("user-ada") {
 		test.Fatal("two keys share a safety code")
+	}
+	if code == keyPair.SafetyCode("user-ben") {
+		test.Fatal("two people with one key share a safety code")
+	}
+}
+
+func TestSafetyCodeIsTheDocumentedHash(test *testing.T) {
+	keyPair, _ := KeyPairFromPrivateKey(sequentialBytes(1, 32))
+	input := append([]byte("teanode passwords safety code v2\x00user-ada\x00"), keyPair.PublicKey()...)
+	hash := sha256.Sum256(input)
+	groups := make([]string, 8)
+	for index := range groups {
+		groups[index] = fmt.Sprintf("%04d", (int(hash[index*2])<<8|int(hash[index*2+1]))%10000)
+	}
+	if want := strings.Join(groups, " "); keyPair.SafetyCode("user-ada") != want {
+		test.Fatalf("code = %q, want %q", keyPair.SafetyCode("user-ada"), want)
+	}
+}
+
+func TestNormalizeSafetyCode(test *testing.T) {
+	want := "0123 4567 8901 2345 6789 0123 4567 8901"
+	for _, text := range []string{want, "01234567890123456789012345678901", "  0123 4567 8901 2345 6789 0123 4567 8901\n", "0123\u00a04567 89012345 67890123 4567 8901"} {
+		if got, err := NormalizeSafetyCode(text); err != nil || got != want {
+			test.Errorf("NormalizeSafetyCode(%q) = %q, %v", text, got, err)
+		}
+	}
+	for _, text := range []string{"", "0123 4567 8901 2345 6789", "0123 4567 8901 2345 6789 0123 4567 8901 2", "0123-4567-8901-2345-6789-0123-4567-8901", "0123 4567 8901 2345 6789 0123 4567 890x", "\u0663\u0664 4567 8901 2345 6789 0123 4567 8901"} {
+		if got, err := NormalizeSafetyCode(text); err == nil {
+			test.Errorf("NormalizeSafetyCode(%q) = %q, want an error", text, got)
+		}
+	}
+	keyPair, _ := KeyPairFromPrivateKey(sequentialBytes(1, 32))
+	code := keyPair.SafetyCode("user-ada")
+	if got, err := NormalizeSafetyCode(strings.ReplaceAll(code, " ", "")); err != nil || got != code {
+		test.Errorf("a made code typed without spaces = %q, %v", got, err)
 	}
 }
 

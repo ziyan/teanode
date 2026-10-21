@@ -511,15 +511,42 @@ export async function isKeyPairConsistent(keyPair: PersonKeyPair): Promise<boole
   }
 }
 
-// safetyCode is the short form of a public key two people compare: SHA-256 of
-// the 65 bytes, the first 10 bytes as five big-endian 16 bit numbers, each
-// modulo 10000, in four digits.
-export async function safetyCode(publicKey: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', copyBytes(readPublicKey(publicKey))))
+const SAFETY_CODE_LABEL = 'teanode passwords safety code v2'
+const SAFETY_CODE_GROUP_COUNT = 8
+
+// safetyCode is the short form of a person's public key two people compare:
+// eight groups of four digits. It is the SHA-256 of the label, a zero byte,
+// the user id in UTF-8, a zero byte and the 65 key bytes; the first 16 bytes of
+// the hash are eight big-endian 16 bit numbers, each modulo 10000. The user id
+// is part of it so a search for a key with a wanted code only works for one
+// person.
+export async function safetyCode(userId: string, publicKey: Uint8Array): Promise<string> {
+  const input = concatenateBytes(
+    encodeUtf8(SAFETY_CODE_LABEL),
+    new Uint8Array([0]),
+    encodeUtf8(userId),
+    new Uint8Array([0]),
+    readPublicKey(publicKey),
+  )
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', copyBytes(input)))
   const view = new DataView(digest.buffer, digest.byteOffset, digest.byteLength)
   const groups: string[] = []
-  for (let index = 0; index < 5; index++) {
+  for (let index = 0; index < SAFETY_CODE_GROUP_COUNT; index++) {
     groups.push(String(view.getUint16(index * 2) % 10000).padStart(4, '0'))
+  }
+  return groups.join(' ')
+}
+
+// normalizeSafetyCode reads a safety code a person typed or pasted: 32 digits
+// with white space anywhere or nowhere. It returns the code as safetyCode
+// writes it (eight groups of four digits), so two codes compare as text, or
+// null for anything else.
+export function normalizeSafetyCode(text: string): string | null {
+  const digits = text.replace(/\s+/g, '')
+  if (!/^[0-9]{32}$/.test(digits)) return null
+  const groups: string[] = []
+  for (let index = 0; index < digits.length; index += 4) {
+    groups.push(digits.slice(index, index + 4))
   }
   return groups.join(' ')
 }

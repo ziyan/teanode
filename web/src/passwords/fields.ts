@@ -20,6 +20,19 @@ export interface PasskeyFields {
   createdAt: string
 }
 
+// One person or one circle that may have an item. Exactly one of the two is
+// set, as a non-empty id.
+export type ItemGrantee = { userId: string; circleId?: undefined } | { circleId: string; userId?: undefined }
+
+// Who may have an item and whether the agent may use it. It is sealed inside
+// the fields, written only by the owner's device, so the server cannot widen
+// it. An item with no record grants nobody and is not usable by the agent. A
+// recipient's copy may show the record but never acts on it.
+export interface ItemAccess {
+  isUsableByAgent: boolean
+  grantees: ItemGrantee[]
+}
+
 export interface LoginFields {
   name: string
   userName: string
@@ -29,6 +42,7 @@ export interface LoginFields {
   notes: string
   passkeys: PasskeyFields[]
   folder: string
+  access?: ItemAccess
 }
 
 export interface CardFields {
@@ -41,12 +55,14 @@ export interface CardFields {
   brand: string
   notes: string
   folder: string
+  access?: ItemAccess
 }
 
 export interface NoteFields {
   name: string
   text: string
   folder: string
+  access?: ItemAccess
 }
 
 export interface ItemFieldsByKind {
@@ -97,6 +113,37 @@ export function fillMissingFields<Kind extends ItemKind>(
   const empty: ItemFields =
     itemKind === 'login' ? emptyLoginFields() : itemKind === 'card' ? emptyCardFields() : emptyNoteFields()
   return { ...empty, ...fields } as ItemFieldsByKind[Kind]
+}
+
+// isReachedByAccess reports whether the record grants an item to a recipient:
+// a person grantee by user id, or a circle grantee when the server lists the
+// recipient as a member of that circle (circleIdsOfRecipient). The recipient
+// still needs a key confirmed on this device before anything is sealed for
+// them. No record reaches nobody.
+export function isReachedByAccess(
+  access: ItemAccess | undefined,
+  recipientUserId: string,
+  circleIdsOfRecipient: readonly string[],
+): boolean {
+  if (!access || recipientUserId === '') return false
+  return access.grantees.some((grantee) =>
+    grantee.userId !== undefined
+      ? grantee.userId === recipientUserId
+      : grantee.circleId !== undefined && circleIdsOfRecipient.includes(grantee.circleId),
+  )
+}
+
+// accessWithGrantees returns a new record with these grantees and the same
+// agent use. No record counts as one that grants nobody and is not usable by
+// the agent. The given record is not changed.
+export function accessWithGrantees(access: ItemAccess | undefined, grantees: readonly ItemGrantee[]): ItemAccess {
+  return { isUsableByAgent: access?.isUsableByAgent ?? false, grantees: grantees.map((grantee) => ({ ...grantee })) }
+}
+
+// accessWithAgentUse returns a new record with agent use turned on or off and
+// the same grantees. The given record is not changed.
+export function accessWithAgentUse(access: ItemAccess | undefined, isUsableByAgent: boolean): ItemAccess {
+  return { isUsableByAgent, grantees: (access?.grantees ?? []).map((grantee) => ({ ...grantee })) }
 }
 
 // How each field of a kind is typed. A list of text is a list whose every
@@ -174,13 +221,46 @@ function readPasskeyList(value: unknown): PasskeyFields[] | null {
   return passkeys
 }
 
+// readAccess reads the access record. Nothing or null is no record
+// (undefined). Anything that is not exactly the shape of ItemAccess is refused
+// (null): an object with exactly isUsableByAgent, a boolean, and grantees, a
+// list of objects each with exactly one of userId and circleId as a non-empty
+// text. The item is then unreadable instead of half understood.
+function readAccess(value: unknown): ItemAccess | undefined | null {
+  if (value === undefined || value === null) return undefined
+  if (!isPlainObject(value)) return null
+  const keys = Object.keys(value)
+  if (keys.length !== 2 || !keys.includes('isUsableByAgent') || !keys.includes('grantees')) return null
+  if (typeof value.isUsableByAgent !== 'boolean' || !Array.isArray(value.grantees)) return null
+  const grantees: ItemGrantee[] = []
+  for (const element of value.grantees) {
+    if (!isPlainObject(element)) return null
+    const grantee = readGrantee(element)
+    if (grantee === null) return null
+    grantees.push(grantee)
+  }
+  return { isUsableByAgent: value.isUsableByAgent, grantees }
+}
+
+function readGrantee(element: Record<string, unknown>): ItemGrantee | null {
+  const keys = Object.keys(element)
+  if (keys.length !== 1) return null
+  const [key] = keys
+  const id = element[key]
+  if (typeof id !== 'string' || id === '') return null
+  if (key === 'userId') return { userId: id }
+  if (key === 'circleId') return { circleId: id }
+  return null
+}
+
 // parseItemFields checks what came out of decrypting an item against the
 // kind's shape and returns the fields with every key the kind defines, or null
 // when the value is not an object or any field has the wrong type. A person
 // the item is shared by can seal anything with the item's key, so what opens
 // is not trusted to be an item: the screens and the sort read these fields
 // as the types above and would fail on a number where a name goes. Keys the
-// kind does not define are kept, so a newer client's fields survive an edit.
+// kind does not define are kept, so a newer client's fields survive an edit. The access
+// record, if there is one, must have exactly the shape of ItemAccess.
 export function parseItemFields<Kind extends ItemKind>(itemKind: Kind, value: unknown): ItemFieldsByKind[Kind] | null {
   if (!isPlainObject(value)) return null
   const checked: Record<string, unknown> = {}
@@ -194,5 +274,13 @@ export function parseItemFields<Kind extends ItemKind>(itemKind: Kind, value: un
     if (read === null) return null
     checked[fieldName] = read
   }
-  return { ...value, ...checked } as unknown as ItemFieldsByKind[Kind]
+  const access = readAccess(value.access)
+  if (access === null) return null
+  const parsed: Record<string, unknown> = { ...value, ...checked }
+  if (access === undefined) {
+    delete parsed.access
+  } else {
+    parsed.access = access
+  }
+  return parsed as unknown as ItemFieldsByKind[Kind]
 }
