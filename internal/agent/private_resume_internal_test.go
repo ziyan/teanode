@@ -14,22 +14,26 @@ import (
 // A turn a chat app, an MCP program or a command left running started is not
 // the person's. If it leaves a question open and the person answers later, the
 // turn that carries the answer on is not the person's either; one that began
-// in the dashboard stays theirs. A card kept before the flag was recorded is
-// not the person's.
+// in the dashboard stays theirs, but only when the late answer was also the
+// person's own tap: one made with a command line token, an app password or by
+// an operator acting as the person does not make the resumed turn theirs. A
+// card kept before the flag was recorded is not the person's.
 func TestAResumedTurnIsThePersonsOnlyIfTheOneItCarriesOnWas(t *testing.T) {
 	saved := interactionLiveWait
 	interactionLiveWait = 200 * time.Millisecond
 	defer func() { interactionLiveWait = saved }()
 
 	for name, test := range map[string]struct {
-		surface      string
-		isForgotten  bool
-		isPersonsRun bool
+		surface                string
+		isForgotten            bool
+		isPersonsRun           bool
+		isAnswerFromPersonsTap bool
 	}{
-		"telegram":                  {surface: "telegram"},
-		"mcp":                       {surface: "mcp"},
-		"drawer":                    {surface: "drawer", isPersonsRun: true},
-		"drawer, flag not recorded": {surface: "drawer", isForgotten: true, isPersonsRun: true},
+		"telegram, answered by a tap":                  {surface: "telegram", isAnswerFromPersonsTap: true},
+		"mcp, answered by a tap":                       {surface: "mcp", isAnswerFromPersonsTap: true},
+		"drawer, answered by a tap":                    {surface: "drawer", isPersonsRun: true, isAnswerFromPersonsTap: true},
+		"drawer, answered with a token":                {surface: "drawer", isPersonsRun: true},
+		"drawer, flag not recorded, answered by a tap": {surface: "drawer", isForgotten: true, isPersonsRun: true, isAnswerFromPersonsTap: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			database, release := dbtest.AcquireDatabase(t)
@@ -73,12 +77,12 @@ func TestAResumedTurnIsThePersonsOnlyIfTheOneItCarriesOnWas(t *testing.T) {
 			if test.isForgotten {
 				interaction.IsStartedByPerson = false
 			}
-			resumed, err := worker.ResumeInteraction(&ResumeSettings{Interaction: interaction, Answer: "Work", Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation}, "[chat about it]")
+			resumed, err := worker.ResumeInteraction(&ResumeSettings{Interaction: interaction, Answer: "Work", Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, IsAnswerFromPersonsTap: test.isAnswerFromPersonsTap}, "[chat about it]")
 			if err != nil || resumed == nil {
 				t.Fatalf("ResumeInteraction: %v", err)
 			}
 			drainTurn(resumed)
-			if want := test.isPersonsRun && !test.isForgotten; resumed.IsStartedByPerson() != want {
+			if want := test.isPersonsRun && !test.isForgotten && test.isAnswerFromPersonsTap; resumed.IsStartedByPerson() != want {
 				t.Errorf("the turn that carries on the answer IsStartedByPerson = %v, want %v", resumed.IsStartedByPerson(), want)
 			}
 		})

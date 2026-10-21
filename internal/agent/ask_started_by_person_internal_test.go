@@ -40,10 +40,16 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 			t.Errorf("a turn on %q that an operator made as the person", surface)
 		}
 	}
-	// The answer to a card is the person's tap, but the turn is theirs only
-	// if the one that raised the card was.
-	if !(&AskRun{settings: &AskSettings{Surface: "drawer", Message: "Work", IsAnswerToCard: true, IsCardRaisedByPerson: true}}).IsStartedByPerson() {
-		t.Error("the answer to a card a tap's turn raised")
+	// The answer to a card carries the turn on as the person's only if the
+	// one that raised the card was theirs and the answer was their own tap.
+	if !(&AskRun{settings: &AskSettings{Surface: "drawer", Message: "Work", IsAnswerToCard: true, IsCardRaisedByPerson: true, IsAnswerFromPersonsTap: true}}).IsStartedByPerson() {
+		t.Error("the tap's answer to a card a tap's turn raised")
+	}
+	if (&AskRun{settings: &AskSettings{Surface: "drawer", Message: "Work", IsAnswerToCard: true, IsCardRaisedByPerson: true}}).IsStartedByPerson() {
+		t.Error("a token's answer to a card a tap's turn raised")
+	}
+	if (&AskRun{settings: &AskSettings{Surface: "drawer", Message: "Work", IsAnswerToCard: true, IsAnswerFromPersonsTap: true}}).IsStartedByPerson() {
+		t.Error("a tap's answer to a card a token's turn raised")
 	}
 	if (&AskRun{settings: &AskSettings{Surface: "drawer", Message: "Work", IsAnswerToCard: true, IsPersonsTap: true}}).IsStartedByPerson() {
 		t.Error("the answer to a card a token's turn raised")

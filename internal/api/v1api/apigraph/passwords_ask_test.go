@@ -65,3 +65,57 @@ func TestOnlyThePersonsOwnTapStartsARunThatMayUsePasswords(t *testing.T) {
 		})
 	}
 }
+
+// A card the person's own run raised, answered after that run had ended,
+// carries on as the person's run only when the answer was also the person's
+// own tap. The same late answer made with a command line token, an app
+// password or by an operator signed in as the person resumes the run, but it
+// may not use Passwords.
+func TestALateAnswerCarriesOnAsThePersonsRunOnlyWhenItWasTheirTap(t *testing.T) {
+	world := newChatWorld(t)
+	world.withModel(t, []string{dentistRound, dentistRound, dentistRound, dentistRound})
+	frankAgent := world.agentOf(t, world.frank)
+	grants := models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})
+
+	for name, test := range map[string]struct {
+		principal *api.Principal
+		expected  bool
+	}{
+		"the dashboard's session":             {principal: &api.Principal{User: world.frank, Permissions: grants, CredentialKind: models.CredentialSession}, expected: true},
+		"the phone app":                       {principal: &api.Principal{User: world.frank, Permissions: grants, CredentialKind: models.CredentialApp}, expected: true},
+		"a command line token":                {principal: &api.Principal{User: world.frank, Permissions: grants, CredentialKind: models.CredentialToken}},
+		"an operator signed in as the person": {principal: &api.Principal{User: world.frank, Impersonator: world.heidi, Permissions: grants, CredentialKind: models.CredentialSession}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var conversation *models.AgentConversation
+			var card *models.AgentInteraction
+			dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+				var err error
+				if conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: frankAgent.ID, Kind: models.AgentConversationNamed, Surface: "drawer", LastAt: time.Now()}); err != nil {
+					t.Fatal(err)
+				}
+				// The run that raised the card ended long ago, and the person's own tap started it.
+				if card, err = tx.CreateAgentInteraction(&models.AgentInteraction{
+					AgentID: frankAgent.ID, ConversationID: conversation.ID, RunID: "run-" + conversation.ID, CallID: "call-" + conversation.ID,
+					InteractionKind: models.InteractionQuestion, ToolName: "ask_user", InteractionText: "Which account?", IsStartedByPerson: true,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			})
+			dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+				ctx := api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), test.principal), tx)
+				if isAnswered, err := world.graph.AnswerAgentQuestion(ctx, AnswerAgentQuestionArguments{RunID: card.RunID, CallID: card.CallID, Answer: "Work"}); err != nil || !isAnswered {
+					t.Fatalf("AnswerAgentQuestion: %v %v", isAnswered, err)
+				}
+			})
+			run := world.worker.LatestIn(conversation.ID)
+			if run == nil {
+				t.Fatal("the late answer started no run")
+			}
+			if got := run.IsStartedByPerson(); got != test.expected {
+				t.Fatalf("the run that carries the answer on IsStartedByPerson = %v, want %v", got, test.expected)
+			}
+			world.worker.Wait()
+		})
+	}
+}

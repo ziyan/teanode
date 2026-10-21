@@ -108,9 +108,14 @@ type AskSettings struct {
 	// IsCardRaisedByPerson that the turn that raised it was one the person
 	// started. The answer is the person's, but it is not typed into a chat
 	// app or a program: the turn counts as the person's only if the one it
-	// carries on did.
-	IsAnswerToCard       bool
-	IsCardRaisedByPerson bool
+	// carries on did, and only if the answer itself was the person's own tap
+	// on a screen (IsAnswerFromPersonsTap, as IsPersonsTap is for a typed
+	// turn). A late answer made with a command line token, an app password or
+	// by an operator acting as the person carries the card on, but not as the
+	// person's run.
+	IsAnswerToCard         bool
+	IsCardRaisedByPerson   bool
+	IsAnswerFromPersonsTap bool
 
 	// DrawerID names the open drawer that sent the turn: the browser a
 	// location call asks, rather than any other the person has open. Empty
@@ -814,10 +819,11 @@ func (self *AskRun) IsStartedByPerson() bool {
 		return self.settings.IsPersonsSchedule
 	case "drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api":
 		if self.settings.IsAnswerToCard {
-			// The answer to a card is the person's tap, but it starts nothing
-			// of its own: the turn is theirs only if the one that raised the
-			// card was (the card keeps that).
-			return self.settings.IsCardRaisedByPerson && !self.settings.Headless && !models.IsOwnTurn(self.settings.Message)
+			// The answer to a card starts nothing of its own: the turn is
+			// theirs only if the one that raised the card was (the card keeps
+			// that) and the answer came from their own tap, not from a
+			// token or an operator acting as them.
+			return self.settings.IsCardRaisedByPerson && self.settings.IsAnswerFromPersonsTap && !self.settings.Headless && !models.IsOwnTurn(self.settings.Message)
 		}
 		if !self.settings.IsPersonsTap || self.settings.IsOperatorActingAsPerson {
 			return false

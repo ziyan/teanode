@@ -177,8 +177,9 @@ func (self *graph) answerInteraction(ctx context.Context, found *models.Agent, w
 	}
 	if _, err := worker.ResumeInteraction(&agent.ResumeSettings{
 		Interaction: interaction, Answer: answer, Agent: found, Owner: principal.User,
-		Operations:   &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions, impersonator: principal.Impersonator},
-		Conversation: conversation,
+		IsAnswerFromPersonsTap: principal.IsPersonsTap(),
+		Operations:             &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions, impersonator: principal.Impersonator},
+		Conversation:           conversation,
 	}, askuser.ChatAboutIt); err != nil {
 		return false, translateError(err)
 	}

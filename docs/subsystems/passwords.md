@@ -237,7 +237,12 @@ What stands between an item and a page:
   its parent's, but it is given no Passwords answer worth keeping: `list`,
   `read_note` and `generate` are refused in a subagent, since what it finds comes
   back to its parent as a tool result that is kept like any other. The passwords
-  tool's `list` and `read_note` keep the same rule about who started the run.
+  tool's `list` and `read_note` keep the same rule about who started the run. A card answered
+  after the run that raised it had ended resumes a run that counts as the person's
+  only when the person's run raised the card **and** the answer was the person's own
+  tap (`ResumeSettings.IsAnswerFromPersonsTap`, from `Principal.IsPersonsTap`): the
+  same late answer made with a command line token, an app password or by an operator
+  acting as the person resumes the run, but it may not use Passwords.
 
   Three more edges are closed. A turn that carries on an answer given to a card
   after the turn that raised it had ended is the person's only if the turn that

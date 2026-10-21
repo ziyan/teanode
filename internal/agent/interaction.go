@@ -106,12 +106,18 @@ func (self *AskRun) takePreApproval(toolName string, arguments json.RawMessage) 
 // ResumeSettings is what a late answer needs to carry on: the card, what
 // the person said, and who they are to the API.
 type ResumeSettings struct {
-	Interaction  *models.AgentInteraction
-	Answer       string
-	Agent        *models.Agent
-	Owner        *models.User
-	Operations   Operations
-	Conversation *models.AgentConversation
+	Interaction *models.AgentInteraction
+	Answer      string
+	// IsAnswerFromPersonsTap says the answer was the person's own tap on a
+	// screen (access.Principal.IsPersonsTap), not a command line token, an
+	// app password or an operator acting as the person. The turn that carries
+	// the answer on counts as the person's only when this is set and the card
+	// was raised by a run the person started.
+	IsAnswerFromPersonsTap bool
+	Agent                  *models.Agent
+	Owner                  *models.User
+	Operations             Operations
+	Conversation           *models.AgentConversation
 }
 
 // ResumeInteraction starts the turn a late answer brings: the answer to
@@ -148,6 +154,7 @@ func (self *Agent) ResumeInteraction(settings *ResumeSettings, chatAboutIt strin
 		Agent: settings.Agent, Owner: settings.Owner, Operations: settings.Operations,
 		Conversation: settings.Conversation, Message: message, Surface: "drawer", PreApproved: preApproved,
 		IsAnswerToCard: true, IsCardRaisedByPerson: interaction.IsStartedByPerson,
+		IsAnswerFromPersonsTap: settings.IsAnswerFromPersonsTap,
 	})
 }
 
