@@ -47,6 +47,12 @@ type FilledValues struct {
 	mutex  sync.Mutex
 	values []filledValue
 	tabs   map[string]*filledTab
+	// scriptedOrigins are the sites (see OriginOf) the agent ran a script on.
+	// A script leaves things behind that outlive its document: a window it
+	// opened, a worker, a cookie, a handler another page of the site runs. So
+	// the mark is the site's, not the document's, and it lasts as long as
+	// this value does (see NoteScriptedOrigin).
+	scriptedOrigins map[string]bool
 	// now is the clock, for tests.
 	now func() time.Time
 }
@@ -379,6 +385,121 @@ func (self *FilledValues) NoteScripted(tab string, document Document) {
 	}
 }
 
+// NoteScriptedOrigin says the agent ran a script on a site, or in a window it
+// opened on that site, and so on every page of the site from now on. The
+// origin is whatever OriginOf gives; anything else is ignored. A fill, a
+// one-time code or a passkey is refused on a page of a scripted origin for as
+// long as this value lives (the headless page: until it is reset; the
+// person's browser: until the person allows it again).
+func (self *FilledValues) NoteScriptedOrigin(origin string) {
+	if self == nil {
+		return
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.noteScriptedOriginLocked(OriginOf(origin))
+}
+
+func (self *FilledValues) noteScriptedOriginLocked(origin string) {
+	if origin == "" {
+		return
+	}
+	if self.scriptedOrigins == nil {
+		self.scriptedOrigins = map[string]bool{}
+	}
+	self.scriptedOrigins[origin] = true
+}
+
+// NoteScriptedOrigins is NoteScriptedOrigin for each address given.
+func (self *FilledValues) NoteScriptedOrigins(origins []string) {
+	for _, origin := range origins {
+		self.NoteScriptedOrigin(origin)
+	}
+}
+
+// IsOriginScripted says the agent ran a script on the site the address is on.
+func (self *FilledValues) IsOriginScripted(address string) bool {
+	if self == nil {
+		return false
+	}
+	origin := OriginOf(address)
+	if origin == "" {
+		return false
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.scriptedOrigins[origin]
+}
+
+// ScriptedOrigins are the sites the agent ran a script on, sorted.
+func (self *FilledValues) ScriptedOrigins() []string {
+	if self == nil {
+		return nil
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	origins := make([]string, 0, len(self.scriptedOrigins))
+	for origin := range self.scriptedOrigins {
+		origins = append(origins, origin)
+	}
+	sort.Strings(origins)
+	return origins
+}
+
+// ForgetScriptedOrigins lets the agent fill on every site again.
+func (self *FilledValues) ForgetScriptedOrigins() {
+	if self == nil {
+		return
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.scriptedOrigins = nil
+}
+
+// ForgetPages forgets what is known of the pages: which are locked, which a
+// script ran in, which sites it ran on and where a secret was put. It keeps
+// the values to hide (they were typed once and stay hidden from the model),
+// for a browser that was reset: it has no page, cookie or storage from before.
+func (self *FilledValues) ForgetPages() {
+	if self == nil {
+		return
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.tabs = nil
+	self.scriptedOrigins = nil
+}
+
+// OriginOf is the site an address is on, written the one way the scripted
+// marks are compared: scheme, lower-case host without a leading "www." (the
+// fill treats it as the same site) and the port when it is not the scheme's
+// own. It is empty for an address that is not an http or https one.
+func OriginOf(address string) string {
+	parsed, err := url.Parse(strings.TrimSpace(address))
+	if err != nil {
+		return ""
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "" {
+		return ""
+	}
+	if strings.HasPrefix(host, "www.") && strings.Contains(host[4:], ".") {
+		host = host[4:]
+	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	port := parsed.Port()
+	if port == "" || (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		return scheme + "://" + host
+	}
+	return scheme + "://" + host + ":" + port
+}
+
 // NoteScriptOnEveryPage says the tab was given something that runs in every
 // page it loads (see filledTab.hasScriptOnEveryPage).
 func (self *FilledValues) NoteScriptOnEveryPage(tab string) {
@@ -416,6 +537,9 @@ func (self *FilledValues) HasBeenScripted(tab string) bool {
 	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+	if len(self.scriptedOrigins) > 0 {
+		return true
+	}
 	for _, name := range []string{tab, ""} {
 		if found := self.tabs[name]; found != nil && (found.isScripted || len(found.scriptedDocuments) > 0 || found.hasScriptOnEveryPage) {
 			return true

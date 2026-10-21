@@ -1,5 +1,8 @@
 // @vitest-environment-options {"url": "https://shop.example.test/sign-in"}
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SCRIPTED_ORIGIN_REFUSAL } from './lockedTab'
 
 // The service worker's script is driven here as the socket drives it: through
 // act, with the browser's APIs stood in for. What is held to is what the agent
@@ -22,16 +25,25 @@ const event = (name: string) => ({
   removeListener: vi.fn(),
 })
 const sendCommand = vi.fn(async (_target: unknown, method: string) => (method === 'Network.enable' ? {} : {}))
-const executeScript = vi.fn(async () => [{ result: { ok: true, data: 'a result' } }])
+const executeScript = vi.fn(async (_injection?: unknown) => [
+  { result: { ok: true, data: 'a result' }, documentId: 'doc-run' } as Record<string, unknown>,
+])
+const queryTabs = vi.fn(async (_filter?: unknown) => [] as Record<string, unknown>[])
+const storedLocal: Record<string, unknown> = {}
+let tabUrl = 'https://shop.example.test/sign-in'
 
 let act: (action: string, args: Record<string, unknown>) => Promise<{ ok: boolean; data?: any; error?: string }>
+let clearScriptedOrigins: () => Promise<void>
 
 beforeAll(async () => {
   vi.stubGlobal('chrome', {
     storage: {
       session: { get: async () => ({ tabId: 7, ownTabId: 7 }), set: async () => {}, remove: async () => {} },
       sync: { get: async () => ({}) },
-      local: { get: async () => ({}) },
+      local: {
+        get: async (key: string) => (key in storedLocal ? { [key]: storedLocal[key] } : {}),
+        set: async (values: Record<string, unknown>) => void Object.assign(storedLocal, values),
+      },
       onChanged: event('storage.onChanged'),
     },
     runtime: {
@@ -39,17 +51,19 @@ beforeAll(async () => {
       onInstalled: event('onInstalled'),
       onMessage: event('onMessage'),
       openOptionsPage: vi.fn(),
+      id: 'extension-id',
+      getURL: (path: string) => `chrome-extension://extension-id/${path}`,
     },
     action: { setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn(), onClicked: event('onClicked') },
     tabs: {
       get: async (id: number) => ({
         id,
-        url: 'https://shop.example.test/sign-in',
+        url: tabUrl,
         title: 'Shop',
         windowId: 1,
         active: true,
       }),
-      query: async () => [],
+      query: queryTabs,
       sendMessage: async () => {},
       onUpdated: event('tabs.onUpdated'),
       onRemoved: event('tabs.onRemoved'),
@@ -64,7 +78,7 @@ beforeAll(async () => {
     webNavigation: { onCommitted: event('webNavigation.onCommitted') },
     scripting: { executeScript },
   })
-  ;({ act } = await import('./background'))
+  ;({ act, clearScriptedOrigins } = await import('./background'))
 })
 
 const requestEvent = {
@@ -81,7 +95,11 @@ function debuggerEvent(method: string, params: unknown) {
   for (const listener of listeners['debugger.onEvent']) listener({ tabId: 7 }, method, params)
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Each test starts with no site the agent ran a script on.
+  await clearScriptedOrigins()
+  tabUrl = 'https://shop.example.test/sign-in'
+  queryTabs.mockClear()
   fillLogin.mockReset()
   fillOneTimeCode.mockReset()
   executeScript.mockClear()
@@ -111,7 +129,7 @@ describe('a call the server checked for one tab', () => {
 
 describe('what is kept of the network', () => {
   it('never holds the body of a request', async () => {
-    await act('cdp', { method: 'Network.enable' })
+    await act('cdp', { method: 'Network.enable', isScript: false })
     debuggerEvent('Network.requestWillBeSent', requestEvent)
     const answer = await act('cdp_events', { forget: true })
     expect(answer.data.events).toHaveLength(1)
@@ -156,7 +174,7 @@ describe('what is kept of the network', () => {
   })
 
   it('is turned off and forgotten before a password goes in, and nothing is kept of that document', async () => {
-    await act('cdp', { method: 'Network.enable' })
+    await act('cdp', { method: 'Network.enable', isScript: false })
     debuggerEvent('Network.requestWillBeSent', requestEvent)
     debuggerEvent('Runtime.consoleAPICalled', { args: [{ value: 'before the fill' }] })
     fillLogin.mockResolvedValue({ ok: true, data: { isFilled: true, documentId: 'doc-1' } })
@@ -266,6 +284,9 @@ describe('a tab showing a document the agent filled', () => {
   it('is not read back, whatever the server has been told', async () => {
     await commit('doc-20')
     expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
+    // A script on the site keeps it from being filled (see below); this test is
+    // about what is read after a fill.
+    await clearScriptedOrigins()
     await fillDocument('doc-20')
     for (const action of ['evaluate', 'screenshot', 'storage']) {
       const answer = await act(action, { expression: '1' })
@@ -349,5 +370,131 @@ describe('a tab showing a document the agent filled', () => {
     expect((await act('cdp', { method: 'Runtime.evaluate', params: { expression: '1' } })).ok).toBe(false)
     await commit('doc-25')
     expect((await act('evaluate', { expression: '1' })).ok).toBe(true)
+  })
+})
+
+describe('a site the agent ran a script on', () => {
+  const commitOn = async (documentId: string, url: string) => {
+    for (const listener of listeners['webNavigation.onCommitted']) {
+      await listener({ tabId: 7, frameId: 0, documentId, url, transitionQualifiers: [] })
+    }
+  }
+  let documentCount = 0
+  beforeEach(async () => {
+    // Each test starts on a document nothing was filled into.
+    await commitOn(`doc-fresh-${++documentCount}`, 'https://shop.example.test/sign-in')
+  })
+  const fill = async () => act('fill_login', { host: 'shop.example.test', passwordRef: 2, password: 'hunter2' })
+  const messageFrom = async (message: unknown, sender: unknown) => {
+    const answers: unknown[] = []
+    let isAnswerLater = false
+    for (const listener of listeners['onMessage']) {
+      if (
+        (listener as (...args: unknown[]) => unknown)(message, sender, (answer: unknown) => answers.push(answer)) ===
+        true
+      )
+        isAnswerLater = true
+    }
+    if (isAnswerLater) await new Promise((resolve) => setTimeout(resolve, 10))
+    return answers
+  }
+
+  it('is kept in the storage, as origins only, and is not filled in any page of it', async () => {
+    fillLogin.mockResolvedValue({ ok: true, data: { isFilled: true, documentId: 'doc-1' } })
+    expect((await fill()).ok).toBe(true)
+    await commitOn('doc-after-sign-in', 'https://shop.example.test/account')
+    const answer = await act('evaluate', { expression: '1' })
+    expect(answer).toEqual({ ok: true, data: { scriptRun: { documentId: 'doc-run' }, value: 'a result' } })
+    expect(storedLocal.scriptedOrigins).toEqual(['https://shop.example.test'])
+    fillLogin.mockClear()
+    // Another page of the site, and the same site written with www.
+    for (const address of ['https://shop.example.test/account', 'https://www.shop.example.test/']) {
+      tabUrl = address
+      const refused = await fill()
+      expect(refused.ok, address).toBe(false)
+      expect(refused.error, address).toBe(SCRIPTED_ORIGIN_REFUSAL)
+    }
+    expect(fillLogin).not.toHaveBeenCalled()
+    expect((await act('fill_one_time_code', { host: 'shop.example.test', ref: 2, code: '000000' })).error).toBe(
+      SCRIPTED_ORIGIN_REFUSAL,
+    )
+    // Another site is not marked.
+    tabUrl = 'https://bank.example.test/'
+    fillLogin.mockResolvedValue({ ok: true, data: { isFilled: true, documentId: 'doc-2' } })
+    expect((await fill()).ok).toBe(true)
+  })
+
+  it('is allowed again when the person says so, from their options page and no other', async () => {
+    await act('evaluate', { expression: '1' })
+    const options = { id: 'extension-id', frameId: 0, url: 'chrome-extension://extension-id/options.html' }
+    expect(await messageFrom({ type: 'passwords:scripted-origins' }, options)).toEqual([
+      { origins: ['https://shop.example.test'] },
+    ])
+    // A page of a website, a content script, and another page of the extension.
+    for (const sender of [
+      { id: 'extension-id', frameId: 0, url: 'https://shop.example.test/', tab: { id: 3 } },
+      { id: 'extension-id', frameId: 0, url: 'chrome-extension://extension-id/suggestion.html' },
+      { id: 'another-extension', frameId: 0, url: 'chrome-extension://extension-id/options.html' },
+      { id: 'extension-id', frameId: 2, url: 'chrome-extension://extension-id/options.html' },
+    ]) {
+      expect(await messageFrom({ type: 'passwords:clear-scripted-origins' }, sender)).toEqual([
+        { error: 'Not allowed from here.' },
+      ])
+    }
+    expect(storedLocal.scriptedOrigins).toEqual(['https://shop.example.test'])
+    expect(await messageFrom({ type: 'passwords:clear-scripted-origins' }, options)).toEqual([{}])
+    expect(storedLocal.scriptedOrigins).toEqual([])
+    fillLogin.mockResolvedValue({ ok: true, data: { isFilled: true, documentId: 'doc-3' } })
+    expect((await fill()).ok).toBe(true)
+  })
+
+  it('follows the page when it moves to another document while the script runs', async () => {
+    // The script is sent to the sign-in page's predecessor; the page is replaced
+    // by a page of another site, the script runs there and that page moves on.
+    executeScript.mockImplementationOnce(async () => {
+      await commitOn('doc-30', 'https://login.example.test/sign-in')
+      await commitOn('doc-31', 'https://news.example.test/')
+      return [{ result: { ok: true, data: 1 }, documentId: 'doc-30' }]
+    })
+    await act('evaluate', { expression: 'new Promise(() => {})' })
+    expect(storedLocal.scriptedOrigins).toEqual([
+      'https://login.example.test',
+      'https://news.example.test',
+      'https://shop.example.test',
+    ])
+    // Even when the script is refused or throws.
+    executeScript.mockRejectedValueOnce(new Error('no'))
+    await clearScriptedOrigins()
+    expect((await act('evaluate', { expression: '1' })).ok).toBe(false)
+    expect(storedLocal.scriptedOrigins).toEqual(['https://shop.example.test'])
+  })
+
+  it('names the site of a window the script opened', async () => {
+    queryTabs.mockResolvedValue([
+      { id: 99, openerTabId: 7, pendingUrl: 'https://popup.example.test/' },
+      { id: 98, openerTabId: 5, url: 'https://unrelated.example.test/' },
+    ])
+    await act('evaluate', { expression: 'window.open()' })
+    queryTabs.mockResolvedValue([])
+    expect(storedLocal.scriptedOrigins).toEqual(['https://popup.example.test', 'https://shop.example.test'])
+  })
+
+  it('is marked by a protocol command that runs script, or one the server does not describe, and not by one it says only looks', async () => {
+    await act('cdp', { method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved' }, isScript: false })
+    expect(storedLocal.scriptedOrigins ?? []).toEqual([])
+    const answer = await act('cdp', { method: 'Runtime.evaluate', params: { expression: '1' }, isScript: true })
+    expect(answer.ok).toBe(true)
+    expect(answer.data).toEqual({ scriptRun: { documentId: '' }, value: { result: {} } })
+    expect(storedLocal.scriptedOrigins).toEqual(['https://shop.example.test'])
+    await clearScriptedOrigins()
+    await act('cdp', { method: 'DOM.setAttributeValue', params: {} })
+    expect(storedLocal.scriptedOrigins).toEqual(['https://shop.example.test'])
+  })
+
+  it('is refused in the words the server has for it', async () => {
+    const source = readFileSync(resolve(__dirname, '../../../internal/browser/passwords.go'), 'utf8')
+    const words = /const ScriptedSiteInTabWords = (".*")\n/.exec(source)
+    expect(words).not.toBeNull()
+    expect(JSON.parse(words![1])).toBe(SCRIPTED_ORIGIN_REFUSAL)
   })
 })

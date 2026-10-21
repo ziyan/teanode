@@ -36,9 +36,9 @@ import { fillLoginForAgent, fillOneTimeCodeForAgent } from './passwords/agentFil
 // Which document each of the agent's tabs shows and which the agent filled a
 // password or code into: the server locks a filled tab until it commits a new
 // document, and is told when one does.
-import { TabDocuments, withoutRequestBodies } from './tabDocuments'
+import { SCRIPTED_ORIGINS_KEY, ScriptedOrigins, TabDocuments, withoutRequestBodies } from './tabDocuments'
 // What is refused on its own for a tab showing a document the agent filled.
-import { lockedActionRefusal, lockedMethodRefusal } from './lockedTab'
+import { SCRIPTED_ORIGIN_REFUSAL, lockedActionRefusal, lockedMethodRefusal } from './lockedTab'
 // What the agent's actions do inside the page (snapshot, click, type ...).
 import { inPage } from './inPage'
 
@@ -48,6 +48,14 @@ void restrictStorageToTrustedContexts()
 
 let socket = null
 const documents = new TabDocuments()
+// scriptedOrigins are the sites the agent ran a script on in this browser: no
+// fill is done on them until the person allows them again. The record is kept
+// in chrome.storage.local (origins only), read back before an action is done.
+const scriptedOrigins = new ScriptedOrigins()
+const scriptedOriginsRestored = chrome.storage.local
+  .get(SCRIPTED_ORIGINS_KEY)
+  .then((stored) => scriptedOrigins.replace(stored && stored[SCRIPTED_ORIGINS_KEY]))
+  .catch(() => {})
 // attached is the tab the actions go to and the person's own tab, either of
 // which may be none: ownTabId is theirs, attached through the panel, and
 // tabId the one actions go to -- theirs, or one the agent opened.
@@ -297,7 +305,8 @@ function connect(origin, secret) {
       }
     }
     const tabs = await listTabs().catch(() => [])
-    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null, currentTab: attached.tabId, tabs }))
+    await scriptedOriginsRestored
+    opening.send(JSON.stringify({ type: 'hello', protocol: PROTOCOL, token: secret, title: attached.title, url: attached.url, hasTab: attached.tabId !== null, currentTab: attached.tabId, tabs, scriptedOrigins: scriptedOrigins.list() }))
     // A word every so often keeps this worker, and the socket, alive
     // while nothing else is said.
     clearInterval(pings)
@@ -380,6 +389,10 @@ function connect(origin, secret) {
 void connectIfSignedIn()
 chrome.runtime.onStartup.addListener(() => void connectIfSignedIn())
 chrome.runtime.onInstalled.addListener(() => void connectIfSignedIn())
+// The options page may change the list itself (allowing sites again).
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[SCRIPTED_ORIGINS_KEY]) scriptedOrigins.replace(changes[SCRIPTED_ORIGINS_KEY].newValue)
+})
 chrome.storage.onChanged.addListener((changes, area) => {
   if (!(area === 'local' && changes.token) && !(area === 'sync' && changes.server)) return
   disconnect()
@@ -923,6 +936,90 @@ async function stopWatchingNetwork(tabId) {
   state.events = []
 }
 
+// keepScriptedOrigins writes the list of scripted sites to the storage.
+const keepScriptedOrigins = () => chrome.storage.local.set({ [SCRIPTED_ORIGINS_KEY]: scriptedOrigins.list() })
+
+// clearScriptedOrigins lets the agent fill on every site again. The options
+// page asks for it with the message passwords:clear-scripted-origins.
+async function clearScriptedOrigins() {
+  await scriptedOriginsRestored
+  scriptedOrigins.clear()
+  await keepScriptedOrigins()
+}
+
+// frameState is what the browser says the tab's main frame shows now: its
+// address and document, read together.
+async function frameState(tabId) {
+  try {
+    if (chrome.webNavigation && typeof chrome.webNavigation.getFrame === 'function') {
+      const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 })
+      if (frame) return { url: frame.url || '', documentId: frame.documentId || '' }
+    }
+  } catch {
+    // Fall back to the tab's own address.
+  }
+  const tab = await chrome.tabs.get(tabId).catch(() => null)
+  return { url: (tab && tab.url) || '', documentId: '' }
+}
+
+// markScriptedSites notes the sites a script ran, or is running, on: the one
+// the tab shows now, the ones it committed since its count of commits was
+// countBefore (a script that waits can run in several documents), and those of
+// the windows the tab opened (a window outlives the page that opened it).
+async function markScriptedSites(tabId, countBefore, addresses) {
+  await scriptedOriginsRestored
+  const found = [...addresses, (await frameState(tabId)).url, ...documents.originsSince(tabId, countBefore)]
+  const opened = await chrome.tabs.query({}).catch(() => [])
+  for (const other of opened) {
+    if (other && other.openerTabId === tabId) found.push(other.pendingUrl || other.url)
+  }
+  let isNews = false
+  for (const address of found) isNews = scriptedOrigins.add(address) || isNews
+  if (isNews) await keepScriptedOrigins().catch(() => {})
+}
+
+// runAsScript does an action that runs script in the page, or changes it. The
+// sites are marked before, and again after, however it ends: the page can move
+// to another document meanwhile, and the script runs in the one the browser
+// finds when it gets there. The answer names the document the script ran in,
+// for the server's own mark; the model is given the value alone.
+// work answers { answer, documentId }, the documentId being empty when the
+// browser did not say.
+async function runAsScript(tab, work) {
+  const countBefore = documents.countOf(tab.id)
+  await markScriptedSites(tab.id, Number.POSITIVE_INFINITY, [tab.url])
+  let done
+  try {
+    done = await work()
+  } finally {
+    await markScriptedSites(tab.id, countBefore, []).catch(() => {})
+  }
+  if (!done.answer.ok) return done.answer
+  const documentId = done.documentId || (await frameState(tab.id)).documentId
+  return { ...done.answer, data: { scriptRun: { documentId }, value: done.answer.data } }
+}
+
+// isOptionsPage says a message comes from the extension's own options page.
+function isOptionsPage(sender) {
+  if (!sender || sender.id !== chrome.runtime.id || (sender.frameId !== undefined && sender.frameId !== 0)) return false
+  const prefix = chrome.runtime.getURL('')
+  const url = typeof sender.url === 'string' ? sender.url : ''
+  return url.startsWith(prefix) && '/' + url.slice(prefix.length).split(/[?#]/)[0] === '/options.html'
+}
+
+// What the options page asks about the sites the agent ran a script on.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const type = message && message.type
+  if (type !== 'passwords:clear-scripted-origins' && type !== 'passwords:scripted-origins') return false
+  if (!isOptionsPage(sender)) {
+    sendResponse({ error: 'Not allowed from here.' })
+    return false
+  }
+  const work = type === 'passwords:scripted-origins' ? scriptedOriginsRestored.then(() => ({ origins: scriptedOrigins.list() })) : clearScriptedOrigins().then(() => ({}))
+  work.then(sendResponse, () => sendResponse({ error: 'Something went wrong.' }))
+  return true
+})
+
 // act does one action in the attached tab: navigation here, everything
 // else in the page through the content script; fetch through the tab's
 // own session.
@@ -1026,10 +1123,16 @@ async function act(action, args) {
         const lockedRefusal = lockedMethodRefusal(args.method, args.params)
         if (lockedRefusal) return { ok: false, error: lockedRefusal }
       }
-      agentUsing.add(tab.id)
-      await debuggerFor(tab.id)
-      const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
-      return { ok: true, data: { result: answer === undefined ? null : answer } }
+      const sendProtocolCommand = async () => {
+        agentUsing.add(tab.id)
+        await debuggerFor(tab.id)
+        const answer = await chrome.debugger.sendCommand({ tabId: tab.id }, args.method, args.params || {})
+        return { ok: true, data: { result: answer === undefined ? null : answer } }
+      }
+      // The server says whether the command runs script in the page or changes
+      // it; one it does not say anything about is taken to.
+      if (args.isScript === false) return await sendProtocolCommand()
+      return await runAsScript(tab, async () => ({ answer: await sendProtocolCommand(), documentId: '' }))
     }
     if (action === 'cdp_events') {
       const state = debugging.get(tab.id)
@@ -1061,6 +1164,11 @@ async function act(action, args) {
     // person let the agent use and that the tab is on one of its sites; the
     // extension checks the tab's address again and never echoes a value.
     if (action === 'fill_login' || action === 'fill_one_time_code') {
+      // A site the agent ran a script on is not filled, in any page of it.
+      await scriptedOriginsRestored
+      if (scriptedOrigins.has(tab.url) || scriptedOrigins.has((await frameState(tab.id)).url)) {
+        return { ok: false, error: SCRIPTED_ORIGIN_REFUSAL }
+      }
       // What the page asks of the network is not kept from here on, and what
       // was kept before is let go: a form's request carries the password.
       await stopWatchingNetwork(tab.id)
@@ -1072,14 +1180,18 @@ async function act(action, args) {
       await rememberDocuments().catch(() => {})
       return { ok: true, data: { ...answer.data, tab: tab.id, commitCount: documents.countOf(tab.id) } }
     }
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: inPage,
-      // Whether the tab shows a filled document is the worker's to say, never
-      // the caller's: it is set after whatever came with the action.
-      args: [action, { ...args, isFilledDocument }],
-    })
-    return result?.result || { ok: false, error: 'the page did not answer' }
+    const runInPage = async () => {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: inPage,
+        // Whether the tab shows a filled document is the worker's to say, never
+        // the caller's: it is set after whatever came with the action.
+        args: [action, { ...args, isFilledDocument }],
+      })
+      return { answer: result?.result || { ok: false, error: 'the page did not answer' }, documentId: result?.documentId || '' }
+    }
+    if (action === 'evaluate') return await runAsScript(tab, runInPage)
+    return (await runInPage()).answer
   } catch (error) {
     return { ok: false, error: String(error && error.message ? error.message : error) }
   }
@@ -1293,5 +1405,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 })
 
-// act is exported for the tests, which drive it as the socket does.
-export { act }
+// act and clearScriptedOrigins are exported for the tests, which drive them as
+// the socket and the options page do.
+export { act, clearScriptedOrigins }

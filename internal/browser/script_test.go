@@ -77,9 +77,10 @@ func TestSecretHostsAreKeptForTheLifeOfTheTab(test *testing.T) {
 	}
 }
 
-// A script run in the headless page marks the document the browser says it is
-// in; the fill, the one-time code and the passkey are refused on it and
-// allowed on the next document, with no command sent to the page.
+// A script run in the headless page marks the site of the document the browser
+// says it is in; the fill, the one-time code and the passkey are refused on
+// any page of the site, with no command sent to the page, until the browser is
+// reset.
 func TestEvaluateMarksTheDocumentAndAFillIsRefusedOnIt(test *testing.T) {
 	chrome, page, finish := startFake(test)
 	defer finish()
@@ -120,23 +121,31 @@ func TestEvaluateMarksTheDocumentAndAFillIsRefusedOnIt(test *testing.T) {
 		},
 	} {
 		err := fill()
-		if err == nil || err.Error() != ScriptedPageWords || strings.Contains(err.Error(), request.Text) {
+		if err == nil || err.Error() != ScriptedSiteWords || strings.Contains(err.Error(), request.Text) {
 			test.Errorf("%s on a scripted document: %v", name, err)
 		}
 	}
 	if chrome.sent("Runtime.evaluate") != evaluations || chrome.sent("WebAuthn.addVirtualAuthenticator") != 0 {
 		test.Fatalf("something was sent to a scripted page: %v", chrome.commands)
 	}
-	// A reload, or a new page, is a new document.
+	// A reload, or a new page, is a new document of the same site, which the
+	// script may have left things on.
 	chrome.setHistory([]string{"about:blank", signIn}, nil, -1, "loader-2")
-	if err := page.FillSecret(ctx, request); err != nil {
-		test.Fatalf("a fill on a new document: %s", err)
+	if err := page.FillSecret(ctx, request); err == nil || err.Error() != ScriptedSiteWords {
+		test.Fatalf("a fill on a new document of the site: %v", err)
 	}
-	// Going back to the scripted document (the browser restores it from its
-	// cache) is the scripted document again.
-	chrome.setHistory([]string{"about:blank", signIn}, nil, -1, "loader-1")
-	if err := page.FillSecret(ctx, request); err == nil {
-		test.Fatal("the scripted document came back and was filled")
+	// Another site is not marked.
+	chrome.setHistory([]string{"about:blank", "https://bank.example.test/sign-in"}, nil, -1, "loader-3")
+	if err := page.FillSecret(ctx, request); err != nil {
+		test.Fatalf("a fill on another site: %s", err)
+	}
+	// A reset page has nothing from before.
+	chrome.setHistory([]string{"about:blank", signIn}, nil, -1, "loader-4")
+	if err := page.Reset(ctx); err != nil {
+		test.Fatal(err)
+	}
+	if err := page.FillSecret(ctx, request); err != nil {
+		test.Fatalf("a fill after a reset: %s", err)
 	}
 }
 

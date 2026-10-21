@@ -104,3 +104,8 @@ export function lockedMethodRefusal(method: string, params: unknown): string {
   }
   return ''
 }
+
+// SCRIPTED_ORIGIN_REFUSAL is the answer to a fill on a site the agent ran a
+// script on. It matches ScriptedSiteInTabWords in internal/browser/passwords.go.
+export const SCRIPTED_ORIGIN_REFUSAL =
+  'The agent ran a script on this site in the person\'s browser, and what a script leaves behind (a window, a worker, a handler on another page of the site) outlives its page, so nothing is filled on this site. The person can turn it back on with "Allow the agent to fill on these sites again" in the TeaNode extension\'s options. Sign in before you run any script.'

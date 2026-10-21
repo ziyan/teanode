@@ -132,14 +132,20 @@ func (self *Browser) Close() error {
 // Context is a fresh, isolated browser context with one page in it: no
 // cookies, no storage, no history from anyone else.
 type Context struct {
-	browser   *Browser
-	contextId string
-	targetId  string
-	sessionId string
+	browser *Browser
 
 	mutex  sync.Mutex
 	closed bool
 	lastAt time.Time
+
+	// contextId, targetId and sessionId are the browser context, the page and
+	// the session this value drives. Reset replaces them, so they are read
+	// with the mutex held (see session), and pageDone is closed when they are
+	// replaced or the context closes, to end what was started for them.
+	contextId string
+	targetId  string
+	sessionId string
+	pageDone  chan struct{}
 
 	// filled is what a sign-in put into the page, kept for the life of the
 	// page (see FilledValues). filledWatch is closed when the context closes,
@@ -162,8 +168,31 @@ type Context struct {
 	heldPasskey *heldPasskey
 }
 
+// openedPage is a browser context with one page in it, attached to.
+type openedPage struct {
+	contextId string
+	targetId  string
+	sessionId string
+}
+
 // NewContext opens a context and a blank page in it.
 func (self *Browser) NewContext(ctx context.Context) (*Context, error) {
+	opened, err := self.openPage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	page := &Context{browser: self, contextId: opened.contextId, targetId: opened.targetId, sessionId: opened.sessionId, lastAt: time.Now(), filledWatch: make(chan struct{}), pageDone: make(chan struct{})}
+	go page.guardRequests(opened.sessionId, page.pageDone)
+	self.mutex.Lock()
+	self.contexts[opened.contextId] = page
+	self.mutex.Unlock()
+	return page, nil
+}
+
+// openPage makes a browser context and a blank page in it, with every request
+// of the page guarded. The caller starts answering the paused requests
+// (guardRequests) and owns the context from then on.
+func (self *Browser) openPage(ctx context.Context) (*openedPage, error) {
 	var created struct {
 		BrowserContextID string `json:"browserContextId"`
 	}
@@ -194,7 +223,6 @@ func (self *Browser) NewContext(ctx context.Context) (*Context, error) {
 	if err := self.connection.call(ctx, "", "Target.attachToTarget", map[string]any{"targetId": target.TargetID, "flatten": true}, &attached); err != nil {
 		return nil, err
 	}
-	page := &Context{browser: self, contextId: created.BrowserContextID, targetId: target.TargetID, sessionId: attached.SessionID, lastAt: time.Now(), filledWatch: make(chan struct{})}
 	// The page never downloads, and every request it makes is checked.
 	_ = self.connection.call(ctx, attached.SessionID, "Page.enable", nil, nil)
 	_ = self.connection.call(ctx, attached.SessionID, "Runtime.enable", nil, nil)
@@ -208,21 +236,82 @@ func (self *Browser) NewContext(ctx context.Context) (*Context, error) {
 		_ = self.connection.call(ctx, "", "Target.disposeBrowserContext", map[string]any{"browserContextId": created.BrowserContextID}, nil)
 		return nil, fmt.Errorf("browser: cannot guard the page's requests: %w", err)
 	}
-	go page.guardRequests()
-	self.mutex.Lock()
-	self.contexts[created.BrowserContextID] = page
-	self.mutex.Unlock()
-	return page, nil
+	return &openedPage{contextId: created.BrowserContextID, targetId: target.TargetID, sessionId: attached.SessionID}, nil
 }
 
-// guardRequests answers every paused request: continued when its host is
-// allowed, failed otherwise.
-func (self *Context) guardRequests() {
-	events, stop := self.browser.connection.listen(self.sessionId)
+// session is the session of the page this value drives now.
+func (self *Context) session() string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.sessionId
+}
+
+// Reset throws the page away and opens a new one in a new browser context, as
+// when it was first opened: no cookie, storage, history, window or worker from
+// before is there. A script the agent ran leaves things behind that outlive
+// its page, so a site it ran a script on is not filled again until this is
+// done (see CheckNotScripted); the values to hide from the model stay hidden.
+func (self *Context) Reset(ctx context.Context) error {
+	self.mutex.Lock()
+	closed := self.closed
+	self.mutex.Unlock()
+	if closed {
+		return fmt.Errorf("browser: the page is closed")
+	}
+	// The new page first, so that a failure leaves the old one as it was.
+	opened, err := self.browser.openPage(ctx)
+	if err != nil {
+		return err
+	}
+	self.mutex.Lock()
+	if self.closed {
+		self.mutex.Unlock()
+		_ = self.browser.connection.call(ctx, "", "Target.disposeBrowserContext", map[string]any{"browserContextId": opened.contextId}, nil)
+		return fmt.Errorf("browser: the page is closed")
+	}
+	oldContextID, oldWatch, oldDone, held := self.contextId, self.filledWatch, self.pageDone, self.heldPasskey
+	self.contextId, self.targetId, self.sessionId = opened.contextId, opened.targetId, opened.sessionId
+	self.pageDone = make(chan struct{})
+	self.filledWatch = make(chan struct{})
+	self.isWatching = false
+	self.commitCount = 0
+	self.currentEntryID = 0
+	self.knownEntryIDs = nil
+	self.heldPasskey = nil
+	self.lastAt = time.Now()
+	fresh := self.pageDone
+	self.mutex.Unlock()
+	self.browser.mutex.Lock()
+	delete(self.browser.contexts, oldContextID)
+	self.browser.contexts[opened.contextId] = self
+	self.browser.mutex.Unlock()
+	go self.guardRequests(opened.sessionId, fresh)
+	// What the old page started ends with it.
+	if held != nil {
+		close(held.done)
+	}
+	close(oldWatch)
+	close(oldDone)
+	self.filled.ForgetPages()
+	disposeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	return self.browser.connection.call(disposeCtx, "", "Target.disposeBrowserContext", map[string]any{"browserContextId": oldContextID}, nil)
+}
+
+// guardRequests answers every paused request of one session: continued when
+// its host is allowed, failed otherwise. It ends when done is closed.
+func (self *Context) guardRequests(sessionId string, done <-chan struct{}) {
+	events, stop := self.browser.connection.listen(sessionId)
 	defer stop()
-	for event := range events {
+	for {
+		var event *message
+		select {
+		case <-done:
+			return
+		case event = <-events:
+		}
 		if event.Method == "Fetch.authRequired" {
-			self.answerProxy(event)
+			self.answerProxy(sessionId, event)
 			continue
 		}
 		if event.Method != "Fetch.requestPaused" {
@@ -239,24 +328,18 @@ func (self *Context) guardRequests() {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := self.allowed(paused.Request.URL); err != nil {
-			_ = self.browser.connection.call(ctx, self.sessionId, "Fetch.failRequest", map[string]any{"requestId": paused.RequestID, "errorReason": "AccessDenied"}, nil)
+			_ = self.browser.connection.call(ctx, sessionId, "Fetch.failRequest", map[string]any{"requestId": paused.RequestID, "errorReason": "AccessDenied"}, nil)
 		} else {
-			_ = self.browser.connection.call(ctx, self.sessionId, "Fetch.continueRequest", map[string]any{"requestId": paused.RequestID}, nil)
+			_ = self.browser.connection.call(ctx, sessionId, "Fetch.continueRequest", map[string]any{"requestId": paused.RequestID}, nil)
 		}
 		cancel()
-		self.mutex.Lock()
-		closed := self.closed
-		self.mutex.Unlock()
-		if closed {
-			return
-		}
 	}
 }
 
 // answerProxy hands Chrome the password for this server's own proxy. It is
 // the only thing that ever asks the page for one: a site asking for a
 // password is answered with "Default", which is a refusal to type anything.
-func (self *Context) answerProxy(event *message) {
+func (self *Context) answerProxy(sessionId string, event *message) {
 	var asked struct {
 		RequestID     string `json:"requestId"`
 		AuthChallenge struct {
@@ -276,7 +359,7 @@ func (self *Context) answerProxy(event *message) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_ = self.browser.connection.call(ctx, self.sessionId, "Fetch.continueWithAuth", map[string]any{
+	_ = self.browser.connection.call(ctx, sessionId, "Fetch.continueWithAuth", map[string]any{
 		"requestId":             asked.RequestID,
 		"authChallengeResponse": answer,
 	}, nil)
@@ -324,19 +407,23 @@ func (self *Context) Close() error {
 	self.closed = true
 	held := self.heldPasskey
 	self.heldPasskey = nil
+	contextID, watch, done := self.contextId, self.filledWatch, self.pageDone
 	self.mutex.Unlock()
 	if held != nil {
 		close(held.done)
 	}
-	if self.filledWatch != nil {
-		close(self.filledWatch)
+	if watch != nil {
+		close(watch)
+	}
+	if done != nil {
+		close(done)
 	}
 	self.browser.mutex.Lock()
-	delete(self.browser.contexts, self.contextId)
+	delete(self.browser.contexts, contextID)
 	self.browser.mutex.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return self.browser.connection.call(ctx, "", "Target.disposeBrowserContext", map[string]any{"browserContextId": self.contextId}, nil)
+	return self.browser.connection.call(ctx, "", "Target.disposeBrowserContext", map[string]any{"browserContextId": contextID}, nil)
 }
 
 // Location is where a navigation ended.
@@ -459,7 +546,13 @@ func (self *Context) elementCenter(ctx context.Context, where Target) (float64, 
   let isSecret = false;
   if (node instanceof HTMLInputElement) {
     try { isSecret = !!(window.__teanodeFilled && window.__teanodeFilled.has(node)); } catch (error) { isSecret = true; }
-    isSecret = isSecret || node.type.toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || '');
+    let isMasked = false;
+    try {
+      const style = getComputedStyle(node);
+      const mask = style.getPropertyValue('-webkit-text-security') || style.webkitTextSecurity || '';
+      isMasked = mask !== '' && mask !== 'none';
+    } catch (error) { isMasked = true; }
+    isSecret = isSecret || isMasked || node.type.toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || '');
   }
   const label = node.getAttribute ? node.getAttribute('aria-label') : '';
   const name = ((isLocked && holdsTypedText ? label : (label || node.innerText || (isSecret ? '' : node.value) || node.textContent)) || '').trim().slice(0, 80);
@@ -684,11 +777,24 @@ func (self *Context) Back(ctx context.Context) (*Location, error) {
 // Evaluate runs an expression and returns its JSON value, bounded.
 //
 // A script is the agent's, and can leave a listener or a changed form behind
-// that a later sign-in would feed, so the document it ran in is marked and is
-// not filled (see CheckNotScripted).
+// that a later sign-in would feed, and a window, a worker or a handler that
+// outlives its page. So the site it ran on is marked and is not filled until
+// the browser is reset (see CheckNotScripted). The mark is made before the
+// script and again after it returns, and for every document the page
+// committed meanwhile: a page that is about to be replaced can run the script
+// in the document that replaced it, which the first mark did not name.
 func (self *Context) Evaluate(ctx context.Context, expression string, maximum int) (string, error) {
 	self.touch()
+	events, stopListening := self.browser.connection.listen(self.session())
+	defer stopListening()
 	self.noteScript(ctx)
+	defer func() {
+		// The script's own context may be over; the mark still has to be made.
+		markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		self.noteScriptedNavigations(events)
+		self.noteScript(markCtx)
+	}()
 	var value json.RawMessage
 	if err := self.evaluate(ctx, expression, &value); err != nil {
 		return "", err
@@ -732,10 +838,10 @@ func (self *Context) evaluate(ctx context.Context, expression string, result any
 
 func (self *Context) call(ctx context.Context, method string, params any, result any) error {
 	self.mutex.Lock()
-	closed := self.closed
+	closed, sessionId := self.closed, self.sessionId
 	self.mutex.Unlock()
 	if closed {
 		return fmt.Errorf("browser: the page is closed")
 	}
-	return self.browser.connection.call(ctx, self.sessionId, method, params, result)
+	return self.browser.connection.call(ctx, sessionId, method, params, result)
 }

@@ -119,18 +119,94 @@ func TestAScriptedHeadlessPageIsNotFilled(test *testing.T) {
 	}
 	fills := len(chrome.fills(test))
 	uses := len(found.usedOn(test, found.grantedLogin))
-	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedPageWords)
-	mustRefuse(test, run, codeArguments, devtools.ScriptedPageWords)
-	mustRefuse(test, run, passkeyArguments, devtools.ScriptedPageWords)
+	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedSiteWords)
+	mustRefuse(test, run, codeArguments, devtools.ScriptedSiteWords)
+	mustRefuse(test, run, passkeyArguments, devtools.ScriptedSiteWords)
 	if len(chrome.fills(test)) != fills || len(chrome.sent("WebAuthn.addVirtualAuthenticator")) != 0 || len(found.usedOn(test, found.grantedLogin)) != uses {
 		test.Fatal("a scripted page was filled, given a passkey, or the use was recorded")
 	}
-	// The sign-in page opened again is a new document.
+	// The sign-in page opened again is a new document of the same site, which
+	// the script may have left things on.
 	chrome.mutex.Lock()
 	chrome.loader = "loader-2"
 	chrome.mutex.Unlock()
+	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedSiteWords)
+	// A fresh browser is filled, and a script on it marks its site again.
+	if _, err := browse(run, `{"action":"reset"}`); err != nil {
+		test.Fatal(err)
+	}
 	if _, err := browse(run, fillLogin(found.grantedLogin)); err != nil {
-		test.Fatalf("a new document: %s", err)
+		test.Fatalf("a fresh browser: %s", err)
+	}
+}
+
+// reset is the headless browser's only; the person's own browser is not thrown
+// away.
+func TestResetStartsAFreshHeadlessBrowserAndIsRefusedOnTheTab(test *testing.T) {
+	found := newWorld(test)
+	run, chrome := found.headlessRun(test, shopAddress)
+	before := len(chrome.sent("Target.createBrowserContext"))
+	if _, err := browse(run, `{"action":"reset"}`); err != nil {
+		test.Fatal(err)
+	}
+	if len(chrome.sent("Target.createBrowserContext")) != before+1 || len(chrome.sent("Target.disposeBrowserContext")) != 1 {
+		test.Fatalf("a reset did not open a new browser context and dispose of the old: %v", chrome.commands)
+	}
+	tabRun := found.tabRun(shopAddress)
+	mustRefuse(test, tabRun, `{"action":"reset","target":"tab"}`, "not reset")
+	if len(tabRun.tab.actions()) != 0 {
+		test.Fatalf("the person's browser was asked: %v", tabRun.tab.actions())
+	}
+}
+
+// The server decides what counts as a script, sends that with the action, and
+// marks the document the extension says the script ran in, which may be newer
+// than the one it knew when it sent the action. The model reads the value alone.
+func TestATabScriptIsMarkedInTheDocumentTheExtensionSaysItRanIn(test *testing.T) {
+	found := newWorld(test)
+	run := found.tabRun(shopAddress)
+	run.tab.tabID = "7"
+	run.tab.fillAnswer = `{"isFilled":true,"tab":7,"documentId":"doc-9","commitCount":9}`
+	for _, tab := range []string{"", "7"} {
+		run.tab.Filled().Committed(tab, devtools.Commit{DocumentID: "doc-1", Address: shopAddress, Count: 1})
+	}
+	// The sign-in page replaced the page the script was sent to, and the script
+	// ran in it: the extension says so, and the commit is reported afterwards.
+	run.tab.answer = `{"scriptRun":{"documentId":"doc-2"},"value":{"title":"Sign in"}}`
+	result, err := browse(run, `{"action":"evaluate","expression":"document.title","isScript":false}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(result.Content, "scriptRun") || !strings.Contains(result.Content, `"title":"Sign in"`) {
+		test.Fatalf("the model reads more than the value: %s", result.Content)
+	}
+	asked := run.tab.actions()
+	if !strings.Contains(asked[len(asked)-1].arguments, `"isScript":true`) {
+		test.Fatalf("the extension was not told the action runs script, whatever the model said: %v", asked[len(asked)-1])
+	}
+	run.tab.Filled().Committed("7", devtools.Commit{DocumentID: "doc-2", Address: shopAddress, Count: 2})
+	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedPageWords)
+	// An action that runs no script is sent as one that does not.
+	run.tab.answer = `{"result":"fine"}`
+	if _, err := browse(run, `{"action":"click","ref":3,"isScript":true}`); err != nil {
+		test.Fatal(err)
+	}
+	asked = run.tab.actions()
+	if !strings.Contains(asked[len(asked)-1].arguments, `"isScript":false`) {
+		test.Fatalf("a click was sent as a script: %v", asked[len(asked)-1])
+	}
+	if _, err := browse(run, `{"action":"cdp","method":"Runtime.evaluate","params":{"expression":"1"}}`); err != nil {
+		test.Fatal(err)
+	}
+	asked = run.tab.actions()
+	if !strings.Contains(asked[len(asked)-1].arguments, `"isScript":true`) {
+		test.Fatalf("a protocol command that runs script was not sent as one: %v", asked[len(asked)-1])
+	}
+	// An answer in the old shape is read as it is.
+	run.tab.answer = `{"result":"fine"}`
+	result, err = browse(run, `{"action":"evaluate","expression":"1"}`)
+	if err != nil || !strings.Contains(result.Content, "fine") {
+		test.Fatalf("an answer without the document: %v %v", result, err)
 	}
 }
 

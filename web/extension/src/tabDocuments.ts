@@ -33,6 +33,78 @@ export interface CommitDetails {
 // reportsKept is the most reports held while the server cannot be told.
 const reportsKept = 100
 
+// commitOriginsKept is how many of a tab's latest commits are remembered by
+// the site they were on, to name the sites a script may have run on while the
+// tab moved (see TabDocuments.originsSince).
+const commitOriginsKept = 20
+
+// SCRIPTED_ORIGINS_KEY is where the list of scripted sites is kept, in
+// chrome.storage.local: an array of origin strings, nothing else. The options
+// page reads the same key to show the list.
+export const SCRIPTED_ORIGINS_KEY = 'scriptedOrigins'
+
+// originOf is the site an address is on, written the one way sites are compared
+// here and in the server (internal/browser/filled.go, OriginOf): scheme, lower
+// case host without a leading "www.", and the port when it is not the scheme's
+// own. It is empty for an address that is not an http or https one.
+export function originOf(address: unknown): string {
+  if (typeof address !== 'string') return ''
+  let parsed: URL
+  try {
+    parsed = new URL(address.trim())
+  } catch {
+    return ''
+  }
+  const scheme = parsed.protocol.replace(/:$/, '').toLowerCase()
+  if (scheme !== 'http' && scheme !== 'https') return ''
+  let host = parsed.hostname.toLowerCase().replace(/\.$/, '')
+  if (host === '') return ''
+  if (host.startsWith('www.') && host.slice(4).includes('.')) host = host.slice(4)
+  const isDefaultPort =
+    parsed.port === '' || (scheme === 'https' && parsed.port === '443') || (scheme === 'http' && parsed.port === '80')
+  return `${scheme}://${host}${isDefaultPort ? '' : ':' + parsed.port}`
+}
+
+// ScriptedOrigins are the sites the agent ran a script on in the person's
+// browser. A script leaves things behind that outlive its page (a window it
+// opened that reaches back into the site's pages, a worker, a handler on
+// another page of the site), so a site on this list is not filled by the agent
+// until the person allows it again. Only origins are kept, never an address or
+// a value. The list is the extension's record: the server is told it, but the
+// extension decides.
+export class ScriptedOrigins {
+  private origins = new Set<string>()
+
+  // add notes the site an address is on. It says whether that was news.
+  add(address: unknown): boolean {
+    const origin = originOf(address)
+    if (origin === '' || this.origins.has(origin)) return false
+    this.origins.add(origin)
+    return true
+  }
+
+  // has says the agent ran a script on the site the address is on.
+  has(address: unknown): boolean {
+    const origin = originOf(address)
+    return origin !== '' && this.origins.has(origin)
+  }
+
+  list(): string[] {
+    return [...this.origins].sort()
+  }
+
+  clear(): void {
+    this.origins.clear()
+  }
+
+  // replace puts a stored list in place of this one, ignoring anything that is
+  // not an origin string.
+  replace(kept: unknown): void {
+    this.origins.clear()
+    for (const entry of Array.isArray(kept) ? kept : []) this.add(entry)
+  }
+}
+
 // KeptDocuments is what the class keeps of itself between one run of the
 // service worker and the next (chrome.storage.session): ids and counts, never
 // an address or a value.
@@ -47,6 +119,7 @@ export class TabDocuments {
   private current = new Map<number, string>()
   private filled = new Map<number, Set<string>>()
   private pending: CommitReport[] = []
+  private commitOrigins = new Map<number, { count: number; origin: string }[]>()
 
   // committed notes a navigation that committed. It answers the report to send
   // the server, or null for a frame that is not a tab's main frame and for a
@@ -57,6 +130,13 @@ export class TabDocuments {
     this.counts.set(details.tabId, count)
     if (details.documentId) this.current.set(details.tabId, details.documentId)
     if (!isListed) return null
+    const origin = originOf(details.url)
+    if (origin !== '') {
+      const recent = this.commitOrigins.get(details.tabId) ?? []
+      recent.push({ count, origin })
+      if (recent.length > commitOriginsKept) recent.splice(0, recent.length - commitOriginsKept)
+      this.commitOrigins.set(details.tabId, recent)
+    }
     const report: CommitReport = {
       tab: details.tabId,
       documentId: details.documentId ?? '',
@@ -114,6 +194,12 @@ export class TabDocuments {
     return this.counts.get(tabId) ?? 0
   }
 
+  // originsSince are the sites the tab committed documents on after its
+  // count of commits was the one given: a script that waits can run in several.
+  originsSince(tabId: number, count: number): string[] {
+    return (this.commitOrigins.get(tabId) ?? []).filter((entry) => entry.count > count).map((entry) => entry.origin)
+  }
+
   // markFilled notes that a value was put into the tab's document.
   markFilled(tabId: number, documentId: string | undefined): void {
     if (!documentId) return
@@ -131,6 +217,7 @@ export class TabDocuments {
   }
 
   forget(tabId: number): void {
+    this.commitOrigins.delete(tabId)
     this.counts.delete(tabId)
     this.current.delete(tabId)
     this.filled.delete(tabId)

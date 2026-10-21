@@ -37,6 +37,19 @@
   // one). Its value is never read into a snapshot, whoever put it there, so a
   // password filled in for the person is not sent to the model afterwards.
   // An input that cannot be told is taken to be one.
+  // A text input a page draws as dots with -webkit-text-security (how a card
+  // number or a code is masked without a password input) holds a secret too,
+  // whatever its type and name say. A style that cannot be read is taken to be
+  // masked.
+  function isMasked(element) {
+    try {
+      const style = window.getComputedStyle(element);
+      const mask = style.getPropertyValue('-webkit-text-security') || style.webkitTextSecurity || '';
+      return mask !== '' && mask !== 'none';
+    } catch (error) {
+      return true;
+    }
+  }
   function isSecretField(element) {
     if (!(element instanceof HTMLInputElement)) return false;
     try {
@@ -44,6 +57,7 @@
     } catch (error) {
       return true;
     }
+    if (isMasked(element)) return true;
     return (element.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(element.getAttribute('autocomplete') || '');
   }
   function nameOf(element) {

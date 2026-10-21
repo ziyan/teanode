@@ -49,12 +49,27 @@ func (self *Context) PageURL(ctx context.Context) (string, error) {
 }
 
 // ScriptedPageWords is what the model is told when a page is not filled
-// because the agent ran script in it, here and by the tab target.
-const ScriptedPageWords = "This page has run the agent's script, so it is not filled. Open the sign-in page again (navigate) and fill it before running any script."
+// because the agent ran script in it and the site it is on could not be told,
+// here and by the tab target.
+const ScriptedPageWords = "This page has run the agent's script, so it is not filled. Sign in before you run any script on a site."
+
+// ScriptedSiteWords is what the model is told when the headless browser does
+// not fill a page because the agent ran a script on its site.
+const ScriptedSiteWords = "The agent ran a script on this site in this browser, and what a script leaves behind (a window, a worker, a handler on another page of the site) outlives its page, so nothing is filled on this site any more. Use reset to start a fresh browser, then sign in before you run any script."
+
+// ScriptedSiteInTabWords is what the model is told when the person's browser
+// does not fill a page because the agent ran a script on its site.
+const ScriptedSiteInTabWords = "The agent ran a script on this site in the person's browser, and what a script leaves behind (a window, a worker, a handler on another page of the site) outlives its page, so nothing is filled on this site. The person can turn it back on with \"Allow the agent to fill on these sites again\" in the TeaNode extension's options. Sign in before you run any script."
 
 // ScriptOnEveryPageWords is what the model is told when a tab was given a
 // script that runs in every page it loads.
-const ScriptOnEveryPageWords = "This tab was given a script that runs in every page it loads, so nothing is filled in it. Open a new tab (open) and fill the sign-in page there before running any script."
+const ScriptOnEveryPageWords = "This tab was given a script that runs in every page it loads, so nothing is filled in it. Open a new tab (open) and fill the sign-in page there before running any script. In the agent's own browser, reset starts a fresh one."
+
+// wordsError is an error that is a sentence for the model: it ends with a full
+// stop, which an error string should not, so it is its own type.
+type wordsError string
+
+func (self wordsError) Error() string { return string(self) }
 
 // currentDocument is the document the main frame shows now, as the browser says.
 func (self *Context) currentDocument(ctx context.Context) (Document, error) {
@@ -72,10 +87,14 @@ func (self *Context) currentDocument(ctx context.Context) (Document, error) {
 	return Document{ID: tree.FrameTree.Frame.LoaderID, Address: tree.FrameTree.Frame.URL}, nil
 }
 
-// noteScript records that a script is about to run in the page, in the
-// document it shows now (see FilledValues.NoteScripted). When the browser
-// does not say which document that is, the page is taken to be scripted for
-// good: a script that cannot be placed cannot be ruled out later.
+// noteScript records that a script is running in the page, or has just run, in
+// the document it shows now (see FilledValues.NoteScripted), and on that
+// document's site (see FilledValues.NoteScriptedOrigin). It is called before
+// the script and again after, because the page can move to another document
+// in between: the one the script ran in is the one shown at the start, or at
+// the end, or one the page passed through (see noteScriptedNavigations). When
+// the browser does not say which document that is, the page is taken to be
+// scripted for good: a script that cannot be placed cannot be ruled out later.
 func (self *Context) noteScript(ctx context.Context) {
 	document, err := self.currentDocument(ctx)
 	if err != nil {
@@ -83,27 +102,132 @@ func (self *Context) noteScript(ctx context.Context) {
 		return
 	}
 	self.filled.NoteScripted("", document)
+	self.filled.NoteScriptedOrigin(document.Address)
+	self.noteScriptedTargets(ctx)
 }
 
-// CheckNotScripted says the page can be filled: the agent has run no script in
-// the document it shows now. The error is the words for the model. The browser
-// is asked which document that is only if a script was ever run, and when it
-// does not answer the page is refused.
-func (self *Context) CheckNotScripted(ctx context.Context) error {
-	if self.filled.HasScriptOnEveryPage("") {
-		return errors.New(ScriptOnEveryPageWords)
+// noteScriptedNavigations marks every main frame document the page committed
+// since the events were first listened to: a script that waits for a promise
+// can run through several.
+func (self *Context) noteScriptedNavigations(events <-chan *message) {
+	for {
+		select {
+		case event := <-events:
+			if event.Method != "Page.frameNavigated" {
+				continue
+			}
+			var navigated struct {
+				Frame struct {
+					ParentID string `json:"parentId"`
+					LoaderID string `json:"loaderId"`
+					URL      string `json:"url"`
+				} `json:"frame"`
+			}
+			if json.Unmarshal(event.Params, &navigated) != nil || navigated.Frame.ParentID != "" {
+				continue
+			}
+			self.filled.NoteScripted("", Document{ID: navigated.Frame.LoaderID, Address: navigated.Frame.URL})
+			self.filled.NoteScriptedOrigin(navigated.Frame.URL)
+		default:
+			return
+		}
 	}
-	if !self.filled.HasBeenScripted("") {
-		return nil
+}
+
+// pageTarget is one target of the browser context: a page or a window the
+// page's script opened, and the like.
+type pageTarget struct {
+	TargetID         string `json:"targetId"`
+	Type             string `json:"type"`
+	URL              string `json:"url"`
+	BrowserContextID string `json:"browserContextId"`
+}
+
+// otherTargets are the targets of this page's browser context besides the
+// page itself: windows a script opened, workers, frames of other processes.
+func (self *Context) otherTargets(ctx context.Context) ([]pageTarget, error) {
+	var listed struct {
+		TargetInfos []pageTarget `json:"targetInfos"`
 	}
-	document, err := self.currentDocument(ctx)
+	if err := self.browser.connection.call(ctx, "", "Target.getTargets", nil, &listed); err != nil {
+		return nil, err
+	}
+	self.mutex.Lock()
+	contextID, targetID := self.contextId, self.targetId
+	self.mutex.Unlock()
+	var others []pageTarget
+	for _, target := range listed.TargetInfos {
+		if target.BrowserContextID == contextID && target.TargetID != targetID {
+			others = append(others, target)
+		}
+	}
+	return others, nil
+}
+
+// isWindow says a target is a page or a window of the web, which a script can
+// open and the browser can close; the browser's own interface targets (an
+// address bar's pop-up) and workers are not.
+func (self pageTarget) isWindow() bool {
+	return self.Type == "page"
+}
+
+// noteScriptedTargets marks the site of every other target of the browser
+// context: a window the script opened is the script's too. When the browser
+// does not list them the page is taken to be scripted for good.
+func (self *Context) noteScriptedTargets(ctx context.Context) {
+	others, err := self.otherTargets(ctx)
 	if err != nil {
-		return err
+		self.filled.NoteScriptOnEveryPage("")
+		return
 	}
-	if self.filled.IsScripted("", document.ID) {
-		return errors.New(ScriptedPageWords)
+	for _, target := range others {
+		self.filled.NoteScriptedOrigin(target.URL)
+	}
+}
+
+// closeOtherTargets closes every target of the browser context but the page,
+// so that no window a script opened is alive while a secret is typed. It
+// fails when the browser does not say which targets there are or one stays.
+func (self *Context) closeOtherTargets(ctx context.Context) error {
+	others, err := self.otherTargets(ctx)
+	if err != nil {
+		return errors.New("browser: the browser did not say which windows are open")
+	}
+	for _, target := range others {
+		if !target.isWindow() {
+			continue
+		}
+		if err := self.browser.connection.call(ctx, "", "Target.closeTarget", map[string]any{"targetId": target.TargetID}, nil); err != nil {
+			return errors.New("browser: another window is open and could not be closed")
+		}
 	}
 	return nil
+}
+
+// CheckNotScripted says the page can be filled: the agent has run no script on
+// the site it shows now, and none in the document. It also closes every
+// window but the page, which a script may have opened (a window outlives the
+// document that opened it and can reach back into the site's pages). The error
+// is the words for the model. The browser is asked which document the page
+// shows only if a script was ever run, and when it does not answer the page is
+// refused.
+func (self *Context) CheckNotScripted(ctx context.Context) error {
+	if self.filled.HasScriptOnEveryPage("") {
+		return wordsError(ScriptOnEveryPageWords)
+	}
+	if self.filled.HasBeenScripted("") {
+		document, err := self.currentDocument(ctx)
+		if err != nil {
+			return err
+		}
+		if self.filled.IsOriginScripted(document.Address) {
+			return wordsError(ScriptedSiteWords)
+		}
+		if self.filled.IsScripted("", document.ID) {
+			return wordsError(ScriptedPageWords)
+		}
+	}
+	return self.closeOtherTargets(ctx)
 }
 
 // Filled is what a sign-in put into this page: the values to hide from the
@@ -181,18 +305,20 @@ func (self *Context) PrepareToFill(ctx context.Context) {
 	document.CommitCount = self.commitCount
 	isWatching := self.isWatching
 	self.isWatching = true
+	watch := self.filledWatch
+	sessionId := self.sessionId
 	self.mutex.Unlock()
 
 	self.filled.Lock("", document)
-	if isWatching || self.filledWatch == nil {
+	if isWatching || watch == nil {
 		return
 	}
-	events, stopListening := self.browser.connection.listen(self.sessionId)
+	events, stopListening := self.browser.connection.listen(sessionId)
 	go func() {
 		defer stopListening()
 		for {
 			select {
-			case <-self.filledWatch:
+			case <-watch:
 				return
 			case event := <-events:
 				if event.Method != "Page.frameNavigated" {
@@ -208,7 +334,7 @@ func (self *Context) PrepareToFill(ctx context.Context) {
 				if json.Unmarshal(event.Params, &navigated) != nil || navigated.Frame.ParentID != "" {
 					continue
 				}
-				self.committed(navigated.Frame.LoaderID, navigated.Frame.URL)
+				self.committed(navigated.Frame.LoaderID, navigated.Frame.URL, watch)
 			}
 		}
 	}()
@@ -247,7 +373,7 @@ var historyAfterCommitWait = 3 * time.Second
 
 // readHistoryAfterCommit reads the navigation history, trying again for a short
 // while when the browser says the page is not attached yet.
-func (self *Context) readHistoryAfterCommit() (*historyEntries, error) {
+func (self *Context) readHistoryAfterCommit(stop <-chan struct{}) (*historyEntries, error) {
 	wait := historyAfterCommitWait
 	if self.historyWait > 0 {
 		wait = self.historyWait
@@ -261,7 +387,7 @@ func (self *Context) readHistoryAfterCommit() (*historyEntries, error) {
 			return entries, err
 		}
 		select {
-		case <-self.filledWatch:
+		case <-stop:
 			return nil, err
 		case <-time.After(25 * time.Millisecond):
 		}
@@ -273,8 +399,8 @@ func (self *Context) readHistoryAfterCommit() (*historyEntries, error) {
 // makes a new entry, and back and forward land on an entry that was already
 // there. When the history cannot be read the commit is taken to be a move
 // through it, which leaves the lock as it is.
-func (self *Context) committed(loaderID, address string) {
-	entries, err := self.readHistoryAfterCommit()
+func (self *Context) committed(loaderID, address string, stop <-chan struct{}) {
+	entries, err := self.readHistoryAfterCommit(stop)
 	isBackForward := true
 	self.mutex.Lock()
 	self.commitCount++
@@ -515,7 +641,7 @@ func (self *Context) AddPasskey(ctx context.Context, passkey Passkey) error {
 		return errors.New("browser: the browser did not take the passkey")
 	}
 	lifetime := passkeyLifetime
-	events, stopListening := self.browser.connection.listen(self.sessionId)
+	events, stopListening := self.browser.connection.listen(self.session())
 	held := &heldPasskey{done: make(chan struct{}), authenticatorID: added.AuthenticatorID}
 	self.mutex.Lock()
 	self.heldPasskey = held

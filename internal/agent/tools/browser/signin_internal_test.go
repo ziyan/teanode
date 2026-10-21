@@ -90,6 +90,18 @@ func newWorld(test *testing.T) *world {
 			test.Fatal(err)
 		}
 		plaintext, _ := json.Marshal(fields)
+		if isUsable {
+			// The owner's device writes the agent's permission into the sealed
+			// fields, and the agent opens an item only if it is there.
+			var decoded map[string]any
+			if err := json.Unmarshal(plaintext, &decoded); err != nil {
+				test.Fatal(err)
+			}
+			decoded["access"] = map[string]any{"isUsableByAgent": true, "grantees": []any{}}
+			if plaintext, err = json.Marshal(decoded); err != nil {
+				test.Fatal(err)
+			}
+		}
 		sealedFields, err := passwords.Seal(itemKey, plaintext, passwords.ItemFieldsData(itemId, passwords.ItemKind(itemKind)))
 		if err != nil {
 			test.Fatal(err)
@@ -1073,11 +1085,16 @@ func TestAFilledHeadlessPageRefusesScriptsUntilItNavigatesAndHidesValues(test *t
 	if _, err := browse(run, evaluate); err != nil {
 		test.Fatalf("a script before a fill: %s", err)
 	}
-	// The document the script ran in is not filled; a new one is.
-	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedPageWords)
+	// The site the script ran on is not filled, in any document; a fresh
+	// browser is.
+	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedSiteWords)
 	chrome.mutex.Lock()
 	chrome.loader = "loader-1b"
 	chrome.mutex.Unlock()
+	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedSiteWords)
+	if _, err := browse(run, `{"action":"reset"}`); err != nil {
+		test.Fatal(err)
+	}
 	if _, err := browse(run, fillLogin(found.grantedLogin)); err != nil {
 		test.Fatal(err)
 	}

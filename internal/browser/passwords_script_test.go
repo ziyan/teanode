@@ -158,7 +158,7 @@ func TestARealChromeDoesNotFillAPageTheAgentRanScriptIn(test *testing.T) {
 					test.Fatalf("a script before any fill was refused: %s", err)
 				}
 				err := found.fill(found.refOf(fieldID), kind, text)
-				if err == nil || !strings.Contains(err.Error(), ScriptedPageWords) || strings.Contains(err.Error(), text) {
+				if err == nil || !strings.Contains(err.Error(), ScriptedSiteWords) || strings.Contains(err.Error(), text) {
 					test.Fatalf("a page the agent ran script in was filled, or refused with the wrong words: %v", err)
 				}
 				if value, _ := found.page.Evaluate(found.ctx, `document.getElementById('secret').value + document.getElementById('code').value`, 100); strings.Contains(value, text) {
@@ -170,12 +170,24 @@ func TestARealChromeDoesNotFillAPageTheAgentRanScriptIn(test *testing.T) {
 				}
 
 				// The sign-in page opened again is a new document without the
-				// script: it is filled, and the value goes to the site.
+				// script, but on the same site, which the script may have left a
+				// window or a handler on: it is not filled.
+				if _, err := found.page.Navigate(found.ctx, found.siteAddress); err != nil {
+					test.Fatal(err)
+				}
+				if err := found.fill(found.refOf(fieldID), kind, text); err == nil || !strings.Contains(err.Error(), ScriptedSiteWords) {
+					test.Fatalf("a new document of the site was filled: %v", err)
+				}
+				// A fresh browser has nothing the script made: the sign-in page
+				// is filled, and the value goes to the site.
+				if err := found.page.Reset(found.ctx); err != nil {
+					test.Fatal(err)
+				}
 				if _, err := found.page.Navigate(found.ctx, found.siteAddress); err != nil {
 					test.Fatal(err)
 				}
 				if err := found.fill(found.refOf(fieldID), kind, text); err != nil {
-					test.Fatalf("a new document was not filled: %s", err)
+					test.Fatalf("a fresh browser was not filled: %s", err)
 				}
 				found.submitAndSettle()
 				if received := found.receivedText(); strings.Contains(received, text) {
@@ -194,7 +206,7 @@ func TestARealChromeDoesNotSetUpAPasskeyOnAPageTheAgentRanScriptIn(test *testing
 		test.Fatal(err)
 	}
 	err := found.page.AddPasskey(found.ctx, Passkey{CredentialID: []byte("credential"), RelyingPartyID: "localhost", PrivateKey: []byte("key")})
-	if err == nil || !strings.Contains(err.Error(), ScriptedPageWords) {
+	if err == nil || !strings.Contains(err.Error(), ScriptedSiteWords) {
 		test.Fatalf("a passkey on a scripted page: %v", err)
 	}
 	if found.page.HasPasskey() {
@@ -272,5 +284,33 @@ func TestARealChromeFillsAFormThatSendsToItsOwnSite(test *testing.T) {
 				test.Fatalf("the field holds %s", value)
 			}
 		})
+	}
+}
+
+// A text input a page draws as dots with -webkit-text-security holds a secret
+// whatever its type says: its value is not read into a snapshot, and a click
+// does not name it by its value. A plain text input is shown as before.
+func TestARealChromeDoesNotShowAMaskedTextInput(test *testing.T) {
+	const maskedValue = "1234 5678 9012 3456"
+	found := startRealChromePage(test, func(string) string {
+		return `<html><body><input id="card" type="text" aria-label="" style="-webkit-text-security: disc" value="` + maskedValue + `">
+<input id="city" type="text" value="Springfield"></body></html>`
+	})
+	snapshot, err := found.page.Snapshot(found.ctx, "interactive", 0)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(snapshot.Text, maskedValue) || strings.Contains(snapshot.Text, "1234") {
+		test.Fatalf("the snapshot shows a masked input's value: %s", snapshot.Text)
+	}
+	if !strings.Contains(snapshot.Text, "(filled, value not shown)") || !strings.Contains(snapshot.Text, `value="Springfield"`) {
+		test.Fatalf("the snapshot does not tell the masked input from the plain one: %s", snapshot.Text)
+	}
+	name, _, err := found.page.Click(found.ctx, Target{Ref: found.refOf(`input(text)`)})
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(name, "1234") {
+		test.Fatalf("a click names the masked input by its value: %s", name)
 	}
 }

@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"encoding/json"
 	"strings"
 
 	devtools "github.com/ziyan/teanode/internal/browser"
@@ -19,6 +20,20 @@ import (
 // document (devtools.FilledValues, the lock in the other direction). Something
 // that runs in every page the tab loads from then on is never undone by a
 // navigation, so that tab is never filled again.
+//
+// That is the server's half, and it is not enough alone. A script runs in the
+// document the page shows when the browser gets to it, which may be a newer one
+// than the one marked before the command was sent, so the extension names the
+// document the script ran in with its answer (scriptRunAnswer), and the server
+// marks that one too. And what a script leaves behind outlives its document: a
+// window it opened that reaches back into the site's pages, a worker, a handler
+// on another page of the site. So the extension also keeps the sites the agent
+// ran a script on, for the life of its record (the person allows them again in
+// its options), and fills nowhere on them. The extension is the one that knows,
+// so the server does not keep a copy of that list that could go stale when the
+// person allows a site again; the extension's refusal reaches the model in its
+// own words. The headless browser keeps the list for the life of its page (a
+// reset starts a fresh one).
 //
 // A tab the agent filled a password or a one-time code into holds a session
 // afterwards. Its cookies and storage are not read back through the storage
@@ -147,32 +162,74 @@ func isScriptOnEveryPageMethod(method string) bool {
 	return false
 }
 
-// noteScriptRun records that an action of the person's tab is about to run
-// script in the page, or change it, so that the document is not filled
-// afterwards. The caller has already let the action through the lock.
-func noteScriptRun(filled *devtools.FilledValues, tabKey, address string, arguments *browserArguments) {
+// scriptRunOf says what an action of the person's tab does to the page: it runs
+// script in it or changes it (isScript), and whether it also puts something in
+// every page the tab loads from then on.
+func scriptRunOf(arguments *browserArguments) (isScript, isOnEveryPage bool) {
 	switch arguments.Action {
 	case "evaluate":
-		filled.NoteScripted(tabKey, devtools.Document{Address: address})
+		return true, false
 	case "navigate", "open":
 		// A script address or a document carried in its address runs as, or
 		// in place of, the page.
-		if !isWebAddress(arguments.URL) && strings.TrimSpace(arguments.URL) != "" {
-			filled.NoteScripted(tabKey, devtools.Document{Address: address})
-		}
+		return !isWebAddress(arguments.URL) && strings.TrimSpace(arguments.URL) != "", false
 	case "cdp":
 		switch {
 		case isScriptOnEveryPageMethod(arguments.Method):
-			filled.NoteScriptOnEveryPage(tabKey)
+			return true, true
 		case isSessionProtocolMethod(arguments.Method):
 			// Cookies and storage are read and written beside the page, not
 			// by script in it.
+			return false, false
 		case !isProtocolMethodReadOnly(arguments.Method):
-			filled.NoteScripted(tabKey, devtools.Document{Address: address})
+			return true, false
 		case !strings.HasPrefix(strings.TrimSpace(arguments.Method), "Input.") && hasScriptAddress(arguments.Params):
-			filled.NoteScripted(tabKey, devtools.Document{Address: address})
+			return true, false
 		}
 	}
+	return false, false
+}
+
+// noteScriptRun records that an action of the person's tab is about to run
+// script in the page, or change it, so that the document is not filled
+// afterwards. The caller has already let the action through the lock, and the
+// extension says which document the script ran in with its answer (see
+// markScriptRunAnswer), which may be a newer one.
+func noteScriptRun(filled *devtools.FilledValues, tabKey, address string, arguments *browserArguments) {
+	isScript, isOnEveryPage := scriptRunOf(arguments)
+	switch {
+	case isOnEveryPage:
+		filled.NoteScriptOnEveryPage(tabKey)
+	case isScript:
+		filled.NoteScripted(tabKey, devtools.Document{Address: address})
+	}
+}
+
+// scriptRunAnswer is how the extension answers an action that ran script: the
+// document the script ran in, and what the action itself answers. The model
+// reads the value alone.
+type scriptRunAnswer struct {
+	ScriptRun *struct {
+		DocumentID string `json:"documentId"`
+	} `json:"scriptRun"`
+	Value json.RawMessage `json:"value"`
+}
+
+// markScriptRunAnswer marks the document the extension says a script ran in,
+// and gives back what the action answered. An answer that is not in that shape
+// (an older extension, or an action that ran no script) is given back as it is.
+func markScriptRunAnswer(filled *devtools.FilledValues, tabKey string, data json.RawMessage) json.RawMessage {
+	var answer scriptRunAnswer
+	if json.Unmarshal(data, &answer) != nil || answer.ScriptRun == nil {
+		return data
+	}
+	if answer.ScriptRun.DocumentID != "" {
+		filled.NoteScripted(tabKey, devtools.Document{ID: answer.ScriptRun.DocumentID})
+	}
+	if len(answer.Value) == 0 {
+		return json.RawMessage("null")
+	}
+	return answer.Value
 }
 
 // refuseScriptedTab is the refusal of a sign-in on the person's tab whose page
