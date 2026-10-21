@@ -94,8 +94,6 @@ struct PasswordsShareScreen: View {
                         .actionColor()
                         .disabled(chosen == nil || isAdding)
                 }
-            } header: {
-                Text("Share with")
             } footer: {
                 Text("Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only, once you have confirmed their safety code. Only you can change the item.")
             }
@@ -130,7 +128,7 @@ struct PasswordsShareScreen: View {
             .tint(.red)
             .actionColor(isDestructive: true)
         } header: {
-            Text(verbatim: grantee.name)
+            PasswordsValueText(grantee.name, isProse: true)
         } footer: {
             if grantee.id == grantees.last?.id {
                 Text("Compare each safety code with the person, in person or on a call. If it is not the same on their screen, do not confirm it.")
@@ -256,7 +254,7 @@ struct PasswordsRecipientRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(verbatim: PersonWords.pickerLabel(name: recipient.name, username: recipient.username))
+            PasswordsValueText(PersonWords.pickerLabel(name: recipient.name, username: recipient.username), isProse: true)
             if recipient.safetyCode == nil {
                 Text("Waiting until they set up Passwords")
                     .font(.footnote)
@@ -295,9 +293,9 @@ struct PasswordsWaitingConfirmationRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(verbatim: PersonWords.pickerLabel(name: waiting.recipient.name, username: waiting.recipient.username))
+            PasswordsValueText(PersonWords.pickerLabel(name: waiting.recipient.name, username: waiting.recipient.username), isProse: true)
             if let itemName = waiting.itemName {
-                Text(verbatim: itemName)
+                PasswordsValueText(itemName, isProse: true)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

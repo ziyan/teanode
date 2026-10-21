@@ -110,7 +110,7 @@ struct PasswordsRecoveryKeySections: View {
 
     var body: some View {
         Section {
-            Text(verbatim: PasswordsFormat.recoveryKeyLines(recoveryKeyText).joined(separator: "\n"))
+            PasswordsValueText(PasswordsFormat.recoveryKeyLines(recoveryKeyText).joined(separator: "\n"))
                 .font(.body.monospaced())
                 .textSelection(.enabled)
                 .accessibilityLabel(Text("Recovery key"))

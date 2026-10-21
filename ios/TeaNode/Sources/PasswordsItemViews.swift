@@ -108,7 +108,7 @@ struct PasswordsItemScreen: View {
         }
         if !login.notes.isEmpty {
             Section("Notes") {
-                PasswordsFieldRow(model: model, title: String(localized: "Notes"), value: login.notes)
+                PasswordsFieldRow(model: model, title: String(localized: "Notes"), value: login.notes, isProse: true)
             }
         }
         folderSection(login.folder)
@@ -119,13 +119,13 @@ struct PasswordsItemScreen: View {
         if let url = PasswordsFormat.url(ofSite: site) {
             Link(destination: url) {
                 Label {
-                    Text(verbatim: PasswordsFormat.shownSite(site))
+                    PasswordsValueText(PasswordsFormat.shownSite(site))
                 } icon: {
                     Image(systemName: "safari")
                 }
             }
         } else {
-            Text(verbatim: site)
+            PasswordsValueText(site)
         }
     }
 
@@ -133,7 +133,7 @@ struct PasswordsItemScreen: View {
     private func cardSections(_ card: PasswordsCardFields) -> some View {
         Section {
             if !card.cardholderName.isEmpty {
-                PasswordsFieldRow(model: model, title: String(localized: "Name on card"), value: card.cardholderName)
+                PasswordsFieldRow(model: model, title: String(localized: "Name on card"), value: card.cardholderName, isProse: true)
             }
             if !card.number.isEmpty {
                 PasswordsFieldRow(
@@ -158,7 +158,7 @@ struct PasswordsItemScreen: View {
         }
         if !card.notes.isEmpty {
             Section("Notes") {
-                PasswordsFieldRow(model: model, title: String(localized: "Notes"), value: card.notes)
+                PasswordsFieldRow(model: model, title: String(localized: "Notes"), value: card.notes, isProse: true)
             }
         }
         folderSection(card.folder)
@@ -167,7 +167,7 @@ struct PasswordsItemScreen: View {
     @ViewBuilder
     private func noteSections(_ note: PasswordsNoteFields) -> some View {
         Section {
-            PasswordsFieldRow(model: model, title: String(localized: "Note"), value: note.text)
+            PasswordsFieldRow(model: model, title: String(localized: "Note"), value: note.text, isProse: true)
         }
         folderSection(note.folder)
     }
@@ -176,7 +176,7 @@ struct PasswordsItemScreen: View {
     private func folderSection(_ folder: String) -> some View {
         if !folder.isEmpty {
             Section {
-                LabeledContent("Folder") { Text(verbatim: folder) }
+                LabeledContent("Folder") { PasswordsValueText(folder, isProse: true) }
             }
         }
     }
@@ -239,7 +239,7 @@ struct PasswordsItemScreen: View {
                     Label("Share", systemImage: "person.badge.plus")
                         .foregroundStyle(.primary)
                     Spacer()
-                    Text(verbatim: sharedSummary(item))
+                    PasswordsValueText(PasswordsWords.shareSummary(of: item.shares), isProse: true)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.trailing)
                 }
@@ -247,11 +247,6 @@ struct PasswordsItemScreen: View {
         } footer: {
             Text("Choose a circle or a person. Only you can change an item you share.")
         }
-    }
-
-    private func sharedSummary(_ item: PasswordItem) -> String {
-        if item.shares.isEmpty { return String(localized: "Not shared") }
-        return ListFormatter.localizedString(byJoining: item.shares.map { PasswordsWords.granteeName(of: $0) })
     }
 
     private func deleteSection(_ item: PasswordItem) -> some View {
@@ -323,6 +318,8 @@ struct PasswordsFieldRow: View {
     let value: String
     /// What a tap copies, when it is not the value as shown (a card number without its spaces).
     var copiedValue: String?
+    /// Whether the value is sentences (a note) rather than a name, a number or a password.
+    var isProse = false
     var isSecret = false
     var isRevealed = false
     /// What a secret shows while hidden; dots by default, so a password's length is not told.
@@ -338,7 +335,7 @@ struct PasswordsFieldRow: View {
                     Text(verbatim: title)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Text(verbatim: shownValue)
+                    shownText
                         .font(isSecret && isRevealed ? Font.body.monospaced() : Font.body)
                         .foregroundStyle(.primary)
                 }
@@ -360,7 +357,14 @@ struct PasswordsFieldRow: View {
         }
     }
 
-    private var shownValue: String { isSecret && !isRevealed ? maskedValue : value }
+    /// The dots of a hidden secret as they are; anything else as a stored value.
+    @ViewBuilder private var shownText: some View {
+        if isSecret && !isRevealed {
+            Text(verbatim: maskedValue)
+        } else {
+            PasswordsValueText(value, isProse: isProse)
+        }
+    }
 }
 
 /// PasswordsOneTimeCodeRow is a login's one-time code, changing as it does,
@@ -409,10 +413,10 @@ struct PasswordsPasskeyRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: passkey.relyingPartyId)
+            PasswordsValueText(passkey.relyingPartyId)
             let accountName = passkey.userName.isEmpty ? loginUserName : passkey.userName
             if !accountName.isEmpty {
-                Text(verbatim: accountName)
+                PasswordsValueText(accountName)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

@@ -318,10 +318,15 @@ struct PasswordsGeneratorSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Text(verbatim: generated)
+                    // Not selectable: the text on screen has zero-width spaces in it, which a selection would copy.
+                    // A long press copies the password itself.
+                    PasswordsValueText(generated)
                         .font(.body.monospaced())
-                        .textSelection(.enabled)
+                        .contextMenu {
+                            Button("Copy", systemImage: "doc.on.doc") { PasswordsClipboard.copy(generated) }
+                        }
                         .accessibilityLabel(Text("Generated password"))
+                        .accessibilityValue(Text(verbatim: generated))
                     Button("Another password", systemImage: "arrow.clockwise") { generate() }
                         .actionColor()
                         .disabled(!canGenerate)
@@ -338,14 +343,15 @@ struct PasswordsGeneratorSheet: View {
                     Toggle("Leave out look-alike characters", isOn: $options.shouldAvoidLookAlikes)
                 }
             }
+            // A large title, so that it reads in full whatever the text size: an inline one is cut between the two buttons.
             .navigationTitle("Password generator")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Use this password") {
+                    Button("Use") {
                         onUse(generated)
                         dismiss()
                     }

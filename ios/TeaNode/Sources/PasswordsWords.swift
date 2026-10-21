@@ -115,6 +115,18 @@ enum PasswordsWords {
         return share.granteeName
     }
 
+    /// Whom an item the person owns is shared with, for the Share row: "Sam and
+    /// Alex", "Home", or "Home, 1 waiting" when somebody the share reaches has
+    /// not set up Passwords or still waits for the owner to confirm their key.
+    /// A circle is named by the circle, not by everyone in it.
+    static func shareSummary(of shares: [PasswordShareView]) -> String {
+        if shares.isEmpty { return String(localized: "Not shared") }
+        let names = ListFormatter.localizedString(byJoining: shares.map(\.granteeName))
+        let waitingUserIds = Set(shares.flatMap(\.recipients).filter { $0.publicKey == nil || !$0.hasKey }.map(\.userId))
+        if waitingUserIds.isEmpty { return names }
+        return String(localized: "\(names), \(waitingUserIds.count) waiting")
+    }
+
     /// "Copied" sentence for a field: "Password copied."
     static func copiedText(_ fieldName: String) -> String {
         String(localized: "\(fieldName) copied.")
@@ -192,6 +204,27 @@ extension PasswordItem {
     var sites: [String] {
         if case .login(let login) = fields { return login.sites }
         return []
+    }
+}
+
+/// PasswordsValueText shows a value the person stored (a user name, a site, a
+/// password, a note) so that a line never ends in a hyphen SwiftUI made up:
+/// the value may end a line only after "@", ".", "/" and the like, or inside a
+/// string too long to be a word (see `PasswordsDisplayText`). It reads aloud as
+/// the value itself. Use it for every stored value that is shown; the copy
+/// buttons copy the value, never what is shown here.
+struct PasswordsValueText: View {
+    let value: String
+    var isProse = false
+
+    init(_ value: String, isProse: Bool = false) {
+        self.value = value
+        self.isProse = isProse
+    }
+
+    var body: some View {
+        Text(verbatim: PasswordsDisplayText.breakable(value, isProse: isProse))
+            .accessibilityLabel(value)
     }
 }
 

@@ -80602,22 +80602,6 @@
         }
       }
     },
-    "Use this password": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このパスワードを使う"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用此密码"
-          }
-        }
-      }
-    },
     "Used by the agent": {
       "localizations": {
         "ja": {
@@ -81310,6 +81294,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器要求的口令验证慢得离谱，因此“密码”保持锁定。"
+          }
+        }
+      }
+    },
+    "Use": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用"
+          }
+        }
+      }
+    },
+    "%@, %lld waiting": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、%lld 人が待機中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，%lld 人等待中"
           }
         }
       }

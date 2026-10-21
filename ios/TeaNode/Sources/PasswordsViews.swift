@@ -39,6 +39,9 @@ struct PasswordsScreen: View {
             .task {
                 await model.start()
                 #if DEBUG
+                    // When start() ends on a phase that took no waiting to reach (the screens before set up), the
+                    // phase change below has not run yet, and it would clear the path set here. Let it run first.
+                    try? await Task.sleep(for: .milliseconds(300))
                     openDemoScreen()
                 #endif
             }
@@ -370,9 +373,9 @@ struct PasswordsItemRow: View {
                 .frame(width: iconWidth)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: item.name.isEmpty ? String(localized: "Untitled") : item.name)
+                PasswordsValueText(item.name.isEmpty ? String(localized: "Untitled") : item.name, isProse: true)
                 if !item.subtitle.isEmpty {
-                    Text(verbatim: item.subtitle)
+                    PasswordsValueText(item.subtitle)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -505,7 +508,7 @@ struct PasswordsDeletedRow: View {
                 .frame(width: iconWidth)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: item.name)
+                PasswordsValueText(item.name, isProse: true)
                 if let deletedAt = item.deletedAt {
                     Text("Deleted \(deletedAt.formatted(.relative(presentation: .named)))")
                         .font(.footnote)

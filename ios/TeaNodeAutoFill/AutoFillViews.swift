@@ -1,4 +1,5 @@
 import SwiftUI
+import TeaNodeKit
 
 // The extension's screens. The system presents them as a sheet over the
 // browser or app that asked, so every screen has its own way out (Cancel, or
@@ -211,6 +212,24 @@ struct AutoFillSectionView: View {
     }
 }
 
+/// AutoFillValueText shows a value the person stored (a login's name, a user
+/// name, a site) so that a line never ends in a hyphen SwiftUI made up: it may
+/// end only where `PasswordsDisplayText` allows. It reads aloud as the value.
+struct AutoFillValueText: View {
+    let value: String
+    var isProse = false
+
+    init(_ value: String, isProse: Bool = false) {
+        self.value = value
+        self.isProse = isProse
+    }
+
+    var body: some View {
+        Text(verbatim: PasswordsDisplayText.breakable(value, isProse: isProse))
+            .accessibilityLabel(value)
+    }
+}
+
 /// AutoFillRowView is a login: its name, and the user name under it. A
 /// passkey has a key beside it.
 struct AutoFillRowView: View {
@@ -219,11 +238,11 @@ struct AutoFillRowView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title)
+                AutoFillValueText(row.title, isProse: true)
                     .font(.body)
                     .foregroundStyle(.primary)
                 if !row.subtitle.isEmpty {
-                    Text(row.subtitle)
+                    AutoFillValueText(row.subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -256,8 +275,8 @@ struct AutoFillRegistrationView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Site", value: registration.relyingPartyId)
-                LabeledContent("User name", value: registration.userName)
+                LabeledContent("Site") { AutoFillValueText(registration.relyingPartyId) }
+                LabeledContent("User name") { AutoFillValueText(registration.userName) }
             } footer: {
                 Text("The passkey is saved with your logins in TeaNode Passwords.")
             }
