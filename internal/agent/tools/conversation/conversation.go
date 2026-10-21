@@ -272,7 +272,13 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			return nil, fmt.Errorf("there is no conversation %q", id)
 		}
 		said := make([]map[string]any, 0, len(messages))
-		for _, message := range messages {
+		// What the agent did in a turn that used Health, or listed or read
+		// something in Passwords, is not read back by another run: a goal, a
+		// schedule the agent wrote or a run a mail steered would otherwise
+		// get a note's text or a generated password out of the person's chat.
+		// What the person wrote stays.
+		isPrivate := tools.PrivateTurns(messages)
+		for index, message := range messages {
 			// The system's own words are the prompt, which the model has.
 			if message.Role == "system" {
 				continue
@@ -316,6 +322,11 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				entry["tool"] = message.Name
 			}
 			if content := strings.TrimSpace(message.Content); content != "" {
+				if isPrivate[index] && (message.Role == "tool" || message.Role == "assistant") {
+					entry["said"] = hiddenPrivateWords
+					said = append(said, entry)
+					continue
+				}
 				// A secret shown once is shown once. A tool that hands
 				// over a password or a token says so on its answer, and
 				// that answer is in the transcript; it is not read back
@@ -626,6 +637,10 @@ func reactionsOf(message *models.AgentMessage) []map[string]string {
 // verbatimPrefix is what a tool's answer carries when it holds a secret
 // the person asked to see. It is defined by the loop that writes it.
 const verbatimPrefix = "show_verbatim:"
+
+// hiddenPrivateWords stands for what the agent or one of its tools said in a
+// turn that used Health, or listed, read or made up something in Passwords.
+const hiddenPrivateWords = "[hidden: from a turn that used Health or Passwords]"
 
 // cutRunes shortens text to a number of characters without cutting one
 // in half, which would leave the model reading a replacement character.

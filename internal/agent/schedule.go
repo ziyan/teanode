@@ -184,7 +184,7 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 			return err
 		}
 	}
-	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: turnMessage, Surface: surface, Headless: true, IsPersonsSchedule: isPersonsSchedule(schedule), UsageKind: string(models.AgentJobSchedule)})
+	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: turnMessage, Surface: surface, Headless: true, IsPersonsSchedule: isPersonsOwnSchedule(schedule, run.Agent, run.Owner), UsageKind: string(models.AgentJobSchedule)})
 	if err != nil {
 		return err
 	}
@@ -295,11 +295,50 @@ func endIfNoTimeLeft(tx db.Transaction, scheduleId string) error {
 	return err
 }
 
-// isPersonsSchedule is whether the person wrote the schedule's prompt. Only a
-// recorded "person" counts: a writer that is empty or unknown is not taken to
-// be the person, since a run it wakes holds the tool kit with nobody watching.
+// BriefScheduleName is what the schedule the daily brief's switch writes is
+// called, and AssetEstimateScheduleName the one the asset estimates' switch
+// writes. Both are found by name.
+const (
+	BriefScheduleName         = "Daily brief"
+	AssetEstimateScheduleName = "Estimate asset values"
+)
+
+// isPersonsSchedule is whether the schedule's prompt is handed to the run as
+// the person's own words: the person wrote it, or pressed the switch that made
+// it. A writer that is empty or unknown is not taken to be the person, since a
+// run it wakes holds the tool kit with nobody watching.
 func isPersonsSchedule(schedule *models.AgentSchedule) bool {
-	return models.KnownWriter(schedule.WrittenBy) == models.WrittenByPerson
+	switch models.KnownWriter(schedule.WrittenBy) {
+	case models.WrittenByPerson, models.WrittenByBuiltIn:
+		return true
+	}
+	return false
+}
+
+// isBuiltInSchedule is whether TeaNode wrote the schedule: recorded so, or,
+// for a row made before built-in schedules were recorded as such, one of the
+// switches' names still holding the prompt the switch wrote.
+func isBuiltInSchedule(schedule *models.AgentSchedule, found *models.Agent, owner *models.User) bool {
+	if models.KnownWriter(schedule.WrittenBy) == models.WrittenByBuiltIn {
+		return true
+	}
+	prompt := strings.TrimSpace(schedule.Prompt)
+	switch {
+	case strings.EqualFold(schedule.Name, BriefScheduleName):
+		return found != nil && owner != nil && prompt == strings.TrimSpace(BriefPrompt(found, owner))
+	case strings.EqualFold(schedule.Name, AssetEstimateScheduleName):
+		return prompt == strings.TrimSpace(AssetEstimatePrompt())
+	}
+	return false
+}
+
+// isPersonsOwnSchedule is whether a run the schedule wakes counts as the
+// person asking, which is what Passwords asks. Only a schedule the person
+// wrote does: not one the agent wrote, and not one of the built-in schedules,
+// which read content the person did not write (the brief reads the inbox) and
+// so could be steered by a stranger's mail.
+func isPersonsOwnSchedule(schedule *models.AgentSchedule, found *models.Agent, owner *models.User) bool {
+	return models.KnownWriter(schedule.WrittenBy) == models.WrittenByPerson && !isBuiltInSchedule(schedule, found, owner)
 }
 
 // scheduleCheckIn is the message a drawer schedule's turn arrives as.

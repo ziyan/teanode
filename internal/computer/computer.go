@@ -33,6 +33,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ziyan/teanode/internal/passwords"
 )
 
 // The program's side of the relay. It says hello with the person's token,
@@ -727,6 +729,23 @@ func RunFilesystem(options *Options, arguments *FilesystemArguments) (any, error
 		return nil, errors.New("a path is needed")
 	}
 	path := resolve(options.Home, arguments.Path)
+	// The files `teanode passwords` keeps on this computer (the opened keys
+	// and the known keys of the people it shares with) are not read, changed,
+	// copied or moved through this tool: the agent runs as the person, and
+	// the opened keys open every item whatever "Let the agent use this" says.
+	// This stops the obvious route; a program the agent runs can still read
+	// the file as the person (see docs/subsystems/passwords.md).
+	switch arguments.Action {
+	case "read", "fetch", "put", "write", "append", "edit", "copy", "move":
+		if passwords.IsLocalFile(path) {
+			return nil, errors.New(passwordsFileRefusalWords)
+		}
+		if arguments.Action == "copy" || arguments.Action == "move" {
+			if passwords.IsLocalFile(resolve(options.Home, arguments.Destination)) {
+				return nil, errors.New(passwordsFileRefusalWords)
+			}
+		}
+	}
 	var err error
 	switch arguments.Action {
 	case "read":
@@ -816,6 +835,10 @@ func RunFilesystem(options *Options, arguments *FilesystemArguments) (any, error
 	}
 	return nil, fmt.Errorf("%q is not something the filesystem does", arguments.Action)
 }
+
+// passwordsFileRefusalWords is the answer to a file of Passwords on this
+// computer.
+const passwordsFileRefusalWords = "that file belongs to Passwords on this computer and is not open to the agent"
 
 // fetchFile is the file's bytes for the server to keep: a picture, a
 // video, a document the agent hands to the person. Base64 across the
@@ -1012,6 +1035,10 @@ func grep(root, pattern string, limit int) (any, error) {
 	more := false
 	searched := 0
 	scan := func(path string) error {
+		// Passwords' own files are not searched (see RunFilesystem).
+		if passwords.IsLocalFile(path) {
+			return nil
+		}
 		info, err := os.Stat(path)
 		if err != nil || !info.Mode().IsRegular() || info.Size() > readBytes {
 			return nil

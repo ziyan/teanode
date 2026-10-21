@@ -55,3 +55,37 @@ func TestEditingAScheduleKeepsOrTakesItsWriter(t *testing.T) {
 		}
 	})
 }
+
+// The schedule the daily brief's switch writes is recorded as built in, not as
+// the person's: it reads the inbox, so a run it wakes does not count as the
+// person asking for Passwords (it is still handed to the run as their words).
+// The person rewriting its prompt makes it theirs.
+func TestTheBriefSwitchWritesABuiltInSchedule(t *testing.T) {
+	fixture := newFinanceFixture(t, false)
+	fixture.as(t, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		brief, err := fixture.resolver.SetAgentBrief(ctx, SetAgentBriefArguments{Enabled: true})
+		if err != nil || brief == nil {
+			t.Fatalf("SetAgentBrief: %v %v", brief, err)
+		}
+		if brief.WrittenBy != models.WrittenByBuiltIn {
+			t.Errorf("the brief is recorded as written by %q", brief.WrittenBy)
+		}
+		stored, err := tx.GetAgentSchedule(brief.ID)
+		if err != nil || stored == nil || stored.WrittenBy != models.WrittenByBuiltIn {
+			t.Fatalf("the stored brief: %+v %v", stored, err)
+		}
+		// Turning it off and on again, or moving its time, leaves the writer.
+		if _, err := fixture.resolver.SetAgentBrief(ctx, SetAgentBriefArguments{Enabled: true, At: "08:00"}); err != nil {
+			t.Fatal(err)
+		}
+		if stored, _ = tx.GetAgentSchedule(brief.ID); stored.WrittenBy != models.WrittenByBuiltIn {
+			t.Errorf("moving the time changed the writer to %q", stored.WrittenBy)
+		}
+		if _, err := fixture.resolver.SaveAgentSchedule(ctx, SaveAgentScheduleArguments{ScheduleID: brief.ID, Prompt: "Read me my bank balance first thing."}); err != nil {
+			t.Fatal(err)
+		}
+		if stored, _ = tx.GetAgentSchedule(brief.ID); stored.WrittenBy != models.WrittenByPerson {
+			t.Errorf("a prompt the person wrote is theirs: %q", stored.WrittenBy)
+		}
+	})
+}

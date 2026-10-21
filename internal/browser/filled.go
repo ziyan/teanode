@@ -237,6 +237,35 @@ func (self *FilledValues) IsLocked(tab string) bool {
 	return false
 }
 
+// HasFilledDocument says a value was put into some document of the tab, so
+// that asking the browser which document it shows now is worth a round trip.
+func (self *FilledValues) HasFilledDocument(tab string) bool {
+	if self == nil {
+		return false
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	found := self.tabs[tab]
+	return found != nil && len(found.documents) > 0
+}
+
+// NoteCurrentDocument is the answer to asking the browser, right now, which
+// document the tab shows. Events say the same thing but can arrive late: a
+// move back can restore the filled document from the history's cache before
+// the event that reports it, so a command that is about to run asks instead
+// of waiting for the event. If the document is one a value was put into, the
+// tab is locked (and stays so until a new document is committed).
+func (self *FilledValues) NoteCurrentDocument(tab, documentID string) {
+	if self == nil || documentID == "" {
+		return
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if found := self.tabs[tab]; found != nil && found.documents[documentID] {
+		found.isLocked = true
+	}
+}
+
 // Committed is the browser saying the tab committed a document. Reports are
 // applied in the order of their counts; a report older than one already seen
 // is ignored. A tab that was never filled holds no lock to end.

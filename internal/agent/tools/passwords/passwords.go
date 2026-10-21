@@ -29,9 +29,10 @@
 // Every read is recorded on the item and in the audit log. The person must
 // still hold the permission to use Passwords when an item is opened.
 //
-// Memory: when conversations are filed into memory, what a turn that read a
-// note said is left out, and the conversation's title and summary are not
-// refreshed from it (see isPrivateToolCall in internal/agent).
+// Memory: when conversations are filed into memory, what a turn that listed
+// the items or read a note said is left out, the conversation's title and
+// summary are not refreshed from it, and another run reading the conversation
+// back does not get it (see tools.IsPrivateToolCall).
 package passwords
 
 import (

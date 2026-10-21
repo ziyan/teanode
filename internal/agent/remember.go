@@ -2,9 +2,7 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -373,39 +371,10 @@ func worthReading(messages []*models.AgentMessage) []*models.AgentMessage {
 	return kept
 }
 
-// privateTools are the tools whose answers are the person's alone, so that a
-// turn which called one is kept out of memory filing and out of conversation
-// titles and summaries. Actions is empty when every call of the tool is
-// private, and otherwise the actions that are: the passwords tool's list
-// shows only names, sites and user names, but reading a note or making up a
-// password puts text into the conversation that must not be filed.
-var privateTools = []struct {
-	Name    string
-	Actions []string
-}{
-	{Name: "health"},
-	{Name: "passwords", Actions: []string{"read_note", "generate"}},
-}
-
-// isPrivateToolCall says whether a tool call is one of the private tools, as
-// the model calls it (health, or passwords with an action) or by the name of
-// one of its actions (health_summary, passwords_read_note).
+// isPrivateToolCall says whether a tool call is one of the private tools (see
+// tools.IsPrivateToolCall).
 func isPrivateToolCall(call models.AgentToolCall) bool {
-	for _, private := range privateTools {
-		var action string
-		switch {
-		case call.Name == private.Name:
-			action = tools.ActionOf(json.RawMessage(call.Arguments))
-		case strings.HasPrefix(call.Name, private.Name+"_"):
-			action = strings.TrimPrefix(call.Name, private.Name+"_")
-		default:
-			continue
-		}
-		if len(private.Actions) == 0 || slices.Contains(private.Actions, action) {
-			return true
-		}
-	}
-	return false
+	return tools.IsPrivateToolCall(call)
 }
 
 // withoutPrivateTurns is the messages without what the agent said, and what
@@ -424,52 +393,20 @@ func isPrivateToolCall(call models.AgentToolCall) bool {
 // message that made tool calls, and the turn goes on to the agent's final
 // answer. Only a message after an answer starts a turn.
 func withoutPrivateTurns(messages []*models.AgentMessage) []*models.AgentMessage {
+	isPrivate := tools.PrivateTurns(messages)
 	kept := make([]*models.AgentMessage, 0, len(messages))
-	for start := 0; start < len(messages); {
-		end := start + 1
-		for end < len(messages) && !isTurnStart(messages, end) {
-			end++
+	for index, message := range messages {
+		if !isPrivate[index] || message.Role == string(llm.RoleUser) {
+			kept = append(kept, message)
 		}
-		hasPrivate := false
-		for _, message := range messages[start:end] {
-			for _, call := range message.ToolCalls {
-				if isPrivateToolCall(call) {
-					hasPrivate = true
-				}
-			}
-		}
-		for _, message := range messages[start:end] {
-			if !hasPrivate || message.Role == string(llm.RoleUser) {
-				kept = append(kept, message)
-			}
-		}
-		start = end
 	}
 	return kept
 }
 
-// isTurnStart says whether the message at index begins a turn: it is a
-// message of the person, and not one they steered into the running turn.
-// A steered message comes after the result of a tool call, or after an
-// assistant message that made one (notes between are not looked at), or
-// after another message of the person's that was itself steered in, since
-// a person may steer twice before the turn answers.
+// isTurnStart says whether the message at index begins a turn (see
+// tools.IsTurnStart).
 func isTurnStart(messages []*models.AgentMessage, index int) bool {
-	if messages[index].Role != string(llm.RoleUser) {
-		return false
-	}
-	for previous := index - 1; previous >= 0; previous-- {
-		switch messages[previous].Role {
-		case models.AgentMessageNote, string(llm.RoleUser):
-			continue
-		case string(llm.RoleTool):
-			return false
-		case string(llm.RoleAssistant):
-			return len(messages[previous].ToolCalls) == 0
-		}
-		return true
-	}
-	return true
+	return tools.IsTurnStart(messages, index)
 }
 
 // chatName is how a run names the conversation it read. The main chat is

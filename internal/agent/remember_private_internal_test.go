@@ -8,27 +8,28 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// A call of a private tool is one that read Health, or that read a note or made
-// up a password in the person's Passwords. Listing the items they let the agent
-// use says only names, sites and user names, so it is not.
+// A call of a private tool is one that read Health, or that listed the items,
+// read a note or made up a password in the person's Passwords: the names, sites
+// and user names of the items are not for memory or for a later run either.
 func TestWhichToolCallsArePrivate(t *testing.T) {
 	for name, test := range map[string]struct {
 		call      models.AgentToolCall
 		isPrivate bool
 	}{
-		"health":                         {models.AgentToolCall{Name: "health", Arguments: `{"action":"types"}`}, true},
-		"a health action by its name":    {models.AgentToolCall{Name: "health_samples"}, true},
-		"read a note":                    {models.AgentToolCall{Name: "passwords", Arguments: `{"action":"read_note","item_id":"x"}`}, true},
-		"read a note, shouted":           {models.AgentToolCall{Name: "passwords", Arguments: `{"action":" READ_NOTE "}`}, true},
-		"read a note by its action name": {models.AgentToolCall{Name: "passwords_read_note"}, true},
-		"generate":                       {models.AgentToolCall{Name: "passwords", Arguments: `{"action":"generate"}`}, true},
-		"list":                           {models.AgentToolCall{Name: "passwords", Arguments: `{"action":"list"}`}, false},
-		"list by its action name":        {models.AgentToolCall{Name: "passwords_list"}, false},
-		"passwords with no arguments":    {models.AgentToolCall{Name: "passwords"}, false},
-		"passwords with broken ones":     {models.AgentToolCall{Name: "passwords", Arguments: `{"action":`}, false},
-		"the word in another field":      {models.AgentToolCall{Name: "passwords", Arguments: `{"action":"list","item_id":"read_note"}`}, false},
-		"another tool":                   {models.AgentToolCall{Name: "weather", Arguments: `{"action":"read_note"}`}, false},
-		"a tool that starts the same":    {models.AgentToolCall{Name: "passwordsafe", Arguments: `{"action":"read_note"}`}, false},
+		"health":                          {models.AgentToolCall{Name: "health", Arguments: `{"action":"types"}`}, true},
+		"a health action by its name":     {models.AgentToolCall{Name: "health_samples"}, true},
+		"read a note":                     {models.AgentToolCall{Name: "passwords", Arguments: `{"action":"read_note","item_id":"x"}`}, true},
+		"read a note, shouted":            {models.AgentToolCall{Name: "passwords", Arguments: `{"action":" READ_NOTE "}`}, true},
+		"read a note by its action name":  {models.AgentToolCall{Name: "passwords_read_note"}, true},
+		"generate":                        {models.AgentToolCall{Name: "passwords", Arguments: `{"action":"generate"}`}, true},
+		"list":                            {models.AgentToolCall{Name: "passwords", Arguments: `{"action":"list"}`}, true},
+		"list by its action name":         {models.AgentToolCall{Name: "passwords_list"}, true},
+		"fill a login (a browser action)": {models.AgentToolCall{Name: "browser", Arguments: `{"action":"fill_login"}`}, false},
+		"passwords with no arguments":     {models.AgentToolCall{Name: "passwords"}, false},
+		"passwords with broken ones":      {models.AgentToolCall{Name: "passwords", Arguments: `{"action":`}, false},
+		"the word in another field":       {models.AgentToolCall{Name: "passwords", Arguments: `{"action":"show","item_id":"read_note"}`}, false},
+		"another tool":                    {models.AgentToolCall{Name: "weather", Arguments: `{"action":"read_note"}`}, false},
+		"a tool that starts the same":     {models.AgentToolCall{Name: "passwordsafe", Arguments: `{"action":"read_note"}`}, false},
 	} {
 		if got := isPrivateToolCall(test.call); got != test.isPrivate {
 			t.Errorf("%s: isPrivateToolCall = %v, want %v", name, got, test.isPrivate)
@@ -38,7 +39,8 @@ func TestWhichToolCallsArePrivate(t *testing.T) {
 
 // A turn that read a note in Passwords is kept out of the filing run exactly as
 // a turn that read Health is: what the person said stays, what the agent said
-// and its tools answered does not. A turn that only listed the items stays.
+// and its tools answered does not. That holds for a turn that only listed the
+// items too.
 func TestAFilingRunSkipsATurnThatReadANote(t *testing.T) {
 	message := func(id string, role llm.Role, content, toolName, arguments string) *models.AgentMessage {
 		found := &models.AgentMessage{ID: id, Role: string(role), Content: content}
@@ -64,14 +66,14 @@ func TestAFilingRunSkipsATurnThatReadANote(t *testing.T) {
 	for _, each := range worthReading(messages) {
 		got = append(got, each.ID)
 	}
-	want := []string{"u1", "a1", "a2", "u2", "u3", "a5"}
+	want := []string{"u1", "u2", "u3", "a5"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("worthReading kept %v, want %v", got, want)
 	}
 }
 
-// A conversation is not described from the turn that read a note, and is from
-// one that only listed the items.
+// A conversation is not described from the turn that read a note or listed the
+// items, and is from one that did neither.
 func TestAConversationIsNotDescribedFromATurnThatReadANote(t *testing.T) {
 	read := []*models.AgentMessage{
 		{ID: "u1", Role: string(llm.RoleUser), Content: "Read me the shed note"},
@@ -83,7 +85,11 @@ func TestAConversationIsNotDescribedFromATurnThatReadANote(t *testing.T) {
 		t.Error("a turn that read a note is private from any message of it")
 	}
 	listed := []*models.AgentMessage{read[0], {ID: "a1", Role: string(llm.RoleAssistant), ToolCalls: []models.AgentToolCall{{ID: "c1", Name: "passwords", Arguments: `{"action":"list"}`}}}, read[2], read[3]}
-	if isPrivateRead(listed, 3) {
-		t.Error("a turn that only listed the items is not private")
+	if !isPrivateRead(listed, 3) {
+		t.Error("a turn that listed the items is private")
+	}
+	other := []*models.AgentMessage{read[0], {ID: "a1", Role: string(llm.RoleAssistant), ToolCalls: []models.AgentToolCall{{ID: "c1", Name: "weather", Arguments: `{"action":"today"}`}}}, read[2], read[3]}
+	if isPrivateRead(other, 3) {
+		t.Error("a turn that used another tool is not private")
 	}
 }

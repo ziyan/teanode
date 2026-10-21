@@ -208,7 +208,9 @@ func IsOriginOfSites(sites []string, page string) bool {
 		if !isNamed {
 			sitePort = defaultPortOf(siteScheme)
 		}
-		if sitePort == pagePort {
+		// A port that could not be read is zero on both sides and is not a
+		// match for anything, itself included.
+		if sitePort > 0 && sitePort == pagePort {
 			return true
 		}
 	}

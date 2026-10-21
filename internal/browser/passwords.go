@@ -56,9 +56,10 @@ func (self *Context) Filled() *FilledValues {
 
 // historyEntries is the page's navigation history as the browser keeps it.
 type historyEntries struct {
-	currentID int
-	ids       []int
-	address   string
+	currentID    int
+	currentIndex int
+	ids          []int
+	address      string
 }
 
 // history reads the navigation history, which a script in the page cannot
@@ -77,7 +78,7 @@ func (self *Context) history(ctx context.Context) (*historyEntries, error) {
 	if history.CurrentIndex < 0 || history.CurrentIndex >= len(history.Entries) {
 		return nil, errors.New("browser: the browser did not say where the page is")
 	}
-	entries := &historyEntries{currentID: history.Entries[history.CurrentIndex].ID, address: history.Entries[history.CurrentIndex].URL}
+	entries := &historyEntries{currentID: history.Entries[history.CurrentIndex].ID, currentIndex: history.CurrentIndex, address: history.Entries[history.CurrentIndex].URL}
 	for _, entry := range history.Entries {
 		entries.ids = append(entries.ids, entry.ID)
 	}
@@ -153,6 +154,32 @@ func (self *Context) PrepareToFill(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// CheckCurrentDocument asks the browser which document the page shows right
+// now and locks the page if a value was put into that document. Going back can
+// restore the filled document from the history's cache a moment before the
+// event that reports it reaches the lock (and before the server's own history
+// read finishes), so a command that could read a field back asks first
+// instead of trusting the events alone. It does nothing for a page nothing
+// was filled into. The error says the browser did not answer; the caller then
+// refuses the command rather than guess.
+func (self *Context) CheckCurrentDocument(ctx context.Context) error {
+	if !self.filled.HasFilledDocument("") {
+		return nil
+	}
+	var tree struct {
+		FrameTree struct {
+			Frame struct {
+				LoaderID string `json:"loaderId"`
+			} `json:"frame"`
+		} `json:"frameTree"`
+	}
+	if err := self.call(ctx, "Page.getFrameTree", nil, &tree); err != nil {
+		return errors.New("browser: the browser did not say which page this is")
+	}
+	self.filled.NoteCurrentDocument("", tree.FrameTree.Frame.LoaderID)
+	return nil
 }
 
 // historyAfterCommitWait is how long a commit waits for the navigation history

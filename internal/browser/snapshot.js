@@ -3,7 +3,7 @@
 // reference and not a guess at a selector. Text mode is the page's words
 // alone. Refs are kept on the elements themselves, so a later click finds
 // the same node.
-(function (mode, maximum) {
+(function (mode, maximum, isLocked) {
   const interactive = new Set(['a', 'button', 'input', 'select', 'textarea', 'summary', 'option', 'label']);
   const roles = new Set(['button', 'link', 'checkbox', 'radio', 'textbox', 'combobox', 'listbox', 'menuitem', 'tab', 'switch', 'option', 'searchbox', 'slider', 'spinbutton']);
   const skip = new Set(['script', 'style', 'noscript', 'svg', 'path', 'template', 'head', 'meta', 'link']);
@@ -15,6 +15,21 @@
     if (style.display === 'none' || style.visibility === 'hidden' || element.hidden) return false;
     const rect = element.getBoundingClientRect();
     return !(rect.width === 0 && rect.height === 0 && element.childElementCount === 0);
+  }
+  // While the page is locked (a password or code was filled into it), no
+  // input, textarea or editable region shows what it holds, whoever or
+  // whatever put it there: text that was copied from a filled field and pasted
+  // into another one is a way to read the secret back that comparing a value
+  // with the secret cannot catch. The page's own flag for a filled document
+  // counts too, so a page that was filled stays hidden if the server's lock
+  // is not known.
+  const hideValues = !!isLocked || !!window.__teanodeFilled;
+  // Whether an element holds text somebody typed or pasted. A button's value
+  // is its label and a checkbox's is the page's own, so those are not.
+  function holdsTypedText(element) {
+    if (element instanceof HTMLTextAreaElement || element.isContentEditable) return true;
+    if (!(element instanceof HTMLInputElement)) return false;
+    return !['button', 'submit', 'reset', 'image', 'checkbox', 'radio'].includes((element.type || 'text').toLowerCase());
   }
   // A field that holds a secret: a password, or a code the page asked for as
   // one, or any input the agent filled a password or a code into, whatever its
@@ -38,6 +53,7 @@
       const forLabel = document.querySelector('label[for="' + CSS.escape(element.id) + '"]');
       if (forLabel) return forLabel.innerText.trim();
     }
+    if (hideValues && holdsTypedText(element)) return '';
     const text = (element.innerText || (isSecretField(element) ? '' : element.value) || element.textContent || '').trim().replace(/\s+/g, ' ');
     return text.slice(0, 120);
   }
@@ -56,7 +72,23 @@
     return false;
   }
   if (mode === 'text') {
-    const text = (document.body ? document.body.innerText : '') || '';
+    let text = (document.body ? document.body.innerText : '') || '';
+    if (hideValues) {
+      // Without the editable regions: their text is what somebody typed or pasted.
+      const parts = [];
+      (function collect(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const piece = node.textContent.trim();
+          if (piece) parts.push(piece);
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        if (skip.has(node.tagName.toLowerCase()) || !visible(node)) return;
+        if (node instanceof HTMLTextAreaElement || node.isContentEditable) return;
+        for (const child of node.childNodes) collect(child);
+      })(document.body || document.documentElement);
+      text = parts.join('\n');
+    }
     return { title: document.title, url: location.href, text: text.slice(0, maximum), truncated: text.length > maximum };
   }
   const lines = [];
@@ -84,6 +116,7 @@
         // A value too long to show whole is not shown at all: its first
         // characters would be a part of whatever it is.
         if (isSecretField(node)) extra = ' (filled, value not shown)';
+        else if (hideValues && holdsTypedText(node)) extra = ' (has text, not shown while the page is locked)';
         else if (node.value.length > 80) extra = ' (long value, not shown)';
         else extra = ' value=' + JSON.stringify(node.value);
       }
@@ -91,11 +124,16 @@
       if (tag === 'select') extra = ' value=' + JSON.stringify(node.value);
       lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + (name ? ' "' + name + '"' : '') + extra);
       total += 40 + (name ? name.length : 0);
+      if (hideValues && node.isContentEditable) {
+        lines[lines.length - 1] += ' (text not shown while the page is locked)';
+        return;
+      }
       if (tag === 'select') {
         for (const option of node.options) { lines.push('  '.repeat(depth + 1) + '- option ' + JSON.stringify(option.text) + (option.selected ? ' (selected)' : '')); }
         return;
       }
       if (tag === 'a' || tag === 'button' || tag === 'label' || tag === 'option') return;
+      if (tag === 'textarea' && hideValues) return;
     } else if (/^h[1-6]$/.test(tag)) {
       lines.push('  '.repeat(depth) + tag + ': ' + (node.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 200));
       total += 20;

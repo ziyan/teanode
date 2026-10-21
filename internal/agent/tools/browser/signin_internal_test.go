@@ -288,6 +288,11 @@ func (self *world) tabRun(address string) *signInRun {
 // records it.
 type fakeChrome struct {
 	address string
+	// loader is the id of the document the main frame shows, "loader-1" when
+	// empty. A test sets it under the mutex to move the page.
+	loader string
+	// failFrameTree makes the document of the main frame unanswerable.
+	failFrameTree bool
 	// evaluated is what a script of the model's evaluates to, when set.
 	evaluated any
 
@@ -397,6 +402,10 @@ func (self *fakeChrome) pageOf(test *testing.T) *devtools.Context {
 			self.mutex.Lock()
 			self.commands = append(self.commands, chromeCommand{method: incoming.Method, parameters: string(incoming.Params)})
 			address := self.address
+			loader, failFrameTree := self.loader, self.failFrameTree
+			if loader == "" {
+				loader = "loader-1"
+			}
 			self.mutex.Unlock()
 			var result any = map[string]any{}
 			switch incoming.Method {
@@ -409,7 +418,13 @@ func (self *fakeChrome) pageOf(test *testing.T) *devtools.Context {
 			case "Page.getNavigationHistory":
 				result = map[string]any{"currentIndex": 1, "entries": []map[string]any{{"id": 1, "url": "about:blank"}, {"id": 2, "url": address}}}
 			case "Page.getFrameTree":
-				result = map[string]any{"frameTree": map[string]any{"frame": map[string]any{"id": "main", "loaderId": "loader-1", "url": address}}}
+				if failFrameTree {
+					self.writeMutex.Lock()
+					_ = socket.WriteJSON(map[string]any{"id": incoming.ID, "sessionId": incoming.SessionID, "error": map[string]any{"code": -32000, "message": "Not attached to an active page"}})
+					self.writeMutex.Unlock()
+					continue
+				}
+				result = map[string]any{"frameTree": map[string]any{"frame": map[string]any{"id": "main", "loaderId": loader, "url": address}}}
 			case "Runtime.evaluate":
 				value := any(map[string]any{"isFilled": true, "problem": ""})
 				if self.evaluated != nil && !strings.Contains(string(incoming.Params), "isFilled") {
@@ -1067,6 +1082,9 @@ func TestAFilledHeadlessPageRefusesScriptsUntilItNavigatesAndHidesValues(test *t
 	chrome.emit("Page.frameNavigated", `{"frame":{"id":"inner","parentId":"main","loaderId":"loader-frame"}}`)
 	time.Sleep(100 * time.Millisecond)
 	mustRefuse(test, run, evaluate, lockedWords)
+	chrome.mutex.Lock()
+	chrome.loader = "loader-2"
+	chrome.mutex.Unlock()
 	chrome.emit("Page.frameNavigated", `{"frame":{"id":"main","loaderId":"loader-2","url":"https://shop.example.test/account"}}`)
 	deadline := time.Now().Add(5 * time.Second)
 	for run.page.Filled().IsLocked("") && time.Now().Before(deadline) {

@@ -445,8 +445,9 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 		if mode == "interactive" && !strings.Contains(snapshot.Text, "(filled, value not shown)") {
 			test.Fatalf("the filled password is not marked: %s", snapshot.Text)
 		}
-		if mode == "interactive" && !strings.Contains(snapshot.Text, `value="ada"`) {
-			test.Fatalf("a user name is shown: %s", snapshot.Text)
+		// A page a password was filled into shows no input's text at all.
+		if mode == "interactive" && (strings.Contains(snapshot.Text, `value="ada"`) || !strings.Contains(snapshot.Text, "(has text, not shown while the page is locked)")) {
+			test.Fatalf("a user name is shown on a page a password was filled into: %s", snapshot.Text)
 		}
 	}
 	name, _, err := page.Click(ctx, Target{Ref: passwordRef})
@@ -475,7 +476,7 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 		test.Fatal(err)
 	}
 	snapshot, err = page.Snapshot(ctx, "interactive", 0)
-	if err != nil || strings.Contains(snapshot.Text, "qqqqq") || !strings.Contains(snapshot.Text, "(long value, not shown)") {
+	if err != nil || strings.Contains(snapshot.Text, "qqqqq") || !strings.Contains(snapshot.Text, "not shown") {
 		test.Fatalf("a long value: %v %s", err, snapshot.Text)
 	}
 
@@ -486,6 +487,26 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 	page.PrepareToFill(ctx)
 	if !page.Filled().IsLocked("") {
 		test.Fatal("not locked after PrepareToFill")
+	}
+	// Text pasted or typed into any input, textarea or editable region is
+	// not shown in a snapshot or named by a click while the page is locked.
+	if _, err := page.Evaluate(ctx, `(function () { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(document.getElementById('plain'), 'pasted-copy-1'); document.getElementById('area').value = 'pasted-copy-2'; document.getElementById('editable').textContent = 'pasted-copy-3'; return true; })()`, 20); err != nil {
+		test.Fatal(err)
+	}
+	for _, mode := range []string{"interactive", "text"} {
+		snapshot, err := page.Snapshot(ctx, mode, 0)
+		if err != nil || strings.Contains(snapshot.Text, "pasted-copy") {
+			test.Fatalf("a locked %s snapshot shows pasted text: %v %s", mode, err, snapshot.Text)
+		}
+		if mode == "interactive" && (!strings.Contains(snapshot.Text, "Push") || !strings.Contains(snapshot.Text, "Show")) {
+			test.Fatalf("a locked snapshot lost the buttons: %s", snapshot.Text)
+		}
+	}
+	for _, id := range []string{"plain", "area", "editable"} {
+		name, _, err := page.Click(ctx, Target{Selector: "#" + id})
+		if err != nil || strings.Contains(name, "pasted-copy") {
+			test.Fatalf("a click named %s %q (%v)", id, name, err)
+		}
 	}
 	if _, _, err := page.Click(ctx, Target{Ref: refOf(`"Push"`)}); err != nil {
 		test.Fatal(err)
@@ -569,5 +590,118 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 	defer stopWaiting()
 	if answer, _ := page.Evaluate(shortCtx, ask, 200); answer == "true" {
 		test.Fatal("the passkey still signs after the page navigated")
+	}
+}
+
+// Going back returns only once the browser has moved to the earlier entry of
+// its history, and asks which document it shows then: when that is the filled
+// one, restored from the history's cache before any event said so, the page is
+// locked again before the caller can run anything on it.
+func TestBackWaitsForTheMoveAndLocksAgainWhenTheFilledDocumentComesBack(test *testing.T) {
+	chrome, page, finish := startFake(test)
+	defer finish()
+	signIn := "https://shop.example.test/sign-in"
+	account := "https://shop.example.test/account"
+	chrome.setHistory([]string{"about:blank", signIn}, []int{1, 2}, -1, "loader-1")
+	page.Filled().Remember("a-password")
+	page.PrepareToFill(context.Background())
+
+	// A new page: unlocked.
+	chrome.setHistory([]string{"about:blank", signIn, account}, []int{1, 2, 3}, -1, "loader-2")
+	chrome.emit("Page.frameNavigated", map[string]any{"frame": map[string]any{"id": "main", "loaderId": "loader-2", "url": account}})
+	if !waitUntil(func() bool { return !page.Filled().IsLocked("") }) {
+		test.Fatal("a new page did not unlock")
+	}
+
+	// history.back() takes a moment to reach the browser's history, and no
+	// event is sent for the move.
+	chrome.mutex.Lock()
+	chrome.evaluate = func(expression string) any {
+		if strings.Contains(expression, "history.back") {
+			go func() {
+				time.Sleep(150 * time.Millisecond)
+				chrome.setHistory([]string{"about:blank", signIn, account}, []int{1, 2, 3}, 1, "loader-1")
+			}()
+		}
+		if strings.Contains(expression, "location.href") {
+			return map[string]any{"url": account, "title": ""}
+		}
+		return true
+	}
+	chrome.mutex.Unlock()
+	started := time.Now()
+	if _, err := page.Back(context.Background()); err != nil {
+		test.Fatal(err)
+	}
+	if time.Since(started) < 100*time.Millisecond {
+		test.Fatal("Back returned before the browser had moved")
+	}
+	if !page.Filled().IsLocked("") {
+		test.Fatal("the filled document came back and the page was not locked")
+	}
+}
+
+// A command about to run asks the browser which document it shows, and a
+// browser that does not say is an error for the caller to refuse on.
+func TestCheckCurrentDocumentLocksOnTheFilledDocumentOnly(test *testing.T) {
+	chrome, page, finish := startFake(test)
+	defer finish()
+	chrome.setHistory([]string{"about:blank", "https://shop.example.test/sign-in"}, []int{1, 2}, -1, "loader-1")
+	// Nothing filled: no question asked.
+	if err := page.CheckCurrentDocument(context.Background()); err != nil || chrome.sent("Page.getFrameTree") != 0 {
+		test.Fatalf("an unfilled page: %v %d", err, chrome.sent("Page.getFrameTree"))
+	}
+	page.Filled().Remember("a-password")
+	page.PrepareToFill(context.Background())
+	asked := chrome.sent("Page.getFrameTree")
+	page.Filled().Committed("", Commit{DocumentID: "loader-2", Address: "https://shop.example.test/account", Count: 9})
+	chrome.setHistory([]string{"about:blank", "https://shop.example.test/sign-in", "https://shop.example.test/account"}, []int{1, 2, 3}, -1, "loader-2")
+	if err := page.CheckCurrentDocument(context.Background()); err != nil || page.Filled().IsLocked("") || chrome.sent("Page.getFrameTree") != asked+1 {
+		test.Fatalf("another document: %v locked %v", err, page.Filled().IsLocked(""))
+	}
+	chrome.setHistory([]string{"about:blank", "https://shop.example.test/sign-in", "https://shop.example.test/account"}, []int{1, 2, 3}, -1, "loader-1")
+	if err := page.CheckCurrentDocument(context.Background()); err != nil || !page.Filled().IsLocked("") {
+		test.Fatalf("the filled document: %v locked %v", err, page.Filled().IsLocked(""))
+	}
+	// A nil value and a document that is not known change nothing.
+	var none *FilledValues
+	none.NoteCurrentDocument("", "loader-1")
+	page.Filled().NoteCurrentDocument("", "")
+}
+
+// While the page is locked the snapshot is asked to show no input's value, and
+// a click or hover names an element by its label alone; before the lock they
+// are not.
+func TestSnapshotAndNamesAreToldWhetherThePageIsLocked(test *testing.T) {
+	chrome, page, finish := startFake(test)
+	defer finish()
+	chrome.setHistory([]string{"about:blank", "https://shop.example.test/sign-in"}, []int{1, 2}, -1, "loader-1")
+	var expressions []string
+	chrome.mutex.Lock()
+	chrome.evaluate = func(expression string) any {
+		expressions = append(expressions, expression)
+		return map[string]any{"ok": true, "x": 1, "y": 1, "name": "input", "text": "", "title": "", "url": ""}
+	}
+	chrome.mutex.Unlock()
+	if _, err := page.Snapshot(context.Background(), "", 0); err != nil {
+		test.Fatal(err)
+	}
+	if _, _, err := page.Click(context.Background(), Target{Ref: 1}); err != nil {
+		test.Fatal(err)
+	}
+	if !strings.HasSuffix(expressions[0], `"interactive", 20000, false)`) || !strings.Contains(expressions[1], "const isLocked = false ||") {
+		test.Fatalf("an unlocked page was told it was locked:\n%s\n%s", expressions[0][len(expressions[0])-40:], expressions[1])
+	}
+	page.Filled().Remember("a-password")
+	page.PrepareToFill(context.Background())
+	expressions = nil
+	if _, err := page.Snapshot(context.Background(), "text", 0); err != nil {
+		test.Fatal(err)
+	}
+	if _, err := page.Hover(context.Background(), Target{Ref: 1}); err != nil {
+		test.Fatal(err)
+	}
+	if !strings.HasSuffix(expressions[0], `"text", 20000, true)`) || !strings.Contains(expressions[1], "const isLocked = true ||") {
+		test.Fatalf("a locked page was not told so:\n%s\n%s", expressions[0][len(expressions[0])-40:], expressions[1])
 	}
 }

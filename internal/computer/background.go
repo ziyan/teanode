@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ziyan/teanode/internal/passwords"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -398,10 +399,7 @@ func startCommand(options *Options, arguments *ShellArguments) (*backgroundComma
 		command = exec.CommandContext(lifetime, "/bin/sh", "-c", arguments.Command)
 	}
 	command.Dir = directory
-	command.Env = os.Environ()
-	for key, value := range arguments.Environment {
-		command.Env = append(command.Env, key+"="+value)
-	}
+	command.Env = agentEnvironment(arguments.Environment)
 	// When it is killed, whatever it left running is not waited for beyond
 	// a moment.
 	command.WaitDelay = 2 * time.Second
@@ -513,4 +511,17 @@ func (self *outputBuffer) tail(most int) (string, bool) {
 		isTruncated = true
 	}
 	return string(joined), isTruncated
+}
+
+// agentEnvironment is the environment of a command the agent runs: this
+// program's own, then what the call added, then the mark that says the agent
+// ran it (passwords.AgentCommandEnvironmentName), which comes last so that the
+// call cannot unset it. The Passwords commands refuse to open Passwords when
+// they see the mark.
+func agentEnvironment(added map[string]string) []string {
+	environment := os.Environ()
+	for key, value := range added {
+		environment = append(environment, key+"="+value)
+	}
+	return append(environment, passwords.AgentCommandEnvironmentName+"=1")
 }

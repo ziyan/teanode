@@ -54,7 +54,7 @@ func TestAllowingAnEstimateMakesTheEstimateSchedule(test *testing.T) {
 		}
 		carId = car.ID
 		schedules := estimateSchedules(test, tx, fixture.ownerAgent.ID)
-		if len(schedules) != 1 || !schedules[0].Enabled || schedules[0].WrittenBy != models.WrittenByPerson ||
+		if len(schedules) != 1 || !schedules[0].Enabled || schedules[0].WrittenBy != models.WrittenByBuiltIn ||
 			!strings.Contains(schedules[0].Prompt, "estimateDescription") || schedules[0].NextRunAt == nil {
 			test.Fatalf("the estimate schedule is %+v", schedules)
 		}

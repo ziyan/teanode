@@ -488,3 +488,189 @@ func containsString(list []string, wanted string) bool {
 	}
 	return false
 }
+
+// Copying a filled field's text and pasting it into an ordinary one would put
+// the secret where the exact-value scrubbing does not see it, so on a locked
+// tab a key event that carries editing commands or a control, alt or meta
+// modifier, a key that copies or pastes by itself, a pointer that moves with a
+// button held (drag and drop), the middle button and every drag command are
+// refused, and plain typing and clicking are not.
+func TestALockedTabRefusesCopyPasteAndDragCommands(test *testing.T) {
+	found := newWorld(test)
+	run := found.filledTab(test)
+	asked := len(run.tab.actions())
+	for _, arguments := range []string{
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"a","commands":["selectAll"]}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"rawKeyDown","commands":["copy"]}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"rawKeyDown","commands":[]}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"rawKeyDown","commands":["paste"]}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"c","modifiers":2}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"v","modifiers":4}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"a","modifiers":1}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"a","modifiers":10}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"a","modifiers":"ctrl"}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"Insert","modifiers":8}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","windowsVirtualKeyCode":45}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"Delete","modifiers":8}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"Paste"}}`,
+		`{"action":"cdp","method":"Input.dispatchMouseEvent","params":{"type":"mouseMoved","x":10,"y":10,"button":"left"}}`,
+		`{"action":"cdp","method":"Input.dispatchMouseEvent","params":{"type":"mouseMoved","x":10,"y":10,"buttons":1}}`,
+		`{"action":"cdp","method":"Input.dispatchMouseEvent","params":{"type":"mousePressed","x":10,"y":10,"button":"middle"}}`,
+		`{"action":"press","key":"Control+a"}`,
+		`{"action":"press","key":"Ctrl+c"}`,
+		`{"action":"press","key":"Meta+V"}`,
+		`{"action":"press","key":"ControlOrMeta+v"}`,
+		`{"action":"press","key":"Shift+Insert"}`,
+		`{"action":"press","key":"Alt+Tab"}`,
+		`{"action":"steps","steps":[{"action":"press","key":"Control+a"}]}`,
+	} {
+		if strings.Contains(arguments, `"steps"`) {
+			stepped, err := browse(run, arguments)
+			if err != nil || !strings.Contains(stepped.Content, clipboardLockedWords) {
+				test.Fatalf("%s: %v %v", arguments, stepped, err)
+			}
+			continue
+		}
+		mustRefuse(test, run, arguments, clipboardLockedWords)
+	}
+	mustRefuse(test, run, `{"action":"cdp","method":"Input.dispatchDragEvent","params":{"type":"drop","x":1,"y":1,"data":{"items":[]}}}`, lockedWords)
+	if len(run.tab.actions()) != asked {
+		test.Fatalf("the tab was asked while locked: %v", run.tab.actions()[asked:])
+	}
+	// Plain typing, a click with the pointer moving without a button, a
+	// shifted letter and an ordinary key still go to the page.
+	for _, arguments := range []string{
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"a","text":"a"}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"A","text":"A","modifiers":8}}`,
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"Enter","modifiers":0}}`,
+		`{"action":"cdp","method":"Input.dispatchMouseEvent","params":{"type":"mouseMoved","x":10,"y":10,"button":"none","buttons":0}}`,
+		`{"action":"cdp","method":"Input.dispatchMouseEvent","params":{"type":"mousePressed","x":10,"y":10,"button":"left","clickCount":1}}`,
+		`{"action":"cdp","method":"Input.dispatchMouseEvent","params":{"type":"mouseReleased","x":10,"y":10,"button":"left","clickCount":1}}`,
+		`{"action":"press","key":"Enter"}`,
+		`{"action":"press","key":"a"}`,
+		`{"action":"press","key":"+"}`,
+	} {
+		if _, err := browse(run, arguments); err != nil {
+			test.Errorf("%s on a locked tab: %s", arguments, err)
+		}
+	}
+	// Unlocked, the shortcuts go through.
+	run.tab.Filled().Committed("7", devtools.Commit{DocumentID: "doc-2", Address: "https://shop.example.test/account", Count: 4})
+	for _, arguments := range []string{
+		`{"action":"cdp","method":"Input.dispatchKeyEvent","params":{"type":"keyDown","key":"a","commands":["selectAll"]}}`,
+		`{"action":"press","key":"Control+a"}`,
+	} {
+		if _, err := browse(run, arguments); err != nil {
+			test.Errorf("%s on an unlocked tab: %s", arguments, err)
+		}
+	}
+}
+
+// A CSS selector is a yes or no question to the page (an attribute selector
+// can match the start of a field's value that the page mirrors into its
+// markup), so a locked page, in either browser and also inside steps, is acted
+// on by ref alone, and waiting for a selector is refused.
+func TestALockedPageIsActedOnByRefAndNeverBySelector(test *testing.T) {
+	found := newWorld(test)
+	tabRun := found.filledTab(test)
+	headlessRun, chrome := found.headlessRun(test, shopAddress)
+	chrome.evaluated = map[string]any{"ok": true, "x": 5, "y": 5, "name": "button"}
+	if _, err := browse(headlessRun, fillLogin(found.grantedLogin)); err != nil {
+		test.Fatal(err)
+	}
+	asked := len(tabRun.tab.actions())
+	evaluations := len(chrome.sent("Runtime.evaluate"))
+	for name, run := range map[string]*signInRun{"tab": tabRun, "headless": headlessRun} {
+		target := ""
+		if name == "tab" {
+			target = `"target":"tab",`
+		}
+		for _, arguments := range []string{
+			`{"action":"wait","for":"selector","selector":"input[type=password][value^=\"a\"]","timeout_ms":100}`,
+			`{"action":"wait","for":"selector","timeout_ms":100}`,
+			`{"action":"wait","selector":"#x","timeout_ms":100}`,
+			`{"action":"click","selector":"input[type=password][value^=\"a\"]"}`,
+			`{"action":"hover","selector":"#x"}`,
+			`{"action":"scroll","selector":"#x"}`,
+			`{"action":"type","selector":"#x","text":"a"}`,
+			`{"action":"select","selector":"#x","value":"a"}`,
+		} {
+			arguments = strings.Replace(arguments, "{", "{"+target, 1)
+			mustRefuse(test, run, arguments, selectorLockedWords)
+			stepped, err := browse(run, `{`+target+`"action":"steps","steps":[`+strings.Replace(arguments, `{`+target, `{`, 1)+`]}`)
+			if err != nil || !strings.Contains(stepped.Content, selectorLockedWords) {
+				test.Fatalf("a selector in steps (%s): %v %v", name, stepped, err)
+			}
+		}
+	}
+	if len(tabRun.tab.actions()) != asked {
+		test.Fatalf("the tab was asked while locked: %v", tabRun.tab.actions()[asked:])
+	}
+	// The headless page ran nothing for them beyond its own lock check.
+	for _, parameters := range chrome.sent("Runtime.evaluate")[evaluations:] {
+		if strings.Contains(parameters, "querySelector") {
+			test.Fatalf("a selector reached the page: %s", parameters)
+		}
+	}
+	// By ref still works, and so does a selector on a page nothing was filled into.
+	if _, err := browse(headlessRun, `{"action":"hover","ref":2}`); err != nil {
+		test.Fatalf("a ref on a locked page: %s", err)
+	}
+	other := found.tabRun(shopAddress)
+	other.tab.answer = `{"result":"fine"}`
+	if _, err := browse(other, `{"target":"tab","action":"click","selector":"#x"}`); err != nil {
+		test.Fatalf("a selector on a page nothing was filled into: %s", err)
+	}
+}
+
+// Going back can bring the filled document back from the history's cache
+// before the event that tells the lock, so the headless page's browser is
+// asked which document it shows right before a command that could read it.
+func TestTheHeadlessPageIsLockedAgainWhenTheFilledDocumentIsBackBeforeAnyEvent(test *testing.T) {
+	found := newWorld(test)
+	run, chrome := found.headlessRun(test, shopAddress)
+	chrome.evaluated = map[string]any{"ok": true, "x": 5, "y": 5, "name": "button"}
+	if _, err := browse(run, fillLogin(found.grantedLogin)); err != nil {
+		test.Fatal(err)
+	}
+	mustRefuse(test, run, `{"action":"evaluate","expression":"1"}`, lockedWords)
+	// The page moves on to a new document: unlocked.
+	chrome.mutex.Lock()
+	chrome.loader = "loader-2"
+	chrome.mutex.Unlock()
+	run.page.Filled().Committed("", devtools.Commit{DocumentID: "loader-2", Address: "https://shop.example.test/account", Count: 50})
+	if _, err := browse(run, `{"action":"evaluate","expression":"1"}`); err != nil {
+		test.Fatalf("a script on the new document: %s", err)
+	}
+	// The browser goes back to the filled document, with no event yet.
+	chrome.mutex.Lock()
+	chrome.loader = "loader-1"
+	chrome.mutex.Unlock()
+	for _, arguments := range []string{
+		`{"action":"evaluate","expression":"1"}`,
+		`{"action":"screenshot"}`,
+		`{"action":"storage"}`,
+		`{"action":"cdp_events"}`,
+		`{"action":"cdp","method":"Runtime.evaluate"}`,
+		`{"action":"steps","steps":[{"action":"wait","for":"timeout","timeout_ms":1},{"action":"evaluate","expression":"1"}]}`,
+	} {
+		if strings.Contains(arguments, "steps") {
+			stepped, err := browse(run, arguments)
+			if err != nil || !strings.Contains(stepped.Content, lockedWords) {
+				test.Fatalf("%s: %v %v", arguments, stepped, err)
+			}
+			continue
+		}
+		mustRefuse(test, run, arguments, lockedWords)
+	}
+	// When the browser does not say which document it shows, a command that
+	// could read the page is not run, and one that cannot is.
+	chrome.mutex.Lock()
+	chrome.failFrameTree = true
+	chrome.mutex.Unlock()
+	run.page.Filled().Committed("", devtools.Commit{DocumentID: "loader-3", Address: "https://shop.example.test/other", Count: 51})
+	mustRefuse(test, run, `{"action":"evaluate","expression":"1"}`, documentUnknownWords)
+	if _, err := browse(run, `{"action":"hover","ref":2}`); err != nil {
+		test.Fatalf("a hover when the document is not known: %s", err)
+	}
+}

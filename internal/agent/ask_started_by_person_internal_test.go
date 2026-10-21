@@ -14,15 +14,16 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 	person := func(surface string) *AskRun {
 		return &AskRun{settings: &AskSettings{Surface: surface, Message: "sign in to my shop"}}
 	}
-	for _, surface := range []string{"drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api", "mcp"} {
+	for _, surface := range []string{"drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api"} {
 		if !person(surface).IsStartedByPerson() {
 			t.Errorf("a turn the person typed on %q", surface)
 		}
 	}
 	// A surface that is not a person typing: content, chat apps, goals,
 	// dreams, the agent writing first, a command left running, a restart
-	// resumed, and no surface at all.
-	for _, surface := range []string{"telegram", "discord", "chat", "research", "goal", "background", "resume", "subagent", "speak-first:overnight", "dream", "evaluate", "a-surface-made-up-later", ""} {
+	// resumed, a program that speaks MCP (another program, not the person),
+	// and no surface at all.
+	for _, surface := range []string{"mcp", "telegram", "discord", "chat", "research", "goal", "background", "resume", "subagent", "speak-first:overnight", "dream", "evaluate", "a-surface-made-up-later", ""} {
 		if person(surface).IsStartedByPerson() {
 			t.Errorf("a turn on %q is not the person's", surface)
 		}

@@ -26,6 +26,17 @@ const scriptsLockedWords = "Scripts, pictures, storage, network logs and DevTool
 // that carries anything else.
 const addressLockedWords = "A page TeaNode filled a password or code into can only be sent to an http or https address (and reloaded as it is) until that tab loads a new page. Script and data addresses, and anything else sent along with a navigation or reload, are not done."
 
+// documentUnknownWords is the answer to a command that could read a page, when
+// the browser did not say which page it shows and one was filled into.
+const documentUnknownWords = "The browser did not say which page this is just now, and a password or code was filled into this page earlier. Try again in a moment."
+
+// selectorLockedWords is the answer to a CSS selector on a locked page.
+const selectorLockedWords = "A CSS selector answers yes or no about what a page holds (a selector on an attribute can match the start of a field's value), so on a page TeaNode filled a password or code into only refs from a snapshot are used until that tab loads a new page. Take a snapshot and act by ref."
+
+// clipboardLockedWords is the answer to a key, mouse or drag command that
+// could copy a field's text out or move it into another place.
+const clipboardLockedWords = "Copying, cutting, pasting and dragging are not done on a page TeaNode filled a password or code into, until that tab loads a new page. Type the rest of the sign-in."
+
 // lockedRefusedActions are the actions refused on a locked tab: each can read
 // a filled field or what was sent from it.
 var lockedRefusedActions = map[string]bool{"evaluate": true, "screenshot": true, "storage": true, "cdp_events": true}
@@ -61,6 +72,122 @@ func isProtocolMethodAllowedWhileLocked(method string) bool {
 		}
 	}
 	return false
+}
+
+// keyModifierMask is the bits of the modifiers of a DevTools key event for
+// alt (1), control (2) and meta or command (4). Shift (8) alone only changes
+// which character is typed.
+const keyModifierMask = 1 | 2 | 4
+
+// keyModifierShift is the shift bit of the modifiers.
+const keyModifierShift = 8
+
+// modifiersOf reads the modifiers of a DevTools input event. A value that is
+// not a whole number is not understood and reported as not ok.
+func modifiersOf(parameters map[string]any) (int, bool) {
+	value, isPresent := parameters["modifiers"]
+	if !isPresent || value == nil {
+		return 0, true
+	}
+	switch typed := value.(type) {
+	case float64:
+		if typed != float64(int(typed)) {
+			return 0, false
+		}
+		return int(typed), true
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case json.Number:
+		parsed, err := typed.Int64()
+		return int(parsed), err == nil
+	}
+	return 0, false
+}
+
+// isClipboardKeyName says a key name is one that copies, cuts or pastes by
+// itself.
+func isClipboardKeyName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "insert", "copy", "cut", "paste":
+		return true
+	}
+	return false
+}
+
+// isKeyEventAllowedWhileLocked says the parameters of an Input.dispatchKeyEvent
+// may be sent to a locked tab. A key event can carry editing commands
+// ("selectAll", "copy", "paste") and modifiers (control, alt, meta), and with
+// those it copies a filled field's text and pastes it into an ordinary field,
+// where the scrubbing of the exact value no longer recognizes it. Plain typing
+// is the page's to receive and stays.
+func isKeyEventAllowedWhileLocked(parameters map[string]any) bool {
+	if _, hasCommands := parameters["commands"]; hasCommands {
+		return false
+	}
+	modifiers, isUnderstood := modifiersOf(parameters)
+	if !isUnderstood || modifiers&keyModifierMask != 0 {
+		return false
+	}
+	for _, name := range []string{"key", "code"} {
+		if text, isText := parameters[name].(string); isText && isClipboardKeyName(text) {
+			return false
+		}
+	}
+	// Insert is also virtual key 45, and Shift with Delete cuts.
+	if code, isNumber := parameters["windowsVirtualKeyCode"].(float64); isNumber && code == 45 {
+		return false
+	}
+	if modifiers&keyModifierShift != 0 {
+		if text, isText := parameters["key"].(string); isText && strings.EqualFold(text, "Delete") {
+			return false
+		}
+	}
+	return true
+}
+
+// isMouseEventAllowedWhileLocked says the parameters of an
+// Input.dispatchMouseEvent may be sent to a locked tab. A pointer that moves
+// with a button held drags the selected text, which another field takes in as
+// a drop, and the middle button pastes the selection on some systems.
+func isMouseEventAllowedWhileLocked(parameters map[string]any) bool {
+	button, _ := parameters["button"].(string)
+	if strings.EqualFold(button, "middle") {
+		return false
+	}
+	if kind, _ := parameters["type"].(string); kind == "mouseMoved" {
+		if button != "" && !strings.EqualFold(button, "none") {
+			return false
+		}
+		if buttons, isPresent := parameters["buttons"]; isPresent && buttons != nil {
+			if number, isNumber := buttons.(float64); !isNumber || number != 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// isPressAllowedWhileLocked says a key of the press action may be pressed on
+// a locked tab: not a combination with control, alt or meta (select all, copy,
+// paste) and not a key that copies or pastes by itself.
+func isPressAllowedWhileLocked(key string) bool {
+	key = strings.TrimSpace(key)
+	parts := []string{key}
+	if len(key) > 1 && strings.Contains(key, "+") {
+		parts = strings.Split(key, "+")
+	}
+	for _, part := range parts {
+		switch strings.ToLower(strings.TrimSpace(part)) {
+		case "control", "ctrl", "meta", "command", "cmd", "alt", "option", "controlormeta", "super", "win", "windows":
+			return false
+		}
+		if isClipboardKeyName(part) {
+			return false
+		}
+	}
+	return true
 }
 
 // isLockedNavigationAllowed says the parameters of a Page.navigate or a
@@ -145,13 +272,32 @@ func refuseWhileLocked(filled *devtools.FilledValues, tab string, arguments *bro
 	if lockedRefusedActions[arguments.Action] {
 		return refusal(scriptsLockedWords)
 	}
+	// A selector answers yes or no about the page, so a locked page is acted
+	// on by ref alone.
+	if strings.TrimSpace(arguments.Selector) != "" || (arguments.Action == "wait" && arguments.For == "selector") {
+		return refusal(selectorLockedWords)
+	}
 	switch arguments.Action {
+	case "press":
+		if !isPressAllowedWhileLocked(arguments.Key) {
+			return refusal(clipboardLockedWords)
+		}
 	case "cdp":
 		if !isProtocolMethodAllowedWhileLocked(arguments.Method) {
 			return refusal(scriptsLockedWords)
 		}
 		if !isLockedNavigationAllowed(arguments.Method, arguments.Params) {
 			return refusal(addressLockedWords)
+		}
+		switch strings.TrimSpace(arguments.Method) {
+		case "Input.dispatchKeyEvent":
+			if !isKeyEventAllowedWhileLocked(arguments.Params) {
+				return refusal(clipboardLockedWords)
+			}
+		case "Input.dispatchMouseEvent":
+			if !isMouseEventAllowedWhileLocked(arguments.Params) {
+				return refusal(clipboardLockedWords)
+			}
 		}
 		// What is typed with the keyboard is the page's to receive; any other
 		// parameter holding a javascript: or data: address is a way to run

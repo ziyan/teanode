@@ -15,7 +15,7 @@ import (
 // the web is called. Found by name, as the daily brief's is, because a
 // person who renames it has made it theirs and allowing another estimate
 // should leave it alone.
-const AssetEstimateScheduleName = "Estimate asset values"
+const AssetEstimateScheduleName = agent.AssetEstimateScheduleName
 
 // assetEstimateCron is when the schedule runs: the first of each month in
 // the morning, in the person's zone. A car or a house moves slowly enough
@@ -58,8 +58,9 @@ func (self *graph) startAssetEstimates(ctx context.Context, tx db.Transaction, p
 			AgentID: found.ID, Name: AssetEstimateScheduleName, Cron: assetEstimateCron,
 			Prompt: agent.AssetEstimatePrompt(),
 			// The person's own words, because the person allowed the
-			// estimates, as with the daily brief's switch.
-			WrittenBy: models.WrittenByPerson,
+			// estimates, as with the daily brief's switch, and recorded as
+			// built in for the same reason: it reads the web.
+			WrittenBy: models.WrittenByBuiltIn,
 			Deliver:   models.AgentDeliverDrawer, Enabled: true,
 		}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())

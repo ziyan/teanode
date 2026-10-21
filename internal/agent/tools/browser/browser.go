@@ -39,7 +39,7 @@ func init() {
 					"item_id":        tools.StringProperty("for fill_login, fill_one_time_code and passkey_sign_in: the login in Passwords, by the item_id that passwords list gives"),
 					"user_name_ref":  tools.IntegerProperty("for fill_login: the user name field, from the last snapshot; leave out when the page has none"),
 					"password_ref":   tools.IntegerProperty("for fill_login: the password field, from the last snapshot; leave out when the page has none"),
-					"selector":       tools.StringProperty("a CSS selector instead of a ref"),
+					"selector":       tools.StringProperty("a CSS selector instead of a ref (not on a page you filled a password or code into: refs only)"),
 					"value":          tools.StringProperty("for select: the option's value or text"),
 					"index":          tools.IntegerProperty("for select: the option's position"),
 					"text":           tools.StringProperty("for type: what to type; for ask_to_take_over: what the person should do in the tab, in a line"),
@@ -57,7 +57,7 @@ func init() {
 					"forget":         tools.BooleanProperty("for cdp_events: clear what has been kept after reading it"),
 					"steps":          tools.ArrayProperty("for steps: up to fifty of the above, run in order, stopping at the first failure", map[string]any{"type": "object"}),
 				}, "action"),
-				Guidance: "browser: navigate first, then snapshot to see the page with its refs, then act by ref. Snapshot again after anything that changes the page. Typing a password or a card number into the person's own tab is theirs to ask for and is not refused; say what you are about to do first, and never read one back into the conversation. To sign in with a saved login, call passwords list for the item_id, take a snapshot, then fill_login with the refs of the user name and password fields (and fill_one_time_code for a code field); you never see the values and a snapshot leaves a filled password out. A page you filled a password or code into is locked: evaluate, screenshot, storage, cdp_events and the DevTools commands that read a page are refused on it until that tab loads a new page (navigate to one, or click through to the next), so click and type the rest of the sign-in. If the item is not listed, the person has not let you use it: tell them to turn on \"Let the agent use this\" on it.",
+				Guidance: "browser: navigate first, then snapshot to see the page with its refs, then act by ref. Snapshot again after anything that changes the page. Typing a password or a card number into the person's own tab is theirs to ask for and is not refused; say what you are about to do first, and never read one back into the conversation. To sign in with a saved login, call passwords list for the item_id, take a snapshot, then fill_login with the refs of the user name and password fields (and fill_one_time_code for a code field); you never see the values and a snapshot leaves a filled password out. A page you filled a password or code into is locked: evaluate, screenshot, storage, cdp_events and the DevTools commands that read a page are refused on it until that tab loads a new page (navigate to one, or click through to the next), so click and type the rest of the sign-in. On that page act by ref (a selector is refused), do not copy, paste or drag, and expect the text of inputs not to be shown. If the item is not listed, the person has not let you use it: tell them to turn on \"Let the agent use this\" on it.",
 				Preview: func(arguments json.RawMessage) string {
 					var call browserArguments
 					_ = json.Unmarshal(arguments, &call)
@@ -252,6 +252,13 @@ func runBrowser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	// or photographed (the ways to read a field's value back) until it
 	// loads a new document, and nothing the page says repeats a value it was
 	// given.
+	//
+	// Going back can bring the filled document back a moment before the
+	// event that tells the lock about it, so the browser is asked which
+	// document it shows now, right before the command that could read it.
+	if err := page.CheckCurrentDocument(ctx); err != nil && (lockedRefusedActions[arguments.Action] || arguments.Action == "cdp") {
+		return nil, refusal(documentUnknownWords)
+	}
 	if err := refuseWhileLocked(page.Filled(), "", &arguments); err != nil {
 		return nil, err
 	}

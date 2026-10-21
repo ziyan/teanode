@@ -66,7 +66,7 @@ func passwordsKnownKeysPath(command *cli.Command) (path, server string, err erro
 	if err != nil {
 		return "", "", err
 	}
-	return filepath.Join(directory, "passwords-keys-"+name+".json"), server, nil
+	return filepath.Join(directory, passwords.KnownKeysFileName(name)), server, nil
 }
 
 // readPasswordsKnownKeysFile reads the file as it is now. None is an empty

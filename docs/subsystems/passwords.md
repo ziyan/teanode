@@ -116,8 +116,15 @@ What stands between an item and a page:
   spoke, or a schedule they wrote themselves, which is what a scheduled sign-in
   uses. A run that content started is refused: an inbound mail (research), a chat
   app, a webhook, a goal, a dream, a command left running, a restart resumed, a
-  schedule the agent wrote for itself, or any surface not known to be the
-  person's. A subagent is its parent's. The passwords tool's `list` and
+  program that speaks MCP (another program, not the person), a schedule the
+  agent wrote for itself, one of the built-in schedules (the daily brief and the
+  asset estimates, recorded as written by `built_in`: they read the inbox and the
+  web, so mail could steer them, though their prompt is still handed to the run
+  as the person's words), or any surface not known to be the person's. A
+  schedule made before that was recorded counts as built in too when it still has
+  the built-in name and prompt. A schedule saved with no writer, and one from
+  before the writer was recorded at all, counts as the person's. A subagent is
+  its parent's. The passwords tool's `list` and
   `read_note` keep the same rule.
 - **The rest of the browser tool's rules.** None of the three is a reading
   action, so a tab the person has taken over refuses them like a click. Each is
@@ -200,7 +207,7 @@ headless page, or a tab of the person's browser) the agent filled one into
   `cdp_events`, and every DevTools command except real input
   (`Input.dispatchMouseEvent`, `Input.dispatchKeyEvent`, `Input.dispatchTouchEvent`,
   `Input.insertText`, `Input.imeSetComposition`; not the drag methods, which hand
-  back what is dragged) and moving the page (`Page.navigate`, `Page.reload`, `Page.getNavigationHistory`,
+  back what is dragged), with the limits in "Copying and selectors" below, and moving the page (`Page.navigate`, `Page.reload`, `Page.getNavigationHistory`,
   `Page.getFrameTree`, `Page.getLayoutMetrics`, `Page.enable`, `Page.disable`):
   `Network.`, `Fetch.`, `Runtime.`, `DOM.`, `DOMSnapshot.`, `Page.captureSnapshot`,
   `Accessibility.`, `CSS.` and whatever the protocol adds are refused, since a
@@ -262,6 +269,39 @@ The lock belongs to the tab and to its document, not to the tool:
 A page that signs in without loading a new document (a single-page app) stays
 locked after the sign-in; navigating to a page of the app loads one and ends it.
 
+**Copying and selectors.** Two more things are refused on a locked page, in both
+browsers and inside `steps`, because each would let the model read a value back
+without the exact value ever appearing:
+
+- *Copy, paste and drag.* A key event with editing `commands` (`selectAll`,
+  `copy`, `paste`), with a control, alt or meta modifier, or for the Insert key
+  (or Shift with Delete), a mouse move with a button held (drag and drop), the
+  middle button, any drag command, and the `press` action with a key such as
+  `Control+a` are refused. Without them a filled text field (a one-time code
+  field, or a password field a show button turned into text) cannot be copied into
+  an ordinary input, where the scrubbing would no longer recognize it. Plain
+  typing, Shift with a letter, Enter and clicks still work.
+- *A CSS selector.* A selector says yes or no about the page, and
+  `input[type=password][value^="a"]` matches when the page copies the value into
+  the attribute (React does). So a locked page is acted on by ref alone: any
+  `selector` argument, and `wait` with `for` set to `selector`, is refused.
+- *Input values are not shown.* While a page is locked, the snapshot (headless
+  browser: `snapshot.js`) shows no input's, textarea's or editable region's text at
+  all ("has text, not shown while the page is locked"), not only the filled ones,
+  and a click or hover names such an element by its label alone. A button's value
+  is its label and is still shown. This is a second line behind the two above.
+
+**The document is asked, not only told.** Going back can restore the filled
+document from the history's cache a moment before the `Page.frameNavigated` event
+(or the server's history read) reaches the lock, so `steps: [back, wait, evaluate]`
+could land in the gap. Before any headless command that could read the page
+(`evaluate`, `screenshot`, `storage`, `cdp`, `cdp_events`, and the snapshot and
+element names above) the server asks `Page.getFrameTree` for the main frame's
+current loader id and locks the page again if it is a document that was filled
+(`Context.CheckCurrentDocument`). If the browser does not answer, those commands
+are refused rather than guessed at. `back` itself now returns only once the
+history has moved to the earlier entry, and checks again.
+
 ## The rules
 
 - **Only what the person turned on.** The tool lists items with
@@ -279,8 +319,9 @@ locked after the sign-in; navigating to a page of the app loads one and ends it.
   Health, a run nobody is watching is allowed when the person started it: a
   schedule they wrote themselves, since signing in on a schedule is why a person
   turns an item on. `list`, `read_note` and the three sign-in actions are refused
-  in a run that content started (an inbound mail, a webhook, a goal, a dream, a
-  schedule the agent wrote for itself), because what such a run does is steered
+  in a run that content started (an inbound mail, a webhook, a goal, a dream, an
+  MCP client, a built-in schedule such as the daily brief, a schedule the agent
+  wrote for itself), because what such a run does is steered
   by content the person did not write. A note is not read in a subagent, whose
   answer comes back as a tool result that filing into memory cannot tell from any
   other.
@@ -295,13 +336,42 @@ locked after the sign-in; navigating to a page of the app loads one and ends it.
   the item's revision (a device that has the item open can still save it), so a
   device shows the new time after a full read of the item, not from the changes
   after a revision.
-- **Memory and titles.** When conversations are filed into memory, what the agent
-  said and its tools answered in a turn that read a note or made up a password is
-  left out, and the conversation's title and summary are not refreshed from it.
-  This is the Health filter (`isPrivateToolCall`, `withoutPrivateTurns` in
-  `internal/agent`) with a second tool in its list. It does not reach text the
-  person or the agent repeats later; the tool's guidance tells the agent not to
-  copy Passwords into notes, memory or messages.
+- **Memory, titles and other runs.** A turn that listed the items, read a note or
+  made up a password is a private turn, like one that used Health
+  (`tools.IsPrivateToolCall`, `tools.PrivateTurns` in `internal/agent/tools`,
+  with `list`, `read_note` and `generate` in the list). When conversations are
+  filed into memory, what the agent said and its tools answered in a private turn
+  is left out, and the conversation's title and summary are not refreshed from it.
+  The `conversation` tool's `read` shows the same messages as "[hidden: from a
+  turn that used Health or Passwords]", so a goal, a schedule the agent wrote or
+  a run a mail steered cannot read a note or a made-up password out of the
+  person's chat. What the person wrote stays. It does not reach text the person
+  or the agent repeats later; the tool's guidance tells the agent not to copy
+  Passwords into notes, memory or messages. The conversation tool's `search`
+  still matches words in the agent's earlier answers and says only which
+  conversations they are in.
+- **This computer's files.** `teanode passwords unlock` keeps the opened account
+  key and private key, in the clear, in a file only the person can read
+  (`passwords-unlock-<profile>.json`, in `$XDG_RUNTIME_DIR/teanode` or the
+  configuration directory) for up to 8 hours, and `passwords-keys-<profile>.json`
+  holds the public keys of the people shared with. The agent's computer tools run
+  as the person, so the file and `teanode passwords show --reveal` would open
+  every item whatever "Let the agent use this" says. Two guards stop the obvious
+  routes (`internal/passwords/localfiles.go` names the files and the mark once):
+  the computer program's filesystem tool refuses to read, write, copy, move or
+  edit a file with those names (also through a link) and leaves them out of
+  `grep`; and the program sets `TEANODE_AGENT_COMMAND=1` on every shell command
+  and terminal session it starts for the agent (last, so a call cannot unset it),
+  and the `teanode passwords` commands that open the keys, read or write the
+  unlock file or ask for the passphrase, which is every command that shows,
+  copies or exports an item, answer "Passwords on this computer are not open to
+  the agent's commands." **The limit, plainly:** a command the agent runs as you
+  can do what you can. A program it writes can clear the mark, read the file
+  with the person's own permissions, or use the clipboard or the terminal the
+  person is typing into (a terminal the person attached is theirs, not marked).
+  The guard stops the obvious routes, not a determined program; the way to keep
+  an unlocked computer from the agent is `teanode passwords lock` when you are
+  done, or not unlocking on a computer the agent can run commands on.
 - **The person switches, the agent does not.** Turning "Let the agent use this"
   on or off, sharing, erasing and every change to an item need the person's
   device; the server cannot read an item, so the agent has nothing to change.

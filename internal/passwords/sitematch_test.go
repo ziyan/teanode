@@ -110,6 +110,8 @@ func TestIsOriginOfSitesMatchesThePortToo(test *testing.T) {
 		{"a loopback page on http, no port named", []string{"http://localhost"}, "http://localhost:8080/", false},
 		{"a loopback page on http, default port", []string{"http://localhost"}, "http://localhost/", true},
 		{"an unreadable port matches nothing", []string{"https://example.com:99999"}, "https://example.com/", false},
+		{"an unreadable port on the site and on the page is not a match", []string{"https://example.com:99999"}, "https://example.com:99999/", false},
+		{"a zero port on both sides is not a match", []string{"https://example.com:0"}, "https://example.com:0/", false},
 		{"another host", []string{"example.com"}, "https://example.com.evil.test/", false},
 		{"an address", []string{"[::1]:8443"}, "https://[::1]:8443/", true},
 	}

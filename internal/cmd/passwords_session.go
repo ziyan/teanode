@@ -77,7 +77,7 @@ func passwordsUnlockPaths(command *cli.Command) (paths []string, server string, 
 	if err != nil {
 		return nil, "", err
 	}
-	filename := "passwords-unlock-" + name + ".json"
+	filename := passwords.UnlockFileName(name)
 	if runtimeDirectory := passwordsRuntimeDirectory(); runtimeDirectory != "" {
 		paths = append(paths, filepath.Join(runtimeDirectory, "teanode", filename))
 	}
@@ -90,6 +90,9 @@ func passwordsUnlockPaths(command *cli.Command) (paths []string, server string, 
 // server. A file that others could have read or changed is an error, not
 // something to use.
 func readPasswordsUnlock(command *cli.Command) (*passwordsKeys, time.Time, error) {
+	if err := refuseAgentCommand(); err != nil {
+		return nil, time.Time{}, err
+	}
 	paths, server, err := passwordsUnlockPaths(command)
 	if err != nil {
 		return nil, time.Time{}, err
@@ -125,6 +128,9 @@ func readPasswordsUnlock(command *cli.Command) (*passwordsKeys, time.Time, error
 // writePasswordsUnlock keeps the opened keys until the lock time passes, but
 // never more than passwordsUnlockLifetimeMost.
 func writePasswordsUnlock(command *cli.Command, keys *passwordsKeys, lockAfter time.Duration) (time.Time, error) {
+	if err := refuseAgentCommand(); err != nil {
+		return time.Time{}, err
+	}
 	paths, server, err := passwordsUnlockPaths(command)
 	if err != nil {
 		return time.Time{}, err
@@ -167,6 +173,21 @@ func removePasswordsUnlock(command *cli.Command) (bool, error) {
 		wasUnlocked = wasUnlocked || wasRemoved
 	}
 	return wasUnlocked, nil
+}
+
+// refuseAgentCommand is the refusal for a command the agent runs: the computer
+// program marks every shell command and terminal it starts for the agent (see
+// passwords.AgentCommandEnvironmentName), and a marked command does not open
+// Passwords, read or write the file `unlock` keeps the keys in, or ask for the
+// passphrase. This stops the obvious routes (`passwords show --reveal`,
+// `passwords export`, `passwords copy`, reading the unlock file); a command
+// the agent runs runs as the person and can unset the mark in a program of its
+// own, so it is a guard and not a boundary.
+func refuseAgentCommand() error {
+	if passwords.IsAgentCommand() {
+		return errors.New(passwords.AgentCommandRefusalWords)
+	}
+	return nil
 }
 
 // passwordsInput is where a passphrase, a recovery key or a password is read
@@ -321,6 +342,9 @@ func readSetUpPasswords(ctx context.Context, connection *client.Client) (*client
 // back. A recovery key proves with its own proof; the server answers with the
 // account key sealed by it.
 func unlockPasswords(ctx context.Context, connection *client.Client, setup *client.PasswordsSetupView, secret passwordsSecret) (*passwordsKeys, error) {
+	if err := refuseAgentCommand(); err != nil {
+		return nil, err
+	}
 	proof, wrapKey, err := secret.proof(setup)
 	if errors.Is(err, passwords.ErrInvalidRecoveryKey) {
 		return nil, usage("that is not a recovery key; it is 13 groups of 4 letters and digits")
@@ -380,9 +404,21 @@ type passwordsSession struct {
 // there are none. What it asks for it does not keep: only `unlock` leaves the
 // keys on disk.
 func openPasswords(ctx context.Context, command *cli.Command, connection *client.Client) (*passwordsSession, error) {
+	if err := refuseAgentCommand(); err != nil {
+		return nil, err
+	}
 	keys, _, err := readPasswordsUnlock(command)
 	if err != nil {
 		return nil, err
+	}
+	if keys != nil && command.Bool("passphrase-stdin") {
+		// A script that pipes the passphrase first and then a secret must get
+		// the same result whether or not an earlier `unlock` left the keys: the
+		// first line is the passphrase either way, so it is read and dropped
+		// here, and the next line is not mistaken for it.
+		if _, err := readHiddenLine(command, "", true, "passphrase-stdin"); err != nil {
+			return nil, err
+		}
 	}
 	if keys == nil {
 		setup, err := readSetUpPasswords(ctx, connection)

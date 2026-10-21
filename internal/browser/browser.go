@@ -396,10 +396,20 @@ func (self *Context) Snapshot(ctx context.Context, mode string, maximum int) (*S
 		mode = "interactive"
 	}
 	var snapshot Snapshot
-	if err := self.evaluate(ctx, fmt.Sprintf("(%s)(%q, %d)", snapshotScript, mode, maximum), &snapshot); err != nil {
+	if err := self.evaluate(ctx, fmt.Sprintf("(%s)(%q, %d, %t)", snapshotScript, mode, maximum, self.isLockedNow(ctx)), &snapshot); err != nil {
 		return nil, err
 	}
 	return &snapshot, nil
+}
+
+// isLockedNow says a value was filled into the page it shows now. It asks the
+// browser which document that is first (see CheckCurrentDocument); when the
+// browser does not say, a page that was filled into is taken to be locked.
+func (self *Context) isLockedNow(ctx context.Context) bool {
+	if err := self.CheckCurrentDocument(ctx); err != nil {
+		return true
+	}
+	return self.filled.IsLocked("")
 }
 
 // Screenshot is the viewport, or the whole page, as PNG.
@@ -442,14 +452,19 @@ func (self *Context) elementCenter(ctx context.Context, where Target) (float64, 
   if (!node) return {ok: false};
   node.scrollIntoView({block: 'center', inline: 'center'});
   const rect = node.getBoundingClientRect();
+  // While the page is locked, an input, a textarea or an editable region is
+  // named by its label alone, never by what it holds (see snapshot.js).
+  const isLocked = %t || !!window.__teanodeFilled;
+  const holdsTypedText = node instanceof HTMLTextAreaElement || node.isContentEditable || (node instanceof HTMLInputElement && !['button', 'submit', 'reset', 'image', 'checkbox', 'radio'].includes((node.type || 'text').toLowerCase()));
   let isSecret = false;
   if (node instanceof HTMLInputElement) {
     try { isSecret = !!(window.__teanodeFilled && window.__teanodeFilled.has(node)); } catch (error) { isSecret = true; }
     isSecret = isSecret || node.type.toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || '');
   }
-  const name = (node.getAttribute && (node.getAttribute('aria-label') || node.innerText || (isSecret ? '' : node.value) || node.textContent) || '').trim().slice(0, 80);
+  const label = node.getAttribute ? node.getAttribute('aria-label') : '';
+  const name = ((isLocked && holdsTypedText ? label : (label || node.innerText || (isSecret ? '' : node.value) || node.textContent)) || '').trim().slice(0, 80);
   return {ok: true, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, name: node.tagName.toLowerCase() + (name ? ' "' + name + '"' : '')};
-})()`, element, where.Ref, where.Selector)
+})()`, element, where.Ref, where.Selector, self.isLockedNow(ctx))
 	if err := self.evaluate(ctx, script, &found); err != nil {
 		return 0, 0, "", err
 	}
@@ -628,13 +643,41 @@ func (self *Context) Wait(ctx context.Context, condition, selector string, timeo
 	}
 }
 
-// Back goes to the previous page.
+// backCommitWait is how long Back waits for the history to move to the entry
+// it went back to.
+var backCommitWait = 3 * time.Second
+
+// Back goes to the previous page. It returns once the browser has moved to the
+// previous entry of its history (the move itself is not instant: the old page
+// stays the current document until the new one commits), so that whatever the
+// caller does next acts on the page that was gone back to, not on the one that
+// was left a moment before.
 func (self *Context) Back(ctx context.Context) (*Location, error) {
 	self.touch()
+	var before *historyEntries
+	if entries, err := self.history(ctx); err == nil && entries.currentIndex > 0 {
+		before = entries
+	}
 	if err := self.evaluate(ctx, `history.back(); true`, nil); err != nil {
 		return nil, err
 	}
+	if before != nil {
+		deadline := time.Now().Add(backCommitWait)
+		for time.Now().Before(deadline) {
+			entries, err := self.history(ctx)
+			if err == nil && entries.currentID != before.currentID {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(25 * time.Millisecond):
+			}
+		}
+	}
 	_, _ = self.Wait(ctx, "load", "", 15*time.Second)
+	// The move may have brought back the document that was filled.
+	_ = self.CheckCurrentDocument(ctx)
 	return self.location(ctx)
 }
 
