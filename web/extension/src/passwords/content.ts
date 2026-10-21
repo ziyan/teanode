@@ -447,6 +447,12 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
     })
     return false
   }
+  if (message.type === 'passwords:frame-facts') {
+    // What the popup and the keyboard shortcut tell the person about this
+    // frame: every page above it is looked at, not only the top one.
+    sendResponse(frameFacts())
+    return false
+  }
   if (message.type === 'passwords:show-bar') {
     void showBar((message as ShowBarMessage).offer)
     sendResponse({})

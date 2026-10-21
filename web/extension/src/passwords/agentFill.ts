@@ -104,16 +104,22 @@ function fillInPage(origin: string, fields: FieldToFill[]): { isFilled: boolean;
     return true
   }
   // A form that sends what is typed to another host than the page's own is
-  // not filled for the agent: nobody can be asked here.
+  // not filled for the agent: nobody can be asked here. The addresses are
+  // those formActionAttributes in fieldDetection.ts reads, written out again
+  // because nothing of that file is in scope here.
   const isFormSendingElsewhere = (node: HTMLInputElement): boolean => {
     const form = node.form
     if (!form) return false
-    // Every control that belongs to the form, including a button outside it
-    // that names it with its form attribute.
-    const attributes = [
-      form.getAttribute('action'),
-      ...Array.from(form.elements).map((control) => control.getAttribute('formaction')),
-    ]
+    const getAttribute = Element.prototype.getAttribute
+    const buttonForm = Object.getOwnPropertyDescriptor(HTMLButtonElement.prototype, 'form')?.get
+    const inputForm = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'form')?.get
+    const attributes: (string | null)[] = [getAttribute.call(form, 'action')]
+    for (const control of Array.from(Document.prototype.querySelectorAll.call(document, '[formaction]'))) {
+      let owner: HTMLFormElement | null = null
+      if (control instanceof HTMLButtonElement && buttonForm) owner = buttonForm.call(control)
+      else if (control instanceof HTMLInputElement && inputForm) owner = inputForm.call(control)
+      if (owner === form) attributes.push(getAttribute.call(control, 'formaction'))
+    }
     return attributes.some((attribute) => {
       if (attribute === null || attribute.trim() === '') return false
       try {

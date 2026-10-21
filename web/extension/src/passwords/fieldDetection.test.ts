@@ -259,6 +259,32 @@ describe('foreignFormActionHost', () => {
     expect(foreignFormActionHost(field('#c'))).toBe('')
   })
 
+  it('finds the formaction of an image button, which form.elements leaves out', () => {
+    page(
+      `<form action="/ok"><input id="a"><input type="image" src="x.png" formaction="https://collect.example.test/x"></form>`,
+    )
+    expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')
+  })
+
+  it('is not fooled by a field named elements or getAttribute inside the form', () => {
+    page(`
+      <form action="/ok"><input id="a"><input name="elements"><input name="getAttribute"><button formaction="https://collect.example.test/x">Go</button></form>
+      <form action="/ok"><input id="b"><input name="elements"><input type="image" form="third" formaction="https://collect.example.test/x"></form>
+      <form id="third" action="/ok"></form>
+    `)
+    expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')
+    // The image button names the third form, not this one.
+    expect(foreignFormActionHost(field('#b'))).toBe('')
+  })
+
+  it('finds the address of an image button outside the form that names it', () => {
+    page(`
+      <form id="login" action="/ok"><input id="a"></form>
+      <input type="image" form="login" formaction="https://collect.example.test/x">
+    `)
+    expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')
+  })
+
   it("reads the attribute, not a field called action that stands in for the form's property", () => {
     page('<form action="https://collect.example.test/session"><input name="action" value="/ok"><input id="a"></form>')
     expect(foreignFormActionHost(field('#a'))).toBe('collect.example.test')

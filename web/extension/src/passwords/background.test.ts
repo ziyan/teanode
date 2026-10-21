@@ -297,6 +297,36 @@ describe('suggestions and filling', () => {
   })
 })
 
+describe('whether the frame the popup is for is inside another origin', () => {
+  it('counts a frame as cross-origin when the content script finds a page above it on another origin', async () => {
+    const context = await start({ records: await exampleRecords() })
+    await context.unlock()
+    // The frame and the top page share an origin; a frame between them does not.
+    context.scripting.executeScript.mockResolvedValue([{ frameId: 3, result: 'https://example.com/login' }])
+    context.tabState.url = 'https://example.com/'
+    context.tabs.sendMessage.mockResolvedValue({ isCrossOrigin: true, topHost: 'example.com' } as any)
+    const state = await context.send({ type: 'passwords:state', tabId: 5, frameId: 3 }, ownPageSender())
+    expect(state.isFrameCrossOrigin).toBe(true)
+    expect(state.topHost).toBe('example.com')
+    expect(context.tabs.sendMessage).toHaveBeenCalledWith(5, { type: 'passwords:frame-facts' }, { frameId: 3 })
+
+    context.tabs.sendMessage.mockResolvedValue({ isCrossOrigin: false, topHost: 'example.com' } as any)
+    expect(
+      (await context.send({ type: 'passwords:state', tabId: 5, frameId: 3 }, ownPageSender())).isFrameCrossOrigin,
+    ).toBe(false)
+  })
+
+  it('falls back to the tab address when the frame does not answer', async () => {
+    const context = await start({ records: await exampleRecords() })
+    await context.unlock()
+    context.scripting.executeScript.mockResolvedValue([{ frameId: 3, result: 'https://other.example.test/login' }])
+    context.tabs.sendMessage.mockRejectedValue(new Error('no content script'))
+    const state = await context.send({ type: 'passwords:state', tabId: 5, frameId: 3 }, ownPageSender())
+    expect(state.isFrameCrossOrigin).toBe(true)
+    expect(state.topHost).toBe('example.com')
+  })
+})
+
 describe('the window for a sandboxed document', () => {
   afterEach(() => {
     delete (window as any).origin
@@ -312,6 +342,7 @@ describe('the window for a sandboxed document', () => {
     Object.defineProperty(window, 'origin', { configurable: true, value: 'null' })
     expect(addressOfFrame()).toBe('')
 
+    context.tabs.sendMessage.mockClear()
     // What the worker does with that answer: nothing listed for the page, nothing filled.
     context.scripting.executeScript.mockResolvedValue([{ frameId: 3, result: '' }])
     const state = await context.send({ type: 'passwords:state', tabId: 5, frameId: 3 }, ownPageSender())

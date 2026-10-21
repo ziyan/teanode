@@ -21,7 +21,8 @@ import {
   registrationAuthenticatorData,
   signAssertion,
 } from '../../../src/passwords/passkey'
-import { effectiveDomain, isRelyingPartyOfHost, isSecureContextPage } from './hosts'
+import { effectiveDomain, isSecureContextPage } from './hosts'
+import { isRelyingPartyOfHost } from './relyingParty'
 
 // What the extension knows about the page that asked, from the browser's own
 // description of the frame that sent the message and never from the page.

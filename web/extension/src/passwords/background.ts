@@ -851,6 +851,25 @@ function isOtherOrigin(first: string, second: string): boolean {
   }
 }
 
+// readFrameFacts asks the content script in the frame whether some page above
+// the frame has another origin (it looks at every ancestor, not only the top
+// page) and what the top page's host is. A frame that does not answer (no
+// content script, a sandboxed document) is read from the tab's address alone.
+async function readFrameFacts(
+  tabId: number,
+  frameId: number,
+): Promise<{ isCrossOrigin: boolean; topHost: string } | null> {
+  try {
+    const answer = await chrome.tabs.sendMessage(tabId, { type: 'passwords:frame-facts' }, { frameId })
+    if (answer && typeof answer.isCrossOrigin === 'boolean' && typeof answer.topHost === 'string') {
+      return { isCrossOrigin: answer.isCrossOrigin, topHost: answer.topHost }
+    }
+  } catch {
+    // The frame has no content script.
+  }
+  return null
+}
+
 async function frameTargetState(tabId: number | undefined, frameId: number | undefined) {
   if (tabId === undefined) return { url: '', frameHost: '', topHost: '', isFrameCrossOrigin: false }
   const url = (await describeFrame(tabId, frameId ?? 0)) ?? ''
@@ -858,11 +877,14 @@ async function frameTargetState(tabId: number | undefined, frameId: number | und
     .get(tabId)
     .then((tab: { url?: string }) => tab.url ?? '')
     .catch(() => '')
-  const isFrameCrossOrigin = isOtherOrigin(url, topUrl)
+  const facts = url ? await readFrameFacts(tabId, frameId ?? 0) : null
+  // Without an answer the frame counts as cross-origin when its address is
+  // not the tab's; with one, a middle frame on another origin counts too.
+  const isFrameCrossOrigin = facts ? facts.isCrossOrigin || isOtherOrigin(url, topUrl) : isOtherOrigin(url, topUrl)
   return {
     url,
     frameHost: url ? normalizeHost(url) : '',
-    topHost: topUrl ? normalizeHost(topUrl) : '',
+    topHost: facts && facts.topHost !== '' ? facts.topHost : topUrl ? normalizeHost(topUrl) : '',
     isFrameCrossOrigin,
   }
 }

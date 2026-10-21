@@ -4,7 +4,6 @@ import {
   doesSiteMatchPage,
   doSitesMatchPage,
   effectiveDomain,
-  isRelyingPartyOfHost,
   isSecureContextPage,
   isWebPage,
   normalizeHost,
@@ -111,65 +110,6 @@ describe('doesHostMatch', () => {
     expect(doesHostMatch('https://evil.test/a', 'example.com')).toBe(false)
     expect(doesHostMatch('about:blank', 'example.com')).toBe(false)
     expect(doesHostMatch('https://example.com/', '')).toBe(false)
-  })
-})
-
-describe('isRelyingPartyOfHost', () => {
-  it('accepts the host itself and a domain above it', () => {
-    expect(isRelyingPartyOfHost('login.example.com', 'https://login.example.com/')).toBe(true)
-    expect(isRelyingPartyOfHost('example.com', 'https://login.example.com/')).toBe(true)
-    expect(isRelyingPartyOfHost('Example.COM', 'https://example.com/')).toBe(true)
-    expect(isRelyingPartyOfHost('localhost', 'http://localhost:3000/')).toBe(true)
-  })
-
-  it('refuses another site, and a name that only ends alike', () => {
-    expect(isRelyingPartyOfHost('example.com', 'https://example.com.evil.test/')).toBe(false)
-    expect(isRelyingPartyOfHost('example.test', 'https://evilexample.test/')).toBe(false)
-    expect(isRelyingPartyOfHost('login.example.com', 'https://example.com/')).toBe(false)
-  })
-
-  it('refuses a public suffix as the relying party', () => {
-    // Built from labels, so no real host name is written in this file.
-    const countrySecondLevel = ['co', 'uk'].join('.')
-    const hostingSuffix = ['github', 'io'].join('.')
-    expect(isRelyingPartyOfHost('com', 'https://example.com/')).toBe(false)
-    expect(isRelyingPartyOfHost(countrySecondLevel, `https://example.${countrySecondLevel}/`)).toBe(false)
-    expect(isRelyingPartyOfHost(`example.${countrySecondLevel}`, `https://login.example.${countrySecondLevel}/`)).toBe(
-      true,
-    )
-    expect(isRelyingPartyOfHost(hostingSuffix, `https://ada.${hostingSuffix}/`)).toBe(false)
-    expect(isRelyingPartyOfHost(`ada.${hostingSuffix}`, `https://ada.${hostingSuffix}/`)).toBe(true)
-  })
-
-  it('refuses a domain above an address', () => {
-    expect(isRelyingPartyOfHost('0.0.2.7', 'https://192.0.2.7/')).toBe(false)
-    expect(isRelyingPartyOfHost('2.7', 'https://192.0.2.7/')).toBe(false)
-    // An address is not a relying party; the loopback address of a local test page is.
-    expect(isRelyingPartyOfHost('192.0.2.7', 'https://192.0.2.7/')).toBe(false)
-    expect(isRelyingPartyOfHost('[::1]', 'https://[::1]/')).toBe(false)
-    expect(isRelyingPartyOfHost('127.0.0.1', 'http://127.0.0.1:3000/')).toBe(true)
-  })
-
-  it('refuses the shared hosting suffixes a short list would miss', () => {
-    // Built from labels, so no real host name is written in this file.
-    for (const labels of [
-      ['onrender', 'com'],
-      ['fly', 'dev'],
-      ['repl', 'co'],
-      ['glitch', 'me'],
-      ['myshopify', 'com'],
-      ['wixsite', 'com'],
-    ]) {
-      const suffix = labels.join('.')
-      expect(isRelyingPartyOfHost(suffix, `https://ada.${suffix}/`), suffix).toBe(false)
-      expect(isRelyingPartyOfHost(`ada.${suffix}`, `https://ada.${suffix}/`), suffix).toBe(true)
-      expect(isRelyingPartyOfHost(`ada.${suffix}`, `https://login.ada.${suffix}/`), suffix).toBe(true)
-    }
-  })
-
-  it('refuses an empty id and a page that is not a web page', () => {
-    expect(isRelyingPartyOfHost('', 'https://example.com/')).toBe(false)
-    expect(isRelyingPartyOfHost('example.com', 'about:blank')).toBe(false)
   })
 })
 

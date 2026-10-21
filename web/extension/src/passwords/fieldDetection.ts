@@ -221,15 +221,42 @@ export function setFieldValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+// formActionAttributes is where the form sends what is typed in it, as the
+// attributes say: the form's "action" first, then the "formaction" of every
+// submit control that belongs to the form. Three things are read around what
+// the page can change:
+//  - Controls are found with the document's own querySelectorAll and a
+//    control's form is read from the prototype's getter, never from
+//    form.elements, because form.elements leaves out an image button (whose
+//    formaction the browser honors) and a field named "elements" inside the
+//    form stands in for it.
+//  - A button outside the form that names it with its form attribute belongs
+//    to it, and a button inside it that names another form does not; the
+//    form getter says both.
+//  - The form's own getAttribute is not called: a field named "getAttribute"
+//    inside the form would stand in for it.
+// agentFill.ts runs inside the page with nothing of this file in scope and
+// carries the same steps written out again; agentFill.test.ts runs both over
+// the same pages.
+export function formActionAttributes(document: Document, form: HTMLFormElement): (string | null)[] {
+  const getAttribute = Element.prototype.getAttribute
+  const buttonForm = Object.getOwnPropertyDescriptor(HTMLButtonElement.prototype, 'form')?.get
+  const inputForm = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'form')?.get
+  const attributes: (string | null)[] = [getAttribute.call(form, 'action')]
+  for (const control of Array.from(Document.prototype.querySelectorAll.call(document, '[formaction]'))) {
+    let owner: HTMLFormElement | null = null
+    if (control instanceof HTMLButtonElement && buttonForm) owner = buttonForm.call(control)
+    else if (control instanceof HTMLInputElement && inputForm) owner = inputForm.call(control)
+    if (owner === form) attributes.push(getAttribute.call(control, 'formaction'))
+  }
+  return attributes
+}
+
 // foreignFormActionHost is the host the form around a field sends to when that
 // is not the host of the page the form is on, else an empty text. A form on a
 // secure page that sends to a plain-text address counts too, whatever the host
-// (it is named with "not encrypted" after it). The form's "action" and any
-// control's "formaction" are read as attributes: a field named "action" inside
-// the form would stand in for the form's action property. The controls are all
-// those that belong to the form (form.elements), which includes a button
-// outside the form that names it with its form attribute, and leaves out a
-// button inside it that names another form.
+// (it is named with "not encrypted" after it). The addresses are those
+// formActionAttributes reads.
 export function foreignFormActionHost(input: HTMLInputElement): string {
   const form = input.form
   if (!form) return ''
@@ -237,11 +264,7 @@ export function foreignFormActionHost(input: HTMLInputElement): string {
   const pageUrl = document.location?.href ?? ''
   const pageHost = normalizeHost(pageUrl)
   const isPageSecure = /^https:/i.test(pageUrl)
-  const attributes = [
-    form.getAttribute('action'),
-    ...Array.from(form.elements).map((control) => control.getAttribute('formaction')),
-  ]
-  for (const attribute of attributes) {
+  for (const attribute of formActionAttributes(document, form)) {
     if (attribute === null || attribute.trim() === '') continue
     let resolved: URL
     try {

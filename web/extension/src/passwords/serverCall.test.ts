@@ -49,10 +49,10 @@ describe('friendlyServerWords', () => {
 })
 
 describe('callServer', () => {
-  function stub(response: { status: number; ok: boolean; body?: unknown }) {
+  function stub(response: { status: number; ok: boolean; body?: unknown }, server = 'https://tea.example.test/') {
     vi.stubGlobal('chrome', {
       storage: {
-        sync: { get: async () => ({ server: 'https://tea.example.test/' }) },
+        sync: { get: async () => ({ server }) },
         local: { get: async () => ({ token: 'token' }) },
       },
     })
@@ -83,5 +83,22 @@ describe('callServer', () => {
     await expect(callServer('query { x }')).rejects.toMatchObject({
       message: 'The server had a problem. Try again in a moment.',
     })
+  })
+
+  it('sends the token to plain http only on this computer', async () => {
+    stub({ status: 200, ok: true, body: { data: { value: 1 } } }, 'http://tea.example.test')
+    await expect(callServer('query { x }')).rejects.toMatchObject({
+      message: expect.stringMatching(/must start with https:\/\//),
+    })
+    expect(fetch).not.toHaveBeenCalled()
+    for (const server of [
+      'http://localhost:8080',
+      'http://127.0.0.1:8080/',
+      'http://[::1]:8080',
+      'http://tea.localhost',
+    ]) {
+      stub({ status: 200, ok: true, body: { data: { value: 1 } } }, server)
+      expect(await callServer('query { x }'), server).toEqual({ value: 1 })
+    }
   })
 })

@@ -21,26 +21,63 @@ export interface OneTimeCodeSettings {
   accountName: string
 }
 
+// The longest period read: far longer than any site uses, and a number every
+// language here holds exactly.
+const MAXIMUM_ONE_TIME_CODE_PERIOD_SECONDS = 2147483647
+
+// hasControlCharacter is true for an ASCII control character, including a
+// delete.
+function hasControlCharacter(text: string): boolean {
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index)
+    if (code < 0x20 || code === 0x7f) return true
+  }
+  return false
+}
+
 // parseOneTimeCodeUri reads otpauth://totp/<label>?secret=...; counter based
 // codes (otpauth://hotp) are refused, as no site this is for uses them.
+//
+// The reading is strict, and the same as ParseOneTimeCodeURI in
+// internal/passwords/onetimecode.go; both read the cases in
+// internal/passwords/testdata/onetimecode.json. The host is exactly "totp" (no
+// port), the query has no malformed percent escape and no semicolon, the
+// secret holds only base32 letters (case does not matter) with spaces and
+// hyphens ignored and padding "=" only at the end, and the digit count and
+// the period are plain ASCII digits (no sign, no space) with a period of at
+// most MAXIMUM_ONE_TIME_CODE_PERIOD_SECONDS.
 export function parseOneTimeCodeUri(uri: string): OneTimeCodeSettings {
+  // Only ASCII white space is trimmed from either end (Go's TrimSpace and
+  // this language's trim differ on a few others). A control character inside
+  // is refused: the address parser would drop a tab or a line break wherever
+  // it is, which would let one hide inside a secret. A malformed percent
+  // escape is refused, as Go's address parser does.
+  const text = uri.replace(/^[ \t\n\r\f\v]+|[ \t\n\r\f\v]+$/g, '')
+  if (hasControlCharacter(text) || /%(?![0-9A-Fa-f]{2})/.test(text)) {
+    throw new PasswordsCryptoError('The one-time code address is not a web address')
+  }
   let address: URL
   try {
-    address = new URL(uri.trim())
+    address = new URL(text)
   } catch {
     throw new PasswordsCryptoError('The one-time code address is not a web address')
   }
   if (address.protocol !== 'otpauth:')
     throw new PasswordsCryptoError('The one-time code address must start with otpauth://')
-  if (address.hostname.toLowerCase() !== 'totp')
-    throw new PasswordsCryptoError('Only time based one-time codes are supported')
+  // The text between "//" and the next "/", "?" or "#" is exactly "totp": no
+  // user name, no port, not even an empty one.
+  const authority = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/?#]*)/.exec(text)?.[1] ?? ''
+  if (authority.toLowerCase() !== 'totp') throw new PasswordsCryptoError('Only time based one-time codes are supported')
+  // URLSearchParams keeps a semicolon as text; the Go reading refuses it.
+  if (address.search.includes(';')) throw new PasswordsCryptoError('The one-time code address has a malformed query')
 
-  const secretText = address.searchParams.get('secret')
+  const secretText = (address.searchParams.get('secret') ?? '').replace(/[ -]/g, '').replace(/=+$/, '')
   if (!secretText) throw new PasswordsCryptoError('The one-time code address has no secret')
+  if (!/^[A-Za-z2-7]+$/.test(secretText)) throw new PasswordsCryptoError('The one-time code secret is not base32')
   const secret = decodeBase32(secretText)
   if (secret.length === 0) throw new PasswordsCryptoError('The one-time code secret is empty')
 
-  const algorithmText = (address.searchParams.get('algorithm') ?? 'SHA1').toUpperCase()
+  const algorithmText = (address.searchParams.get('algorithm') || 'SHA1').toUpperCase()
   if (!Object.prototype.hasOwnProperty.call(HASH_NAMES, algorithmText)) {
     throw new PasswordsCryptoError(`Unsupported one-time code algorithm ${algorithmText}`)
   }
@@ -53,7 +90,9 @@ export function parseOneTimeCodeUri(uri: string): OneTimeCodeSettings {
     DEFAULT_ONE_TIME_CODE_PERIOD_SECONDS,
     'period',
   )
-  if (periodSeconds < 1) throw new PasswordsCryptoError('The one-time code period must be at least 1 second')
+  if (periodSeconds < 1 || periodSeconds > MAXIMUM_ONE_TIME_CODE_PERIOD_SECONDS) {
+    throw new PasswordsCryptoError('The one-time code period must be from 1 second to 2147483647 seconds')
+  }
 
   // The label is "Issuer:account" or "account", percent-encoded after the slash.
   let label: string
@@ -78,7 +117,7 @@ export function parseOneTimeCodeUri(uri: string): OneTimeCodeSettings {
 
 function readWholeNumber(text: string | null, fallback: number, name: string): number {
   if (text === null || text === '') return fallback
-  if (!/^\d+$/.test(text)) throw new PasswordsCryptoError(`The one-time code ${name} is not a number`)
+  if (!/^[0-9]+$/.test(text)) throw new PasswordsCryptoError(`The one-time code ${name} is not a number`)
   return Number(text)
 }
 

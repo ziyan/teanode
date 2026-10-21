@@ -226,6 +226,40 @@ describe('fillLoginForAgent', () => {
     expect((await fillLoginForAgent(7, args)).ok).toBe(true)
   })
 
+  it('refuses a form whose image button sends elsewhere, which form.elements leaves out', async () => {
+    const args = { host: 'login.example.test', password: 'hunter2', passwordRef: 2 }
+    const form = document.querySelector('form') as HTMLFormElement
+    form.insertAdjacentHTML('beforeend', '<input type="image" src="x.png" formaction="https://collect.example.test/x">')
+    expect((await fillLoginForAgent(7, args)).ok).toBe(false)
+    expect(field('pass').value).toBe('')
+  })
+
+  it('refuses a form with a field named elements or getAttribute that stands in for the form properties', async () => {
+    const args = { host: 'login.example.test', password: 'hunter2', passwordRef: 2 }
+    const form = document.querySelector('form') as HTMLFormElement
+    form.insertAdjacentHTML(
+      'beforeend',
+      '<input name="elements"><input name="getAttribute"><button formaction="https://collect.example.test/x">Go</button>',
+    )
+    expect((await fillLoginForAgent(7, args)).ok).toBe(false)
+    expect(field('pass').value).toBe('')
+  })
+
+  it('ignores a button inside the form that names another form, and finds one outside that names this one', async () => {
+    const args = { host: 'login.example.test', password: 'hunter2', passwordRef: 2 }
+    const form = document.querySelector('form') as HTMLFormElement
+    document.body.insertAdjacentHTML('beforeend', '<form id="other" action="/other"></form>')
+    form.insertAdjacentHTML('beforeend', '<button form="other" formaction="https://collect.example.test/x">Go</button>')
+    expect((await fillLoginForAgent(7, args)).ok).toBe(true)
+    field('pass').value = ''
+    form.id = 'login'
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<input type="image" form="login" formaction="https://collect.example.test/x">',
+    )
+    expect((await fillLoginForAgent(7, args)).ok).toBe(false)
+  })
+
   it('finds the address of a button outside the form that names it with its form attribute', async () => {
     const args = { host: 'login.example.test', password: 'hunter2', passwordRef: 2 }
     const form = document.querySelector('form') as HTMLFormElement

@@ -31,6 +31,7 @@ import './passwords/background'
 // The token and the other storage the extension keeps are closed to its
 // content scripts (the part of it that runs inside web pages).
 import { restrictStorageToTrustedContexts } from './storageAccess'
+import { serverAddressProblem } from './serverAddress'
 import { fillLoginForAgent, fillOneTimeCodeForAgent } from './passwords/agentFill'
 // Which document each of the agent's tabs shows and which the agent filled a
 // password or code into: the server locks a filled tab until it commits a new
@@ -148,7 +149,7 @@ function connectIfSignedIn() {
       if (socket) return
       const origin = await serverOrigin()
       const secret = await token()
-      if (!origin || !secret || !/^https?:\/\//i.test(origin)) return
+      if (!origin || !secret || serverAddressProblem(origin) !== '') return
       connect(origin, secret)
     })().finally(() => {
       connecting = null
@@ -162,9 +163,10 @@ function connectIfSignedIn() {
 async function attach(tab) {
   const origin = await serverOrigin()
   const secret = await token()
-  if (!origin || !secret || !/^https?:\/\//i.test(origin)) {
+  if (!origin || !secret || serverAddressProblem(origin) !== '') {
     // Typed without a scheme, the address builds a WebSocket URL that
-    // throws, and the button did nothing with nothing said.
+    // throws, and the button did nothing with nothing said. An http address
+    // to another computer is refused the same way: the token would go in the clear.
     chrome.runtime.openOptionsPage()
     return
   }

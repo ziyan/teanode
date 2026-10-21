@@ -373,6 +373,10 @@ describe('filling from the window', () => {
     expect(await ask({ ...fields, isForeignActionConfirmed: true })).toEqual({ filledCount: 2 })
   })
 
+  it('tells the service worker whether a page above the frame has another origin, and the top host', async () => {
+    expect(await ask({ type: 'passwords:frame-facts' })).toEqual({ isCrossOrigin: false, topHost: 'shop.example.test' })
+  })
+
   it('answers only the extension', () => {
     expect(runtimeListener(fields, { id: 'someone-else' }, () => {})).toBe(false)
   })

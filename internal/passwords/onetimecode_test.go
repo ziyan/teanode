@@ -2,6 +2,9 @@ package passwords
 
 import (
 	"encoding/base32"
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 )
@@ -105,6 +108,78 @@ func TestParseOneTimeCodeURIRefuses(test *testing.T) {
 		"otpauth://totp/a?secret=JBSWY3DPEHPK3PXP&digits=7",
 		"otpauth://totp/a?secret=JBSWY3DPEHPK3PXP&algorithm=MD5",
 		"otpauth://totp/a?secret=JBSWY3DPEHPK3PXP&period=0",
+	} {
+		if _, err := ParseOneTimeCodeURI(address); err == nil {
+			test.Errorf("%q was accepted", address)
+		}
+	}
+}
+
+// testdata/onetimecode.json holds the addresses the reading must answer the
+// same way here and in the dashboard and the extension (web/src/passwords/
+// oneTimeCode.ts, which reads the same file).
+type sharedOneTimeCodeCases struct {
+	UnixSeconds []int64 `json:"unixSeconds"`
+	Cases       []struct {
+		Name          string   `json:"name"`
+		Address       string   `json:"address"`
+		IsValid       bool     `json:"isValid"`
+		SecretHex     string   `json:"secretHex"`
+		Algorithm     string   `json:"algorithm"`
+		DigitCount    int      `json:"digitCount"`
+		PeriodSeconds int      `json:"periodSeconds"`
+		Issuer        string   `json:"issuer"`
+		AccountName   string   `json:"accountName"`
+		ExpectedCodes []string `json:"expectedCodes"`
+	} `json:"cases"`
+}
+
+func TestSharedOneTimeCodeCases(test *testing.T) {
+	content, err := os.ReadFile("testdata/onetimecode.json")
+	if err != nil {
+		test.Fatal(err)
+	}
+	var shared sharedOneTimeCodeCases
+	if err := json.Unmarshal(content, &shared); err != nil {
+		test.Fatal(err)
+	}
+	if len(shared.Cases) < 50 || len(shared.UnixSeconds) == 0 {
+		test.Fatal("testdata/onetimecode.json has too few cases")
+	}
+	for _, each := range shared.Cases {
+		oneTimeCode, err := ParseOneTimeCodeURI(each.Address)
+		if !each.IsValid {
+			if err == nil {
+				test.Errorf("%s: %q was accepted", each.Name, each.Address)
+			}
+			continue
+		}
+		if err != nil {
+			test.Errorf("%s: %q was refused: %v", each.Name, each.Address, err)
+			continue
+		}
+		if hex.EncodeToString(oneTimeCode.Secret) != each.SecretHex || oneTimeCode.Algorithm != each.Algorithm ||
+			oneTimeCode.DigitCount != each.DigitCount || oneTimeCode.PeriodSeconds != each.PeriodSeconds ||
+			oneTimeCode.Issuer != each.Issuer || oneTimeCode.AccountName != each.AccountName {
+			test.Errorf("%s: %q read as %+v", each.Name, each.Address, oneTimeCode)
+			continue
+		}
+		for index, unixSeconds := range shared.UnixSeconds {
+			if got, err := oneTimeCode.CodeAt(time.Unix(unixSeconds, 0)); err != nil || got != each.ExpectedCodes[index] {
+				test.Errorf("%s: code at %d = %q, %v, wanted %q", each.Name, unixSeconds, got, err, each.ExpectedCodes[index])
+			}
+		}
+	}
+}
+
+func TestParseOneTimeCodeURIRefusesWhatTheOtherReadingsRefuse(test *testing.T) {
+	for _, address := range []string{
+		"otpauth://totp/a?secret=JBSW\tY3DPEHPK3PXP",
+		"otpauth://totp/a?secret=JBSWY3DP=EHPK3PXP",
+		"otpauth://totp/a?secret=JBSWY3DPEHPK3PXP&digits=%2B8",
+		"otpauth://totp/a?secret=JBSWY3DPEHPK3PXP&period=%2B5",
+		"otpauth://totp/a?secret=JBSWY3DPEHPK3PXP&period=99999999999999999999",
+		"otpauth://totp:80/a?secret=JBSWY3DPEHPK3PXP",
 	} {
 		if _, err := ParseOneTimeCodeURI(address); err == nil {
 			test.Errorf("%q was accepted", address)

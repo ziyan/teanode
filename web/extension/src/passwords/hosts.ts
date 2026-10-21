@@ -1,5 +1,6 @@
-// Which saved sites a page belongs to, and which relying party ids a page may
-// sign for. The site rule is the one internal/passwords/sitematch.go follows
+// Which saved sites a page belongs to, and the facts about a page that a
+// passkey needs (relyingParty.ts decides which relying party ids a page may
+// sign for). The site rule is the one internal/passwords/sitematch.go follows
 // (IsOriginOfSites), so that the dashboard, the iPhone, the agent and this
 // extension agree on what a site is: the same host with "www." ignored, the
 // same port, and nothing looser. The shared cases in
@@ -72,7 +73,7 @@ function withoutWWW(host: string): string {
 // hostOf is the host of a site or a page, with its leading "www." dropped
 // when shouldDropWWW says so. It is empty when the address is not one
 // parseSite reads.
-function hostOf(site: string, shouldDropWWW: boolean): string {
+export function hostOf(site: string, shouldDropWWW: boolean): string {
   const parsed = parseSite(site)
   if (parsed === null) return ''
   return shouldDropWWW ? withoutWWW(parsed.host) : parsed.host
@@ -130,90 +131,10 @@ export function doesHostMatch(pageUrl: string, host: string): boolean {
   return isWebPage(pageUrl) && pageHost !== '' && pageHost === normalizeHost(host)
 }
 
-function isInternetAddress(host: string): boolean {
+export function isInternetAddress(host: string): boolean {
   if (host.startsWith('[')) return true
   const parts = host.split('.')
   return parts.length === 4 && parts.every((part) => /^\d+$/.test(part))
-}
-
-// Names under which anybody can register a site of their own. A passkey for
-// one of them would be a passkey for every site below it. This is a list of
-// the common hosting services, not the public suffix list the browser
-// carries (the dashboard does not depend on a library that has it); the
-// pattern below covers the country code second levels (a "co" or "com" label
-// before a two letter code). Each name is written as its labels and joined
-// here, since these are names that belong to hosting services, not hosts
-// anything in this repository talks to.
-const SHARED_HOSTING_SUFFIXES = new Set(
-  [
-    ['github', 'io'],
-    ['gitlab', 'io'],
-    ['herokuapp', 'com'],
-    ['vercel', 'app'],
-    ['netlify', 'app'],
-    ['pages', 'dev'],
-    ['workers', 'dev'],
-    ['web', 'app'],
-    ['firebaseapp', 'com'],
-    ['appspot', 'com'],
-    ['blogspot', 'com'],
-    ['cloudfront', 'net'],
-    ['amazonaws', 'com'],
-    ['azurewebsites', 'net'],
-    ['azurestaticapps', 'net'],
-    ['ngrok', 'io'],
-    ['ngrok-free', 'app'],
-    ['onrender', 'com'],
-    ['fly', 'dev'],
-    ['repl', 'co'],
-    ['replit', 'app'],
-    ['replit', 'dev'],
-    ['glitch', 'me'],
-    ['myshopify', 'com'],
-    ['wixsite', 'com'],
-    ['weebly', 'com'],
-    ['webflow', 'io'],
-    ['railway', 'app'],
-    ['surge', 'sh'],
-    ['neocities', 'org'],
-    ['ondigitalocean', 'app'],
-    ['trycloudflare', 'com'],
-    ['github', 'dev'],
-    ['codesandbox', 'io'],
-    ['stackblitz', 'io'],
-    ['bubbleapps', 'io'],
-    ['carrd', 'co'],
-    ['framer', 'website'],
-    ['lovable', 'app'],
-    ['loca', 'lt'],
-  ].map((labels) => labels.join('.')),
-)
-
-function isPublicSuffixLike(domain: string): boolean {
-  if (!domain.includes('.')) return true
-  if (SHARED_HOSTING_SUFFIXES.has(domain)) return true
-  return /^(?:co|com|org|net|gov|edu|ac|or|ne|go|gob|mil|ltd|plc|sch|nhs|me)\.[a-z]{2}$/.test(domain)
-}
-
-// isRelyingPartyOfHost says whether a passkey for the relying party id may be
-// made or used on a page: the id is the page's host itself, or a domain above
-// it that is not a suffix anybody can register under. "example.com" is the
-// relying party of "login.example.com"; a bare top level name, a country code
-// second level and "example.com.evil.test" are not the relying party of
-// anything they are not. An address is not a relying party at all, and has no
-// domain above it: the one exception is the loopback address a local test page
-// uses ("localhost" is a name, and passes as the host itself).
-export function isRelyingPartyOfHost(relyingPartyId: string, pageUrl: string): boolean {
-  const relyingParty = relyingPartyId.trim().toLowerCase().replace(/\.+$/, '')
-  if (!isWebPage(pageUrl)) return false
-  const host = hostOf(pageUrl, false)
-  if (relyingParty === '' || host === '') return false
-  if (isInternetAddress(relyingParty) || isInternetAddress(host)) {
-    return relyingParty === host && host === '127.0.0.1'
-  }
-  if (relyingParty === host) return true
-  if (!host.endsWith('.' + relyingParty)) return false
-  return !isPublicSuffixLike(relyingParty)
 }
 
 // isSecureContextPage says whether WebAuthn works on the page: https, or a

@@ -3,6 +3,8 @@
 // own session): it reads and saves items and unlocks, and cannot set up,
 // share or grant the agent.
 
+import { serverAddressProblem } from '../serverAddress'
+
 // The sentences the server writes for a person, which are shown as they are.
 // Anything else it says (a validation message, a rate limit, an internal
 // error) is put in the words below, so a person is not shown what is meant
@@ -69,6 +71,9 @@ export async function callServer(query: string, variables: Record<string, unknow
   if (!/^https?:\/\//i.test(origin) || token === '') {
     throw new ServerCallError('Sign in to TeaNode from the extension options first.', true)
   }
+  // The token is never sent in the clear to a server on another computer.
+  const addressProblem = serverAddressProblem(origin)
+  if (addressProblem !== '') throw new ServerCallError(addressProblem)
   let response: Response
   try {
     response = await fetch(`${origin}/api/v1/graphql`, {

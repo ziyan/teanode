@@ -3,6 +3,8 @@
 // web sign-in flow; the page hands the token to this extension's callback
 // address, which nothing else can receive.
 
+import { serverAddressProblem } from './serverAddress'
+
 const serverInput = document.getElementById('server')
 const saved = document.getElementById('saved')
 const who = document.getElementById('who')
@@ -44,6 +46,12 @@ async function login() {
     status.className = 'status bad'
     return
   }
+  const addressProblem = serverAddressProblem(origin)
+  if (addressProblem) {
+    status.textContent = addressProblem
+    status.className = 'status bad'
+    return
+  }
   const state = nonce()
   const redirect = chrome.identity.getRedirectURL('authorized')
   const query = new URLSearchParams({ state, name: 'extension', redirect })
@@ -73,7 +81,7 @@ async function logout() {
   await chrome.storage.session.remove('passwordsKeys')
   const { token, tokenId } = await chrome.storage.local.get(['token', 'tokenId'])
   const origin = await serverOrigin()
-  if (token && tokenId && origin) {
+  if (token && tokenId && origin && !serverAddressProblem(origin)) {
     // Best effort: the token is forgotten here whatever the server says.
     try {
       await fetch(`${origin}/api/v1/graphql`, {
@@ -96,8 +104,15 @@ serverOrigin().then((origin) => {
 })
 document.getElementById('save').addEventListener('click', async () => {
   const server = serverInput.value.trim().replace(/\/+$/, '')
+  const addressProblem = server ? serverAddressProblem(server) : ''
+  if (addressProblem) {
+    saved.textContent = addressProblem
+    saved.className = 'status bad'
+    return
+  }
   await chrome.storage.sync.set({ server })
   saved.textContent = server ? 'Saved.' : 'Cleared.'
+  saved.className = 'status'
   await show()
 })
 document.getElementById('passwords').addEventListener('click', () => {

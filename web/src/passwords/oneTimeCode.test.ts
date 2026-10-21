@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { encodeBase32 } from './crypto'
 import { oneTimeCode, oneTimeCodeSecondsLeft, parseOneTimeCodeUri } from './oneTimeCode'
@@ -107,5 +109,59 @@ describe('parseOneTimeCodeUri', () => {
     expect(() => parseOneTimeCodeUri('otpauth://totp/ada?secret=GEZDGNBV&digits=7')).toThrow(/6 or 8/)
     expect(() => parseOneTimeCodeUri('otpauth://totp/ada?secret=GEZDGNBV&period=0')).toThrow(/period/)
     expect(() => parseOneTimeCodeUri('otpauth://totp/ada?secret=GEZDGNBV&period=x')).toThrow(/period/)
+  })
+})
+
+// The cases in internal/passwords/testdata/onetimecode.json are read by the Go
+// tests of the same reading (internal/passwords/onetimecode_test.go) and here.
+// Both must give the same answers, so an address that is accepted in one place
+// is accepted in the other, with the same secret, settings and codes.
+interface SharedCases {
+  unixSeconds: number[]
+  cases: {
+    name: string
+    address: string
+    isValid: boolean
+    secretHex?: string
+    algorithm?: string
+    digitCount?: number
+    periodSeconds?: number
+    issuer?: string
+    accountName?: string
+    expectedCodes?: string[]
+  }[]
+}
+
+const sharedCasesPath = resolve(import.meta.dirname, '../../../internal/passwords/testdata/onetimecode.json')
+
+describe('the cases shared with the Go reading', () => {
+  it('has the file', () => {
+    expect(existsSync(sharedCasesPath)).toBe(true)
+  })
+
+  const shared = existsSync(sharedCasesPath) ? (JSON.parse(readFileSync(sharedCasesPath, 'utf8')) as SharedCases) : null
+
+  it('reads every address the way Go does, or refuses it', async () => {
+    expect(shared?.cases.length).toBeGreaterThan(50)
+    for (const each of shared?.cases ?? []) {
+      if (!each.isValid) {
+        expect(() => parseOneTimeCodeUri(each.address), each.name).toThrow()
+        continue
+      }
+      const settings = parseOneTimeCodeUri(each.address)
+      expect(Array.from(settings.secret, (byte) => byte.toString(16).padStart(2, '0')).join(''), each.name).toBe(
+        each.secretHex,
+      )
+      expect(settings.algorithm, each.name).toBe(each.algorithm)
+      expect(settings.digitCount, each.name).toBe(each.digitCount)
+      expect(settings.periodSeconds, each.name).toBe(each.periodSeconds)
+      expect(settings.issuer, each.name).toBe(each.issuer)
+      expect(settings.accountName, each.name).toBe(each.accountName)
+      for (const [index, unixSeconds] of (shared?.unixSeconds ?? []).entries()) {
+        expect(await oneTimeCode(settings, unixSeconds), `${each.name} at ${unixSeconds}`).toBe(
+          each.expectedCodes?.[index],
+        )
+      }
+    }
   })
 })
