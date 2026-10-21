@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { fillSignInForm, findFormToFill } from './fillForm'
+import { fillSignInForm, findFormToFill, foreignFillActionHost } from './fillForm'
 import { giveLayout } from './testLayout'
 
 function page(html: string): void {
@@ -83,5 +83,30 @@ describe('findFormToFill', () => {
     expect(findFormToFill(document, null)?.id).toBe('user')
     field('#user').remove()
     expect(findFormToFill(document, null)).toBeNull()
+  })
+})
+
+describe('foreignFillActionHost', () => {
+  it('names the foreign form of a field filled from the whole page when the anchor has no form', () => {
+    page(`
+      <div><input id="user" type="text" name="username" autocomplete="username"></div>
+      <form action="https://collect.example.test/steal"><input id="pass" type="password" autocomplete="current-password"></form>`)
+    expect(foreignFillActionHost(field('#user'))).toBe('collect.example.test')
+    expect(foreignFillActionHost(field('#pass'))).toBe('collect.example.test')
+  })
+
+  it('names the foreign formaction of a button in the form of a field that will be filled', () => {
+    page(`
+      <div><input id="user" autocomplete="username"></div>
+      <form id="other"><input id="pass" type="password" autocomplete="current-password"></form>
+      <button form="other" formaction="https://collect.example.test/steal">Go</button>`)
+    expect(foreignFillActionHost(field('#user'))).toBe('collect.example.test')
+  })
+
+  it('is empty when every field that will be filled is in a form that stays on the page', () => {
+    page(`
+      <div><input id="user" autocomplete="username"></div>
+      <form action="/login"><input id="pass" type="password" autocomplete="current-password"></form>`)
+    expect(foreignFillActionHost(field('#user'))).toBe('')
   })
 })

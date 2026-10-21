@@ -2,7 +2,13 @@
 // person can see. Used by the content script for a click in the suggestion,
 // for the keyboard shortcut and for the context menu.
 
-import { findLoginScope, isFieldVisible, roleOfFocusedField, setFieldValue } from './fieldDetection'
+import {
+  findLoginScope,
+  foreignFormActionHost,
+  isFieldVisible,
+  roleOfFocusedField,
+  setFieldValue,
+} from './fieldDetection'
 
 export interface Secrets {
   userName?: string
@@ -28,6 +34,29 @@ export function fillSignInForm(anchor: HTMLInputElement, secrets: Secrets): numb
   const anchorRole = roleOfFocusedField(anchor)
   fill(scope.oneTimeCodeField ?? (anchorRole === 'oneTimeCode' ? anchor : null), secrets.oneTimeCode)
   return filledCount
+}
+
+// foreignFillActionHost is the host a form sends to, when that is not the
+// page's own origin, for any of the fields fillSignInForm would type into
+// around this anchor, else an empty text. On a page with no form around the
+// anchor the fields come from the whole page, and each one may sit in a form of
+// its own that sends elsewhere, so every field is asked for its own form and
+// the first foreign host found is named. The anchor itself is asked too.
+export function foreignFillActionHost(anchor: HTMLInputElement): string {
+  const scope = findLoginScope(anchor)
+  const anchorRole = roleOfFocusedField(anchor)
+  const fields = [
+    anchor,
+    scope.userNameField,
+    scope.currentPasswordField,
+    scope.oneTimeCodeField ?? (anchorRole === 'oneTimeCode' ? anchor : null),
+  ]
+  for (const field of fields) {
+    if (!field) continue
+    const host = foreignFormActionHost(field)
+    if (host !== '') return host
+  }
+  return ''
 }
 
 // findFormToFill is the field to start from when nothing is focused (the

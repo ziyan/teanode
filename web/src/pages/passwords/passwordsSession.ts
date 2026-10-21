@@ -1326,6 +1326,11 @@ export class PasswordsSession {
   //   key is sealed for the people that record reaches, and the agent gets a
   //   copy only if that record allows it and the server still lists the item as
   //   usable by the agent. The old version's own record is never used.
+  // - On a device with no memory of the item (it is not trusted for automatic
+  //   new keys) the record held could be an old one the server brought back,
+  //   so the key is sealed only for people this device sealed for before and
+  //   the agent gets no copy; everyone else is left for Finish sharing, which
+  //   shows who gets the key before anything is sealed.
   //
   // When that new key fails the restore stands and hasRekeyFailed is true.
   async restoreItemVersion(
@@ -1339,6 +1344,8 @@ export class PasswordsSession {
     if (listed === undefined) throw new PasswordsError('itemUnknown')
     const currentAccess = held.accessProblem === null ? held.verifiedAccess : null
     if (currentAccess === null) throw new PasswordsAccessError('accessNotVerified')
+    // Asked before the restore, which makes this device remember the item.
+    const isFirstSight = !this.trustedItemIds.has(itemId)
     let answer: { RestorePasswordItemVersion: PasswordItemRecord }
     try {
       answer = await graphql<{ RestorePasswordItemVersion: PasswordItemRecord }>(RESTORE_PASSWORD_ITEM_VERSION, {
@@ -1358,7 +1365,7 @@ export class PasswordsSession {
     }
     const restored = await this.keepOwnAnswer(record, itemId, true, { keptAccess: currentAccess })
     try {
-      return { item: await this.giveNewKey(itemId, { access: currentAccess }), hasRekeyFailed: false }
+      return { item: await this.giveNewKey(itemId, { access: currentAccess, isFirstSight }), hasRekeyFailed: false }
     } catch {
       return { item: restored, hasRekeyFailed: true }
     }
@@ -1403,6 +1410,13 @@ export class PasswordsSession {
   // one first (giveAutomaticNewKey) and go on with the key the item has when it
   // is refused.
   //
+  // isFirstSight is a new key the person asked for on an item this device has
+  // no memory of (a restore there): the record shown could be an old one the
+  // server brought back, so it seals as an automatic key does, only for people
+  // this device sealed for and with an agent copy only if this device made one
+  // before. Everyone else is left waiting for Finish sharing, which shows the
+  // plan first. It has no cooldown.
+  //
   // The record is signed with one version above the highest this device
   // remembers or was just shown, whoever asked.
   //
@@ -1423,6 +1437,7 @@ export class PasswordsSession {
       baseRevision?: number
       shouldPublish?: boolean
       isAutomatic?: boolean
+      isFirstSight?: boolean
       plan?: FinishSharingItemPlan
     } = {},
   ): Promise<PasswordItem> {
@@ -1456,6 +1471,7 @@ export class PasswordsSession {
       baseRevision?: number
       shouldPublish?: boolean
       isAutomatic?: boolean
+      isFirstSight?: boolean
       plan?: FinishSharingItemPlan
     },
   ): Promise<PasswordItem> {
@@ -1467,6 +1483,10 @@ export class PasswordsSession {
     const access = options.access ?? item.verifiedAccess ?? undefined
     if (access === undefined) throw new PasswordsAccessError('accessNotVerified')
     const isAutomatic = options.isAutomatic === true
+    // The person's action on an item this device has no memory of (a restore)
+    // seals like an automatic key does, only for people this device sealed for
+    // and for an agent copy it made, since the record could be an old one.
+    const isLimitedToMemory = isAutomatic || options.isFirstSight === true
     const memory = memoryOf(item.id)
     const newItemKey = randomBytes(KEY_BYTE_COUNT)
     const signedFields = await withSignedAccess(
@@ -1498,7 +1518,7 @@ export class PasswordsSession {
       if (!isReachedByAccess(access, recipient.userId, circleIdsByUserId.get(recipient.userId) ?? [])) continue
       // An automatic new key leaves out somebody this device did not seal for
       // before; the person's own action gives it to them (see the note above).
-      if (isAutomatic && !memory.sealedForUserIds.includes(recipient.userId)) continue
+      if (isLimitedToMemory && !memory.sealedForUserIds.includes(recipient.userId)) continue
       // A key sealed for a confirmed plan goes only to the people the plan names.
       if (options.plan !== undefined && !options.plan.recipientUserIds.includes(recipient.userId)) continue
       recipientNames.set(recipient.userId, personName(recipient))
@@ -1522,7 +1542,7 @@ export class PasswordsSession {
       access.isUsableByAgent &&
       item.isUsableByAgent &&
       isAgentAllowedByPlan &&
-      (!isAutomatic || memory.hasMadeAgentCopy)
+      (!isLimitedToMemory || memory.hasMadeAgentCopy)
     ) {
       const agentKey = await graphql<{ ReadPasswordsAgentKey: string }>(READ_PASSWORDS_AGENT_KEY)
       itemKeyByAgentKey = await sealItemKeyFor(
@@ -1658,6 +1678,11 @@ export class PasswordsSession {
     const record = current.verifiedAccess
     const sealedBefore = memoryOf(current.id).sealedForUserIds
     if (current.needsNewKey) {
+      // The new key replaces every key the server holds. A plan made before
+      // the server marked the item names only the people who were waiting, so
+      // sealing it now would take the key from everyone else who holds one
+      // and the record still reaches. The person confirms again instead.
+      if (this.dropsKeyHolders(current, record, itemPlan)) throw new PasswordsAccessError('sharingPlanOutOfDate')
       current = this.ownedItem(await this.giveNewKey(current.id, { plan: itemPlan }))
     } else {
       const keys: WaitingShareKeyInput[] = []
@@ -1713,6 +1738,18 @@ export class PasswordsSession {
     }
     this.publish()
     return current
+  }
+
+  // dropsKeyHolders says whether a new key sealed for exactly this plan would
+  // take the key from somebody who holds one now and whom the record still
+  // reaches, or the agent's copy when the record lets the agent use the item.
+  private dropsKeyHolders(item: PasswordItem, record: ItemAccess, itemPlan: FinishSharingItemPlan): boolean {
+    for (const recipient of item.shares.flatMap((share) => share.recipients)) {
+      if (recipient.publicKey === null || !recipient.hasKey || recipient.userId === this.userId) continue
+      if (recipient.hasTooMuchShared || itemPlan.recipientUserIds.includes(recipient.userId)) continue
+      if (isReachedByAccess(record, recipient.userId, circleIdsOf(recipient.userId, item.shares))) return true
+    }
+    return record.isUsableByAgent && item.isUsableByAgent && !itemPlan.isAgentIncluded
   }
 
   // planFinishSharing says who finishing the sharing of these items would give

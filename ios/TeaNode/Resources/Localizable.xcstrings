@@ -82813,6 +82813,22 @@
           }
         }
       }
+    },
+    "Sharing for that item changed after you confirmed. Review who gets it and finish again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認後にこの項目の共有が変わりました。共有先を確認して、もう一度完了してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认之后该项目的共享发生了变化。请重新查看共享对象，然后再次完成。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

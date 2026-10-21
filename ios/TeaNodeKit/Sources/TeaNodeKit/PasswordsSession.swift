@@ -66,6 +66,10 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
     case restoredAnotherVersion
     /// The item is not in the sharing plan the person confirmed (`PasswordsFinishPlan.items`).
     case itemNotInSharingPlan
+    /// The server marked the item for a new key after the person confirmed a plan made while it was
+    /// not marked. The new key would take the key from people who hold one now and are not in the
+    /// plan, so nothing is sealed and the person confirms a new plan.
+    case sharingPlanOutOfDate
 
     public var errorDescription: String? {
         switch self {
@@ -91,6 +95,7 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
         case .answeredAboutAnotherItem: return "The server answered about another item."
         case .restoredAnotherVersion: return "The server restored something else."
         case .itemNotInSharingPlan: return "That item was not in what you confirmed."
+        case .sharingPlanOutOfDate: return "Sharing for that item changed after you confirmed. Review who gets it and finish again."
         }
     }
 
@@ -1262,6 +1267,10 @@ public actor PasswordsSession {
     ///   again only if that record allows it and the server still lists the item as usable by the
     ///   agent; otherwise `itemIdsWithLostAgentCopy` offers it on "Finish sharing". The restored
     ///   version's own record is never used.
+    /// - On a phone with no memory of the item (`isRememberedForAutomaticAction`) the record held could
+    ///   be an old one the server brought back, so the new key is sealed only for people this phone
+    ///   sealed the item for before, and the agent gets no copy; everyone else is left for "Finish
+    ///   sharing", which shows who gets the key first.
     ///
     /// If a step after the restore fails, the restored item is returned and `giveNewKey` or the
     /// next save tries again.
@@ -1275,6 +1284,8 @@ public actor PasswordsSession {
             throw PasswordsError.sharingCouldNotBeChecked(itemId: itemId)
         }
         let highestVersion = highestRecordVersion(of: before)
+        // Asked before the restore, which makes this device remember the item.
+        let isRemembered = isRememberedForAutomaticAction(itemId: itemId)
         let answered = try await call {
             try await api.restorePasswordItemVersion(itemId: itemId, versionId: versionId, baseRevision: view.revision)
         }
@@ -1283,13 +1294,14 @@ public actor PasswordsSession {
             throw PasswordsError.restoredAnotherVersion
         }
         let kept = try keep(answered, forItemId: itemId, opener: opener)
-        itemIdsActedOn.insert(itemId)
+        if isRemembered { itemIdsActedOn.insert(itemId) }
         do {
             let signed = try PasswordsCrypto.withSignedAccess(
                 accountKey: opener.accountKey, itemId: itemId, itemKind: kept.itemKind, fields: kept.fields, access: currentAccess,
                 highestVersionSeen: highestVersion)
             _ = try await saveFields(signed, of: try ownedView(itemId), opener: opener)
-            _ = try await rekey(itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: .none, origin: .request)
+            _ = try await rekey(
+                itemId: itemId, replacing: nil, baseRevision: nil, accessEdit: .none, origin: isRemembered ? .request : .restore)
         } catch PasswordsError.locked {
             throw PasswordsError.locked
         } catch {
@@ -1962,18 +1974,47 @@ public actor PasswordsSession {
     /// screen shows `finishPlan(itemIds:)` and asks first, and passes that plan here: keys are
     /// sealed only for the people it names for this item (whoever the server lists by now), and
     /// the agent's copy is made only if it says so. An item the plan does not name is refused
-    /// (`itemNotInSharingPlan`).
+    /// (`itemNotInSharingPlan`). When the server marked the item after the plan was made and the new
+    /// key would take the key from people who hold one and are not in the plan, nothing is sealed
+    /// (`sharingPlanOutOfDate`) and the person confirms a new plan.
     public func finishSharing(itemId: String, plan: PasswordsFinishPlan) async throws {
         guard let itemPlan = plan.items.first(where: { $0.itemId == itemId }) else { throw PasswordsError.itemNotInSharingPlan }
         let view = try ownedView(itemId)
         guard view.deletedAt == nil else { throw PasswordsError.itemNotFound }
-        if view.needsNewKey { try await giveNewKey(itemId: itemId, plan: itemPlan) }
+        if view.needsNewKey {
+            // The new key replaces every key the server holds. A plan made before the server marked the
+            // item names only the people who were waiting, so sealing it now would take the key from
+            // everyone else who holds one and the record still reaches. The person confirms again instead.
+            if try sealingPlanWouldDropKeyHolders(view, plan: itemPlan) { throw PasswordsError.sharingPlanOutOfDate }
+            try await giveNewKey(itemId: itemId, plan: itemPlan)
+        }
         try await completeWaitingShares(onlyItemId: itemId, onlyUserIds: Set(itemPlan.recipientUserIds))
         if itemPlan.isAgentIncluded, itemIdsWithLostAgentCopy.contains(itemId) {
             _ = try await setUsableByAgent(itemId: itemId, isUsable: true)
         }
         keyItemIdsLeftForPerson.remove(itemId)
         shareItemIdsLeftForPerson.remove(itemId)
+    }
+
+    /// Whether a new key sealed for exactly this plan would take the key from somebody who holds one
+    /// now and whom the item's record still reaches, or the agent's copy when the record lets the
+    /// agent use the item. False when the record is not the person's own: the new key is refused then.
+    private func sealingPlanWouldDropKeyHolders(_ view: PasswordItemView, plan: PasswordsFinishPlan.Item) throws -> Bool {
+        let opened = try requireOpener().open(view)
+        guard opened.sharingCheck == .verified, let access = opened.verifiedAccess else { return false }
+        for recipient in view.shares.flatMap(\.recipients)
+        where recipient.userId != userId && recipient.hasKey && !recipient.hasTooMuchShared
+            && !plan.recipientUserIds.contains(recipient.userId)
+        {
+            let publicKeyData = recipient.publicKey.flatMap { Data(base64Encoded: $0) }
+            guard let publicKeyData, PasswordsCrypto.isPublicKeyValid(publicKeyData) else { continue }
+            let circleIds = Self.circleIds(listing: recipient.userId, in: view)
+            if PasswordsItemAccess.isReachedByAccess(access, recipientUserId: recipient.userId, circleIdsOfRecipient: circleIds) {
+                return true
+            }
+        }
+        return access.isUsableByAgent && view.isUsableByAgent && view.itemKind != PasswordsItemKind.card.rawValue
+            && !plan.isAgentIncluded
     }
 
     /// What `finishSharing` would do for these items, from the phone's copy: for each owned item

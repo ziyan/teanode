@@ -18,7 +18,9 @@ export type { PasswordsErrorCode } from '../../passwords/passwordsError'
 // asked for (answeredAboutAnotherItem, and nothing more is done with that
 // answer), or answered a restore with other content than the version the
 // person chose (restoredAnotherVersion, same), or the item was not in the
-// sharing plan the person confirmed (itemNotInSharingPlan). The first needs the
+// sharing plan the person confirmed (itemNotInSharingPlan), or the server
+// marked the item for a new key after the person confirmed a plan that would
+// take the key from people who hold one (sharingPlanOutOfDate). The first needs the
 // person to set sharing again, the second a tap on Try again, the others
 // another try.
 export type PasswordsAccessErrorCode =
@@ -28,6 +30,7 @@ export type PasswordsAccessErrorCode =
   | 'answeredAboutAnotherItem'
   | 'restoredAnotherVersion'
   | 'itemNotInSharingPlan'
+  | 'sharingPlanOutOfDate'
 
 export class PasswordsAccessError extends Error {
   readonly code: PasswordsAccessErrorCode
@@ -46,6 +49,7 @@ const ACCESS_ERROR_WORDS: Record<PasswordsAccessErrorCode, Key> = {
   answeredAboutAnotherItem: 'passwords.errorAnsweredAboutAnotherItem',
   restoredAnotherVersion: 'passwords.errorRestoredAnotherVersion',
   itemNotInSharingPlan: 'passwords.errorItemNotInSharingPlan',
+  sharingPlanOutOfDate: 'passwords.errorSharingPlanOutOfDate',
 }
 
 const ERROR_WORDS: Record<PasswordsErrorCode, Key> = {

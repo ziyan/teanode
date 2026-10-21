@@ -5270,6 +5270,8 @@ it('restores the content of an older version and gives the new key to the people
       ],
     },
   })
+  // This browser remembers the item and having sealed it for Person C.
+  rememberOnDevice('item-y', { sealedForUserIds: ['person-c'] })
   await openSession()
   await passwordsSession.listItemVersions('item-y')
   const result = await passwordsSession.restoreItemVersion('item-y', 'version-older')
@@ -5478,4 +5480,119 @@ it('keeps the agent off after a restore even when the record held before it lets
   expect(passwordsSession.planFinishSharing(['item-y']).items).toEqual([
     { itemId: 'item-y', recipientUserIds: [], isAgentIncluded: true },
   ])
+})
+
+// =====================================================================================
+// A restore on a browser with no memory of the item, and a plan made before the
+// server marked the item.
+// =====================================================================================
+
+async function olderVersionOf(itemId: string, password: string) {
+  const fields = await withSignedAccess(
+    fixture.accountKey,
+    itemId,
+    'login',
+    { ...emptyLoginFields(), name: 'Example login', password } as never,
+    accessOf([]),
+    0,
+  )
+  const sealed = await sealPasswordItem(fixture.accountKey, itemId, 'login', fields as never, null)
+  return {
+    versionId: 'version-older',
+    savedAt: '2026-09-01T10:00:00Z',
+    isSavedByPerson: true,
+    itemKind: 'login',
+    encryptedFields: sealed.encryptedFields,
+    itemKey: sealed.itemKey,
+  }
+}
+
+it('a restore on a browser that never saw the item seals for nobody a replayed record names and leaves them for Finish sharing', async () => {
+  const { base, server } = await oldRecordOnFreshBrowser()
+  // The server shows the record from before Person B was removed as the current one.
+  server.records = [{ ...base, revision: 900 }]
+  server.versions['login-one'] = [await olderVersionOf('login-one', 'older-password')]
+  await openSession()
+  const seen = passwordsSession.getSnapshot().items[0]
+  expect(seen.verifiedAccess?.grantees).toEqual([{ userId: 'person-b' }])
+  await passwordsSession.listItemVersions('login-one')
+  vi.mocked(graphql).mock.calls.length = 0
+  await passwordsSession.restoreItemVersion('login-one', 'version-older')
+  const input = lastRekeyInput()
+  expect(input.shareKeys).toEqual([])
+  expect(input.itemKeyByAgentKey).toBeNull()
+  // Person B is left waiting, and the plan Finish sharing shows names them.
+  expect(passwordsSession.planFinishSharing(['login-one']).items).toEqual([
+    { itemId: 'login-one', recipientUserIds: ['person-b'], isAgentIncluded: expect.any(Boolean) },
+  ])
+})
+
+it('a restore on a browser that remembers a newer record is refused', async () => {
+  const { base, server } = await oldRecordOnFreshBrowser()
+  server.records = [{ ...base, revision: 900 }]
+  server.versions['login-one'] = [await olderVersionOf('login-one', 'older-password')]
+  rememberOnDevice('login-one', { highestRecordVersion: 4 })
+  await openSession()
+  await passwordsSession.listItemVersions('login-one')
+  vi.mocked(graphql).mock.calls.length = 0
+  await expect(passwordsSession.restoreItemVersion('login-one', 'version-older')).rejects.toMatchObject({
+    code: 'accessNotVerified',
+  })
+  expect(calls('RestorePasswordItemVersion')).toHaveLength(0)
+})
+
+it('a restore on a browser that never saw the item makes no agent copy even when the server still lists the agent as using it', async () => {
+  const { base, server } = await oldRecordOnFreshBrowser()
+  server.records = [{ ...base, revision: 900 }]
+  server.versions['login-one'] = [await olderVersionOf('login-one', 'older-password')]
+  const honest = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    const result = (await honest(document, variables)) as Record<string, any>
+    if (!document.includes('RestorePasswordItemVersion(')) return result as never
+    // The server does not end the agent's use, as the real one does.
+    const lying = { ...result.RestorePasswordItemVersion, isUsableByAgent: true }
+    server.records = server.records.map((record) => (record.id === lying.id ? lying : record))
+    return { RestorePasswordItemVersion: lying } as never
+  })
+  await openSession()
+  await passwordsSession.listItemVersions('login-one')
+  vi.mocked(graphql).mock.calls.length = 0
+  await passwordsSession.restoreItemVersion('login-one', 'version-older')
+  const input = lastRekeyInput()
+  expect(input.itemKeyByAgentKey).toBeNull()
+  expect(input.shareKeys).toEqual([])
+})
+
+it('Finish sharing stops when the server marks the item after the plan, instead of dropping the people who hold a key', async () => {
+  knowKeyOnDevice('person-b', benKey())
+  knowKeyOnDevice('person-c', cora())
+  const shares = (aKey: boolean, bKey: boolean) =>
+    sharedWith([
+      { userId: 'person-c', name: 'Person C', publicKey: cora(), hasKey: aKey },
+      { userId: 'person-b', name: 'Person B', publicKey: benKey(), hasKey: bKey },
+    ])
+  const record = await ownedLogin('item-y', 'Item Y', accessOf([{ userId: 'person-b' }, { userId: 'person-c' }]), {
+    revision: 30,
+    shares: shares(true, false),
+  })
+  const server = serve({ records: [record] })
+  await openSession()
+  const plan = passwordsSession.planFinishSharing(['item-y'])
+  expect(plan.items).toEqual([{ itemId: 'item-y', recipientUserIds: ['person-b'], isAgentIncluded: false }])
+  // The plan is on the screen. A circle member leaves on another device: the server marks the item.
+  server.records = server.records.map((each) => ({ ...each, needsNewKey: true, revision: each.revision + 10 }))
+  await passwordsSession.refresh()
+  vi.mocked(graphql).mock.calls.length = 0
+  await expect(passwordsSession.finishSharing('item-y', plan)).rejects.toMatchObject({
+    code: 'sharingPlanOutOfDate',
+  })
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+  // Nobody lost a key, and a new plan made now names everybody the record reaches.
+  const keyed = server.records[0].shares.flatMap((share) => share.recipients).map((each) => [each.userId, each.hasKey])
+  expect(keyed).toEqual([
+    ['person-c', true],
+    ['person-b', false],
+  ])
+  const newPlan = passwordsSession.planFinishSharing(['item-y'])
+  expect([...newPlan.items[0].recipientUserIds].sort()).toEqual(['person-b', 'person-c'])
 })

@@ -89,6 +89,8 @@ enum PasswordsWords {
         case .answeredAboutAnotherItem: String(localized: "The server answered about another item.")
         case .restoredAnotherVersion: String(localized: "The server restored something else.")
         case .itemNotInSharingPlan: String(localized: "That item was not in what you confirmed.")
+        case .sharingPlanOutOfDate:
+            String(localized: "Sharing for that item changed after you confirmed. Review who gets it and finish again.")
         }
     }
 

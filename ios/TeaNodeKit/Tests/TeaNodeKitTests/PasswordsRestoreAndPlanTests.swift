@@ -290,4 +290,112 @@ final class PasswordsRestoreAndPlanTests: XCTestCase {
             // refused
         }
     }
+
+    // MARK: A phone with no memory of the item
+
+    private let passphrase = "ada invented passphrase"
+
+    private func shareItem(_ session: PasswordsSession, _ item: PasswordItem, with userIds: [String]) async throws {
+        var recipients: [PasswordRecipient] = []
+        for userId in userIds { recipients += try await session.recipients(granteeUserId: userId) }
+        _ = try await session.setShares(
+            itemId: item.id, grantees: userIds.map { PasswordShareGranteeInput(granteeUserId: $0) }, recipients: recipients)
+    }
+
+    /// The owner shared the item with Ben, then took Ben off on the first phone. The server puts the old
+    /// record back and lists Ben again. Returns the server and the item, with the first phone's session.
+    private func itemWithAnOldRecordBroughtBack(_ server: FakePasswordsServer) async throws -> (item: PasswordItem, one: PasswordsSession) {
+        try await people(server)
+        let one = makeSession(server, userId: "user-ada")
+        _ = try await one.setUp(passphrase: passphrase, iterationCount: iterationCount)
+        let item = try await one.save(fields: loginFields("first-password"))
+        try await shareItem(one, item, with: ["user-ben"])
+        let staleOptional = await server.item(item.id)
+        let stale = try XCTUnwrap(staleOptional)
+        _ = try await one.save(fields: loginFields("second-password"), id: item.id, baseRevision: nil)
+        _ = try await one.setShares(itemId: item.id, grantees: [], recipients: [])
+        _ = try await server.setShares(
+            userId: "user-ada", itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], keys: [])
+        await server.replaceStoredFields(
+            itemId: item.id, encryptedFields: stale.encryptedFields, itemKeyByAccountKey: stale.itemKeyByAccountKey, needsNewKey: false)
+        return (item, one)
+    }
+
+    /// A second phone has never seen the item and is shown the old record as the item's. Restoring an
+    /// earlier version there seals the new key for nobody the old record names, and makes no agent copy.
+    func testRestoreOnAPhoneThatNeverSawTheItemSealsForNobodyAnOldRecordNames() async throws {
+        let server = FakePasswordsServer()
+        let (item, _) = try await itemWithAnOldRecordBroughtBack(server)
+        let two = makeSession(server, userId: "user-ada")
+        _ = try await two.unlock(passphrase: passphrase)
+        try await two.sync(isFull: true)
+        let opened = try await two.versions(of: item.id)
+        let versionId = try XCTUnwrap(opened.versions.first?.id)
+        _ = try await two.restoreVersion(itemId: item.id, versionId: versionId)
+
+        let storedOptional = await server.item(item.id)
+        let stored = try XCTUnwrap(storedOptional)
+        XCTAssertNil(stored.keys["user-ben"], "Ben was named by a record this phone could not tell from an old one")
+        XCTAssertNil(stored.itemKeyByAgentKey)
+        XCTAssertFalse(stored.needsNewKey)
+        // Ben is left for Finish sharing, which shows the plan first.
+        let plan = await two.finishPlan(itemIds: [item.id])
+        XCTAssertEqual(plan.items.map(\.recipientUserIds), [["user-ben"]])
+    }
+
+    /// The same restore on the first phone, which remembers the newer record, is refused.
+    func testRestoreOnAPhoneThatRemembersTheNewerRecordIsRefused() async throws {
+        let server = FakePasswordsServer()
+        let (item, one) = try await itemWithAnOldRecordBroughtBack(server)
+        try await one.sync(isFull: true)
+        let opened = try await one.versions(of: item.id)
+        let versionId = try XCTUnwrap(opened.versions.first?.id)
+        do {
+            _ = try await one.restoreVersion(itemId: item.id, versionId: versionId)
+            XCTFail("the restore went ahead")
+        } catch PasswordsError.sharingCouldNotBeChecked {
+            // refused
+        }
+        let storedOptional = await server.item(item.id)
+        XCTAssertNil(try XCTUnwrap(storedOptional).keys["user-ben"])
+    }
+
+    /// The plan names Cora, who waits (Ben holds a key). Before the person confirms, the server marks the
+    /// item as needing a new key and the phone reads again. A new key sealed for Cora alone would take
+    /// Ben's key away, so finishing stops, seals nothing, and a new plan names both.
+    func testFinishSharingStopsWhenTheServerMarksTheItemAfterThePlanWasMade() async throws {
+        let server = FakePasswordsServer()
+        try await people(server)
+        let one = makeSession(server, userId: "user-ada")
+        _ = try await one.setUp(passphrase: passphrase, iterationCount: iterationCount)
+        let item = try await one.save(fields: loginFields())
+        try await shareItem(one, item, with: ["user-ben", "user-cora"])
+        await server.removeKey(itemId: item.id, userId: "user-cora")
+
+        let two = makeSession(server, userId: "user-ada")
+        _ = try await two.unlock(passphrase: passphrase)
+        try await two.sync(isFull: true)
+        let plan = await two.finishPlan(itemIds: [item.id])
+        XCTAssertEqual(plan.items.map(\.recipientUserIds), [["user-cora"]])
+
+        await server.markNeedsNewKey(itemId: item.id)
+        try await two.sync(isFull: true)
+        do {
+            try await two.finishSharing(itemId: item.id, plan: plan)
+            XCTFail("finishing went ahead with a plan that drops Ben's key")
+        } catch PasswordsError.sharingPlanOutOfDate {
+            // stopped
+        }
+        let storedOptional = await server.item(item.id)
+        let stored = try XCTUnwrap(storedOptional)
+        XCTAssertNotNil(stored.keys["user-ben"])
+        XCTAssertNil(stored.keys["user-cora"])
+        let newPlan = await two.finishPlan(itemIds: [item.id])
+        XCTAssertEqual(newPlan.items.map(\.recipientUserIds), [["user-ben", "user-cora"]])
+        try await two.finishSharing(itemId: item.id, plan: newPlan)
+        let finishedOptional = await server.item(item.id)
+        let finished = try XCTUnwrap(finishedOptional)
+        XCTAssertNotNil(finished.keys["user-ben"])
+        XCTAssertNotNil(finished.keys["user-cora"])
+    }
 }

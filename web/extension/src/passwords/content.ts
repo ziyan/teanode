@@ -15,13 +15,12 @@
 import {
   FieldRole,
   findLoginScope,
-  foreignFormActionHost,
   isFieldVisible,
   readSubmittedLogin,
   roleOfFocusedField,
   setFieldValue,
 } from './fieldDetection'
-import { fillSignInForm, findFormToFill } from './fillForm'
+import { fillSignInForm, findFormToFill, foreignFillActionHost } from './fillForm'
 import { FrameMessage, HostedFrame } from './hostedFrame'
 import { normalizeHost } from './hosts'
 import { trust } from './pageDom'
@@ -110,7 +109,7 @@ async function showSuggestion(field: HTMLInputElement, role: FieldRole) {
   // The focus moved on while the service worker was thinking.
   if (turn !== suggestionCount || !answer || answer.suggestionState === 'none') return
   if (!field.isConnected || !isFieldVisible(field) || field.ownerDocument.activeElement !== field) return
-  const facts = { ...frameFacts(), formActionHost: foreignFormActionHost(field) }
+  const facts = { ...frameFacts(), formActionHost: foreignFillActionHost(field) }
   const hosted = new HostedFrame(document, {
     page: 'suggestion.html',
     widthPixels: Math.max(260, Math.min(field.getBoundingClientRect().width, 360)),
@@ -183,7 +182,7 @@ async function onSuggestionMessage(
   // and they said yes. The form is looked at again now: it may have changed.
   // A password the generator makes is not a stored secret and goes only into
   // the focused new-password field, so it needs no confirmation.
-  const needsConfirmation = facts.isCrossOrigin || foreignFormActionHost(field) !== ''
+  const needsConfirmation = facts.isCrossOrigin || foreignFillActionHost(field) !== ''
   if (needsConfirmation && frameMessageKind !== 'generate' && message.isConfirmed !== true) return
   if (frameMessageKind === 'choose' && typeof message.itemId === 'string') {
     const isCode = role === 'oneTimeCode'
@@ -473,7 +472,7 @@ chrome.runtime.onMessage.addListener((message: any, sender: any, sendResponse: (
     }
     // A form that sends to another host than the page's own gets the login
     // only if the person was told so and said yes.
-    const formActionHost = foreignFormActionHost(anchor)
+    const formActionHost = foreignFillActionHost(anchor)
     if (formActionHost !== '' && fields.isForeignActionConfirmed !== true) {
       sendResponse({ filledCount: 0, foreignActionHost: formActionHost })
       return false
