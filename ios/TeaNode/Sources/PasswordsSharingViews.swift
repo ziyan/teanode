@@ -100,8 +100,8 @@ struct PasswordsShareScreen: View {
                 Text("Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only. Only you can change the item.")
             }
             if !keyChangesHere.isEmpty {
-                Section {
-                    ForEach(keyChangesHere) { change in
+                ForEach(keyChangesHere) { change in
+                    Section {
                         PasswordsKeyChangeRow(model: model, change: change)
                     }
                 }
@@ -156,12 +156,14 @@ struct PasswordsShareScreen: View {
             Button(role: .destructive) {
                 grantees.removeAll { $0.id == grantee.id }
             } label: {
-                Label("Stop sharing with \(grantee.name)", systemImage: "person.badge.minus").foregroundStyle(.red)
+                Label("Remove \(grantee.name)", systemImage: "person.badge.minus").foregroundStyle(.red)
             }
             .tint(.red)
             .actionColor(isDestructive: true)
         } header: {
             PasswordsValueText(grantee.name, isProse: true)
+        } footer: {
+            Text("Press Save to stop sharing.")
         }
     }
 
@@ -271,36 +273,49 @@ struct PasswordsSafetyCodeLines: View {
     }
 }
 
-/// PasswordsRecipientRow is one person an item reaches: their name, that they are
-/// waiting to set up Passwords, or that the codes were compared, or "Compare codes" to
-/// check the key with them (hidden once compared). Nothing here has to be done before sharing.
+/// PasswordsRecipientRow is one person an item reaches, as rows of a list: their name with what is
+/// known of them (waiting until they set up Passwords, too much shared with them already, or that
+/// the codes were compared), and "Compare codes" as a row of its own to check the key with them
+/// (left out once compared). Nothing here has to be done before sharing.
 struct PasswordsRecipientRow: View {
     let recipient: PasswordRecipient
     /// Called by "Compare codes", which only a person with a key has.
     var compare: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            PasswordsValueText(PersonWords.pickerLabel(name: recipient.name, username: recipient.username), isProse: true)
-            if recipient.safetyCode == nil {
-                Text("Waiting until they set up Passwords")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                if recipient.isCompared {
-                    Label("Codes compared", systemImage: "checkmark.circle.fill")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Button(action: compare) {
-                        Label("Compare codes", systemImage: "checkmark.shield")
-                    }
-                    .buttonStyle(.borderless)
-                    .actionColor()
+        Group {
+            VStack(alignment: .leading, spacing: 4) {
+                PasswordsValueText(PersonWords.pickerLabel(name: recipient.name, username: recipient.username), isProse: true)
+                status
+            }
+            .accessibilityElement(children: .combine)
+            if recipient.safetyCode != nil, !recipient.isCompared {
+                Button(action: compare) {
+                    Label("Compare codes", systemImage: "checkmark.shield")
+                        .actionColor()
                 }
             }
         }
-        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if recipient.safetyCode == nil {
+            Text("Waiting until they set up Passwords")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else {
+            if recipient.hasTooMuchShared {
+                Text("\(recipient.name) has too much shared with them.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if recipient.isCompared {
+                Label("Codes compared", systemImage: "checkmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
@@ -355,10 +370,14 @@ struct PasswordsCompareCodesSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Ask \(target.name) to open Passwords settings on their own device and read you their safety code. It should be the same as the one below.")
+                    if target.previousSafetyCode == nil {
+                        Text("Ask \(target.name) to open Passwords settings on their own device and read you their safety code. It should match “Their safety code” below. They can check “Your safety code” the same way.")
+                    } else {
+                        Text("Ask \(target.name) to open Passwords settings on their own device and read you their safety code. It should match “Their safety code” below, not “Their code before”. They can check “Your safety code” the same way.")
+                    }
                     PasswordsSafetyCodeLines(caption: "Their safety code", code: target.safetyCode)
                     if let previousSafetyCode = target.previousSafetyCode {
-                        PasswordsSafetyCodeLines(caption: "Their safety code before", code: previousSafetyCode)
+                        PasswordsSafetyCodeLines(caption: "Their code before", code: previousSafetyCode)
                     }
                     if let ownSafetyCode = model.ownSafetyCode {
                         PasswordsSafetyCodeLines(caption: "Your safety code", code: ownSafetyCode)
@@ -395,53 +414,49 @@ struct PasswordsCompareCodesSheet: View {
     }
 }
 
-/// PasswordsKeyChangeRow is the notice that a person's key changed: it was accepted, nothing
-/// waits on it, and it stays until it is dismissed. "Compare codes" shows both codes.
+/// PasswordsKeyChangeRow is the notice that a person's key changed, as rows of a list: it was
+/// accepted, nothing waits on it, and it stays until it is dismissed. The words are a row of their
+/// own, and "Compare codes" (which shows both codes) and "Dismiss" are a row each.
 struct PasswordsKeyChangeRow: View {
     let model: PasswordsModel
     let change: PasswordsKeyChange
     @State private var isComparing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        Group {
             Text("\(change.displayName)'s key changed. This happens when they erase Passwords and set it up again. If you did not expect it, compare safety codes with them.")
                 .font(.footnote)
-            VStack(alignment: .leading, spacing: 8) {
-                Button { isComparing = true } label: {
-                    Label("Compare codes", systemImage: "checkmark.shield")
-                        .actionColor()
-                }
-                Button { Task { await model.dismissKeyChange(change) } } label: {
-                    Label("Dismiss", systemImage: "xmark")
-                        .actionColor()
-                }
+            Button { isComparing = true } label: {
+                Label("Compare codes", systemImage: "checkmark.shield")
+                    .actionColor()
             }
-            .buttonStyle(.borderless)
-        }
-        .accessibilityElement(children: .contain)
-        .sheet(isPresented: $isComparing) {
-            PasswordsCompareCodesSheet(model: model, target: PasswordsCompareTarget(change: change))
+            .sheet(isPresented: $isComparing) {
+                PasswordsCompareCodesSheet(model: model, target: PasswordsCompareTarget(change: change))
+            }
+            Button { Task { await model.dismissKeyChange(change) } } label: {
+                Label("Dismiss", systemImage: "xmark")
+                    .actionColor()
+            }
         }
     }
 }
 
 /// PasswordsCircleShareNoticeRow is the notice that this iPhone sealed an item's key for somebody
-/// the item reaches through a circle and had never sealed it for before. Who is in a circle is the
-/// server's word, so the person is told. Nothing waits on it, and it stays until it is dismissed.
+/// the item reaches through a circle and had never sealed it for before, as rows of a list. Who is
+/// in a circle is the server's word, so the person is told. Nothing waits on it, and it stays until
+/// it is dismissed.
 struct PasswordsCircleShareNoticeRow: View {
     let model: PasswordsModel
     let notice: PasswordsCircleShareNotice
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        Group {
             Text("\(notice.recipientName) got \(notice.itemName) through \(notice.circleName).")
                 .font(.footnote)
             Button { Task { await model.dismissCircleShareNotice(notice) } } label: {
                 Label("Dismiss", systemImage: "xmark")
                     .actionColor()
             }
-            .buttonStyle(.borderless)
         }
-        .accessibilityElement(children: .contain)
     }
 }

@@ -80074,22 +80074,6 @@
         }
       }
     },
-    "Stop sharing with %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@との共有をやめる"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "停止与%@共享"
-          }
-        }
-      }
-    },
     "Strong.": {
       "localizations": {
         "ja": {
@@ -81720,22 +81704,6 @@
         }
       }
     },
-    "Their safety code before": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "相手の以前の安全コード"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对方更改前的安全码"
-          }
-        }
-      }
-    },
     "The codes match": {
       "localizations": {
         "ja": {
@@ -81748,22 +81716,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "安全码一致"
-          }
-        }
-      }
-    },
-    "Ask %@ to open Passwords settings on their own device and read you their safety code. It should be the same as the one below.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@さんに、ご自身のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。下のコードと同じになるはずです。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请%@在自己的设备上打开“密码”设置，并向你读出安全码。它应与下方的安全码相同。"
           }
         }
       }
@@ -81998,6 +81950,250 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ 通过 %3$@ 获得了“%2$@”。"
+          }
+        }
+      }
+    },
+    "Finish sharing %lld items": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finish sharing %lld item"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finish sharing %lld items"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "完成 %lld 个项目的共享"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "完成 %lld 个项目的共享"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Finishing sharing: %lld of %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を完了中: %lld / %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在完成共享：%lld / %lld"
+          }
+        }
+      }
+    },
+    "Finished sharing %lld items.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finished sharing %lld item."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Finished sharing %lld items."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已完成 %lld 个项目的共享。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已完成 %lld 个项目的共享。"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了しました。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の項目の共有を完了しました。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Sharing could not be finished for some items. Try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一部の項目の共有を完了できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分项目的共享未能完成。请重试。"
+          }
+        }
+      }
+    },
+    "More are waiting: finish these first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待機中の共有がほかにもあります。まずこれらを完了してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还有其他共享在等待：请先完成这些。"
+          }
+        }
+      }
+    },
+    "%@ has too much shared with them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんに共有されている内容が多すぎます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有过多内容与%@共享。"
+          }
+        }
+      }
+    },
+    "Press Save to stop sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有をやめるには「保存」を押してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按“保存”以停止共享。"
+          }
+        }
+      }
+    },
+    "Their code before": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手の以前の安全コード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方更改前的安全码"
+          }
+        }
+      }
+    },
+    "Ask %@ to open Passwords settings on their own device and read you their safety code. It should match “Their safety code” below. They can check “Your safety code” the same way.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんに、ご自身のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。下の「相手の安全コード」と一致するはずです。相手も「あなたの安全コード」を同じ方法で確認できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请%@在自己的设备上打开“密码”设置，并向你读出安全码。它应与下方的“对方的安全码”一致。对方也可以用同样的方式核对“你的安全码”。"
+          }
+        }
+      }
+    },
+    "Ask %@ to open Passwords settings on their own device and read you their safety code. It should match “Their safety code” below, not “Their code before”. They can check “Your safety code” the same way.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんに、ご自身のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。下の「相手の安全コード」と一致するはずで、「相手の以前の安全コード」とは異なります。相手も「あなたの安全コード」を同じ方法で確認できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请%@在自己的设备上打开“密码”设置，并向你读出安全码。它应与下方的“对方的安全码”一致，而不是“对方更改前的安全码”。对方也可以用同样的方式核对“你的安全码”。"
           }
         }
       }

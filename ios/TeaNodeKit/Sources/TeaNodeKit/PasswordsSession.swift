@@ -218,6 +218,9 @@ public struct PasswordRecipient: Identifiable, Hashable, Sendable {
     public let safetyCode: String?
     /// Whether the item already has a key for this public key.
     public let hasKey: Bool
+    /// Whether the person already has the most the server lets others share with them: no key is
+    /// stored for them, so none is sealed (`PasswordsSession.setShares`, `completeWaitingShares`).
+    public let hasTooMuchShared: Bool
     /// Whether the key is the one this device knows for the person, a first sight, or a change.
     public let keyTrust: PasswordsKeyTrust
     /// The safety code of the key this device knew before, when `keyTrust` is `.changed`.
@@ -239,6 +242,7 @@ public struct PasswordRecipient: Identifiable, Hashable, Sendable {
         name = view.name
         username = view.username
         hasKey = view.hasKey
+        hasTooMuchShared = view.hasTooMuchShared
         if let text = view.publicKey, let data = Data(base64Encoded: text), PasswordsCrypto.isPublicKeyValid(data),
             let code = try? PasswordsCrypto.safetyCode(publicKey: data)
         {
@@ -269,6 +273,8 @@ public struct PasswordWaitingShare: Hashable, Sendable {
     /// The item's name, if the item is in the phone's copy.
     public let itemName: String?
     public let recipient: PasswordRecipient
+    /// Whether more are waiting than the server lists (the newest items first).
+    public let hasMoreWaiting: Bool
 }
 
 /// PasswordsKeyChange is a person whose key changed from the one this device knew: the key was
@@ -305,6 +311,17 @@ public struct PasswordsCircleShareNotice: Identifiable, Hashable, Sendable {
 /// recipients who were waiting.
 public struct PasswordsCompletedShares: Equatable, Sendable {
     public let addedKeyCount: Int
+    /// The names of waiting people who were left out because they already have the most the
+    /// server lets others share with them ("<name> has too much shared with them."), sorted.
+    public let tooMuchSharedNames: [String]
+    /// Whether the server says more are waiting than it listed: the rest shows once these are done.
+    public let hasMoreWaiting: Bool
+
+    public init(addedKeyCount: Int, tooMuchSharedNames: [String] = [], hasMoreWaiting: Bool = false) {
+        self.addedKeyCount = addedKeyCount
+        self.tooMuchSharedNames = tooMuchSharedNames
+        self.hasMoreWaiting = hasMoreWaiting
+    }
 }
 
 /// PasswordsUnlocked is what a right passphrase or recovery key opened.
@@ -1260,7 +1277,9 @@ public actor PasswordsSession {
         var sealedKeys: [String: String] = [:]
         var sealedUserIds = Set<String>()
         for recipient in recipients where recipient.userId != userId && !alreadyKeyedUserIds.contains(recipient.userId) {
-            guard let publicKey = recipient.publicKey, sealedUserIds.insert(recipient.userId).inserted else { continue }
+            guard let publicKey = recipient.publicKey, !recipient.hasTooMuchShared, sealedUserIds.insert(recipient.userId).inserted else {
+                continue
+            }
             // The record the owner sealed decides, not the server's list of shares.
             let circleIds = (circleIdsByUserId[recipient.userId] ?? []) + Self.circleIds(listing: recipient.userId, in: view)
             guard PasswordsItemAccess.isReachedByAccess(newAccess, recipientUserId: recipient.userId, circleIdsOfRecipient: circleIds) else {
@@ -1434,7 +1453,8 @@ public actor PasswordsSession {
         let views = try await call { try await api.listWaitingPasswordShares() }
         return views.map { view in
             let name = itemView(id: view.itemId).flatMap { try? opener.open($0).name }
-            return PasswordWaitingShare(itemId: view.itemId, itemName: name, recipient: Self.recipient(view.recipient, opener: opener))
+            return PasswordWaitingShare(
+                itemId: view.itemId, itemName: name, recipient: Self.recipient(view.recipient, opener: opener), hasMoreWaiting: view.hasMoreWaiting)
         }
     }
 
@@ -1459,6 +1479,8 @@ public actor PasswordsSession {
         /// The server names an item the copy does not hold, or a person the owner's record would
         /// reach but the copy's shares do not list (they joined a circle after the copy was made).
         var isCopyBehind = false
+        /// The names of waiting people who have too much shared with them already: skipped.
+        var tooMuchSharedNames: Set<String> = []
     }
 
     /// `isByPerson` is whether the person started this (they opened the item and pressed the
@@ -1493,6 +1515,12 @@ public actor PasswordsSession {
                 continue
             }
             guard let itemKey = try? opener.itemKey(for: view) else { continue }
+            // The server stores no key for somebody who has too much shared with them: sealing one
+            // would only be tried again on every pass.
+            if recipient.hasTooMuchShared {
+                plan.tooMuchSharedNames.insert(recipient.name)
+                continue
+            }
             let memory = memories[entry.itemId] ?? PasswordsItemMemory()
             if !isByPerson,
                 !(isRememberedForAutomaticAction(itemId: entry.itemId)
@@ -1550,8 +1578,10 @@ public actor PasswordsSession {
         while true {
             let opener = try requireOpener()
             var waiting = try await call { try await api.listWaitingPasswordShares() }
+            let hasMoreWaiting = waiting.contains { $0.hasMoreWaiting }
             if let onlyItemId { waiting = waiting.filter { $0.itemId == onlyItemId } }
             let plan = try waitingPlan(waiting, opener: opener, isByPerson: isByPerson)
+            let tooMuchSharedNames = plan.tooMuchSharedNames.sorted()
             if plan.isCopyBehind && !isFullReadDone {
                 isFullReadDone = true
                 try await sync(isFull: true)
@@ -1562,7 +1592,9 @@ public actor PasswordsSession {
             } else {
                 shareItemIdsLeftForPerson = plan.itemIdsLeftForPerson
             }
-            guard !plan.keys.isEmpty else { return PasswordsCompletedShares(addedKeyCount: 0) }
+            guard !plan.keys.isEmpty else {
+                return PasswordsCompletedShares(addedKeyCount: 0, tooMuchSharedNames: tooMuchSharedNames, hasMoreWaiting: hasMoreWaiting)
+            }
             try recordSealedKeys(plan.sealedKeys)
             do {
                 let addedKeyCount = try await call { try await api.addPasswordShareKeys(plan.keys) }
@@ -1572,7 +1604,10 @@ public actor PasswordsSession {
                         change: PasswordsSealedChange(
                             userIds: sealedUserIds, isReplacing: false, circleShares: plan.circleSharesByItemId[sealedItemId] ?? []))
                 }
-                return PasswordsCompletedShares(addedKeyCount: addedKeyCount)
+                // The copy's shares still say these people have no key: read the changed items again.
+                if addedKeyCount > 0 { _ = try? await sync() }
+                return PasswordsCompletedShares(
+                    addedKeyCount: addedKeyCount, tooMuchSharedNames: tooMuchSharedNames, hasMoreWaiting: hasMoreWaiting)
             } catch PasswordsError.itemChangedOnAnotherDevice where !isRetriedAfterChange {
                 // An item got a new key since the copy was made: read it again, then seal from that.
                 isRetriedAfterChange = true

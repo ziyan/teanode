@@ -59,13 +59,31 @@ public struct PasswordRecipientView: Codable, Hashable, Sendable {
     public let publicKey: String?
     /// Whether the item already has a key sealed for this person's current public key.
     public let hasKey: Bool
+    /// Whether the person already has the most the server lets others share with them, so a key
+    /// for this item is not stored for them. An older server does not send it: then false.
+    public let hasTooMuchShared: Bool
 
-    public init(userId: String, name: String, username: String, publicKey: String?, hasKey: Bool) {
+    public init(userId: String, name: String, username: String, publicKey: String?, hasKey: Bool, hasTooMuchShared: Bool = false) {
         self.userId = userId
         self.name = name
         self.username = username
         self.publicKey = publicKey
         self.hasKey = hasKey
+        self.hasTooMuchShared = hasTooMuchShared
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case userId, name, username, publicKey, hasKey, hasTooMuchShared
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        userId = try container.decode(String.self, forKey: .userId)
+        name = try container.decode(String.self, forKey: .name)
+        username = try container.decode(String.self, forKey: .username)
+        publicKey = try container.decodeIfPresent(String.self, forKey: .publicKey)
+        hasKey = try container.decode(Bool.self, forKey: .hasKey)
+        hasTooMuchShared = try container.decodeIfPresent(Bool.self, forKey: .hasTooMuchShared) ?? false
     }
 }
 
@@ -192,10 +210,25 @@ public struct PasswordItemListView: Codable, Equatable, Sendable {
 public struct PasswordWaitingShareView: Codable, Hashable, Sendable {
     public let itemId: String
     public let recipient: PasswordRecipientView
+    /// Set on every entry when more are waiting than the server lists (the newest items first).
+    /// An older server does not send it: then false.
+    public let hasMoreWaiting: Bool
 
-    public init(itemId: String, recipient: PasswordRecipientView) {
+    public init(itemId: String, recipient: PasswordRecipientView, hasMoreWaiting: Bool = false) {
         self.itemId = itemId
         self.recipient = recipient
+        self.hasMoreWaiting = hasMoreWaiting
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case itemId, recipient, hasMoreWaiting
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        itemId = try container.decode(String.self, forKey: .itemId)
+        recipient = try container.decode(PasswordRecipientView.self, forKey: .recipient)
+        hasMoreWaiting = try container.decodeIfPresent(Bool.self, forKey: .hasMoreWaiting) ?? false
     }
 }
 
@@ -376,11 +409,11 @@ extension Documents {
         accountKeyWrapped privateKeyByAccountKey publicKey
         """
     static let passwordRecipientFields = """
-        userId name username publicKey hasKey
+        userId name username publicKey hasKey hasTooMuchShared
         """
     static let passwordItemFields = """
         id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision isUsableByAgent lastUsedByAgentAt deletedAt createdAt updatedAt needsNewKey
-        shares { id granteeUserId granteeCircleId granteeName recipients { userId name username publicKey hasKey } }
+        shares { id granteeUserId granteeCircleId granteeName recipients { userId name username publicKey hasKey hasTooMuchShared } }
         """
 
     public static let passwordsSetup = """
@@ -428,7 +461,7 @@ extension Documents {
         }
         """
     public static let waitingPasswordShares = """
-        query { ListWaitingPasswordShares { itemId recipient { userId name username publicKey hasKey } } }
+        query { ListWaitingPasswordShares { itemId hasMoreWaiting recipient { userId name username publicKey hasKey hasTooMuchShared } } }
         """
     public static let passwordsAgentKey = """
         query { ReadPasswordsAgentKey }

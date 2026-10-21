@@ -470,8 +470,8 @@ final class PasswordsRecordTests: XCTestCase {
             pins.itemMemories["item-1"],
             PasswordsItemMemory(
                 highestRecordVersion: 5, highestRecordMac: "mac-five", sealedForUserIds: ["user-ben", "user-carol"], didMakeAgentCopy: true))
-        // Another person's memory is not this person's.
-        XCTAssertTrue(try second.loadPins(userId: "user-grace").itemMemories.isEmpty)
+        // What is remembered about an item follows the item id, not the user id the server names.
+        XCTAssertEqual(try second.loadPins(userId: "user-grace").itemMemories["item-1"]?.highestRecordVersion, 5)
 
         let memory = PasswordsMemoryPinStore()
         try memory.recordSeenRecord(userId: "user-ada", itemId: "item-1", version: 2, mac: nil)

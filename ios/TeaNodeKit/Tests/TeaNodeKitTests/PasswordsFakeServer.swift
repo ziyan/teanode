@@ -40,6 +40,10 @@ actor FakePasswordsServer {
     /// When true, every call fails the way a missing connection does.
     var isOffline = false
     private(set) var listCalls: [Int64?] = []
+    /// People who have the most the server lets others share with them: it stores no new key for them.
+    private var tooMuchSharedUserIds: Set<String> = []
+    /// When true, every waiting share it lists says that more are waiting.
+    private var hasMoreWaiting = false
     private var listCallMark = 0
 
     /// Starts counting list calls from here (`listCallsSinceMark`).
@@ -63,6 +67,14 @@ actor FakePasswordsServer {
         guard var changed = items[itemId] else { return }
         changed.revision = nextRevision()
         items[itemId] = changed
+    }
+
+    func setHasTooMuchShared(_ userId: String, _ isTooMuch: Bool) {
+        if isTooMuch { tooMuchSharedUserIds.insert(userId) } else { tooMuchSharedUserIds.remove(userId) }
+    }
+
+    func setHasMoreWaiting(_ hasMore: Bool) {
+        hasMoreWaiting = hasMore
     }
 
     func addPerson(userId: String, name: String) {
@@ -252,7 +264,8 @@ actor FakePasswordsServer {
         let publicKey = person?.setup?.publicKey
         let hasKey = publicKey != nil && item.keys[userId]?.recipientPublicKey == publicKey
         return PasswordRecipientView(
-            userId: userId, name: person?.name ?? "", username: person?.username ?? "", publicKey: publicKey, hasKey: hasKey)
+            userId: userId, name: person?.name ?? "", username: person?.username ?? "", publicKey: publicKey, hasKey: hasKey,
+            hasTooMuchShared: !hasKey && tooMuchSharedUserIds.contains(userId))
     }
 
     private func view(_ item: StoredItem, for viewerUserId: String) -> PasswordItemView? {
@@ -304,7 +317,7 @@ actor FakePasswordsServer {
             for recipientId in reached(item) {
                 let recipient = recipientView(recipientId, item: item)
                 if recipient.publicKey != nil && !recipient.hasKey {
-                    waiting.append(PasswordWaitingShareView(itemId: item.id, recipient: recipient))
+                    waiting.append(PasswordWaitingShareView(itemId: item.id, recipient: recipient, hasMoreWaiting: hasMoreWaiting))
                 }
             }
         }
@@ -415,6 +428,7 @@ actor FakePasswordsServer {
 
     func addShareKeys(userId: String, keys: [PasswordItemShareKeyInput]) throws -> Int {
         try requireOnline()
+        var storedCount = 0
         for key in keys {
             var item = try ownedItem(key.itemId, userId: userId)
             guard key.itemKey == item.itemKeyByAccountKey else {
@@ -423,11 +437,14 @@ actor FakePasswordsServer {
             guard reached(item).contains(key.recipientUserId), people[key.recipientUserId]?.setup?.publicKey == key.recipientPublicKey else {
                 throw TeaNodeError.refused("api: not found")
             }
+            // A person who has too much shared with them gets no key, and the call goes on for the others.
+            if tooMuchSharedUserIds.contains(key.recipientUserId) { continue }
             item.keys[key.recipientUserId] = (key.itemKeyByRecipientKey, key.recipientPublicKey)
             item.revision = nextRevision()
             items[key.itemId] = item
+            storedCount += 1
         }
-        return keys.count
+        return storedCount
     }
 
     func setUsableByAgent(userId: String, itemId: String, isUsableByAgent: Bool, itemKeyByAgentKey: String?) throws -> PasswordItemView {

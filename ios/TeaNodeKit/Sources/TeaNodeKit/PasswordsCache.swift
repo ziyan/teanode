@@ -134,8 +134,9 @@ public struct PasswordsItemMemory: Codable, Equatable, Sendable {
 /// own that survives the cache being dropped (a server that answers with another public key
 /// or an older record must not be able to make the phone forget them). They go only when the
 /// person removes the account from the phone or starts Passwords over, never when the server
-/// ends the sign-in. They are kept under the server and the signed-in person's user id, so one
-/// person's are never read as another's.
+/// ends the sign-in. The keys are kept under the server and the signed-in person's user id, so one
+/// person's are never read as another's; what is remembered about an owned item is kept under the
+/// server and the item id alone, since the user id the server names does not decide it.
 public struct PasswordsPins: Codable, Equatable, Sendable {
     public static let currentFormatVersion = 2
 
@@ -421,25 +422,40 @@ public struct PasswordsCache: Sendable {
     }
 
     #if canImport(Darwin)
-        private static func coordinate<Output>(url: URL, isWriting: Bool, _ body: () throws -> Output) throws -> Output {
-            var coordinationError: NSError?
+        /// Holds what the coordinator's accessor needs, so the accessor captures one Sendable value
+        /// and nothing mutable. The accessor runs on this thread before `coordinate` returns, so the
+        /// box is never used from two places at once.
+        private final class Coordination<Output>: @unchecked Sendable {
+            private let body: () throws -> Output
             var outcome: Result<Output, Error>?
-            let coordinator = NSFileCoordinator(filePresenter: nil)
-            func run(_: URL) {
+
+            init(body: @escaping () throws -> Output) {
+                self.body = body
+            }
+
+            func run() {
                 do {
                     outcome = .success(try body())
                 } catch {
                     outcome = .failure(error)
                 }
             }
-            if isWriting {
-                coordinator.coordinate(writingItemAt: url, options: [], error: &coordinationError, byAccessor: run)
-            } else {
-                coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError, byAccessor: run)
+        }
+
+        private static func coordinate<Output>(url: URL, isWriting: Bool, _ body: () throws -> Output) throws -> Output {
+            try withoutActuallyEscaping(body) { escapableBody in
+                let coordination = Coordination(body: escapableBody)
+                var coordinationError: NSError?
+                let coordinator = NSFileCoordinator(filePresenter: nil)
+                if isWriting {
+                    coordinator.coordinate(writingItemAt: url, options: [], error: &coordinationError) { _ in coordination.run() }
+                } else {
+                    coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { _ in coordination.run() }
+                }
+                if let coordinationError { throw coordinationError }
+                guard let outcome = coordination.outcome else { throw PasswordsCacheError.unreadable }
+                return try outcome.get()
             }
-            if let coordinationError { throw coordinationError }
-            guard let outcome else { throw PasswordsCacheError.unreadable }
-            return try outcome.get()
         }
     #endif
 

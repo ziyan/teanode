@@ -148,6 +148,27 @@ extension PasswordsItemMemory {
         return mac != highestRecordMac
     }
 
+    /// The memory when two copies of it are kept, as when an old keychain item moves to its new
+    /// place: it keeps the higher record version with its mac, everybody either one sealed for or
+    /// chose, and the agent copy only when both made it, so the result is never looser than either.
+    func merging(_ other: PasswordsItemMemory) -> PasswordsItemMemory {
+        var merged = self
+        if other.highestRecordVersion > highestRecordVersion {
+            merged.highestRecordVersion = other.highestRecordVersion
+            merged.highestRecordMac = other.highestRecordMac
+        } else if other.highestRecordVersion == highestRecordVersion, highestRecordMac == nil {
+            merged.highestRecordMac = other.highestRecordMac
+        }
+        merged.sealedForUserIds = Array(Set(sealedForUserIds).union(other.sealedForUserIds).sorted().prefix(Self.mostSealedForUserIds))
+        merged.chosenUserIds = Array(Set(chosenUserIds).union(other.chosenUserIds).sorted().prefix(Self.mostSealedForUserIds))
+        merged.didMakeAgentCopy = didMakeAgentCopy && other.didMakeAgentCopy
+        for circleShare in other.circleShares where !merged.circleShares.contains(where: { $0.recipientUserId == circleShare.recipientUserId }) {
+            merged.circleShares.append(circleShare)
+        }
+        merged.circleShares = Array(merged.circleShares.suffix(Self.mostCircleShares))
+        return merged
+    }
+
     /// The memory after this device sealed an item key itself; the people are sorted and capped.
     func sealing(_ change: PasswordsSealedChange) -> PasswordsItemMemory {
         var sealed = self
@@ -172,6 +193,9 @@ extension PasswordsItemMemory {
 public final class PasswordsMemoryPinStore: PasswordsPinStore, @unchecked Sendable {
     private let lock = NSLock()
     private var pinsByUserId: [String: PasswordsPins] = [:]
+    /// What is remembered about each owned item, by item id alone: an item id is a random id, and
+    /// the server's word for who the signed-in person is does not decide what this device remembers.
+    private var itemMemories: [String: PasswordsItemMemory] = [:]
 
     public init() {}
 
@@ -184,7 +208,9 @@ public final class PasswordsMemoryPinStore: PasswordsPinStore, @unchecked Sendab
     public func loadPins(userId: String) throws -> PasswordsPins {
         lock.lock()
         defer { lock.unlock() }
-        return pinsByUserId[userId] ?? PasswordsPins(userId: userId)
+        var pins = pinsByUserId[userId] ?? PasswordsPins(userId: userId)
+        pins.itemMemories = itemMemories
+        return pins
     }
 
     public func recordKnownIfAbsent(userId: String, otherUserId: String, publicKey: String) throws {
@@ -208,17 +234,16 @@ public final class PasswordsMemoryPinStore: PasswordsPinStore, @unchecked Sendab
     }
 
     public func updateItemMemory(userId: String, itemId: String, change: (PasswordsItemMemory) -> PasswordsItemMemory) throws {
-        update(userId: userId) {
-            var changed = $0
-            changed.itemMemories[itemId] = change($0.itemMemories[itemId] ?? PasswordsItemMemory())
-            return changed
-        }
+        lock.lock()
+        defer { lock.unlock() }
+        itemMemories[itemId] = change(itemMemories[itemId] ?? PasswordsItemMemory())
     }
 
     public func removeAll() throws {
         lock.lock()
         defer { lock.unlock() }
         pinsByUserId = [:]
+        itemMemories = [:]
     }
 }
 
@@ -240,8 +265,9 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         guard let data = try? Data(contentsOf: fileURL), let pins = try? JSONDecoder().decode(PasswordsPins.self, from: data),
             pins.formatVersion <= PasswordsPins.currentFormatVersion
         else { throw PasswordsPinStoreError.unreadable }
-        // Another person's keys are not this person's.
-        return pins.userId == userId ? pins : PasswordsPins(userId: userId)
+        // Another person's keys are not this person's, but what is remembered about an item is
+        // kept by the item's id, which the server's word for the person does not change.
+        return pins.userId == userId ? pins : PasswordsPins(userId: userId, itemMemories: pins.itemMemories)
     }
 
     private func write(_ pins: PasswordsPins) throws {
@@ -301,8 +327,10 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
     /// read once the phone has been unlocked after starting. The account of an item says what the key
     /// is for (`known`, `compared` or `changed`, the signed-in person, the other person); its data is the
     /// public key text. The service names the server and the person's sign-in name (`signInAccountKey`) and
-    /// each account carries the signed-in person's user id, so the pins of one person on one server are
-    /// never read as another's. They are removed only when the person removes the account from the phone
+    /// each account of a key carries the signed-in person's user id, so the pins of one person on one server are
+    /// never read as another's. What is remembered about an owned item is kept by item id alone (`memory|<item id>`),
+    /// so the user id the server names does not decide which memories are read; `loadPins` moves the ones an earlier
+    /// build kept under a user id. They are removed only when the person removes the account from the phone
     /// (`removeAll`), never because the server ended the sign-in. An item that does not read as a public key
     /// is skipped, so one damaged item never makes the others disappear. The first version kept `seen` and `confirmed` keys; `loadPins` moves
     /// them into `known` (and `compared` for a confirmed one) once and deletes them.
@@ -313,7 +341,13 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         private static let changedKind = "changed"
         private static let legacySeenKind = "seen"
         private static let legacyConfirmedKind = "confirmed"
-        private static let itemKind = "item"
+        /// What the first versions kept for an item, under the signed-in person's user id
+        /// (`item|<user id>|<item id>`). `loadPins` moves each into `memoryKind`.
+        private static let legacyItemKind = "item"
+        /// What is remembered about an owned item, by item id alone (`memory|<item id>`): an item id
+        /// is a random id, so the user id the server names for the signed-in person does not decide
+        /// which memories this device reads.
+        private static let memoryKind = "memory"
 
         public let signInAccountKey: String
         /// The keychain group to use; nil is the app's first group.
@@ -347,9 +381,17 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
             "\(kind)|\(userId)|\(ownerUserId)"
         }
 
+        private static func memoryAccount(itemId: String) -> String {
+            "\(memoryKind)|\(itemId)"
+        }
+
         private func accountQuery(kind: String, userId: String, ownerUserId: String) -> [String: Any] {
+            accountQuery(account: Self.account(kind: kind, userId: userId, ownerUserId: ownerUserId))
+        }
+
+        private func accountQuery(account: String) -> [String: Any] {
             var accountQuery = query()
-            accountQuery[kSecAttrAccount as String] = Self.account(kind: kind, userId: userId, ownerUserId: ownerUserId)
+            accountQuery[kSecAttrAccount as String] = account
             return accountQuery
         }
 
@@ -368,14 +410,24 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
             let prefixes = [Self.knownKind, Self.comparedKind, Self.changedKind, Self.legacySeenKind, Self.legacyConfirmedKind].map {
                 ($0, "\($0)|\(userId)|")
             }
-            let itemPrefix = "\(Self.itemKind)|\(userId)|"
+            let memoryPrefix = "\(Self.memoryKind)|"
+            let legacyItemPrefix = "\(Self.legacyItemKind)|"
+            var legacyMemories: [(account: String, itemId: String, memory: PasswordsItemMemory)] = []
             for attributes in found {
                 guard let account = attributes[kSecAttrAccount as String] as? String,
                     let data = attributes[kSecValueData as String] as? Data
                 else { continue }
-                if account.hasPrefix(itemPrefix) {
+                if account.hasPrefix(memoryPrefix) {
                     if let memory = try? JSONDecoder().decode(PasswordsItemMemory.self, from: data) {
-                        pins.itemMemories[String(account.dropFirst(itemPrefix.count))] = memory
+                        pins.itemMemories[String(account.dropFirst(memoryPrefix.count))] = memory
+                    }
+                    continue
+                }
+                if account.hasPrefix(legacyItemPrefix) {
+                    // `item|<user id>|<item id>`: whichever user id it names, it is in this sign-in's service.
+                    let rest = account.dropFirst(legacyItemPrefix.count)
+                    if let separator = rest.firstIndex(of: "|"), let memory = try? JSONDecoder().decode(PasswordsItemMemory.self, from: data) {
+                        legacyMemories.append((account, String(rest[rest.index(after: separator)...]), memory))
                     }
                     continue
                 }
@@ -393,7 +445,23 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
                 }
             }
             migrateLegacyKeys(userId: userId, seenKeys: legacySeenKeys, confirmedKeys: legacyConfirmedKeys, into: &pins)
+            migrateLegacyMemories(legacyMemories, into: &pins)
             return pins
+        }
+
+        /// Moves the memories kept under a user id to the item id alone, merged with one already
+        /// there. The new item is written before the old one is deleted, and one that could not be
+        /// written keeps its old item for the next read. Best effort, as the memories are all in
+        /// `pins` for this read either way.
+        private func migrateLegacyMemories(
+            _ legacyMemories: [(account: String, itemId: String, memory: PasswordsItemMemory)], into pins: inout PasswordsPins
+        ) {
+            for legacy in legacyMemories {
+                let merged = pins.itemMemories[legacy.itemId].map { $0.merging(legacy.memory) } ?? legacy.memory
+                pins.itemMemories[legacy.itemId] = merged
+                guard (try? write(merged, itemId: legacy.itemId)) != nil else { continue }
+                SecItemDelete(accountQuery(account: legacy.account) as CFDictionary)
+            }
         }
 
         /// Moves the first version's keys into the one known key of each person: a confirmed key
@@ -431,7 +499,11 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         }
 
         private func put(kind: String, userId: String, ownerUserId: String, data: Data, isReplacing: Bool) throws {
-            let existing = accountQuery(kind: kind, userId: userId, ownerUserId: ownerUserId)
+            try put(account: Self.account(kind: kind, userId: userId, ownerUserId: ownerUserId), data: data, isReplacing: isReplacing)
+        }
+
+        private func put(account: String, data: Data, isReplacing: Bool) throws {
+            let existing = accountQuery(account: account)
             if isReplacing {
                 let status = SecItemUpdate(existing as CFDictionary, [kSecValueData as String: data] as CFDictionary)
                 if status == errSecSuccess { return }
@@ -481,8 +553,8 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         }
 
         /// The memory kept for one item, read from its own keychain item.
-        private func memory(userId: String, itemId: String) throws -> PasswordsItemMemory {
-            var reading = accountQuery(kind: Self.itemKind, userId: userId, ownerUserId: itemId)
+        private func memory(itemId: String) throws -> PasswordsItemMemory {
+            var reading = accountQuery(account: Self.memoryAccount(itemId: itemId))
             reading[kSecReturnData as String] = true
             var found: CFTypeRef?
             let status = SecItemCopyMatching(reading as CFDictionary, &found)
@@ -494,10 +566,10 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
             return memory
         }
 
-        private func write(_ memory: PasswordsItemMemory, userId: String, itemId: String) throws {
+        private func write(_ memory: PasswordsItemMemory, itemId: String) throws {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            try put(kind: Self.itemKind, userId: userId, ownerUserId: itemId, data: try encoder.encode(memory), isReplacing: true)
+            try put(account: Self.memoryAccount(itemId: itemId), data: try encoder.encode(memory), isReplacing: true)
         }
 
         // The memory of one item is one keychain item, changed by reading that item and writing it
@@ -505,10 +577,10 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         // that comes of it is a version, a mac or a list of people sealed for that is one change
         // behind, which only ever makes a later check stricter, never looser.
         public func updateItemMemory(userId: String, itemId: String, change: (PasswordsItemMemory) -> PasswordsItemMemory) throws {
-            let current = try memory(userId: userId, itemId: itemId)
+            let current = try memory(itemId: itemId)
             let changed = change(current)
             guard changed != current else { return }
-            try write(changed, userId: userId, itemId: itemId)
+            try write(changed, itemId: itemId)
         }
 
         public func removeAll() throws {

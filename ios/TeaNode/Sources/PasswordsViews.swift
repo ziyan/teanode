@@ -287,9 +287,9 @@ struct PasswordsListView: View {
 
     private var list: some View {
         List {
+            needsYouSection
             keyChangeSection
             circleShareSection
-            needsYouSection
             Section {
                 ForEach(shownItems) { item in
                     NavigationLink(value: PasswordsDestination.item(item.id)) {
@@ -311,11 +311,9 @@ struct PasswordsListView: View {
     /// Notices of keys that changed: each was accepted, nothing waits on it, and it stays until it is dismissed.
     @ViewBuilder
     private var keyChangeSection: some View {
-        if !model.keyChanges.isEmpty {
+        ForEach(model.keyChanges) { change in
             Section {
-                ForEach(model.keyChanges) { change in
-                    PasswordsKeyChangeRow(model: model, change: change)
-                }
+                PasswordsKeyChangeRow(model: model, change: change)
             }
         }
     }
@@ -323,22 +321,22 @@ struct PasswordsListView: View {
     /// Notices of people this iPhone sealed an item for through a circle for the first time.
     @ViewBuilder
     private var circleShareSection: some View {
-        if !model.circleShareNotices.isEmpty {
+        ForEach(model.circleShareNotices) { notice in
             Section {
-                ForEach(model.circleShareNotices) { notice in
-                    PasswordsCircleShareNoticeRow(model: model, notice: notice)
-                }
+                PasswordsCircleShareNoticeRow(model: model, notice: notice)
             }
         }
     }
 
-    /// One line for each item this iPhone left for the person to finish sharing. It does not block
-    /// anything: the item opens as usual, and its screen has the button.
+    /// "Finish sharing N items" and one line for each item this iPhone left for the person to finish
+    /// sharing (a person who joined a circle later needs one tap for each item, so one row does
+    /// them all). It does not block anything: each item opens as usual, and its screen has the button.
     @ViewBuilder
     private var needsYouSection: some View {
         let waitingItems = model.items.filter { model.itemIdsNeedingYou.contains($0.id) }
         if !waitingItems.isEmpty {
             Section {
+                finishEveryItemRow(count: waitingItems.count)
                 ForEach(waitingItems) { item in
                     NavigationLink(value: PasswordsDestination.item(item.id)) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -348,6 +346,39 @@ struct PasswordsListView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                }
+            } footer: {
+                needsYouFooter
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func finishEveryItemRow(count: Int) -> some View {
+        if let progress = model.sharingProgress {
+            HStack(spacing: 12) {
+                ProgressView()
+                Text("Finishing sharing: \(progress.doneCount) of \(progress.totalCount)")
+                    .contentTransition(.numericText())
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            Button { Task { await model.finishSharingEveryItem() } } label: {
+                Label("Finish sharing \(count) items", systemImage: "person.badge.plus")
+                    .actionColor()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var needsYouFooter: some View {
+        if model.hasMoreSharesWaiting || !model.namesWithTooMuchShared.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                if model.hasMoreSharesWaiting {
+                    Text("More are waiting: finish these first.")
+                }
+                ForEach(model.namesWithTooMuchShared, id: \.self) { name in
+                    Text("\(name) has too much shared with them.")
                 }
             }
         }
@@ -478,18 +509,25 @@ struct PasswordsDeletedScreen: View {
                             NavigationLink(value: PasswordsDestination.item(item.id)) {
                                 PasswordsDeletedRow(item: item)
                             }
+                            .confirmationDialog(
+                                "Delete forever?",
+                                isPresented: Binding(
+                                    get: { itemToDeleteForever?.id == item.id }, set: { if !$0 { itemToDeleteForever = nil } }),
+                                titleVisibility: .visible, presenting: itemToDeleteForever
+                            ) { item in
+                                Button("Delete forever", role: .destructive) { Task { await deleteForever(item) } }
+                            } message: { item in
+                                Text("\(item.name) is removed from Passwords and from this iPhone, and cannot be brought back.")
+                            }
                             .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    itemToDeleteForever = item
-                                } label: {
-                                    Label("Delete forever", systemImage: "trash")
-                                }
-                                .tint(.red)
-                                Button {
-                                    Task { await restore(item) }
-                                } label: {
-                                    Label("Restore", systemImage: "arrow.uturn.backward")
-                                }
+                                Button("Restore", systemImage: "arrow.uturn.backward") { Task { await restore(item) } }
+                                Button("Delete forever", systemImage: "trash", role: .destructive) { itemToDeleteForever = item }
+                                    .tint(.red)
+                            }
+                            .contextMenu {
+                                Button("Restore", systemImage: "arrow.uturn.backward") { Task { await restore(item) } }
+                                Button("Delete forever", systemImage: "trash", role: .destructive) { itemToDeleteForever = item }
+                                    .tint(.red)
                             }
                         }
                     } footer: {
@@ -500,14 +538,6 @@ struct PasswordsDeletedScreen: View {
         }
         .navigationTitle("Recently deleted")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            "Delete forever?", isPresented: Binding(get: { itemToDeleteForever != nil }, set: { if !$0 { itemToDeleteForever = nil } }),
-            titleVisibility: .visible, presenting: itemToDeleteForever
-        ) { item in
-            Button("Delete forever", role: .destructive) { Task { await deleteForever(item) } }
-        } message: { item in
-            Text("\(item.name) is removed from Passwords and from this iPhone, and cannot be brought back.")
-        }
     }
 
     private func deleteForever(_ item: PasswordItem) async {

@@ -19,6 +19,12 @@ enum PasswordsPhase: Equatable {
     case unlocked
 }
 
+/// PasswordsSharingProgress is how many items "Finish sharing" has done of how many it will do.
+struct PasswordsSharingProgress: Equatable {
+    let doneCount: Int
+    let totalCount: Int
+}
+
 /// PasswordsModel is Passwords on this iPhone: whether it is set up, locked or
 /// open, and the person's items while it is open. It owns the session
 /// (TeaNodeKit's PasswordsSession), which holds the account key in memory only
@@ -62,6 +68,14 @@ final class PasswordsModel {
     /// The items among those that this iPhone did not give a new key by itself: one was given a
     /// moment ago, or it has given the most it gives in a session. The item's screen says so.
     private(set) var itemIdsNeedingAttention: Set<String> = []
+    /// How far "Finish sharing" for every waiting item has got, while it runs; nil otherwise.
+    private(set) var sharingProgress: PasswordsSharingProgress?
+    /// The names of people left out of the last check of waiting shares because they already have
+    /// the most the server lets others share with them ("<name> has too much shared with them.").
+    private(set) var namesWithTooMuchShared: [String] = []
+    /// Whether the server said, at the last check, that more shares are waiting than it listed:
+    /// the rest shows once the ones listed are finished.
+    private(set) var hasMoreSharesWaiting = false
     /// The person's own safety code, made from the key pair this iPhone opened; nil while locked.
     /// Anybody who wants to check the person's key can compare it. Nothing waits on it.
     private(set) var ownSafetyCode: String?
@@ -337,7 +351,7 @@ final class PasswordsModel {
         items = []
         deletedItems = []
         unreadableItemCount = 0
-        keyChanges = []
+        forgetNamesAndMarks()
         ownSafetyCode = nil
         if phase == .unlocked { phase = .locked }
     }
@@ -433,11 +447,22 @@ final class PasswordsModel {
         items = []
         deletedItems = []
         unreadableItemCount = 0
+        forgetNamesAndMarks()
+        ownSafetyCode = nil
+        phase = closedPhase
+    }
+
+    /// Drops what names people or items (the notices and the marks on items), so a locked screen
+    /// holds none of them in memory.
+    private func forgetNamesAndMarks() {
         keyChanges = []
         circleShareNotices = []
         itemIdsNeedingYou = []
-        ownSafetyCode = nil
-        phase = closedPhase
+        itemIdsNeedingNewKey = []
+        itemIdsNeedingAttention = []
+        sharingProgress = nil
+        namesWithTooMuchShared = []
+        hasMoreSharesWaiting = false
     }
 
     /// Opens the items of the copy for the lists, and tells the system's
@@ -471,6 +496,8 @@ final class PasswordsModel {
     private func giveWaitingRecipientsTheirKeys() async {
         guard let session, !isDemo else { return }
         guard let completed = try? await session.completeWaitingShares() else { return }
+        namesWithTooMuchShared = completed.tooMuchSharedNames
+        hasMoreSharesWaiting = completed.hasMoreWaiting
         keyChanges = await session.keyChanges()
         circleShareNotices = await session.circleShareNotices()
         itemIdsNeedingYou = await session.itemIdsNeedingYou
@@ -562,6 +589,38 @@ final class PasswordsModel {
             await reload()
         } catch {
             report(error, orSay: String(localized: "The sharing could not be finished."))
+        }
+    }
+
+    /// Finishes the sharing of every item this iPhone left for the person, one after the other, on
+    /// the person's one tap. `sharingProgress` says how far it has got, and a count is said when it
+    /// is done. The server lists at most 2000 waiting shares at once, so the shares that were not
+    /// listed show once these are finished (`hasMoreSharesWaiting`).
+    func finishSharingEveryItem() async {
+        guard let session, sharingProgress == nil else { return }
+        let waitingItems = items.filter { itemIdsNeedingYou.contains($0.id) }
+        guard !waitingItems.isEmpty else { return }
+        let totalCount = waitingItems.count
+        var finishedCount = 0
+        var lastError: Error?
+        sharingProgress = PasswordsSharingProgress(doneCount: 0, totalCount: totalCount)
+        for (index, item) in waitingItems.enumerated() {
+            do {
+                try await session.finishSharing(itemId: item.id)
+                finishedCount += 1
+            } catch {
+                lastError = error
+                // A locked session fails every item the same way: stop.
+                if let passwordsError = error as? PasswordsError, passwordsError == .locked { break }
+            }
+            sharingProgress = PasswordsSharingProgress(doneCount: index + 1, totalCount: totalCount)
+        }
+        sharingProgress = nil
+        await reload()
+        await giveWaitingRecipientsTheirKeys()
+        if finishedCount > 0 { doneText = String(localized: "Finished sharing \(finishedCount) items.") }
+        if let lastError {
+            report(lastError, orSay: String(localized: "Sharing could not be finished for some items. Try again."))
         }
     }
 
