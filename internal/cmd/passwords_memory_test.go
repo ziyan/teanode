@@ -79,7 +79,7 @@ func TestPasswordsFreshComputerLeavesTheNewKeyAndTheAgentCopyToThePerson(test *t
 	}
 
 	// The person's own command does it, for the record as the owner signed it.
-	fake.mustRun(testToken, "", "rekey", "example.com")
+	fake.mustRun(testToken, "", "rekey", "example.com", "--yes")
 	if item.itemKeyByAgentKey == "" || item.itemKeyByAgentKey == oldAgentCopy || item.needsNewKey {
 		test.Fatalf("rekey did not give the item and the agent a new key: %+v", item)
 	}

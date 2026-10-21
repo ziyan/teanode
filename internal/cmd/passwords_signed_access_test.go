@@ -152,7 +152,7 @@ func TestPasswordsForgedAccessRecordReachesNobody(test *testing.T) {
 			rekeysBefore := fake.rekeyCount
 			for _, command := range [][]string{
 				{"edit", "example.com", "--user-name", "ada"},
-				{"rekey", "example.com"},
+				{"rekey", "example.com", "--yes"},
 				{"share", "example.com", "ben"},
 			} {
 				_, err := fake.run(testToken, "", command...)
@@ -255,7 +255,7 @@ func TestPasswordsReplayedAccessRecordIsRefused(test *testing.T) {
 	keysBefore := len(item.keys)
 	for _, command := range [][]string{
 		{"edit", "example.com", "--user-name", "ada"},
-		{"rekey", "example.com"},
+		{"rekey", "example.com", "--yes"},
 		{"share", "example.com", "cora"},
 		{"agent", "on", "example.com", "--force"},
 	} {
@@ -319,14 +319,14 @@ func TestPasswordsAutomaticRekeyNeverWidens(test *testing.T) {
 	// rekey, which the person runs on purpose, seals for everybody the record
 	// reaches whose key is confirmed, and for the agent when the record and the
 	// server agree. It works on a computer that remembers nothing of the item.
-	fake.mustRun(testToken, "", "rekey", "example.com")
+	fake.mustRun(testToken, "", "rekey", "example.com", "--yes")
 	if fake.lastRekeyKeyCount != 1 || !item.isUsableByAgent || item.itemKeyByAgentKey == "" || item.needsNewKey {
 		test.Errorf("rekey on a computer that remembers nothing: keys %d agent %v", fake.lastRekeyKeyCount, item.isUsableByAgent)
 	}
 	forgetRememberedItems(test)
 	fake.mustRun(testToken, "", "agent", "on", "example.com", "--force")
 	forgetRememberedItems(test)
-	fake.mustRun(testToken, "", "rekey", "example.com")
+	fake.mustRun(testToken, "", "rekey", "example.com", "--yes")
 	if fake.lastRekeyKeyCount != 1 || !item.isUsableByAgent || item.itemKeyByAgentKey == "" {
 		test.Errorf("rekey: keys %d agent %v", fake.lastRekeyKeyCount, item.isUsableByAgent)
 	}
@@ -389,7 +389,7 @@ func TestPasswordsAutomaticRekeysAreSpacedAndLimited(test *testing.T) {
 		test.Fatalf("the second automatic re-key was made: %d", fake.rekeyCount)
 	}
 	// The person's own rekey is never held back.
-	fake.mustRun(testToken, "", "rekey", "example.com")
+	fake.mustRun(testToken, "", "rekey", "example.com", "--yes")
 	if fake.rekeyCount != 2 || item.needsNewKey {
 		test.Fatalf("rekey: %d", fake.rekeyCount)
 	}

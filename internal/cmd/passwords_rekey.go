@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
+
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/passwords"
 )
@@ -335,4 +338,107 @@ func printWaitingRecipients(waiting []*client.PasswordRecipientView) {
 		fmt.Printf("%s (%s) cannot open it until they have the new key; run 'teanode passwords share --waiting' to give it to them\n",
 			forTerminal(recipient.Name), forTerminal(recipient.Username))
 	}
+}
+
+// passwordsRekeyPlan is who a new key for an item the person owns is sealed
+// for, worked out from the owner's signed record and the server's list the way
+// rekeyItemWithAccess does, without sealing anything. `rekey` says it before it
+// seals, and `list` and `show` say it under an item that needs one, so the
+// person knows who the command they are told to run gives the item to.
+type passwordsRekeyPlan struct {
+	// SealedForUserNames are the people who get the new key now.
+	SealedForUserNames []string
+
+	// WaitingUserNames are the people the record reaches who have not set up
+	// Passwords, so they wait for the key.
+	WaitingUserNames []string
+
+	// IsAgentCopyMade says the agent gets a copy of the new key.
+	IsAgentCopyMade bool
+}
+
+// rekeyAccessChange is how `rekey` changes the record before it seals: an item
+// whose record lets the agent use it while the server has no copy of its key
+// for the agent is given a record that says what the server has, because
+// rekey never widens access. Nil leaves the record as it is.
+func (self *passwordsItem) rekeyAccessChange() func(*passwords.PasswordAccess) *passwords.PasswordAccess {
+	if !self.hasLostAgentCopy() {
+		return nil
+	}
+	return func(access *passwords.PasswordAccess) *passwords.PasswordAccess {
+		return passwords.AccessWithAgentUse(access, false)
+	}
+}
+
+func (self *passwordsItem) rekeyPlan(changeAccess func(*passwords.PasswordAccess) *passwords.PasswordAccess) passwordsRekeyPlan {
+	plan := passwordsRekeyPlan{SealedForUserNames: []string{}, WaitingUserNames: []string{}}
+	access := self.VerifiedAccess
+	if changeAccess != nil && access != nil {
+		access = changeAccess(access)
+	}
+	plan.IsAgentCopyMade = access != nil && access.IsUsableByAgent && self.View.IsUsableByAgent
+	circleIDs := circleIDsOfRecipients(self.View.Shares)
+	seen := map[string]bool{}
+	for _, recipient := range existingRecipients(self.View) {
+		if seen[recipient.UserID] {
+			continue
+		}
+		seen[recipient.UserID] = true
+		if !self.isReachedBySealedAccess(recipient, circleIDs) {
+			continue
+		}
+		name := forTerminal(textFromServer(recipient.Username))
+		if recipient.PublicKey == "" {
+			plan.WaitingUserNames = append(plan.WaitingUserNames, name)
+		} else {
+			plan.SealedForUserNames = append(plan.SealedForUserNames, name)
+		}
+	}
+	return plan
+}
+
+// words say who gets the new key, in one sentence.
+func (self passwordsRekeyPlan) words() string {
+	sealedFor := "nobody but you"
+	if len(self.SealedForUserNames) > 0 {
+		sealedFor = strings.Join(self.SealedForUserNames, ", ")
+	}
+	words := "the new key goes to " + sealedFor
+	if self.IsAgentCopyMade {
+		words += "; the agent gets a copy"
+	} else {
+		words += "; the agent gets none"
+	}
+	if len(self.WaitingUserNames) > 0 {
+		words += "; waiting for them to set up Passwords: " + strings.Join(self.WaitingUserNames, ", ")
+	}
+	return words
+}
+
+// confirmRekey says who the new key goes to before anything is sealed, and
+// asks for a yes: `rekey` seals for everyone the record reaches, including
+// people this computer never gave the item to, and a computer that never saw
+// the item can be shown an older record. Without a terminal to ask on it
+// refuses, unless --yes was given. With --json the words go to standard error
+// so that standard output stays JSON.
+func confirmRekey(command *cli.Command, itemName string, plan passwordsRekeyPlan) error {
+	words := "Giving " + forTerminal(itemName) + " a new key: " + plan.words() + "."
+	output := os.Stdout
+	if command.Bool("json") {
+		output = os.Stderr
+	}
+	if command.Bool("yes") {
+		_, _ = fmt.Fprintln(output, words)
+		return nil
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return usage(words + "\nRefusing without confirmation, and standard input is not a terminal to ask on; pass --yes to proceed")
+	}
+	_, _ = fmt.Fprintf(output, "%s Type 'yes' to continue: ", words)
+	var answer string
+	_, _ = fmt.Scanln(&answer)
+	if answer != "yes" {
+		return errors.New("canceled")
+	}
+	return nil
 }

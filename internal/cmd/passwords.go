@@ -254,8 +254,11 @@ func NewPasswordsCommand() *cli.Command {
 					"command, which you run on purpose, seals for everyone your record reaches. An item\n" +
 					"whose record of who may have it was not signed by your devices,\n" +
 					"or is an old one the server showed again, is left alone: set it again with 'unshare'\n" +
-					"and then 'share'.",
-				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
+					"and then 'share'.\n\n" +
+					"Before it seals anything it says who gets the new key (the people your record\n" +
+					"reaches, and whether the agent gets a copy) and asks you to type yes; without a\n" +
+					"terminal it refuses unless --yes is given. 'list' and 'show' name the same people.",
+				Flags:  []cli.Flag{JSONFlag(), passphraseFlag(), &cli.BoolFlag{Name: "yes", Usage: "do not ask before sealing the new key for the people named (needed without a terminal)"}},
 				Action: runPasswordsRekey,
 			},
 			{
@@ -804,14 +807,22 @@ func summarizeItem(item *passwordsItem) passwordsItemSummary {
 
 // needsNewKeyWords tell what to run for an item the server marks as needing a
 // new key.
-func needsNewKeyWords(itemID string) string {
-	return "needs a new key: run teanode passwords rekey " + itemID
+func needsNewKeyWords(item *passwordsItem) string {
+	words := "needs a new key: run teanode passwords rekey " + item.View.ID
+	if item.IsOwner() && item.AccessCheck != accessCheckNotVerified && item.AccessCheck != accessCheckReplayed {
+		words += " (" + item.rekeyPlan(item.rekeyAccessChange()).words() + ")"
+	}
+	return words
 }
 
 // lostAgentCopyWords tell what to run for an item the owner's record lets the
 // agent use but whose agent copy the server no longer has.
-func lostAgentCopyWords(itemID string) string {
-	return "the agent has no copy of its key: run teanode passwords rekey " + itemID
+func lostAgentCopyWords(item *passwordsItem) string {
+	words := "the agent has no copy of its key: run teanode passwords rekey " + item.View.ID
+	if item.AccessCheck != accessCheckNotVerified && item.AccessCheck != accessCheckReplayed {
+		words += " (" + item.rekeyPlan(item.rekeyAccessChange()).words() + ")"
+	}
+	return words
 }
 
 // itemMarkers are the short words that go after an item in a list.
@@ -897,10 +908,10 @@ func runPasswordsList(ctx context.Context, command *cli.Command) error {
 	}
 	for index, summary := range summaries {
 		if summary.NeedsNewKey {
-			fmt.Printf("%s: %s\n", forTerminal(summary.Name), needsNewKeyWords(summary.ID))
+			fmt.Printf("%s: %s\n", forTerminal(summary.Name), needsNewKeyWords(shownItems[index]))
 		}
 		if summary.HasLostAgentCopy {
-			fmt.Printf("%s: %s\n", forTerminal(summary.Name), lostAgentCopyWords(summary.ID))
+			fmt.Printf("%s: %s\n", forTerminal(summary.Name), lostAgentCopyWords(shownItems[index]))
 		}
 		if words := shownItems[index].sharingCheckWords(); words != "" {
 			fmt.Printf("%s: %s\n", forTerminal(summary.Name), words)
@@ -1066,7 +1077,7 @@ func runPasswordsShow(ctx context.Context, command *cli.Command) error {
 		header = append(header, [2]string{"marks", markers})
 	}
 	if summary.NeedsNewKey {
-		header = append(header, [2]string{"note", needsNewKeyWords(summary.ID)})
+		header = append(header, [2]string{"note", needsNewKeyWords(item)})
 	}
 	if words := item.sharingCheckWords(); words != "" {
 		header = append(header, [2]string{"note", words})
@@ -2164,12 +2175,18 @@ func runPasswordsRekey(ctx context.Context, command *cli.Command) error {
 	// An item whose record lets the agent use it while the server has no copy
 	// for the agent is given a record that says what the server has: the agent
 	// cannot use the item, and rekey never widens access.
-	var changeAccess func(*passwords.PasswordAccess) *passwords.PasswordAccess
+	changeAccess := item.rekeyAccessChange()
 	hasLostAgentCopy := item.hasLostAgentCopy()
-	if hasLostAgentCopy {
-		changeAccess = func(access *passwords.PasswordAccess) *passwords.PasswordAccess {
-			return passwords.AccessWithAgentUse(access, false)
+	// Who gets the key is said, and agreed to, before anything is sealed. An
+	// item whose record cannot be believed is refused first, as rekeyItem
+	// does, so nobody is asked about a re-key that cannot happen.
+	if changeAccess == nil {
+		if err := item.refuseWithoutVerifiedAccess("cannot give the item a new key"); err != nil {
+			return err
 		}
+	}
+	if err := confirmRekey(command, item.Name(), item.rekeyPlan(changeAccess)); err != nil {
+		return err
 	}
 	waiting, err := session.rekeyItem(item, changeAccess, rekeyByPerson)
 	if err != nil {

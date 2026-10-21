@@ -438,7 +438,7 @@ func TestPasswordsRekeyLeavesAPersonThisComputerNeverSealedForToThePerson(test *
 		test.Fatalf("share --waiting sealed for somebody this computer never sealed for:\n%s", notices.text.String())
 	}
 
-	fake.mustRun(testToken, "", "rekey", "example.com")
+	fake.mustRun(testToken, "", "rekey", "example.com", "--yes")
 	fake.unlockAs(benToken)
 	if output := strings.TrimSpace(fake.mustRun(benToken, "", "copy", "example.com")); output != "shared-secret-example" {
 		test.Errorf("Ben copies %q after rekey sealed the new key for him", output)

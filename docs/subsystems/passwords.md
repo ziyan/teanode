@@ -220,8 +220,8 @@ What stands between an item and a page:
   schedule they wrote themselves, which is what a scheduled sign-in uses. The
   server carries into the run whether the request was a tap and whether an
   operator made it as the person (`AskSettings.IsPersonsTap` and
-  `IsOperatorActingAsPerson`). A command line token, an app password, OAuth, the
-  extension's token, a program that speaks MCP and any operator acting as the
+  `IsOperatorActingAsPerson`). A command line token, an app password, an OAuth
+  grant of an app other than the TeaNode app, the extension's token, a program that speaks MCP and any operator acting as the
   person start no such run, whatever surface they name: a token that says
   `drawer` still cannot list or read anything, and the refusal says "Ask in the
   TeaNode app or on the dashboard". A run that content started is refused too: an inbound mail (research), a chat
@@ -577,7 +577,13 @@ The server cannot read an item, so what it can do is bound how much and how
 fast, and keep a history that a program with a token cannot erase. A **tap** is
 the person's own action on the dashboard or in the iPhone app
 (`Principal.IsPersonsTap`); a command line token, the extension and an OAuth
-grant are not taps.
+grant are not taps. The one exception is the TeaNode iPhone app's own sign-in: a
+token has the app's kind (`ClientKindApp`, which `IsPersonsTap` accepts) only when
+the person approved the sign-in with a tap and the client is registered with
+exactly the app's return address, `com.teanode.app:/oauth` (or the token came from
+a connect code made with a tap). Any other app can register an address of its own
+and ask for the whole API, and is signed in, but its token is not a tap, so it
+cannot set up, erase, share, restore or let the agent use an item.
 
 - **Size.** An item's sealed fields are at most 512 KB, and a sealed share key or
   agent copy is exactly the size of a sealed 32-byte item key, written the one way
@@ -656,7 +662,10 @@ grant are not taps.
   membership lock and the revision lock until its request commits. A document may
   name at most 25 Passwords mutations (it is refused whole, before any runs), a
   change waits at most 5 seconds for the locks and is then told "Passwords is
-  busy with other changes. Try again in a moment." with nothing changed, and
+  busy with other changes. Try again in a moment." with nothing changed (every
+  change takes its locks under a savepoint, so the request can still commit; once
+  one change of a document has timed out, the rest of that document's changes are
+  refused at once, so a document waits once and not for each change), and
   how much a person holds is summed from two numbers the database keeps for each
   item (`item_bytes`, `versions_bytes`) so that the sum does not read their
   versions while the locks are held.
@@ -920,7 +929,9 @@ equal; `docs/subsystems/devices.md` has the whole account).
   code"); `trust <user name> <code>` is the optional way to mark codes compared,
   records the key only if the 32 digits match what the server shows, never prints
   the expected code, and gates nothing; `rekey <item>` gives an item a new key (for
-  everyone the signed record reaches); `delete
+  everyone the signed record reaches); before it seals anything it says who gets
+  the key and whether the agent gets a copy, and asks for `yes` at a terminal, or
+  needs `--yes` without one, and `list` and `show` name the same people; `delete
   --forever` removes an item that is already deleted, which needs a tap, so it
   says where to do it. `edit`, `share`, `unshare` and `agent` re-key first when
   the server marks the item, for people and the agent this computer last saw

@@ -337,7 +337,7 @@ func TestAnImpersonatorCannotSignAnAppIn(test *testing.T) {
 // is the same sign-in, so it keeps the kind.
 func TestOnlyASignInMadeAtATapGivesTheAppItsMark(test *testing.T) {
 	world := newSignInWorld(test)
-	appClient := world.register(test, "com.example.app:/oauth")
+	appClient := world.register(test, teaNodeAppRedirectAddress)
 	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 	resource := "https://" + world.host + api.Prefix
 
@@ -349,13 +349,13 @@ func TestOnlyASignInMadeAtATapGivesTheAppItsMark(test *testing.T) {
 		return answer
 	}
 	consent := func(credentialKind models.CredentialKind) map[string]any {
-		data, failures := world.askWith(test, credentialKind, `mutation { ApproveOAuthAuthorization(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", codeChallenge: "`+challenge+`", resource: "`+resource+`") { redirectUrl } }`)
+		data, failures := world.askWith(test, credentialKind, `mutation { ApproveOAuthAuthorization(clientId: "`+appClient+`", redirectUri: "`+teaNodeAppRedirectAddress+`", codeChallenge: "`+challenge+`", resource: "`+resource+`") { redirectUrl } }`)
 		if len(failures) > 0 {
 			test.Fatalf("ApproveOAuthAuthorization: %v", failures)
 		}
 		redirect, _ := url.Parse(data["ApproveOAuthAuthorization"].(map[string]any)["redirectUrl"].(string))
 		_, answer := world.post(test, api.PathOAuthToken, url.Values{
-			"grant_type": {"authorization_code"}, "client_id": {appClient}, "redirect_uri": {"com.example.app:/oauth"},
+			"grant_type": {"authorization_code"}, "client_id": {appClient}, "redirect_uri": {teaNodeAppRedirectAddress},
 			"code": {redirect.Query().Get("code")}, "code_verifier": {"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"},
 		})
 		return answer
@@ -387,6 +387,64 @@ func TestOnlyASignInMadeAtATapGivesTheAppItsMark(test *testing.T) {
 		renewedToken, _ := renewed["access_token"].(string)
 		if got := world.credentialOf(renewedToken); renewedToken == "" || got != test2.expected {
 			test.Errorf("%s: the renewal signs in as %q, expected %q (%v)", name, got, test2.expected, renewed)
+		}
+	}
+}
+
+// Any app can register an address of its own and ask for the API, and is then
+// signed in as the whole account. Only the TeaNode app's own sign-in is taken
+// as a person's tap: another app's token works, but approves nothing that
+// needs a tap, though the person approved it on the dashboard.
+func TestAnotherAppsConsentIsNotAPersonsTap(test *testing.T) {
+	world := newSignInWorld(test)
+	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	resource := "https://" + world.host + api.Prefix
+	for name, redirect := range map[string]string{
+		"an app of another scheme":                "com.example.app:/oauth",
+		"the TeaNode scheme with another path":    "com.teanode.app:/other",
+		"another scheme that starts the same way": "com.teanode.app.evil:/oauth",
+	} {
+		appClient := world.register(test, redirect)
+		data, failures := world.askWith(test, models.CredentialSession, `mutation { ApproveOAuthAuthorization(clientId: "`+appClient+`", redirectUri: "`+redirect+`", codeChallenge: "`+challenge+`", resource: "`+resource+`") { redirectUrl } }`)
+		if len(failures) > 0 {
+			test.Fatalf("%s: ApproveOAuthAuthorization: %v", name, failures)
+		}
+		approved, _ := url.Parse(data["ApproveOAuthAuthorization"].(map[string]any)["redirectUrl"].(string))
+		_, answer := world.post(test, api.PathOAuthToken, url.Values{
+			"grant_type": {"authorization_code"}, "client_id": {appClient}, "redirect_uri": {redirect},
+			"code": {approved.Query().Get("code")}, "code_verifier": {"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"},
+		})
+		token, _ := answer["access_token"].(string)
+		if token == "" || !world.worksOnTheAPI(token) {
+			test.Errorf("%s: the sign-in was answered %v", name, answer)
+			continue
+		}
+		if got := world.credentialOf(token); got != models.CredentialToken {
+			test.Errorf("%s: the token signs in as %q, expected %q", name, got, models.CredentialToken)
+		}
+		_, renewed := world.post(test, api.PathOAuthToken, url.Values{
+			"grant_type": {"refresh_token"}, "client_id": {appClient}, "refresh_token": {answer["refresh_token"].(string)},
+		})
+		if got := world.credentialOf(renewed["access_token"].(string)); got != models.CredentialToken {
+			test.Errorf("%s: the renewal signs in as %q, expected %q", name, got, models.CredentialToken)
+		}
+	}
+}
+
+func TestOnlyTheTeaNodeAppsAddressIsTheTeaNodeApp(test *testing.T) {
+	for redirects, expected := range map[string]bool{
+		"com.teanode.app:/oauth":                              true,
+		"com.example.app:/oauth":                              false,
+		"com.teanode.app:/oauth,https://harness.example.com/": false,
+		"com.teanode.app:/oauth,com.example.app:/oauth":       false,
+		"": false,
+	} {
+		client := &models.OAuthClient{}
+		if redirects != "" {
+			client.RedirectURIs = strings.Split(redirects, ",")
+		}
+		if got := isTeaNodeApp(client); got != expected {
+			test.Errorf("%q: isTeaNodeApp = %v, expected %v", redirects, got, expected)
 		}
 	}
 }

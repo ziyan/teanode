@@ -168,7 +168,7 @@ func TestPasswordsRekeySealsOnlyForTheSealedRecord(test *testing.T) {
 	item := fake.items[firstItemID(fake)]
 	coraUserID := "user-cora"
 	item.grantees = append(item.grantees, &client.PasswordShareGranteeInput{GranteeUserID: &coraUserID})
-	fake.mustRun(testToken, "", "rekey", "example.com")
+	fake.mustRun(testToken, "", "rekey", "example.com", "--yes")
 	if item.keys["user-ben"] == nil {
 		test.Error("Ben lost the item in a re-key")
 	}
@@ -210,7 +210,7 @@ func TestPasswordsNeedsNewKey(test *testing.T) {
 	}
 
 	// rekey clears it.
-	output := fake.mustRun(testToken, "", "rekey", "example.com")
+	output := fake.mustRun(testToken, "", "rekey", "example.com", "--yes")
 	if item.needsNewKey || fake.rekeyCount != 1 || !strings.Contains(output, "has a new key") {
 		test.Fatalf("rekey: %q marked=%v count=%d", output, item.needsNewKey, fake.rekeyCount)
 	}

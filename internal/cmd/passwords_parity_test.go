@@ -103,6 +103,7 @@ func TestPasswordsParity(test *testing.T) {
 		"ListPasswordItems.sinceRevision":        "a command always lists every item, because it opens them all to find one",
 		"ListPasswordRecipients.granteeUserId":   "the person is the argument of share, found by username",
 		"ListPasswordRecipients.granteeCircleId": "the circle is the argument of share, found by name",
+		"ListPasswordItemVersions.itemId":        "versions is refused before it asks, because earlier versions need the person's tap",
 	}
 	queries := reflect.TypeFor[apigraph.PasswordsQuery]()
 	for operation, names := range table {

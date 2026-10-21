@@ -208,12 +208,16 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 	}
 
 	// The app's own sign-in is marked as such only when the approval was a
-	// person's tap, on the dashboard or in the app. An approval made with a
-	// command line token could have been made by a program on the person's
-	// computer, which would then hold an app's token and with it the right
-	// to approve a call that spends money. It still gets its token, unmarked.
+	// person's tap, on the dashboard or in the app, and the program is the
+	// TeaNode app itself. An approval made with a command line token could
+	// have been made by a program on the person's computer, which would then
+	// hold an app's token and with it the right to approve a call that
+	// spends money. And any other app that registers an address of its own
+	// and asks for the API is signed in as the whole account, but its token
+	// is not a person's tap: the person approved that program, not the
+	// TeaNode app. Either still gets its token, unmarked.
 	var clientKind models.TokenClientKind
-	if isWholeAccount && principal.IsPersonsTap() {
+	if isWholeAccount && principal.IsPersonsTap() && isTeaNodeApp(client) {
 		clientKind = models.ClientKindApp
 	}
 
@@ -252,6 +256,28 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 
 	log.Noticef("%s authorized the client %s (%q)", principal.User.Username, client.ID, client.Name)
 	return &OAuthApproval{RedirectURL: redirect.String()}, nil
+}
+
+// teaNodeAppRedirectAddress is the only return address of the TeaNode phone
+// app (RFC 8252 private-use scheme, the app's bundle identifier), the one
+// ios/TeaNodeKit registers with. A phone hands an address in this scheme to
+// the app that claimed it, so an approval that returns here reaches the
+// TeaNode app and no other.
+const teaNodeAppRedirectAddress = "com.teanode.app:/oauth"
+
+// isTeaNodeApp says the client registered as the TeaNode phone app, and
+// nothing else. Any app can register an address of its own scheme, so a
+// private-use address alone does not say whose app it is.
+func isTeaNodeApp(client *models.OAuthClient) bool {
+	if len(client.RedirectURIs) == 0 {
+		return false
+	}
+	for _, redirect := range client.RedirectURIs {
+		if redirect != teaNodeAppRedirectAddress {
+			return false
+		}
+	}
+	return true
 }
 
 // tokenResource is what an approved token will be good for, and whether that

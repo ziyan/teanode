@@ -134,7 +134,7 @@ func staleMarkedItems(test *testing.T) (fake *fakePasswordsServer, yID, zID stri
 func TestPasswordsRekeyAnsweredWithAnotherItemWritesNothingDown(test *testing.T) {
 	fake, yID, zID := staleMarkedItems(test)
 	fake.answerOperationWith("RekeyPasswordItem", yID, zID)
-	output, err := fake.run(testToken, "", "rekey", "yyy.example.com")
+	output, err := fake.run(testToken, "", "rekey", "yyy.example.com", "--yes")
 	if err == nil || !strings.Contains(err.Error(), "The server answered about another item.") {
 		test.Fatalf("rekey of Y answered with Z: %q, %v", output, err)
 	}
@@ -262,7 +262,7 @@ func TestPasswordsListSaysWhenTheAgentCopyIsLost(test *testing.T) {
 	if len(summaries) != 1 || !summaries[0].HasLostAgentCopy || summaries[0].IsUsableByAgent {
 		test.Fatalf("json: %+v", summaries)
 	}
-	fake.mustRun(testToken, "", "rekey", "example.com")
+	fake.mustRun(testToken, "", "rekey", "example.com", "--yes")
 	output = fake.mustRun(testToken, "", "list")
 	if strings.Contains(output, "agent copy lost") {
 		test.Fatalf("rekey left the agent copy lost:\n%s", output)

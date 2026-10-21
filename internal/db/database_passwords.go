@@ -788,6 +788,12 @@ func (self *transaction) SetPasswordsLockAfterMinutes(userId string, lockAfterMi
 }
 
 func (self *transaction) ErasePasswords(userId string) (int, error) {
+	return inPasswordsSavepoint(self, func() (int, error) {
+		return self.erasePasswords(userId)
+	})
+}
+
+func (self *transaction) erasePasswords(userId string) (int, error) {
 	if err := lockPasswordsForWrite(self.tx); err != nil {
 		return 0, err
 	}
@@ -1025,6 +1031,12 @@ func (self *transaction) storedPasswordShareKeyBytes(itemId string) (map[string]
 }
 
 func (self *transaction) SavePasswordItem(item *models.PasswordItem, baseRevision *int64) (*models.PasswordItem, error) {
+	return inPasswordsSavepoint(self, func() (*models.PasswordItem, error) {
+		return self.savePasswordItem(item, baseRevision)
+	})
+}
+
+func (self *transaction) savePasswordItem(item *models.PasswordItem, baseRevision *int64) (*models.PasswordItem, error) {
 	if item == nil || item.ID == "" || item.OwnerUserID == "" || !item.ItemKind.IsValid() ||
 		item.EncryptedFields == "" || item.ItemKeyByAccountKey == "" {
 		return nil, ErrInvalidArguments
@@ -1158,6 +1170,12 @@ func (self *transaction) GetPasswordItem(ownerUserId, itemId string) (*models.Pa
 }
 
 func (self *transaction) DeletePasswordItem(ownerUserId, itemId string, isByPerson bool) (*models.PasswordItem, error) {
+	return inPasswordsSavepoint(self, func() (*models.PasswordItem, error) {
+		return self.deletePasswordItem(ownerUserId, itemId, isByPerson)
+	})
+}
+
+func (self *transaction) deletePasswordItem(ownerUserId, itemId string, isByPerson bool) (*models.PasswordItem, error) {
 	if err := lockPasswordsForWrite(self.tx); err != nil {
 		return nil, err
 	}
@@ -1211,6 +1229,12 @@ func (self *transaction) DeletePasswordItem(ownerUserId, itemId string, isByPers
 }
 
 func (self *transaction) RestorePasswordItem(ownerUserId, itemId string, isByPerson bool) (*models.PasswordItem, error) {
+	return inPasswordsSavepoint(self, func() (*models.PasswordItem, error) {
+		return self.restorePasswordItem(ownerUserId, itemId, isByPerson)
+	})
+}
+
+func (self *transaction) restorePasswordItem(ownerUserId, itemId string, isByPerson bool) (*models.PasswordItem, error) {
 	// The item's old shares reach their recipients again the moment it is
 	// restored, which is disclosing it to them: a person's tap, as adding a
 	// grantee is.
@@ -1261,6 +1285,12 @@ func (self *transaction) RestorePasswordItem(ownerUserId, itemId string, isByPer
 }
 
 func (self *transaction) PurgePasswordItem(ownerUserId, itemId string) error {
+	return self.withPasswordsSavepoint(func() error {
+		return self.purgePasswordItem(ownerUserId, itemId)
+	})
+}
+
+func (self *transaction) purgePasswordItem(ownerUserId, itemId string) error {
 	if err := lockPasswordsForWrite(self.tx); err != nil {
 		return err
 	}
@@ -1301,6 +1331,12 @@ func (self *transaction) ListPasswordItemVersions(ownerUserId, itemId string) ([
 }
 
 func (self *transaction) RestorePasswordItemVersion(ownerUserId, itemId string, versionRevision, baseRevision int64, isByPerson bool) (*models.PasswordItem, error) {
+	return inPasswordsSavepoint(self, func() (*models.PasswordItem, error) {
+		return self.restorePasswordItemVersion(ownerUserId, itemId, versionRevision, baseRevision, isByPerson)
+	})
+}
+
+func (self *transaction) restorePasswordItemVersion(ownerUserId, itemId string, versionRevision, baseRevision int64, isByPerson bool) (*models.PasswordItem, error) {
 	// The restored key may be one that people since removed from the item still
 	// hold, and the old fields may name more people than the item is shared with
 	// now: only the person decides that.
@@ -1902,19 +1938,58 @@ func (self *transaction) ListPasswordRecipients(callerUserId, granteeUserId, gra
 // withPasswordsSavepoint runs the steps under a savepoint, so that a refusal
 // that comes after some of them wrote leaves nothing behind. The request's own
 // transaction commits when a resolver answers with an error, so a method that
-// can refuse after writing has to undo its own writes.
+// can refuse after writing has to undo its own writes. A lock wait that timed
+// out also needs it: PostgreSQL refuses every later statement of a transaction
+// that failed, and without a savepoint to go back to the answer would be a
+// failed commit instead of ErrPasswordsBusy.
+//
+// Once one change of this transaction timed out on a lock, the rest are
+// refused with ErrPasswordsBusy at once. A document of many changes would
+// otherwise wait passwordsLockTimeout for each of them, behind the same lock.
 func (self *transaction) withPasswordsSavepoint(steps func() error) error {
+	if self.isPasswordsBusy {
+		return ErrPasswordsBusy
+	}
 	savepointName := "passwords_" + newID()
 	if err := self.tx.Exec("SAVEPOINT " + savepointName).Error; err != nil {
 		return err
 	}
 	if err := steps(); err != nil {
+		if isPasswordsLockTimeout(err) {
+			self.isPasswordsBusy = true
+		}
 		if rollbackErr := self.tx.Exec("ROLLBACK TO SAVEPOINT " + savepointName).Error; rollbackErr != nil {
 			return errors.Join(err, rollbackErr)
 		}
 		return err
 	}
 	return self.tx.Exec("RELEASE SAVEPOINT " + savepointName).Error
+}
+
+// isPasswordsLockTimeout says the error is a lock wait that gave up, either
+// already turned into ErrPasswordsBusy or the database's own error from a row
+// lock taken after the first two.
+func isPasswordsLockTimeout(err error) bool {
+	if errors.Is(err, ErrPasswordsBusy) {
+		return true
+	}
+	var failure *pgconn.PgError
+	return errors.As(err, &failure) && failure.Code == "55P03"
+}
+
+// inPasswordsSavepoint is withPasswordsSavepoint for a change that answers
+// with a value.
+func inPasswordsSavepoint[Answer any](self *transaction, steps func() (Answer, error)) (Answer, error) {
+	var answer Answer
+	err := self.withPasswordsSavepoint(func() (err error) {
+		answer, err = steps()
+		return err
+	})
+	if err != nil {
+		var none Answer
+		return none, err
+	}
+	return answer, nil
 }
 
 func (self *transaction) SetPasswordItemShares(ownerUserId, itemId string, grantees []models.PasswordShareGrantee, keys []*models.PasswordShareKey, isByPerson bool) (*models.PasswordItem, error) {
@@ -2625,6 +2700,12 @@ func (self *transaction) rekeyPasswordItem(ownerUserId string, rekey *models.Pas
 }
 
 func (self *transaction) SetPasswordItemUsableByAgent(ownerUserId, itemId string, isUsable bool, itemKeyByAgentKey string) (*models.PasswordItem, error) {
+	return inPasswordsSavepoint(self, func() (*models.PasswordItem, error) {
+		return self.setPasswordItemUsableByAgent(ownerUserId, itemId, isUsable, itemKeyByAgentKey)
+	})
+}
+
+func (self *transaction) setPasswordItemUsableByAgent(ownerUserId, itemId string, isUsable bool, itemKeyByAgentKey string) (*models.PasswordItem, error) {
 	if isUsable && itemKeyByAgentKey == "" {
 		return nil, ErrInvalidArguments
 	}

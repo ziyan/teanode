@@ -256,7 +256,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 		}
 	}
 	// The same command by hand, on an item that does not need it.
-	mustRun("ada-session", "", "rekey", "example.com")
+	mustRun("ada-session", "", "rekey", "example.com", "--yes")
 	if _, err := run("ada-session", "", "agent", "on", "Travel card", "--force"); err == nil || !strings.Contains(err.Error(), "card cannot be used by the agent") {
 		test.Fatalf("a card for the agent: %v", err)
 	}
