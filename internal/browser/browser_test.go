@@ -23,6 +23,8 @@ type fakeChrome struct {
 	commands   []string
 	parameters []string
 	evaluate   func(expression string) any
+	// history is the page's navigation history, oldest first.
+	history []string
 }
 
 // paramsOf is what was sent with the first call of a command.
@@ -79,6 +81,14 @@ func (self *fakeChrome) serve(t *testing.T) *httptest.Server {
 					value = self.evaluate(params.Expression)
 				}
 				result = map[string]any{"result": map[string]any{"type": "object", "value": value}}
+			case "Page.getNavigationHistory":
+				entries := []map[string]any{}
+				for _, address := range self.history {
+					entries = append(entries, map[string]any{"url": address})
+				}
+				result = map[string]any{"currentIndex": len(entries) - 1, "entries": entries}
+			case "WebAuthn.addVirtualAuthenticator":
+				result = map[string]any{"authenticatorId": "authenticator-1"}
 			case "Page.captureScreenshot":
 				result = map[string]any{"data": "iVBORw0KGgo="}
 			}

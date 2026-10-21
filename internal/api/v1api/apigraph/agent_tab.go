@@ -30,9 +30,10 @@ import (
 // there is a tab to act in, so the agent can open one in the person's
 // browser when none is attached; 4 also streams a tab's picture and takes
 // the person's input, for the dashboard's browser page, and lists its tabs
-// with each update. An extension still speaking 2 or 3 is welcomed in its
-// own, and only cannot be watched.
-const tabProtocol = 4
+// with each update; 5 also fills a login or a one-time code the server hands
+// it, for the agent's sign-in with Passwords. An extension still speaking 2,
+// 3 or 4 is welcomed in its own, and only cannot be watched or fill.
+const tabProtocol = 5
 
 // tabProtocolOldest is the oldest version still taken.
 const tabProtocolOldest = 2
@@ -265,6 +266,7 @@ func (self *graph) tabView(response http.ResponseWriter, request *http.Request) 
 			hasTab := message.HasTab == nil || *message.HasTab
 			worker.ConnectBrowser(found.ID, socket, message.Title, message.URL, hasTab)
 			worker.SetBrowserCanCast(found.ID, socket, message.Protocol >= 4)
+			worker.SetBrowserCanFillPasswords(found.ID, socket, message.Protocol >= 5)
 			// Signed in, it may send pictures of a tab, which are larger
 			// than anything said before the hello.
 			conn.SetReadLimit(tabFrameReadLimit)

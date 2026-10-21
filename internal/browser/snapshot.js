@@ -16,6 +16,13 @@
     const rect = element.getBoundingClientRect();
     return !(rect.width === 0 && rect.height === 0 && element.childElementCount === 0);
   }
+  // A field that holds a secret: a password, or a code the page asked for as
+  // one. Its value is never read into a snapshot, whoever put it there, so a
+  // password filled in for the person is not sent to the model afterwards.
+  function isSecretField(element) {
+    if (!(element instanceof HTMLInputElement)) return false;
+    return (element.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(element.getAttribute('autocomplete') || '');
+  }
   function nameOf(element) {
     const label = element.getAttribute && (element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('placeholder') || element.getAttribute('alt') || element.getAttribute('name'));
     if (label) return label.trim();
@@ -23,7 +30,7 @@
       const forLabel = document.querySelector('label[for="' + CSS.escape(element.id) + '"]');
       if (forLabel) return forLabel.innerText.trim();
     }
-    const text = (element.innerText || element.value || element.textContent || '').trim().replace(/\s+/g, ' ');
+    const text = (element.innerText || (isSecretField(element) ? '' : element.value) || element.textContent || '').trim().replace(/\s+/g, ' ');
     return text.slice(0, 120);
   }
   function refFor(element) {
@@ -65,7 +72,7 @@
       const name = nameOf(node);
       let extra = '';
       if (tag === 'a' && node.href) extra = ' href=' + node.getAttribute('href');
-      if ((tag === 'input' || tag === 'textarea') && node.value && node.type !== 'password') extra = ' value=' + JSON.stringify(node.value.slice(0, 80));
+      if ((tag === 'input' || tag === 'textarea') && node.value) extra = isSecretField(node) ? ' (filled, value not shown)' : ' value=' + JSON.stringify(node.value.slice(0, 80));
       if (tag === 'input' && (node.type === 'checkbox' || node.type === 'radio')) extra = node.checked ? ' checked' : '';
       if (tag === 'select') extra = ' value=' + JSON.stringify(node.value);
       lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + (name ? ' "' + name + '"' : '') + extra);

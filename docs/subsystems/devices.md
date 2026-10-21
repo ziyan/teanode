@@ -438,6 +438,9 @@ disabled or confirm lists, and a person can add either to their own.
   the thirty seconds start only when the last view closes.
 - **Watching needs extension protocol 4.** An older extension still works for
   the agent; the page says to update it.
+- **Signing in with Passwords needs protocol 5.** The agent's `fill_login` and
+  `fill_one_time_code` in the person's tab are sent only to an extension that
+  speaks it (see `docs/subsystems/passwords.md`).
 - **A locked screen or a sleeping display** has not been measured: if Chrome
   stops painting there, the picture freezes until the screen wakes.
 - **Reading local storage reads the current tab**, which after the agent opened

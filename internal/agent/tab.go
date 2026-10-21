@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/browser"
 )
 
 // The tab relay: the person's own browser tab, attached through the
@@ -37,6 +38,11 @@ type attachedTab struct {
 	// canCast says the extension can stream a tab's picture and take the
 	// person's input (protocol 4).
 	canCast atomic.Bool
+	// canFillPasswords says the extension fills a login or a one-time code
+	// from arguments the server builds (protocol 5).
+	canFillPasswords atomic.Bool
+	// filled is what a sign-in put into the tab, dropped with the tab.
+	filled browser.FilledValues
 
 	// hasTab says there is a tab the actions go to: the person's own,
 	// attached, or one the agent opened. Read by the tool while the socket
@@ -83,6 +89,17 @@ func (self *Agent) SetBrowserCanCast(agentId string, connection TabConnection, c
 	}
 	tab.canCast.Store(canCast)
 	self.castAgain(agentId)
+}
+
+// SetBrowserCanFillPasswords is the browser on this connection saying it
+// fills a login or a one-time code the server hands it, which the agent's
+// sign-in with Passwords in the person's tab needs.
+func (self *Agent) SetBrowserCanFillPasswords(agentId string, connection TabConnection, canFillPasswords bool) {
+	tab := self.tabFor(agentId)
+	if tab == nil || (connection != nil && tab.connection != connection) {
+		return
+	}
+	tab.canFillPasswords.Store(canFillPasswords)
 }
 
 // reconnectedTab waits up to wait for a person's browser to be connected
@@ -185,6 +202,17 @@ func (self *attachedTab) HasTab() bool {
 // and take the person's input there: an extension of protocol 4.
 func (self *attachedTab) IsWatchable() bool {
 	return self.canCast.Load()
+}
+
+// CanFillPasswords says whether the browser fills a login or a one-time code
+// the server hands it: an extension of protocol 5.
+func (self *attachedTab) CanFillPasswords() bool {
+	return self.canFillPasswords.Load()
+}
+
+// Filled is what the agent's sign-in put into the tab.
+func (self *attachedTab) Filled() *browser.FilledValues {
+	return &self.filled
 }
 
 // IsTakenOver says whether the person has taken their tab over from the

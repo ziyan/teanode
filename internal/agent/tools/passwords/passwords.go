@@ -9,12 +9,13 @@
 // refuses a card even if one were somehow marked.
 //
 // What reaches the model is limited on purpose. A login's password, one-time
-// code and passkeys never do; the plan gives signing in to the browser tool,
-// which types them in or signs with them only on the item's own sites. The
-// list shows an item's name, sites and user name, and whether it has a
-// one-time code and passkeys. A note the agent
-// may use is read by the model, so the text of a note goes to the model's
-// provider; that is what the person chose when they turned it on.
+// code and passkeys never do; signing in is the browser tool's fill_login,
+// fill_one_time_code and passkey_sign_in, by item id, which type them in or
+// sign with them only on the item's own sites (signin.go gives it the login
+// and records the use). The list shows an item's name, sites and user name,
+// and whether it has a one-time code and passkeys. A note the agent may use is
+// read by the model, so the text of a note goes to the model's provider; that
+// is what the person chose when they turned it on.
 //
 // It uses only the person's own items, never an item somebody shared with them:
 // the owner decides what reaches a model's provider, as for Health. It answers
@@ -80,6 +81,8 @@ func init() {
 					"You can use only the items the person turned on \"Let the agent use this\" for: list shows them, and read_note reads the text of a note among them. " +
 					"You never see a login's password, one-time code or passkey, and you cannot use a card or an item somebody shared with the person. " +
 					"generate makes up a new random password for the person without storing it. " +
+					"To sign in to a site with a login, take its item_id from list and use the browser tool: fill_login (item_id, user_name_ref, password_ref) puts the user name and password into the page's fields, fill_one_time_code (item_id, ref) puts in the current one-time code, and passkey_sign_in (item_id, in the headless browser only) makes the passkey ready so that you click the site's sign-in button; " +
+					"they work only on a page whose host is one of the item's sites, and you never see the values. " +
 					"It works in a conversation with the person in the TeaNode app or on the dashboard, and in a scheduled or other run nobody is watching, " +
 					"but never over Telegram or Discord nor in a chat with other people, since what you read would reach them. " +
 					"If list shows nothing, tell the person to open the item in Passwords and turn on \"Let the agent use this\", then ask again.",

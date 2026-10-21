@@ -22,6 +22,7 @@ import (
 // the request waited.
 type fakeLink struct {
 	isDropped bool
+	filled    browser.FilledValues
 
 	mutex sync.Mutex
 	asked []string
@@ -36,11 +37,13 @@ func (self *fakeLink) Ask(_ context.Context, action string, _ any) (json.RawMess
 	}
 	return json.RawMessage(`{"url":"https://shop.example.org/","text":"a page"}`), nil
 }
-func (self *fakeLink) Title() string     { return "A shop" }
-func (self *fakeLink) URL() string       { return "https://shop.example.org/" }
-func (self *fakeLink) HasTab() bool      { return true }
-func (self *fakeLink) IsTakenOver() bool { return false }
-func (self *fakeLink) IsWatchable() bool { return true }
+func (self *fakeLink) Title() string                 { return "A shop" }
+func (self *fakeLink) URL() string                   { return "https://shop.example.org/" }
+func (self *fakeLink) HasTab() bool                  { return true }
+func (self *fakeLink) IsTakenOver() bool             { return false }
+func (self *fakeLink) IsWatchable() bool             { return true }
+func (self *fakeLink) Filled() *browser.FilledValues { return &self.filled }
+func (self *fakeLink) CanFillPasswords() bool        { return true }
 
 func (self *fakeLink) actionsAsked() []string {
 	self.mutex.Lock()

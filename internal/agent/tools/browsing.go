@@ -55,6 +55,13 @@ type Tab interface {
 	// IsWatchable says the person can watch and take the tab over from the
 	// dashboard: their extension is new enough.
 	IsWatchable() bool
+	// CanFillPasswords says the extension can fill a login, a one-time code
+	// or a passkey that the server builds the arguments for (protocol 5).
+	CanFillPasswords() bool
+	// Filled is what the agent's sign-in put into this tab, kept in memory
+	// for as long as the connection lives: the values to hide from the model
+	// and whether scripts may run on the tab.
+	Filled() *browser.FilledValues
 }
 
 // TakeOverAsker is a turn that can ask the person to take their browser tab
