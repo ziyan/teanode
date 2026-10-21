@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.189.1] - 2026-10-21
+
+### Changed
+
+- iPhone: Location is a map of the whole screen, with Visits, Places and Sharing in a drawer over it that opens at half height and drags up to the whole screen or down out of the way. (#614)
+
 ## [0.189.0] - 2026-10-21
 
 ### Added
