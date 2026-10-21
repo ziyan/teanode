@@ -63,7 +63,7 @@ final class LocationModel {
     // MARK: The person selected on the map
 
     /// Who the map is centered on: somebody sharing, or nobody for the person's
-    /// own. Their card, with their visits today, comes up over the map.
+    /// own. Their visits show in the drawer, under their name.
     private(set) var selectedUserId: String?
 
     init(connection: Connection) {

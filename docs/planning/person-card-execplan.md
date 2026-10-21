@@ -47,6 +47,8 @@ To see it working: open a chat with Sam, tap Sam's picture on a message, and the
   Date/Author: 2026-10-20, Claude.
 - Decision: on Location the card replaces `LocationChosenPersonCard` and `LocationPersonPanel`; a row still selects the person on the map, and now also brings the card up at half height, with the map above it.
   Rationale: the chosen-person card and the panel are a smaller copy of the card's Location section.
+- Decision (2026-10-21): once Location's lists moved into a drawer over the map, choosing a person shows their visits in the drawer and no longer brings the card up too; their picture and name at the top of the drawer open it.
+  Rationale: the card came up over the drawer showing the same visits, so one tap opened two views of the same day.
   Date/Author: 2026-10-20, Claude.
 - Decision: in Circles, tapping a member opens the card (today it opens the Relationship sheet; Relationship moves into the card, and stays in the row's menu).
   Date/Author: 2026-10-20, Claude.

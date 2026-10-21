@@ -375,9 +375,8 @@ struct LocationMapHeader: View {
                 if let coordinate = person.coordinate {
                     Annotation(person.displayName, coordinate: coordinate) {
                         Button {
-                            // Chosen again, they stay chosen and their card comes up again: the own picture or row is the way back.
+                            // Chosen again, they stay chosen: the own picture or row is the way back.
                             if person.userId != model.selectedUserId { model.select(userId: person.userId) }
-                            app.openedPerson = .account(userId: person.userId)
                         } label: {
                             AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36)
                                 .overlay(
