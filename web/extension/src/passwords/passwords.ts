@@ -94,6 +94,7 @@ function showUnlock() {
     isRecoveryKey = !isRecoveryKey
     label.textContent = isRecoveryKey ? 'Recovery key' : 'Passphrase'
     switchKind.textContent = isRecoveryKey ? 'Use the passphrase instead' : 'Use the recovery key instead'
+    say('')
     input.value = ''
     input.focus()
   })
@@ -168,6 +169,8 @@ async function showLogins(state: PopupState) {
     }
     if (answer.forThisSite.length === 0 && answer.others.length === 0) {
       listArea.append(element('p', { className: 'muted' }, query ? 'Nothing matches.' : 'There are no logins yet.'))
+    } else if (query && answer.others.length === 0) {
+      listArea.append(element('p', { className: 'muted' }, 'No other logins match.'))
     }
   }
   await loadList()
@@ -251,7 +254,7 @@ function loginRow(login: LoginSummary, state: PopupState): HTMLElement {
   }
   if (login.hasPassword) add('Copy password', () => copy(login.id, 'password'))
   if (login.userName) add('Copy user name', () => copy(login.id, 'userName'))
-  if (login.hasOneTimeCode) add('Code', () => showCode(login, codeArea, state))
+  if (login.hasOneTimeCode) add('One-time code', () => showCode(login, codeArea, state))
   row.append(actions, codeArea)
   return row
 }
@@ -273,10 +276,11 @@ async function showCode(login: LoginSummary, area: HTMLElement, state: PopupStat
     let secondsLeft = answer.secondsLeft
     clear(area)
     const digits = element('span', { className: 'code' }, answer.code.replace(/(\d{3})(\d+)/, '$1 $2'))
-    const countdown = element('span', { className: 'muted' }, ` ${secondsLeft}s`)
+    const countdown = element('span', { className: 'muted' }, ` ${secondsLeft}s left`)
     const copyButton = element('button', { type: 'button' }, 'Copy code')
     copyButton.addEventListener('click', () => void guarded(() => copy(login.id, 'oneTimeCode')))
-    area.append(element('div', { className: 'actions' }, digits, countdown, copyButton))
+    const codeActions = element('div', { className: 'actions' }, digits, countdown, copyButton)
+    area.append(codeActions)
     if (tabId !== undefined && state.frameHost !== '') {
       const fill = element('button', { type: 'button' }, 'Fill code')
       fill.addEventListener(
@@ -295,12 +299,12 @@ async function showCode(login: LoginSummary, area: HTMLElement, state: PopupStat
             setTimeout(() => window.close(), 500)
           }),
       )
-      area.append(fill)
+      codeActions.append(fill)
     }
     stopTimer()
     timer = setInterval(() => {
       secondsLeft -= 1
-      countdown.textContent = ` ${Math.max(secondsLeft, 0)}s`
+      countdown.textContent = ` ${Math.max(secondsLeft, 0)}s left`
       if (secondsLeft <= 0) void guarded(draw)
     }, 1000)
   }
@@ -326,7 +330,7 @@ function generatorSection(): HTMLElement {
   const lookAlikes = checkbox('Avoid look-alikes', DEFAULT_PASSWORD_OPTIONS.shouldAvoidLookAlikes)
   const output = element('input', { type: 'text', readOnly: true, spellcheck: false })
   const make = element('button', { type: 'button' }, 'Generate')
-  const copyButton = element('button', { type: 'button' }, 'Copy')
+  const copyButton = element('button', { type: 'button' }, 'Copy password')
   make.addEventListener('click', () => {
     try {
       output.value = generatePassword({
@@ -367,7 +371,7 @@ function generatorSection(): HTMLElement {
 
 // --- the foot of the window -------------------------------------------------
 
-const dashboardLink = element('button', { type: 'button', className: 'quiet' }, 'Open Passwords on the dashboard')
+const dashboardLink = element('button', { type: 'button' }, 'Open Passwords on the dashboard')
 dashboardLink.addEventListener('click', () => void ask({ type: 'passwords:open-dashboard' }))
 document.body.append(element('div', { className: 'page' }, dashboardLink))
 

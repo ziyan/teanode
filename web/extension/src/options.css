@@ -129,6 +129,11 @@ hr {
   border-top: 1px solid var(--border);
   margin: var(--space-6) 0;
 }
+h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-title);
+  font-weight: 600;
+}
 .how {
   font-size: 13px;
 }

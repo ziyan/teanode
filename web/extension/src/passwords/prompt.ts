@@ -47,6 +47,13 @@ async function refresh() {
   showChoice(info)
 }
 
+// Cancel closes the window, which answers the website as a refusal.
+function makeCancelButton(): HTMLButtonElement {
+  const button = element('button', { type: 'button' }, 'Cancel')
+  button.addEventListener('click', () => window.close())
+  return button
+}
+
 function makeBrowserButton(): HTMLButtonElement {
   const button = element('button', { type: 'button' }, 'Use the browser instead')
   button.addEventListener('click', async () => {
@@ -69,7 +76,7 @@ function showUnlock() {
     {},
     element('p', { className: 'muted' }, 'Passwords is locked. Unlock it with your passphrase to continue.'),
     element('label', { className: 'field' }, element('span', {}, 'Passphrase'), input),
-    element('div', { className: 'actions' }, unlock, makeBrowserButton()),
+    element('div', { className: 'actions' }, unlock, makeBrowserButton(), makeCancelButton()),
     status,
   )
   form.addEventListener('submit', async (event) => {
@@ -79,6 +86,7 @@ function showUnlock() {
     try {
       await ask({ type: 'passwords:unlock', secretText: input.value, isRecoveryKey: false })
       input.value = ''
+      say('')
       void refresh()
     } catch (error) {
       unlock.disabled = false
@@ -98,7 +106,7 @@ function showChoice(info: PromptInfo) {
       radio.addEventListener('change', () => {
         chosenCredentialId = choice.credentialId
       })
-      choices.append(element('label', { className: 'row inline' }, radio, choice.label))
+      choices.append(element('label', { className: 'row choice-row' }, radio, element('span', {}, choice.label)))
     })
   } else if (info.kind === 'get' && info.choices.length === 1) {
     choices.append(element('div', { className: 'row' }, element('div', { className: 'name' }, info.choices[0].label)))
@@ -133,7 +141,7 @@ function showChoice(info: PromptInfo) {
         ? 'The passkey is kept encrypted in TeaNode Passwords.'
         : 'Your passkey signs the sign-in on this device.',
     ),
-    element('div', { className: 'actions' }, allow, makeBrowserButton()),
+    element('div', { className: 'actions' }, allow, makeBrowserButton(), makeCancelButton()),
     status,
   )
 }

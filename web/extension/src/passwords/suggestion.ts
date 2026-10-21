@@ -23,8 +23,12 @@ interface RenderData {
 function render(data: RenderData) {
   clear(root)
   const list = element('div', { className: 'page' })
-  const title = element('div', { className: 'muted' }, 'TeaNode Passwords')
-  list.append(title)
+  // The title, and a way out that does not depend on knowing the Escape key.
+  const close = element('button', { className: 'quiet', type: 'button', title: 'Close' }, 'Close')
+  close.addEventListener('click', () => page.tell({ kind: 'close' }))
+  list.append(
+    element('div', { className: 'frame-header' }, element('div', { className: 'muted' }, 'TeaNode Passwords'), close),
+  )
   const answer = data.answer
   if (answer.state === 'locked') {
     const unlock = element('button', { className: 'primary', type: 'button' }, 'Unlock TeaNode Passwords')
@@ -45,7 +49,11 @@ function render(data: RenderData) {
         element(
           'span',
           { className: 'detail' },
-          data.role === 'oneTimeCode' ? 'Fill the one-time code' : login.userName,
+          data.role === 'oneTimeCode'
+            ? login.userName
+              ? `${login.userName}, one-time code`
+              : 'One-time code'
+            : login.userName,
         ),
       )
       onTrustedActivate(choice, page.isClickAllowed, () => {
