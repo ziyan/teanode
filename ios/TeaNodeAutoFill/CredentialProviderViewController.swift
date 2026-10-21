@@ -31,6 +31,13 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         host.didMove(toParent: self)
     }
 
+    /// The sheet is gone, completed or not (the person swiped it away, or the
+    /// app behind it went): forget the account key and the opened items now.
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        model.sheetDidDisappear()
+    }
+
     // MARK: Lists
 
     /// The person is filling a password.
@@ -40,16 +47,18 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
     }
 
     /// The person is signing in on a website that accepts a passkey; the
-    /// passwords of the site are in the list too.
+    /// passwords of the site are in the list too. The relying party id ranks
+    /// only the passkeys (`AutoFillIndex.passkeyRows`), never the passwords: it
+    /// is a host with no port, so as a requested site it would suggest a login
+    /// saved for another port of the same host.
     override func prepareCredentialList(
         for serviceIdentifiers: [ASCredentialServiceIdentifier], requestParameters: ASPasskeyCredentialRequestParameters
     ) {
         let assertion = AutoFillPasskeyAssertion(
             relyingPartyId: requestParameters.relyingPartyIdentifier, clientDataHash: requestParameters.clientDataHash,
             allowedCredentialIds: requestParameters.allowedCredentials)
-        let requestedSites =
-            Self.requestedSites(serviceIdentifiers) + [AutoFillRequestedSite(address: requestParameters.relyingPartyIdentifier, isPageAddress: false)]
-        model.start(.list(AutoFillListing(requestedSites: requestedSites, passkeyAssertion: assertion, isOneTimeCode: false)))
+        model.start(
+            .list(AutoFillListing(requestedSites: Self.requestedSites(serviceIdentifiers), passkeyAssertion: assertion, isOneTimeCode: false)))
     }
 
     /// The person is filling a one-time code (iOS 18 and later).

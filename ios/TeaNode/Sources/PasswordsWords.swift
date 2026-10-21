@@ -240,12 +240,10 @@ struct PasswordsAppSwitcherCover: ViewModifier {
     let model: PasswordsModel
     @Environment(\.scenePhase) private var scenePhase
 
-    private var isCovering: Bool {
-        let isOpen = model.phase == .unlocked || model.phase == .recoveryKey
-        return isOpen && (scenePhase != .active || model.isHoldingCover)
-    }
-
     func body(content: Content) -> some View {
+        // Read here, in the body, which runs on the main actor with the model.
+        let isOpen = model.phase == .unlocked || model.phase == .recoveryKey
+        let isCovering = isOpen && (scenePhase != .active || model.isHoldingCover)
         content.overlay {
             if isCovering {
                 Color(.systemBackground)

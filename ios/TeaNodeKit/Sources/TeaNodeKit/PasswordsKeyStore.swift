@@ -101,6 +101,24 @@ public actor PasswordsMemoryKeyStore: PasswordsKeyStore {
             return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &problem)
         }
 
+        /// Whether this phone can check that the person holding it is its owner:
+        /// Face ID, Touch ID or, failing those, the passcode. False only on a phone
+        /// with no passcode at all.
+        public static var canConfirmDeviceOwner: Bool {
+            var problem: NSError?
+            return LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: &problem)
+        }
+
+        /// Whether a failed read means the kept key can never open again: the
+        /// system dropped it (the faces or fingers changed) or refused its
+        /// authentication for good. Any other failure (the keychain not being
+        /// reachable for a moment, biometry locked out after too many tries) leaves
+        /// the key where it is, as it opens again later.
+        public static func isKeptKeyLost(by error: PasswordsKeyStoreError) -> Bool {
+            guard case .failed(let status) = error else { return false }
+            return status == errSecAuthFailed || status == errSecItemNotFound
+        }
+
         /// Asks the person for Face ID (or the passcode when Face ID will not
         /// do) for one thing that must be them, such as erasing Passwords.
         /// False when they cancel or it fails.

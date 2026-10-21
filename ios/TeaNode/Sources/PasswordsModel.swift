@@ -246,10 +246,12 @@ final class PasswordsModel {
             await forgetKeptKey()
             problemText = PasswordsWords.problemText(PasswordsError.needsPassphrase, orSay: "")
         } catch let keyStoreError as PasswordsKeyStoreError {
-            // Anything but the person's own cancel (Face ID that did not recognize them, a key the
-            // system dropped because the faces or fingers changed): the key is no use. Forget it, so
-            // the screen asks for the passphrase, which can put it behind Face ID again.
-            await forgetKeptKey()
+            // The key is forgotten only when it is gone for good (the system dropped it because the
+            // faces or fingers changed, or refused its authentication), so the screen asks for the
+            // passphrase, which can put it behind Face ID again. A failure that passes (the keychain
+            // not reachable for a moment, Face ID locked out after too many tries) keeps it, and
+            // the person types the passphrase this once.
+            if PasswordsKeychainKeyStore.isKeptKeyLost(by: keyStoreError) { await forgetKeptKey() }
             problemText = PasswordsWords.problemText(
                 keyStoreError, orSay: String(localized: "Face ID could not open Passwords. Type your passphrase instead."))
         } catch {
@@ -551,11 +553,12 @@ final class PasswordsModel {
         lockAfterMinutes = try await session.updateLockAfterMinutes(minutes)
     }
 
-    /// Asks for Face ID (or the passcode) before something that must be the
-    /// person, when this iPhone can: true when they passed, or when it cannot ask
-    /// (no Face ID set up), in which case the confirmation dialog is the only check.
+    /// Asks for Face ID, or the passcode when Face ID is not set up or does not
+    /// recognize the person, before something that must be them: true when they
+    /// passed. Only a phone with no passcode at all cannot ask, and then the
+    /// confirmation dialog is the only check.
     func confirmItIsThePerson(reason: String) async -> Bool {
-        guard canUseFaceID, !isDemo else { return true }
+        guard PasswordsKeychainKeyStore.canConfirmDeviceOwner, !isDemo else { return true }
         return await PasswordsKeychainKeyStore.confirmDeviceOwner(reason: reason)
     }
 

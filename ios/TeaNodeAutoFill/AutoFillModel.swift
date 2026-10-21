@@ -20,6 +20,8 @@ private enum AutoFillUnlockOutcome {
     /// Face ID was cancelled or failed; `problemText` is set for a failure.
     case notGiven(problemText: String?)
     case needsApp
+    /// The request ended or was replaced while Face ID was open; nothing was kept.
+    case superseded
 }
 
 @MainActor
@@ -43,6 +45,13 @@ final class AutoFillModel: ObservableObject {
     private var cacheContents: PasswordsCacheContents?
     private var opener: PasswordsOpener?
     private var accountKey: Data?
+    /// Counts the requests and the endings of requests. An `await` in the middle
+    /// of a request (Face ID, reading the copy, opening the items) can come
+    /// back after the person cancelled or the next request started; the code
+    /// that resumes compares this number with the one it started with
+    /// (`isStillCurrent`) and stops, so it neither refills what was forgotten
+    /// nor ends the request a second time.
+    private var requestGeneration = 0
 
     // MARK: Starting
 
@@ -93,8 +102,21 @@ final class AutoFillModel: ObservableObject {
         autoFillScreen = .starting
     }
 
-    /// Drops the account key, the opener, the copy of the items and the summaries.
+    /// The sheet went away: forget what Face ID opened, whether or not the
+    /// request was completed, and make any request still waiting stop.
+    func sheetDidDisappear() {
+        forgetOpenedPasswords()
+    }
+
+    /// Whether the request that was running when `generation` was read is still the one running.
+    private func isStillCurrent(_ generation: Int) -> Bool {
+        generation == requestGeneration
+    }
+
+    /// Drops the account key, the opener, the copy of the items and the
+    /// summaries, and ends every request still waiting on an `await`.
     private func forgetOpenedPasswords() {
+        requestGeneration += 1
         opener = nil
         accountKey = nil
         cacheContents = nil
@@ -113,10 +135,13 @@ final class AutoFillModel: ObservableObject {
     }
 
     private func unlockAndContinue() async {
+        let generation = requestGeneration
         switch await unlock() {
+        case .superseded:
+            return
         case .unlocked:
             lockedProblemText = nil
-            await continueRequest()
+            await continueRequest(generation: generation)
         case .notGiven(let problemText):
             lockedProblemText = problemText
             autoFillScreen = .locked
@@ -125,20 +150,25 @@ final class AutoFillModel: ObservableObject {
         }
     }
 
-    private func continueRequest() async {
+    private func continueRequest(generation: Int) async {
         guard let request else { return }
         switch request {
         case .list:
             await loadLoginSummaries()
+            guard isStillCurrent(generation) else { return }
             autoFillScreen = .list
         case .providePassword(let itemId, let userName, let requestedSites):
-            guard let login = await loginToFill(itemId: itemId, userName: userName, requestedSites: requestedSites) else {
+            let foundLogin = await loginToFill(itemId: itemId, userName: userName, requestedSites: requestedSites)
+            guard isStillCurrent(generation) else { return }
+            guard let login = foundLogin else {
                 complete { $0.cancel(.credentialIdentityNotFound) }
                 return
             }
             fill(login: login, rowKind: .password, isFromList: false)
         case .providePasskey(let assertion, let itemId, let credentialId):
-            guard let login = await loginWithPasskey(itemId: itemId, credentialId: credentialId) else {
+            let foundLogin = await loginWithPasskey(itemId: itemId, credentialId: credentialId)
+            guard isStillCurrent(generation) else { return }
+            guard let login = foundLogin else {
                 complete { $0.cancel(.credentialIdentityNotFound) }
                 return
             }
@@ -200,11 +230,13 @@ final class AutoFillModel: ObservableObject {
     /// opened when they are needed.
     private func unlock() async -> AutoFillUnlockOutcome {
         if opener != nil { return .unlocked }
+        let generation = requestGeneration
         guard let account = try? KeychainAccountStore().load(),
             let fileURL = AutoFillLocation.cacheFile(signInAccountKey: account.accountKey)
         else { return .needsApp }
         let cache = PasswordsCache(fileURL: fileURL)
         let loadedContents = await Task.detached(priority: .userInitiated) { try? cache.load() }.value
+        guard isStillCurrent(generation) else { return .superseded }
         guard let contents = loadedContents else { return .needsApp }
 
         let promptReason = String(localized: "Fill your logins from TeaNode Passwords.")
@@ -212,9 +244,12 @@ final class AutoFillModel: ObservableObject {
         do {
             keptKey = try await PasswordsKeychainKeyStore.forThisBundle().load(signInAccountKey: account.accountKey, promptReason: promptReason)
         } catch {
+            guard isStillCurrent(generation) else { return .superseded }
             if let keyStoreError = error as? PasswordsKeyStoreError, keyStoreError == .canceled { return .notGiven(problemText: nil) }
             return .notGiven(problemText: String(localized: "Face ID did not unlock Passwords. Try again."))
         }
+        // The request ended while Face ID was open: keep nothing it opened.
+        guard isStillCurrent(generation) else { return .superseded }
         guard let keptKey else { return .needsApp }
         let newOpener: PasswordsOpener
         do {
@@ -234,9 +269,13 @@ final class AutoFillModel: ObservableObject {
     /// search by user name. Does nothing when it has been done.
     private func loadLoginSummaries() async {
         guard logins.isEmpty, let opener, let views = cacheContents?.items else { return }
-        logins = await Task.detached(priority: .userInitiated) {
+        let generation = requestGeneration
+        let loadedLogins = await Task.detached(priority: .userInitiated) {
             AutoFillIndex.loginSummaries(views: views, opener: opener)
         }.value
+        // Summaries of a request that has ended are not kept.
+        guard isStillCurrent(generation) else { return }
+        logins = loadedLogins
     }
 
     // MARK: The list
@@ -338,14 +377,18 @@ final class AutoFillModel: ObservableObject {
     func savePasskey() {
         guard case .registration(let registration) = autoFillScreen, !isWorking else { return }
         isWorking = true
+        let generation = requestGeneration
         Task {
             await saveNewPasskey(registration)
-            isWorking = false
+            if isStillCurrent(generation) { isWorking = false }
         }
     }
 
     private func saveNewPasskey(_ registration: AutoFillPasskeyRegistration) async {
+        let generation = requestGeneration
         switch await unlock() {
+        case .superseded:
+            return
         case .unlocked:
             break
         case .notGiven(let problemText):
@@ -358,6 +401,7 @@ final class AutoFillModel: ObservableObject {
             return
         }
         await loadLoginSummaries()
+        guard isStillCurrent(generation) else { return }
         guard let signedInAccount, let cacheFileURL, let accountKey, let userId = cacheContents?.userId else {
             autoFillScreen = .needsApp
             return
@@ -373,12 +417,15 @@ final class AutoFillModel: ObservableObject {
             let session = PasswordsSession(api: connection, cache: PasswordsCache(fileURL: cacheFileURL), userId: userId)
             try await session.open(accountKey: accountKey)
             try await keep(passkey, for: registration, in: session)
+            // The request ended while the passkey was being saved: the website is not waiting any more.
+            guard isStillCurrent(generation) else { return }
             // Only now, with the passkey on the server, does the website get it.
             let createdPasskey = AutoFillCreatedPasskey(
                 relyingPartyId: registration.relyingPartyId, clientDataHash: registration.clientDataHash,
                 credentialId: created.credentialId, attestationObject: created.attestationObject)
             complete { $0.fillPasskeyRegistration(createdPasskey) }
         } catch {
+            guard isStillCurrent(generation) else { return }
             problemMessage = AutoFillProblem(title: String(localized: "Could not save the passkey"), message: Self.savingProblemText(for: error))
         }
     }

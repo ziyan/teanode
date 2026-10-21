@@ -144,6 +144,18 @@
     {
       "site": "localhost:",
       "expectedHost": ""
+    },
+    {
+      "site": "https://evil.test/\u0301x@example.com",
+      "expectedHost": "evil.test"
+    },
+    {
+      "site": "https://evil.test?\u0301x@example.com",
+      "expectedHost": "evil.test"
+    },
+    {
+      "site": "https://evil.test#\u200dx@example.com",
+      "expectedHost": "evil.test"
     }
   ],
   "originCases": [

@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -439,6 +441,17 @@ func TestWriteVectors(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
+	// The refused recovery keys hold spaces and a dash that are not ASCII;
+	// they are written escaped so the file itself stays ASCII.
+	var escaped strings.Builder
+	for _, character := range string(encoded) {
+		if character > unicode.MaxASCII {
+			fmt.Fprintf(&escaped, `\u%04x`, character)
+			continue
+		}
+		escaped.WriteRune(character)
+	}
+	encoded = []byte(escaped.String())
 	if err := os.WriteFile(vectorsPath, append(encoded, '\n'), 0o644); err != nil {
 		test.Fatal(err)
 	}

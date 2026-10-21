@@ -43,43 +43,81 @@ public enum PasswordsSiteMatch {
             let scheme = split.scheme.lowercased()
             guard scheme == "http" || scheme == "https" else { return nil }
             text = split.rest
-        } else if text.hasPrefix("//") {
-            text = String(text.dropFirst(2))
+        } else if hasScalarPrefix(text, "//") {
+            text = String(String.UnicodeScalarView(text.unicodeScalars.dropFirst(2)))
         } else if isSchemeWithoutSlashes(text) {
             // "javascript:", "mailto:", "about:blank": not a host and a port.
             return nil
         }
-        if let authorityEnd = text.firstIndex(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
-            text = String(text[text.startIndex..<authorityEnd])
-        }
-        // Anything before the last "@" is a user name and password, never the host.
-        if let atSign = text.lastIndex(of: "@") {
-            text = String(text[text.index(after: atSign)...])
-        }
-        if text.hasPrefix("[") {
+        // Every search below is over unicode scalars, not Characters: a
+        // combining mark after a "/" or an "@" must not hide it, as it does not
+        // for the Go rule that reads bytes.
+        let scalars = Array(authority(of: text).unicodeScalars)
+        if scalars.first == "[" {
             // An IPv6 address: the brackets and everything between them.
-            guard let closing = text.firstIndex(of: "]") else { return nil }
-            return String(text[text.startIndex...closing]).lowercased()
+            guard let closing = scalars.firstIndex(of: "]") else { return nil }
+            return string(of: scalars[0...closing]).lowercased()
         }
-        if let colon = text.lastIndex(of: ":") {
-            let port = text[text.index(after: colon)...]
-            guard port.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
-            text = String(text[text.startIndex..<colon])
+        var hostScalars = scalars[...]
+        if let colon = scalars.lastIndex(of: ":") {
+            guard scalars[(colon + 1)...].allSatisfy({ $0.value >= 48 && $0.value <= 57 }) else { return nil }
+            hostScalars = scalars[..<colon]
         }
-        var host = text.lowercased()
-        while host.hasSuffix(".") { host.removeLast() }
-        if host.hasPrefix("www."), host.dropFirst(4).contains(".") { host.removeFirst(4) }
-        guard !host.isEmpty, !host.unicodeScalars.contains(where: { " \t\r\n".unicodeScalars.contains($0) }) else { return nil }
-        return host
+        var host = Array(string(of: hostScalars).lowercased().unicodeScalars)
+        while host.last == "." { host.removeLast() }
+        if host.starts(with: "www.".unicodeScalars), host.dropFirst(4).contains(".") { host.removeFirst(4) }
+        guard !host.isEmpty, !host.contains(where: { " \t\r\n".unicodeScalars.contains($0) }) else { return nil }
+        return string(of: host[...])
+    }
+
+    /// The part of an address after its scheme that holds a host: up to the
+    /// first "/", "?" or "#", and after the last "@" (a user name and password).
+    private static func authority(of text: String) -> String {
+        var scalars = text.unicodeScalars[...]
+        if let authorityEnd = scalars.firstIndex(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
+            scalars = scalars[..<authorityEnd]
+        }
+        if let atSign = scalars.lastIndex(of: "@") {
+            scalars = scalars[scalars.index(after: atSign)...]
+        }
+        return String(String.UnicodeScalarView(scalars))
+    }
+
+    private static func string(of scalars: ArraySlice<Unicode.Scalar>) -> String {
+        var view = String.UnicodeScalarView()
+        view.append(contentsOf: scalars)
+        return String(view)
+    }
+
+    private static func hasScalarSuffix(_ text: String, _ suffix: String) -> Bool {
+        text.unicodeScalars.reversed().starts(with: suffix.unicodeScalars.reversed())
+    }
+
+    private static func hasScalarPrefix(_ text: String, _ prefix: String) -> Bool {
+        text.unicodeScalars.starts(with: prefix.unicodeScalars)
+    }
+
+    /// Whether two pieces of text are the same unicode scalars. `==` on a
+    /// String also treats canonically equivalent text as equal, which the Go
+    /// rule, comparing bytes, does not.
+    private static func isSameText(_ first: String, _ second: String) -> Bool {
+        first.unicodeScalars.elementsEqual(second.unicodeScalars)
     }
 
     /// Splits `scheme://rest` when the text starts with a scheme followed by two
     /// slashes. A `://` further on, in a path or a query, is not a scheme.
     static func splitScheme(_ text: String) -> (scheme: String, rest: String)? {
-        guard let schemeEnd = text.range(of: "://"), schemeEnd.lowerBound > text.startIndex else { return nil }
-        let scheme = String(text[text.startIndex..<schemeEnd.lowerBound])
-        guard isSchemeToken(scheme) else { return nil }
-        return (scheme, String(text[schemeEnd.upperBound...]))
+        let scalars = Array(text.unicodeScalars)
+        let separator = Array("://".unicodeScalars)
+        guard scalars.count >= separator.count else { return nil }
+        for schemeEnd in 0...(scalars.count - separator.count) where scalars[schemeEnd...].starts(with: separator) {
+            // Only the first "://" counts, and a scheme cannot be empty.
+            guard schemeEnd > 0 else { return nil }
+            let scheme = string(of: scalars[..<schemeEnd])
+            guard isSchemeToken(scheme) else { return nil }
+            return (scheme, string(of: scalars[(schemeEnd + separator.count)...]))
+        }
+        return nil
     }
 
     /// A letter followed by letters, digits, `+`, `-` and `.`.
@@ -96,10 +134,13 @@ public enum PasswordsSiteMatch {
     /// A scheme and a colon that is not a host and a port: `mailto:ada@example.com` is,
     /// `localhost:8080/sign-in` is not.
     private static func isSchemeWithoutSlashes(_ text: String) -> Bool {
-        guard let colon = text.firstIndex(of: ":"), colon > text.startIndex, isSchemeToken(String(text[text.startIndex..<colon])) else {
+        let scalars = text.unicodeScalars
+        guard let colon = scalars.firstIndex(of: ":"), colon > scalars.startIndex,
+            isSchemeToken(String(scalars[scalars.startIndex..<colon]))
+        else {
             return false
         }
-        let rest = Array(text[text.index(after: colon)...].utf8)
+        let rest = Array(String(scalars[scalars.index(after: colon)...]).utf8)
         var digitsEnd = 0
         while digitsEnd < rest.count, rest[digitsEnd] >= 48, rest[digitsEnd] <= 57 { digitsEnd += 1 }
         if digitsEnd > 0, digitsEnd == rest.count || [UInt8(ascii: "/"), UInt8(ascii: "?"), UInt8(ascii: "#")].contains(rest[digitsEnd]) {
@@ -116,10 +157,10 @@ public enum PasswordsSiteMatch {
     /// How well one site fits the requested page.
     public static func level(site: String, requested: String) -> PasswordsSiteMatchLevel {
         guard let siteHost = normalizedHost(of: site), let requestedHost = normalizedHost(of: requested) else { return .none }
-        if siteHost == requestedHost { return .exactHost }
+        if isSameText(siteHost, requestedHost) { return .exactHost }
         // A dot-less name (localhost, an intranet host) has no parent domain to share.
-        if siteHost.contains(".") && requestedHost.contains(".")
-            && (requestedHost.hasSuffix("." + siteHost) || siteHost.hasSuffix("." + requestedHost))
+        if siteHost.unicodeScalars.contains(".") && requestedHost.unicodeScalars.contains(".")
+            && (hasScalarSuffix(requestedHost, "." + siteHost) || hasScalarSuffix(siteHost, "." + requestedHost))
         {
             return .relatedHost
         }
@@ -164,7 +205,7 @@ public enum PasswordsSiteMatch {
         let requestedScheme = scheme(of: requested)
         let requestedPort = effectivePort(of: requested)
         for site in sites {
-            guard normalizedHost(of: site) == requestedHost else { continue }
+            guard let siteHost = normalizedHost(of: site), isSameText(siteHost, requestedHost) else { continue }
             let siteScheme = scheme(of: site)
             if requestedScheme == "http" && siteScheme != "http" { continue }
             let sitePort = explicitPort(of: site) ?? defaultPort(ofScheme: siteScheme)
@@ -198,28 +239,21 @@ public enum PasswordsSiteMatch {
         var text = site.trimmingCharacters(in: .whitespacesAndNewlines)
         if let split = splitScheme(text) {
             text = split.rest
-        } else if text.hasPrefix("//") {
-            text = String(text.dropFirst(2))
+        } else if hasScalarPrefix(text, "//") {
+            text = String(String.UnicodeScalarView(text.unicodeScalars.dropFirst(2)))
         }
-        if let authorityEnd = text.firstIndex(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
-            text = String(text[text.startIndex..<authorityEnd])
+        var scalars = Array(authority(of: text).unicodeScalars)[...]
+        if scalars.first == "[" {
+            guard let closing = scalars.firstIndex(of: "]"), closing + 1 < scalars.endIndex, scalars[closing + 1] == ":" else { return nil }
+            scalars = scalars[(closing + 1)...]
         }
-        if let atSign = text.lastIndex(of: "@") {
-            text = String(text[text.index(after: atSign)...])
-        }
-        if text.hasPrefix("[") {
-            guard let closing = text.firstIndex(of: "]") else { return nil }
-            let afterBracket = text[text.index(after: closing)...]
-            guard afterBracket.hasPrefix(":") else { return nil }
-            text = String(afterBracket)
-        }
-        guard let colon = text.lastIndex(of: ":") else { return nil }
-        let digits = text[text.index(after: colon)...]
+        guard let colon = scalars.lastIndex(of: ":") else { return nil }
+        let digits = scalars[(colon + 1)...]
         if digits.isEmpty { return nil }
         var port = 0
-        for character in digits {
-            guard let digit = character.asciiValue, digit >= 48, digit <= 57, port <= 65535 else { return 0 }
-            port = port * 10 + Int(digit - 48)
+        for scalar in digits {
+            guard scalar.value >= 48, scalar.value <= 57, port <= 65535 else { return 0 }
+            port = port * 10 + Int(scalar.value - 48)
         }
         return port >= 1 && port <= 65535 ? port : 0
     }
