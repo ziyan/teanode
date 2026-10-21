@@ -144,12 +144,11 @@ func TestALockedTabAnswersOnlyInputAndNavigationOfTheDevToolsProtocol(test *test
 	if _, err := browse(run, `{"action":"cdp_stop"}`); err != nil {
 		test.Fatalf("cdp_stop on a locked tab: %s", err)
 	}
-	// Unlocked, they all go through.
+	// Unlocked, script goes through again. (A request's body is answered only
+	// for a request cdp_events has shown, locked or not: see reach.go.)
 	run.tab.Filled().Committed("7", devtools.Commit{DocumentID: "doc-2", Address: "https://shop.example.test/account", Count: 4})
-	for _, method := range []string{"Runtime.evaluate", "Network.getResponseBody"} {
-		if _, err := browse(run, fmt.Sprintf(`{"action":"cdp","method":%q}`, method)); err != nil {
-			test.Errorf("%s on an unlocked tab: %s", method, err)
-		}
+	if _, err := browse(run, `{"action":"cdp","method":"Runtime.evaluate"}`); err != nil {
+		test.Errorf("Runtime.evaluate on an unlocked tab: %s", err)
 	}
 	// The network log would carry the session's cookies, so a tab signed in to
 	// does not turn it on again (see script.go).
