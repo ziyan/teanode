@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/privateturn"
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -126,7 +127,7 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 	if err != nil {
 		return nil, err
 	}
-	answer, calls, err := followSubagent(ctx, turn, conversation.ID, subagentWait)
+	answer, calls, hasPrivateCall, err := followSubagent(ctx, turn, conversation.ID, subagentWait)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +137,11 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 		// actually did can be pointed at it.
 		"run":        conversation.ID,
 		"tool_calls": calls,
+		// Whether the run called a private tool (Health, or some of
+		// Passwords). Its answer then holds what the call showed, and as a
+		// tool result of the parent it is kept out of memory filing with the
+		// rest of the parent's turn: see privateturn.Turns.
+		privateturn.SubagentHasPrivateCallKey: hasPrivateCall,
 	})
 	if err != nil {
 		return nil, err
@@ -167,15 +173,16 @@ func (self *Agent) createSubagentRun(ctx context.Context, agentId, title string)
 }
 
 // followSubagent waits for a subagent's turn to end, at most wait, and
-// says what it answered and how many tools it called. A turn still going
+// says what it answered, how many tools it called and whether any of them was
+// a private tool (privateturn.IsToolCall). A turn still going
 // when the wait is up, or when ctx ends, is stopped.
-func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wait time.Duration) (string, int, error) {
+func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wait time.Duration) (string, int, bool, error) {
 	events, unsubscribe := turn.Subscribe()
 	defer unsubscribe()
 
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
-	answer, failure, calls := "", "", 0
+	answer, failure, calls, hasPrivateCall := "", "", 0, false
 	for waiting := true; waiting; {
 		select {
 		case event, open := <-events:
@@ -188,6 +195,9 @@ func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wa
 				answer = event.Text
 			case EventToolCall:
 				calls++
+				if privateturn.IsToolCall(models.AgentToolCall{Name: event.Tool, Arguments: event.Arguments}) {
+					hasPrivateCall = true
+				}
 			case EventError:
 				failure = event.Error
 			}
@@ -197,17 +207,17 @@ func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wa
 			waiting = false
 		case <-ctx.Done():
 			turn.Stop()
-			return "", calls, ctx.Err()
+			return "", calls, hasPrivateCall, ctx.Err()
 		}
 	}
 	if failure != "" {
-		return "", calls, fmt.Errorf("the subagent did not finish: %s", failure)
+		return "", calls, hasPrivateCall, fmt.Errorf("the subagent did not finish: %s", failure)
 	}
 	answer = strings.TrimSpace(answer)
 	if answer == "" {
-		return "", calls, fmt.Errorf("the subagent ended without answering; its working is in the run %s", conversationId)
+		return "", calls, hasPrivateCall, fmt.Errorf("the subagent ended without answering; its working is in the run %s", conversationId)
 	}
-	return answer, calls, nil
+	return answer, calls, hasPrivateCall, nil
 }
 
 // startBackgroundSubagent starts a subagent that the turn does not wait

@@ -87,6 +87,7 @@ func init() {
 					"You can use only the items the person turned on \"Let the agent use this\" for: list shows them, and read_note reads the text of a note among them. " +
 					"You never see a login's password, one-time code or passkey, and you cannot use a card or an item somebody shared with the person. " +
 					"generate makes up a new random password for the person without storing it. " +
+					"list, read_note and generate are refused in a subagent, since what they give would come back in its answer; do them in this conversation. " +
 					"To sign in to a site with a login, take its item_id from list and use the browser tool: fill_login (item_id, user_name_ref, password_ref) puts the user name and password into the page's fields, fill_one_time_code (item_id, ref) puts in the current one-time code, and passkey_sign_in (item_id, in the headless browser only) makes the passkey ready so that you click the site's sign-in button; " +
 					"they work only on a page whose host is one of the item's sites, and you never see the values. " +
 					"It works in a conversation with the person in the TeaNode app or on the dashboard, and in a schedule the person wrote themselves, " +

@@ -57,3 +57,42 @@ func TestToolNamesAreThePrivateTools(t *testing.T) {
 		t.Errorf("ToolNames = %v", got)
 	}
 }
+
+// The answer of a subagent whose run called a private tool holds what the call
+// showed, and reaches the parent as an ordinary tool result: the parent's turn
+// is private. A subagent that called none leaves the turn as it was, and so
+// does an answer that merely mentions the key.
+func TestATurnWhoseSubagentCalledAPrivateToolIsPrivate(t *testing.T) {
+	turn := func(answer string) []*models.AgentMessage {
+		return []*models.AgentMessage{
+			{Role: "user", Content: "what is in my wifi note?"},
+			{Role: "assistant", ToolCalls: []models.AgentToolCall{{ID: "1", Name: "subagent", Arguments: `{"prompt":"find the note"}`}}},
+			{Role: "tool", ToolCallID: "1", Name: "subagent", Content: answer},
+			{Role: "assistant", Content: "Here is what the note says."},
+			{Role: "user", Content: "thanks, what is the weather?"},
+			{Role: "assistant", Content: "Sunny."},
+		}
+	}
+	for name, test := range map[string]struct {
+		answer string
+		want   []bool
+	}{
+		"a private call":              {`{"answer":"the note says: invented text","run":"r","tool_calls":2,"has_private_call":true}`, []bool{true, true, true, true, false, false}},
+		"no private call":             {`{"answer":"sunny","run":"r","tool_calls":2,"has_private_call":false}`, []bool{false, false, false, false, false, false}},
+		"an old answer":               {`{"answer":"sunny","run":"r","tool_calls":2}`, []bool{false, false, false, false, false, false}},
+		"words not a key":             {`{"answer":"has_private_call is true","run":"r","tool_calls":2}`, []bool{false, false, false, false, false, false}},
+		"not JSON":                    {`has_private_call`, []bool{false, false, false, false, false, false}},
+		"a key that is not a boolean": {`{"has_private_call":"yes"}`, []bool{false, false, false, false, false, false}},
+	} {
+		if got := Turns(turn(test.answer)); !slices.Equal(got, test.want) {
+			t.Errorf("%s: Turns = %v, want %v", name, got, test.want)
+		}
+	}
+
+	// Another tool's result with the key is not a subagent's answer.
+	other := turn(`{"has_private_call":true}`)
+	other[2].Name = "mail_search"
+	if got := Turns(other); slices.Contains(got, true) {
+		t.Errorf("another tool: Turns = %v", got)
+	}
+}

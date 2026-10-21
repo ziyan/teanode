@@ -18,6 +18,15 @@ const (
 	roleTool      = "tool"
 )
 
+// SubagentToolName is the tool that hands work to a run of its own, and
+// SubagentHasPrivateCallKey is the key of its answer that says the run called
+// a private tool. The subagent's answer comes back to its parent as a tool
+// result, so a turn whose subagent made such a call is private too.
+const (
+	SubagentToolName          = "subagent"
+	SubagentHasPrivateCallKey = "has_private_call"
+)
+
 // privateTools are the tools whose answers are the person's alone, so that a
 // turn which called one is kept out of memory filing, out of conversation
 // titles and summaries, and out of what another run reads back from the
@@ -92,17 +101,36 @@ func Turns(messages []*models.AgentMessage) []bool {
 			end++
 		}
 		for _, message := range messages[start:end] {
+			isTurnPrivate := isSubagentAnswerPrivate(message)
 			for _, call := range message.ToolCalls {
 				if IsToolCall(call) {
-					for index := start; index < end; index++ {
-						isPrivate[index] = true
-					}
+					isTurnPrivate = true
+				}
+			}
+			if isTurnPrivate {
+				for index := start; index < end; index++ {
+					isPrivate[index] = true
 				}
 			}
 		}
 		start = end
 	}
 	return isPrivate
+}
+
+// isSubagentAnswerPrivate says whether a message is the answer of the subagent
+// tool for a run that called a private tool: the answer holds whatever that
+// call showed, and reaches the parent turn as an ordinary tool result.
+func isSubagentAnswerPrivate(message *models.AgentMessage) bool {
+	if message.Role != roleTool || message.Name != SubagentToolName {
+		return false
+	}
+	var answer map[string]json.RawMessage
+	if json.Unmarshal([]byte(message.Content), &answer) != nil {
+		return false
+	}
+	var hasPrivateCall bool
+	return json.Unmarshal(answer[SubagentHasPrivateCallKey], &hasPrivateCall) == nil && hasPrivateCall
 }
 
 // actionOf is the action a call's arguments name, in lower case, or empty.

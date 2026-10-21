@@ -78,7 +78,7 @@ type scheduleArguments struct {
 // passwordsNotice is said to the model when it makes or rewords a schedule
 // whose prompt is about signing in, so that it tells the person. A schedule the
 // agent wrote cannot use Passwords; one the person saves themselves can.
-const passwordsNotice = "This schedule was written by the agent, so its runs cannot use Passwords. Tell the person: they can save the schedule themselves on the dashboard or in the app (Agent, Schedules) to let its runs use Passwords."
+const passwordsNotice = "This schedule was written by the agent, so its runs cannot use Passwords. Tell the person: they can open the schedule on the dashboard or in the app (Agent, Schedules) and save it themselves to let its runs use Passwords."
 
 // signingInWords matches a prompt that is about signing in, a password, a
 // passkey, a login or a one-time code.

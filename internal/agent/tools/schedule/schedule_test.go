@@ -144,7 +144,7 @@ func TestAScheduleAboutSigningInTellsTheModelWhatThePersonCanDo(t *testing.T) {
 	})
 	ctx := tools.WithRun(context.Background(), run)
 	tool := find(t)
-	wanted := "they can save the schedule themselves on the dashboard or in the app (Agent, Schedules) to let its runs use Passwords"
+	wanted := "they can open the schedule on the dashboard or in the app (Agent, Schedules) and save it themselves to let its runs use Passwords"
 
 	for _, prompt := range []string{"Sign in to the Example shop and check my order.", "Log in to example.test and read the balance", "Check the password for the router is still set", "signin to the portal"} {
 		result, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"add","name":"Check","cron":"@in 5m","prompt":"` + prompt + `","deliver":"drawer"}`)})

@@ -454,6 +454,12 @@ func TestNothingIsReadWhereOthersWouldSeeIt(test *testing.T) {
 	if strings.Contains(content, "padlock") || !strings.Contains(content, "not in a subagent") {
 		test.Errorf("a subagent: %s", content)
 	}
+	// The names, sites and user names that list shows would come back in the
+	// subagent's answer, so list is refused there too.
+	content, _ = mustAct(test, subagent, "list", `{}`)
+	if !strings.Contains(content, "not in a subagent") || strings.Contains(content, "item_list") || strings.Contains(content, "Shed") || strings.Contains(content, "padlock") {
+		test.Errorf("a subagent, list: %s", content)
+	}
 	if found.lastUsedAt(test, found.grantedNote) {
 		test.Error("a refused read was recorded as a use")
 	}
@@ -519,7 +525,7 @@ func TestARunThatContentStartedUsesNothing(test *testing.T) {
 func TestARunOfAnAgentsScheduleIsToldHowThePersonOpensIt(test *testing.T) {
 	found := newWorld(test)
 	run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: "schedule", isHeadless: true, isStartedByOthers: true, isWokenByAgentsSchedule: true}
-	wanted := "The person can save the schedule themselves on the dashboard or in the app (Agent, Schedules) to let its runs use Passwords."
+	wanted := "The person can open the schedule on the dashboard or in the app (Agent, Schedules) and save it themselves to let its runs use Passwords."
 	for _, action := range []string{"list", "read_note"} {
 		content, _ := mustAct(test, run, action, fmt.Sprintf(`{"item_id":%q}`, found.grantedNote))
 		if !strings.Contains(content, "schedule that the agent wrote") || !strings.Contains(content, wanted) {

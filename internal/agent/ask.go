@@ -805,8 +805,8 @@ func (self *AskRun) IsStartedByPerson() bool {
 }
 
 // IsWokenByAgentsSchedule says a schedule the agent wrote woke this run, so that
-// Passwords can tell the person to save the schedule themselves. A subagent is
-// its parent's.
+// Passwords can tell the person to open the schedule and save it themselves.
+// A subagent is its parent's.
 func (self *AskRun) IsWokenByAgentsSchedule() bool {
 	if parent := self.settings.confirmVia; parent != nil {
 		return parent.IsWokenByAgentsSchedule()

@@ -43,9 +43,9 @@ const notTheirsWords = "Passwords is used only in a conversation with the person
 
 // agentsScheduleWords is the answer in place of notTheirsWords for a run that
 // a schedule the agent wrote woke. It says what the person can do about it, so
-// the model tells them instead of trying again: a schedule they save
-// themselves is theirs, and its runs may use Passwords.
-const agentsScheduleWords = "This run was woken by a schedule that the agent wrote, not one the person wrote, so Passwords is closed to it. The person can save the schedule themselves on the dashboard or in the app (Agent, Schedules) to let its runs use Passwords. Tell them so."
+// the model tells them instead of trying again: a schedule they open
+// and save themselves is theirs, and its runs may use Passwords.
+const agentsScheduleWords = "This run was woken by a schedule that the agent wrote, not one the person wrote, so Passwords is closed to it. The person can open the schedule on the dashboard or in the app (Agent, Schedules) and save it themselves to let its runs use Passwords. Tell them so."
 
 // agentsScheduleRun is a run that can say a schedule the agent wrote woke it.
 type agentsScheduleRun interface {
@@ -69,6 +69,11 @@ const notAllowedWords = "The person's account is not allowed to use Passwords, s
 // generateInSubagentWords is the answer of generate in a subagent, where a
 // password made up would come back to its parent as a tool result.
 const generateInSubagentWords = "A password made up here would appear in the conversation and go to the model's provider. Ask for one in a conversation with the person instead, and suggest they make it with the generator in Passwords and save it themselves, which no model sees."
+
+// listInSubagentWords is the answer of list in a subagent, where the names,
+// sites and user names listed would come back to its parent as the subagent's
+// answer.
+const listInSubagentWords = "The items in Passwords are listed only in a conversation with the person or in their own scheduled run, not in a subagent, so list them from there."
 
 // subagentSurface is a run whose answer comes back to its parent as a tool
 // result, which the filing of conversations into memory cannot tell from any
@@ -183,6 +188,12 @@ type listedItem struct {
 const unreadableWords = "the server could not open this item; the person can turn \"Let the agent use this\" off and on again on it"
 
 var runList = withGate(func(ctx context.Context, call *tools.Call, run tools.Run) (*tools.Result, error) {
+	// The names, sites and user names listed in a subagent would come back
+	// to its parent in the subagent's answer, which filing into memory
+	// cannot tell from any other.
+	if run.Surface() == subagentSurface {
+		return tools.TextResult("%s", listInSubagentWords), nil
+	}
 	var listed []listedItem
 	isRefused := false
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
