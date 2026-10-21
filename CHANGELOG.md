@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.192.3] - 2026-10-21
+
+### Security
+
+- The agent's view of an attached tab's network traffic can no longer include TeaNode's own requests. (#622)
+
 ## [0.192.2] - 2026-10-21
 
 ### Security
