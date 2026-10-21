@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.190.0] - 2026-10-21
+
+### Added
+
+- Taking over your browser tab from a phone lays the tab out at your phone's width while you hold it, and the picture pinches to zoom and drags to pan. (#615)
+
 ## [0.189.1] - 2026-10-21
 
 ### Changed
