@@ -34,8 +34,31 @@ public protocol PasswordsPinStore: Sendable {
     /// Records a key the person confirmed by comparing safety codes. It replaces the seen key
     /// of that person too, so their items are checked against it.
     func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws
-    /// Forgets every pinned key of the sign-in.
+    /// Remembers that an owned item's access record was seen with this version and a valid
+    /// signature. Never lowers what is remembered.
+    func raiseRecordVersion(userId: String, itemId: String, version: Int) throws
+    /// Replaces who held a key for an owned item, and whether it had an agent copy, as this
+    /// device last saw it. Does not touch the remembered record version.
+    func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws
+    /// Forgets every pinned key and item memory of the sign-in.
     func removeAll() throws
+}
+
+extension PasswordsItemMemory {
+    /// The memory with a version raised (never lowered).
+    func raised(to version: Int) -> PasswordsItemMemory {
+        var raised = self
+        raised.highestRecordVersion = max(highestRecordVersion, version)
+        return raised
+    }
+
+    /// The memory with its key holders and agent copy replaced; holders are sorted and capped.
+    func holding(keyHolderUserIds: [String], hadAgentCopy: Bool) -> PasswordsItemMemory {
+        var replaced = self
+        replaced.keyHolderUserIds = Array(Set(keyHolderUserIds).sorted().prefix(Self.mostKeyHolderUserIds))
+        replaced.hadAgentCopy = hadAgentCopy
+        return replaced
+    }
 }
 
 // MARK: In memory
@@ -46,13 +69,16 @@ public final class PasswordsMemoryPinStore: PasswordsPinStore, @unchecked Sendab
     private let lock = NSLock()
     private var seen: [String: [String: String]] = [:]
     private var confirmed: [String: [String: String]] = [:]
+    private var memories: [String: [String: PasswordsItemMemory]] = [:]
 
     public init() {}
 
     public func loadPins(userId: String) throws -> PasswordsPins {
         lock.lock()
         defer { lock.unlock() }
-        return PasswordsPins(userId: userId, seenPublicKeys: seen[userId] ?? [:], confirmedPublicKeys: confirmed[userId] ?? [:])
+        return PasswordsPins(
+            userId: userId, seenPublicKeys: seen[userId] ?? [:], confirmedPublicKeys: confirmed[userId] ?? [:],
+            itemMemories: memories[userId] ?? [:])
     }
 
     public func recordSeenIfAbsent(userId: String, ownerUserId: String, publicKey: String) throws {
@@ -69,11 +95,25 @@ public final class PasswordsMemoryPinStore: PasswordsPinStore, @unchecked Sendab
         seen[userId, default: [:]][ownerUserId] = publicKey
     }
 
+    public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        memories[userId, default: [:]][itemId] = (memories[userId]?[itemId] ?? PasswordsItemMemory()).raised(to: version)
+    }
+
+    public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        memories[userId, default: [:]][itemId] = (memories[userId]?[itemId] ?? PasswordsItemMemory()).holding(
+            keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy)
+    }
+
     public func removeAll() throws {
         lock.lock()
         defer { lock.unlock() }
         seen = [:]
         confirmed = [:]
+        memories = [:]
     }
 }
 
@@ -124,6 +164,19 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         try write(pins)
     }
 
+    public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
+        var pins = try read(userId: userId)
+        pins.itemMemories[itemId] = (pins.itemMemories[itemId] ?? PasswordsItemMemory()).raised(to: version)
+        try write(pins)
+    }
+
+    public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
+        var pins = try read(userId: userId)
+        pins.itemMemories[itemId] = (pins.itemMemories[itemId] ?? PasswordsItemMemory()).holding(
+            keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy)
+        try write(pins)
+    }
+
     public func removeAll() throws {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         try FileManager.default.removeItem(at: fileURL)
@@ -146,6 +199,7 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         static let servicePrefix = "com.teanode.app.passwords.pins."
         private static let seenKind = "seen"
         private static let confirmedKind = "confirmed"
+        private static let itemKind = "item"
 
         public let signInAccountKey: String
         /// The keychain group to use; nil is the app's first group.
@@ -197,10 +251,19 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
             var pins = PasswordsPins(userId: userId)
             let seenPrefix = "\(Self.seenKind)|\(userId)|"
             let confirmedPrefix = "\(Self.confirmedKind)|\(userId)|"
+            let itemPrefix = "\(Self.itemKind)|\(userId)|"
             for attributes in found {
                 guard let account = attributes[kSecAttrAccount as String] as? String,
-                    let data = attributes[kSecValueData as String] as? Data, let text = String(data: data, encoding: .utf8),
-                    let keyBytes = Data(base64Encoded: text), PasswordsCrypto.isPublicKeyValid(keyBytes)
+                    let data = attributes[kSecValueData as String] as? Data
+                else { continue }
+                if account.hasPrefix(itemPrefix) {
+                    if let memory = try? JSONDecoder().decode(PasswordsItemMemory.self, from: data) {
+                        pins.itemMemories[String(account.dropFirst(itemPrefix.count))] = memory
+                    }
+                    continue
+                }
+                guard let text = String(data: data, encoding: .utf8), let keyBytes = Data(base64Encoded: text),
+                    PasswordsCrypto.isPublicKeyValid(keyBytes)
                 else { continue }
                 if account.hasPrefix(seenPrefix) {
                     pins.seenPublicKeys[String(account.dropFirst(seenPrefix.count))] = text
@@ -213,7 +276,10 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
 
         /// Adds the item, or replaces its data when `isReplacing` and it is already there.
         private func put(kind: String, userId: String, ownerUserId: String, publicKey: String, isReplacing: Bool) throws {
-            let data = Data(publicKey.utf8)
+            try put(kind: kind, userId: userId, ownerUserId: ownerUserId, data: Data(publicKey.utf8), isReplacing: isReplacing)
+        }
+
+        private func put(kind: String, userId: String, ownerUserId: String, data: Data, isReplacing: Bool) throws {
             let existing = accountQuery(kind: kind, userId: userId, ownerUserId: ownerUserId)
             if isReplacing {
                 let status = SecItemUpdate(existing as CFDictionary, [kSecValueData as String: data] as CFDictionary)
@@ -244,6 +310,41 @@ public struct PasswordsFilePinStore: PasswordsPinStore {
         public func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws {
             try put(kind: Self.confirmedKind, userId: userId, ownerUserId: ownerUserId, publicKey: publicKey, isReplacing: true)
             try put(kind: Self.seenKind, userId: userId, ownerUserId: ownerUserId, publicKey: publicKey, isReplacing: true)
+        }
+
+        /// The memory kept for one item, read from its own keychain item.
+        private func memory(userId: String, itemId: String) throws -> PasswordsItemMemory {
+            var reading = accountQuery(kind: Self.itemKind, userId: userId, ownerUserId: itemId)
+            reading[kSecReturnData as String] = true
+            var found: CFTypeRef?
+            let status = SecItemCopyMatching(reading as CFDictionary, &found)
+            if status == errSecItemNotFound { return PasswordsItemMemory() }
+            guard status == errSecSuccess else { throw PasswordsPinStoreError.failed(status) }
+            guard let data = found as? Data, let memory = try? JSONDecoder().decode(PasswordsItemMemory.self, from: data) else {
+                throw PasswordsPinStoreError.unreadable
+            }
+            return memory
+        }
+
+        private func write(_ memory: PasswordsItemMemory, userId: String, itemId: String) throws {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            try put(kind: Self.itemKind, userId: userId, ownerUserId: itemId, data: try encoder.encode(memory), isReplacing: true)
+        }
+
+        // The memory of one item is one keychain item, changed by reading that item and writing it
+        // back. The app and the AutoFill extension can both do that at the same moment; the worst
+        // that comes of it is a version raise or a key holder list that is one change behind,
+        // which only ever makes a later check stricter, never looser.
+        public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
+            let current = try memory(userId: userId, itemId: itemId)
+            guard version > current.highestRecordVersion else { return }
+            try write(current.raised(to: version), userId: userId, itemId: itemId)
+        }
+
+        public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
+            let current = try memory(userId: userId, itemId: itemId)
+            try write(current.holding(keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy), userId: userId, itemId: itemId)
         }
 
         public func removeAll() throws {

@@ -81819,6 +81819,278 @@
           }
         }
       }
+    },
+    "Sharing for this item could not be checked. Set sharing again first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目の共有を確認できませんでした。先に共有を設定し直してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法验证此项目的共享设置。请先重新设置共享。"
+          }
+        }
+      }
+    },
+    "This item needs a new key, but one was given a moment ago. Try again in a few minutes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目には新しいキーが必要ですが、先ほど設定したばかりです。数分後にもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目需要新密钥，但刚刚已生成过一个。请几分钟后再试。"
+          }
+        }
+      }
+    },
+    "Sharing could not be checked": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を確認できませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法验证共享设置"
+          }
+        }
+      }
+    },
+    "The server also lists %@, but you did not share this item with them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーには%@も共有相手として載っていますが、この項目をその相手と共有した覚えはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器还列出了%@，但你并没有与其共享此项目。"
+          }
+        }
+      }
+    },
+    "This item needs a new key. This iPhone gave it one a moment ago, so it waits before giving another.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目には新しいキーが必要です。この iPhone は先ほど設定したばかりなので、しばらく待ってから次を設定します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目需要新密钥。这部 iPhone 刚刚生成过一个，所以要等一会儿再生成下一个。"
+          }
+        }
+      }
+    },
+    "Nobody gets this item and the agent cannot use it until you set sharing again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を設定し直すまで、誰もこの項目を受け取れず、エージェントも使えません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你重新设置共享之前，任何人都无法获得此项目，助手也不能使用它。"
+          }
+        }
+      }
+    },
+    "This item's sharing was changed back by the server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目の共有がサーバーによって元に戻されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目的共享设置被服务器改回了旧状态"
+          }
+        }
+      }
+    },
+    "Nothing is done with the older sharing. Set sharing again to choose who has this item.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "古い共有設定では何も行いません。共有を設定し直して、この項目を持つ相手を選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不会按旧的共享设置执行任何操作。请重新设置共享，选择谁可以使用此项目。"
+          }
+        }
+      }
+    },
+    "Set sharing again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を設定し直す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新设置共享"
+          }
+        }
+      }
+    },
+    "Delete %@ forever?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を完全に削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "永久删除 %@？"
+          }
+        }
+      }
+    },
+    "It is removed from Passwords and from this iPhone, and cannot be brought back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードとこの iPhone から削除され、元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它会从“密码”和这部 iPhone 中移除，且无法恢复。"
+          }
+        }
+      }
+    },
+    "%@ was deleted forever.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を完全に削除しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已永久删除%@。"
+          }
+        }
+      }
+    },
+    "The item could not be deleted forever.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を完全に削除できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法永久删除该项目。"
+          }
+        }
+      }
+    },
+    "Delete forever?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完全に削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "永久删除？"
+          }
+        }
+      }
+    },
+    "%@ is removed from Passwords and from this iPhone, and cannot be brought back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はパスワードとこの iPhone から削除され、元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@会从“密码”和这部 iPhone 中移除，且无法恢复。"
+          }
+        }
+      }
+    },
+    "Choose who has this item and save. That sets sharing again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目を持つ相手を選んで保存してください。それで共有が設定し直されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择谁可以使用此项目并保存，即可重新设置共享。"
+          }
+        }
+      }
+    },
+    "Saving removes them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存すると削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存后会将其移除。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

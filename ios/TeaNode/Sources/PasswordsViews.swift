@@ -390,7 +390,7 @@ struct PasswordsItemRow: View {
                 .labelStyle(.tag)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        } else if !item.shares.isEmpty {
+        } else if !item.recordedShares.isEmpty {
             Label("Shared", systemImage: "person.2")
                 .labelStyle(.tag)
                 .font(.caption)
@@ -442,6 +442,7 @@ struct PasswordsCopyMenu: View {
 /// can be restored.
 struct PasswordsDeletedScreen: View {
     @Bindable var model: PasswordsModel
+    @State private var itemToDeleteForever: PasswordItem?
 
     var body: some View {
         Group {
@@ -459,6 +460,11 @@ struct PasswordsDeletedScreen: View {
                                 PasswordsDeletedRow(item: item)
                             }
                             .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    itemToDeleteForever = item
+                                } label: {
+                                    Label("Delete forever", systemImage: "trash")
+                                }
                                 Button {
                                     Task { await restore(item) }
                                 } label: {
@@ -474,6 +480,23 @@ struct PasswordsDeletedScreen: View {
         }
         .navigationTitle("Recently deleted")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Delete forever?", isPresented: Binding(get: { itemToDeleteForever != nil }, set: { if !$0 { itemToDeleteForever = nil } }),
+            titleVisibility: .visible, presenting: itemToDeleteForever
+        ) { item in
+            Button("Delete forever", role: .destructive) { Task { await deleteForever(item) } }
+        } message: { item in
+            Text("\(item.name) is removed from Passwords and from this iPhone, and cannot be brought back.")
+        }
+    }
+
+    private func deleteForever(_ item: PasswordItem) async {
+        do {
+            try await model.purge(item)
+            model.doneText = String(localized: "\(item.name) was deleted forever.")
+        } catch {
+            model.report(error, orSay: String(localized: "The item could not be deleted forever."))
+        }
     }
 
     private func restore(_ item: PasswordItem) async {

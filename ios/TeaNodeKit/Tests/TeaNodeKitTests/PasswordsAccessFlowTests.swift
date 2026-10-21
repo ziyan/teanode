@@ -12,6 +12,8 @@ final class HookedServerFlags: @unchecked Sendable {
     /// The names of the mutating calls, in order.
     var calls: [String] = []
     var lastRekeyInput: PasswordItemRekeyInput?
+    /// The keys of the last `SetPasswordItemShares` call.
+    var lastShareKeys: [PasswordShareKeyInput] = []
     var addedShareKeyCalls: [[PasswordItemShareKeyInput]] = []
     /// Item ids whose owner view claims the agent may use it and that it needs a new key.
     var falselyAgentAndMarkedItemIds: Set<String> = []
@@ -80,10 +82,15 @@ struct HookedAPI: PasswordsAPI {
         flags.calls.append("restorePasswordItem")
         return bent(try await inner.restorePasswordItem(id: id))
     }
+    func purgePasswordItem(id: String) async throws -> Bool {
+        flags.calls.append("purgePasswordItem")
+        return try await inner.purgePasswordItem(id: id)
+    }
     func setPasswordItemShares(itemId: String, grantees: [PasswordShareGranteeInput], keys: [PasswordShareKeyInput]) async throws
         -> PasswordItemView
     {
         flags.calls.append("setPasswordItemShares")
+        flags.lastShareKeys = keys
         var before: PasswordItemView?
         if flags.isAnsweringSharesUnchanged {
             before = try await inner.listPasswordItems(sinceRevision: nil).items.first { $0.id == itemId }
@@ -184,7 +191,11 @@ final class PasswordsAccessFlowTests: XCTestCase {
             itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-ben")], recipients: recipients,
             confirmedUserIds: ["user-ben"])
         XCTAssertEqual(flags.calls, ["savePasswordItem", "setPasswordItemShares"])
-        XCTAssertEqual(shared.fields.access, PasswordsItemAccess(grantees: [.person(userId: "user-ben")]))
+        XCTAssertEqual(shared.sharingCheck, .verified)
+        XCTAssertEqual(shared.fields.access?.grantees, [.person(userId: "user-ben")])
+        XCTAssertEqual(shared.fields.access?.isUsableByAgent, false)
+        // The item started at version 1; sharing signed version 2.
+        XCTAssertEqual(shared.fields.access?.recordVersion, 2)
         let storedAccess = try await sealedAccess(of: item.id, server: server, accountKey: accountKey)
         XCTAssertEqual(storedAccess?.grantees, [.person(userId: "user-ben")])
         try await ben.sync()
@@ -195,7 +206,10 @@ final class PasswordsAccessFlowTests: XCTestCase {
         _ = try await ada.setShares(itemId: item.id, grantees: [], recipients: [])
         XCTAssertEqual(flags.calls, ["setPasswordItemShares", "rekeyPasswordItem"])
         let rekeyed = try await sealedAccess(of: item.id, server: server, accountKey: accountKey)
-        XCTAssertEqual(rekeyed, PasswordsItemAccess())
+        XCTAssertEqual(rekeyed?.grantees, [])
+        XCTAssertEqual(rekeyed?.isUsableByAgent, false)
+        XCTAssertEqual(rekeyed?.recordVersion, 3)
+        XCTAssertTrue(PasswordsCrypto.isAccessVerified(accountKey: accountKey, itemId: item.id, itemKind: .login, access: rekeyed))
         let needsNewKey = await ada.needsNewKey(itemId: item.id)
         XCTAssertFalse(needsNewKey)
     }
@@ -237,7 +251,9 @@ final class PasswordsAccessFlowTests: XCTestCase {
         _ = try await ada.setUsableByAgent(itemId: item.id, isUsable: true)
         let agentOnItem = try await ada.item(id: item.id)
         let access = try XCTUnwrap(agentOnItem.fields.access)
-        XCTAssertEqual(access, PasswordsItemAccess(isUsableByAgent: true, grantees: [.person(userId: "user-ben")]))
+        XCTAssertEqual(agentOnItem.sharingCheck, .verified)
+        XCTAssertEqual(access.isUsableByAgent, true)
+        XCTAssertEqual(access.grantees, [.person(userId: "user-ben")])
 
         // An editor that built its fields without the record, or with a wider one, changes nothing.
         let withoutRecord = loginFields(password: "edited once")
@@ -247,9 +263,12 @@ final class PasswordsAccessFlowTests: XCTestCase {
             let saved = try await ada.save(fields: fields, id: item.id)
             XCTAssertEqual(saved.fields.access, access)
         }
-        // A new item starts with no record, whatever the fields carry.
+        // A new item starts with a signed record that grants nobody, whatever the fields carry.
         let fresh = try await ada.save(fields: loginFields(name: "Fresh").withAccess(access))
-        XCTAssertNil(fresh.fields.access)
+        XCTAssertEqual(fresh.sharingCheck, .verified)
+        XCTAssertEqual(fresh.fields.access?.grantees, [])
+        XCTAssertEqual(fresh.fields.access?.isUsableByAgent, false)
+        XCTAssertEqual(fresh.fields.access?.recordVersion, 1)
     }
 
     // MARK: What the server says does not decide
@@ -524,7 +543,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
 
     // MARK: Keys and safety codes
 
-    func testTheOwnSafetyCodeComesFromTheOpenedKeyPairAndTheOwnUserId() async throws {
+    func testTheOwnSafetyCodeComesFromTheOpenedKeyPair() async throws {
         let server = await makeServer([("user-ada", "Ada")])
         let ada = makeSession(server, userId: "user-ada")
         try await setUp(ada, passphrase: "ada invented passphrase")
@@ -532,9 +551,7 @@ final class PasswordsAccessFlowTests: XCTestCase {
         XCTAssertEqual(code.split(separator: " ").count, 8)
         let publicKeyText = await server.publicKey(of: "user-ada")
         let publicKey = try XCTUnwrap(Data(base64Encoded: publicKeyText))
-        XCTAssertEqual(code, try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: publicKey))
-        // Another user id gives another code for the same key.
-        XCTAssertNotEqual(code, try PasswordsCrypto.safetyCode(userId: "user-grace", publicKey: publicKey))
+        XCTAssertEqual(code, try PasswordsCrypto.safetyCode(publicKey: publicKey))
         await ada.lock()
         do {
             _ = try await ada.ownSafetyCode()

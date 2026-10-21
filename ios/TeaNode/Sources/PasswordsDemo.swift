@@ -244,7 +244,12 @@
             lastUsedByAgentDaysAgo: Int? = nil, deletedDaysAgo: Int? = nil, sharedWith: [PasswordShareGranteeInput] = []
         ) {
             let itemKey = PasswordsCrypto.makeKey()
-            guard let sealedFields = try? PasswordsCrypto.sealItemFields(fields, itemKey: itemKey, itemId: itemId),
+            // The record that says who may have the item is signed with the account key, as the app does.
+            guard
+                let signedFields = try? PasswordsCrypto.withSignedAccess(
+                    accountKey: accountKey, itemId: itemId, itemKind: fields.itemKind, fields: fields, access: fields.access,
+                    highestVersionSeen: 0),
+                let sealedFields = try? PasswordsCrypto.sealItemFields(signedFields, itemKey: itemKey, itemId: itemId),
                 let sealedKey = try? PasswordsCrypto.seal(
                     itemKey, key: accountKey, associatedData: PasswordsCrypto.itemKeyAssociatedData(itemId: itemId))
             else { return }
@@ -366,6 +371,7 @@
                 if query.contains("SavePasswordItem") { return try respond("SavePasswordItem", save(variables)) }
                 if query.contains("DeletePasswordItem") { return try respond("DeletePasswordItem", delete(variables)) }
                 if query.contains("RestorePasswordItem") { return try respond("RestorePasswordItem", restore(variables)) }
+                if query.contains("PurgePasswordItem") { return try respond("PurgePasswordItem", purge(variables)) }
                 if query.contains("SetPasswordItemShares") { return try respond("SetPasswordItemShares", setShares(variables)) }
                 if query.contains("AddPasswordShareKeys") { return try respond("AddPasswordShareKeys", addShareKeys(variables)) }
                 if query.contains("SetPasswordItemUsableByAgent") {
@@ -598,6 +604,15 @@
             item.revision = nextRevision()
             items[item.id] = item
             return try presented(item)
+        }
+
+        /// Deletes a deleted item for good, as the real server does for a person's tap.
+        private func purge(_ variables: [String: Any]) throws -> Bool {
+            try requireTap()
+            let item = try ownedItem(try string(variables, "id"))
+            guard item.deletedAt != nil else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
+            items[item.id] = nil
+            return true
         }
 
         /// Whether the person shares a circle with another person.

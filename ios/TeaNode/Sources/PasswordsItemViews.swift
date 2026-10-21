@@ -12,6 +12,7 @@ struct PasswordsItemScreen: View {
     @Binding var editing: PasswordsEditing?
     @State private var revealedFieldNames: Set<String> = []
     @State private var isConfirmingDelete = false
+    @State private var isConfirmingDeleteForever = false
     @State private var isWorking = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
@@ -193,6 +194,7 @@ struct PasswordsItemScreen: View {
             } footer: {
                 Text("Items you delete stay here for 30 days. Then they are gone for good.")
             }
+            deleteForeverSection(item)
         } else if item.isSharedWithMe {
             Section {
                 Label("Shared by \(item.ownerName)", systemImage: "person.2")
@@ -203,6 +205,7 @@ struct PasswordsItemScreen: View {
         } else {
             if item.itemKind != .card { agentSection(item) }
             if model.itemIdsNeedingNewKey.contains(item.id) { newKeySection(item) }
+            sharingNoticeSection(item)
             shareSection(item)
             deleteSection(item)
         }
@@ -216,7 +219,8 @@ struct PasswordsItemScreen: View {
                     get: { item.isUsableByAgent },
                     set: { isOn in Task { await setAgent(item, isOn: isOn) } })
             )
-            .disabled(isWorking)
+            // The agent's consent is the person's own record, which has to be checked first.
+            .disabled(isWorking || item.sharingCheck != .verified)
             if item.isUsableByAgent, let usedAt = item.lastUsedByAgentAt {
                 LabeledContent("Last used by the agent") {
                     Text(verbatim: usedAt.formatted(.relative(presentation: .named)))
@@ -236,11 +240,48 @@ struct PasswordsItemScreen: View {
     /// Shown when somebody was removed from the item but it could not be given a new key yet.
     private func newKeySection(_ item: PasswordItem) -> some View {
         Section {
-            Text("Removed. The item could not be given a new key.")
-                .foregroundStyle(.primary)
+            if model.itemIdsNeedingAttention.contains(item.id) {
+                Text("This item needs a new key. This iPhone gave it one a moment ago, so it waits before giving another.")
+                    .foregroundStyle(.primary)
+            } else {
+                Text("Removed. The item could not be given a new key.")
+                    .foregroundStyle(.primary)
+            }
             Button("Try again", systemImage: "arrow.clockwise") { Task { await giveNewKey(item) } }
                 .actionColor()
                 .disabled(isWorking)
+        }
+    }
+
+    /// Says when the item's sharing cannot be trusted, or when the server lists somebody the person
+    /// never shared the item with. Setting sharing again writes a record that is checked again.
+    @ViewBuilder
+    private func sharingNoticeSection(_ item: PasswordItem) -> some View {
+        let isUnchecked = item.sharingCheck == .unverified || item.sharingCheck == .replayed
+        let unrecordedText = PasswordsWords.unrecordedSharesNotice(of: item)
+        if isUnchecked || unrecordedText != nil {
+            Section {
+                if item.sharingCheck == .unverified {
+                    Text("Sharing could not be checked")
+                        .font(.body.weight(.semibold))
+                    Text("Nobody gets this item and the agent cannot use it until you set sharing again.")
+                        .foregroundStyle(.secondary)
+                } else if item.sharingCheck == .replayed {
+                    Text("This item's sharing was changed back by the server")
+                        .font(.body.weight(.semibold))
+                    Text("Nothing is done with the older sharing. Set sharing again to choose who has this item.")
+                        .foregroundStyle(.secondary)
+                }
+                if let unrecordedText {
+                    Text(unrecordedText)
+                }
+                if isUnchecked {
+                    NavigationLink(value: PasswordsDestination.share(item.id)) {
+                        Label("Set sharing again", systemImage: "person.badge.plus")
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
         }
     }
 
@@ -251,13 +292,32 @@ struct PasswordsItemScreen: View {
                     Label("Share", systemImage: "person.badge.plus")
                         .foregroundStyle(.primary)
                     Spacer()
-                    PasswordsValueText(PasswordsWords.shareSummary(of: item.shares), isProse: true)
+                    PasswordsValueText(PasswordsWords.shareSummary(of: item), isProse: true)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.trailing)
                 }
             }
         } footer: {
             Text("Choose a circle or a person. Only you can change an item you share.")
+        }
+    }
+
+    /// Deleting an item that is already in Recently deleted removes it and its old versions for good.
+    private func deleteForeverSection(_ item: PasswordItem) -> some View {
+        Section {
+            Button(role: .destructive) {
+                isConfirmingDeleteForever = true
+            } label: {
+                Label("Delete forever", systemImage: "trash").foregroundStyle(.red)
+            }
+            .tint(.red)
+            .actionColor(isDestructive: true)
+            .disabled(isWorking)
+            .confirmationDialog("Delete \(item.name) forever?", isPresented: $isConfirmingDeleteForever, titleVisibility: .visible) {
+                Button("Delete forever", role: .destructive) { Task { await deleteForever(item) } }
+            } message: {
+                Text("It is removed from Passwords and from this iPhone, and cannot be brought back.")
+            }
         }
     }
 
@@ -313,6 +373,18 @@ struct PasswordsItemScreen: View {
             dismiss()
         } catch {
             model.report(error, orSay: String(localized: "The item could not be deleted."))
+        }
+    }
+
+    private func deleteForever(_ item: PasswordItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await model.purge(item)
+            model.doneText = String(localized: "\(item.name) was deleted forever.")
+            dismiss()
+        } catch {
+            model.report(error, orSay: String(localized: "The item could not be deleted forever."))
         }
     }
 

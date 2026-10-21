@@ -264,11 +264,16 @@ public struct PasswordShareKeyInput: Codable, Hashable, Sendable {
     public var recipientUserId: String
     public var itemKeyByRecipientKey: String
     public var recipientPublicKey: String
+    /// The item key sealed with the account key, exactly as the item showed it when this device
+    /// opened it to seal this key. `SetPasswordItemShares` requires it whenever keys are given and
+    /// refuses the key when the item has another key by now ("changed on another device").
+    public var itemKey: String?
 
-    public init(recipientUserId: String, itemKeyByRecipientKey: String, recipientPublicKey: String) {
+    public init(recipientUserId: String, itemKeyByRecipientKey: String, recipientPublicKey: String, itemKey: String? = nil) {
         self.recipientUserId = recipientUserId
         self.itemKeyByRecipientKey = itemKeyByRecipientKey
         self.recipientPublicKey = recipientPublicKey
+        self.itemKey = itemKey
     }
 }
 
@@ -348,6 +353,9 @@ public protocol PasswordsAPI: Sendable {
     func savePasswordItem(_ input: PasswordItemSaveInput) async throws -> PasswordItemView
     func deletePasswordItem(id: String) async throws -> PasswordItemView
     func restorePasswordItem(id: String) async throws -> PasswordItemView
+    /// Deletes an item the person deleted, and its old versions, for good (`PurgePasswordItem`).
+    /// The server needs the person's own tap (the app's sign-in), not a token.
+    func purgePasswordItem(id: String) async throws -> Bool
     func setPasswordItemShares(itemId: String, grantees: [PasswordShareGranteeInput], keys: [PasswordShareKeyInput]) async throws
         -> PasswordItemView
     func addPasswordShareKeys(_ keys: [PasswordItemShareKeyInput]) async throws -> Int
@@ -437,6 +445,9 @@ extension Documents {
     public static let restorePasswordItem = """
         mutation ($id: String!) { RestorePasswordItem(id: $id) { \(passwordItemFields) } }
         """
+    public static let purgePasswordItem = """
+        mutation ($id: String!) { PurgePasswordItem(id: $id) }
+        """
     public static let setPasswordItemShares = """
         mutation ($itemId: String!, $grantees: [PasswordShareGranteeInput!]!, $keys: [PasswordShareKeyInput!]!) {
           SetPasswordItemShares(input: { itemId: $itemId, grantees: $grantees, keys: $keys }) { \(passwordItemFields) }
@@ -463,6 +474,7 @@ extension Documents {
         "updatePasswordsSettings": updatePasswordsSettings, "erasePasswords": erasePasswords, "passwordItems": passwordItems,
         "passwordRecipients": passwordRecipients, "waitingPasswordShares": waitingPasswordShares, "passwordsAgentKey": passwordsAgentKey,
         "savePasswordItem": savePasswordItem, "deletePasswordItem": deletePasswordItem, "restorePasswordItem": restorePasswordItem,
+        "purgePasswordItem": purgePasswordItem,
         "setPasswordItemShares": setPasswordItemShares, "addPasswordShareKeys": addPasswordShareKeys,
         "setPasswordItemUsableByAgent": setPasswordItemUsableByAgent, "rekeyPasswordItem": rekeyPasswordItem,
     ]
@@ -567,6 +579,11 @@ extension Connection: PasswordsAPI {
     public func restorePasswordItem(id: String) async throws -> PasswordItemView {
         struct Answer: Decodable, Sendable { let RestorePasswordItem: PasswordItemView }
         return try await execute(Documents.restorePasswordItem, variables: ["id": .string(id)], as: Answer.self).RestorePasswordItem
+    }
+
+    public func purgePasswordItem(id: String) async throws -> Bool {
+        struct Answer: Decodable, Sendable { let PurgePasswordItem: Bool }
+        return try await execute(Documents.purgePasswordItem, variables: ["id": .string(id)], as: Answer.self).PurgePasswordItem
     }
 
     public func setPasswordItemShares(itemId: String, grantees: [PasswordShareGranteeInput], keys: [PasswordShareKeyInput]) async throws

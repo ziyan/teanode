@@ -38,6 +38,8 @@ public enum PasswordsCryptoError: Error, Equatable, Sendable {
     case invalidKeyPair
     /// Key derivation from a passphrase failed.
     case keyDerivationFailed
+    /// An access record could not be signed: the highest version seen is out of range.
+    case invalidAccessRecord
     /// A passphrase iteration count below the minimum. The count comes back from
     /// the server, and a tiny one would make the proof cheap to guess from.
     case iterationCountTooLow
@@ -196,6 +198,11 @@ public enum PasswordsCrypto {
     private static let wrapKeyInfo = "teanode passwords wrap v1"
     private static let proofKeyInfo = "teanode passwords proof v1"
     private static let shareKeyInfo = "teanode passwords share v1"
+    private static let accessRecordLabel = "teanode passwords access record v1"
+
+    /// The highest record version any implementation accepts: the largest
+    /// integer a JavaScript number holds exactly.
+    public static let maximumRecordVersion = 9_007_199_254_740_991
 
     // MARK: Associated data
 
@@ -426,19 +433,18 @@ public enum PasswordsCrypto {
     private static let safetyCodeLabel = "teanode passwords safety code v2"
     private static let safetyCodeGroupCount = 8
 
-    /// The code two people compare out loud to be sure a person's public key is
-    /// the one they think: eight groups of four digits joined by spaces
+    /// The code two people compare out loud to be sure a public key is the one
+    /// they think: eight groups of four digits joined by spaces
     /// ("0412 9930 0007 5121 8800 0123 4567 8901"). It is the SHA-256 of the
-    /// label `teanode passwords safety code v2`, a zero byte, the user id in
-    /// UTF-8, a zero byte and the 65 public key bytes. The first 16 bytes of the
-    /// hash are eight big-endian 16 bit numbers, each modulo 10000. The user id
-    /// is part of it so a search for a key with a wanted code only works for one
-    /// person.
-    public static func safetyCode(userId: String, publicKey: Data) throws -> String {
+    /// label `teanode passwords safety code v2`, a zero byte and the 65 public
+    /// key bytes. The first 16 bytes of the hash are eight big-endian 16 bit
+    /// numbers, each modulo 10000. Nothing the server supplies goes into it, so
+    /// a server cannot pick an identifier to make a search for a matching code
+    /// easier: matching a fixed code means finding a key whose hash matches it,
+    /// about 2^106 key generations.
+    public static func safetyCode(publicKey: Data) throws -> String {
         guard publicKey.count == publicKeyByteCount else { throw PasswordsCryptoError.invalidKeyPair }
         var input = Data(safetyCodeLabel.utf8)
-        input.append(0)
-        input.append(Data(userId.utf8))
         input.append(0)
         input.append(publicKey)
         let digest = Array(SHA256.hash(data: input))
@@ -464,6 +470,103 @@ public enum PasswordsCrypto {
             groups.append(String(characters[start..<start + 4]))
         }
         return groups.joined(separator: " ")
+    }
+
+    // MARK: Access record signature
+
+    /// The key an access record is signed with: HKDF-SHA256 of the account key,
+    /// no salt, the label as the info, 32 bytes. Only the owner's devices hold
+    /// the account key, so only they can sign a record.
+    public static func accessMacKey(accountKey: Data) throws -> Data {
+        try hkdf(secret: accountKey, salt: Data(), info: accessRecordLabel)
+    }
+
+    /// What the signature covers: the label, a zero byte, the item id, a zero
+    /// byte, the item kind, a zero byte, the record version in decimal, a zero
+    /// byte, "1" or "0" for agent use, a zero byte, then each grantee as "u:"
+    /// and the user id or "c:" and the circle id, in UTF-8 byte order, each
+    /// followed by a zero byte. The record needs a version.
+    public static func accessSignedBytes(itemId: String, itemKind: PasswordsItemKind, access: PasswordsItemAccess) throws -> Data {
+        guard let version = access.recordVersion, version >= 1, version <= maximumRecordVersion else {
+            throw PasswordsCryptoError.invalidAccessRecord
+        }
+        let granteeBytes = access.grantees
+            .map { grantee -> [UInt8] in
+                switch grantee {
+                case .person(let userId): return Array("u:\(userId)".utf8)
+                case .circle(let circleId): return Array("c:\(circleId)".utf8)
+                }
+            }
+            .sorted { $0.lexicographicallyPrecedes($1) }
+        var signed = Data()
+        for part in [accessRecordLabel, itemId, itemKind.rawValue, String(version), access.isUsableByAgent ? "1" : "0"] {
+            signed.append(contentsOf: Array(part.utf8))
+            signed.append(0)
+        }
+        for bytes in granteeBytes {
+            signed.append(contentsOf: bytes)
+            signed.append(0)
+        }
+        return signed
+    }
+
+    /// The signature of an access record for an item: HMAC-SHA256 over
+    /// `accessSignedBytes`, under `accessMacKey`, as standard base64 with
+    /// padding. It uses the record's `recordVersion`, which must be set, and
+    /// ignores its `recordMac`.
+    public static func macOfAccess(accountKey: Data, itemId: String, itemKind: PasswordsItemKind, access: PasswordsItemAccess) throws -> String {
+        let key = SymmetricKey(data: try accessMacKey(accountKey: accountKey))
+        let signed = try accessSignedBytes(itemId: itemId, itemKind: itemKind, access: access)
+        return Data(HMAC<SHA256>.authenticationCode(for: signed, using: key)).base64EncodedString()
+    }
+
+    /// A copy of the record with its version set to one more than the highest
+    /// version this device has seen with a valid signature for the item (0 if
+    /// none), and the signature for that version. The version and signature the
+    /// given record has are ignored: a version the server supplied is never a
+    /// reason to count higher. No record is signed as one that grants nobody and
+    /// is not usable by the agent.
+    public static func signAccess(
+        accountKey: Data, itemId: String, itemKind: PasswordsItemKind, access: PasswordsItemAccess?, highestVersionSeen: Int
+    ) throws -> PasswordsItemAccess {
+        guard highestVersionSeen >= 0, highestVersionSeen < maximumRecordVersion else { throw PasswordsCryptoError.invalidAccessRecord }
+        var signed = PasswordsItemAccess(
+            isUsableByAgent: access?.isUsableByAgent ?? false, grantees: access?.grantees ?? [], recordVersion: highestVersionSeen + 1)
+        signed.recordMac = try macOfAccess(accountKey: accountKey, itemId: itemId, itemKind: itemKind, access: signed)
+        return signed
+    }
+
+    /// The fields with the given access record signed (see `signAccess`) in
+    /// place of the one they had. Everything else is unchanged.
+    public static func withSignedAccess(
+        accountKey: Data, itemId: String, itemKind: PasswordsItemKind, fields: PasswordsItemFields, access: PasswordsItemAccess?,
+        highestVersionSeen: Int
+    ) throws -> PasswordsItemFields {
+        let signed = try signAccess(
+            accountKey: accountKey, itemId: itemId, itemKind: itemKind, access: access, highestVersionSeen: highestVersionSeen)
+        return fields.withAccess(signed)
+    }
+
+    /// Whether the record is signed by the owner's devices for this item: it has
+    /// a version and a signature, and the signature is the one `macOfAccess`
+    /// gives. A missing record, version or signature, and a wrong signature, are
+    /// all `false`. The comparison takes the same time whatever the bytes.
+    public static func isAccessVerified(accountKey: Data, itemId: String, itemKind: PasswordsItemKind, access: PasswordsItemAccess?) -> Bool {
+        guard let access, access.recordVersion != nil, let text = access.recordMac, let given = Data(base64Encoded: text),
+            given.count == keyByteCount,
+            let key = try? accessMacKey(accountKey: accountKey),
+            let signed = try? accessSignedBytes(itemId: itemId, itemKind: itemKind, access: access)
+        else { return false }
+        return HMAC<SHA256>.isValidAuthenticationCode(given, authenticating: signed, using: SymmetricKey(data: key))
+    }
+
+    /// The fields' access record when it is signed for this item (see
+    /// `isAccessVerified`), and `nil` when there is none or it is not signed. A
+    /// device treats `nil` as a record that reaches nobody: it re-keys nothing
+    /// and makes no agent copy from the item, and asks the person to set sharing
+    /// again. A recipient cannot call this: the key is the owner's.
+    public static func verifyAccess(accountKey: Data, itemId: String, itemKind: PasswordsItemKind, fields: PasswordsItemFields) -> PasswordsItemAccess? {
+        isAccessVerified(accountKey: accountKey, itemId: itemId, itemKind: itemKind, access: fields.access) ? fields.access : nil
     }
 
     // MARK: Sealed for a key pair

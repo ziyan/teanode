@@ -30,6 +30,8 @@ public enum PasswordsCacheError: Error, Equatable, Sendable {
     case unreadable
     /// The file was written by a newer build.
     case unsupportedVersion
+    /// What was to be written is over the limit set for it (the AutoFill summary's byte budget).
+    case tooLarge
 }
 
 /// PasswordsMergeResult is what a merge changed, for a screen that wants to
@@ -46,11 +48,37 @@ public struct PasswordsMergeResult: Equatable, Sendable {
     }
 }
 
-/// PasswordsPins are the public keys this device holds for other people. They
-/// are about other people, not about the person's own setup, so they are kept
-/// in a pin store of their own that survives the cache being dropped (a server
-/// that answers with another public key must not be able to make the phone
-/// forget them) and goes only when the sign-in is removed.
+/// PasswordsItemMemory is what this device remembers about one item the person owns, from
+/// the last time it looked at the item in a state nobody was disputing. It lives with the
+/// pinned keys, in the Passwords keychain group, because what it protects is the owner's
+/// own record of who may have the item: the share extension and the widgets cannot write it.
+public struct PasswordsItemMemory: Codable, Equatable, Sendable {
+    /// The highest `recordVersion` this device has seen on the item's access record with a
+    /// valid signature. A record with a lower version is an older one the server sent back.
+    public var highestRecordVersion: Int
+    /// The user ids that held a key for the item when this device last saw it without the
+    /// server asking for a new key. An automatic new key is sealed only for these people.
+    public var keyHolderUserIds: [String]
+    /// Whether the item had a copy of its key for the agent at that time.
+    public var hadAgentCopy: Bool
+
+    public init(highestRecordVersion: Int = 0, keyHolderUserIds: [String] = [], hadAgentCopy: Bool = false) {
+        self.highestRecordVersion = highestRecordVersion
+        self.keyHolderUserIds = keyHolderUserIds
+        self.hadAgentCopy = hadAgentCopy
+    }
+
+    /// Most key holders remembered for one item. Somebody beyond this is left waiting for the
+    /// person's OK after an automatic new key, which is the safe side.
+    public static let mostKeyHolderUserIds = 1000
+}
+
+/// PasswordsPins are the public keys this device holds for other people, and what it
+/// remembers about each item the person owns. They are about other people and the server's
+/// past answers, not about the person's own setup, so they are kept in a pin store of their
+/// own that survives the cache being dropped (a server that answers with another public key
+/// or an older record must not be able to make the phone forget them) and goes only when the
+/// sign-in is removed.
 public struct PasswordsPins: Codable, Equatable, Sendable {
     public static let currentFormatVersion = 1
 
@@ -64,12 +92,32 @@ public struct PasswordsPins: Codable, Equatable, Sendable {
     /// The key the person confirmed by comparing its safety code, by user id. Only these keys
     /// let this device seal an item key for somebody without asking.
     public var confirmedPublicKeys: [String: String]
+    /// What this device remembers about each item the person owns, by item id.
+    public var itemMemories: [String: PasswordsItemMemory]
 
-    public init(userId: String, seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:]) {
+    public init(
+        userId: String, seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:],
+        itemMemories: [String: PasswordsItemMemory] = [:]
+    ) {
         self.formatVersion = Self.currentFormatVersion
         self.userId = userId
         self.seenPublicKeys = seenPublicKeys
         self.confirmedPublicKeys = confirmedPublicKeys
+        self.itemMemories = itemMemories
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case formatVersion, userId, seenPublicKeys, confirmedPublicKeys, itemMemories
+    }
+
+    /// Reads pins written before items had a memory too: they have none.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        formatVersion = try container.decode(Int.self, forKey: .formatVersion)
+        userId = try container.decode(String.self, forKey: .userId)
+        seenPublicKeys = try container.decode([String: String].self, forKey: .seenPublicKeys)
+        confirmedPublicKeys = try container.decode([String: String].self, forKey: .confirmedPublicKeys)
+        itemMemories = try container.decodeIfPresent([String: PasswordsItemMemory].self, forKey: .itemMemories) ?? [:]
     }
 
     /// The key to open a person's shared items with and to compare their items against: the
@@ -106,19 +154,27 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
     /// The keys the person confirmed by comparing safety codes, by user id. A device seals an
     /// item key without asking only for a key in here. Read from the pin store, not from the cache files.
     public var confirmedPublicKeys: [String: String]
+    /// What this device remembers about each item the person owns, by item id. Read from the pin
+    /// store, not from the cache files.
+    public var itemMemories: [String: PasswordsItemMemory]
 
-    /// Both maps, as the pin store holds them.
+    /// Everything the pin store holds.
     public var pins: PasswordsPins {
-        get { PasswordsPins(userId: userId, seenPublicKeys: seenPublicKeys, confirmedPublicKeys: confirmedPublicKeys) }
+        get {
+            PasswordsPins(
+                userId: userId, seenPublicKeys: seenPublicKeys, confirmedPublicKeys: confirmedPublicKeys, itemMemories: itemMemories)
+        }
         set {
             seenPublicKeys = newValue.seenPublicKeys
             confirmedPublicKeys = newValue.confirmedPublicKeys
+            itemMemories = newValue.itemMemories
         }
     }
 
     public init(
         userId: String, publicKey: String, privateKeyByAccountKey: String, revision: Int64 = 0, lockAfterMinutes: Int,
-        items: [PasswordItemView] = [], seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:]
+        items: [PasswordItemView] = [], seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:],
+        itemMemories: [String: PasswordsItemMemory] = [:]
     ) {
         self.formatVersion = Self.currentFormatVersion
         self.userId = userId
@@ -129,6 +185,7 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
         self.items = items
         self.seenPublicKeys = seenPublicKeys
         self.confirmedPublicKeys = confirmedPublicKeys
+        self.itemMemories = itemMemories
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -147,6 +204,7 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
         items = []
         seenPublicKeys = [:]
         confirmedPublicKeys = [:]
+        itemMemories = [:]
     }
 
     /// Writes the header: neither the items nor the pins.
@@ -407,7 +465,15 @@ public struct PasswordsCache: Sendable {
 
     /// The sealed summary the app wrote, as the file holds it; nil when there is none.
     public func loadSummaryData() throws -> Data? {
-        try coordinatedRead { try? Data(contentsOf: summaryFileURL) }
+        try coordinatedRead { readSummaryFile() }
+    }
+
+    /// The summary file's bytes; nil when there is none, or when it is bigger than any summary
+    /// this build writes (an earlier build did not limit it), without reading it.
+    private func readSummaryFile() -> Data? {
+        let size = (try? FileManager.default.attributesOfItem(atPath: summaryFileURL.path)[.size] as? NSNumber)?.intValue
+        if let size, size > PasswordsAutoFillSummary.mostSealedBytes { return nil }
+        return try? Data(contentsOf: summaryFileURL)
     }
 
     /// Replaces the summary file.
@@ -420,7 +486,7 @@ public struct PasswordsCache: Sendable {
     /// `update` gets nil when there is no file; returning nil removes it.
     public func updateSummaryData(_ update: (Data?) -> Data?) throws {
         try coordinatedWrite {
-            let current = try? Data(contentsOf: summaryFileURL)
+            let current = readSummaryFile()
             if let next = update(current) {
                 try write(next, to: summaryFileURL)
             } else {
@@ -437,6 +503,17 @@ public struct PasswordsCache: Sendable {
     /// Records a key the person confirmed by comparing safety codes.
     public func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws {
         try pinStore.recordConfirmed(userId: userId, ownerUserId: ownerUserId, publicKey: publicKey)
+    }
+
+    /// Remembers that an owned item's access record was seen at this version with a valid
+    /// signature; never lowers what is remembered.
+    public func raiseRecordVersion(userId: String, itemId: String, version: Int) throws {
+        try pinStore.raiseRecordVersion(userId: userId, itemId: itemId, version: version)
+    }
+
+    /// Remembers who held a key for an owned item, and whether it had an agent copy, as of now.
+    public func recordKeyHolders(userId: String, itemId: String, keyHolderUserIds: [String], hadAgentCopy: Bool) throws {
+        try pinStore.recordKeyHolders(userId: userId, itemId: itemId, keyHolderUserIds: keyHolderUserIds, hadAgentCopy: hadAgentCopy)
     }
 
     private func write(_ data: Data, to targetURL: URL) throws {

@@ -85,6 +85,8 @@ enum PasswordsWords {
         case .ownerKeyChanged: String(localized: "The key of the person who shared this changed. Compare the safety codes with them, then trust the new key.")
         case .ownerKeyUnknown: String(localized: "This iPhone has not seen the key of the person who shared this yet. Open Passwords and pull to refresh.")
         case .itemNeedsNewKey: String(localized: "Removed. The item could not be given a new key.")
+        case .sharingCouldNotBeChecked: String(localized: "Sharing for this item could not be checked. Set sharing again first.")
+        case .itemNeedsAttention: String(localized: "This item needs a new key, but one was given a moment ago. Try again in a few minutes.")
         }
     }
 
@@ -121,13 +123,31 @@ enum PasswordsWords {
     /// Whom an item the person owns is shared with, for the Share row: "Sam and
     /// Alex", "Home", or "Home, 1 waiting" when somebody the share reaches has
     /// not set up Passwords or still waits for the owner to confirm their key.
-    /// A circle is named by the circle, not by everyone in it.
-    static func shareSummary(of shares: [PasswordShareView]) -> String {
+    /// A circle is named by the circle, not by everyone in it. Only the shares the person's
+    /// own record lists count (`PasswordItem.recordedShares`); an item whose record could not
+    /// be checked is shared with nobody as far as the app can tell.
+    static func shareSummary(of item: PasswordItem) -> String {
+        switch item.sharingCheck {
+        case .unverified, .replayed: return String(localized: "Sharing could not be checked")
+        case .verified, .ownedByAnotherPerson: return shareSummary(of: item.recordedShares)
+        }
+    }
+
+    private static func shareSummary(of shares: [PasswordShareView]) -> String {
         if shares.isEmpty { return String(localized: "Not shared") }
         let names = ListFormatter.localizedString(byJoining: shares.map(\.granteeName))
         let waitingUserIds = Set(shares.flatMap(\.recipients).filter { $0.publicKey == nil || !$0.hasKey }.map(\.userId))
         if waitingUserIds.isEmpty { return names }
         return String(localized: "\(names), \(waitingUserIds.count) waiting")
+    }
+
+    /// The sentence that names the people the server lists for an item whose record does not list them:
+    /// "The server also lists Mallory, but you did not share this item with them." Nil when there are none.
+    static func unrecordedSharesNotice(of item: PasswordItem) -> String? {
+        let names = item.unrecordedShares.map { granteeName(of: $0) }
+        guard !names.isEmpty else { return nil }
+        let listed = ListFormatter.localizedString(byJoining: names)
+        return String(localized: "The server also lists \(listed), but you did not share this item with them.")
     }
 
     /// "Copied" sentence for a field: "Password copied."
@@ -158,7 +178,7 @@ enum PasswordsFilter: Hashable {
         switch self {
         case .everything: true
         case .kind(let itemKind): item.itemKind == itemKind
-        case .shared: item.isSharedWithMe || !item.shares.isEmpty
+        case .shared: item.isSharedWithMe || !item.recordedShares.isEmpty
         case .usableByAgent: item.isUsableByAgent
         case .folder(let name): item.folder == name
         }

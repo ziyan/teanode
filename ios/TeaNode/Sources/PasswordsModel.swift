@@ -54,6 +54,9 @@ final class PasswordsModel {
     /// agent was turned off, a member left a circle) that could not be given one yet: the item's
     /// screen says so and offers a retry.
     private(set) var itemIdsNeedingNewKey: [String] = []
+    /// The items among those that this iPhone did not give a new key by itself: one was given a
+    /// moment ago, or it has given the most it gives in a session. The item's screen says so.
+    private(set) var itemIdsNeedingAttention: Set<String> = []
     /// The person's own safety code, made from the key pair this iPhone opened and the person's own
     /// user id; nil while locked. Other people compare it before they trust the person's key.
     private(set) var ownSafetyCode: String?
@@ -389,6 +392,7 @@ final class PasswordsModel {
             var givenItemIds: [String] = []
             if !isDemo { givenItemIds = await session.giveNewKeysToMarkedItems() }
             if !givenItemIds.isEmpty { await reload() }
+            itemIdsNeedingAttention = await session.itemIdsNeedingAttention
             await giveWaitingRecipientsTheirKeys(isAnnouncing: !givenItemIds.isEmpty, isOpeningConfirmations: false)
         } catch {
             await handleSyncFailure(error)
@@ -444,6 +448,7 @@ final class PasswordsModel {
             unreadableItemCount = opened.unreadableReasons.values.filter { $0 == .cannotOpen }.count
             ownerKeyChanges = await session.ownerKeyChanges()
             itemIdsNeedingNewKey = await session.itemIdsNeedingNewKey
+            itemIdsNeedingAttention = await session.itemIdsNeedingAttention
             ownSafetyCode = try? await session.ownSafetyCode()
         } catch {
             report(error, orSay: String(localized: "Your items could not be opened."))
@@ -528,6 +533,13 @@ final class PasswordsModel {
         _ = try await session.restore(id: item.id)
         await reload()
         await giveWaitingRecipientsTheirKeys(isAnnouncing: item.needsNewKey, isOpeningConfirmations: false)
+    }
+
+    /// Deletes an item from Recently deleted for good. It cannot be brought back.
+    func purge(_ item: PasswordItem) async throws {
+        let session = try requireSession()
+        try await session.purge(id: item.id)
+        await reload()
     }
 
     func setUsableByAgent(_ item: PasswordItem, isUsable: Bool) async throws {

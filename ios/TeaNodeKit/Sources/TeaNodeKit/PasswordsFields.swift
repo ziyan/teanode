@@ -67,33 +67,74 @@ struct PasswordsAnyCodingKey: CodingKey {
 /// it. It is a key inside the sealed fields of every kind of item, written only
 /// by the owner's device, so the server cannot widen it. An item with no record
 /// (`access == nil`) grants nobody and is not usable by the agent. A recipient's
-/// copy may show the record but never acts on it. Decoding accepts exactly this
-/// shape: an object with `isUsableByAgent` (a boolean) and `grantees` (a list of
-/// grantees), and nothing else; any other shape makes the item unreadable.
+/// copy may show the record but never acts on it.
+///
+/// `recordVersion` and `recordMac` are its signature: the version counts the
+/// owner's changes, and the mac is the base64 of an HMAC-SHA256 under a key
+/// made from the account key, which only the owner's devices hold (see
+/// `PasswordsCrypto.macOfAccess`). A record may lack both, as one written before
+/// they existed; `PasswordsCrypto.verifyAccess` does not trust such a record.
+///
+/// Decoding accepts exactly this shape: an object with `isUsableByAgent` (a
+/// boolean) and `grantees` (a list of grantees), and optionally `recordVersion`
+/// (a positive integer) and `recordMac` (canonical base64 of 32 bytes), and
+/// nothing else; any other shape makes the item unreadable.
 public struct PasswordsItemAccess: Codable, Equatable, Sendable {
     public var isUsableByAgent: Bool
     public var grantees: [PasswordsGrantee]
+    /// `nil` for a record that has none, else a positive integer.
+    public var recordVersion: Int?
+    /// `nil` for a record that has none, else the canonical base64 of 32 bytes.
+    public var recordMac: String?
 
-    public init(isUsableByAgent: Bool = false, grantees: [PasswordsGrantee] = []) {
+    public init(isUsableByAgent: Bool = false, grantees: [PasswordsGrantee] = [], recordVersion: Int? = nil, recordMac: String? = nil) {
         self.isUsableByAgent = isUsableByAgent
         self.grantees = grantees
+        self.recordVersion = recordVersion
+        self.recordMac = recordMac
     }
 
     private enum CodingKeys: String, CodingKey {
         case isUsableByAgent
         case grantees
+        case recordVersion
+        case recordMac
     }
 
     public init(from decoder: Decoder) throws {
         let keyContainer = try decoder.container(keyedBy: PasswordsAnyCodingKey.self)
-        let knownKeys = Set([CodingKeys.isUsableByAgent.rawValue, CodingKeys.grantees.rawValue])
-        guard Set(keyContainer.allKeys.map(\.stringValue)) == knownKeys else {
+        let givenKeys = Set(keyContainer.allKeys.map(\.stringValue))
+        let requiredKeys = Set([CodingKeys.isUsableByAgent.rawValue, CodingKeys.grantees.rawValue])
+        let allowedKeys = requiredKeys.union([CodingKeys.recordVersion.rawValue, CodingKeys.recordMac.rawValue])
+        guard givenKeys.isSuperset(of: requiredKeys), givenKeys.isSubset(of: allowedKeys) else {
             throw DecodingError.dataCorrupted(
-                .init(codingPath: decoder.codingPath, debugDescription: "An access record is exactly isUsableByAgent and grantees"))
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "An access record is isUsableByAgent and grantees, and may have recordVersion and recordMac"))
         }
         let container = try decoder.container(keyedBy: CodingKeys.self)
         isUsableByAgent = try container.decode(Bool.self, forKey: .isUsableByAgent)
         grantees = try container.decode([PasswordsGrantee].self, forKey: .grantees)
+        if givenKeys.contains(CodingKeys.recordVersion.rawValue) {
+            let version = try container.decode(Int.self, forKey: .recordVersion)
+            guard version >= 1, version <= PasswordsCrypto.maximumRecordVersion else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .recordVersion, in: container, debugDescription: "A record version is a positive integer")
+            }
+            recordVersion = version
+        } else {
+            recordVersion = nil
+        }
+        if givenKeys.contains(CodingKeys.recordMac.rawValue) {
+            let text = try container.decode(String.self, forKey: .recordMac)
+            guard let bytes = Data(base64Encoded: text), bytes.count == PasswordsCrypto.keyByteCount, bytes.base64EncodedString() == text else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .recordMac, in: container, debugDescription: "A record mac is canonical base64 of 32 bytes")
+            }
+            recordMac = text
+        } else {
+            recordMac = nil
+        }
     }
 
     /// Whether the record grants an item to a recipient: a person grantee by
@@ -111,13 +152,17 @@ public struct PasswordsItemAccess: Codable, Equatable, Sendable {
         }
     }
 
-    /// A record with these grantees and the same agent use. No record counts as
-    /// one that grants nobody and is not usable by the agent.
+    /// A record with these grantees and the same agent use, without a version or
+    /// signature: sign it again (`PasswordsCrypto.withSignedAccess`) before it is
+    /// sealed. No record counts as one that grants nobody and is not usable by
+    /// the agent.
     public static func accessWithGrantees(_ access: PasswordsItemAccess?, grantees: [PasswordsGrantee]) -> PasswordsItemAccess {
         PasswordsItemAccess(isUsableByAgent: access?.isUsableByAgent ?? false, grantees: grantees)
     }
 
-    /// A record with agent use turned on or off and the same grantees.
+    /// A record with agent use turned on or off and the same grantees, without a
+    /// version or signature: sign it again (`PasswordsCrypto.withSignedAccess`)
+    /// before it is sealed.
     public static func accessWithAgentUse(_ access: PasswordsItemAccess?, isUsableByAgent: Bool) -> PasswordsItemAccess {
         PasswordsItemAccess(isUsableByAgent: isUsableByAgent, grantees: access?.grantees ?? [])
     }

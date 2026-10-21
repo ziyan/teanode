@@ -97,6 +97,26 @@ struct PasswordsShareScreen: View {
             } footer: {
                 Text("Each person who has set up Passwords gets this item's key, sealed on this iPhone for their key only, once you have confirmed their safety code. Only you can change the item.")
             }
+            if let item, item.sharingCheck == .unverified || item.sharingCheck == .replayed {
+                Section {
+                    if item.sharingCheck == .replayed {
+                        Text("This item's sharing was changed back by the server")
+                            .font(.body.weight(.semibold))
+                    } else {
+                        Text("Sharing could not be checked")
+                            .font(.body.weight(.semibold))
+                    }
+                    Text("Choose who has this item and save. That sets sharing again.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let item, let unrecordedText = PasswordsWords.unrecordedSharesNotice(of: item) {
+                Section {
+                    Text(unrecordedText)
+                    Text("Saving removes them.")
+                        .foregroundStyle(.secondary)
+                }
+            }
             if grantees.isEmpty {
                 Section {
                     Text("Not shared with anyone.")
@@ -150,10 +170,9 @@ struct PasswordsShareScreen: View {
             if people.isEmpty, circles.isEmpty, grantees.isEmpty, item.shares.isEmpty { loadProblemText = error.loadProblemText }
         }
         if !isLoaded, grantees.isEmpty {
-            // The shares the owner's own record lists. A share only the server lists is not shown as
-            // one the person made; saving ends it.
-            let recordGrantees = item.fields.access?.grantees ?? []
-            for share in item.shares where Self.isInRecord(share, recordGrantees: recordGrantees) {
+            // The shares the owner's own checked record lists. A share only the server lists is not shown
+            // as one the person made (the form says so); saving ends it.
+            for share in item.recordedShares {
                 let reached = await recipientsReached(by: share)
                 grantees.append(
                     PasswordsShareGrantee(
@@ -169,13 +188,6 @@ struct PasswordsShareScreen: View {
         if let known = try? await model.recipients(of: share) { return known }
         let circleIds = share.granteeCircleId.map { [$0] } ?? []
         return share.recipients.map { PasswordRecipient(view: $0, circleIds: circleIds) }
-    }
-
-    /// Whether the owner's sealed record lists the grantee of a share the server shows.
-    private static func isInRecord(_ share: PasswordShareView, recordGrantees: [PasswordsGrantee]) -> Bool {
-        if let circleId = share.granteeCircleId { return recordGrantees.contains(.circle(circleId: circleId)) }
-        if let userId = share.granteeUserId { return recordGrantees.contains(.person(userId: userId)) }
-        return false
     }
 
     // MARK: Changing

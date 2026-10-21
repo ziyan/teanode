@@ -221,16 +221,15 @@ final class PasswordsCryptoTests: XCTestCase {
         }
     }
 
-    func testSafetyCodeIsEightGroupsOfFourDigitsBoundToTheUserAndStable() throws {
+    func testSafetyCodeIsEightGroupsOfFourDigitsFromTheKeyAloneAndStable() throws {
         let keyPair = PasswordsCrypto.makeKeyPair()
-        let code = try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: keyPair.publicKey)
-        XCTAssertEqual(code, try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: keyPair.publicKey))
+        let code = try PasswordsCrypto.safetyCode(publicKey: keyPair.publicKey)
+        XCTAssertEqual(code, try PasswordsCrypto.safetyCode(publicKey: keyPair.publicKey))
         let groups = code.split(separator: " ")
         XCTAssertEqual(groups.count, 8)
         XCTAssertTrue(groups.allSatisfy { $0.count == 4 && $0.allSatisfy(\.isNumber) })
-        XCTAssertNotEqual(code, try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: PasswordsCrypto.makeKeyPair().publicKey))
-        XCTAssertNotEqual(code, try PasswordsCrypto.safetyCode(userId: "user-ben", publicKey: keyPair.publicKey))
-        XCTAssertThrowsError(try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: Data(count: 64)))
+        XCTAssertNotEqual(code, try PasswordsCrypto.safetyCode(publicKey: PasswordsCrypto.makeKeyPair().publicKey))
+        XCTAssertThrowsError(try PasswordsCrypto.safetyCode(publicKey: Data(count: 64)))
     }
 
     func testATypedSafetyCodeIsReadWithOrWithoutSpacesAndOtherTextIsRefused() {

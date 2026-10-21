@@ -44,8 +44,12 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
             name: String(repeating: "n", count: 1000), userName: "ada@example.com", password: "correct horse", sites: sites,
             oneTimeCodeUri: "otpauth://totp/Example:ada?issuer=Example", notes: "private notes ONETIMEMARKER", passkeys: passkeys)
         let summary = PasswordsAutoFillSummary.login(itemId: "id-1", ownerName: "Grace", isSharedWithMe: true, fields: fields)
-        XCTAssertEqual(summary.sites.count, PasswordsAutoFillSummary.mostSitesPerLogin)
-        XCTAssertEqual(summary.passkeys.count, PasswordsAutoFillSummary.mostPasskeysPerLogin)
+        // Somebody else's login lists fewer sites and passkeys than the person's own.
+        XCTAssertEqual(summary.sites.count, PasswordsAutoFillSummary.mostSitesPerSharedLogin)
+        XCTAssertEqual(summary.passkeys.count, PasswordsAutoFillSummary.mostPasskeysPerSharedLogin)
+        let own = PasswordsAutoFillSummary.login(itemId: "id-2", ownerName: "", isSharedWithMe: false, fields: fields)
+        XCTAssertEqual(own.sites.count, PasswordsAutoFillSummary.mostSitesPerLogin)
+        XCTAssertEqual(own.passkeys.count, PasswordsAutoFillSummary.mostPasskeysPerLogin)
         XCTAssertLessThanOrEqual(summary.displayName.count, 200)
         XCTAssertTrue(summary.sites.allSatisfy { $0.count <= 200 })
         XCTAssertTrue(summary.hasPassword)
@@ -65,7 +69,7 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
             "ada")
     }
 
-    func testTheSummaryHoldsAtMostAFixedNumberOfLoginsAndKeepsTheOwnOnesFirst() {
+    func testTheSummaryHoldsAtMostAFixedNumberOfLoginsAndKeepsTheOwnOnesFirst() throws {
         var summary = PasswordsAutoFillSummary(userId: "user-ada")
         for index in 0..<(PasswordsAutoFillSummary.mostLogins + 50) {
             let isShared = index % 2 == 0
@@ -78,9 +82,11 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
             PasswordsAutoFillLogin(
                 itemId: "own-last", displayName: "Zzz", userName: "", sites: [], passkeys: [], ownerName: "", isSharedWithMe: false,
                 hasPassword: true, hasOneTimeCode: false))
-        XCTAssertEqual(summary.logins.count, PasswordsAutoFillSummary.mostLogins)
+        // The count and the byte budget both apply; the person's own logins are all kept whichever bites.
+        XCTAssertLessThanOrEqual(summary.logins.count, PasswordsAutoFillSummary.mostLogins)
         XCTAssertTrue(summary.logins.contains { $0.itemId == "own-last" })
         XCTAssertEqual(summary.logins.filter { !$0.isSharedWithMe }.count, (PasswordsAutoFillSummary.mostLogins + 50) / 2 + 1)
+        XCTAssertLessThanOrEqual(try JSONEncoder().encode(summary).count, PasswordsAutoFillSummary.mostBytes)
     }
 
     func testTheSealedSummaryOpensOnlyWithTheAccountKeyOfTheSamePerson() throws {
@@ -316,6 +322,156 @@ final class PasswordsAutoFillSummaryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: cache.pinsFileURL), damaged)
         let stored = await server.item(item.id)
         XCTAssertNil(stored?.keys["user-linus"], "nothing was sealed for the key that could not be recorded")
+    }
+
+    // MARK: The byte budget
+
+    /// A login as a hostile circle member makes it: every list as long as the item allows, with the
+    /// longest ids and names. `weight` makes some of them bigger than others.
+    private func hostileFields(index: Int, weight: Int) -> PasswordsLoginFields {
+        let sites = (0..<PasswordsAutoFillSummary.mostSitesPerLogin).map { number in
+            "https://" + String(repeating: "a", count: 150) + "\(index)-\(number).example.test/" + String(repeating: "p", count: 30)
+        }
+        let passkeys = (0..<PasswordsAutoFillSummary.mostPasskeysPerLogin).map { number in
+            PasswordsPasskeyFields(
+                credentialId: String(repeating: "c", count: 1000 + weight * 200) + "\(index)-\(number)",
+                relyingPartyId: String(repeating: "r", count: 190) + "\(index)", userHandle: "dXNlcg",
+                userName: String(repeating: "u", count: 190) + "\(number)", userDisplayName: "Ada",
+                privateKey: String(repeating: "k", count: 200), createdAt: "2026-10-21T00:00:00Z")
+        }
+        return PasswordsLoginFields(
+            name: String(repeating: "n", count: 190) + "\(index)", userName: String(repeating: "x", count: 190) + "\(index)", password: "pw",
+            sites: sites, passkeys: passkeys)
+    }
+
+    private func jsonBytes(_ summary: PasswordsAutoFillSummary) throws -> Int {
+        try JSONEncoder().encode(summary).count
+    }
+
+    func testSharedLoginsAreCappedPerOwnerAndAHostileCircleStaysInsideTheByteBudget() throws {
+        var logins: [PasswordsAutoFillLogin] = []
+        // Ten of the person's own logins, each as long as a login can be.
+        for index in 0..<10 {
+            logins.append(
+                PasswordsAutoFillSummary.login(
+                    itemId: "own-\(index)", ownerName: "", isSharedWithMe: false, fields: hostileFields(index: index, weight: 0)))
+        }
+        // Twelve owners share 250 hostile logins each, of different sizes: with their own caps
+        // that is still tens of megabytes.
+        for owner in 0..<12 {
+            for index in 0..<250 {
+                logins.append(
+                    PasswordsAutoFillSummary.login(
+                        itemId: "shared-\(owner)-\(index)", ownerName: "Owner \(owner)", isSharedWithMe: true,
+                        fields: hostileFields(index: owner * 1000 + index, weight: index % 5), ownerUserId: "user-owner-\(owner)"))
+        }
+        }
+        XCTAssertGreaterThan(try JSONEncoder().encode(logins).count, 20 * 1024 * 1024)
+        var summary = PasswordsAutoFillSummary(userId: "user-ada", logins: logins)
+        summary.sortAndCap()
+
+        XCTAssertLessThanOrEqual(try jsonBytes(summary), PasswordsAutoFillSummary.mostBytes)
+        // The person's own logins all stay.
+        XCTAssertEqual(summary.logins.filter { !$0.isSharedWithMe }.count, 10)
+        // No owner has more than the cap, and no shared login lists more than five sites and five passkeys.
+        let sharedByOwner = Dictionary(grouping: summary.logins.filter(\.isSharedWithMe), by: { $0.ownerUserId ?? "" })
+        XCTAssertTrue(sharedByOwner.values.allSatisfy { $0.count <= PasswordsAutoFillSummary.mostSharedLoginsPerOwner })
+        XCTAssertTrue(summary.logins.filter(\.isSharedWithMe).allSatisfy { $0.sites.count <= 5 && $0.passkeys.count <= 5 })
+        // What was dropped is the largest of the shared logins: nothing kept is bigger than anything dropped.
+        let keptItemIds = Set(summary.logins.map(\.itemId))
+        let sharedLogins = logins.filter(\.isSharedWithMe)
+        let afterOwnerCap = Dictionary(grouping: sharedLogins, by: { $0.ownerUserId ?? "" }).values.flatMap {
+            Array($0.sorted { $0.displayName < $1.displayName }.prefix(PasswordsAutoFillSummary.mostSharedLoginsPerOwner))
+        }
+        let keptSizes = afterOwnerCap.filter { keptItemIds.contains($0.itemId) }.map { (try? JSONEncoder().encode($0).count) ?? 0 }
+        let droppedSizes = afterOwnerCap.filter { !keptItemIds.contains($0.itemId) }.map { (try? JSONEncoder().encode($0).count) ?? 0 }
+        XCTAssertFalse(droppedSizes.isEmpty)
+        XCTAssertLessThanOrEqual(keptSizes.max() ?? 0, droppedSizes.min() ?? 0)
+
+        // It seals, within the size a sealed summary may have, and opens.
+        let accountKey = PasswordsCrypto.makeKey()
+        let sealed = try summary.sealedData(accountKey: accountKey)
+        XCTAssertLessThanOrEqual(sealed.count, PasswordsAutoFillSummary.mostSealedBytes)
+        XCTAssertEqual(try PasswordsAutoFillSummary.open(sealed, accountKey: accountKey, userId: "user-ada"), summary)
+    }
+
+    func testOpeningTheSummaryOfAHostileCircleTakesAFewMegabytes() throws {
+        var logins: [PasswordsAutoFillLogin] = []
+        for owner in 0..<12 {
+            for index in 0..<250 {
+                logins.append(
+                    PasswordsAutoFillSummary.login(
+                        itemId: "shared-\(owner)-\(index)", ownerName: "Owner \(owner)", isSharedWithMe: true,
+                        fields: hostileFields(index: owner * 1000 + index, weight: index % 5), ownerUserId: "user-owner-\(owner)"))
+            }
+        }
+        var summary = PasswordsAutoFillSummary(userId: "user-ada", logins: logins)
+        logins = []
+        summary.sortAndCap()
+        let accountKey = PasswordsCrypto.makeKey()
+        let sealed = try summary.sealedData(accountKey: accountKey)
+        summary = PasswordsAutoFillSummary(userId: "user-ada")
+
+        guard resetPeak() else { throw XCTSkip("the peak of this process cannot be reset here") }
+        let baselineKilobytes = residentKilobytes("VmHWM")
+        let opened = try PasswordsAutoFillSummary.open(sealed, accountKey: accountKey, userId: "user-ada")
+        let growthMiB = (residentKilobytes("VmHWM") - baselineKilobytes) / 1024
+        print("Passwords memory: hostile summary of \(sealed.count / 1024) KiB sealed opened, \(opened.logins.count) logins: peak grew by \(growthMiB) MiB")
+        XCTAssertFalse(opened.logins.isEmpty)
+        // The summary the audit found needed about 200 MB to open.
+        XCTAssertLessThan(growthMiB, 20)
+    }
+
+    func testASummaryOverTheBudgetIsNeverWritten() throws {
+        var summary = PasswordsAutoFillSummary(userId: "user-ada")
+        for index in 0..<200 {
+            summary.logins.append(
+                PasswordsAutoFillSummary.login(
+                    itemId: "own-\(index)", ownerName: "", isSharedWithMe: false, fields: hostileFields(index: index, weight: 4)))
+        }
+        XCTAssertGreaterThan(try jsonBytes(summary), PasswordsAutoFillSummary.mostBytes)
+        XCTAssertThrowsError(try summary.sealedData(accountKey: PasswordsCrypto.makeKey())) { error in
+            XCTAssertEqual(error as? PasswordsCacheError, .tooLarge)
+        }
+        // Made the proper way, the person's own logins alone over the budget lose the largest first and it fits.
+        summary.sortAndCap()
+        XCTAssertLessThanOrEqual(try jsonBytes(summary), PasswordsAutoFillSummary.mostBytes)
+        XCTAssertNoThrow(try summary.sealedData(accountKey: PasswordsCrypto.makeKey()))
+    }
+
+    func testAnOldSummaryFileOfAnySizeIsNotRead() throws {
+        let directory = makeDirectory()
+        let cache = PasswordsCache(fileURL: directory.appendingPathComponent("passwords.json"), pinStore: PasswordsMemoryPinStore())
+        // A file bigger than any summary this build writes, as an earlier build could have left.
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let oversized = Data(repeating: 0x61, count: PasswordsAutoFillSummary.mostSealedBytes + 1)
+        try oversized.write(to: cache.summaryFileURL)
+        XCTAssertNil(try cache.loadSummaryData())
+        XCTAssertThrowsError(try PasswordsAutoFillSummary.open(oversized, accountKey: PasswordsCrypto.makeKey(), userId: "user-ada")) { error in
+            XCTAssertEqual(error as? PasswordsCacheError, .unreadable)
+        }
+        // The app's update starts over from nothing instead of reading it.
+        var sawData: Data?
+        var wasCalled = false
+        try cache.updateSummaryData { current in
+            wasCalled = true
+            sawData = current
+            return nil
+        }
+        XCTAssertTrue(wasCalled)
+        XCTAssertNil(sawData)
+    }
+
+    func testASharedLoginIsSummarizedWithItsOwnerAndTheSmallerCaps() throws {
+        let fields = PasswordsItemFields.login(hostileFields(index: 1, weight: 0))
+        let item = PasswordItem(
+            id: "item-1", fields: fields, ownerUserId: "user-grace", ownerName: "Grace", isSharedWithMe: true, revision: 1,
+            isUsableByAgent: false, lastUsedByAgentAt: nil, deletedAt: nil, createdAt: nil, updatedAt: nil, shares: [], needsNewKey: false,
+            sharingCheck: .ownedByAnotherPerson)
+        let login = try XCTUnwrap(PasswordsAutoFillSummary.login(of: item))
+        XCTAssertEqual(login.ownerUserId, "user-grace")
+        XCTAssertEqual(login.sites.count, PasswordsAutoFillSummary.mostSitesPerSharedLogin)
+        XCTAssertEqual(login.passkeys.count, PasswordsAutoFillSummary.mostPasskeysPerSharedLogin)
     }
 
     // MARK: Memory

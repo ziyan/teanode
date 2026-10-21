@@ -46,6 +46,7 @@ struct HostileServerAPI: PasswordsAPI {
     func savePasswordItem(_ input: PasswordItemSaveInput) async throws -> PasswordItemView { try await inner.savePasswordItem(input) }
     func deletePasswordItem(id: String) async throws -> PasswordItemView { try await inner.deletePasswordItem(id: id) }
     func restorePasswordItem(id: String) async throws -> PasswordItemView { try await inner.restorePasswordItem(id: id) }
+    func purgePasswordItem(id: String) async throws -> Bool { try await inner.purgePasswordItem(id: id) }
     func setPasswordItemShares(itemId: String, grantees: [PasswordShareGranteeInput], keys: [PasswordShareKeyInput]) async throws
         -> PasswordItemView
     {

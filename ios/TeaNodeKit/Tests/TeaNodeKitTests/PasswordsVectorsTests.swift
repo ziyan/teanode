@@ -115,9 +115,16 @@ final class PasswordsVectorsTests: XCTestCase {
         let shareSection = try object(try loadVectors(), "share")
         XCTAssertEqual(
             fields.access,
-            PasswordsItemAccess(
-                isUsableByAgent: true,
-                grantees: [.person(userId: try text(shareSection, "recipientId")), .circle(circleId: "00000000-0000-4000-8000-000000000005")]))
+            try signedAccess(try object(try loadVectors(), "accessRecord"), "signedAccess"))
+        XCTAssertEqual(fields.access?.recordVersion, 7)
+        XCTAssertEqual(
+            fields.access?.grantees,
+            [.person(userId: try text(shareSection, "recipientId")), .circle(circleId: "00000000-0000-4000-8000-000000000005")])
+        let record = try object(try loadVectors(), "accessRecord")
+        XCTAssertEqual(
+            PasswordsCrypto.verifyAccess(
+                accountKey: try bytes(record, "accountKey"), itemId: parts[1], itemKind: kind, fields: fields),
+            fields.access)
         // Sealing the fields again with the same nonce gives something that opens to the same fields.
         let resealed = try PasswordsCrypto.sealItemFields(
             fields, itemKey: try bytes(section, "key"), itemId: parts[1], nonce: try bytes(section, "nonce"))
@@ -125,14 +132,48 @@ final class PasswordsVectorsTests: XCTestCase {
             try PasswordsCrypto.openItemFields(resealed, itemKey: try bytes(section, "key"), itemId: parts[1], itemKind: kind), fields)
     }
 
+    private func signedAccess(_ parent: JSONObject, _ key: String) throws -> PasswordsItemAccess {
+        let data = try JSONSerialization.data(withJSONObject: try object(parent, key))
+        return try JSONDecoder().decode(PasswordsItemAccess.self, from: data)
+    }
+
+    func testAccessRecordSignature() throws {
+        let section = try object(try loadVectors(), "accessRecord")
+        let accountKey = try bytes(section, "accountKey")
+        let itemId = try text(section, "itemId")
+        let itemKind = try XCTUnwrap(PasswordsItemKind(rawValue: try text(section, "itemKind")))
+        let signed = try signedAccess(section, "signedAccess")
+        XCTAssertEqual(try PasswordsCrypto.accessMacKey(accountKey: accountKey), try bytes(section, "macKey"))
+        XCTAssertEqual(
+            try PasswordsCrypto.accessSignedBytes(itemId: itemId, itemKind: itemKind, access: signed), try bytes(section, "signedBytes"))
+        XCTAssertEqual(
+            try PasswordsCrypto.macOfAccess(accountKey: accountKey, itemId: itemId, itemKind: itemKind, access: signed), signed.recordMac)
+        let highestVersionSeen = try XCTUnwrap(section["highestVersionSeen"] as? Int)
+        XCTAssertEqual(
+            try PasswordsCrypto.signAccess(
+                accountKey: accountKey, itemId: itemId, itemKind: itemKind, access: try signedAccess(section, "access"),
+                highestVersionSeen: highestVersionSeen),
+            signed)
+        XCTAssertTrue(PasswordsCrypto.isAccessVerified(accountKey: accountKey, itemId: itemId, itemKind: itemKind, access: signed))
+        let forgedRecords = try XCTUnwrap(section["forged"] as? [JSONObject])
+        XCTAssertFalse(forgedRecords.isEmpty)
+        for forged in forgedRecords {
+            let name = try text(forged, "name")
+            let forgedKind = try XCTUnwrap(PasswordsItemKind(rawValue: try text(forged, "itemKind")))
+            XCTAssertFalse(
+                PasswordsCrypto.isAccessVerified(
+                    accountKey: accountKey, itemId: try text(forged, "itemId"), itemKind: forgedKind,
+                    access: try signedAccess(forged, "access")),
+                name)
+        }
+    }
+
     func testPersonKey() throws {
         let section = try object(try loadVectors(), "personKey")
         let keyPair = try PasswordsCrypto.keyPair(privateKey: try bytes(section, "privateKey"))
         XCTAssertEqual(keyPair.publicKey, try bytes(section, "publicKey"))
-        let userId = try text(section, "userId")
         let code = try text(section, "safetyCode")
-        XCTAssertEqual(try PasswordsCrypto.safetyCode(userId: userId, publicKey: keyPair.publicKey), code)
-        XCTAssertNotEqual(try PasswordsCrypto.safetyCode(userId: userId + "x", publicKey: keyPair.publicKey), code)
+        XCTAssertEqual(try PasswordsCrypto.safetyCode(publicKey: keyPair.publicKey), code)
         let typedCodes = try XCTUnwrap(section["typedSafetyCodes"] as? [String])
         for typed in [code] + typedCodes {
             XCTAssertEqual(PasswordsCrypto.normalizeSafetyCode(typed), code, typed)

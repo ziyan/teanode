@@ -361,6 +361,33 @@ actor FakePasswordsServer {
         return view(item, for: userId)!
     }
 
+    /// Deletes a deleted item for good, as the real server does for a tap.
+    func purge(userId: String, itemId: String) throws -> Bool {
+        try requireOnline()
+        let item = try ownedItem(itemId, userId: userId)
+        guard item.deletedAt != nil else { throw TeaNodeError.refused("api: not found") }
+        items[itemId] = nil
+        return true
+    }
+
+    /// Puts an item back to sealed text captured earlier, as a server that kept an old copy would.
+    func replaceStoredFields(itemId: String, encryptedFields: String, itemKeyByAccountKey: String, needsNewKey: Bool) {
+        guard var changed = items[itemId] else { return }
+        changed.encryptedFields = encryptedFields
+        changed.itemKeyByAccountKey = itemKeyByAccountKey
+        changed.needsNewKey = needsNewKey
+        changed.revision = nextRevision()
+        items[itemId] = changed
+    }
+
+    /// Marks an item as needing a new key without anything else changing, as the server does on its own word.
+    func markNeedsNewKey(itemId: String) {
+        guard var changed = items[itemId] else { return }
+        changed.needsNewKey = true
+        changed.revision = nextRevision()
+        items[itemId] = changed
+    }
+
     func setShares(userId: String, itemId: String, grantees: [PasswordShareGranteeInput], keys: [PasswordShareKeyInput]) throws
         -> PasswordItemView
     {
@@ -372,6 +399,9 @@ actor FakePasswordsServer {
         if !reachedBefore.subtracting(reachedUserIds).isEmpty { item.needsNewKey = true }
         item.keys = item.keys.filter { reachedUserIds.contains($0.key) }
         for key in keys {
+            guard key.itemKey == item.itemKeyByAccountKey else {
+                throw TeaNodeError.refused("This item changed on another device. Open it again.")
+            }
             guard reachedUserIds.contains(key.recipientUserId) else { throw TeaNodeError.refused("That person is not reached by this share.") }
             guard people[key.recipientUserId]?.setup?.publicKey == key.recipientPublicKey else {
                 throw TeaNodeError.refused("api: invalid arguments: That person's key changed since it was read. Read their key again and seal the item for it.")
@@ -486,6 +516,7 @@ struct FakePasswordsAPI: PasswordsAPI {
     }
     func deletePasswordItem(id: String) async throws -> PasswordItemView { try await server.delete(userId: userId, itemId: id) }
     func restorePasswordItem(id: String) async throws -> PasswordItemView { try await server.restore(userId: userId, itemId: id) }
+    func purgePasswordItem(id: String) async throws -> Bool { try await server.purge(userId: userId, itemId: id) }
     func setPasswordItemShares(itemId: String, grantees: [PasswordShareGranteeInput], keys: [PasswordShareKeyInput]) async throws
         -> PasswordItemView
     {
