@@ -38,7 +38,10 @@ struct LocationPeopleRows: View {
                                 .font(.title3)
                                 .foregroundStyle(.tint)
                                 .frame(width: LocationPersonRow.avatarSize)
+                            // A font of its own: a text in a list row without
+                            // one takes the list's size, past the cap below.
                             Text("\(model.people.count) people")
+                                .font(.body)
                                 .foregroundStyle(.primary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Image(systemName: "chevron.right")
