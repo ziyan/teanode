@@ -179,7 +179,8 @@
                 Self.agentLoginItemId, .login(
                     PasswordsLoginFields(
                         name: "Example Shop", userName: "robin", password: Self.demoPassword("maple", "orbit", "77", "Tide"),
-                        sites: ["https://shop.example.com"], passkeys: [passkey], folder: "Personal")),
+                        sites: ["https://shop.example.com"], passkeys: [passkey], folder: "Personal",
+                        access: PasswordsItemAccess(isUsableByAgent: true, grantees: []))),
                 accountKey: accountKey, createdDaysAgo: 90, isUsableByAgent: true, lastUsedByAgentDaysAgo: 2)
             addOwned(
                 "demo-item-login-router", .login(
@@ -212,7 +213,8 @@
                 Self.sharedByMeItemId, .login(
                     PasswordsLoginFields(
                         name: "Family streaming", userName: "family@example.com", password: Self.demoPassword("orchard", "signal", "31", "Ruby"),
-                        sites: ["https://watch.example.com"], folder: "Home")),
+                        sites: ["https://watch.example.com"], folder: "Home",
+                        access: PasswordsItemAccess(isUsableByAgent: false, grantees: [.circle(circleId: "circle-home")]))),
                 accountKey: accountKey, createdDaysAgo: 80, sharedWith: [PasswordShareGranteeInput(granteeCircleId: "circle-home")])
             addOwned(
                 "demo-item-note-alarm", .note(PasswordsNoteFields(name: "Old alarm code", text: "Front door: 4821")),
@@ -369,6 +371,7 @@
                 if query.contains("SetPasswordItemUsableByAgent") {
                     return try respond("SetPasswordItemUsableByAgent", setUsableByAgent(variables))
                 }
+                if query.contains("RekeyPasswordItem") { return try respond("RekeyPasswordItem", rekey(variables)) }
             } catch let failure as PasswordsDemoFailure {
                 return refusal(failure.reason)
             } catch {
@@ -663,6 +666,29 @@
                 addedCount += 1
             }
             return addedCount
+        }
+
+        /// Gives an item a new item key: the fields and the keys come sealed by the device; the old share keys go.
+        private func rekey(_ variables: [String: Any]) throws -> PasswordItemView {
+            var item = try ownedItem(try string(variables, "id"))
+            item.encryptedFields = try string(variables, "encryptedFields")
+            item.itemKeyByAccountKey = try string(variables, "itemKey")
+            let reached = Set(reachedUserIds(item))
+            item.keys = [:]
+            for key in variables["shareKeys"] as? [[String: Any]] ?? [] {
+                guard let userId = key["recipientUserId"] as? String, let sealed = key["itemKeyByRecipientKey"] as? String,
+                    let publicKey = key["recipientPublicKey"] as? String
+                else { throw PasswordsDemoFailure(reason: "api: invalid arguments: a key names the recipient") }
+                try requireKeyForCurrentKey(userId: userId, publicKey: publicKey, reached: reached)
+                item.keys[userId] = (sealed, publicKey)
+            }
+            if (variables["itemKeyByAgentKey"] as? String)?.isEmpty ?? true {
+                item.isUsableByAgent = false
+                item.lastUsedByAgentAt = nil
+            }
+            item.revision = nextRevision()
+            items[item.id] = item
+            return try presented(item)
         }
 
         private func setUsableByAgent(_ variables: [String: Any]) throws -> PasswordItemView {

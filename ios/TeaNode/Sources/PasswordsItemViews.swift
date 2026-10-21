@@ -286,10 +286,13 @@ struct PasswordsItemScreen: View {
         defer { isWorking = false }
         do {
             try await model.setUsableByAgent(item, isUsable: isOn)
-            model.doneText =
-                isOn
-                ? String(localized: "The agent can use this item now.")
-                : String(localized: "The agent can no longer use this item.")
+            // The toast may already say who is waiting for the person's OK after the new key.
+            if model.doneText == nil {
+                model.doneText =
+                    isOn
+                    ? String(localized: "The agent can use this item now.")
+                    : String(localized: "The agent can no longer use this item.")
+            }
         } catch {
             model.report(error, orSay: String(localized: "The agent setting could not be changed."))
         }

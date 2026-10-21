@@ -14,6 +14,115 @@ public enum PasswordsItemKind: String, Codable, CaseIterable, Sendable {
     case note
 }
 
+/// PasswordsGrantee is one person or one circle that may have an item. Exactly
+/// one of the two is written, as a non-empty id: `{"userId": "..."}` or
+/// `{"circleId": "..."}`.
+public enum PasswordsGrantee: Codable, Equatable, Hashable, Sendable {
+    case person(userId: String)
+    case circle(circleId: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case userId
+        case circleId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: PasswordsAnyCodingKey.self)
+        guard container.allKeys.count == 1, let key = container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "A grantee needs exactly one of userId and circleId"))
+        }
+        let identifier = try container.decode(String.self, forKey: key)
+        guard !identifier.isEmpty else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "A grantee needs a non-empty id"))
+        }
+        switch key.stringValue {
+        case CodingKeys.userId.rawValue: self = .person(userId: identifier)
+        case CodingKeys.circleId.rawValue: self = .circle(circleId: identifier)
+        default:
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "A grantee needs exactly one of userId and circleId"))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .person(let userId): try container.encode(userId, forKey: .userId)
+        case .circle(let circleId): try container.encode(circleId, forKey: .circleId)
+        }
+    }
+}
+
+/// A coding key for any text, so a decoder can see which keys an object has and refuse the ones it does not know.
+struct PasswordsAnyCodingKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
+}
+
+/// PasswordsItemAccess is who may have an item and whether the agent may use
+/// it. It is a key inside the sealed fields of every kind of item, written only
+/// by the owner's device, so the server cannot widen it. An item with no record
+/// (`access == nil`) grants nobody and is not usable by the agent. A recipient's
+/// copy may show the record but never acts on it. Decoding accepts exactly this
+/// shape: an object with `isUsableByAgent` (a boolean) and `grantees` (a list of
+/// grantees), and nothing else; any other shape makes the item unreadable.
+public struct PasswordsItemAccess: Codable, Equatable, Sendable {
+    public var isUsableByAgent: Bool
+    public var grantees: [PasswordsGrantee]
+
+    public init(isUsableByAgent: Bool = false, grantees: [PasswordsGrantee] = []) {
+        self.isUsableByAgent = isUsableByAgent
+        self.grantees = grantees
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isUsableByAgent
+        case grantees
+    }
+
+    public init(from decoder: Decoder) throws {
+        let keyContainer = try decoder.container(keyedBy: PasswordsAnyCodingKey.self)
+        let knownKeys = Set([CodingKeys.isUsableByAgent.rawValue, CodingKeys.grantees.rawValue])
+        guard Set(keyContainer.allKeys.map(\.stringValue)) == knownKeys else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "An access record is exactly isUsableByAgent and grantees"))
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isUsableByAgent = try container.decode(Bool.self, forKey: .isUsableByAgent)
+        grantees = try container.decode([PasswordsGrantee].self, forKey: .grantees)
+    }
+
+    /// Whether the record grants an item to a recipient: a person grantee by
+    /// user id, or a circle grantee when the server lists the recipient as a
+    /// member of that circle (`circleIdsOfRecipient`). The recipient still needs
+    /// a key confirmed on this device before anything is sealed for them. No
+    /// record (`nil`) reaches nobody.
+    public static func isReachedByAccess(_ access: PasswordsItemAccess?, recipientUserId: String, circleIdsOfRecipient: [String]) -> Bool {
+        guard let access, !recipientUserId.isEmpty else { return false }
+        return access.grantees.contains { grantee in
+            switch grantee {
+            case .person(let userId): return userId == recipientUserId
+            case .circle(let circleId): return circleIdsOfRecipient.contains(circleId)
+            }
+        }
+    }
+
+    /// A record with these grantees and the same agent use. No record counts as
+    /// one that grants nobody and is not usable by the agent.
+    public static func accessWithGrantees(_ access: PasswordsItemAccess?, grantees: [PasswordsGrantee]) -> PasswordsItemAccess {
+        PasswordsItemAccess(isUsableByAgent: access?.isUsableByAgent ?? false, grantees: grantees)
+    }
+
+    /// A record with agent use turned on or off and the same grantees.
+    public static func accessWithAgentUse(_ access: PasswordsItemAccess?, isUsableByAgent: Bool) -> PasswordsItemAccess {
+        PasswordsItemAccess(isUsableByAgent: isUsableByAgent, grantees: access?.grantees ?? [])
+    }
+}
+
 /// PasswordsPasskeyFields is a passkey kept inside a login. `privateKey` is
 /// PKCS#8 DER (ES256) in base64; `credentialId` and `userHandle` are base64url,
 /// as a website sends them; `createdAt` is an ISO 8601 time.
@@ -64,10 +173,12 @@ public struct PasswordsLoginFields: Codable, Equatable, Sendable {
     public var notes: String
     public var passkeys: [PasswordsPasskeyFields]
     public var folder: String
+    /// Who may have this login and whether the agent may use it; `nil` is nobody and not the agent.
+    public var access: PasswordsItemAccess?
 
     public init(
         name: String = "", userName: String = "", password: String = "", sites: [String] = [], oneTimeCodeUri: String = "",
-        notes: String = "", passkeys: [PasswordsPasskeyFields] = [], folder: String = ""
+        notes: String = "", passkeys: [PasswordsPasskeyFields] = [], folder: String = "", access: PasswordsItemAccess? = nil
     ) {
         self.name = name
         self.userName = userName
@@ -77,6 +188,7 @@ public struct PasswordsLoginFields: Codable, Equatable, Sendable {
         self.notes = notes
         self.passkeys = passkeys
         self.folder = folder
+        self.access = access
     }
 
     public init(from decoder: Decoder) throws {
@@ -89,6 +201,7 @@ public struct PasswordsLoginFields: Codable, Equatable, Sendable {
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
         passkeys = try container.decodeIfPresent([PasswordsPasskeyFields].self, forKey: .passkeys) ?? []
         folder = try container.decodeIfPresent(String.self, forKey: .folder) ?? ""
+        access = try container.decodeIfPresent(PasswordsItemAccess.self, forKey: .access)
     }
 }
 
@@ -104,10 +217,12 @@ public struct PasswordsCardFields: Codable, Equatable, Sendable {
     public var brand: String
     public var notes: String
     public var folder: String
+    /// Who may have this card; `nil` is nobody. The agent never uses a card, whatever the record says.
+    public var access: PasswordsItemAccess?
 
     public init(
         name: String = "", cardholderName: String = "", number: String = "", expiryMonth: String = "", expiryYear: String = "",
-        securityCode: String = "", brand: String = "", notes: String = "", folder: String = ""
+        securityCode: String = "", brand: String = "", notes: String = "", folder: String = "", access: PasswordsItemAccess? = nil
     ) {
         self.name = name
         self.cardholderName = cardholderName
@@ -118,6 +233,7 @@ public struct PasswordsCardFields: Codable, Equatable, Sendable {
         self.brand = brand
         self.notes = notes
         self.folder = folder
+        self.access = access
     }
 
     public init(from decoder: Decoder) throws {
@@ -131,6 +247,7 @@ public struct PasswordsCardFields: Codable, Equatable, Sendable {
         brand = try container.decodeIfPresent(String.self, forKey: .brand) ?? ""
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
         folder = try container.decodeIfPresent(String.self, forKey: .folder) ?? ""
+        access = try container.decodeIfPresent(PasswordsItemAccess.self, forKey: .access)
     }
 }
 
@@ -139,11 +256,14 @@ public struct PasswordsNoteFields: Codable, Equatable, Sendable {
     public var name: String
     public var text: String
     public var folder: String
+    /// Who may have this note and whether the agent may use it; `nil` is nobody and not the agent.
+    public var access: PasswordsItemAccess?
 
-    public init(name: String = "", text: String = "", folder: String = "") {
+    public init(name: String = "", text: String = "", folder: String = "", access: PasswordsItemAccess? = nil) {
         self.name = name
         self.text = text
         self.folder = folder
+        self.access = access
     }
 
     public init(from decoder: Decoder) throws {
@@ -151,6 +271,7 @@ public struct PasswordsNoteFields: Codable, Equatable, Sendable {
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
         folder = try container.decodeIfPresent(String.self, forKey: .folder) ?? ""
+        access = try container.decodeIfPresent(PasswordsItemAccess.self, forKey: .access)
     }
 }
 
@@ -174,6 +295,31 @@ public enum PasswordsItemFields: Equatable, Sendable {
         case .login(let fields): return fields.name
         case .card(let fields): return fields.name
         case .note(let fields): return fields.name
+        }
+    }
+
+    /// The access record of any kind; `nil` is nobody and not the agent.
+    public var access: PasswordsItemAccess? {
+        switch self {
+        case .login(let fields): return fields.access
+        case .card(let fields): return fields.access
+        case .note(let fields): return fields.access
+        }
+    }
+
+    /// The same fields with this access record (everything else unchanged), for
+    /// whichever kind they are.
+    public func withAccess(_ access: PasswordsItemAccess?) -> PasswordsItemFields {
+        switch self {
+        case .login(var fields):
+            fields.access = access
+            return .login(fields)
+        case .card(var fields):
+            fields.access = access
+            return .card(fields)
+        case .note(var fields):
+            fields.access = access
+            return .note(fields)
         }
     }
 

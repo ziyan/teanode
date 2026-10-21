@@ -52,6 +52,11 @@ struct PasswordsScreen: View {
                 path = []
                 editing = nil
             }
+            // People who wait for the person's OK are listed at the top of the list: go back to it.
+            .onChange(of: model.confirmationRequestCount) {
+                path = []
+                editing = nil
+            }
             // Coming back to the app from another one asks for Face ID again if Passwords locked meanwhile.
             .onChange(of: scenePhase) { previous, current in
                 if previous == .background, current == .active, model.phase == .locked {
@@ -324,7 +329,7 @@ struct PasswordsListView: View {
             } header: {
                 Text("Waiting for your OK")
             } footer: {
-                Text("These people set up Passwords after you shared. Compare each safety code with the person before you confirm it.")
+                Text("These people cannot open an item of yours yet. Ask each person to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
             }
         }
     }

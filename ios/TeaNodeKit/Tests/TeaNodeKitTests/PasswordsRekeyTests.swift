@@ -62,11 +62,11 @@ final class PasswordsRekeyTests: XCTestCase {
         let oldItemKey = try PasswordsCrypto.openForKeyPair(
             agentCopy, recipientPrivateKey: agentPrivateKey, ownerPublicKey: ownerPublicKey, ownerId: "user-ada",
             recipientId: PasswordsCrypto.agentRecipientId, itemId: item.id)
-        XCTAssertEqual(try fields(of: usable, itemKey: oldItemKey), loginFields())
+        XCTAssertEqual(try fields(of: usable, itemKey: oldItemKey).withAccess(nil), loginFields())
 
         let stopped = try await device.setUsableByAgent(itemId: item.id, isUsable: false)
         XCTAssertFalse(stopped.isUsableByAgent)
-        XCTAssertEqual(stopped.fields, loginFields())
+        XCTAssertEqual(stopped.fields.withAccess(nil), loginFields())
         let stoppedStoredOptional = await server.item(item.id)
         let stoppedStored = try XCTUnwrap(stoppedStoredOptional)
         XCTAssertNil(stoppedStored.itemKeyByAgentKey)
@@ -77,14 +77,14 @@ final class PasswordsRekeyTests: XCTestCase {
         _ = try await device.save(fields: loginFields(password: "changed afterwards"), id: item.id)
         let afterOptional = await server.item(item.id)
         let after = try XCTUnwrap(afterOptional)
-        XCTAssertEqual(try fields(of: after, itemKey: newItemKey), loginFields(password: "changed afterwards"))
+        XCTAssertEqual(try fields(of: after, itemKey: newItemKey).withAccess(nil), loginFields(password: "changed afterwards"))
         XCTAssertThrowsError(try fields(of: after, itemKey: oldItemKey))
         // The person's other devices read it as before.
         let other = makeDevice(server, userId: "user-ada")
         _ = try await other.unlock(passphrase: "ada invented passphrase")
         try await other.sync()
         let opened = try await other.item(id: item.id)
-        XCTAssertEqual(opened.fields, loginFields(password: "changed afterwards"))
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields(password: "changed afterwards"))
     }
 
     func testTurningTheAgentOffOnAnItemTheAgentDoesNotUseChangesNothing() async throws {
@@ -135,7 +135,7 @@ final class PasswordsRekeyTests: XCTestCase {
         let world = try await makeSharedWorld()
         for userId in ["user-grace", "user-linus", "user-heidi"] {
             let opened = try await XCTUnwrap(world.people[userId]).item(id: world.itemId)
-            XCTAssertEqual(opened.fields, loginFields())
+            XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
         }
         let beforeOptional = await world.server.item(world.itemId)
         let before = try XCTUnwrap(beforeOptional)
@@ -144,7 +144,7 @@ final class PasswordsRekeyTests: XCTestCase {
         // Heidi is removed. Grace's key was confirmed on this device; Linus's was confirmed only on the other one.
         let narrower = ["user-grace", "user-linus"].map { PasswordShareGranteeInput(granteeUserId: $0) }
         let result = try await world.ada.setShares(itemId: world.itemId, grantees: narrower, recipients: [])
-        XCTAssertEqual(result.fields, loginFields())
+        XCTAssertEqual(result.fields.withAccess(nil), loginFields())
 
         let afterOptional = await world.server.item(world.itemId)
         let after = try XCTUnwrap(afterOptional)
@@ -160,7 +160,7 @@ final class PasswordsRekeyTests: XCTestCase {
         let grace = try XCTUnwrap(world.people["user-grace"])
         try await grace.sync()
         let graceOpened = try await grace.item(id: world.itemId)
-        XCTAssertEqual(graceOpened.fields, loginFields(password: "changed afterwards"))
+        XCTAssertEqual(graceOpened.fields.withAccess(nil), loginFields(password: "changed afterwards"))
         let heidi = try XCTUnwrap(world.people["user-heidi"])
         let heidiResult = try await heidi.sync()
         XCTAssertEqual(heidiResult.removedItemIds, [world.itemId])
@@ -178,7 +178,7 @@ final class PasswordsRekeyTests: XCTestCase {
         try await world.ada.confirmWaitingShare(try XCTUnwrap(completed.waitingForConfirmation.first))
         try await linus.sync()
         let linusOpened = try await linus.item(id: world.itemId)
-        XCTAssertEqual(linusOpened.fields, loginFields(password: "changed afterwards"))
+        XCTAssertEqual(linusOpened.fields.withAccess(nil), loginFields(password: "changed afterwards"))
     }
 
     func testARekeyThatFailsAfterTheRemovalLeavesTheRemovalAndCanBeRetried() async throws {
@@ -201,7 +201,7 @@ final class PasswordsRekeyTests: XCTestCase {
 
         await world.server.setRekeyRefusal(nil)
         let retried = try await world.ada.giveNewKey(itemId: world.itemId)
-        XCTAssertEqual(retried.fields, loginFields())
+        XCTAssertEqual(retried.fields.withAccess(nil), loginFields())
         let isStillMarked = await world.ada.needsNewKey(itemId: world.itemId)
         XCTAssertFalse(isStillMarked)
     }
@@ -216,7 +216,7 @@ final class PasswordsRekeyTests: XCTestCase {
         let keyBefore = try XCTUnwrap(keyBeforeOptional).itemKeyByAccountKey
 
         let saved = try await world.ada.save(fields: loginFields(password: "changed afterwards"), id: world.itemId)
-        XCTAssertEqual(saved.fields, loginFields(password: "changed afterwards"))
+        XCTAssertEqual(saved.fields.withAccess(nil), loginFields(password: "changed afterwards"))
         let keyAfterOptional = await world.server.item(world.itemId)
         XCTAssertNotEqual(try XCTUnwrap(keyAfterOptional).itemKeyByAccountKey, keyBefore)
         let isMarked = await world.ada.needsNewKey(itemId: world.itemId)
@@ -228,16 +228,14 @@ final class PasswordsRekeyTests: XCTestCase {
         let first = makeDevice(server, userId: "user-ada")
         _ = try await first.setUp(passphrase: "ada invented passphrase", iterationCount: iterationCount)
         let item = try await first.save(fields: loginFields())
-        _ = try await first.setUsableByAgent(itemId: item.id, isUsable: true)
         let second = makeDevice(server, userId: "user-ada")
         _ = try await second.unlock(passphrase: "ada invented passphrase")
         try await second.sync()
         // The second device changes the password; the first has not heard.
         _ = try await second.save(fields: loginFields(password: "changed elsewhere"), id: item.id)
 
-        let stopped = try await first.setUsableByAgent(itemId: item.id, isUsable: false)
-        XCTAssertFalse(stopped.isUsableByAgent)
-        XCTAssertEqual(stopped.fields, loginFields(password: "changed elsewhere"))
+        let given = try await first.giveNewKey(itemId: item.id)
+        XCTAssertEqual(given.fields.withAccess(nil), loginFields(password: "changed elsewhere"))
         let rekeyCallCount = await server.rekeyCallCount
         XCTAssertEqual(rekeyCallCount, 2)
     }

@@ -1,11 +1,13 @@
 import Foundation
 import TeaNodeKit
 
-// What the list shows, worked out from the phone's copy of Passwords. The
-// extension runs under a memory limit of about 120 MB, so it opens every login
-// once, keeps only a short summary of it (name, user name, sites, which
-// passkeys it has) and drops the opened item with its password and notes at
-// once. The one login the person picks is opened again when it is needed.
+// What the list shows, worked out from the summary of the logins that the app
+// writes next to the phone's copy of Passwords (PasswordsAutoFillSummary): name,
+// user name, sites, which passkeys each login has, who shared it. The extension
+// runs under a memory limit of about 120 MB, so it never reads or opens the
+// items to draw a list; the one login the person picks is read from its own
+// file and opened when it is needed. How well each login's sites fit the page
+// asking is worked out once, not each time the list is drawn.
 
 /// AutoFillLocation is where the app keeps the phone's copy of Passwords for a
 /// sign-in (PasswordsLocation names the file). The app writes it and the
@@ -42,6 +44,9 @@ enum AutoFillError: Error {
     case nothingToFill
     case unreadablePasskey
     case relyingPartyDoesNotMatch
+    /// The login a passkey would be saved into has an old item key somebody may still hold; the
+    /// app gives it a new one first.
+    case loginNeedsNewKey
 }
 
 /// AutoFillPasskeySummary is a passkey in a login, without its private key.
@@ -61,25 +66,27 @@ struct AutoFillLoginSummary: Identifiable, Equatable, Sendable {
     let hasPassword: Bool
     let hasOneTimeCode: Bool
     let isSharedWithMe: Bool
+    /// Who shared it with the person; empty for the person's own logins.
+    let ownerName: String
 
-    init(itemId: String, isSharedWithMe: Bool, login: PasswordsLoginFields) {
-        id = itemId
-        if !login.name.isEmpty {
-            displayName = login.name
-        } else if let host = login.sites.lazy.compactMap({ PasswordsSiteMatch.normalizedHost(of: $0) }).first {
-            displayName = host
-        } else {
-            displayName = login.userName
-        }
+    init(_ login: PasswordsAutoFillLogin) {
+        id = login.itemId
+        displayName = login.displayName
         userName = login.userName
         sites = login.sites
         passkeys = login.passkeys.compactMap { passkey in
             guard let credentialId = AutoFillBase64URL.decode(passkey.credentialId), !credentialId.isEmpty else { return nil }
             return AutoFillPasskeySummary(credentialId: credentialId, relyingPartyId: passkey.relyingPartyId, userName: passkey.userName)
         }
-        hasPassword = !login.password.isEmpty
-        hasOneTimeCode = !login.oneTimeCodeUri.isEmpty
-        self.isSharedWithMe = isSharedWithMe
+        hasPassword = login.hasPassword
+        hasOneTimeCode = login.hasOneTimeCode
+        isSharedWithMe = login.isSharedWithMe
+        ownerName = login.ownerName
+    }
+
+    /// The name of whoever shared the login, for the line under it; nil for the person's own.
+    var sharedByName: String? {
+        isSharedWithMe && !ownerName.isEmpty ? ownerName : nil
     }
 
     /// Whether the words typed in the search field are in the name, the user
@@ -104,6 +111,8 @@ struct AutoFillRow: Identifiable, Hashable {
     let rowTitle: String
     let rowSubtitle: String
     let rowKind: AutoFillRowKind
+    /// Who shared the login, shown under it; nil for the person's own.
+    let sharedByName: String?
 
     var isPasskey: Bool {
         if case .passkey = rowKind { return true }
@@ -119,22 +128,10 @@ struct AutoFillSection: Identifiable {
 }
 
 enum AutoFillIndex {
-    /// Opens each login in the copy once and keeps its summary. Notes, cards
-    /// and deleted items are skipped without being opened. An item that does
-    /// not open is left out, and so is a shared item whose owner key the
-    /// opener does not know (the app records it when it first syncs the item)
-    /// or that differs from the known one (the app asks the person to trust it).
-    static func loginSummaries(views: [PasswordItemView], opener: PasswordsOpener) -> [AutoFillLoginSummary] {
-        var summaries: [AutoFillLoginSummary] = []
-        for view in views where view.itemKind == PasswordsItemKind.login.rawValue && view.deletedAt == nil {
-            guard let item = try? opener.open(view), case .login(let login) = item.fields else { continue }
-            summaries.append(AutoFillLoginSummary(itemId: view.id, isSharedWithMe: view.isSharedWithMe, login: login))
-        }
-        summaries.sort {
-            let comparison = $0.displayName.localizedCaseInsensitiveCompare($1.displayName)
-            return comparison == .orderedSame ? $0.id < $1.id : comparison == .orderedAscending
-        }
-        return summaries
+    /// The logins of the summary, in the order it has them (by name). The extension reads them
+    /// from the summary file and never opens an item for the list.
+    static func loginSummaries(of summary: PasswordsAutoFillSummary) -> [AutoFillLoginSummary] {
+        summary.logins.map(AutoFillLoginSummary.init)
     }
 
     /// Whether what the system names is a site. An app's bundle id is not one.
@@ -144,13 +141,31 @@ enum AutoFillIndex {
 
     // MARK: Sections
 
+    /// How well each login's sites fit the sites the system named, worked out once for a request
+    /// (the sites do not change while the list is on screen). A login with a very long list of sites
+    /// costs time to match, so this is not repeated for each letter typed in the search field.
+    static func levels(logins: [AutoFillLoginSummary], listing: AutoFillListing) -> [String: PasswordsSiteMatchLevel] {
+        var levels: [String: PasswordsSiteMatchLevel] = [:]
+        let usableSites = listing.requestedSites.filter { isUsable(site: $0.address) }
+        guard !usableSites.isEmpty else { return levels }
+        for login in logins {
+            levels[login.id] =
+                usableSites.map {
+                    PasswordsSiteMatch.level(sites: login.sites, requested: $0.address, isPageAddress: $0.isPageAddress)
+                }.max() ?? PasswordsSiteMatchLevel.none
+        }
+        return levels
+    }
+
     /// The sections of the list: passkeys for the website that asked, the
     /// logins for the requested site (the exact origin when the system gave a
     /// full address, so the same host on another port or over plain http is not
     /// among them), then the logins for a related site (a parent or a child
     /// domain) under their own heading, then the rest. With words typed in the
-    /// search field, the logins that contain them, across all sites.
-    static func sections(logins: [AutoFillLoginSummary], listing: AutoFillListing, searchText: String) -> [AutoFillSection] {
+    /// search field, the logins that contain them, across all sites. `levels` is `levels(logins:listing:)`.
+    static func sections(
+        logins: [AutoFillLoginSummary], levels: [String: PasswordsSiteMatchLevel], listing: AutoFillListing, searchText: String
+    ) -> [AutoFillSection] {
         let words = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let isSearching = !words.isEmpty
         let candidates = isSearching ? logins.filter { $0.matches(searchText: words) } : logins
@@ -166,7 +181,7 @@ enum AutoFillIndex {
         var related: [AutoFillLoginSummary] = []
         if !isSearching {
             for login in fillable {
-                switch bestLevel(of: login, listing: listing) {
+                switch levels[login.id] ?? PasswordsSiteMatchLevel.none {
                 case .exactHost: suggested.append(login)
                 case .relatedHost: related.append(login)
                 case .none: break
@@ -197,12 +212,13 @@ enum AutoFillIndex {
         listing.requestedSites.lazy.compactMap { PasswordsSiteMatch.normalizedHost(of: $0.address) }.first
     }
 
-    /// Whether the login is saved for no site that fits the one asking, by the rules of the
-    /// sections above (an exact host, or a related one). Never when the system named no site
-    /// (an app is not a site), so there is nothing to compare.
-    static func isSiteMismatch(login: AutoFillLoginSummary, listing: AutoFillListing) -> Bool {
+    /// Whether the login is not saved for the exact site asking, so it is filled only after the person
+    /// says yes: a login for a related site (a parent or a child domain) is asked about like any other
+    /// site, the same as on the dashboard and in the extension. Never when the system named no site
+    /// (an app is not a site), so there is nothing to compare. `level` is the login's entry of `levels(...)`.
+    static func isSiteMismatch(level: PasswordsSiteMatchLevel, listing: AutoFillListing) -> Bool {
         guard requestedSiteText(listing: listing) != nil else { return false }
-        return bestLevel(of: login, listing: listing) == .none
+        return level != .exactHost
     }
 
     /// The hosts a login is saved for, for the question asked before filling it elsewhere.
@@ -210,17 +226,10 @@ enum AutoFillIndex {
         login.sites.compactMap { PasswordsSiteMatch.normalizedHost(of: $0) }.joined(separator: ", ")
     }
 
-    /// How well the login's sites fit the best of the sites the system named.
-    private static func bestLevel(of login: AutoFillLoginSummary, listing: AutoFillListing) -> PasswordsSiteMatchLevel {
-        listing.requestedSites.filter { isUsable(site: $0.address) }.map {
-            PasswordsSiteMatch.level(sites: login.sites, requested: $0.address, isPageAddress: $0.isPageAddress)
-        }.max() ?? .none
-    }
-
     private static func row(login: AutoFillLoginSummary, listing: AutoFillListing) -> AutoFillRow {
         AutoFillRow(
             id: (listing.isOneTimeCode ? "code:" : "password:") + login.id, itemId: login.id, rowTitle: login.displayName,
-            rowSubtitle: login.userName, rowKind: listing.isOneTimeCode ? .oneTimeCode : .password)
+            rowSubtitle: login.userName, rowKind: listing.isOneTimeCode ? .oneTimeCode : .password, sharedByName: login.sharedByName)
     }
 
     /// The passkeys the website that asked can use: for its relying party, and
@@ -235,7 +244,7 @@ enum AutoFillIndex {
                     AutoFillRow(
                         id: "passkey:" + login.id + ":" + passkey.credentialId.base64EncodedString(), itemId: login.id,
                         rowTitle: login.displayName, rowSubtitle: passkey.userName.isEmpty ? login.userName : passkey.userName,
-                        rowKind: .passkey(credentialId: passkey.credentialId)))
+                        rowKind: .passkey(credentialId: passkey.credentialId), sharedByName: login.sharedByName))
             }
         }
         return rows

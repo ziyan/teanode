@@ -78,13 +78,13 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(unlocked.accountKey.count, 32)
         try await second.session.sync()
         let opened = try await second.session.item(id: saved.id)
-        XCTAssertEqual(opened.fields, loginFields())
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
 
         let third = makeDevice(server)
         _ = try await third.session.unlock(recoveryKey: recoveryKey.lowercased().replacingOccurrences(of: " ", with: "-"))
         try await third.session.sync()
         let openedByRecoveryKey = try await third.session.item(id: saved.id)
-        XCTAssertEqual(openedByRecoveryKey.fields, loginFields())
+        XCTAssertEqual(openedByRecoveryKey.fields.withAccess(nil), loginFields())
     }
 
     func testAWrongPassphraseAndAWrongRecoveryKeyAreTyped() async throws {
@@ -138,7 +138,7 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(lastReason, "Open Passwords")
         _ = try await device.session.open(accountKey: try XCTUnwrap(kept))
         let item = try await device.session.item(id: saved.id)
-        XCTAssertEqual(item.fields, loginFields())
+        XCTAssertEqual(item.fields.withAccess(nil), loginFields())
 
         // A different key, or no copy at all, asks for the passphrase.
         await device.session.lock()
@@ -320,7 +320,7 @@ final class PasswordsSessionTests: XCTestCase {
         let recipients = try await world.ada.session.recipients(granteeCircleId: "circle-one")
         XCTAssertEqual(recipients.map(\.userId), ["user-grace"])
         let grace = try XCTUnwrap(recipients.first)
-        XCTAssertEqual(grace.safetyCode?.split(separator: " ").count, 5)
+        XCTAssertEqual(grace.safetyCode?.split(separator: " ").count, 8)
         XCTAssertFalse(grace.hasKey)
         XCTAssertEqual(grace.keyTrust, .new)
 
@@ -335,7 +335,7 @@ final class PasswordsSessionTests: XCTestCase {
         let opened = try await world.grace.session.item(id: world.itemId)
         XCTAssertTrue(opened.isSharedWithMe)
         XCTAssertEqual(opened.ownerName, "Ada")
-        XCTAssertEqual(opened.fields, loginFields())
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
         XCTAssertEqual(opened.shares.count, 0)
 
         // A recipient cannot change it.
@@ -349,7 +349,7 @@ final class PasswordsSessionTests: XCTestCase {
         _ = try await world.ada.session.save(fields: loginFields(password: "new password"), id: world.itemId)
         try await world.grace.session.sync()
         let updated = try await world.grace.session.item(id: world.itemId)
-        XCTAssertEqual(updated.fields, loginFields(password: "new password"))
+        XCTAssertEqual(updated.fields.withAccess(nil), loginFields(password: "new password"))
     }
 
     func testUnsharingDropsTheItemFromTheRecipientsCopy() async throws {
@@ -406,7 +406,7 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(stillWaiting.count, 0)
         try await grace.session.sync()
         let opened = try await grace.session.item(id: item.id)
-        XCTAssertEqual(opened.fields, loginFields())
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
     }
 
     // MARK: Known keys
@@ -477,8 +477,8 @@ final class PasswordsSessionTests: XCTestCase {
         let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
         let grace = try XCTUnwrap(recipients.first)
         XCTAssertEqual(grace.keyTrust, .changed)
-        XCTAssertEqual(grace.knownSafetyCode, PasswordsOpener.safetyCodeText(publicKey: oldKey))
-        XCTAssertEqual(grace.safetyCode, try PasswordsCrypto.safetyCode(publicKey: newKeyPair.publicKey))
+        XCTAssertEqual(grace.knownSafetyCode, PasswordsOpener.safetyCodeText(userId: "user-grace", publicKey: oldKey))
+        XCTAssertEqual(grace.safetyCode, try PasswordsCrypto.safetyCode(userId: "user-grace", publicKey: newKeyPair.publicKey))
         XCTAssertNotEqual(grace.knownSafetyCode, grace.safetyCode)
 
         _ = try await world.ada.session.setShares(
@@ -542,7 +542,7 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(completed.waitingForConfirmation, [])
         try await world.grace.session.sync()
         let opened = try await world.grace.session.item(id: second.id)
-        XCTAssertEqual(opened.fields, loginFields(name: "Second"))
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields(name: "Second"))
     }
 
     func testAWaitingShareIsNotSealedWhenTheItemsSharesDoNotReachTheRecipient() async throws {
@@ -570,7 +570,7 @@ final class PasswordsSessionTests: XCTestCase {
         // Recorded in the file (the AutoFill extension reads it there).
         XCTAssertEqual(try XCTUnwrap(try world.grace.cache.load()).seenPublicKeys, ["user-ada": adaKey])
         let opened = try await world.grace.session.item(id: world.itemId)
-        XCTAssertEqual(opened.fields, loginFields())
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
     }
 
     func testAChangedOwnerKeyMakesTheItemUnreadableUntilTheRecipientTrustsIt() async throws {
@@ -597,8 +597,8 @@ final class PasswordsSessionTests: XCTestCase {
         try await world.grace.session.sync()
 
         let expectedReason = PasswordsUnreadableReason.ownerKeyChanged(
-            userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
-            newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey))
+            userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(userId: "user-ada", publicKey: oldKey),
+            newSafetyCode: try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: newOwner.publicKey))
         let listed = try await world.grace.session.list()
         XCTAssertEqual(listed.items.count, 0)
         XCTAssertEqual(listed.unreadableItemIds, [world.itemId])
@@ -610,16 +610,16 @@ final class PasswordsSessionTests: XCTestCase {
             XCTAssertEqual(
                 error as? PasswordsError,
                 .ownerKeyChanged(
-                    userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
-                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey)))
+                    userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(userId: "user-ada", publicKey: oldKey),
+                    newSafetyCode: try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: newOwner.publicKey)))
         }
         let changes = await world.grace.session.ownerKeyChanges()
         XCTAssertEqual(
             changes,
             [
                 PasswordsOwnerKeyChange(
-                    userId: "user-ada", ownerName: "Ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
-                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey),
+                    userId: "user-ada", ownerName: "Ada", oldSafetyCode: PasswordsOpener.safetyCodeText(userId: "user-ada", publicKey: oldKey),
+                    newSafetyCode: try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: newOwner.publicKey),
                     newPublicKey: newOwner.publicKey.base64EncodedString(), itemCount: 1)
             ])
         // The file still holds the key that was known, which the AutoFill extension reads.
@@ -635,8 +635,8 @@ final class PasswordsSessionTests: XCTestCase {
             XCTAssertEqual(
                 error as? PasswordsError,
                 .ownerKeyChanged(
-                    userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: otherKey),
-                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey)))
+                    userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(userId: "user-ada", publicKey: otherKey),
+                    newSafetyCode: try PasswordsCrypto.safetyCode(userId: "user-ada", publicKey: newOwner.publicKey)))
         }
         let stillKnown = try XCTUnwrap(try world.grace.cache.load()).seenPublicKeys["user-ada"]
         XCTAssertEqual(stillKnown, oldKey)
@@ -645,7 +645,7 @@ final class PasswordsSessionTests: XCTestCase {
 
         try await world.grace.session.trustOwnerKey(userId: "user-ada", expectedPublicKey: newOwner.publicKey.base64EncodedString())
         let trusted = try await world.grace.session.item(id: world.itemId)
-        XCTAssertEqual(trusted.fields, loginFields())
+        XCTAssertEqual(trusted.fields.withAccess(nil), loginFields())
         let remaining = await world.grace.session.ownerKeyChanges()
         XCTAssertEqual(remaining, [])
         XCTAssertEqual(try XCTUnwrap(try world.grace.cache.load()).seenPublicKeys["user-ada"], newOwner.publicKey.base64EncodedString())
@@ -677,7 +677,7 @@ final class PasswordsSessionTests: XCTestCase {
         let view = try XCTUnwrap(contents.item(id: world.itemId))
 
         let knowing = try PasswordsOpener(accountKey: adaUnlocked.accountKey, contents: contents)
-        XCTAssertEqual(try knowing.open(view).fields, loginFields())
+        XCTAssertEqual(try knowing.open(view).fields.withAccess(nil), loginFields())
 
         contents.seenPublicKeys = [:]
         let unaware = try PasswordsOpener(accountKey: adaUnlocked.accountKey, contents: contents)
@@ -719,7 +719,8 @@ final class PasswordsSessionTests: XCTestCase {
             recipientId: PasswordsCrypto.agentRecipientId, itemId: login.id)
         let fields = try PasswordsCrypto.openItemFields(
             try PasswordsSealedValue(jsonText: stored.encryptedFields), itemKey: itemKey, itemId: login.id, itemKind: .login)
-        XCTAssertEqual(fields, loginFields())
+        XCTAssertEqual(fields.withAccess(nil), loginFields())
+        XCTAssertEqual(fields.access?.isUsableByAgent, true)
         // The agent's key cannot open an item that was not allowed.
         let storedNoteOptional = await server.item(note.id)
         let storedNote = try XCTUnwrap(storedNoteOptional)
@@ -781,7 +782,7 @@ final class PasswordsSessionTests: XCTestCase {
         _ = try await second.session.unlock(passphrase: "the new passphrase")
         try await second.session.sync()
         let opened = try await second.session.item(id: saved.id)
-        XCTAssertEqual(opened.fields, loginFields())
+        XCTAssertEqual(opened.fields.withAccess(nil), loginFields())
         _ = try await makeDevice(server).session.unlock(recoveryKey: recoveryKey)
     }
 

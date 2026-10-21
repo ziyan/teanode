@@ -263,6 +263,11 @@ struct AutoFillRowView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                if let sharedByName = row.sharedByName {
+                    Text("Shared by \(sharedByName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 8)
             passkeyMark

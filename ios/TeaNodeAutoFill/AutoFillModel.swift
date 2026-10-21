@@ -2,12 +2,16 @@ import Combine
 import Foundation
 import TeaNodeKit
 
-// What the AutoFill extension knows and does. It reads the phone's copy of
-// Passwords and the account key behind Face ID, never the network, and it
-// never derives the passphrase key. The one exception is saving a passkey the
-// person has just made: that needs the server, so the model opens a
-// PasswordsSession with the signed-in connection, saves the login, and only
-// then hands the passkey to the website.
+// What the AutoFill extension knows and does. It reads the header of the
+// phone's copy of Passwords, the summary of the logins the app wrote and the
+// account key behind Face ID, never the network, and it never derives the
+// passphrase key. It does not read the items to draw a list (under its memory
+// limit a copy full of large shared items could not be read): the one login a
+// request picks is read from its own file and opened. The one exception to
+// the network is saving a passkey the person has just made: that needs the
+// server, so the model opens a PasswordsSession that loads items on demand
+// with the signed-in connection, saves the login, and only then hands the
+// passkey to the website.
 //
 // What Face ID opened is kept only for the request it was given for: the
 // account key, the opener and the summaries are dropped when the request
@@ -27,7 +31,9 @@ private enum AutoFillUnlockOutcome {
 @MainActor
 final class AutoFillModel: ObservableObject {
     @Published private(set) var autoFillScreen = AutoFillScreen.starting
-    @Published var searchText = ""
+    @Published var searchText = "" {
+        didSet { refreshSections() }
+    }
     @Published var problemMessage: AutoFillProblem?
     /// Why Face ID did not open Passwords, shown on the locked screen; nil when the person cancelled it.
     @Published private(set) var lockedProblemText: String?
@@ -35,16 +41,23 @@ final class AutoFillModel: ObservableObject {
     /// Whether the app has made a copy of Passwords on this phone, for the configuration screen.
     @Published private(set) var hasSetUpPasswords = false
     @Published private(set) var logins: [AutoFillLoginSummary] = []
+    /// The list as it is drawn: worked out when the logins, the request or the search words change, not on each redraw.
+    @Published private(set) var sections: [AutoFillSection] = []
     /// Set when the person chose a login saved for another site than the one asking: nothing is filled until they say yes.
     @Published var siteQuestion: AutoFillSiteQuestion?
 
     var autoFillCompletion = AutoFillCompletion.ignoring
 
     private var request: AutoFillRequest?
-    private var autoFillListing = AutoFillListing(requestedSites: [], passkeyAssertion: nil, isOneTimeCode: false)
+    private var autoFillListing = AutoFillListing(requestedSites: [], passkeyAssertion: nil, isOneTimeCode: false) {
+        didSet { siteLevels = [:] }
+    }
+    /// How well each login fits the sites asking, by item id (`AutoFillIndex.levels`), worked out once per request.
+    private var siteLevels: [String: PasswordsSiteMatchLevel] = [:]
     private var signedInAccount: Account?
-    private var cacheFileURL: URL?
-    private var cacheContents: PasswordsCacheContents?
+    private var cache: PasswordsCache?
+    /// The header of the copy (who it is for and the key pair); it holds none of the items.
+    private var cacheHeader: PasswordsCacheContents?
     private var opener: PasswordsOpener?
     private var accountKey: Data?
     /// Counts the requests and the endings of requests. An `await` in the middle
@@ -74,6 +87,7 @@ final class AutoFillModel: ObservableObject {
             autoFillScreen = .registration(registration)
         case .list(let newListing):
             autoFillListing = newListing
+            sections = []
             autoFillScreen = .starting
             Task { await unlockAndContinue() }
         case .providePassword, .providePasskey:
@@ -123,10 +137,12 @@ final class AutoFillModel: ObservableObject {
         siteQuestion = nil
         opener = nil
         accountKey = nil
-        cacheContents = nil
-        cacheFileURL = nil
+        cacheHeader = nil
+        cache = nil
         signedInAccount = nil
         logins = []
+        siteLevels = [:]
+        sections = []
     }
 
     /// Whether the app has made a copy of Passwords for the signed-in account
@@ -158,9 +174,9 @@ final class AutoFillModel: ObservableObject {
         guard let request else { return }
         switch request {
         case .list:
-            await loadLoginSummaries()
+            let isLoaded = await loadLoginSummaries()
             guard isStillCurrent(generation) else { return }
-            autoFillScreen = .list
+            autoFillScreen = isLoaded ? .list : .needsApp
         case .providePassword(let itemId, let userName, let requestedSites):
             let foundLogin = await loginToFill(itemId: itemId, userName: userName, requestedSites: requestedSites)
             guard isStillCurrent(generation) else { return }
@@ -194,7 +210,7 @@ final class AutoFillModel: ObservableObject {
         if let itemId {
             login = try? openLogin(id: itemId)
         } else {
-            await loadLoginSummaries()
+            guard await loadLoginSummaries() else { return nil }
             let found = logins.first { summary in
                 summary.hasPassword && summary.userName == userName && Self.isLogin(sites: summary.sites, for: requestedSites)
             }
@@ -218,7 +234,7 @@ final class AutoFillModel: ObservableObject {
         if let itemId {
             login = try? openLogin(id: itemId)
         } else {
-            await loadLoginSummaries()
+            guard await loadLoginSummaries() else { return nil }
             let found = logins.first { summary in summary.passkeys.contains { $0.credentialId == credentialId } }
             login = found.flatMap { try? openLogin(id: $0.id) }
         }
@@ -228,20 +244,21 @@ final class AutoFillModel: ObservableObject {
 
     // MARK: Opening Passwords
 
-    /// Reads the phone's copy and the account key (Face ID). Does nothing when
-    /// it has been done for this request. It opens no item: the summaries of
-    /// the list (`loadLoginSummaries`) and the one login a request picks are
-    /// opened when they are needed.
+    /// Reads the header of the phone's copy and the account key (Face ID). Does nothing when
+    /// it has been done for this request. It reads no item: the list comes from the summary the
+    /// app wrote (`loadLoginSummaries`), and the one login a request picks is read and opened
+    /// when it is needed.
     private func unlock() async -> AutoFillUnlockOutcome {
         if opener != nil { return .unlocked }
         let generation = requestGeneration
         guard let account = try? KeychainAccountStore().load(),
             let fileURL = AutoFillLocation.cacheFile(signInAccountKey: account.accountKey)
         else { return .needsApp }
-        let cache = PasswordsCache(fileURL: fileURL)
-        let loadedContents = await Task.detached(priority: .userInitiated) { try? cache.load() }.value
+        // The keys pinned for other people are in the keychain group of Passwords, not in the shared folder.
+        let cache = PasswordsCache.forThisBundle(fileURL: fileURL, signInAccountKey: account.accountKey)
+        let loadedHeader = await Task.detached(priority: .userInitiated) { try? cache.loadHeader() }.value
         guard isStillCurrent(generation) else { return .superseded }
-        guard let contents = loadedContents else { return .needsApp }
+        guard let header = loadedHeader else { return .needsApp }
 
         let promptReason = String(localized: "Fill your logins from TeaNode Passwords.")
         let keptKey: Data?
@@ -257,35 +274,43 @@ final class AutoFillModel: ObservableObject {
         guard let keptKey else { return .needsApp }
         let newOpener: PasswordsOpener
         do {
-            newOpener = try PasswordsOpener(accountKey: keptKey, contents: contents)
+            newOpener = try PasswordsOpener(accountKey: keptKey, contents: header)
         } catch {
             return .needsApp
         }
         signedInAccount = account
-        cacheFileURL = fileURL
-        cacheContents = contents
+        self.cache = cache
+        cacheHeader = header
         opener = newOpener
         accountKey = keptKey
         return .unlocked
     }
 
-    /// Opens every login once and keeps its summary, for the list and for a
-    /// search by user name. Does nothing when it has been done.
-    private func loadLoginSummaries() async {
-        guard logins.isEmpty, let opener, let views = cacheContents?.items else { return }
+    /// Reads the summary of the logins the app wrote (sealed with the account key), for the list and
+    /// for a search by user name. Does nothing when it has been done. False when there is no summary
+    /// that opens (the app has not written one for this copy yet): the person is asked to open the app.
+    private func loadLoginSummaries() async -> Bool {
+        if !logins.isEmpty { return true }
+        guard let cache, let accountKey, let userId = cacheHeader?.userId else { return false }
         let generation = requestGeneration
-        let loadedLogins = await Task.detached(priority: .userInitiated) {
-            AutoFillIndex.loginSummaries(views: views, opener: opener)
+        let loadedSummary = await Task.detached(priority: .userInitiated) { () -> PasswordsAutoFillSummary? in
+            guard let data = try? cache.loadSummaryData() else { return nil }
+            return try? PasswordsAutoFillSummary.open(data, accountKey: accountKey, userId: userId)
         }.value
-        // Summaries of a request that has ended are not kept.
-        guard isStillCurrent(generation) else { return }
-        logins = loadedLogins
+        // A summary of a request that has ended is not kept.
+        guard isStillCurrent(generation) else { return false }
+        guard let loadedSummary else { return false }
+        logins = AutoFillIndex.loginSummaries(of: loadedSummary)
+        siteLevels = AutoFillIndex.levels(logins: logins, listing: autoFillListing)
+        refreshSections()
+        return true
     }
 
     // MARK: The list
 
-    var sections: [AutoFillSection] {
-        AutoFillIndex.sections(logins: logins, listing: autoFillListing, searchText: searchText)
+    /// Works out the sections of the list again, from the levels worked out once for the request.
+    private func refreshSections() {
+        sections = AutoFillIndex.sections(logins: logins, levels: siteLevels, listing: autoFillListing, searchText: searchText)
     }
 
     var emptyListTitle: String {
@@ -298,8 +323,8 @@ final class AutoFillModel: ObservableObject {
             : String(localized: "Logins you save in TeaNode Passwords show up here.")
     }
 
-    /// The person chose a row. A password or a one-time code of a login that is not saved for the
-    /// site asking (it can only be chosen from "All logins" or a search) is filled only after they confirm.
+    /// The person chose a row. A password or a one-time code of a login that is not saved for the exact
+    /// site asking (one from "Related sites", "All logins" or a search) is filled only after they confirm.
     func select(_ row: AutoFillRow) {
         guard !isWorking else { return }
         if let question = question(askedBeforeFilling: row) {
@@ -325,7 +350,7 @@ final class AutoFillModel: ObservableObject {
             break
         }
         guard let login = logins.first(where: { $0.id == row.itemId }),
-            AutoFillIndex.isSiteMismatch(login: login, listing: autoFillListing),
+            AutoFillIndex.isSiteMismatch(level: siteLevels[login.id] ?? PasswordsSiteMatchLevel.none, listing: autoFillListing),
             let requestedSite = AutoFillIndex.requestedSiteText(listing: autoFillListing)
         else { return nil }
         let savedSites = AutoFillIndex.savedSitesText(login: login)
@@ -383,9 +408,9 @@ final class AutoFillModel: ObservableObject {
             message: String(localized: "TeaNode could not read this item. Open TeaNode, unlock Passwords, and try again."))
     }
 
-    /// Opens one login of the copy. A deleted item, a note or a card is not one.
+    /// Reads one login from its own file in the copy and opens it. A deleted item, a note or a card is not one.
     private func openLogin(id: String) throws -> PasswordsLoginFields {
-        guard let opener, let view = cacheContents?.item(id: id), view.deletedAt == nil else { throw AutoFillError.itemNotFound }
+        guard let opener, let view = try cache?.loadItem(id: id), view.deletedAt == nil else { throw AutoFillError.itemNotFound }
         guard case .login(let login) = try opener.open(view).fields else { throw AutoFillError.itemNotFound }
         return login
     }
@@ -440,9 +465,13 @@ final class AutoFillModel: ObservableObject {
             autoFillScreen = .needsApp
             return
         }
-        await loadLoginSummaries()
+        guard await loadLoginSummaries() else {
+            guard isStillCurrent(generation) else { return }
+            autoFillScreen = .needsApp
+            return
+        }
         guard isStillCurrent(generation) else { return }
-        guard let signedInAccount, let cacheFileURL, let accountKey, let userId = cacheContents?.userId else {
+        guard let signedInAccount, let cache, let accountKey, let userId = cacheHeader?.userId else {
             autoFillScreen = .needsApp
             return
         }
@@ -454,7 +483,8 @@ final class AutoFillModel: ObservableObject {
                 userDisplayName: registration.userName, privateKey: created.privateKey.base64EncodedString(),
                 createdAt: ISO8601DateFormatter().string(from: Date()))
             let connection = Connection(account: signedInAccount, transport: URLSessionTransport(), store: KeychainAccountStore())
-            let session = PasswordsSession(api: connection, cache: PasswordsCache(fileURL: cacheFileURL), userId: userId)
+            // Only the logins this saves into are read, one file each; the app does the syncing.
+            let session = PasswordsSession(api: connection, cache: cache, userId: userId, isLoadingItemsOnDemand: true)
             try await session.open(accountKey: accountKey)
             try await keep(passkey, for: registration, in: session)
             // The request ended while the passkey was being saved: the website is not waiting any more.
@@ -482,6 +512,8 @@ final class AutoFillModel: ObservableObject {
         }
         if let existing {
             let item = try await session.item(id: existing.id)
+            // An item the server marked has a key somebody who lost access may hold: the app gives it a new one first.
+            guard !item.needsNewKey else { throw AutoFillError.loginNeedsNewKey }
             guard case .login(var login) = item.fields else { throw AutoFillError.itemNotFound }
             login.passkeys.removeAll { $0.relyingPartyId == passkey.relyingPartyId && $0.userHandle == passkey.userHandle }
             login.passkeys.append(passkey)
@@ -495,6 +527,9 @@ final class AutoFillModel: ObservableObject {
     }
 
     private static func savingProblemText(for error: Error) -> String {
+        if let autoFillError = error as? AutoFillError, autoFillError == .loginNeedsNewKey {
+            return String(localized: "Open Passwords in TeaNode first: this login needs a new key")
+        }
         if let passwordsError = error as? PasswordsError {
             switch passwordsError {
             case .itemChangedOnAnotherDevice:

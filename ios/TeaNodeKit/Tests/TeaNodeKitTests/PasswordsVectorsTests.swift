@@ -111,6 +111,13 @@ final class PasswordsVectorsTests: XCTestCase {
             try sealedValue(section, "sealed"), itemKey: try bytes(section, "key"), itemId: parts[1], itemKind: kind)
         XCTAssertEqual(fields.itemKind, kind)
         XCTAssertFalse(fields.name.isEmpty)
+        // The access record is read, and sealed again, as the file has it.
+        let shareSection = try object(try loadVectors(), "share")
+        XCTAssertEqual(
+            fields.access,
+            PasswordsItemAccess(
+                isUsableByAgent: true,
+                grantees: [.person(userId: try text(shareSection, "recipientId")), .circle(circleId: "00000000-0000-4000-8000-000000000005")]))
         // Sealing the fields again with the same nonce gives something that opens to the same fields.
         let resealed = try PasswordsCrypto.sealItemFields(
             fields, itemKey: try bytes(section, "key"), itemId: parts[1], nonce: try bytes(section, "nonce"))
@@ -122,7 +129,19 @@ final class PasswordsVectorsTests: XCTestCase {
         let section = try object(try loadVectors(), "personKey")
         let keyPair = try PasswordsCrypto.keyPair(privateKey: try bytes(section, "privateKey"))
         XCTAssertEqual(keyPair.publicKey, try bytes(section, "publicKey"))
-        XCTAssertEqual(try PasswordsCrypto.safetyCode(publicKey: keyPair.publicKey), try text(section, "safetyCode"))
+        let userId = try text(section, "userId")
+        let code = try text(section, "safetyCode")
+        XCTAssertEqual(try PasswordsCrypto.safetyCode(userId: userId, publicKey: keyPair.publicKey), code)
+        XCTAssertNotEqual(try PasswordsCrypto.safetyCode(userId: userId + "x", publicKey: keyPair.publicKey), code)
+        let typedCodes = try XCTUnwrap(section["typedSafetyCodes"] as? [String])
+        for typed in [code] + typedCodes {
+            XCTAssertEqual(PasswordsCrypto.normalizeSafetyCode(typed), code, typed)
+        }
+        let invalidCodes = try XCTUnwrap(section["invalidSafetyCodes"] as? [String])
+        XCTAssertFalse(invalidCodes.isEmpty)
+        for invalid in invalidCodes {
+            XCTAssertNil(PasswordsCrypto.normalizeSafetyCode(invalid), invalid)
+        }
     }
 
     func testShare() throws {

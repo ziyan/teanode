@@ -1,12 +1,28 @@
 import Foundation
 
-// The phone's copy of the person's Passwords: one JSON file the app writes in
-// the app group's container and the AutoFill extension reads, so the
-// extension never needs the network. It holds only what the server sends,
-// which is sealed text, plus the person's key pair (the private half sealed by
-// the account key). Nothing in it opens without the account key, which lives
-// in the keychain behind Face ID (PasswordsKeyStore.swift). The wrapped
-// account key that a passphrase or recovery key opens is not stored here.
+#if canImport(CryptoKit)
+    import CryptoKit
+#else
+    import Crypto
+#endif
+
+// The phone's copy of the person's Passwords: files the app writes in the app
+// group's container and the AutoFill extension reads, so the extension never
+// needs the network. They hold only what the server sends, which is sealed
+// text, plus the person's key pair (the private half sealed by the account
+// key). Nothing in them opens without the account key, which lives in the
+// keychain behind Face ID (PasswordsKeyStore.swift). The wrapped account key
+// that a passphrase or recovery key opens is not stored here.
+//
+// The copy is a small header file (who it is for, the key pair, the revision),
+// one file for each item, and a summary of the logins that the app seals with
+// the account key (PasswordsAutoFillSummary.swift). The AutoFill extension runs
+// under a memory limit, so it reads the header and the summary to list logins
+// and opens only the one item it is asked to fill, never the whole copy. The
+// app and the extension may write at the same time: every change is made under
+// a file coordinator and merged with what is on disk, so neither undoes the
+// other. The keys the device holds for other people are not in these files:
+// they are in a pin store (PasswordsPinStore.swift), the keychain on the phone.
 
 /// PasswordsCacheError is why the cache file could not be used.
 public enum PasswordsCacheError: Error, Equatable, Sendable {
@@ -32,9 +48,9 @@ public struct PasswordsMergeResult: Equatable, Sendable {
 
 /// PasswordsPins are the public keys this device holds for other people. They
 /// are about other people, not about the person's own setup, so they are kept
-/// in a file of their own that survives the cache being dropped (a server that
-/// answers with another public key must not be able to make the phone forget
-/// them) and goes only when the sign-in is removed.
+/// in a pin store of their own that survives the cache being dropped (a server
+/// that answers with another public key must not be able to make the phone
+/// forget them) and goes only when the sign-in is removed.
 public struct PasswordsPins: Codable, Equatable, Sendable {
     public static let currentFormatVersion = 1
 
@@ -63,9 +79,11 @@ public struct PasswordsPins: Codable, Equatable, Sendable {
     }
 }
 
-/// PasswordsCacheContents is the cache file's contents.
+/// PasswordsCacheContents is the cache's header and, when it is loaded whole,
+/// its items. The header is what the file named by `PasswordsCache.fileURL`
+/// holds; each item is a file of its own.
 public struct PasswordsCacheContents: Codable, Equatable, Sendable {
-    public static let currentFormatVersion = 1
+    public static let currentFormatVersion = 2
 
     public var formatVersion: Int
     /// The signed-in person's id, which a shared item's key is opened with.
@@ -77,23 +95,19 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
     /// The highest revision the copy holds, asked for as `sinceRevision` next time.
     public var revision: Int64
     public var lockAfterMinutes: Int
-    /// Every item the person can reach, owned ones deleted in the last 30 days included.
+    /// Every item the person can reach, owned ones deleted in the last 30 days included. Each is
+    /// stored in a file of its own, not in the header; a header loaded without its items has none.
     public var items: [PasswordItemView]
-    /// The key each owner of a shared item had when the first of their items arrived, by
-    /// user id (standard base64, 65 bytes). Public data. It opens that owner's items and
-    /// warns when the key changes; nobody compared its safety code, so it never lets this
-    /// device seal an item key. Stored in the pins file, not in this one.
+    /// The key each owner of a shared item had when the first of their items opened, by user
+    /// id (standard base64, 65 bytes). Public data. It opens that owner's items and warns when
+    /// the key changes; nobody compared its safety code, so it never lets this device seal an
+    /// item key. Read from the pin store, not from the cache files.
     public var seenPublicKeys: [String: String]
     /// The keys the person confirmed by comparing safety codes, by user id. A device seals an
-    /// item key without asking only for a key in here. Stored in the pins file, not in this one.
+    /// item key without asking only for a key in here. Read from the pin store, not from the cache files.
     public var confirmedPublicKeys: [String: String]
 
-    /// Items the person removed somebody from, or stopped the agent using, whose new item key
-    /// could not be made yet (the call failed after the narrowing went through). The next
-    /// save, open or retry gives them one.
-    public var itemIdsNeedingNewKey: [String]
-
-    /// Both maps, as the pins file holds them.
+    /// Both maps, as the pin store holds them.
     public var pins: PasswordsPins {
         get { PasswordsPins(userId: userId, seenPublicKeys: seenPublicKeys, confirmedPublicKeys: confirmedPublicKeys) }
         set {
@@ -104,8 +118,7 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
 
     public init(
         userId: String, publicKey: String, privateKeyByAccountKey: String, revision: Int64 = 0, lockAfterMinutes: Int,
-        items: [PasswordItemView] = [], seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:],
-        itemIdsNeedingNewKey: [String] = []
+        items: [PasswordItemView] = [], seenPublicKeys: [String: String] = [:], confirmedPublicKeys: [String: String] = [:]
     ) {
         self.formatVersion = Self.currentFormatVersion
         self.userId = userId
@@ -116,22 +129,13 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
         self.items = items
         self.seenPublicKeys = seenPublicKeys
         self.confirmedPublicKeys = confirmedPublicKeys
-        self.itemIdsNeedingNewKey = itemIdsNeedingNewKey
     }
 
     private enum CodingKeys: String, CodingKey {
-        case formatVersion, userId, publicKey, privateKeyByAccountKey, revision, lockAfterMinutes, items, itemIdsNeedingNewKey
+        case formatVersion, userId, publicKey, privateKeyByAccountKey, revision, lockAfterMinutes
     }
 
-    /// The key an earlier build wrote its pinned keys under.
-    private enum EarlierCodingKeys: String, CodingKey {
-        case knownPublicKeys
-    }
-
-    /// A file written before pins existed has none. The keys an earlier build pinned on first
-    /// sight (some of them never confirmed) come back as seen keys only, so the person is asked
-    /// once before this device seals anything for them. The file itself no longer holds pins: they
-    /// are in the pins file, which `PasswordsCache.load()` reads in.
+    /// Reads the header. The items and the pins are not in it: `PasswordsCache` reads them in.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         formatVersion = try container.decode(Int.self, forKey: .formatVersion)
@@ -140,14 +144,12 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
         privateKeyByAccountKey = try container.decode(String.self, forKey: .privateKeyByAccountKey)
         revision = try container.decode(Int64.self, forKey: .revision)
         lockAfterMinutes = try container.decode(Int.self, forKey: .lockAfterMinutes)
-        items = try container.decode([PasswordItemView].self, forKey: .items)
-        let earlier = try decoder.container(keyedBy: EarlierCodingKeys.self)
-        seenPublicKeys = try earlier.decodeIfPresent([String: String].self, forKey: .knownPublicKeys) ?? [:]
+        items = []
+        seenPublicKeys = [:]
         confirmedPublicKeys = [:]
-        itemIdsNeedingNewKey = try container.decodeIfPresent([String].self, forKey: .itemIdsNeedingNewKey) ?? []
     }
 
-    /// Writes everything but the pins, which go to the pins file.
+    /// Writes the header: neither the items nor the pins.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(formatVersion, forKey: .formatVersion)
@@ -156,8 +158,6 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
         try container.encode(privateKeyByAccountKey, forKey: .privateKeyByAccountKey)
         try container.encode(revision, forKey: .revision)
         try container.encode(lockAfterMinutes, forKey: .lockAfterMinutes)
-        try container.encode(items, forKey: .items)
-        try container.encode(itemIdsNeedingNewKey, forKey: .itemIdsNeedingNewKey)
     }
 
     /// The item with this id, if the copy holds it.
@@ -202,73 +202,241 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
     }
 }
 
-/// PasswordsCache is the cache file at a URL the caller gives (the app passes
-/// a file in the app group container), and the pins file beside it.
+/// PasswordsCache is the cache at a file URL the caller gives (the app passes
+/// a file in the app group container): the header there, a folder of item files
+/// and a summary file beside it, and a pin store for the keys of other people.
 public struct PasswordsCache: Sendable {
     public let fileURL: URL
+    let pinStore: any PasswordsPinStore
 
-    public init(fileURL: URL) {
+    /// `pinStore` keeps the keys pinned for other people. Without one they are in a file beside the
+    /// cache file, which is only for tests and tools: the app and the AutoFill extension pass the
+    /// keychain's (`PasswordsCache.forThisBundle`), because a file in the app group's folder can be
+    /// written by the share extension and the widgets as well.
+    public init(fileURL: URL, pinStore: (any PasswordsPinStore)? = nil) {
         self.fileURL = fileURL
+        self.pinStore = pinStore ?? PasswordsFilePinStore(fileURL: Self.pinsFileURL(cacheFileURL: fileURL))
     }
 
-    /// The pins file that goes with a cache file: the same name with `.keys.json`
-    /// in place of `.json`, in the same folder.
+    /// The pins file that goes with a cache file when no pin store is given: the same name with
+    /// `.keys.json` in place of `.json`, in the same folder.
     public static func pinsFileURL(cacheFileURL: URL) -> URL {
         cacheFileURL.deletingPathExtension().appendingPathExtension("keys.json")
     }
 
     public var pinsFileURL: URL { Self.pinsFileURL(cacheFileURL: fileURL) }
 
-    /// The contents, with the pins read in from the pins file; nil when there is no
-    /// file. A file that cannot be read throws, so a reader can tell "never synced"
-    /// from "damaged". A cache file written before the pins file existed keeps the keys it
-    /// holds as seen keys, until the next save moves them.
-    public func load() throws -> PasswordsCacheContents? {
+    /// The folder that holds one file for each item.
+    public static func itemsDirectoryURL(cacheFileURL: URL) -> URL {
+        cacheFileURL.deletingPathExtension().appendingPathExtension("items")
+    }
+
+    public var itemsDirectoryURL: URL { Self.itemsDirectoryURL(cacheFileURL: fileURL) }
+
+    /// The file the app writes the sealed summary of the logins in (PasswordsAutoFillSummary.swift).
+    public static func summaryFileURL(cacheFileURL: URL) -> URL {
+        cacheFileURL.deletingPathExtension().appendingPathExtension("summary.json")
+    }
+
+    public var summaryFileURL: URL { Self.summaryFileURL(cacheFileURL: fileURL) }
+
+    /// The name of an item's file: the hash of its id, so that an id a server chose can neither
+    /// name another file nor be too long to be one.
+    static func itemFileName(id: String) -> String {
+        SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined() + ".json"
+    }
+
+    func itemFileURL(id: String) -> URL {
+        itemsDirectoryURL.appendingPathComponent(Self.itemFileName(id: id))
+    }
+
+    // MARK: Coordinating
+
+    /// Runs `body` with this process holding the cache for writing: no other process (the app, the
+    /// AutoFill extension) reads or writes it meanwhile.
+    private func coordinatedWrite<Output>(_ body: () throws -> Output) throws -> Output {
+        #if canImport(Darwin)
+            try Self.coordinate(url: fileURL, isWriting: true, body)
+        #else
+            try body()
+        #endif
+    }
+
+    /// Runs `body` with the cache held for reading: not while another process is writing it.
+    private func coordinatedRead<Output>(_ body: () throws -> Output) throws -> Output {
+        #if canImport(Darwin)
+            try Self.coordinate(url: fileURL, isWriting: false, body)
+        #else
+            try body()
+        #endif
+    }
+
+    #if canImport(Darwin)
+        private static func coordinate<Output>(url: URL, isWriting: Bool, _ body: () throws -> Output) throws -> Output {
+            var coordinationError: NSError?
+            var outcome: Result<Output, Error>?
+            let coordinator = NSFileCoordinator(filePresenter: nil)
+            func run(_: URL) {
+                do {
+                    outcome = .success(try body())
+                } catch {
+                    outcome = .failure(error)
+                }
+            }
+            if isWriting {
+                coordinator.coordinate(writingItemAt: url, options: [], error: &coordinationError, byAccessor: run)
+            } else {
+                coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError, byAccessor: run)
+            }
+            if let coordinationError { throw coordinationError }
+            guard let outcome else { throw PasswordsCacheError.unreadable }
+            return try outcome.get()
+        }
+    #endif
+
+    // MARK: Reading
+
+    /// The header as the file holds it, without items or pins; nil when there is no file.
+    private func readHeader() throws -> PasswordsCacheContents? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Data(contentsOf: fileURL)
-        var contents: PasswordsCacheContents
+        let header: PasswordsCacheContents
         do {
-            contents = try JSONDecoder().decode(PasswordsCacheContents.self, from: data)
+            header = try JSONDecoder().decode(PasswordsCacheContents.self, from: data)
         } catch {
             throw PasswordsCacheError.unreadable
         }
-        guard contents.formatVersion <= PasswordsCacheContents.currentFormatVersion else {
-            throw PasswordsCacheError.unsupportedVersion
+        guard header.formatVersion <= PasswordsCacheContents.currentFormatVersion else { throw PasswordsCacheError.unsupportedVersion }
+        // A copy written before items had files of their own holds them in the header: it is not used.
+        guard header.formatVersion == PasswordsCacheContents.currentFormatVersion else { throw PasswordsCacheError.unreadable }
+        return header
+    }
+
+    /// The pins of this person, best effort: a pin store that cannot be read gives none here. The
+    /// session reads them with `loadPins(userId:)`, which tells the two apart.
+    private func pinsForReading(userId: String) -> PasswordsPins {
+        (try? pinStore.loadPins(userId: userId)) ?? PasswordsPins(userId: userId)
+    }
+
+    /// The header and every item, with the pins read in; nil when there is no file. A file that
+    /// cannot be read throws, so a reader can tell "never synced" from "damaged". An item file that
+    /// cannot be read is left out: the next read of the server brings the item again.
+    public func load() throws -> PasswordsCacheContents? {
+        try coordinatedRead {
+            guard var contents = try readHeader() else { return nil }
+            contents.items = readEveryItem()
+            contents.pins = pinsForReading(userId: contents.userId)
+            return contents
         }
-        if let stored = storedPins(userId: contents.userId) { contents.pins = stored }
-        return contents
     }
 
-    /// The pins kept for this person, whether or not the cache file is there; empty when there are none.
-    public func loadPins(userId: String) -> PasswordsPins {
-        storedPins(userId: userId) ?? PasswordsPins(userId: userId)
+    /// The header with the pins read in, but no items: what the AutoFill extension needs to open the
+    /// key pair, because it opens one item at a time (`loadItem(id:)`). Nil when there is no file.
+    public func loadHeader() throws -> PasswordsCacheContents? {
+        try coordinatedRead {
+            guard var contents = try readHeader() else { return nil }
+            contents.pins = pinsForReading(userId: contents.userId)
+            return contents
+        }
     }
 
-    /// The pins file's contents when it is there, readable and this person's.
-    private func storedPins(userId: String) -> PasswordsPins? {
-        guard let data = try? Data(contentsOf: pinsFileURL),
-            let pins = try? JSONDecoder().decode(PasswordsPins.self, from: data),
-            pins.formatVersion <= PasswordsPins.currentFormatVersion, pins.userId == userId
-        else { return nil }
-        return pins
+    /// One item, read from its own file; nil when the copy has none.
+    public func loadItem(id: String) throws -> PasswordItemView? {
+        try coordinatedRead { readItem(at: itemFileURL(id: id)) }
     }
 
-    /// Writes the contents whole and atomically, readable after the phone's
-    /// first unlock (the extension may run while it is locked again) and left
-    /// out of backups. The pins go to their own file first, so a write that stops
-    /// halfway never loses them.
-    public func save(_ contents: PasswordsCacheContents) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        try write(try encoder.encode(contents.pins), to: pinsFileURL)
-        try write(try encoder.encode(contents), to: fileURL)
+    private func readItem(at url: URL) -> PasswordItemView? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(PasswordItemView.self, from: data)
     }
 
-    /// Writes only the pins, for when there is no cache file to write them with.
-    public func savePins(_ pins: PasswordsPins) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        try write(try encoder.encode(pins), to: pinsFileURL)
+    private func readEveryItem() -> [PasswordItemView] {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: itemsDirectoryURL.path) else { return [] }
+        var items: [PasswordItemView] = []
+        for name in names where name.hasSuffix(".json") {
+            if let item = readItem(at: itemsDirectoryURL.appendingPathComponent(name)) { items.append(item) }
+        }
+        items.sort { $0.id < $1.id }
+        return items
+    }
+
+    /// The pins kept for this person; throws `PasswordsPinStoreError.unreadable` when something is
+    /// stored but cannot be read, so the caller keeps the keys it had and never reads that as none.
+    public func loadPins(userId: String) throws -> PasswordsPins {
+        try pinStore.loadPins(userId: userId)
+    }
+
+    // MARK: Writing
+
+    /// Writes the contents, merged with what is on disk, and returns the revision written.
+    ///
+    /// Another process (the AutoFill extension saving a passkey while the app syncs) may have written
+    /// since this one read, so nothing is written whole from a stale snapshot: the revision written is
+    /// the higher of the two, only the items in `changedItemIds` are written (all of them when it is
+    /// nil, which also removes the files of items that are not in `contents`), and only the items in
+    /// `removedItemIds` are removed. The header is written last, so a write that stops halfway leaves
+    /// items the next read of the server replaces.
+    @discardableResult
+    public func save(
+        _ contents: PasswordsCacheContents, changedItemIds: Set<String>? = nil, removedItemIds: Set<String> = []
+    ) throws -> Int64 {
+        try coordinatedWrite {
+            var header = contents
+            if let onDisk = try? readHeader(), onDisk.userId == header.userId, onDisk.publicKey == header.publicKey {
+                header.revision = max(header.revision, onDisk.revision)
+            }
+            try FileManager.default.createDirectory(at: itemsDirectoryURL, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            for item in contents.items where changedItemIds?.contains(item.id) ?? true {
+                try write(try encoder.encode(item), to: itemFileURL(id: item.id))
+            }
+            if changedItemIds == nil {
+                let keptNames = Set(contents.items.map { Self.itemFileName(id: $0.id) })
+                for name in (try? FileManager.default.contentsOfDirectory(atPath: itemsDirectoryURL.path)) ?? [] where !keptNames.contains(name) {
+                    try? FileManager.default.removeItem(at: itemsDirectoryURL.appendingPathComponent(name))
+                }
+            }
+            for itemId in removedItemIds {
+                try? FileManager.default.removeItem(at: itemFileURL(id: itemId))
+            }
+            try write(try encoder.encode(header), to: fileURL)
+            return header.revision
+        }
+    }
+
+    /// The sealed summary the app wrote, as the file holds it; nil when there is none.
+    public func loadSummaryData() throws -> Data? {
+        try coordinatedRead { try? Data(contentsOf: summaryFileURL) }
+    }
+
+    /// Replaces the summary file.
+    public func saveSummaryData(_ data: Data) throws {
+        try coordinatedWrite { try write(data, to: summaryFileURL) }
+    }
+
+    /// Runs `update` on the summary file's data under the write coordinator and writes what it
+    /// returns, so two processes changing the summary one after the other do not lose a change.
+    /// `update` gets nil when there is no file; returning nil removes it.
+    public func updateSummaryData(_ update: (Data?) -> Data?) throws {
+        try coordinatedWrite {
+            let current = try? Data(contentsOf: summaryFileURL)
+            if let next = update(current) {
+                try write(next, to: summaryFileURL)
+            } else {
+                try? FileManager.default.removeItem(at: summaryFileURL)
+            }
+        }
+    }
+
+    /// Records a key seen on the first shared item of an owner that opened, unless a key is known already.
+    public func recordSeenIfAbsent(userId: String, ownerUserId: String, publicKey: String) throws {
+        try pinStore.recordSeenIfAbsent(userId: userId, ownerUserId: ownerUserId, publicKey: publicKey)
+    }
+
+    /// Records a key the person confirmed by comparing safety codes.
+    public func recordConfirmed(userId: String, ownerUserId: String, publicKey: String) throws {
+        try pinStore.recordConfirmed(userId: userId, ownerUserId: ownerUserId, publicKey: publicKey)
     }
 
     private func write(_ data: Data, to targetURL: URL) throws {
@@ -291,18 +459,23 @@ public struct PasswordsCache: Sendable {
         #endif
     }
 
-    /// Removes the cache file and keeps the pins file. For when the server's answers
-    /// say the copy is not this setup's any more: the pins are about other people's keys,
-    /// which the server must not be able to make the phone forget. Nothing happens when there is no file.
+    // MARK: Erasing
+
+    /// Removes the cache (header, items and summary) and keeps the pinned keys. For when the
+    /// server's answers say the copy is not this setup's any more: the pins are about other
+    /// people's keys, which the server must not be able to make the phone forget. Nothing
+    /// happens when there is nothing.
     public func eraseKeepingPins() throws {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
-        try FileManager.default.removeItem(at: fileURL)
+        try coordinatedWrite {
+            for url in [fileURL, summaryFileURL, itemsDirectoryURL] where FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
     }
 
-    /// Removes the cache file and the pins file. Nothing happens when there are none.
+    /// Removes the cache and the pinned keys. Nothing happens when there are none.
     public func erase() throws {
         try eraseKeepingPins()
-        guard FileManager.default.fileExists(atPath: pinsFileURL.path) else { return }
-        try FileManager.default.removeItem(at: pinsFileURL)
+        try pinStore.removeAll()
     }
 }

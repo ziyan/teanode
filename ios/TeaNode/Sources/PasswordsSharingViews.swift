@@ -131,7 +131,7 @@ struct PasswordsShareScreen: View {
             PasswordsValueText(grantee.name, isProse: true)
         } footer: {
             if grantee.id == grantees.last?.id {
-                Text("Compare each safety code with the person, in person or on a call. If it is not the same on their screen, do not confirm it.")
+                Text("Ask each person to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
             }
         }
     }
@@ -150,15 +150,32 @@ struct PasswordsShareScreen: View {
             if people.isEmpty, circles.isEmpty, grantees.isEmpty, item.shares.isEmpty { loadProblemText = error.loadProblemText }
         }
         if !isLoaded, grantees.isEmpty {
-            for share in item.shares {
-                let recipients = (try? await model.recipients(of: share)) ?? share.recipients.map { PasswordRecipient(view: $0) }
+            // The shares the owner's own record lists. A share only the server lists is not shown as
+            // one the person made; saving ends it.
+            let recordGrantees = item.fields.access?.grantees ?? []
+            for share in item.shares where Self.isInRecord(share, recordGrantees: recordGrantees) {
+                let reached = await recipientsReached(by: share)
                 grantees.append(
                     PasswordsShareGrantee(
                         target: share.granteeCircleId.map { ShareTarget.circle($0) } ?? ShareTarget.person(share.granteeUserId ?? ""),
-                        name: PasswordsWords.granteeName(of: share), recipients: recipients))
+                        name: PasswordsWords.granteeName(of: share), recipients: reached))
             }
         }
         if loadProblemText == nil { isLoaded = true }
+    }
+
+    /// The people a share reaches, marked with what this iPhone knows of each key; without that, as the server lists them.
+    private func recipientsReached(by share: PasswordShareView) async -> [PasswordRecipient] {
+        if let known = try? await model.recipients(of: share) { return known }
+        let circleIds = share.granteeCircleId.map { [$0] } ?? []
+        return share.recipients.map { PasswordRecipient(view: $0, circleIds: circleIds) }
+    }
+
+    /// Whether the owner's sealed record lists the grantee of a share the server shows.
+    private static func isInRecord(_ share: PasswordShareView, recordGrantees: [PasswordsGrantee]) -> Bool {
+        if let circleId = share.granteeCircleId { return recordGrantees.contains(.circle(circleId: circleId)) }
+        if let userId = share.granteeUserId { return recordGrantees.contains(.person(userId: userId)) }
+        return false
     }
 
     // MARK: Changing
@@ -193,21 +210,21 @@ struct PasswordsShareScreen: View {
         guard let item else { return }
         isSaving = true
         defer { isSaving = false }
-        var recipients: [PasswordRecipient] = []
-        for grantee in grantees {
-            for recipient in grantee.recipients where !recipients.contains(where: { $0.userId == recipient.userId }) {
-                recipients.append(recipient)
-            }
-        }
-        let waitingCount = recipients.filter { $0.publicKey == nil || ($0.needsConfirmation && !confirmedUserIds.contains($0.userId)) }.count
+        // Everyone each share reaches; the session seals once for a person who is reached twice.
+        let recipients = grantees.flatMap(\.recipients)
+        let waitingUserIdsHere = Set(
+            recipients.filter { $0.publicKey == nil || ($0.needsConfirmation && !confirmedUserIds.contains($0.userId)) }.map(\.userId))
         do {
-            try await model.setShares(
+            let waitingUserIdsForOk = try await model.setShares(
                 of: item, grantees: grantees.map(\.input), recipients: recipients, confirmedUserIds: Array(confirmedUserIds))
+            let waitingCount = waitingUserIdsHere.union(waitingUserIdsForOk).count
             if waitingCount > 0 {
                 model.doneText = String(localized: "Sharing saved. \(waitingCount) people will get access when they set up Passwords and you confirm their key.")
             } else {
                 model.doneText = String(localized: "Sharing saved.")
             }
+            // Whoever is left waiting for the person's OK is listed at the top of the Passwords screen.
+            if !waitingUserIdsForOk.isEmpty { model.openConfirmations() }
             dismiss()
         } catch PasswordsError.itemNeedsNewKey(let itemIdWithoutNewKey) {
             // The removal went through; the item's screen says it has no new key yet and offers a retry.
@@ -267,6 +284,9 @@ struct PasswordsRecipientRow: View {
                 PasswordsRecipientCodes(recipient: recipient)
             }
             if recipient.needsConfirmation {
+                Text("Ask \(recipient.name) to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 confirmButton
             }
         }
@@ -304,6 +324,9 @@ struct PasswordsWaitingConfirmationRow: View {
                     .foregroundStyle(.secondary)
             }
             PasswordsRecipientCodes(recipient: waiting.recipient)
+            Text("Ask \(waiting.recipient.name) to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             Button(action: confirm) {
                 Label(confirmTitle, systemImage: "checkmark.shield")
             }
@@ -350,7 +373,10 @@ struct PasswordsOwnerKeyChangeRow: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("\(change.ownerName)'s key changed")
                 .font(.footnote.weight(.semibold))
-            Text("Their shared items stay closed until you trust the new key. Compare both codes with them first.")
+            Text("Their shared items stay closed until you trust the new key. Trusting it also lets you share items with them.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text("Ask \(change.ownerName) to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             PasswordsSafetyCodeLines(caption: "Safety code before", code: change.oldSafetyCode)

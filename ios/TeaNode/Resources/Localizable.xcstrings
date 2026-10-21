@@ -2599,6 +2599,64 @@
         }
       }
     },
+    "%lld people are waiting for your OK to open an item again.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld person is waiting for your OK to open an item again."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld people are waiting for your OK to open an item again."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 人が、項目を再び開くためにあなたの確認を待っています。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 人が、項目を再び開くためにあなたの確認を待っています。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 位成员在等你确认，之后才能再次打开项目。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 位成员在等你确认，之后才能再次打开项目。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld permission": {
       "localizations": {
         "ja": {
@@ -4993,6 +5051,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "点击加号打开一个，或在电脑的 herdr 中启动 Claude Code 或 Codex。"
+          }
+        }
+      }
+    },
+    "Open Passwords in TeaNode first: this login needs a new key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にTeaNodeで「パスワード」を開いてください。このログインには新しいキーが必要です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在TeaNode中打开“密码”：此登录需要新的密钥"
           }
         }
       }
@@ -10493,6 +10567,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示图片前询问"
+          }
+        }
+      }
+    },
+    "Ask each person to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それぞれの相手に、自分のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。一致する場合にのみ確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请每个人在自己的设备上打开“密码”设置，并向你读出他们的安全码。只有完全一致时才确认。"
           }
         }
       }
@@ -43050,6 +43140,22 @@
         }
       }
     },
+    "Their shared items stay closed until you trust the new key. Trusting it also lets you share items with them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいキーを信頼するまで、その人が共有した項目は開けないままです。信頼すると、その人と項目を共有できるようにもなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你信任新密钥之前，对方共享的项目将保持锁定。信任后，你也可以向对方共享项目。"
+          }
+        }
+      }
+    },
     "There is no Members group, so this person joins no group and can read nothing until they are put in one.": {
       "localizations": {
         "ja": {
@@ -52662,6 +52768,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "これらのファイルはチャット添付の上限を超えています。音声または動画は録音として保存してください。"
+          }
+        }
+      }
+    },
+    "These people cannot open an item of yours yet. Ask each person to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人たちはまだあなたの項目を開けません。それぞれの相手に、自分のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。一致する場合にのみ確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些人暂时还无法打开你的项目。请每个人在自己的设备上打开“密码”设置，并向你读出他们的安全码。只有完全一致时才确认。"
           }
         }
       }
@@ -63656,6 +63778,22 @@
         }
       }
     },
+    "Somebody who shares with you, or checks your key, can ask you to read them this code. It is made from your key and your account, so it is the same on every device.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたと共有する人やあなたのキーを確認する人が、このコードの読み上げを求めることがあります。コードはあなたのキーとアカウントから作られるため、どのデバイスでも同じです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你共享项目或核对你密钥的人可能会请你读出这个安全码。它由你的密钥和账户生成，所以在每台设备上都一样。"
+          }
+        }
+      }
+    },
     "Your agent asked to run %@ with %@’s %@ skill": {
       "localizations": {
         "ja": {
@@ -64100,6 +64238,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "向%@询问这个视频"
+          }
+        }
+      }
+    },
+    "Ask %@ to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんに、ご自身のデバイスで「パスワードの設定」を開いて安全コードを読み上げてもらってください。一致する場合にのみ確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请%@在自己的设备上打开“密码”设置，并向你读出安全码。只有完全一致时才确认。"
           }
         }
       }
@@ -80906,6 +81060,22 @@
         }
       }
     },
+    "Your safety code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの安全コード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的安全码"
+          }
+        }
+      }
+    },
     "%lld items could not be opened on this iPhone. They may have been saved by a newer version of TeaNode.": {
       "localizations": {
         "en": {
@@ -81112,22 +81282,6 @@
         }
       }
     },
-    "Compare each safety code with the person, in person or on a call. If it is not the same on their screen, do not confirm it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "対面または通話で、相手と各安全コードを照らし合わせてください。相手の画面と違う場合は確認しないでください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请当面或通过通话与对方核对每个安全码。如果和对方屏幕上的不一样，请不要确认。"
-          }
-        }
-      }
-    },
     "Sharing saved. %lld people will get access when they set up Passwords and you confirm their key.": {
       "localizations": {
         "en": {
@@ -81314,22 +81468,6 @@
         }
       }
     },
-    "Their shared items stay closed until you trust the new key. Compare both codes with them first.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しいキーを信頼するまで、その人の共有項目は開けません。先に両方のコードを相手と照合してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在你信任新密钥之前，对方共享的项目将保持锁定。请先与对方核对两个安全码。"
-          }
-        }
-      }
-    },
     "Waiting for your OK": {
       "localizations": {
         "ja": {
@@ -81342,22 +81480,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待你的确认"
-          }
-        }
-      }
-    },
-    "These people set up Passwords after you shared. Compare each safety code with the person before you confirm it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共有したあとにパスワードを設定した人たちです。確認する前に、各安全コードを本人と照合してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这些成员是在你共享之后才设置“密码”的。确认之前，请先与对方核对各自的安全码。"
           }
         }
       }

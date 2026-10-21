@@ -24,11 +24,15 @@ public enum PasswordsLocation {
             .appendingPathComponent(fileName(signInAccountKey: signInAccountKey))
     }
 
-    /// Removes the copy of a sign-in and its pinned keys, when the phone signs out of it.
-    /// Nothing happens when there is none.
+    /// Removes the copy of a sign-in (its header, item files and summary), and the pins file a
+    /// cache without a keychain keeps, when the phone signs out of it. The pinned keys in the
+    /// keychain are removed with `PasswordsCache.erase()` or the pin store. Nothing happens when
+    /// there is none.
     public static func removeCopy(groupContainer: URL, signInAccountKey: String) {
         let copyURL = fileURL(groupContainer: groupContainer, signInAccountKey: signInAccountKey)
         try? FileManager.default.removeItem(at: copyURL)
+        try? FileManager.default.removeItem(at: PasswordsCache.itemsDirectoryURL(cacheFileURL: copyURL))
+        try? FileManager.default.removeItem(at: PasswordsCache.summaryFileURL(cacheFileURL: copyURL))
         try? FileManager.default.removeItem(at: PasswordsCache.pinsFileURL(cacheFileURL: copyURL))
     }
 }

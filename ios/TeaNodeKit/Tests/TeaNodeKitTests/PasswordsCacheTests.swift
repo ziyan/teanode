@@ -57,7 +57,7 @@ final class PasswordsCacheTests: XCTestCase {
         FileManager.default.temporaryDirectory.appendingPathComponent("passwords-cache-\(UUID().uuidString)").appendingPathComponent("passwords.json")
     }
 
-    func testTheFileRoundTripsAndNeverHoldsAClearValue() throws {
+    func testTheFilesRoundTripAndNeverHoldAClearValue() throws {
         let url = temporaryFile()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let cache = PasswordsCache(fileURL: url)
@@ -68,77 +68,108 @@ final class PasswordsCacheTests: XCTestCase {
         let text = String(decoding: try Data(contentsOf: url), as: UTF8.self)
         XCTAssertTrue(text.contains("sealed-private-key"))
         XCTAssertFalse(text.contains("passphrase"))
+        XCTAssertFalse(text.contains("sealed-key"), "the header holds no item")
         try cache.erase()
         XCTAssertNil(try cache.load())
         XCTAssertNoThrow(try cache.erase())
     }
 
-    func testPinnedKeysRoundTripThroughTheirOwnFileAndAnOlderFileReadsItsKeysAsSeenOnly() throws {
+    func testPinnedKeysAreInThePinStoreNotInTheCacheFiles() throws {
         let url = temporaryFile()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-        let cache = PasswordsCache(fileURL: url)
-        var stored = contents(items: [view("one", revision: 1, isSharedWithMe: true)], revision: 1)
-        stored.seenPublicKeys = ["user-grace": "grace-key"]
-        stored.confirmedPublicKeys = ["user-linus": "linus-key"]
+        let pinStore = PasswordsMemoryPinStore()
+        let cache = PasswordsCache(fileURL: url, pinStore: pinStore)
+        let stored = contents(items: [view("one", revision: 1, isSharedWithMe: true)], revision: 1)
         try cache.save(stored)
-        XCTAssertEqual(try cache.load(), stored)
-        // The cache file holds no pins; they are in the pins file beside it.
-        let text = String(decoding: try Data(contentsOf: url), as: UTF8.self)
-        XCTAssertFalse(text.contains("grace-key"))
-        XCTAssertFalse(text.contains("linus-key"))
-        XCTAssertTrue(try String(contentsOf: cache.pinsFileURL, encoding: .utf8).contains("grace-key"))
+        try cache.recordSeenIfAbsent(userId: "user-ada", ownerUserId: "user-grace", publicKey: "grace-key")
+        try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-linus", publicKey: "linus-key")
 
-        // The same file as an earlier build wrote it: pinned keys under knownPublicKeys, no pins file.
-        try FileManager.default.removeItem(at: cache.pinsFileURL)
-        var object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
-        object["knownPublicKeys"] = ["user-grace": "grace-key"]
-        try JSONSerialization.data(withJSONObject: object).write(to: url)
-        let earlier = try XCTUnwrap(try cache.load())
-        XCTAssertEqual(earlier.seenPublicKeys, ["user-grace": "grace-key"])
-        XCTAssertEqual(earlier.confirmedPublicKeys, [:])
-
-        // A file with neither, and no ownerPublicKey on the item, reads as no key known.
-        object["knownPublicKeys"] = nil
-        var items = try XCTUnwrap(object["items"] as? [[String: Any]])
-        items[0]["ownerPublicKey"] = nil
-        object["items"] = items
-        try JSONSerialization.data(withJSONObject: object).write(to: url)
-        let oldest = try XCTUnwrap(try cache.load())
-        XCTAssertEqual(oldest.seenPublicKeys, [:])
-        XCTAssertEqual(oldest.items.first?.ownerPublicKey, "")
+        var expected = stored
+        expected.seenPublicKeys = ["user-grace": "grace-key", "user-linus": "linus-key"]
+        expected.confirmedPublicKeys = ["user-linus": "linus-key"]
+        XCTAssertEqual(try cache.load(), expected)
+        XCTAssertEqual(try cache.loadHeader()?.seenPublicKeys, expected.seenPublicKeys)
+        // Neither the header nor an item file holds a key, and no pins file is written.
+        for fileURL in [url] + (try FileManager.default.contentsOfDirectory(at: cache.itemsDirectoryURL, includingPropertiesForKeys: nil)) {
+            let text = String(decoding: try Data(contentsOf: fileURL), as: UTF8.self)
+            XCTAssertFalse(text.contains("grace-key"))
+            XCTAssertFalse(text.contains("linus-key"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.pinsFileURL.path))
+        // The key seen first is not replaced by a later first sight; a confirmation replaces it.
+        try cache.recordSeenIfAbsent(userId: "user-ada", ownerUserId: "user-grace", publicKey: "other-key")
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").seenPublicKeys["user-grace"], "grace-key")
+        try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-grace", publicKey: "other-key")
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").seenPublicKeys["user-grace"], "other-key")
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").confirmedPublicKeys["user-grace"], "other-key")
     }
 
-    func testErasingKeepingPinsLeavesThePinsFileAndErasingRemovesBoth() throws {
+    func testAPlantedPinsFileIsNotReadWhenThePinsAreInAnotherStore() throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let cache = PasswordsCache(fileURL: url, pinStore: PasswordsMemoryPinStore())
+        try cache.save(contents(items: [], revision: 0))
+        // What anything that can write to the app group's folder can do.
+        let planted = PasswordsPins(userId: "user-ada", seenPublicKeys: [:], confirmedPublicKeys: ["user-mallory": "mallory-key"])
+        try JSONEncoder().encode(planted).write(to: cache.pinsFileURL)
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada"), PasswordsPins(userId: "user-ada"))
+        XCTAssertEqual(try XCTUnwrap(try cache.load()).confirmedPublicKeys, [:])
+    }
+
+    func testAPinsFileThatCannotBeReadIsNeverWrittenOverOrTakenForEmpty() throws {
         let url = temporaryFile()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let cache = PasswordsCache(fileURL: url)
-        var stored = contents(items: [], revision: 0)
-        stored.seenPublicKeys = ["user-grace": "grace-key"]
-        try cache.save(stored)
+        try cache.save(contents(items: [], revision: 0))
+        try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-grace", publicKey: "grace-key")
+        let stored = try Data(contentsOf: cache.pinsFileURL)
+        let damaged = Data("{\"formatVersion\":1,\"userId\":\"user-ada\",\"seenPublicKeys\":5}".utf8)
+        try damaged.write(to: cache.pinsFileURL)
+        XCTAssertThrowsError(try cache.loadPins(userId: "user-ada")) { error in
+            XCTAssertEqual(error as? PasswordsPinStoreError, .unreadable)
+        }
+        XCTAssertThrowsError(try cache.recordSeenIfAbsent(userId: "user-ada", ownerUserId: "user-linus", publicKey: "linus-key"))
+        XCTAssertThrowsError(try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-linus", publicKey: "linus-key"))
+        XCTAssertEqual(try Data(contentsOf: cache.pinsFileURL), damaged)
+        try stored.write(to: cache.pinsFileURL)
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").confirmedPublicKeys, ["user-grace": "grace-key"])
+    }
+
+    func testErasingKeepingPinsLeavesThePinsAndErasingRemovesEverything() throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let cache = PasswordsCache(fileURL: url)
+        try cache.save(contents(items: [view("one", revision: 1)], revision: 1))
+        try cache.saveSummaryData(Data("sealed".utf8))
+        try cache.recordSeenIfAbsent(userId: "user-ada", ownerUserId: "user-grace", publicKey: "grace-key")
         try cache.eraseKeepingPins()
         XCTAssertNil(try cache.load())
-        XCTAssertEqual(cache.loadPins(userId: "user-ada").seenPublicKeys, ["user-grace": "grace-key"])
+        XCTAssertNil(try cache.loadSummaryData())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.itemsDirectoryURL.path))
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada").seenPublicKeys, ["user-grace": "grace-key"])
         // Another person's pins are never read as this person's.
-        XCTAssertEqual(cache.loadPins(userId: "user-other"), PasswordsPins(userId: "user-other"))
+        XCTAssertEqual(try cache.loadPins(userId: "user-other"), PasswordsPins(userId: "user-other"))
         try cache.erase()
-        XCTAssertEqual(cache.loadPins(userId: "user-ada"), PasswordsPins(userId: "user-ada"))
+        XCTAssertEqual(try cache.loadPins(userId: "user-ada"), PasswordsPins(userId: "user-ada"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: cache.pinsFileURL.path))
         XCTAssertNoThrow(try cache.erase())
     }
 
-    func testRemovingTheCopyOfASignInRemovesThePinsFileToo() throws {
+    func testRemovingTheCopyOfASignInRemovesItsFiles() throws {
         let container = FileManager.default.temporaryDirectory.appendingPathComponent("passwords-location-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: container) }
         let cache = PasswordsCache(fileURL: PasswordsLocation.fileURL(groupContainer: container, signInAccountKey: "demo.example.com|ada"))
-        var stored = contents(items: [], revision: 0)
-        stored.confirmedPublicKeys = ["user-grace": "grace-key"]
-        try cache.save(stored)
+        try cache.save(contents(items: [view("one", revision: 1)], revision: 1))
+        try cache.saveSummaryData(Data("sealed".utf8))
+        try cache.recordConfirmed(userId: "user-ada", ownerUserId: "user-grace", publicKey: "grace-key")
         PasswordsLocation.removeCopy(groupContainer: container, signInAccountKey: "demo.example.com|ada")
         XCTAssertFalse(FileManager.default.fileExists(atPath: cache.fileURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.itemsDirectoryURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.summaryFileURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: cache.pinsFileURL.path))
     }
 
-    func testADamagedFileAndANewerFormatAreTyped() throws {
+    func testADamagedFileAnOlderFormatAndANewerFormatAreTyped() throws {
         let url = temporaryFile()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -152,5 +183,76 @@ final class PasswordsCacheTests: XCTestCase {
         XCTAssertThrowsError(try PasswordsCache(fileURL: url).load()) { error in
             XCTAssertEqual(error as? PasswordsCacheError, .unsupportedVersion)
         }
+        // A copy that held its items in the one file is not used: its items have no files.
+        var older = contents(items: [], revision: 0)
+        older.formatVersion = 1
+        try JSONEncoder().encode(older).write(to: url)
+        XCTAssertThrowsError(try PasswordsCache(fileURL: url).load()) { error in
+            XCTAssertEqual(error as? PasswordsCacheError, .unreadable)
+        }
+    }
+
+    func testEachItemHasAFileOfItsOwnAndSavingWritesOnlyWhatChanged() throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let cache = PasswordsCache(fileURL: url)
+        try cache.save(contents(items: [view("one", revision: 1), view("two", revision: 2)], revision: 2))
+        XCTAssertEqual(try cache.loadItem(id: "two")?.revision, 2)
+        XCTAssertNil(try cache.loadItem(id: "three"))
+        XCTAssertEqual(try cache.loadHeader()?.items, [])
+        XCTAssertEqual(try cache.load()?.items.map(\.id), ["one", "two"])
+
+        // An item's file is named by a hash, so no id can name another file or a folder.
+        let hostileId = "../../outside/" + String(repeating: "x", count: 600)
+        XCTAssertFalse(PasswordsCache.itemFileName(id: hostileId).contains("/"))
+        XCTAssertEqual(PasswordsCache.itemFileName(id: hostileId).count, 64 + 5)
+        try cache.save(contents(items: [view(hostileId, revision: 3)], revision: 3), changedItemIds: [hostileId])
+        XCTAssertEqual(try cache.loadItem(id: hostileId)?.id, hostileId)
+
+        // Only the changed item is written, and a removed one's file goes.
+        let oneFile = cache.itemFileURL(id: "one")
+        let before = try Data(contentsOf: oneFile)
+        try FileManager.default.removeItem(at: oneFile)
+        try cache.save(contents(items: [view("one", revision: 1), view("two", revision: 5, fields: "changed")], revision: 5), changedItemIds: ["two"], removedItemIds: [hostileId])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oneFile.path), "an unchanged item is not written again")
+        XCTAssertNil(try cache.loadItem(id: hostileId))
+        XCTAssertEqual(try cache.loadItem(id: "two")?.encryptedFields, "changed")
+        try before.write(to: oneFile)
+        // Saving everything removes the files of items that are not in the contents.
+        try cache.save(contents(items: [view("two", revision: 5, fields: "changed")], revision: 5))
+        XCTAssertEqual(try cache.load()?.items.map(\.id), ["two"])
+    }
+
+    func testSavingMergesTheRevisionWithWhatIsOnDiskAndNeverMovesItBackwards() throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let cache = PasswordsCache(fileURL: url)
+        XCTAssertEqual(try cache.save(contents(items: [], revision: 9)), 9)
+        // A writer that read the copy earlier saves with the revision it had.
+        XCTAssertEqual(try cache.save(contents(items: [], revision: 4)), 9)
+        XCTAssertEqual(try cache.loadHeader()?.revision, 9)
+        XCTAssertEqual(try cache.save(contents(items: [], revision: 11)), 11)
+        // A copy of another setup (another public key) is not merged with.
+        var other = contents(items: [], revision: 2)
+        other.publicKey = "another-key"
+        XCTAssertEqual(try cache.save(other), 2)
+    }
+
+    func testTheSummaryFileIsUpdatedUnderTheWriteLock() throws {
+        let url = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let cache = PasswordsCache(fileURL: url)
+        XCTAssertNil(try cache.loadSummaryData())
+        try cache.updateSummaryData { current in
+            XCTAssertNil(current)
+            return Data("first".utf8)
+        }
+        try cache.updateSummaryData { current in
+            XCTAssertEqual(current, Data("first".utf8))
+            return Data("second".utf8)
+        }
+        XCTAssertEqual(try cache.loadSummaryData(), Data("second".utf8))
+        try cache.updateSummaryData { _ in nil }
+        XCTAssertNil(try cache.loadSummaryData())
     }
 }

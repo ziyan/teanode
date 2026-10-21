@@ -50,9 +50,16 @@ final class PasswordsModel {
     /// Waiting recipients of the person's items whose key the person has not confirmed
     /// on this iPhone (a key only seen on an incoming item counts as not confirmed) or that changed: nothing is sealed for them until the person confirms the key.
     private(set) var waitingConfirmations: [PasswordWaitingShare] = []
-    /// Items somebody was removed from whose new item key could not be made yet: the item's
+    /// The person's items the server marked as needing a new item key (somebody was removed, the
+    /// agent was turned off, a member left a circle) that could not be given one yet: the item's
     /// screen says so and offers a retry.
     private(set) var itemIdsNeedingNewKey: [String] = []
+    /// The person's own safety code, made from the key pair this iPhone opened and the person's own
+    /// user id; nil while locked. Other people compare it before they trust the person's key.
+    private(set) var ownSafetyCode: String?
+    /// Counts the times something wants the screen to show the people waiting for the person's OK,
+    /// which the Passwords screen answers by going back to its list.
+    private(set) var confirmationRequestCount = 0
     private(set) var isSyncing = false
     /// Whether the account key waits behind Face ID on this iPhone.
     private(set) var hasFaceIDKey = false
@@ -134,8 +141,7 @@ final class PasswordsModel {
             let accessSession = try await connection.accessSession()
             guard let userId = accessSession.userId, !userId.isEmpty else { throw PasswordsError.invalidServerAnswer }
             ownUserId = userId
-            let newSession = PasswordsSession(
-                api: connection, cache: PasswordsCache(fileURL: Self.cacheFileURL(signInAccountKey: connection.accountKey)), userId: userId)
+            let newSession = PasswordsSession(api: connection, cache: Self.makeCache(signInAccountKey: connection.accountKey), userId: userId)
             let setup = try await newSession.readSetup()
             session = newSession
             lockAfterMinutes = setup.lockAfterMinutes
@@ -174,6 +180,16 @@ final class PasswordsModel {
             group.flatMap { fileManager.containerURL(forSecurityApplicationGroupIdentifier: $0) }
             ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
         return PasswordsLocation.fileURL(groupContainer: container, signInAccountKey: signInAccountKey)
+    }
+
+    /// The copy of the items with the keys pinned for other people in the keychain group of Passwords,
+    /// where the share extension and the widgets cannot reach them (the demo keeps them in memory).
+    private static func makeCache(signInAccountKey: String) -> PasswordsCache {
+        let fileURL = cacheFileURL(signInAccountKey: signInAccountKey)
+        #if DEBUG
+            if DemoServer.isRequested { return PasswordsCache(fileURL: fileURL, pinStore: PasswordsMemoryPinStore()) }
+        #endif
+        return PasswordsCache.forThisBundle(fileURL: fileURL, signInAccountKey: signInAccountKey)
     }
 
     private var faceIDDefaultsKey: String { "passwordsFaceID.\(connection.accountKey)" }
@@ -318,6 +334,7 @@ final class PasswordsModel {
         unreadableItemCount = 0
         ownerKeyChanges = []
         waitingConfirmations = []
+        ownSafetyCode = nil
         if phase == .unlocked { phase = .locked }
     }
 
@@ -368,8 +385,11 @@ final class PasswordsModel {
             try await session.sync(isFull: isFull)
             lockAfterMinutes = await session.lockAfterMinutes
             await reload()
-            await giveWaitingRecipientsTheirKeys()
-            await retryNewKeys()
+            // Items the server marked get a new key now; whoever is left waiting for the person's OK is said.
+            var givenItemIds: [String] = []
+            if !isDemo { givenItemIds = await session.giveNewKeysToMarkedItems() }
+            if !givenItemIds.isEmpty { await reload() }
+            await giveWaitingRecipientsTheirKeys(isAnnouncing: !givenItemIds.isEmpty, isOpeningConfirmations: false)
         } catch {
             await handleSyncFailure(error)
         }
@@ -409,6 +429,7 @@ final class PasswordsModel {
         unreadableItemCount = 0
         ownerKeyChanges = []
         waitingConfirmations = []
+        ownSafetyCode = nil
         phase = closedPhase
     }
 
@@ -423,6 +444,7 @@ final class PasswordsModel {
             unreadableItemCount = opened.unreadableReasons.values.filter { $0 == .cannotOpen }.count
             ownerKeyChanges = await session.ownerKeyChanges()
             itemIdsNeedingNewKey = await session.itemIdsNeedingNewKey
+            ownSafetyCode = try? await session.ownSafetyCode()
         } catch {
             report(error, orSay: String(localized: "Your items could not be opened."))
             return
@@ -434,8 +456,10 @@ final class PasswordsModel {
     /// The people who set up Passwords after an item was shared with them get
     /// the item's key now, when the person already confirmed their key on this
     /// iPhone. Any other key, or one that changed, is listed in `waitingConfirmations`
-    /// for the person to confirm first.
-    private func giveWaitingRecipientsTheirKeys() async {
+    /// for the person to confirm first. After a new key was given (`isAnnouncing`), which leaves
+    /// everyone whose key is not confirmed here without access until it is, the toast says how
+    /// many people wait, and with `isOpeningConfirmations` the screen goes to where they are listed.
+    private func giveWaitingRecipientsTheirKeys(isAnnouncing: Bool = false, isOpeningConfirmations: Bool = false) async {
         guard let session, !isDemo else { return }
         guard let completed = try? await session.completeWaitingShares() else { return }
         waitingConfirmations = completed.waitingForConfirmation
@@ -443,6 +467,16 @@ final class PasswordsModel {
             let givenCount = completed.addedKeyCount
             doneText = String(localized: "Gave \(givenCount) people access to the items you shared, now that they set up Passwords.")
         }
+        let waitingCount = Set(completed.waitingForConfirmation.map(\.recipient.userId)).count
+        if isAnnouncing, waitingCount > 0 {
+            doneText = String(localized: "\(waitingCount) people are waiting for your OK to open an item again.")
+            if isOpeningConfirmations { openConfirmations() }
+        }
+    }
+
+    /// Asks the screen to show the people waiting for the person's OK, at the top of the list.
+    func openConfirmations() {
+        confirmationRequestCount += 1
     }
 
     /// Says why something failed on the screen behind any sheet, and notes a
@@ -470,9 +504,12 @@ final class PasswordsModel {
     @discardableResult
     func save(fields: PasswordsItemFields, id: String? = nil, baseRevision: Int64? = nil) async throws -> PasswordItem {
         let session = try requireSession()
+        // An item the server marked is given a new key as it is saved.
+        let wasMarked = id.map { itemIdsNeedingNewKey.contains($0) } ?? false
         do {
             let saved = try await session.save(fields: fields, id: id, baseRevision: baseRevision)
             await reload()
+            if wasMarked { await giveWaitingRecipientsTheirKeys(isAnnouncing: true, isOpeningConfirmations: false) }
             return saved
         } catch {
             if let passwordsError = error as? PasswordsError, passwordsError == .itemChangedOnAnotherDevice { await sync() }
@@ -490,12 +527,21 @@ final class PasswordsModel {
         let session = try requireSession()
         _ = try await session.restore(id: item.id)
         await reload()
+        await giveWaitingRecipientsTheirKeys(isAnnouncing: item.needsNewKey, isOpeningConfirmations: false)
     }
 
     func setUsableByAgent(_ item: PasswordItem, isUsable: Bool) async throws {
         let session = try requireSession()
-        _ = try await session.setUsableByAgent(itemId: item.id, isUsable: isUsable)
+        do {
+            _ = try await session.setUsableByAgent(itemId: item.id, isUsable: isUsable)
+        } catch {
+            // The agent was stopped but the new key could not be made yet: the item says so.
+            await reload()
+            throw error
+        }
         await reload()
+        // Turning the agent off gives the item a new key, which leaves the people whose key is not confirmed here waiting.
+        if !isUsable { await giveWaitingRecipientsTheirKeys(isAnnouncing: true, isOpeningConfirmations: true) }
     }
 
     /// Tries again to give an item a new key, after a removal whose re-key failed.
@@ -505,19 +551,10 @@ final class PasswordsModel {
             _ = try await session.giveNewKey(itemId: item.id)
             doneText = String(localized: "The item was given a new key.")
             await reload()
+            await giveWaitingRecipientsTheirKeys(isAnnouncing: true, isOpeningConfirmations: true)
         } catch {
             report(error, orSay: String(localized: "The item could not be given a new key."))
         }
-    }
-
-    /// Quietly retries the items still waiting for a new key, each time Passwords is brought up to date.
-    private func retryNewKeys() async {
-        guard let session, !isDemo else { return }
-        var isChanged = false
-        for itemId in await session.itemIdsNeedingNewKey {
-            if (try? await session.giveNewKey(itemId: itemId)) != nil { isChanged = true }
-        }
-        if isChanged { await reload() }
     }
 
     // MARK: Sharing
@@ -530,14 +567,17 @@ final class PasswordsModel {
     /// The people an item's existing share reaches, marked with what this iPhone knows of each key.
     func recipients(of share: PasswordShareView) async throws -> [PasswordRecipient] {
         let session = try requireSession()
-        return await session.recipients(of: share.recipients)
+        return await session.recipients(of: share.recipients, circleId: share.granteeCircleId)
     }
 
     /// Saves who the item is shared with. A key is sealed only for a new
-    /// recipient whose key this iPhone knows or whose user id is in `confirmedUserIds`.
+    /// recipient whose key this iPhone knows or whose user id is in `confirmedUserIds`, and only
+    /// for somebody the item's own sealed record reaches. Returns the ids of the people who are
+    /// left waiting for the person's OK to get a key for this item (a new key leaves everyone whose
+    /// key is not confirmed on this iPhone waiting).
     func setShares(
         of item: PasswordItem, grantees: [PasswordShareGranteeInput], recipients: [PasswordRecipient], confirmedUserIds: [String]
-    ) async throws {
+    ) async throws -> Set<String> {
         let session = try requireSession()
         do {
             _ = try await session.setShares(
@@ -548,6 +588,8 @@ final class PasswordsModel {
             throw error
         }
         await reload()
+        await giveWaitingRecipientsTheirKeys()
+        return Set(waitingConfirmations.filter { $0.itemId == item.id }.map(\.recipient.userId))
     }
 
     /// Seals one waiting share after the person confirmed the recipient's key.

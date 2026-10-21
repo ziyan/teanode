@@ -25,6 +25,8 @@ actor FakePasswordsServer {
         var isUsableByAgent = false
         var itemKeyByAgentKey: String?
         var deletedAt: String?
+        /// Set when access narrowed while the item kept the key somebody held; cleared by a re-key.
+        var needsNewKey = false
         var grantees: [PasswordShareGranteeInput] = []
         /// Recipient user id to the key and the public key it was sealed for.
         var keys: [String: (itemKeyByRecipientKey: String, recipientPublicKey: String)] = [:]
@@ -38,6 +40,16 @@ actor FakePasswordsServer {
     /// When true, every call fails the way a missing connection does.
     var isOffline = false
     private(set) var listCalls: [Int64?] = []
+    private var listCallMark = 0
+
+    /// Starts counting list calls from here (`listCallsSinceMark`).
+    func markListCalls() {
+        listCallMark = listCalls.count
+    }
+
+    func listCallsSinceMark() -> [Int64?] {
+        Array(listCalls.dropFirst(listCallMark))
+    }
     /// When set, the next re-key calls are refused with this sentence (until cleared).
     var rekeyRefusal: String?
     private(set) var rekeyCallCount = 0
@@ -57,8 +69,20 @@ actor FakePasswordsServer {
         people[userId] = Person(userId: userId, name: name, username: name.lowercased())
     }
 
+    /// Sets the members of a circle. Somebody an item no longer reaches loses its key, and the item is
+    /// marked as needing a new key, as the real server does when a member leaves.
     func setCircle(_ circleId: String, members: [String]) {
+        let reachedBefore = items.mapValues { Set(reached($0)) }
         circles[circleId] = members
+        for (itemId, item) in items {
+            let reachedNow = Set(reached(item))
+            guard !(reachedBefore[itemId] ?? []).subtracting(reachedNow).isEmpty else { continue }
+            var changed = item
+            changed.keys = changed.keys.filter { reachedNow.contains($0.key) }
+            changed.needsNewKey = true
+            changed.revision = nextRevision()
+            items[itemId] = changed
+        }
     }
 
     func setOffline(_ offline: Bool) {
@@ -247,7 +271,8 @@ actor FakePasswordsServer {
             return PasswordItemView(
                 id: item.id, ownerUserId: item.ownerUserId, ownerName: owner?.name ?? "", ownerPublicKey: owner?.setup?.publicKey ?? "",
                 itemKind: item.itemKind, encryptedFields: item.encryptedFields, itemKey: item.itemKeyByAccountKey, isSharedWithMe: false, revision: item.revision,
-                isUsableByAgent: item.isUsableByAgent, deletedAt: item.deletedAt, createdAt: time(), updatedAt: time(), shares: shares)
+                isUsableByAgent: item.isUsableByAgent, deletedAt: item.deletedAt, createdAt: time(), updatedAt: time(), shares: shares,
+                needsNewKey: item.needsNewKey)
         }
         guard item.deletedAt == nil, reached(item).contains(viewerUserId), let key = item.keys[viewerUserId],
             key.recipientPublicKey == people[viewerUserId]?.setup?.publicKey
@@ -317,6 +342,7 @@ actor FakePasswordsServer {
     func delete(userId: String, itemId: String) throws -> PasswordItemView {
         try requireOnline()
         var item = try ownedItem(itemId, userId: userId)
+        if !item.keys.isEmpty || item.isUsableByAgent { item.needsNewKey = true }
         item.deletedAt = time()
         item.isUsableByAgent = false
         item.itemKeyByAgentKey = nil
@@ -340,8 +366,10 @@ actor FakePasswordsServer {
     {
         try requireOnline()
         var item = try ownedItem(itemId, userId: userId)
+        let reachedBefore = Set(reached(item))
         item.grantees = grantees
         let reachedUserIds = Set(reached(item))
+        if !reachedBefore.subtracting(reachedUserIds).isEmpty { item.needsNewKey = true }
         item.keys = item.keys.filter { reachedUserIds.contains($0.key) }
         for key in keys {
             guard reachedUserIds.contains(key.recipientUserId) else { throw TeaNodeError.refused("That person is not reached by this share.") }
@@ -359,6 +387,9 @@ actor FakePasswordsServer {
         try requireOnline()
         for key in keys {
             var item = try ownedItem(key.itemId, userId: userId)
+            guard key.itemKey == item.itemKeyByAccountKey else {
+                throw TeaNodeError.refused("This item changed on another device. Open it again.")
+            }
             guard reached(item).contains(key.recipientUserId), people[key.recipientUserId]?.setup?.publicKey == key.recipientPublicKey else {
                 throw TeaNodeError.refused("api: not found")
             }
@@ -373,6 +404,7 @@ actor FakePasswordsServer {
         try requireOnline()
         var item = try ownedItem(itemId, userId: userId)
         if isUsableByAgent && item.itemKind == "card" { throw TeaNodeError.refused("A card cannot be used by the agent.") }
+        if !isUsableByAgent && item.isUsableByAgent { item.needsNewKey = true }
         item.isUsableByAgent = isUsableByAgent
         item.itemKeyByAgentKey = isUsableByAgent ? itemKeyByAgentKey : nil
         item.revision = nextRevision()
@@ -385,7 +417,6 @@ actor FakePasswordsServer {
         rekeyCallCount += 1
         if let rekeyRefusal { throw TeaNodeError.refused(rekeyRefusal) }
         var item = try ownedItem(input.id, userId: userId)
-        guard item.deletedAt == nil else { throw TeaNodeError.refused("api: not found") }
         guard input.baseRevision == item.revision else {
             throw TeaNodeError.refused("This item changed on another device. Open it again.")
         }
@@ -407,7 +438,8 @@ actor FakePasswordsServer {
         }
         item.encryptedFields = input.encryptedFields
         item.itemKeyByAccountKey = input.itemKey
-        item.keys = newKeys
+        item.keys = item.deletedAt == nil ? newKeys : [:]
+        item.needsNewKey = false
         item.revision = nextRevision()
         items[item.id] = item
         return view(item, for: userId)!

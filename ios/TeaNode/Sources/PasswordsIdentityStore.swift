@@ -64,8 +64,8 @@ enum PasswordsIdentityStore {
 }
 
 /// PasswordsAccountStorage removes what Passwords keeps on this iPhone for a
-/// sign-in that was removed: the encrypted copy of its items, the account key
-/// behind Face ID, and the choice to use it.
+/// sign-in that was removed: the encrypted copy of its items, the keys pinned
+/// for other people, the account key behind Face ID, and the choice to use it.
 enum PasswordsAccountStorage {
     static func accountWasRemoved(signInAccountKey: String, isInUse: Bool) async {
         let group = Bundle.main.object(forInfoDictionaryKey: "TeaNodeAppGroup") as? String
@@ -75,6 +75,8 @@ enum PasswordsAccountStorage {
         if let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             PasswordsLocation.removeCopy(groupContainer: support, signInAccountKey: signInAccountKey)
         }
+        // The keys pinned for other people are in the keychain, not in the folder removed above.
+        try? PasswordsKeychainPinStore.forThisBundle(signInAccountKey: signInAccountKey).removeAll()
         UserDefaults.standard.removeObject(forKey: "passwordsFaceID.\(signInAccountKey)")
         try? await PasswordsKeychainKeyStore.forThisBundle().delete(signInAccountKey: signInAccountKey)
         if isInUse { await PasswordsIdentityStore.removeAll() }

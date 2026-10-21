@@ -110,11 +110,15 @@ public struct PasswordItemView: Codable, Hashable, Identifiable, Sendable {
     public let updatedAt: String
     /// The owner's shares; empty for a recipient.
     public let shares: [PasswordShareView]
+    /// Set by the server when access to the item narrowed (somebody was removed, the agent
+    /// was turned off, a member left a circle) and the item still has the key they held. Only
+    /// `RekeyPasswordItem` clears it. Always false on an item shared with the person.
+    public let needsNewKey: Bool
 
     public init(
         id: String, ownerUserId: String, ownerName: String, ownerPublicKey: String, itemKind: String, encryptedFields: String,
         itemKey: String, isSharedWithMe: Bool, revision: Int64, isUsableByAgent: Bool, lastUsedByAgentAt: String? = nil, deletedAt: String? = nil,
-        createdAt: String, updatedAt: String, shares: [PasswordShareView] = []
+        createdAt: String, updatedAt: String, shares: [PasswordShareView] = [], needsNewKey: Bool = false
     ) {
         self.id = id
         self.ownerUserId = ownerUserId
@@ -131,11 +135,12 @@ public struct PasswordItemView: Codable, Hashable, Identifiable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.shares = shares
+        self.needsNewKey = needsNewKey
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, ownerUserId, ownerName, ownerPublicKey, itemKind, encryptedFields, itemKey, isSharedWithMe, revision
-        case isUsableByAgent, lastUsedByAgentAt, deletedAt, createdAt, updatedAt, shares
+        case isUsableByAgent, lastUsedByAgentAt, deletedAt, createdAt, updatedAt, shares, needsNewKey
     }
 
     /// A phone's copy written before the owner's key was part of an item has none: it reads as empty,
@@ -157,6 +162,7 @@ public struct PasswordItemView: Codable, Hashable, Identifiable, Sendable {
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         shares = try container.decode([PasswordShareView].self, forKey: .shares)
+        needsNewKey = try container.decodeIfPresent(Bool.self, forKey: .needsNewKey) ?? false
     }
 
     public var deletedDate: Date? { ServerTime.date(deletedAt) }
@@ -273,12 +279,20 @@ public struct PasswordItemShareKeyInput: Codable, Hashable, Sendable {
     public var recipientUserId: String
     public var itemKeyByRecipientKey: String
     public var recipientPublicKey: String
+    /// The item key sealed with the account key, exactly as the item showed it when this device
+    /// opened it to seal this key. `AddPasswordShareKeys` requires it and refuses the key when the
+    /// item has another key by now ("changed on another device"). A re-key leaves it out: its
+    /// keys are sealed from the new key in the same call.
+    public var itemKey: String?
 
-    public init(itemId: String, recipientUserId: String, itemKeyByRecipientKey: String, recipientPublicKey: String) {
+    public init(
+        itemId: String, recipientUserId: String, itemKeyByRecipientKey: String, recipientPublicKey: String, itemKey: String? = nil
+    ) {
         self.itemId = itemId
         self.recipientUserId = recipientUserId
         self.itemKeyByRecipientKey = itemKeyByRecipientKey
         self.recipientPublicKey = recipientPublicKey
+        self.itemKey = itemKey
     }
 }
 
@@ -357,7 +371,7 @@ extension Documents {
         userId name username publicKey hasKey
         """
     static let passwordItemFields = """
-        id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision isUsableByAgent lastUsedByAgentAt deletedAt createdAt updatedAt
+        id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision isUsableByAgent lastUsedByAgentAt deletedAt createdAt updatedAt needsNewKey
         shares { id granteeUserId granteeCircleId granteeName recipients { userId name username publicKey hasKey } }
         """
 
@@ -392,7 +406,7 @@ extension Documents {
         """
 
     public static let passwordItems = """
-        query ($sinceRevision: Int) {
+        query ($sinceRevision: Int64) {
           ListPasswordItems(sinceRevision: $sinceRevision) {
             items { \(passwordItemFields) }
             itemIds
@@ -413,7 +427,7 @@ extension Documents {
         """
 
     public static let savePasswordItem = """
-        mutation ($id: String!, $itemKind: String!, $encryptedFields: String!, $itemKey: String!, $baseRevision: Int) {
+        mutation ($id: String!, $itemKind: String!, $encryptedFields: String!, $itemKey: String!, $baseRevision: Int64) {
           SavePasswordItem(input: { id: $id, itemKind: $itemKind, encryptedFields: $encryptedFields, itemKey: $itemKey, baseRevision: $baseRevision }) { \(passwordItemFields) }
         }
         """
@@ -437,7 +451,7 @@ extension Documents {
         }
         """
     public static let rekeyPasswordItem = """
-        mutation ($id: String!, $baseRevision: Int!, $encryptedFields: String!, $itemKey: String!, $shareKeys: [PasswordItemShareKeyInput!]!, $itemKeyByAgentKey: String) {
+        mutation ($id: String!, $baseRevision: Int64!, $encryptedFields: String!, $itemKey: String!, $shareKeys: [PasswordItemShareKeyInput!]!, $itemKeyByAgentKey: String) {
           RekeyPasswordItem(input: { id: $id, baseRevision: $baseRevision, encryptedFields: $encryptedFields, itemKey: $itemKey, shareKeys: $shareKeys, itemKeyByAgentKey: $itemKeyByAgentKey }) { \(passwordItemFields) }
         }
         """

@@ -29,6 +29,7 @@ struct PasswordsSettingsScreen: View {
                 lockSection
                 faceIDSection
                 keysSection
+                safetyCodeSection
             } else {
                 Section {
                     Text("Open Passwords to change its lock time, passphrase or recovery key.")
@@ -135,6 +136,26 @@ struct PasswordsSettingsScreen: View {
             Text("Passphrase and recovery key")
         } footer: {
             Text("Change the passphrase, or make a new recovery key. Your items stay as they are.")
+        }
+    }
+
+    // MARK: Safety code
+
+    /// The person's own safety code, from the key pair this iPhone opened, for somebody who is checking their key.
+    @ViewBuilder
+    private var safetyCodeSection: some View {
+        if let code = model.ownSafetyCode {
+            Section {
+                Text(verbatim: code)
+                    .font(.body.monospaced())
+                    .textSelection(.enabled)
+                    .accessibilityLabel(Text("Your safety code"))
+                    .accessibilityValue(Text(verbatim: code))
+            } header: {
+                Text("Your safety code")
+            } footer: {
+                Text("Somebody who shares with you, or checks your key, can ask you to read them this code. It is made from your key and your account, so it is the same on every device.")
+            }
         }
     }
 

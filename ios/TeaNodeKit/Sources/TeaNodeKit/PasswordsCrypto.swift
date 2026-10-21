@@ -423,18 +423,45 @@ public enum PasswordsCrypto {
         }
     }
 
-    /// The code two people compare out loud to be sure a public key is the
-    /// one they think: SHA-256 of the 65 public key bytes, bytes 0 to 9 as five
-    /// big-endian 16 bit numbers, each modulo 10000, as four digits joined by
-    /// spaces ("0412 9930 0007 5121 8800").
-    public static func safetyCode(publicKey: Data) throws -> String {
+    private static let safetyCodeLabel = "teanode passwords safety code v2"
+    private static let safetyCodeGroupCount = 8
+
+    /// The code two people compare out loud to be sure a person's public key is
+    /// the one they think: eight groups of four digits joined by spaces
+    /// ("0412 9930 0007 5121 8800 0123 4567 8901"). It is the SHA-256 of the
+    /// label `teanode passwords safety code v2`, a zero byte, the user id in
+    /// UTF-8, a zero byte and the 65 public key bytes. The first 16 bytes of the
+    /// hash are eight big-endian 16 bit numbers, each modulo 10000. The user id
+    /// is part of it so a search for a key with a wanted code only works for one
+    /// person.
+    public static func safetyCode(userId: String, publicKey: Data) throws -> String {
         guard publicKey.count == publicKeyByteCount else { throw PasswordsCryptoError.invalidKeyPair }
-        let digest = Array(SHA256.hash(data: publicKey))
+        var input = Data(safetyCodeLabel.utf8)
+        input.append(0)
+        input.append(Data(userId.utf8))
+        input.append(0)
+        input.append(publicKey)
+        let digest = Array(SHA256.hash(data: input))
         var groups: [String] = []
-        for index in 0..<5 {
+        for index in 0..<safetyCodeGroupCount {
             let number = (Int(digest[index * 2]) << 8 | Int(digest[index * 2 + 1])) % 10000
             let digits = String(number)
             groups.append(String(repeating: "0", count: 4 - digits.count) + digits)
+        }
+        return groups.joined(separator: " ")
+    }
+
+    /// Reads a safety code a person typed or pasted: 32 digits with white space
+    /// anywhere or nowhere. Returns the code as `safetyCode` writes it (eight
+    /// groups of four digits), so two codes compare as text, or `nil` for
+    /// anything else.
+    public static func normalizeSafetyCode(_ text: String) -> String? {
+        let digits = text.unicodeScalars.filter { !$0.properties.isWhitespace }
+        guard digits.count == safetyCodeGroupCount * 4, digits.allSatisfy({ $0.value >= 0x30 && $0.value <= 0x39 }) else { return nil }
+        let characters = digits.map { Character($0) }
+        var groups: [String] = []
+        for start in stride(from: 0, to: characters.count, by: 4) {
+            groups.append(String(characters[start..<start + 4]))
         }
         return groups.joined(separator: " ")
     }

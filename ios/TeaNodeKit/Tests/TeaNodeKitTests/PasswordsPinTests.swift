@@ -114,7 +114,8 @@ final class PasswordsPinTests: XCTestCase {
             createdAt: "2026-10-20T10:00:00Z", updatedAt: "2026-10-20T10:00:00Z")
         try await ada.sync()
         let pinned = try XCTUnwrap(try adaCache.load())
-        XCTAssertEqual(pinned.seenPublicKeys["user-mallory"], operatorKey)
+        // The planted item opens with nothing, so the key it carries is not even recorded as seen.
+        XCTAssertNil(pinned.seenPublicKeys["user-mallory"])
         XCTAssertEqual(pinned.confirmedPublicKeys, [:])
 
         // What the phone does after every sync: the planted key still has to be confirmed.
@@ -174,7 +175,7 @@ final class PasswordsPinTests: XCTestCase {
             XCTAssertEqual(error as? PasswordsError, .needsPassphrase)
         }
         XCTAssertNil(try graceCache.load())  // the copy is gone
-        XCTAssertEqual(graceCache.loadPins(userId: "user-grace").seenPublicKeys, ["user-ada": adaKey])  // the pins are not
+        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace").seenPublicKeys, ["user-ada": adaKey])  // the pins are not
         flags.setupPublicKeyOverride = nil
         _ = try await grace.unlock(passphrase: "grace invented passphrase")
         XCTAssertEqual(try XCTUnwrap(try graceCache.load()).seenPublicKeys, ["user-ada": adaKey])
@@ -206,10 +207,10 @@ final class PasswordsPinTests: XCTestCase {
             itemId: item.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
             confirmedUserIds: ["user-grace"])
         try await grace.sync()
-        XCTAssertFalse(graceCache.loadPins(userId: "user-grace").seenPublicKeys.isEmpty)
+        XCTAssertFalse(try graceCache.loadPins(userId: "user-grace").seenPublicKeys.isEmpty)
         try await grace.erase()
         XCTAssertNil(try graceCache.load())
-        XCTAssertEqual(graceCache.loadPins(userId: "user-grace"), PasswordsPins(userId: "user-grace"))
+        XCTAssertEqual(try graceCache.loadPins(userId: "user-grace"), PasswordsPins(userId: "user-grace"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: graceCache.pinsFileURL.path))
     }
 }
