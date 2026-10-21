@@ -369,19 +369,32 @@ function pickSignature(access: ItemAccess | null): Pick<ItemAccess, 'recordVersi
   return { recordVersion: access?.recordVersion, recordMac: access?.recordMac }
 }
 
-type DeviceMemory = { highestRecordVersion: number; keyHolderUserIds: string[]; hadAgentCopy: boolean }
+type DeviceMemory = {
+  highestRecordVersion: number
+  highestRecordMac: string
+  sealedForUserIds: string[]
+  hasMadeAgentCopy: boolean
+}
 
-// rememberOnDevice writes what an earlier look at the item left in
-// localStorage: the highest record version seen, who held a key, and whether
-// the agent had a copy.
-function rememberOnDevice(itemId: string, memory: Partial<DeviceMemory>) {
+// rememberOnDevice writes what an earlier session left in localStorage: the
+// highest record version seen (1 unless said, which is what the fixtures
+// sign), who this device sealed the item for, and whether it made the agent a
+// copy. An item with such a memory is one this device may re-key by itself.
+function rememberOnDevice(itemId: string, memory: Partial<DeviceMemory> = {}) {
   const name = `teanode.passwords.access:${USER_ID}`
   const kept = JSON.parse(window.localStorage.getItem(name) ?? '{}')
   window.localStorage.setItem(
     name,
     JSON.stringify({
       ...kept,
-      [itemId]: { highestRecordVersion: 0, keyHolderUserIds: [], hadAgentCopy: false, ...kept[itemId], ...memory },
+      [itemId]: {
+        highestRecordVersion: 1,
+        highestRecordMac: '',
+        sealedForUserIds: [],
+        hasMadeAgentCopy: false,
+        ...kept[itemId],
+        ...memory,
+      },
     }),
   )
 }
@@ -1222,6 +1235,7 @@ it('gives the key to a person who set up Passwords after the item was shared, an
       waitingFor('login-one', personBPublicKey),
     ],
   })
+  rememberOnDevice('login-given', { sealedForUserIds: ['person-b'] })
   await openSession()
   renderAt('/passwords')
 
@@ -1258,6 +1272,7 @@ it('gives a waiting person the key at once for a changed key, keeps it as the kn
     records: [await sharedWithPersonB('login-given', 'Given login')],
     waiting: [waitingFor('login-given', newPublicKey)],
   })
+  rememberOnDevice('login-given', { sealedForUserIds: ['person-b'] })
   await openSession()
   renderAt('/passwords')
 
@@ -1288,6 +1303,7 @@ it('gives a waiting person this device has no key for the key at once, with no q
     records: [await sharedWithPersonB('login-given', 'Given login')],
     waiting: [waitingFor('login-given', personBPublicKey)],
   })
+  rememberOnDevice('login-given', { sealedForUserIds: ['person-b'] })
   await openSession()
   renderAt('/passwords')
 
@@ -1312,6 +1328,7 @@ it('seals for the key the server lists for a waiting person, and a swapped key i
     records: [await sharedWithPersonB('login-given', 'Given login')],
     waiting: [waitingFor('login-given', personBPublicKey)],
   })
+  rememberOnDevice('login-given', { sealedForUserIds: ['person-b'] })
   await openSession()
 
   const first = await passwordsSession.completeWaitingShares()
@@ -1376,6 +1393,7 @@ it('reads the items in full once when the waiting list names a person or an item
     },
   )
   const server = serve({ records: [withoutMember], waiting: [waitingFor('login-circle', personBPublicKey)] })
+  rememberOnDevice('login-circle', { sealedForUserIds: ['person-b'] })
   await openSession()
   server.records = [
     {
@@ -1608,7 +1626,7 @@ it('does not take a background read for use, so a page left open still locks', a
   expect(passwordsSession.lockIfIdle(1_000 + 60_000)).toBe(true)
 })
 
-it('reads the recipients again, with their new safety codes, when a key changed while the share was open', async () => {
+it('reads the recipients again and tries once more with the new key when a key changed while the share was open', async () => {
   const firstKey = encodeBase64(personB.publicKey)
   const newKeyPair = await generatePersonKeyPair()
   const secondKey = encodeBase64(newKeyPair.publicKey)
@@ -1638,8 +1656,10 @@ it('reads the recipients again, with their new safety codes, when a key changed 
     ],
   })
   const answer = vi.mocked(graphql).getMockImplementation()!
+  let hasRefused = false
   vi.mocked(graphql).mockImplementation(async (document, variables) => {
-    if (document.includes('SetPasswordItemShares')) {
+    if (document.includes('SetPasswordItemShares') && !hasRefused) {
+      hasRefused = true
       throw new APIError("That person's key changed since it was read. Read their key again and seal the item for it.")
     }
     return answer(document, variables)
@@ -1652,8 +1672,22 @@ it('reads the recipients again, with their new safety codes, when a key changed 
   expect(await within(dialog).findByText(await safetyCode(personB.publicKey))).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
 
-  expect(await screen.findByText(/key changed since it was read/)).toBeTruthy()
-  expect(await within(dialog).findByText(await safetyCode(newKeyPair.publicKey))).toBeTruthy()
+  // The save is tried again at once with the new key; the person presses
+  // nothing and does not read the server's sentence.
+  await waitFor(() => expect(calls('SetPasswordItemShares')).toHaveLength(2))
+  const sent = (calls('SetPasswordItemShares')[1][1] as { input: { keys: { recipientPublicKey: string }[] } }).input
+    .keys
+  expect(sent.map((key) => key.recipientPublicKey)).toEqual([secondKey])
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Share Example login' })).toBeNull())
+  expect(screen.queryByText(/key changed since it was read/)).toBeNull()
+  // The key before was the first key this device saw, so the new one is a
+  // change, and the notice stays until it is dismissed.
+  expect(
+    await screen.findByText(
+      "Person B's key changed. This happens when they erase Passwords and set it up again. If you did not expect it, compare safety codes with them.",
+    ),
+  ).toBeTruthy()
+  expect(storedKeys()).toEqual({ 'person-b': secondKey })
   expect(server.records).toHaveLength(1)
 })
 
@@ -2401,6 +2435,7 @@ it('seals for a key a seen-only earlier record kept, without asking', async () =
     records: [await sharedWithPersonB('login-given', 'Given login')],
     waiting: [waitingFor('login-given', personBPublicKey)],
   })
+  rememberOnDevice('login-given', { sealedForUserIds: ['person-b'] })
   await openSession()
 
   const result = await passwordsSession.completeWaitingShares()
@@ -2654,6 +2689,7 @@ it('gives the agent no copy on a re-key when only the server says it may use the
       ),
     ],
   })
+  rememberOnDevice('login-one')
   await openSession()
   await passwordsSession.rekeyIfNeeded('login-one')
 
@@ -2693,7 +2729,7 @@ it('seals the agent copy on a re-key when the opened record lets the agent in', 
     ],
   })
   // The item had a copy for the agent when this device last saw it.
-  rememberOnDevice('login-one', { hadAgentCopy: true })
+  rememberOnDevice('login-one', { hasMadeAgentCopy: true })
   await openSession()
   await passwordsSession.rekeyIfNeeded('login-one')
 
@@ -2916,6 +2952,8 @@ it('gives every item the server marked a new key as Passwords opens, once', asyn
       await recordFor('login-two', 'login', { ...emptyLoginFields(), name: 'Bank' }),
     ],
   })
+  rememberOnDevice('login-one')
+  rememberOnDevice('login-two')
   await openSession()
   renderAt('/passwords')
   await screen.findByRole('link', { name: 'Example login' })
@@ -2930,6 +2968,8 @@ it('does not make a second new key when the item is opened while the page gives 
       await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' }, { needsNewKey: true }),
     ],
   })
+  rememberOnDevice('login-one')
+  rememberOnDevice('login-two')
   await openSession()
   renderAt('/passwords?item=login-one')
   await waitFor(() => expect(passwordsSession.getSnapshot().items[0].needsNewKey).toBe(false))
@@ -2939,7 +2979,7 @@ it('does not make a second new key when the item is opened while the page gives 
 it('gives a person who held a key the new key at once in a re-key, with no question', async () => {
   const personBPublicKey = encodeBase64(personB.publicKey)
   // This device saw Person B hold a key for the item before the server marked it.
-  rememberOnDevice('login-one', { keyHolderUserIds: ['person-b'] })
+  rememberOnDevice('login-one', { sealedForUserIds: ['person-b'] })
   serve({
     records: [
       await recordFor(
@@ -3367,6 +3407,7 @@ it("keeps the record when the server marks an item and hides the share: no devic
   const server = serve({ records: [base] })
   // The server hides the share and marks the item.
   server.records = [{ ...base, shares: [], needsNewKey: true, revision: 5 }]
+  rememberOnDevice('login-one')
   await openSession()
   await passwordsSession.rekeyMarkedItems()
 
@@ -3381,7 +3422,7 @@ it("keeps the record when the server marks an item and hides the share: no devic
   )
 })
 
-it('seals an automatic new key only for people who held a key when the item was last seen, and the agent only if it had a copy', async () => {
+it('seals an automatic new key only for people this device sealed for, and the agent only if this device made a copy', async () => {
   const personBPublicKey = encodeBase64(personB.publicKey)
   knowKeyOnDevice('person-b', personBPublicKey)
   knowKeyOnDevice('person-c', personCPublicKey())
@@ -3406,9 +3447,11 @@ it('seals an automatic new key only for people who held a key when the item was 
     )
   const unmarked = await records(false)
   const server = serve({ records: [unmarked] })
-  // The item is seen as it is: Person B holds a key and the agent has a copy.
+  // This device sealed the item for Person B and made the agent a copy in an
+  // earlier session, but never sealed it for Person C.
+  rememberOnDevice('login-one', { sealedForUserIds: ['person-b'], hasMadeAgentCopy: true })
   await openSession()
-  expect(deviceMemoryOf('login-one')).toMatchObject({ keyHolderUserIds: ['person-b'], hadAgentCopy: true })
+  expect(deviceMemoryOf('login-one')).toMatchObject({ sealedForUserIds: ['person-b'], hasMadeAgentCopy: true })
   // The server marks it, and the 30 second read brings the mark.
   server.records = [{ ...unmarked, needsNewKey: true, revision: 40 }]
   await passwordsSession.refresh()
@@ -3430,6 +3473,7 @@ it('gives the agent no copy on an automatic new key when the item had none when 
       ),
     ],
   })
+  rememberOnDevice('login-one')
   await openSession()
   await passwordsSession.rekeyIfNeeded('login-one')
 
@@ -3466,6 +3510,7 @@ it('seals nothing new when the server replays an older record with the agent and
       ),
     ],
   })
+  rememberOnDevice('login-one')
   await openSession()
   await passwordsSession.rekeyMarkedItems()
 
@@ -3485,6 +3530,7 @@ it('tries an automatic new key for an item once in ten minutes, and refuses the 
   const now = vi.spyOn(Date, 'now')
   try {
     now.mockReturnValue(1_000_000)
+    rememberOnDevice('login-one')
     await openSession()
     await passwordsSession.rekeyIfNeeded('login-one')
     expect(calls('RekeyPasswordItem')).toHaveLength(1)
@@ -3525,6 +3571,7 @@ it('makes at most 20 automatic new keys in one unlocked session', async () => {
     )
   }
   serve({ records })
+  for (const record of records) rememberOnDevice(record.id)
   await openSession()
   const failedItemIds = await passwordsSession.rekeyMarkedItems()
 
@@ -3588,4 +3635,488 @@ it('leaves the access record out of an export, as the command line does', async 
   expect(JSON.stringify(exported)).not.toContain('recordMac')
   // The held item keeps its record.
   expect(passwordsSession.getSnapshot().items[0].verifiedAccess).not.toBeNull()
+})
+
+// --- round 7: nothing automatic on first sight, memory only from what this device did ---
+
+const MEMORY_NAME = `teanode.passwords.access:${USER_ID}`
+
+it('does not re-key by itself on a device with no memory of the item, so a replayed older record turns nothing back on', async () => {
+  const base = await recordFor(
+    'login-one',
+    'login',
+    { ...emptyLoginFields(), name: 'Example login', password: 'invented-password-1', access: accessOf([], true) },
+    { isUsableByAgent: true },
+  )
+  const server = serve({ records: [base] })
+
+  // The first device turns the agent off: version 2, agent off.
+  await openSession()
+  expect(passwordsSession.getSnapshot().items[0].verifiedAccess).toMatchObject({
+    recordVersion: 1,
+    isUsableByAgent: true,
+  })
+  await passwordsSession.setUsableByAgent(passwordsSession.getSnapshot().items[0], false)
+  expect(passwordsSession.getSnapshot().items[0].verifiedAccess).toMatchObject({
+    recordVersion: 2,
+    isUsableByAgent: false,
+  })
+  const firstDeviceMemory = window.localStorage.getItem(MEMORY_NAME)
+  expect(JSON.parse(firstDeviceMemory!)['login-one']).toMatchObject({ highestRecordVersion: 2 })
+  expect(JSON.parse(firstDeviceMemory!)['login-one'].highestRecordMac).not.toBe('')
+  passwordsSession.lock()
+
+  // A browser with nothing stored is shown the item as it was before, then
+  // marked. It has no way to know the record is old, so it does nothing by
+  // itself and leaves the item for the person.
+  window.localStorage.clear()
+  server.records = [{ ...base, revision: 500 }]
+  await openSession()
+  expect(passwordsSession.getSnapshot().items[0].verifiedAccess).toMatchObject({ recordVersion: 1 })
+  server.records = [{ ...base, revision: 501, needsNewKey: true }]
+  await passwordsSession.refresh()
+  vi.mocked(graphql).mock.calls.length = 0
+  expect(await passwordsSession.rekeyMarkedItems()).toEqual([])
+  expect(await passwordsSession.rekeyIfNeeded('login-one')).toBeNull()
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+  expect(calls('ReadPasswordsAgentKey')).toHaveLength(0)
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toEqual(['login-one'])
+
+  // The person opens it and presses the button: that is their action, and the
+  // record is signed one above the highest version this device was shown.
+  await passwordsSession.finishSharing('login-one')
+  const rekey = (calls('RekeyPasswordItem')[0][1] as { input: any }).input
+  expect(await fieldsSentIn(rekey, 'login-one')).toMatchObject({ access: { recordVersion: 2, isUsableByAgent: true } })
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toEqual([])
+  passwordsSession.lock()
+
+  // The first device comes back with its memory: the other device's version 2
+  // has the same version and another signature, which is a replay.
+  window.localStorage.clear()
+  window.localStorage.setItem(MEMORY_NAME, firstDeviceMemory!)
+  await openSession()
+  expect(passwordsSession.getSnapshot().items[0].accessProblem).toBe('replayed')
+})
+
+it('notices a record with the remembered version and another signature as a replay', async () => {
+  serve({ records: await onlyExampleLogin() })
+  await openSession()
+  expect(passwordsSession.getSnapshot().items[0].accessProblem).toBeNull()
+  const remembered = deviceMemoryOf('login-one')!
+  expect(remembered.highestRecordVersion).toBe(1)
+  expect(remembered.highestRecordMac).not.toBe('')
+  passwordsSession.lock()
+
+  // Version 1 again, signed by the same account key for other people.
+  const other = await recordFor('login-one', 'login', {
+    ...emptyLoginFields(),
+    name: 'Example login',
+    access: await (
+      await withSignedAccess(
+        fixture.accountKey,
+        'login-one',
+        'login',
+        emptyLoginFields(),
+        accessOf([{ userId: 'person-b' }]),
+        0,
+      )
+    ).access,
+  })
+  serve({ records: [other] })
+  await openSession()
+  expect(passwordsSession.getSnapshot().items[0].accessProblem).toBe('replayed')
+})
+
+it('gives a device that never saw an item before no key for people the owner removed', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  knowKeyOnDevice('person-b', personBPublicKey)
+  const base = await recordFor(
+    'login-one',
+    'login',
+    { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }], false) },
+    { shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: true }]) },
+  )
+  const server = serve({ records: [base], recipients: [personBRecipient(personBPublicKey, true)] })
+  await openSession()
+  // The owner takes Person B off on this device.
+  await passwordsSession.shareItem(passwordsSession.getSnapshot().items[0], [])
+  expect(passwordsSession.getSnapshot().items[0].verifiedAccess).toMatchObject({ grantees: [] })
+  passwordsSession.lock()
+
+  // A browser with nothing stored is shown the record from before the removal,
+  // then the mark: it re-keys nothing by itself.
+  window.localStorage.clear()
+  server.records = [{ ...base, revision: 900 }]
+  await openSession()
+  expect(passwordsSession.getSnapshot().items[0].verifiedAccess?.grantees).toEqual([{ userId: 'person-b' }])
+  server.records = [{ ...base, revision: 901, needsNewKey: true }]
+  await passwordsSession.refresh()
+  vi.mocked(graphql).mock.calls.length = 0
+  await passwordsSession.rekeyMarkedItems()
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toEqual(['login-one'])
+})
+
+it('seals nobody and no agent copy in an automatic new key with no seal of its own, and the person sealing gives both', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  knowKeyOnDevice('person-b', personBPublicKey)
+  const record = await recordFor(
+    'login-one',
+    'login',
+    { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }], true) },
+    {
+      isUsableByAgent: true,
+      needsNewKey: true,
+      shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: false }]),
+    },
+  )
+  serve({ records: [record], recipients: [personBRecipient(personBPublicKey, false)] })
+  // An earlier session saw the item, but never sealed it for anybody.
+  rememberOnDevice('login-one')
+  await openSession()
+  await passwordsSession.rekeyMarkedItems()
+  const automatic = (calls('RekeyPasswordItem')[0][1] as { input: any }).input
+  expect(automatic.shareKeys).toEqual([])
+  expect(automatic.itemKeyByAgentKey).toBeNull()
+  expect(await fieldsSentIn(automatic, 'login-one')).toMatchObject({ access: { recordVersion: 2 } })
+  // Person B waits, and the record lets the agent in but it has no copy.
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toEqual(['login-one'])
+
+  // The person saves sharing on a marked item: their own action seals for
+  // everybody the verified record reaches, and is not held to the cooldown of
+  // the automatic ones.
+  const server = serve({
+    records: [{ ...record, revision: 700 }],
+    recipients: [personBRecipient(personBPublicKey, false)],
+  })
+  passwordsSession.lock()
+  window.localStorage.clear()
+  knowKeyOnDevice('person-b', personBPublicKey)
+  rememberOnDevice('login-one')
+  await openSession()
+  vi.mocked(graphql).mock.calls.length = 0
+  const target = {
+    grantee: { granteeUserId: 'person-b', granteeCircleId: null },
+    recipients: [personBRecipient(personBPublicKey, false)],
+  }
+  await passwordsSession.shareItem(passwordsSession.getSnapshot().items[0], [target])
+  const viaShare = (calls('RekeyPasswordItem')[0][1] as { input: any }).input
+  expect(viaShare.shareKeys.map((key: { recipientUserId: string }) => key.recipientUserId)).toEqual(['person-b'])
+  expect(viaShare.itemKeyByAgentKey).not.toBeNull()
+  // The record is the verified one, one version above the highest remembered.
+  expect(await fieldsSentIn(viaShare, 'login-one')).toMatchObject({
+    access: { recordVersion: 2, isUsableByAgent: true, grantees: [{ userId: 'person-b' }] },
+  })
+  expect(server.records[0].needsNewKey).toBe(false)
+})
+
+it('turns the agent on for a marked item with the verified record, one version above the highest remembered', async () => {
+  const record = await recordFor(
+    'login-one',
+    'login',
+    { ...emptyLoginFields(), name: 'Example login', access: accessOf([], false) },
+    { needsNewKey: true },
+  )
+  serve({ records: [record] })
+  await openSession()
+  // Not trusted for automatic keys, and the person's switch does not need to be.
+  await passwordsSession.setUsableByAgent(passwordsSession.getSnapshot().items[0], true)
+  const rekey = (calls('RekeyPasswordItem')[0][1] as { input: any }).input
+  expect(await fieldsSentIn(rekey, 'login-one')).toMatchObject({ access: { recordVersion: 2, isUsableByAgent: false } })
+  const saves = calls('SavePasswordItem')
+  const lastSave = (saves[saves.length - 1][1] as { input: any }).input
+  expect(await fieldsSentIn(lastSave, 'login-one')).toMatchObject({
+    access: { recordVersion: 3, isUsableByAgent: true },
+  })
+  expect(deviceMemoryOf('login-one')).toMatchObject({ highestRecordVersion: 3, hasMadeAgentCopy: true })
+})
+
+it('signs a new record one above the highest version remembered when the record on the server could not be checked', async () => {
+  rememberOnDevice('login-one', { highestRecordVersion: 5 })
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login' },
+        {},
+        { isAccessSigned: false },
+      ),
+    ],
+  })
+  await openSession()
+  const item = passwordsSession.getSnapshot().items[0]
+  expect(item.accessProblem).toBe('notVerified')
+  await passwordsSession.shareItem(item, [])
+  const saves = calls('SavePasswordItem')
+  expect(await fieldsSentIn((saves[0][1] as { input: any }).input, 'login-one')).toMatchObject({
+    access: { recordVersion: 6 },
+  })
+})
+
+it('gives the item a new key when the agent is turned on for a record that could not be checked', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  knowKeyOnDevice('person-b', personBPublicKey)
+  const server = serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }], false) },
+        { shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: true }]) },
+        { isAccessSigned: false },
+      ),
+    ],
+  })
+  await openSession()
+  const item = passwordsSession.getSnapshot().items[0]
+  expect(item.accessProblem).toBe('notVerified')
+  const keyBefore = encodeBase64(item.itemKey as Uint8Array)
+  await passwordsSession.setUsableByAgent(item, true)
+  expect(calls('RekeyPasswordItem')).toHaveLength(1)
+  expect(encodeBase64(passwordsSession.getSnapshot().items[0].itemKey as Uint8Array)).not.toBe(keyBefore)
+  // The fresh record grants nobody, so Person B has no key for the new item key.
+  expect(server.records[0].shares[0].recipients[0].hasKey).toBe(false)
+  expect(passwordsSession.getSnapshot().items[0].verifiedAccess).toMatchObject({ isUsableByAgent: true, grantees: [] })
+})
+
+it('gives the item a new key after setting sharing again when the server lists shares or agent use', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  knowKeyOnDevice('person-b', personBPublicKey)
+  const target = {
+    grantee: { granteeUserId: 'person-b', granteeCircleId: null },
+    recipients: [personBRecipient(personBPublicKey, true)],
+  }
+  // The server lists a share, and sharing is set again with the same person.
+  serve({
+    recipients: [personBRecipient(personBPublicKey, true)],
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }], false) },
+        { shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: true }]) },
+        { isAccessSigned: false },
+      ),
+    ],
+  })
+  await openSession()
+  const result = await passwordsSession.shareItem(passwordsSession.getSnapshot().items[0], [target])
+  expect(result.hasRekeyFailed).toBe(false)
+  expect(calls('RekeyPasswordItem')).toHaveLength(1)
+  const rekey = (calls('RekeyPasswordItem')[0][1] as { input: any }).input
+  expect(rekey.shareKeys.map((key: { recipientUserId: string }) => key.recipientUserId)).toEqual(['person-b'])
+  passwordsSession.lock()
+
+  // Only agent use is listed.
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([], true) },
+        { isUsableByAgent: true },
+        { isAccessSigned: false },
+      ),
+    ],
+  })
+  window.localStorage.clear()
+  await openSession()
+  vi.mocked(graphql).mock.calls.length = 0
+  await passwordsSession.shareItem(passwordsSession.getSnapshot().items[0], [])
+  expect(calls('RekeyPasswordItem')).toHaveLength(1)
+  passwordsSession.lock()
+
+  // Nothing listed: nothing to replace.
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login' },
+        {},
+        { isAccessSigned: false },
+      ),
+    ],
+  })
+  window.localStorage.clear()
+  await openSession()
+  vi.mocked(graphql).mock.calls.length = 0
+  await passwordsSession.shareItem(passwordsSession.getSnapshot().items[0], [])
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+})
+
+it('gives a marked item a new key when the person saves it, even when automatic new keys are limited', async () => {
+  const marked = await recordFor(
+    'login-one',
+    'login',
+    { ...emptyLoginFields(), name: 'Example login' },
+    { needsNewKey: true },
+  )
+  const server = serve({ records: [marked] })
+  rememberOnDevice('login-one')
+  const now = vi.spyOn(Date, 'now')
+  try {
+    now.mockReturnValue(1_000_000)
+    await openSession()
+    await passwordsSession.rekeyIfNeeded('login-one')
+    expect(calls('RekeyPasswordItem')).toHaveLength(1)
+
+    // Marked again straight away: the automatic one is refused for ten minutes.
+    server.records = [{ ...server.records[0], needsNewKey: true, revision: server.records[0].revision + 10 }]
+    await passwordsSession.refresh()
+    now.mockReturnValue(1_000_000 + 60_000)
+    await expect(passwordsSession.rekeyIfNeeded('login-one')).rejects.toThrow()
+    expect(calls('RekeyPasswordItem')).toHaveLength(1)
+
+    // The save is the person's action: it gives the new key and keeps their words.
+    const held = passwordsSession.getSnapshot().items[0]
+    await passwordsSession.saveItem(
+      { itemKind: 'login', fields: { ...held.fields, name: 'Renamed login' } as never },
+      held,
+    )
+    expect(calls('RekeyPasswordItem')).toHaveLength(2)
+    const rekey = (calls('RekeyPasswordItem')[1][1] as { input: any }).input
+    expect(await fieldsSentIn(rekey, 'login-one')).toMatchObject({ name: 'Renamed login' })
+    expect(server.records[0].needsNewKey).toBe(false)
+  } finally {
+    now.mockRestore()
+  }
+})
+
+it('leaves the people this device never sealed for to the person, who finishes the sharing from the item', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  const record = await recordFor(
+    'login-one',
+    'login',
+    { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }]) },
+    { shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: false }]) },
+  )
+  serve({ records: [record], waiting: [waitingFor('login-one', personBPublicKey)] })
+  // An earlier session saw the item, but never sealed it for Person B.
+  rememberOnDevice('login-one')
+  await openSession()
+
+  // Nothing is sealed by itself.
+  expect((await passwordsSession.completeWaitingShares()).sharedCount).toBe(0)
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toEqual(['login-one'])
+
+  // The list says so on the item, and opening it shows the button.
+  const view = renderAt('/passwords')
+  expect(await screen.findByText('Open this item to finish sharing it')).toBeTruthy()
+  view.unmount()
+  renderAt('/passwords?item=login-one')
+  fireEvent.click(await screen.findByRole('button', { name: 'Finish sharing' }))
+  await waitFor(() => expect(calls('AddPasswordShareKeys')).toHaveLength(1))
+  const keys = (calls('AddPasswordShareKeys')[0][1] as { keys: Record<string, string>[] }).keys
+  expect(keys[0]).toMatchObject({
+    itemId: 'login-one',
+    recipientUserId: 'person-b',
+    recipientPublicKey: personBPublicKey,
+  })
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Finish sharing' })).toBeNull())
+  expect(deviceMemoryOf('login-one')?.sealedForUserIds).toEqual(['person-b'])
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toEqual([])
+})
+
+it('tells the owner who got an item through a circle when the server adds a member this device never sealed for', async () => {
+  const evilPublicKey = encodeBase64(personC.publicKey)
+  const record = await recordFor(
+    'login-one',
+    'login',
+    { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ circleId: 'circle-one' }], false) },
+    {
+      shares: [
+        {
+          id: 'share-circle',
+          granteeUserId: null,
+          granteeCircleId: 'circle-one',
+          granteeName: 'Fixture Family',
+          recipients: [
+            // Somebody the server put in the circle, with a key of its choosing.
+            {
+              userId: 'person-added',
+              name: 'Person D',
+              username: 'person-d-login',
+              publicKey: evilPublicKey,
+              hasKey: false,
+            },
+          ],
+        },
+      ],
+    },
+  )
+  serve({
+    records: [record],
+    waiting: [
+      {
+        itemId: 'login-one',
+        recipient: {
+          userId: 'person-added',
+          name: 'Person D',
+          username: 'person-d-login',
+          publicKey: evilPublicKey,
+          hasKey: false,
+        },
+      },
+    ],
+  })
+  rememberOnDevice('login-one')
+  await openSession()
+  // By itself the device seals nothing for a member it never sealed for.
+  expect((await passwordsSession.completeWaitingShares()).sharedCount).toBe(0)
+  expect(passwordsSession.getSnapshot().circleShareNotices).toEqual([])
+
+  renderAt('/passwords?item=login-one')
+  fireEvent.click(await screen.findByRole('button', { name: 'Finish sharing' }))
+  expect(await screen.findByText('Person D got Example login through Fixture Family.')).toBeTruthy()
+  expect(passwordsSession.getSnapshot().circleShareNotices).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+  await waitFor(() => expect(screen.queryByText('Person D got Example login through Fixture Family.')).toBeNull())
+  expect(passwordsSession.getSnapshot().circleShareNotices).toEqual([])
+})
+
+it('names a circle member in a notice when the owner shares with the circle, and not a person chosen by name', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  serve({ records: await onlyExampleLogin(), recipients: [personBRecipient(personBPublicKey)] })
+  await openSession()
+  renderAt('/passwords?item=login-one')
+
+  const dialog = await openShareWithCircle()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
+  expect(await screen.findByText('Person B got Example login through Fixture Family.')).toBeTruthy()
+})
+
+it('keeps the known keys and the item memories when Passwords is locked as the person signs out', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  serve({ records: [...(await recordsToList())] })
+  await openSession()
+  expect(storedKeys()).toEqual({ 'person-b': personBPublicKey })
+  const memoryBefore = window.localStorage.getItem(MEMORY_NAME)
+  expect(memoryBefore).not.toBeNull()
+
+  lockPasswords()
+  expect(passwordsSession.isUnlocked).toBe(false)
+  expect(storedKeys()).toEqual({ 'person-b': personBPublicKey })
+  expect(window.localStorage.getItem(MEMORY_NAME)).toBe(memoryBefore)
+})
+
+it('does not read who held a key or whether the agent had a copy from what the server lists', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }], true) },
+        {
+          isUsableByAgent: true,
+          shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: true }]),
+        },
+      ),
+    ],
+  })
+  await openSession()
+  expect(deviceMemoryOf('login-one')).toMatchObject({ sealedForUserIds: [], hasMadeAgentCopy: false })
 })

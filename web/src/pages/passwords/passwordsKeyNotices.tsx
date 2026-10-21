@@ -6,15 +6,17 @@ import { KeyChangeNotice } from './passwordsPins'
 import { SafetyCode } from './passwordsParts'
 import { passwordsSession, usePasswordsSession } from './passwordsSession'
 
-// A person's key changed since this device first saw it. The notice stays
-// until it is dismissed and gates nothing: their items still open with the new
-// key and sharing with them still seals for it. "Compare codes" is the way to
-// check with them, and is optional.
+// Notices that gate nothing. A person's key changed since this device first
+// saw it: the notice stays until it is dismissed, their items still open with
+// the new key and sharing with them still seals for it; "Compare codes" is the
+// way to check with them, and is optional. Somebody got an item through a
+// circle: this device sealed the item's key for a circle member it never sealed
+// for before, and who is in a circle is the server's word, so the owner is told.
 export function PasswordsKeyNotices() {
   const { t } = useTranslation()
-  const { keyNotices } = usePasswordsSession()
+  const { keyNotices, circleShareNotices } = usePasswordsSession()
   const [comparing, setComparing] = useState<KeyChangeNotice | null>(null)
-  if (keyNotices.length === 0) return null
+  if (keyNotices.length === 0 && circleShareNotices.length === 0) return null
   return (
     <div className="passwords-key-notices">
       {keyNotices.map((notice) => (
@@ -25,6 +27,22 @@ export function PasswordsKeyNotices() {
               {t('passwords.compareCodes')}
             </button>
             <button type="button" onClick={() => passwordsSession.dismissKeyNotice(notice.otherUserId)}>
+              {t('passwords.keyNoticeDismiss')}
+            </button>
+          </div>
+        </div>
+      ))}
+      {circleShareNotices.map((notice) => (
+        <div key={notice.noticeId} className="passwords-key-changed" role="status">
+          <p>
+            {t('passwords.circleShareNotice', {
+              name: notice.personName || t('passwords.somebody'),
+              item: notice.itemName,
+              circle: notice.circleName,
+            })}
+          </p>
+          <div className="page-actions">
+            <button type="button" onClick={() => passwordsSession.dismissCircleShareNotice(notice.noticeId)}>
               {t('passwords.keyNoticeDismiss')}
             </button>
           </div>

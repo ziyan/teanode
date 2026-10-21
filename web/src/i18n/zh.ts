@@ -6844,6 +6844,12 @@ export const zh: Catalog = {
   'passwords.accessReplayedTitle': '该项目的共享设置被服务器改回了旧的样子',
   'passwords.accessReplayedBody':
     '服务器送回了共享记录的旧副本。在你重新设置共享之前，不会共享该项目、不会为它换密钥，也不会交给助手。',
+  'passwords.finishSharing': '完成共享',
+  'passwords.finishSharingBody': '有些人仍在等待此项目的密钥，或它需要新的密钥。完成后他们才能打开。',
+  'passwords.finishSharingDone': '共享已完成。',
+  'passwords.finishSharingFailed': '无法完成共享。',
+  'passwords.tagFinishSharing': '打开此项目以完成共享',
+  'passwords.circleShareNotice': '{name} 通过 {circle} 获得了 {item}。',
   'passwords.accessSetAgain': '重新设置共享',
   'passwords.deleteForever': '永久删除',
   'passwords.purgeTitle': '永久删除 {name}？',

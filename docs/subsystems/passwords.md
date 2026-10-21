@@ -61,11 +61,12 @@ id: the first key it saw for them, from any source (sharing with them, an item
 they shared, a waiting share). It seals for that key at once, with no dialog.
 Sharing with somebody whose key the device has never seen seals for the key the
 server gives and records it as known. If the server later gives a different key
-for a known person (they set up Passwords again, or a new device did), the device
-accepts it, seals for it, opens that person's items with it, records it, and shows
-a notice that stays until dismissed: "Ben's key changed. This happens when they
-set up Passwords again or on a new device. If you did not expect it, compare
-safety codes with them." The notice has a Compare codes action showing the old
+for a known person (they erased Passwords and set it up again; a person has one
+key for all their devices, so a new device never changes it), the device accepts
+it, seals for it, opens that person's items with it, records it, and shows a
+notice that stays until dismissed: "Ben's key changed. This happens when they
+erase Passwords and set it up again. If you did not expect it, compare safety
+codes with them." The notice has a Compare codes action showing the old
 and new codes and the person's own; nothing waits on it. Comparing marks the key
 "Codes compared" for display only. Known keys are per device, and a device
 records a person's key as known after an item from that owner opened with it. A

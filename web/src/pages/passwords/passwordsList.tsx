@@ -8,6 +8,7 @@ import { Tooltip } from '../../components/tooltip'
 import { Key, useTranslation } from '../../i18n/i18n'
 import { ItemKind } from '../../passwords/fields'
 import { isAgentAllowed, PasswordItem } from './passwordsProtocol'
+import { usePasswordsSession } from './passwordsSession'
 
 // The list of items: a DataTable, where the whole row opens the item. Search,
 // the kind and the folder narrow it before it gets here; the page, the search
@@ -108,6 +109,7 @@ export function PasswordsList({
   onPurge: (item: PasswordItem) => void
 }) {
   const { t, plural } = useTranslation()
+  const { itemIdsToFinish } = usePasswordsSession()
 
   const nameColumn: Column<PasswordItem> = {
     key: 'name',
@@ -156,6 +158,7 @@ export function PasswordsList({
             {item.isSharedWithMe && <Tag value={t('passwords.tagSharedBy', { name: item.ownerName })} />}
             {item.isOwnedByMe && item.shares.length > 0 && <Tag value={t('passwords.tagShared')} />}
             {isAgentAllowed(item) && <Tag value={t('passwords.tagAgent')} tone="good" />}
+            {itemIdsToFinish.includes(item.id) && <Tag value={t('passwords.tagFinishSharing')} tone="warn" />}
           </>
         )}
       </span>

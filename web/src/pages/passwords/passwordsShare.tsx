@@ -131,49 +131,67 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
     }
   }
 
+  // saveRows seals the item's key for the people in these rows and saves who
+  // the item is shared with, then says so and closes the dialog.
+  async function saveRows(chosenRows: GranteeRow[]) {
+    const targets: ShareTarget[] = chosenRows.map((row) => ({
+      grantee: {
+        granteeUserId: row.kind === 'user' ? row.id : null,
+        granteeCircleId: row.kind === 'circle' ? row.id : null,
+      },
+      recipients: row.recipients,
+    }))
+    const recipients = chosenRows.flatMap((row) => row.recipients)
+    const { hasRekeyFailed } = await passwordsSession.shareItem(item, targets)
+    if (hasRekeyFailed) {
+      // The removal went through; only the new key is missing. The server
+      // keeps its mark on the item, so the next save or open tries again,
+      // and the toast can too.
+      sayRekeyFailed(item.id)
+      onClose()
+      return
+    }
+    const waitingCount = new Set(
+      recipients.filter((recipient) => recipient.publicKey === null).map((recipient) => recipient.userId),
+    ).size
+    toast.done(
+      waitingCount > 0
+        ? plural(waitingCount, { one: 'passwords.shareSavedWaitingOne', other: 'passwords.shareSavedWaiting' })
+        : t('passwords.shareSaved'),
+    )
+    onClose()
+  }
+
   async function save() {
     setIsBusy(true)
     try {
-      const targets: ShareTarget[] = rows.map((row) => ({
-        grantee: {
-          granteeUserId: row.kind === 'user' ? row.id : null,
-          granteeCircleId: row.kind === 'circle' ? row.id : null,
-        },
-        recipients: row.recipients,
-      }))
-      const recipients = rows.flatMap((row) => row.recipients)
-      const { hasRekeyFailed } = await passwordsSession.shareItem(item, targets)
-      if (hasRekeyFailed) {
-        // The removal went through; only the new key is missing. The server
-        // keeps its mark on the item, so the next save or open tries again,
-        // and the toast can too.
-        sayRekeyFailed(item.id)
-        onClose()
-        return
-      }
-      const waitingCount = new Set(
-        recipients.filter((recipient) => recipient.publicKey === null).map((recipient) => recipient.userId),
-      ).size
-      toast.done(
-        waitingCount > 0
-          ? plural(waitingCount, { one: 'passwords.shareSavedWaitingOne', other: 'passwords.shareSavedWaiting' })
-          : t('passwords.shareSaved'),
-      )
-      onClose()
+      await saveRows(rows)
     } catch (failure) {
-      reportFailure(failure, t('passwords.shareFailed'))
       // A person set Passwords up again while this was open, so the key read
-      // is no longer theirs. Their keys are read again, and the new safety
-      // codes are shown before the person tries once more.
+      // is no longer theirs. Their keys are read again and the save is tried
+      // once more with the new key, which is recorded as theirs; the notice
+      // that their key changed stays on the page until it is dismissed.
       if (failure instanceof Error && failure.message.includes(KEY_CHANGED_PHRASE)) {
-        await readRecipientsAgain()
+        const freshRows = await readRecipientsAgain()
+        if (freshRows !== null) {
+          try {
+            await saveRows(freshRows)
+          } catch (secondFailure) {
+            reportFailure(secondFailure, t('passwords.shareFailed'))
+          }
+          return
+        }
       }
+      reportFailure(failure, t('passwords.shareFailed'))
     } finally {
       setIsBusy(false)
     }
   }
 
-  async function readRecipientsAgain() {
+  // readRecipientsAgain reads each row's people again and shows them, and
+  // returns the rows read (null when that failed). The keys shown before are
+  // kept as the known ones first, so the new ones count as a change.
+  async function readRecipientsAgain(): Promise<GranteeRow[] | null> {
     try {
       const read = await Promise.all(
         rows.map(async (row) => {
@@ -187,9 +205,18 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
           return { ...row, recipients: answer.ListPasswordRecipients ?? [] }
         }),
       )
+      for (const row of rows) {
+        for (const recipient of row.recipients) {
+          if (recipient.publicKey !== null) {
+            passwordsSession.recordKeyShown(recipient.userId, recipient.publicKey, personName(recipient))
+          }
+        }
+      }
       setRows(read)
+      return read
     } catch (failure) {
       reportFailure(failure, t('passwords.shareRecipientsFailed'))
+      return null
     }
   }
 

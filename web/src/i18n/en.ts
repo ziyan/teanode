@@ -7174,6 +7174,13 @@ export const en = {
   'passwords.accessReplayedTitle': "This item's sharing was changed back by the server",
   'passwords.accessReplayedBody':
     'An older copy of its sharing came back. Nothing is shared, re-keyed or given to the agent for this item until you set sharing again.',
+  'passwords.finishSharing': 'Finish sharing',
+  'passwords.finishSharingBody':
+    'Some people are still waiting for a key to this item, or it needs a new key. Finishing gives them access.',
+  'passwords.finishSharingDone': 'Sharing is finished.',
+  'passwords.finishSharingFailed': 'Sharing could not be finished.',
+  'passwords.tagFinishSharing': 'Open this item to finish sharing it',
+  'passwords.circleShareNotice': '{name} got {item} through {circle}.',
   'passwords.accessSetAgain': 'Set sharing again',
   'passwords.deleteForever': 'Delete forever',
   'passwords.purgeTitle': 'Delete {name} forever?',

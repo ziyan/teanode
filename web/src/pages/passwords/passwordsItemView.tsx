@@ -15,7 +15,7 @@ import { OneTimeCodeValue, PlainValue, SecretValue } from './passwordsParts'
 import { PasswordShare } from './passwordsApi'
 import { isAgentAllowed, PasswordItem, splitSharesByRecord } from './passwordsProtocol'
 import { useRekeyFailedToast } from './passwordsRekey'
-import { passwordsSession } from './passwordsSession'
+import { passwordsSession, usePasswordsSession } from './passwordsSession'
 import { PasswordsShareDialog } from './passwordsShare'
 
 // One item: its fields hidden until shown, a copy button on each, the
@@ -107,6 +107,7 @@ export function PasswordsItemView({
   const toast = useToast()
   const reportFailure = useFailureToast()
   const sayRekeyFailed = useRekeyFailedToast()
+  const { itemIdsToFinish } = usePasswordsSession()
   const [isSharing, setIsSharing] = useState(false)
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
@@ -148,6 +149,19 @@ export function PasswordsItemView({
       toast.done(t('passwords.itemRestored', { name }))
     } catch (failure) {
       reportFailure(failure, t('passwords.restoreFailed'))
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function finishSharing() {
+    if (isBusy) return
+    setIsBusy(true)
+    try {
+      await passwordsSession.finishSharing(item.id)
+      toast.done(t('passwords.finishSharingDone'))
+    } catch (failure) {
+      reportFailure(failure, t('passwords.finishSharingFailed'))
     } finally {
       setIsBusy(false)
     }
@@ -252,6 +266,16 @@ export function PasswordsItemView({
             <div className="page-actions">
               <button type="button" onClick={() => setIsSharing(true)}>
                 {t('passwords.accessSetAgain')}
+              </button>
+            </div>
+          </div>
+        )}
+        {item.isOwnedByMe && !isDeleted && !item.isUnreadable && itemIdsToFinish.includes(item.id) && (
+          <div className="passwords-key-changed" role="status">
+            <p>{t('passwords.finishSharingBody')}</p>
+            <div className="page-actions">
+              <button type="button" disabled={isBusy} onClick={() => void finishSharing()}>
+                {t('passwords.finishSharing')}
               </button>
             </div>
           </div>

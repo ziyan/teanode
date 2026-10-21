@@ -1,14 +1,26 @@
 // What this device remembers about each of the person's items: the highest
-// version of the sealed access record it has seen with a valid signature, who
-// held a key for the item the last time it looked, and whether the agent had a
-// copy. The first catches an old record the server brings back; the other two
-// keep an automatic new key from giving anybody access they did not have.
+// version of the sealed access record it has seen with a valid signature and
+// that record's signature, the people this device itself sealed the item key
+// for, and whether this device itself made the agent a copy. The first catches
+// an old record the server brings back (a lower version, or the same version
+// with another signature); the other two keep an automatic new key from giving
+// anybody access this device did not give.
+//
+// Who held a key and whether the agent had a copy come only from this device's
+// own seals, never from the server's list: the server could have said anything
+// the last time the item was looked at.
 //
 // It is kept per signed-in person in localStorage, like the other things this
-// device remembers (passwordsPins.ts). None of it is secret. Every access is
-// guarded: a browser that refuses storage remembers nothing, which means a
-// replay cannot be noticed and an automatic new key seals for nobody. Another
-// browser, the iPhone app and the command line each keep their own.
+// device remembers (passwordsPins.ts), and it stays when the person signs out
+// or the server ends the sign-in: it is what notices a replay after the next
+// sign-in. None of it is secret. Every access is guarded: a browser that
+// refuses storage remembers nothing, which means a replay cannot be noticed and
+// an automatic new key seals for nobody. Another browser, the iPhone app and
+// the command line each keep their own.
+//
+// Known limit: a device that sees an item for the first time cannot tell an
+// old signed record from the newest one, so it takes the newest signed record
+// the server shows it when the person acts.
 
 const MEMORY_PREFIX = 'teanode.passwords.access:'
 
@@ -16,14 +28,17 @@ export type ItemMemory = {
   // highestRecordVersion is the highest recordVersion seen on a record whose
   // signature was valid (0 when none was).
   highestRecordVersion: number
-  // keyHolderUserIds are the people the server listed with a key for the item
-  // the last time the item was seen without the server's new-key mark, or that
-  // this device sealed a key for.
-  keyHolderUserIds: string[]
-  // hadAgentCopy says the server listed the item as used by the agent the last
-  // time the item was seen without the new-key mark, or that this device made
-  // the agent a copy.
-  hadAgentCopy: boolean
+  // highestRecordMac is the signature of the record at that version, or an
+  // empty text when it was not kept.
+  highestRecordMac: string
+  // sealedForUserIds are the people this device sealed the item key for.
+  sealedForUserIds: string[]
+  // hasMadeAgentCopy says this device made the agent a copy of the item key.
+  hasMadeAgentCopy: boolean
+}
+
+function emptyMemory(): ItemMemory {
+  return { highestRecordVersion: 0, highestRecordMac: '', sealedForUserIds: [], hasMadeAgentCopy: false }
 }
 
 function readAll(userId: string): Record<string, ItemMemory> {
@@ -40,10 +55,11 @@ function readAll(userId: string): Record<string, ItemMemory> {
           typeof candidate.highestRecordVersion === 'number' && Number.isSafeInteger(candidate.highestRecordVersion)
             ? candidate.highestRecordVersion
             : 0,
-        keyHolderUserIds: Array.isArray(candidate.keyHolderUserIds)
-          ? candidate.keyHolderUserIds.filter((other): other is string => typeof other === 'string')
+        highestRecordMac: typeof candidate.highestRecordMac === 'string' ? candidate.highestRecordMac : '',
+        sealedForUserIds: Array.isArray(candidate.sealedForUserIds)
+          ? candidate.sealedForUserIds.filter((other): other is string => typeof other === 'string')
           : [],
-        hadAgentCopy: candidate.hadAgentCopy === true,
+        hasMadeAgentCopy: candidate.hasMadeAgentCopy === true,
       }
     }
     return memories
@@ -62,34 +78,70 @@ function writeMemory(userId: string, itemId: string, memory: ItemMemory) {
 
 // memoryOf is what this device remembers for the item, or nothing.
 export function memoryOf(userId: string, itemId: string): ItemMemory {
-  if (userId === '') return { highestRecordVersion: 0, keyHolderUserIds: [], hadAgentCopy: false }
-  return readAll(userId)[itemId] ?? { highestRecordVersion: 0, keyHolderUserIds: [], hadAgentCopy: false }
+  if (userId === '') return emptyMemory()
+  return readAll(userId)[itemId] ?? emptyMemory()
 }
 
-// rememberRecordVersion keeps a record version that was seen with a valid
-// signature, when it is higher than the one kept.
-export function rememberRecordVersion(userId: string, itemId: string, recordVersion: number) {
+// hasMemoryOf says whether this device has seen a signed record of the item
+// before (in an earlier session, or by signing one itself).
+export function hasMemoryOf(userId: string, itemId: string): boolean {
+  return userId !== '' && memoryOf(userId, itemId).highestRecordVersion > 0
+}
+
+// isReplayedRecord says whether a record with a valid signature is an old one:
+// its version is lower than the highest this device remembers, or equal to it
+// with another signature.
+export function isReplayedRecord(userId: string, itemId: string, recordVersion: number, recordMac: string): boolean {
+  const memory = memoryOf(userId, itemId)
+  if (recordVersion < memory.highestRecordVersion) return true
+  return (
+    recordVersion === memory.highestRecordVersion &&
+    memory.highestRecordMac !== '' &&
+    recordMac !== memory.highestRecordMac
+  )
+}
+
+// rememberRecord keeps a record that was seen with a valid signature, when its
+// version is higher than the one kept (or the same version, kept without its
+// signature).
+export function rememberRecord(userId: string, itemId: string, recordVersion: number, recordMac: string) {
   if (userId === '') return
   const memory = memoryOf(userId, itemId)
-  if (recordVersion > memory.highestRecordVersion) {
-    writeMemory(userId, itemId, { ...memory, highestRecordVersion: recordVersion })
+  if (
+    recordVersion > memory.highestRecordVersion ||
+    (recordVersion === memory.highestRecordVersion && memory.highestRecordMac === '' && recordMac !== '')
+  ) {
+    writeMemory(userId, itemId, { ...memory, highestRecordVersion: recordVersion, highestRecordMac: recordMac })
   }
 }
 
-// rememberKeyHolders replaces who held a key and whether the agent had a copy,
-// as last seen.
-export function rememberKeyHolders(userId: string, itemId: string, keyHolderUserIds: string[], hadAgentCopy: boolean) {
+// rememberSealedFor replaces the people this device sealed the item key for
+// and whether it made the agent a copy: a new item key has just been made, and
+// only the copies made with it exist.
+export function rememberSealedFor(
+  userId: string,
+  itemId: string,
+  sealedForUserIds: string[],
+  hasMadeAgentCopy: boolean,
+) {
   if (userId === '') return
   const memory = memoryOf(userId, itemId)
-  writeMemory(userId, itemId, { ...memory, keyHolderUserIds: [...new Set(keyHolderUserIds)], hadAgentCopy })
+  writeMemory(userId, itemId, { ...memory, sealedForUserIds: [...new Set(sealedForUserIds)], hasMadeAgentCopy })
 }
 
-// addKeyHolders adds people this device has just sealed a key for.
-export function addKeyHolders(userId: string, itemId: string, keyHolderUserIds: string[]) {
-  if (userId === '' || keyHolderUserIds.length === 0) return
+// addSealedFor adds people this device has just sealed a key for.
+export function addSealedFor(userId: string, itemId: string, sealedForUserIds: string[]) {
+  if (userId === '' || sealedForUserIds.length === 0) return
   const memory = memoryOf(userId, itemId)
   writeMemory(userId, itemId, {
     ...memory,
-    keyHolderUserIds: [...new Set([...memory.keyHolderUserIds, ...keyHolderUserIds])],
+    sealedForUserIds: [...new Set([...memory.sealedForUserIds, ...sealedForUserIds])],
   })
+}
+
+// rememberAgentCopy keeps that this device made the agent a copy of the key.
+export function rememberAgentCopy(userId: string, itemId: string) {
+  if (userId === '') return
+  const memory = memoryOf(userId, itemId)
+  if (!memory.hasMadeAgentCopy) writeMemory(userId, itemId, { ...memory, hasMadeAgentCopy: true })
 }

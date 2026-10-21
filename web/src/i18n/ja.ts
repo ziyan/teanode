@@ -7119,6 +7119,13 @@ export const ja: Catalog = {
   'passwords.accessReplayedTitle': 'この項目の共有設定がサーバーによって元に戻されました',
   'passwords.accessReplayedBody':
     '共有記録の古いコピーが戻ってきました。共有を設定し直すまで、この項目の共有、鍵の交換、エージェントへの提供は行われません。',
+  'passwords.finishSharing': '共有を完了',
+  'passwords.finishSharingBody':
+    '一部の人がこの項目のキーを待っているか、新しいキーが必要です。完了すると、その人たちが開けるようになります。',
+  'passwords.finishSharingDone': '共有を完了しました。',
+  'passwords.finishSharingFailed': '共有を完了できませんでした。',
+  'passwords.tagFinishSharing': 'この項目を開いて共有を完了',
+  'passwords.circleShareNotice': '{name} さんが {circle} を通じて {item} を受け取りました。',
   'passwords.accessSetAgain': '共有を設定し直す',
   'passwords.deleteForever': '完全に削除',
   'passwords.purgeTitle': '{name} を完全に削除しますか？',
@@ -7134,7 +7141,7 @@ export const ja: Catalog = {
   'passwords.compareTitle': '{name} さんとコードを照合',
   'passwords.compareCodes': 'コードを照合',
   'passwords.keyChangedNotice':
-    '{name} さんの鍵が変わりました。パスワードを消去して設定し直すと起こります。心当たりがない場合は、相手と安全コードを照合してください。',
+    '{name} さんの鍵が変わりました。相手がパスワードを消去して設定し直したときに起こります。心当たりがない場合は、相手と安全コードを照合してください。',
   'passwords.keyChangedNew': '現在の安全コード',
   'passwords.keyChangedWarning': '相手の鍵が変わりました。',
   'passwords.errorPublicKeyMismatch':
