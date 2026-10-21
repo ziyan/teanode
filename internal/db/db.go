@@ -128,6 +128,10 @@ type Database interface {
 	OAuthOperation
 	PasskeyOperation
 
+	// Items deleted long enough ago are swept outside a transaction, as
+	// sessions and tokens are.
+	PasswordsScavengeOperation
+
 	// Media is read on every request for a picture in a sent message, which
 	// arrives from a mail program with no session and no transaction to join.
 	MediaOperation
@@ -195,6 +199,7 @@ type Transaction interface {
 	HealthOperation
 	HealthLockOperation
 	HealthShareOperation
+	PasswordsOperation
 	PageShareOperation
 	SkillShareOperation
 	ChatOperation

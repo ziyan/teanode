@@ -114,7 +114,18 @@ export function VerdictMark({ mail }: { mail?: Mail | null }) {
 //
 // The tick lasts a moment and goes back. A button that stays changed is a
 // button that has forgotten what it does.
-export function CopyIconButton({ value, label }: { value: string; label?: string }) {
+//
+// onCopied is told when the clipboard took the value, for a caller that has to
+// do something about it later (the Passwords page clears a secret again).
+export function CopyIconButton({
+  value,
+  label,
+  onCopied,
+}: {
+  value: string
+  label?: string
+  onCopied?: (value: string) => void
+}) {
   const { t } = useTranslation()
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
@@ -145,7 +156,10 @@ export function CopyIconButton({ value, label }: { value: string; label?: string
             return
           }
           void navigator.clipboard.writeText(value).then(
-            () => setState('copied'),
+            () => {
+              setState('copied')
+              onCopied?.(value)
+            },
             () => setState('failed'),
           )
         }}

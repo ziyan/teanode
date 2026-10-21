@@ -461,6 +461,9 @@ func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 		if err := endHealthSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
+		if err := endPasswordSharesOutsideCircles(tx, userId); err != nil {
+			return err
+		}
 		if err := endPageSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}

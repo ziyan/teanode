@@ -148,7 +148,7 @@ its pull request is opened.
   Mail opens on its Mailboxes list, which pushes a folder. Finance, Location and
   Photos choose their list in the menu under the screen's title
   (`toolbarTitleMenu`), the way Files names its place.
-- More is a grouped list: Every day (Calendar, Contacts, Location, Health), Work (Coding,
+- More is a grouped list: Every day (Calendar, Contacts, Location, Health, Passwords), Work (Coding,
   Knowledge, Recordings), Plans (Goals, Ideas), Money (Finance), then Settings. A part
   the server does not offer is left out. A part opened from it shows a button at
   the top left that goes back to the list (`MoreBackButton`).

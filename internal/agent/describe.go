@@ -164,11 +164,12 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 		history = history[len(history)-describeMessages:]
 		historyStarts = historyStarts[len(historyStarts)-describeMessages:]
 	}
-	// What a turn that read the person's Health said is not put into a title
-	// or a summary, which the list and the picker show to anybody looking
-	// over the person's shoulder and which are not kept as Health is. The
-	// conversation keeps the title and the summary it has.
-	if isHealthRead(messages, historyStarts[0]) {
+	// What a turn that read the person's Health or a note in their Passwords
+	// said is not put into a title or a summary, which the list and the
+	// picker show to anybody looking over the person's shoulder and which
+	// are not kept as those are. The conversation keeps the title and the
+	// summary it has.
+	if isPrivateRead(messages, historyStarts[0]) {
 		return mark("", "")
 	}
 	transcript := renderHistory(history)
@@ -220,16 +221,17 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 	return mark(title, summary)
 }
 
-// isHealthRead says whether the messages from the turn that the message at
-// index belongs to, to the end, include a call of the Health tool (see
-// isHealthToolName and withoutHealthTurns).
-func isHealthRead(messages []*models.AgentMessage, index int) bool {
+// isPrivateRead says whether the messages from the turn that the message at
+// index belongs to, to the end, include a call of a private tool: Health, or
+// the Passwords tool reading a note or making up a password (see
+// isPrivateToolCall and withoutPrivateTurns).
+func isPrivateRead(messages []*models.AgentMessage, index int) bool {
 	for index > 0 && !isTurnStart(messages, index) {
 		index--
 	}
 	for _, message := range messages[index:] {
 		for _, call := range message.ToolCalls {
-			if isHealthToolName(call.Name) {
+			if isPrivateToolCall(call) {
 				return true
 			}
 		}

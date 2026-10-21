@@ -33,6 +33,7 @@ targets:
       - target: TeaNodeNotification
       - target: TeaNodeShare
       - target: TeaNodeWidgets
+      - target: TeaNodeAutoFill
       - sdk: HealthKit.framework
     # teanode.com/app/connect links open the app (the site serves the
     # association file), so scanning a connect code with the Camera does.
@@ -63,6 +64,9 @@ targets:
         aps-environment: development
         keychain-access-groups:
           - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+        # TeaNode as a provider in Settings, General, AutoFill & Passwords
+        # (the TeaNodeAutoFill extension): the app carries the capability too.
+        com.apple.developer.authentication-services.autofill-credential-provider: true
         # Apple Health, read only: the app never writes to it. The access list
         # stays empty (it is for clinical records, which are not read), and
         # background delivery lets iOS wake the app about new data.
@@ -94,7 +98,7 @@ targets:
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server, and to take pictures you send."
-        INFOPLIST_KEY_NSFaceIDUsageDescription: "TeaNode asks for Face ID before you approve a payment somebody made with a skill you share."
+        INFOPLIST_KEY_NSFaceIDUsageDescription: "TeaNode asks for Face ID to open Passwords, and before you approve a payment somebody made with a skill you share."
         INFOPLIST_KEY_NSContactsUsageDescription: "TeaNode reads your iPhone's contacts only when you choose to import them into your address book."
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "TeaNode saves the photos you choose to your library."
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "TeaNode backs up your photos and videos to your server when you turn on backup."
@@ -215,6 +219,58 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).widgets
         SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+
+  # TeaNode as an AutoFill provider: Safari, Chrome and other apps offer the
+  # person's logins, passkeys and one-time codes from Passwords. It reads the
+  # copy of Passwords the app keeps in the app group and the account key
+  # behind Face ID in the shared keychain group, and uses the network only to
+  # save a passkey it has just made. The sign-in comes from the same keychain
+  # group as the share extension's. The extension is killed at about 120 MB.
+  TeaNodeAutoFill:
+    type: app-extension
+    platform: iOS
+    sources:
+      - TeaNodeAutoFill
+      - path: TeaNode/Resources/Assets.xcassets
+      - TeaNode/Resources/Localizable.xcstrings
+      # The Face ID purpose string, translated.
+      - TeaNode/Resources/InfoPlist.xcstrings
+    dependencies:
+      - package: TeaNodeKit
+    entitlements:
+      path: TeaNodeAutoFill/TeaNodeAutoFill.entitlements
+      properties:
+        com.apple.developer.authentication-services.autofill-credential-provider: true
+        com.apple.security.application-groups:
+          - $(TEANODE_APP_GROUP)
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+    info:
+      path: TeaNodeAutoFill/Info.plist
+      properties:
+        TeaNodeAppGroup: $(TEANODE_APP_GROUP)
+        CFBundleDisplayName: TeaNode
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # The extension is its own process, so it needs its own Face ID text.
+        NSFaceIDUsageDescription: "TeaNode asks for Face ID to open Passwords, and before you approve a payment somebody made with a skill you share."
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.authentication-services-credential-provider-ui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).CredentialProviderViewController
+          NSExtensionAttributes:
+            ASCredentialProviderExtensionCapabilities:
+              ProvidesPasswords: true
+              ProvidesPasskeys: true
+              ProvidesOneTimeCodes: true
+              ShowsConfigurationUI: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TEANODE_BUNDLE_IDENTIFIER).autofill
+        # The Swift 5 language mode: see CredentialProviderViewController.swift.
+        SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES

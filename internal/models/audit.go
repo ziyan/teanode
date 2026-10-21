@@ -120,6 +120,8 @@ const (
 	AuditResourceFinancePaystub     AuditResourceType = "finance_paystub"     // and its lines
 	AuditResourceFinanceTaxForm     AuditResourceType = "finance_tax_form"    // and its boxes
 	AuditResourceTaxYearSetting     AuditResourceType = "tax_year_setting"    // a year's estimate inputs
+	AuditResourcePasswords          AuditResourceType = "passwords"           // a person's setup, never a key or a hash
+	AuditResourcePasswordItem       AuditResourceType = "password_item"       // what happened to an item and who it is shared with, never a sealed value
 )
 
 // AuditRedactor is implemented by a model that carries a secret, so the secret

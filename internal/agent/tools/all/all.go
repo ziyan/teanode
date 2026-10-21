@@ -38,6 +38,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/memorycheck"
 	_ "github.com/ziyan/teanode/internal/agent/tools/note"
 	_ "github.com/ziyan/teanode/internal/agent/tools/openpage"
+	_ "github.com/ziyan/teanode/internal/agent/tools/passwords"
 	_ "github.com/ziyan/teanode/internal/agent/tools/people"
 	_ "github.com/ziyan/teanode/internal/agent/tools/photo"
 	_ "github.com/ziyan/teanode/internal/agent/tools/recording"

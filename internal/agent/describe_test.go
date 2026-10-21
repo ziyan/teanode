@@ -126,10 +126,10 @@ func TestQuietConversationsAreDescribed(t *testing.T) {
 	})
 }
 
-// A conversation in which the agent read the person's Health keeps the title
-// and the summary it had: the figures it read are not put into a name that
-// the list and the picker show. The same conversation without a call of the
-// Health tool is described as usual.
+// A conversation in which the agent read the person's Health, or a note in
+// their Passwords, keeps the title and the summary it had: the figures or text
+// it read are not put into a name that the list and the picker show. The same
+// conversation without a call of either is described as usual.
 func TestAConversationThatReadHealthIsNotDescribed(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -153,7 +153,7 @@ func TestAConversationThatReadHealthIsNotDescribed(t *testing.T) {
 	operations := &fakeOperations{permissions: models.NewEffectivePermissions(nil)}
 	worker.SetOperationsFactory(func(context.Context, *models.User) (agent.Operations, error) { return operations, nil })
 
-	var readHealth, readActionTool, readNothing *models.AgentConversation
+	var readHealth, readActionTool, readNote, readNothing *models.AgentConversation
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		owner, err := tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"})
 		if err != nil {
@@ -163,7 +163,7 @@ func TestAConversationThatReadHealthIsNotDescribed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateAgent: %s", err)
 		}
-		make := func(toolName string) *models.AgentConversation {
+		make := func(toolName, arguments string) *models.AgentConversation {
 			conversation, err := tx.CreateAgentConversation(&models.AgentConversation{
 				AgentID: found.ID, Kind: models.AgentConversationNamed, Title: "Weekly check", TitledBy: "agent", LastAt: time.Now(),
 			})
@@ -172,7 +172,7 @@ func TestAConversationThatReadHealthIsNotDescribed(t *testing.T) {
 			}
 			assistantCall := &models.AgentMessage{ConversationID: conversation.ID, Role: "assistant", Content: "Let me look."}
 			if toolName != "" {
-				assistantCall.ToolCalls = []models.AgentToolCall{{ID: "call-1", Name: toolName}}
+				assistantCall.ToolCalls = []models.AgentToolCall{{ID: "call-1", Name: toolName, Arguments: arguments}}
 			}
 			for _, message := range []*models.AgentMessage{
 				{ConversationID: conversation.ID, Role: "user", Content: "how did I do this week?"},
@@ -194,9 +194,10 @@ func TestAConversationThatReadHealthIsNotDescribed(t *testing.T) {
 			}
 			return updated
 		}
-		readHealth = make("health")
-		readActionTool = make("health_summary")
-		readNothing = make("weather")
+		readHealth = make("health", `{"action":"summary"}`)
+		readActionTool = make("health_summary", "")
+		readNote = make("passwords", `{"action":"read_note","item_id":"00000000-0000-4000-8000-000000000003"}`)
+		readNothing = make("weather", "")
 	})
 
 	if err := worker.TickAt(context.Background(), time.Now()); err != nil {
@@ -204,10 +205,10 @@ func TestAConversationThatReadHealthIsNotDescribed(t *testing.T) {
 	}
 	worker.Wait()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		for _, conversation := range []*models.AgentConversation{readHealth, readActionTool} {
+		for _, conversation := range []*models.AgentConversation{readHealth, readActionTool, readNote} {
 			kept, _ := tx.GetAgentConversation(conversation.ID)
 			if kept.Title != "Weekly check" || kept.Summary != "A check of the week." {
-				t.Errorf("a conversation that read Health keeps its title and summary: %q, %q", kept.Title, kept.Summary)
+				t.Errorf("a conversation that read something private keeps its title and summary: %q, %q", kept.Title, kept.Summary)
 			}
 			if kept.DescribedAt == nil {
 				t.Error("it is still marked described, so that it is not asked about every minute")

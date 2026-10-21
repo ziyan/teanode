@@ -1,0 +1,804 @@
+import Foundation
+import XCTest
+
+@testable import TeaNodeKit
+
+/// PasswordsSessionTests run the session against a fake server that keeps only
+/// sealed text, so a pass here means two devices (or two people) really can
+/// open each other's work through nothing but what the server holds.
+final class PasswordsSessionTests: XCTestCase {
+    /// The lowest count the format accepts, so the tests do not spend minutes in key derivation.
+    private let iterationCount = PasswordsCrypto.minimumPassphraseIterationCount
+    private var directories: [URL] = []
+
+    override func tearDown() {
+        for directory in directories { try? FileManager.default.removeItem(at: directory) }
+        directories = []
+        super.tearDown()
+    }
+
+    private func makeCache() -> PasswordsCache {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("passwords-test-\(UUID().uuidString)")
+        directories.append(directory)
+        return PasswordsCache(fileURL: directory.appendingPathComponent("passwords.json"))
+    }
+
+    private func makeServer(people: [(String, String)] = [("user-ada", "Ada")]) async -> FakePasswordsServer {
+        let server = FakePasswordsServer()
+        for (userId, name) in people { await server.addPerson(userId: userId, name: name) }
+        return server
+    }
+
+    private func makeDevice(_ server: FakePasswordsServer, userId: String = "user-ada") -> (session: PasswordsSession, cache: PasswordsCache) {
+        let cache = makeCache()
+        return (PasswordsSession(api: FakePasswordsAPI(server: server, userId: userId), cache: cache, userId: userId), cache)
+    }
+
+    private func loginFields(name: String = "Example", password: String = "correct horse") -> PasswordsItemFields {
+        .login(PasswordsLoginFields(name: name, userName: "ada@example.com", password: password, sites: ["https://example.com"]))
+    }
+
+    // MARK: Set up and unlock
+
+    func testSetUpReturnsARecoveryKeyThatHasThirteenGroupsAndLeavesTheSessionUnlocked() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        let recoveryKey = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        XCTAssertEqual(recoveryKey.split(separator: " ").count, 13)
+        let isUnlocked = await device.session.isUnlocked
+        XCTAssertTrue(isUnlocked)
+        let setup = try await device.session.readSetup()
+        XCTAssertTrue(setup.isSetUp)
+        XCTAssertEqual(setup.passphraseIterationCount, iterationCount)
+        let contents = try XCTUnwrap(try device.cache.load())
+        XCTAssertEqual(contents.userId, "user-ada")
+        XCTAssertEqual(contents.publicKey, setup.publicKey)
+    }
+
+    func testSettingUpTwiceIsRefused() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        do {
+            _ = try await device.session.setUp(passphrase: "another one", iterationCount: iterationCount)
+            XCTFail("a second set up should be refused")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .alreadySetUp)
+        }
+    }
+
+    func testAnotherDeviceUnlocksWithThePassphraseAndTheRecoveryKeyAndReadsWhatTheFirstSaved() async throws {
+        let server = await makeServer()
+        let first = makeDevice(server)
+        let recoveryKey = try await first.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let saved = try await first.session.save(fields: loginFields())
+
+        let second = makeDevice(server)
+        let unlocked = try await second.session.unlock(passphrase: "a long invented passphrase")
+        XCTAssertEqual(unlocked.accountKey.count, 32)
+        try await second.session.sync()
+        let opened = try await second.session.item(id: saved.id)
+        XCTAssertEqual(opened.fields, loginFields())
+
+        let third = makeDevice(server)
+        _ = try await third.session.unlock(recoveryKey: recoveryKey.lowercased().replacingOccurrences(of: " ", with: "-"))
+        try await third.session.sync()
+        let openedByRecoveryKey = try await third.session.item(id: saved.id)
+        XCTAssertEqual(openedByRecoveryKey.fields, loginFields())
+    }
+
+    func testAWrongPassphraseAndAWrongRecoveryKeyAreTyped() async throws {
+        let server = await makeServer()
+        let first = makeDevice(server)
+        _ = try await first.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let second = makeDevice(server)
+        do {
+            _ = try await second.session.unlock(passphrase: "not the passphrase")
+            XCTFail("a wrong passphrase should be refused")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .wrongPassphrase)
+        }
+        do {
+            _ = try await second.session.unlock(recoveryKey: try PasswordsCrypto.formatRecoveryKey(PasswordsCrypto.makeRecoveryKey()))
+            XCTFail("a wrong recovery key should be refused")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .wrongRecoveryKey)
+        }
+        let isUnlocked = await second.session.isUnlocked
+        XCTAssertFalse(isUnlocked)
+    }
+
+    func testUnlockingBeforeSetUpSaysSo() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        do {
+            _ = try await device.session.unlock(passphrase: "anything")
+            XCTFail("nothing is set up")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .notSetUp)
+        }
+    }
+
+    func testTheKeptAccountKeyOpensTheSessionAgainWithoutTheNetwork() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let saved = try await device.session.save(fields: loginFields())
+        let unlocked = try await device.session.unlock(passphrase: "a long invented passphrase")
+
+        let store = PasswordsMemoryKeyStore()
+        try await store.save(accountKey: unlocked.accountKey, signInAccountKey: "account-one")
+        await device.session.lock()
+        let isLockedAfterLock = await device.session.isUnlocked
+        XCTAssertFalse(isLockedAfterLock)
+
+        await server.setOffline(true)
+        let kept = try await store.load(signInAccountKey: "account-one", promptReason: "Open Passwords")
+        let lastReason = await store.lastPromptReason
+        XCTAssertEqual(lastReason, "Open Passwords")
+        _ = try await device.session.open(accountKey: try XCTUnwrap(kept))
+        let item = try await device.session.item(id: saved.id)
+        XCTAssertEqual(item.fields, loginFields())
+
+        // A different key, or no copy at all, asks for the passphrase.
+        await device.session.lock()
+        do {
+            _ = try await device.session.open(accountKey: PasswordsCrypto.makeKey())
+            XCTFail("a wrong key should not open")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .needsPassphrase)
+        }
+        let strangerSession = PasswordsSession(api: FakePasswordsAPI(server: server, userId: "user-ada"), cache: makeCache(), userId: "user-ada")
+        do {
+            _ = try await strangerSession.open(accountKey: unlocked.accountKey)
+            XCTFail("with no copy there is nothing to open")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .needsPassphrase)
+        }
+    }
+
+    func testTheOpenerReadsTheCacheWithoutASession() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let saved = try await device.session.save(fields: loginFields())
+        let unlocked = try await device.session.unlock(passphrase: "a long invented passphrase")
+
+        // What the AutoFill extension does: the file, the account key, nothing else.
+        let contents = try XCTUnwrap(try device.cache.load())
+        let opener = try PasswordsOpener(accountKey: unlocked.accountKey, contents: contents)
+        let opened = opener.openAll(contents.items)
+        XCTAssertEqual(opened.items.map(\.id), [saved.id])
+        XCTAssertEqual(opened.items.first?.fields, loginFields())
+        XCTAssertEqual(opened.unreadableItemIds, [])
+        XCTAssertThrowsError(try PasswordsOpener(accountKey: PasswordsCrypto.makeKey(), contents: contents))
+    }
+
+    // MARK: Saving
+
+    func testSaveThenSyncOnAnotherDeviceAndAnEditKeepsTheItemKey() async throws {
+        let server = await makeServer()
+        let first = makeDevice(server)
+        _ = try await first.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let created = try await first.session.save(fields: loginFields())
+        XCTAssertFalse(created.isSharedWithMe)
+        XCTAssertEqual(created.id, created.id.lowercased())
+        let storedBefore = await server.item(created.id)
+
+        let edited = try await first.session.save(fields: loginFields(password: "new password"), id: created.id)
+        XCTAssertGreaterThan(edited.revision, created.revision)
+        let storedAfter = await server.item(created.id)
+        XCTAssertEqual(storedBefore?.itemKeyByAccountKey, storedAfter?.itemKeyByAccountKey)
+
+        let second = makeDevice(server)
+        _ = try await second.session.unlock(passphrase: "a long invented passphrase")
+        let result = try await second.session.sync()
+        XCTAssertEqual(result.changedItemIds, [created.id])
+        let list = try await second.session.list()
+        XCTAssertEqual(list.items.count, 1)
+        XCTAssertEqual(list.items.first?.fields, loginFields(password: "new password"))
+    }
+
+    func testASecondSyncAsksOnlyForWhatChanged() async throws {
+        let server = await makeServer()
+        let first = makeDevice(server)
+        _ = try await first.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let created = try await first.session.save(fields: loginFields())
+        try await first.session.sync()
+        _ = try await first.session.save(fields: .note(PasswordsNoteFields(name: "Router", text: "invented")))
+        let result = try await first.session.sync()
+        XCTAssertEqual(result.changedItemIds.count, 1)
+        XCTAssertNotEqual(result.changedItemIds.first, created.id)
+        let calls = await server.listCalls
+        XCTAssertEqual(calls.count, 2)
+        XCTAssertEqual(calls[0], 0)
+        XCTAssertEqual(calls[1], created.revision)
+        let list = try await first.session.list()
+        XCTAssertEqual(list.items.map(\.name), ["Example", "Router"])
+    }
+
+    func testAStaleBaseRevisionIsATypedError() async throws {
+        let server = await makeServer()
+        let first = makeDevice(server)
+        _ = try await first.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let created = try await first.session.save(fields: loginFields())
+
+        let second = makeDevice(server)
+        _ = try await second.session.unlock(passphrase: "a long invented passphrase")
+        try await second.session.sync()
+
+        _ = try await first.session.save(fields: loginFields(password: "changed on the first device"), id: created.id)
+        do {
+            _ = try await second.session.save(fields: loginFields(password: "changed on the second"), id: created.id, baseRevision: created.revision)
+            XCTFail("the second device based its change on an old revision")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .itemChangedOnAnotherDevice)
+        }
+        // After reading it again the change goes through.
+        try await second.session.sync()
+        let current = try await second.session.item(id: created.id)
+        _ = try await second.session.save(fields: loginFields(password: "changed on the second"), id: created.id, baseRevision: current.revision)
+    }
+
+    func testAnItemCannotChangeKindAndASessionThatIsLockedRefuses() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let created = try await device.session.save(fields: loginFields())
+        do {
+            _ = try await device.session.save(fields: .note(PasswordsNoteFields(name: "x")), id: created.id)
+            XCTFail("a login cannot become a note")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .itemKindCannotChange)
+        }
+        await device.session.lock()
+        do {
+            _ = try await device.session.save(fields: loginFields())
+            XCTFail("locked")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .locked)
+        }
+    }
+
+    func testDeleteAndRestore() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let created = try await device.session.save(fields: loginFields())
+        let deleted = try await device.session.delete(id: created.id)
+        XCTAssertTrue(deleted.isDeleted)
+        let listedDeleted = try await device.session.list()
+        XCTAssertEqual(listedDeleted.items.first?.isDeleted, true)
+        let restored = try await device.session.restore(id: created.id)
+        XCTAssertFalse(restored.isDeleted)
+        XCTAssertGreaterThan(restored.revision, deleted.revision)
+    }
+
+    // MARK: Sharing
+
+    private func makeSharingWorld() async throws -> (
+        server: FakePasswordsServer, ada: (session: PasswordsSession, cache: PasswordsCache),
+        grace: (session: PasswordsSession, cache: PasswordsCache), itemId: String
+    ) {
+        let server = await makeServer(people: [("user-ada", "Ada"), ("user-grace", "Grace")])
+        await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
+        let ada = makeDevice(server, userId: "user-ada")
+        let grace = makeDevice(server, userId: "user-grace")
+        _ = try await ada.session.setUp(passphrase: "ada invented passphrase", iterationCount: iterationCount)
+        _ = try await grace.session.setUp(passphrase: "grace invented passphrase", iterationCount: iterationCount)
+        let item = try await ada.session.save(fields: loginFields())
+        return (server, ada, grace, item.id)
+    }
+
+    func testSharingSealsTheKeyForTheRecipientWhoOpensItWithTheirOwnKeyPair() async throws {
+        let world = try await makeSharingWorld()
+        let recipients = try await world.ada.session.recipients(granteeCircleId: "circle-one")
+        XCTAssertEqual(recipients.map(\.userId), ["user-grace"])
+        let grace = try XCTUnwrap(recipients.first)
+        XCTAssertEqual(grace.safetyCode?.split(separator: " ").count, 5)
+        XCTAssertFalse(grace.hasKey)
+        XCTAssertEqual(grace.keyTrust, .new)
+
+        let shared = try await world.ada.session.setShares(
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients,
+            confirmedUserIds: ["user-grace"])
+        XCTAssertEqual(shared.shares.count, 1)
+        XCTAssertEqual(shared.shares.first?.recipients.map(\.hasKey), [true])
+
+        let result = try await world.grace.session.sync()
+        XCTAssertEqual(result.changedItemIds, [world.itemId])
+        let opened = try await world.grace.session.item(id: world.itemId)
+        XCTAssertTrue(opened.isSharedWithMe)
+        XCTAssertEqual(opened.ownerName, "Ada")
+        XCTAssertEqual(opened.fields, loginFields())
+        XCTAssertEqual(opened.shares.count, 0)
+
+        // A recipient cannot change it.
+        do {
+            _ = try await world.grace.session.save(fields: loginFields(password: "graces change"), id: world.itemId)
+            XCTFail("only the owner changes an item")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .onlyOwnerCanChangeItem)
+        }
+        // The owner's later edit reaches the recipient with the same item key.
+        _ = try await world.ada.session.save(fields: loginFields(password: "new password"), id: world.itemId)
+        try await world.grace.session.sync()
+        let updated = try await world.grace.session.item(id: world.itemId)
+        XCTAssertEqual(updated.fields, loginFields(password: "new password"))
+    }
+
+    func testUnsharingDropsTheItemFromTheRecipientsCopy() async throws {
+        let world = try await makeSharingWorld()
+        let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        _ = try await world.ada.session.setShares(
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
+            confirmedUserIds: ["user-grace"])
+        try await world.grace.session.sync()
+        let before = try await world.grace.session.list()
+        XCTAssertEqual(before.items.count, 1)
+
+        _ = try await world.ada.session.setShares(itemId: world.itemId, grantees: [], recipients: [])
+        let result = try await world.grace.session.sync()
+        XCTAssertEqual(result.removedItemIds, [world.itemId])
+        let after = try await world.grace.session.list()
+        XCTAssertEqual(after.items.count, 0)
+    }
+
+    func testARecipientWhoSetsUpLaterIsWaitingUntilTheOwnersDeviceSealsTheirKey() async throws {
+        let server = await makeServer(people: [("user-ada", "Ada"), ("user-grace", "Grace")])
+        await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
+        let ada = makeDevice(server, userId: "user-ada")
+        _ = try await ada.session.setUp(passphrase: "ada invented passphrase", iterationCount: iterationCount)
+        let item = try await ada.session.save(fields: loginFields())
+
+        // Grace has not set up Passwords: she has no key, so the share is made without one.
+        let recipients = try await ada.session.recipients(granteeCircleId: "circle-one")
+        XCTAssertNil(recipients.first?.publicKey)
+        XCTAssertNil(recipients.first?.safetyCode)
+        _ = try await ada.session.setShares(
+            itemId: item.id, grantees: [PasswordShareGranteeInput(granteeCircleId: "circle-one")], recipients: recipients)
+        let noneYet = try await ada.session.waitingShares()
+        XCTAssertEqual(noneYet.count, 0)
+
+        let grace = makeDevice(server, userId: "user-grace")
+        _ = try await grace.session.setUp(passphrase: "grace invented passphrase", iterationCount: iterationCount)
+        let waiting = try await ada.session.waitingShares()
+        XCTAssertEqual(waiting.map(\.itemId), [item.id])
+        XCTAssertEqual(waiting.first?.itemName, "Example")
+        XCTAssertEqual(waiting.first?.recipient.userId, "user-grace")
+        XCTAssertEqual(waiting.first?.recipient.keyTrust, .new)
+
+        // Ada's device has never seen Grace's key, so nothing is sealed until Ada confirms it.
+        let unconfirmed = try await ada.session.completeWaitingShares()
+        XCTAssertEqual(unconfirmed.addedKeyCount, 0)
+        XCTAssertEqual(unconfirmed.waitingForConfirmation.map(\.itemId), [item.id])
+        XCTAssertEqual(unconfirmed.waitingForConfirmation.first?.recipient.keyTrust, .new)
+        let storedBefore = await server.item(item.id)
+        XCTAssertNil(storedBefore?.keys["user-grace"])
+
+        try await ada.session.confirmWaitingShare(try XCTUnwrap(unconfirmed.waitingForConfirmation.first))
+        let stillWaiting = try await ada.session.waitingShares()
+        XCTAssertEqual(stillWaiting.count, 0)
+        try await grace.session.sync()
+        let opened = try await grace.session.item(id: item.id)
+        XCTAssertEqual(opened.fields, loginFields())
+    }
+
+    // MARK: Known keys
+
+    private func grantGrace(_ world: (server: FakePasswordsServer, ada: (session: PasswordsSession, cache: PasswordsCache), grace: (session: PasswordsSession, cache: PasswordsCache), itemId: String)) async throws -> PasswordItem {
+        let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        return try await world.ada.session.setShares(
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
+            confirmedUserIds: ["user-grace"])
+    }
+
+    func testANewRecipientIsNotSealedForUntilTheirKeyIsConfirmedAndThenItIsKnown() async throws {
+        let world = try await makeSharingWorld()
+        let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        XCTAssertEqual(recipients.first?.keyTrust, .new)
+
+        // No confirmation: the share is made, but no key is sealed for Grace.
+        _ = try await world.ada.session.setShares(
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
+        var stored = await world.server.item(world.itemId)
+        XCTAssertNil(stored?.keys["user-grace"])
+        XCTAssertEqual(try XCTUnwrap(try world.ada.cache.load()).knownPublicKeys, [:])
+
+        // Confirmed: sealed, and Grace's key is recorded as known.
+        _ = try await world.ada.session.setShares(
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
+            confirmedUserIds: ["user-grace"])
+        stored = await world.server.item(world.itemId)
+        XCTAssertNotNil(stored?.keys["user-grace"])
+        let graceKey = try XCTUnwrap(recipients.first?.publicKey).base64EncodedString()
+        XCTAssertEqual(try XCTUnwrap(try world.ada.cache.load()).knownPublicKeys, ["user-grace": graceKey])
+        let again = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        XCTAssertEqual(again.first?.keyTrust, .known)
+    }
+
+    func testAKnownRecipientNeedsNoConfirmationOnAnotherItemAndExistingRecipientsAreNotSealedAgain() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        let first = await world.server.item(world.itemId)
+        let firstKey = try XCTUnwrap(first?.keys["user-grace"]?.itemKeyByRecipientKey)
+
+        // A second item: Grace's key is known now, so it is sealed without a confirmation.
+        let second = try await world.ada.session.save(fields: loginFields(name: "Second"))
+        let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        XCTAssertEqual(recipients.first?.keyTrust, .known)
+        _ = try await world.ada.session.setShares(
+            itemId: second.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
+        let storedSecond = await world.server.item(second.id)
+        XCTAssertNotNil(storedSecond?.keys["user-grace"])
+
+        // Sharing the first item again (a second grantee) does not seal Grace's key again.
+        await world.server.addPerson(userId: "user-linus", name: "Linus")
+        _ = try await world.ada.session.setShares(
+            itemId: world.itemId,
+            grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace"), PasswordShareGranteeInput(granteeUserId: "user-linus")],
+            recipients: recipients)
+        let after = await world.server.item(world.itemId)
+        XCTAssertEqual(after?.keys["user-grace"]?.itemKeyByRecipientKey, firstKey)
+    }
+
+    func testAChangedRecipientKeyIsMarkedChangedAndNotSealedForUntilTrusted() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        let oldKey = await world.server.publicKey(of: "user-grace")
+        let newKeyPair = PasswordsCrypto.makeKeyPair()
+        await world.server.replacePublicKey(userId: "user-grace", publicKey: newKeyPair.publicKey.base64EncodedString())
+
+        let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        let grace = try XCTUnwrap(recipients.first)
+        XCTAssertEqual(grace.keyTrust, .changed)
+        XCTAssertEqual(grace.knownSafetyCode, PasswordsOpener.safetyCodeText(publicKey: oldKey))
+        XCTAssertEqual(grace.safetyCode, try PasswordsCrypto.safetyCode(publicKey: newKeyPair.publicKey))
+        XCTAssertNotEqual(grace.knownSafetyCode, grace.safetyCode)
+
+        _ = try await world.ada.session.setShares(
+            itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients)
+        var stored = await world.server.item(world.itemId)
+        XCTAssertNotEqual(stored?.keys["user-grace"]?.recipientPublicKey, newKeyPair.publicKey.base64EncodedString())
+
+        // Grace is waiting, and completing the waiting shares leaves her key alone.
+        let waiting = try await world.ada.session.waitingShares()
+        XCTAssertEqual(waiting.map(\.recipient.keyTrust), [.changed])
+        let completed = try await world.ada.session.completeWaitingShares()
+        XCTAssertEqual(completed.addedKeyCount, 0)
+        XCTAssertEqual(completed.waitingForConfirmation.map(\.recipient.userId), ["user-grace"])
+        XCTAssertEqual(completed.waitingForConfirmation.first?.recipient.knownSafetyCode, grace.knownSafetyCode)
+        stored = await world.server.item(world.itemId)
+        XCTAssertNotEqual(stored?.keys["user-grace"]?.recipientPublicKey, newKeyPair.publicKey.base64EncodedString())
+
+        // Confirming that one key seals it and records it.
+        try await world.ada.session.confirmWaitingShare(try XCTUnwrap(completed.waitingForConfirmation.first))
+        stored = await world.server.item(world.itemId)
+        XCTAssertEqual(stored?.keys["user-grace"]?.recipientPublicKey, newKeyPair.publicKey.base64EncodedString())
+        let known = try XCTUnwrap(try world.ada.cache.load()).knownPublicKeys
+        XCTAssertEqual(known["user-grace"], newKeyPair.publicKey.base64EncodedString())
+    }
+
+    func testWaitingSharesOfKnownKeysAreSealedByCompleteWaitingShares() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        // Another item is shared with Grace while her key is known but before the key is sealed for it:
+        // the share is made without a key because Ada's call listed no recipients.
+        let second = try await world.ada.session.save(fields: loginFields(name: "Second"))
+        _ = try await world.ada.session.setShares(
+            itemId: second.id, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: [])
+        let completed = try await world.ada.session.completeWaitingShares()
+        XCTAssertEqual(completed.addedKeyCount, 1)
+        XCTAssertEqual(completed.waitingForConfirmation, [])
+        try await world.grace.session.sync()
+        let opened = try await world.grace.session.item(id: second.id)
+        XCTAssertEqual(opened.fields, loginFields(name: "Second"))
+    }
+
+    func testAWaitingShareIsNotSealedWhenTheItemsSharesDoNotReachTheRecipient() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        let waitingForGrace = PasswordWaitingShare(
+            itemId: world.itemId, itemName: nil,
+            recipient: PasswordRecipient(
+                view: PasswordRecipientView(
+                    userId: "user-nobody", name: "Nobody", username: "nobody", publicKey: PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString(),
+                    hasKey: false)))
+        do {
+            try await world.ada.session.confirmWaitingShare(waitingForGrace)
+            XCTFail("the item's shares do not reach that person")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .itemNotFound)
+        }
+    }
+
+    func testARecipientRecordsTheOwnersKeyOnFirstSightAndOpensOnlyWithIt() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        try await world.grace.session.sync()
+        let adaKey = await world.server.publicKey(of: "user-ada")
+        // Recorded in the file (the AutoFill extension reads it there).
+        XCTAssertEqual(try XCTUnwrap(try world.grace.cache.load()).knownPublicKeys, ["user-ada": adaKey])
+        let opened = try await world.grace.session.item(id: world.itemId)
+        XCTAssertEqual(opened.fields, loginFields())
+    }
+
+    func testAChangedOwnerKeyMakesTheItemUnreadableUntilTheRecipientTrustsIt() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        try await world.grace.session.sync()
+        let oldKey = await world.server.publicKey(of: "user-ada")
+
+        // Ada's key changes, and her new key seals the item key again for Grace.
+        let adaUnlocked = try await makeDevice(world.server, userId: "user-ada").session.unlock(passphrase: "ada invented passphrase")
+        let storedItemOptional = await world.server.item(world.itemId)
+        let storedItem = try XCTUnwrap(storedItemOptional)
+        let itemKey = try PasswordsCrypto.open(
+            try PasswordsSealedValue(jsonText: storedItem.itemKeyByAccountKey), key: adaUnlocked.accountKey,
+            associatedData: PasswordsCrypto.itemKeyAssociatedData(itemId: world.itemId))
+        let newOwner = PasswordsCrypto.makeKeyPair()
+        let gracePublicKeyText = await world.server.publicKey(of: "user-grace")
+        let gracePublicKey = try XCTUnwrap(Data(base64Encoded: gracePublicKeyText))
+        let resealed = try PasswordsCrypto.sealForKeyPair(
+            itemKey, ownerKeyPair: newOwner, ownerId: "user-ada", recipientPublicKey: gracePublicKey, recipientId: "user-grace",
+            itemId: world.itemId)
+        await world.server.replacePublicKey(userId: "user-ada", publicKey: newOwner.publicKey.base64EncodedString())
+        await world.server.replaceShareKey(itemId: world.itemId, recipientUserId: "user-grace", itemKeyByRecipientKey: resealed.jsonText)
+        try await world.grace.session.sync()
+
+        let expectedReason = PasswordsUnreadableReason.ownerKeyChanged(
+            userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
+            newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey))
+        let listed = try await world.grace.session.list()
+        XCTAssertEqual(listed.items.count, 0)
+        XCTAssertEqual(listed.unreadableItemIds, [world.itemId])
+        XCTAssertEqual(listed.unreadableReasons[world.itemId], expectedReason)
+        do {
+            _ = try await world.grace.session.item(id: world.itemId)
+            XCTFail("the owner's key changed")
+        } catch {
+            XCTAssertEqual(
+                error as? PasswordsError,
+                .ownerKeyChanged(
+                    userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
+                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey)))
+        }
+        let changes = await world.grace.session.ownerKeyChanges()
+        XCTAssertEqual(
+            changes,
+            [
+                PasswordsOwnerKeyChange(
+                    userId: "user-ada", ownerName: "Ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
+                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey), itemCount: 1)
+            ])
+        // The file still holds the key that was known, which the AutoFill extension reads.
+        let graceContents = try XCTUnwrap(try world.grace.cache.load())
+        XCTAssertEqual(graceContents.knownPublicKeys["user-ada"], oldKey)
+
+        try await world.grace.session.trustOwnerKey(userId: "user-ada")
+        let trusted = try await world.grace.session.item(id: world.itemId)
+        XCTAssertEqual(trusted.fields, loginFields())
+        let remaining = await world.grace.session.ownerKeyChanges()
+        XCTAssertEqual(remaining, [])
+        XCTAssertEqual(try XCTUnwrap(try world.grace.cache.load()).knownPublicKeys["user-ada"], newOwner.publicKey.base64EncodedString())
+    }
+
+    func testAnItemSealedByTheServerForAKeyItCallsTheOwnersDoesNotOpen() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        // The server seals a made-up item key as if Ada had, with its own key pair standing in for the owner's.
+        let forged = PasswordsCrypto.makeKeyPair()
+        let gracePublicKeyText = await world.server.publicKey(of: "user-grace")
+        let gracePublicKey = try XCTUnwrap(Data(base64Encoded: gracePublicKeyText))
+        let sealed = try PasswordsCrypto.sealForKeyPair(
+            PasswordsCrypto.makeKey(), ownerKeyPair: forged, ownerId: "user-ada", recipientPublicKey: gracePublicKey,
+            recipientId: "user-grace", itemId: world.itemId)
+        await world.server.replaceShareKey(itemId: world.itemId, recipientUserId: "user-grace", itemKeyByRecipientKey: sealed.jsonText)
+        try await world.grace.session.sync()
+        let listed = try await world.grace.session.list()
+        XCTAssertEqual(listed.items.count, 0)
+        XCTAssertEqual(listed.unreadableReasons[world.itemId], .cannotOpen)
+    }
+
+    func testTheOpenerForTheAutoFillExtensionSkipsOwnersItDoesNotKnow() async throws {
+        let world = try await makeSharingWorld()
+        _ = try await grantGrace(world)
+        let adaUnlocked = try await world.grace.session.unlock(passphrase: "grace invented passphrase")
+        try await world.grace.session.sync()
+        var contents = try XCTUnwrap(try world.grace.cache.load())
+        let view = try XCTUnwrap(contents.item(id: world.itemId))
+
+        let knowing = try PasswordsOpener(accountKey: adaUnlocked.accountKey, contents: contents)
+        XCTAssertEqual(try knowing.open(view).fields, loginFields())
+
+        contents.knownPublicKeys = [:]
+        let unaware = try PasswordsOpener(accountKey: adaUnlocked.accountKey, contents: contents)
+        XCTAssertThrowsError(try unaware.open(view)) { error in
+            XCTAssertEqual(error as? PasswordsError, .ownerKeyUnknown(userId: "user-ada"))
+        }
+        XCTAssertEqual(unaware.openAll([view]).unreadableReasons[world.itemId], .ownerKeyUnknown(userId: "user-ada"))
+
+        contents.knownPublicKeys = ["user-ada": PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()]
+        let mistaken = try PasswordsOpener(accountKey: adaUnlocked.accountKey, contents: contents)
+        XCTAssertEqual(
+            mistaken.openAll([view]).unreadableReasons[world.itemId].map { reason -> Bool in
+                if case .ownerKeyChanged = reason { return true }
+                return false
+            }, true)
+    }
+
+    // MARK: The agent
+
+    func testTheAgentSealOpensWithTheAgentPrivateKeyAndOnlyThatItemKeyIsInIt() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let login = try await device.session.save(fields: loginFields())
+        let note = try await device.session.save(fields: .note(PasswordsNoteFields(name: "Router", text: "invented")))
+
+        let allowed = try await device.session.setUsableByAgent(itemId: login.id, isUsable: true)
+        XCTAssertTrue(allowed.isUsableByAgent)
+
+        let storedOptional = await server.item(login.id)
+        let stored = try XCTUnwrap(storedOptional)
+        let sealedForAgent = try PasswordsKeyPairSealedValue(jsonText: try XCTUnwrap(stored.itemKeyByAgentKey))
+        let agentPrivateKey = await server.agentKeyPair.privateKey
+        // The agent opens it with the owner's public key and user id: the person's own key pair sealed it.
+        let ownerPublicKeyText = await server.publicKey(of: "user-ada")
+        let ownerPublicKey = try XCTUnwrap(Data(base64Encoded: ownerPublicKeyText))
+        let itemKey = try PasswordsCrypto.openForKeyPair(
+            sealedForAgent, recipientPrivateKey: agentPrivateKey, ownerPublicKey: ownerPublicKey, ownerId: "user-ada",
+            recipientId: PasswordsCrypto.agentRecipientId, itemId: login.id)
+        let fields = try PasswordsCrypto.openItemFields(
+            try PasswordsSealedValue(jsonText: stored.encryptedFields), itemKey: itemKey, itemId: login.id, itemKind: .login)
+        XCTAssertEqual(fields, loginFields())
+        // The agent's key cannot open an item that was not allowed.
+        let storedNoteOptional = await server.item(note.id)
+        let storedNote = try XCTUnwrap(storedNoteOptional)
+        XCTAssertNil(storedNote.itemKeyByAgentKey)
+
+        let stopped = try await device.session.setUsableByAgent(itemId: login.id, isUsable: false)
+        XCTAssertFalse(stopped.isUsableByAgent)
+        let storedAfterOptional = await server.item(login.id)
+        let storedAfter = try XCTUnwrap(storedAfterOptional)
+        XCTAssertNil(storedAfter.itemKeyByAgentKey)
+    }
+
+    func testACardCannotBeUsedByTheAgent() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let card = try await device.session.save(fields: .card(PasswordsCardFields(name: "Invented card", number: "4000 0000 0000 0000")))
+        do {
+            _ = try await device.session.setUsableByAgent(itemId: card.id, isUsable: true)
+            XCTFail("a card is never the agent's")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .cardCannotBeUsedByAgent)
+        }
+    }
+
+    // MARK: Settings
+
+    func testChangingThePassphraseKeepsTheItemsAndTheRecoveryKey() async throws {
+        let server = await makeServer()
+        let first = makeDevice(server)
+        let recoveryKey = try await first.session.setUp(passphrase: "the old passphrase", iterationCount: iterationCount)
+        let saved = try await first.session.save(fields: loginFields())
+        try await first.session.changePassphrase(
+            currentPassphrase: "the old passphrase", newPassphrase: "the new passphrase", iterationCount: iterationCount)
+
+        let second = makeDevice(server)
+        do {
+            _ = try await second.session.unlock(passphrase: "the old passphrase")
+            XCTFail("the old passphrase should be refused")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .wrongPassphrase)
+        }
+        _ = try await second.session.unlock(passphrase: "the new passphrase")
+        try await second.session.sync()
+        let opened = try await second.session.item(id: saved.id)
+        XCTAssertEqual(opened.fields, loginFields())
+        _ = try await makeDevice(server).session.unlock(recoveryKey: recoveryKey)
+    }
+
+    func testChangingThePassphraseWithTheRecoveryKey() async throws {
+        let server = await makeServer()
+        let first = makeDevice(server)
+        let recoveryKey = try await first.session.setUp(passphrase: "forgotten passphrase", iterationCount: iterationCount)
+        let second = makeDevice(server)
+        _ = try await second.session.unlock(recoveryKey: recoveryKey)
+        try await second.session.changePassphrase(recoveryKey: recoveryKey, newPassphrase: "a fresh passphrase", iterationCount: iterationCount)
+        _ = try await makeDevice(server).session.unlock(passphrase: "a fresh passphrase")
+    }
+
+    func testReplacingTheRecoveryKeyStopsTheOldOne() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        let oldKey = try await device.session.setUp(passphrase: "the passphrase", iterationCount: iterationCount)
+        let newKey = try await device.session.replaceRecoveryKey(passphrase: "the passphrase")
+        XCTAssertNotEqual(oldKey, newKey)
+        do {
+            _ = try await makeDevice(server).session.unlock(recoveryKey: oldKey)
+            XCTFail("the old recovery key should be refused")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .wrongRecoveryKey)
+        }
+        _ = try await makeDevice(server).session.unlock(recoveryKey: newKey)
+    }
+
+    func testTheLockTimeIsKeptOnTheServerAndInTheCache() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "the passphrase", iterationCount: iterationCount)
+        let kept = try await device.session.updateLockAfterMinutes(60)
+        XCTAssertEqual(kept, 60)
+        let lockAfterMinutes = await device.session.lockAfterMinutes
+        XCTAssertEqual(lockAfterMinutes, 60)
+        XCTAssertEqual(try device.cache.load()?.lockAfterMinutes, 60)
+        let isAskRequiredSoon = await device.session.isAskRequired(now: Date().addingTimeInterval(59 * 60))
+        XCTAssertFalse(isAskRequiredSoon)
+        let isAskRequiredLater = await device.session.isAskRequired(now: Date().addingTimeInterval(61 * 60))
+        XCTAssertTrue(isAskRequiredLater)
+    }
+
+    func testNotingUseMovesTheLockTimeOnAndDoesNothingWhileLocked() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        await device.session.noteUse()
+        let lastUsedBefore = await device.session.lastUsedAt
+        XCTAssertNil(lastUsedBefore)
+        _ = try await device.session.setUp(passphrase: "the passphrase", iterationCount: iterationCount)
+        let firstUseOrNil = await device.session.lastUsedAt
+        let firstUse = try XCTUnwrap(firstUseOrNil)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        await device.session.noteUse()
+        let secondUseOrNil = await device.session.lastUsedAt
+        let secondUse = try XCTUnwrap(secondUseOrNil)
+        XCTAssertGreaterThan(secondUse, firstUse)
+        await device.session.lock()
+        await device.session.noteUse()
+        let lastUsedAfter = await device.session.lastUsedAt
+        XCTAssertNil(lastUsedAfter)
+    }
+
+    func testErasingRemovesTheServersCopyAndThePhones() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "the passphrase", iterationCount: iterationCount)
+        _ = try await device.session.save(fields: loginFields())
+        try await device.session.erase()
+        let isUnlocked = await device.session.isUnlocked
+        XCTAssertFalse(isUnlocked)
+        XCTAssertNil(try device.cache.load())
+        let setup = try await device.session.readSetup()
+        XCTAssertFalse(setup.isSetUp)
+    }
+
+    func testASyncAfterPasswordsWasErasedAndSetUpAgainElsewhereAsksForThePassphrase() async throws {
+        let server = await makeServer()
+        let phone = makeDevice(server)
+        _ = try await phone.session.setUp(passphrase: "the passphrase", iterationCount: iterationCount)
+        let other = makeDevice(server)
+        try await other.session.erase()
+        _ = try await other.session.setUp(passphrase: "a new passphrase", iterationCount: iterationCount)
+        do {
+            try await phone.session.sync()
+            XCTFail("the phone's copy belongs to the old setup")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .needsPassphrase)
+        }
+        XCTAssertNil(try phone.cache.load())
+    }
+
+    func testIdentityRecordsComeFromTheOpenedLogins() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "the passphrase", iterationCount: iterationCount)
+        let login = try await device.session.save(fields: loginFields())
+        _ = try await device.session.save(fields: .note(PasswordsNoteFields(name: "Router", text: "invented")))
+        let records = try await device.session.identityRecords()
+        XCTAssertEqual(
+            records.passwordIdentities,
+            [PasswordsPasswordIdentity(recordId: login.id, serviceDomain: "example.com", userName: "ada@example.com")])
+    }
+}

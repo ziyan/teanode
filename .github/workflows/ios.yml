@@ -340,6 +340,20 @@ jobs:
             shoot "$health_settings_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$health_settings_screen"
             shoot "$health_settings_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$health_settings_screen"
           done
+          # Passwords: the list, a login (with its one-time code, a site and a passkey), a card, the agent's
+          # login, an item shared with the person, recently deleted, the editor and the generator over it,
+          # sharing, the settings, setting up (the introduction, the passphrase, the recovery key), and closed.
+          shoot passwords-light light large -TeaNodeDemo -TeaNodeTab passwords
+          shoot passwords-dark dark large -TeaNodeDemo -TeaNodeTab passwords
+          shoot passwords-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab passwords
+          for passwords_screen in passwords-login passwords-editor passwords-share passwords-settings passwords-recovery-key passwords-unlock; do
+            shoot "$passwords_screen-light" light large -TeaNodeDemo -TeaNodeTab passwords -TeaNodeScreen "$passwords_screen"
+            shoot "$passwords_screen-dark" dark large -TeaNodeDemo -TeaNodeTab passwords -TeaNodeScreen "$passwords_screen"
+          done
+          shoot passwords-login-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab passwords -TeaNodeScreen passwords-login
+          for passwords_screen in passwords-card passwords-agent-login passwords-shared-login passwords-deleted passwords-generator passwords-intro passwords-setup; do
+            shoot "$passwords_screen-light" light large -TeaNodeDemo -TeaNodeTab passwords -TeaNodeScreen "$passwords_screen"
+          done
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings

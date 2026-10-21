@@ -1,0 +1,111 @@
+import { describe, expect, it } from 'vitest'
+import { encodeBase32 } from './crypto'
+import { oneTimeCode, oneTimeCodeSecondsLeft, parseOneTimeCodeUri } from './oneTimeCode'
+import { bytesFromText, expectBytes } from './testSupport'
+
+// RFC 6238 appendix B: 8 digit codes, one shared secret per hash, written as
+// the ASCII the RFC gives.
+const secrets = {
+  SHA1: '12345678901234567890',
+  SHA256: '12345678901234567890123456789012',
+  SHA512: '1234567890123456789012345678901234567890123456789012345678901234',
+}
+const rfcCases: Array<[number, string, string, string]> = [
+  // unix seconds, SHA1, SHA256, SHA512
+  [59, '94287082', '46119246', '90693936'],
+  [1111111109, '07081804', '68084774', '25091201'],
+  [1111111111, '14050471', '67062674', '99943326'],
+  [1234567890, '89005924', '91819424', '93441116'],
+  [2000000000, '69279037', '90698825', '38618901'],
+  [20000000000, '65353130', '77737706', '47863826'],
+]
+
+function uriFor(algorithm: keyof typeof secrets): string {
+  return `otpauth://totp/Example:ada@example.com?secret=${encodeBase32(bytesFromText(secrets[algorithm]))}&issuer=Example&algorithm=${algorithm}&digits=8`
+}
+
+describe('oneTimeCode', () => {
+  it.each(rfcCases)('matches RFC 6238 at %i seconds', async (unixSeconds, sha1, sha256, sha512) => {
+    expect(await oneTimeCode(parseOneTimeCodeUri(uriFor('SHA1')), unixSeconds)).toBe(sha1)
+    expect(await oneTimeCode(parseOneTimeCodeUri(uriFor('SHA256')), unixSeconds)).toBe(sha256)
+    expect(await oneTimeCode(parseOneTimeCodeUri(uriFor('SHA512')), unixSeconds)).toBe(sha512)
+  })
+
+  it('gives six digits by default, with leading zeros kept', async () => {
+    const settings = parseOneTimeCodeUri(`otpauth://totp/Example?secret=${encodeBase32(bytesFromText(secrets.SHA1))}`)
+    // The eight digit code at this time is 07081804, so the six digit one is its last six.
+    expect(await oneTimeCode(settings, 1111111109)).toBe('081804')
+  })
+
+  it('stays the same inside a period and changes at its edge', async () => {
+    const settings = parseOneTimeCodeUri(uriFor('SHA1'))
+    expect(await oneTimeCode(settings, 60)).toBe(await oneTimeCode(settings, 89))
+    expect(await oneTimeCode(settings, 59)).not.toBe(await oneTimeCode(settings, 60))
+  })
+
+  it('honors another period', async () => {
+    const settings = parseOneTimeCodeUri(`${uriFor('SHA1')}&period=60`)
+    expect(await oneTimeCode(settings, 61)).toBe(await oneTimeCode(settings, 119))
+  })
+})
+
+describe('oneTimeCodeSecondsLeft', () => {
+  it('counts down from the period to 1', () => {
+    const settings = parseOneTimeCodeUri(uriFor('SHA1'))
+    expect(oneTimeCodeSecondsLeft(settings, 60)).toBe(30)
+    expect(oneTimeCodeSecondsLeft(settings, 61)).toBe(29)
+    expect(oneTimeCodeSecondsLeft(settings, 89)).toBe(1)
+    expect(oneTimeCodeSecondsLeft(settings, 90.7)).toBe(30)
+  })
+
+  it('follows the period', () => {
+    const settings = parseOneTimeCodeUri(`${uriFor('SHA1')}&period=45`)
+    expect(oneTimeCodeSecondsLeft(settings, 100)).toBe(35)
+  })
+})
+
+describe('parseOneTimeCodeUri', () => {
+  it('reads a full address', () => {
+    const settings = parseOneTimeCodeUri(uriFor('SHA256'))
+    expect(settings).toMatchObject({
+      algorithm: 'SHA256',
+      digitCount: 8,
+      periodSeconds: 30,
+      issuer: 'Example',
+      accountName: 'ada@example.com',
+    })
+    expectBytes(settings.secret, bytesFromText(secrets.SHA256))
+  })
+
+  it('defaults to SHA1, 6 digits and 30 seconds, and reads a lower case secret without padding', () => {
+    const settings = parseOneTimeCodeUri(
+      `otpauth://totp/ada?secret=${encodeBase32(bytesFromText(secrets.SHA1)).toLowerCase()}`,
+    )
+    expect(settings).toMatchObject({
+      algorithm: 'SHA1',
+      digitCount: 6,
+      periodSeconds: 30,
+      issuer: '',
+      accountName: 'ada',
+    })
+    expectBytes(settings.secret, bytesFromText(secrets.SHA1))
+  })
+
+  it('takes the issuer from the label when the address names none, and decodes the label', () => {
+    const settings = parseOneTimeCodeUri('otpauth://totp/Example%20Inc:ada%40example.test?secret=GEZDGNBV')
+    expect(settings.issuer).toBe('Example Inc')
+    expect(settings.accountName).toBe('ada@example.test')
+  })
+
+  it('refuses what it cannot make a code from', () => {
+    expect(() => parseOneTimeCodeUri('not an address')).toThrow()
+    expect(() => parseOneTimeCodeUri('https://example.com/?secret=GEZDGNBV')).toThrow(/otpauth/)
+    expect(() => parseOneTimeCodeUri('otpauth://hotp/ada?secret=GEZDGNBV&counter=1')).toThrow(/time based/)
+    expect(() => parseOneTimeCodeUri('otpauth://totp/ada')).toThrow(/no secret/)
+    expect(() => parseOneTimeCodeUri('otpauth://totp/ada?secret=!!!')).toThrow()
+    expect(() => parseOneTimeCodeUri('otpauth://totp/ada?secret=GEZDGNBV&algorithm=MD5')).toThrow(/algorithm/)
+    expect(() => parseOneTimeCodeUri('otpauth://totp/ada?secret=GEZDGNBV&digits=7')).toThrow(/6 or 8/)
+    expect(() => parseOneTimeCodeUri('otpauth://totp/ada?secret=GEZDGNBV&period=0')).toThrow(/period/)
+    expect(() => parseOneTimeCodeUri('otpauth://totp/ada?secret=GEZDGNBV&period=x')).toThrow(/period/)
+  })
+})

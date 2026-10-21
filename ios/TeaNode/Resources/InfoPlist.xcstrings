@@ -56,19 +56,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode asks for Face ID before you approve a payment somebody made with a skill you share."
+            "value": "TeaNode asks for Face ID to open Passwords, and before you approve a payment somebody made with a skill you share."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "有人使用你共享的技能付款时，TeaNode 会在你批准前要求面容 ID。"
+            "value": "TeaNode 会在打开密码时要求面容 ID；有人使用你共享的技能付款时，也会在你批准前要求面容 ID。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "共有したスキルで誰かが支払いをしたとき、承認の前に TeaNode が Face ID を求めます。"
+            "value": "パスワードを開くとき、また共有したスキルで誰かが支払いをして承認する前に、TeaNode は Face ID を求めます。"
           }
         }
       }
