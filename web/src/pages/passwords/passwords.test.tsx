@@ -32,7 +32,7 @@ import {
   ItemKind,
 } from '../../passwords/fields'
 import { SessionProvider } from '../../session'
-import { PasswordItemRecord, PasswordRecipient, PasswordsSetup } from './passwordsApi'
+import { PasswordItemRecord, PasswordItemVersion, PasswordRecipient, PasswordsSetup } from './passwordsApi'
 import { PasswordsPage } from './passwordsPage'
 import {
   makeSetUp,
@@ -122,6 +122,8 @@ type Server = {
   // fullUserIds are the people the server does not store a key for (too much
   // is already shared with them): it stores the others of a call.
   fullUserIds: string[]
+  // versions are the earlier versions the server keeps of each item, by item id.
+  versions: Record<string, PasswordItemVersion[]>
 }
 
 function serve(overrides: Partial<Server> = {}): Server {
@@ -135,6 +137,7 @@ function serve(overrides: Partial<Server> = {}): Server {
     isRekeyFailing: false,
     hasMoreWaiting: false,
     fullUserIds: [],
+    versions: {},
     ...overrides,
   }
   vi.mocked(graphql).mockImplementation(async (document, variables) => {
@@ -207,6 +210,30 @@ function serve(overrides: Partial<Server> = {}): Server {
       }
       server.records = [...server.records.filter((record) => record.id !== input.id), saved]
       return { SavePasswordItem: saved } as never
+    }
+    if (document.includes('ListPasswordItemVersions')) {
+      return { ListPasswordItemVersions: server.versions[asked.itemId] ?? [] } as never
+    }
+    if (document.includes('RestorePasswordItemVersion')) {
+      const existing = server.records.find((record) => record.id === asked.itemId)!
+      if (asked.baseRevision !== existing.revision) throw new APIError(STALE_MESSAGE)
+      const version = (server.versions[asked.itemId] ?? []).find((each) => each.versionId === asked.versionId)
+      if (!version) throw new APIError('not found')
+      // The restored fields and key are current; every key given out is dropped.
+      const restored: PasswordItemRecord = {
+        ...existing,
+        encryptedFields: version.encryptedFields,
+        itemKey: version.itemKey,
+        revision: existing.revision + 10,
+        needsNewKey: true,
+        isUsableByAgent: false,
+        shares: existing.shares.map((share) => ({
+          ...share,
+          recipients: share.recipients.map((recipient) => ({ ...recipient, hasKey: false })),
+        })),
+      }
+      server.records = server.records.map((record) => (record.id === restored.id ? restored : record))
+      return { RestorePasswordItemVersion: restored } as never
     }
     if (document.includes('DeletePasswordItem') || document.includes('RestorePasswordItem')) {
       const isDelete = document.includes('DeletePasswordItem')
@@ -4143,6 +4170,11 @@ it('leaves the people this device never sealed for to the person, who finishes t
   view.unmount()
   renderAt('/passwords?item=login-one')
   fireEvent.click(await screen.findByRole('button', { name: 'Finish sharing' }))
+  // Nothing is sealed until the person confirms, and the dialog says who gets it.
+  const confirmation = await screen.findByRole('alertdialog', { name: 'Finish sharing?' })
+  expect(within(confirmation).getByText('Give the key to Person B for 1 item.')).toBeTruthy()
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Give the keys' }))
   await waitFor(() => expect(calls('AddPasswordShareKeys')).toHaveLength(1))
   const keys = (calls('AddPasswordShareKeys')[0][1] as { keys: Record<string, string>[] }).keys
   expect(keys[0]).toMatchObject({
@@ -4207,6 +4239,7 @@ it('tells the owner who got an item through a circle when the server adds a memb
 
   renderAt('/passwords?item=login-one')
   fireEvent.click(await screen.findByRole('button', { name: 'Finish sharing' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Give the keys' }))
   expect(await screen.findByText('Person D got Example login through Fixture Family.')).toBeTruthy()
   expect(passwordsSession.getSnapshot().circleShareNotices).toHaveLength(1)
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
@@ -4526,6 +4559,10 @@ it('finishes the sharing of every waiting item with one tap, and says how many',
   expect(passwordsSession.getSnapshot().itemIdsToFinish.sort()).toEqual(['login-one', 'login-two'])
   renderAt('/passwords')
   fireEvent.click(await screen.findByRole('button', { name: 'Finish sharing 2 items' }))
+  const confirmation = await screen.findByRole('alertdialog', { name: 'Finish sharing?' })
+  expect(within(confirmation).getByText('Give 2 items a new key that only you hold.')).toBeTruthy()
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Give the keys' }))
   expect(await screen.findByText('Finished sharing 2 items.')).toBeTruthy()
   expect(calls('RekeyPasswordItem')).toHaveLength(2)
   expect(server.records.every((record) => !record.needsNewKey)).toBe(true)
@@ -4658,4 +4695,388 @@ it('calls a second record of the same version with another signature a replay', 
   server.records = [{ ...second, revision: 99 }]
   await passwordsSession.refresh()
   expect(passwordsSession.getSnapshot().items[0].accessProblem).toBe('replayed')
+})
+
+// --- round 11: an answer is about the item asked for, a first look at a marked item is
+// not remembered, finishing sharing is confirmed, earlier versions -------------------------
+
+const benKey = () => encodeBase64(personB.publicKey)
+const benShare = (hasKey: boolean) =>
+  sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: benKey(), hasKey }])
+
+function memoryOnDevice(itemId: string): DeviceMemory | undefined {
+  const raw = window.localStorage.getItem(MEMORY_NAME)
+  return raw === null ? undefined : JSON.parse(raw)[itemId]
+}
+
+function ownedLogin(
+  id: string,
+  name: string,
+  access: ItemAccess,
+  overrides: Partial<PasswordItemRecord> = {},
+): Promise<PasswordItemRecord> {
+  return recordFor(id, 'login', { ...emptyLoginFields(), name, password: `${name}-password`, access }, overrides)
+}
+
+function lastRekeyInput(): any {
+  const all = calls('RekeyPasswordItem')
+  return (all[all.length - 1][1] as { input: any }).input
+}
+
+// answerWithOtherItem makes the server do what was asked of it for one item and
+// then answer with the record of another item.
+function answerWithOtherItem(operation: string, askedItemId: string, otherRecord: () => PasswordItemRecord) {
+  const honest = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    const asked = (variables ?? {}) as Record<string, any>
+    const itemId = asked.id ?? asked.itemId ?? asked.input?.id ?? asked.input?.itemId
+    if (document.includes(`${operation}(`) && itemId === askedItemId) {
+      await honest(document, variables)
+      return { [operation]: otherRecord() } as never
+    }
+    return honest(document, variables)
+  })
+}
+
+// Y is shared with Person B and used by the agent. Z was too; the owner took
+// both off on another device, so this browser, which never saw Z, is shown the
+// old record, marked.
+async function twoItemsOneStale() {
+  knowKeyOnDevice('person-b', benKey())
+  const recordY = await ownedLogin('item-y', 'Item Y', accessOf([{ userId: 'person-b' }], true), {
+    isUsableByAgent: true,
+    shares: benShare(true),
+  })
+  const recordZ = await ownedLogin('item-z', 'Item Z', accessOf([{ userId: 'person-b' }], true), {
+    isUsableByAgent: true,
+    needsNewKey: true,
+    revision: 50,
+    shares: benShare(false),
+  })
+  const server = serve({ records: [recordY, recordZ], recipients: [personBRecipient(benKey(), true)] })
+  return { server, recordY, recordZ }
+}
+
+it('refuses a re-key of Y answered with the record of Z: nothing is remembered under Z and Z is not re-keyed', async () => {
+  const { server } = await twoItemsOneStale()
+  await openSession()
+  answerWithOtherItem('RekeyPasswordItem', 'item-y', () => server.records.find((record) => record.id === 'item-z')!)
+  await expect(passwordsSession.giveNewKey('item-y')).rejects.toMatchObject({ code: 'answeredAboutAnotherItem' })
+  expect(memoryOnDevice('item-z')?.sealedForUserIds ?? []).toEqual([])
+  expect(memoryOnDevice('item-z')?.hasMadeAgentCopy ?? false).toBe(false)
+  expect(memoryOnDevice('item-y')?.sealedForUserIds ?? []).toEqual([])
+  vi.mocked(graphql).mock.calls.length = 0
+  await passwordsSession.rekeyMarkedItems()
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toContain('item-z')
+})
+
+it('refuses a save of a new item answered with the record of Z: Z is not trusted for a re-key', async () => {
+  const { server } = await twoItemsOneStale()
+  await openSession()
+  const honest = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SavePasswordItem(') && (variables as any).input.id !== 'item-z') {
+      await honest(document, variables)
+      return { SavePasswordItem: server.records.find((record) => record.id === 'item-z') } as never
+    }
+    return honest(document, variables)
+  })
+  await expect(
+    passwordsSession.saveItem({ itemKind: 'login', fields: { ...emptyLoginFields(), name: 'Brand new' } }, null),
+  ).rejects.toMatchObject({ code: 'answeredAboutAnotherItem' })
+  vi.mocked(graphql).mock.calls.length = 0
+  await passwordsSession.rekeyMarkedItems()
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+})
+
+it('refuses a change of shares answered with the record of a private item: Z is not re-keyed for the agent', async () => {
+  const coraKey = encodeBase64(personC.publicKey)
+  knowKeyOnDevice('person-b', benKey())
+  knowKeyOnDevice('person-c', coraKey)
+  const both = sharedWith([
+    { userId: 'person-b', name: 'Person B', publicKey: benKey(), hasKey: true },
+    { userId: 'person-c', name: 'Person C', publicKey: coraKey, hasKey: true },
+  ])
+  const recordY = await ownedLogin(
+    'item-y',
+    'Item Y',
+    accessOf([{ userId: 'person-b' }, { userId: 'person-c' }], true),
+    {
+      isUsableByAgent: true,
+      shares: both,
+    },
+  )
+  const recordZ = await ownedLogin('item-z', 'Private item Z', accessOf([], false))
+  const server = serve({ records: [recordY, recordZ], recipients: [personBRecipient(benKey(), true)] })
+  await openSession()
+  answerWithOtherItem('SetPasswordItemShares', 'item-y', () => ({
+    ...server.records.find((record) => record.id === 'item-z')!,
+    isUsableByAgent: true,
+  }))
+  vi.mocked(graphql).mock.calls.length = 0
+  const target = {
+    grantee: { granteeUserId: 'person-b', granteeCircleId: null },
+    recipients: [personBRecipient(benKey(), true)],
+  }
+  await expect(
+    passwordsSession.shareItem(
+      passwordsSession.getSnapshot().items.find((item) => item.id === 'item-y')!,
+      [target],
+    ),
+  ).rejects.toMatchObject({ code: 'answeredAboutAnotherItem' })
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+  expect(memoryOnDevice('item-z')?.sealedForUserIds ?? []).toEqual([])
+})
+
+it('refuses the agent switch, a delete, a restore and a record save answered with another item', async () => {
+  const recordY = await ownedLogin('item-y', 'Item Y', accessOf([]))
+  const recordZ = await ownedLogin('item-z', 'Item Z', accessOf([]))
+  const deletedY = await ownedLogin('item-d', 'Item D', accessOf([]), { deletedAt: '2026-10-03T10:00:00Z' })
+  const server = serve({ records: [recordY, recordZ, deletedY] })
+  await openSession()
+  const other = () => ({
+    ...server.records.find((record) => record.id === 'item-z')!,
+    deletedAt: '2026-10-04T10:00:00Z',
+  })
+  const heldZ = passwordsSession.getSnapshot().items.find((item) => item.id === 'item-z')!
+
+  answerWithOtherItem('SetPasswordItemUsableByAgent', 'item-y', other)
+  await expect(
+    passwordsSession.setUsableByAgent(
+      passwordsSession.getSnapshot().items.find((item) => item.id === 'item-y')!,
+      true,
+    ),
+  ).rejects.toMatchObject({ code: 'answeredAboutAnotherItem' })
+  expect(memoryOnDevice('item-y')?.hasMadeAgentCopy ?? false).toBe(false)
+
+  answerWithOtherItem('DeletePasswordItem', 'item-y', other)
+  await expect(passwordsSession.deleteItem('item-y')).rejects.toMatchObject({ code: 'answeredAboutAnotherItem' })
+
+  answerWithOtherItem('RestorePasswordItem', 'item-d', other)
+  await expect(passwordsSession.restoreItem('item-d')).rejects.toMatchObject({ code: 'answeredAboutAnotherItem' })
+
+  // Z is still held as it was, not as the other answers said.
+  expect(passwordsSession.getSnapshot().items.find((item) => item.id === 'item-z')?.deletedAt).toBe(heldZ.deletedAt)
+})
+
+it('does not remember a record seen on a marked item, so a second unlock does not re-key it by itself', async () => {
+  knowKeyOnDevice('person-b', benKey())
+  const stale = await ownedLogin('item-z', 'Item Z', accessOf([{ userId: 'person-b' }], true), {
+    isUsableByAgent: true,
+    needsNewKey: true,
+    revision: 50,
+    shares: benShare(true),
+  })
+  serve({ records: [stale], recipients: [personBRecipient(benKey(), true)] })
+  await openSession()
+  expect(memoryOnDevice('item-z')).toBeUndefined()
+  await passwordsSession.rekeyMarkedItems()
+  passwordsSession.lock()
+  await openSession()
+  vi.mocked(graphql).mock.calls.length = 0
+  await passwordsSession.rekeyMarkedItems()
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toEqual(['item-z'])
+})
+
+it('does not remember a record seen on a deleted item, and remembers one on an item that is neither', async () => {
+  const deleted = await ownedLogin('item-d', 'Item D', accessOf([]), { deletedAt: '2026-10-03T10:00:00Z' })
+  const live = await ownedLogin('item-l', 'Item L', accessOf([]))
+  serve({ records: [deleted, live] })
+  await openSession()
+  expect(memoryOnDevice('item-d')).toBeUndefined()
+  expect(memoryOnDevice('item-l')?.highestRecordVersion).toBe(1)
+})
+
+it('remembers the record the person signs even when the answer is a marked item', async () => {
+  knowKeyOnDevice('person-b', benKey())
+  const record = await ownedLogin('item-y', 'Item Y', accessOf([{ userId: 'person-b' }]), {
+    shares: benShare(true),
+    needsNewKey: true,
+  })
+  serve({ records: [record], recipients: [personBRecipient(benKey(), true)] })
+  await openSession()
+  expect(memoryOnDevice('item-y')).toBeUndefined()
+  await passwordsSession.finishSharing('item-y')
+  expect(memoryOnDevice('item-y')?.highestRecordVersion).toBe(2)
+})
+
+it('plans finishing: who gets a key for how many items, and the agent', async () => {
+  knowKeyOnDevice('person-b', benKey())
+  const records: PasswordItemRecord[] = []
+  for (const id of ['item-1', 'item-2']) {
+    records.push(
+      await ownedLogin(id, `Name ${id}`, accessOf([{ userId: 'person-b' }], true), {
+        isUsableByAgent: true,
+        needsNewKey: true,
+        shares: benShare(false),
+      }),
+    )
+  }
+  records.push(await ownedLogin('item-3', 'Name item-3', accessOf([]), { needsNewKey: true }))
+  serve({ records, recipients: [personBRecipient(benKey(), false)] })
+  await openSession()
+  expect(passwordsSession.planFinishSharing(['item-1', 'item-2', 'item-3'])).toEqual({
+    itemCount: 3,
+    groups: [{ people: [{ name: 'Person B', isCircle: false, personCount: 1 }], itemCount: 2 }],
+    agentItemCount: 2,
+    onlyYouItemCount: 1,
+  })
+})
+
+it('asks before finishing sharing, says who gets the key, and seals nothing when cancelled', async () => {
+  knowKeyOnDevice('person-b', benKey())
+  const record = await ownedLogin('item-y', 'Item Y', accessOf([{ userId: 'person-b' }], true), {
+    isUsableByAgent: true,
+    needsNewKey: true,
+    shares: benShare(false),
+  })
+  serve({ records: [record], recipients: [personBRecipient(benKey(), false)] })
+  await openSession()
+  renderAt('/passwords?item=item-y')
+  fireEvent.click(await screen.findByRole('button', { name: 'Finish sharing' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Finish sharing?' })
+  expect(within(dialog).getByText('Give the key to Person B for 1 item.')).toBeTruthy()
+  expect(within(dialog).getByText('Give the agent a copy of the key for 1 item.')).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+})
+
+// An owned item with two earlier versions: an older one the person saved, with
+// Person B on its sharing record, and a newer one another program saved.
+async function itemWithVersions() {
+  knowKeyOnDevice('person-b', benKey())
+  const olderFields = await withSignedAccess(
+    fixture.accountKey,
+    'item-y',
+    'login',
+    { ...emptyLoginFields(), name: 'Item Y', userName: 'ada@example.test', password: 'older-password' } as never,
+    accessOf([{ userId: 'person-b' }]),
+    0,
+  )
+  const olderSealed = await sealPasswordItem(fixture.accountKey, 'item-y', 'login', olderFields as never, null)
+  const newerFields = await withSignedAccess(
+    fixture.accountKey,
+    'item-y',
+    'login',
+    { ...emptyLoginFields(), name: 'Item Y', userName: 'ada@example.test', password: 'newer-password' } as never,
+    accessOf([{ userId: 'person-b' }]),
+    0,
+  )
+  const newerSealed = await sealPasswordItem(fixture.accountKey, 'item-y', 'login', newerFields as never, null)
+  // The item now: record version 2, so the restored version 1 record is an old one.
+  const currentFields = await withSignedAccess(
+    fixture.accountKey,
+    'item-y',
+    'login',
+    { ...emptyLoginFields(), name: 'Item Y', userName: 'ada@example.test', password: 'current-password' } as never,
+    accessOf([]),
+    1,
+  )
+  const current = await recordFor('item-y', 'login', currentFields as never, { shares: benShare(true), revision: 30 })
+  const server = serve({
+    records: [current],
+    recipients: [personBRecipient(benKey(), false)],
+    versions: {
+      'item-y': [
+        {
+          versionId: 'version-older',
+          savedAt: '2026-09-01T10:00:00Z',
+          isSavedByPerson: true,
+          itemKind: 'login',
+          encryptedFields: olderSealed.encryptedFields,
+          itemKey: olderSealed.itemKey,
+        },
+        {
+          versionId: 'version-newer',
+          savedAt: '2026-09-20T10:00:00Z',
+          isSavedByPerson: false,
+          itemKind: 'login',
+          encryptedFields: newerSealed.encryptedFields,
+          itemKey: newerSealed.itemKey,
+        },
+      ],
+    },
+  })
+  return { server }
+}
+
+it('lists earlier versions with who saved them, opens one read-only, and restores it after a confirmation', async () => {
+  const { server } = await itemWithVersions()
+  await openSession()
+  renderAt('/passwords?item=item-y')
+  fireEvent.click(await screen.findByRole('button', { name: 'Show earlier versions' }))
+  const list = await screen.findByRole('alertdialog', { name: 'Earlier versions' })
+  // Newest first, with who saved it.
+  const rows = within(list).getAllByRole('button', { name: /: Open$/ })
+  expect(rows).toHaveLength(2)
+  expect(within(list).getByText('Saved by you')).toBeTruthy()
+  expect(within(list).getByText('Saved by another device or program')).toBeTruthy()
+  expect(rows[0].getAttribute('aria-label')).toContain(new Date('2026-09-20T10:00:00Z').toLocaleString('en'))
+
+  fireEvent.click(rows[1])
+  const version = await screen.findByRole('alertdialog', {
+    name: `Version from ${new Date('2026-09-01T10:00:00Z').toLocaleString('en')}`,
+  })
+  expect(within(version).getByText('This is how the item was then. Nothing here can be changed.')).toBeTruthy()
+  expect(within(version).getByText('ada@example.test')).toBeTruthy()
+  expect(calls('RestorePasswordItemVersion')).toHaveLength(0)
+
+  fireEvent.click(within(version).getByRole('button', { name: 'Restore this version' }))
+  const confirmation = await screen.findByRole('alertdialog', {
+    name: `Restore the version from ${new Date('2026-09-01T10:00:00Z').toLocaleString('en')}?`,
+  })
+  expect(calls('RestorePasswordItemVersion')).toHaveLength(0)
+  fireEvent.click(within(confirmation).getByRole('button', { name: 'Restore' }))
+
+  expect(await screen.findByText('The earlier version was restored.')).toBeTruthy()
+  const restoreCalls = calls('RestorePasswordItemVersion')
+  expect(restoreCalls).toHaveLength(1)
+  expect(restoreCalls[0][1]).toEqual({ itemId: 'item-y', versionId: 'version-older', baseRevision: 30 })
+  // The device re-keys at once as the person's action, for the people the restored record names.
+  expect(calls('RekeyPasswordItem')).toHaveLength(1)
+  const input = lastRekeyInput()
+  expect(input.shareKeys.map((key: any) => key.recipientUserId)).toEqual(['person-b'])
+  const written = await fieldsSentIn(input, 'item-y')
+  expect(written.password).toBe('older-password')
+  // The record is signed above the highest version this device saw (2), not the old one.
+  expect(written.access.recordVersion).toBe(3)
+  expect(server.records[0].needsNewKey).toBe(false)
+  expect(passwordsSession.getSnapshot().items[0].accessProblem).toBeNull()
+  expect(passwordsSession.getSnapshot().items[0].fields).toMatchObject({ password: 'older-password' })
+})
+
+it('keeps the restore when the new key fails, and says so', async () => {
+  const { server } = await itemWithVersions()
+  await openSession()
+  server.isRekeyFailing = true
+  const result = await passwordsSession.restoreItemVersion('item-y', 'version-older')
+  expect(result.hasRekeyFailed).toBe(true)
+  expect(result.item.fields).toMatchObject({ password: 'older-password' })
+  expect(passwordsSession.getSnapshot().items[0].needsNewKey).toBe(true)
+})
+
+it('refuses a restore answered with another item', async () => {
+  const { server } = await itemWithVersions()
+  server.records.push(await ownedLogin('item-z', 'Item Z', accessOf([])))
+  await openSession()
+  answerWithOtherItem('RestorePasswordItemVersion', 'item-y', () =>
+    server.records.find((record) => record.id === 'item-z')!,
+  )
+  vi.mocked(graphql).mock.calls.length = 0
+  await expect(passwordsSession.restoreItemVersion('item-y', 'version-older')).rejects.toMatchObject({
+    code: 'answeredAboutAnotherItem',
+  })
+  expect(calls('RekeyPasswordItem')).toHaveLength(0)
+})
+
+it('does not offer earlier versions on an item shared with the person', async () => {
+  serve({ records: [await sharedRecordFor('login-shared', { ...emptyLoginFields(), name: 'Shared login' })] })
+  await openSession()
+  renderAt('/passwords?item=login-shared')
+  expect(await screen.findByText('Shared login')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Show earlier versions' })).toBeNull()
 })

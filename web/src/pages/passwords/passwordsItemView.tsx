@@ -9,54 +9,22 @@ import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { Translation, useTranslation } from '../../i18n/i18n'
 import { useFailureToast } from './passwordsErrors'
-import { siteFromText } from './passwordsEditor'
-import { KIND_WORDS, siteHost } from './passwordsList'
-import { OneTimeCodeValue, PlainValue, SecretValue } from './passwordsParts'
+import { FinishSharingDialog } from './passwordsFinishSharing'
+import { PasswordsFieldList } from './passwordsFieldList'
+import { KIND_WORDS } from './passwordsList'
 import { PasswordShare } from './passwordsApi'
 import { isAgentAllowed, PasswordItem, splitSharesByRecord } from './passwordsProtocol'
 import { useRekeyFailedToast } from './passwordsRekey'
 import { passwordsSession, usePasswordsSession } from './passwordsSession'
 import { PasswordsShareDialog } from './passwordsShare'
+import { PasswordsVersionsDialog } from './passwordsVersions'
+
+export { sitesToShow } from './passwordsFieldList'
 
 // One item: its fields hidden until shown, a copy button on each, the
 // one-time code running, the passkeys and the sites. The owner can change it,
 // share it, delete it and let the agent use it; somebody it is shared with can
 // only read and copy.
-
-// isWebAddress says whether a site may be a link: only http and https, so a
-// saved "javascript:" address is shown as text and never run.
-function isWebAddress(site: string): boolean {
-  try {
-    const protocol = new URL(site).protocol
-    return protocol === 'https:' || protocol === 'http:'
-  } catch {
-    return false
-  }
-}
-
-// The most sites one login lists. A login can carry thousands, and a page of
-// them is no use to read; the rest are counted.
-const MOST_SITES_SHOWN = 50
-
-// sitesToShow are the sites as they are listed: a bare "example.com" becomes
-// an https address, as the editor keeps it, and a site written twice is shown
-// once, so each is a link and the list's keys are different. At most
-// MOST_SITES_SHOWN are returned, with how many more there are.
-export function sitesToShow(sites: string[]): { shown: string[]; hiddenCount: number } {
-  const seen = new Set<string>()
-  const shown: string[] = []
-  for (const site of sites) {
-    if (site.trim() === '') continue
-    // Text that does not make a web address even with https in front stays as
-    // it was saved.
-    const normalized = siteFromText(site)
-    const address = isWebAddress(normalized) ? normalized : site.trim()
-    if (seen.has(address)) continue
-    seen.add(address)
-    if (shown.length < MOST_SITES_SHOWN) shown.push(address)
-  }
-  return { shown, hiddenCount: seen.size - shown.length }
-}
 
 // whoItIsSharedWith says what each share of an item is: a person by name, with
 // "waiting" when they have not set up Passwords yet, or a circle by name with
@@ -84,15 +52,6 @@ function whoItIsSharedWith(shares: PasswordShare[], { t, plural }: Pick<Translat
   return t('passwords.sharedWith', { names: parts.join(' · ') })
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="passwords-field">
-      <dt className="muted">{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  )
-}
-
 export function PasswordsItemView({
   item,
   onBack,
@@ -103,21 +62,19 @@ export function PasswordsItemView({
   onEdit: () => void
 }) {
   const translation = useTranslation()
-  const { t, language } = translation
+  const { t } = translation
   const toast = useToast()
   const reportFailure = useFailureToast()
   const sayRekeyFailed = useRekeyFailedToast()
   const { itemIdsToFinish } = usePasswordsSession()
   const [isSharing, setIsSharing] = useState(false)
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
+  const [isConfirmingFinish, setIsConfirmingFinish] = useState(false)
+  const [isShowingVersions, setIsShowingVersions] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const name = item.fields.name || t('passwords.unreadableItem')
   const isDeleted = item.deletedAt !== null
   const { recorded: recordedShares, unrecorded: unrecordedShares } = useMemo(() => splitSharesByRecord(item), [item])
-  const sites = useMemo(
-    () => (item.itemKind === 'login' ? sitesToShow(item.fields.sites) : { shown: [], hiddenCount: 0 }),
-    [item],
-  )
 
   // An item the server marked as needing a new key (a removal could not give
   // it one) is given one when it is opened.
@@ -164,6 +121,7 @@ export function PasswordsItemView({
       reportFailure(failure, t('passwords.finishSharingFailed'))
     } finally {
       setIsBusy(false)
+      setIsConfirmingFinish(false)
     }
   }
 
@@ -274,7 +232,7 @@ export function PasswordsItemView({
           <div className="passwords-key-changed" role="status">
             <p>{t('passwords.finishSharingBody')}</p>
             <div className="page-actions">
-              <button type="button" disabled={isBusy} onClick={() => void finishSharing()}>
+              <button type="button" disabled={isBusy} onClick={() => setIsConfirmingFinish(true)}>
                 {t('passwords.finishSharing')}
               </button>
             </div>
@@ -298,108 +256,7 @@ export function PasswordsItemView({
         {item.isUnreadable ? (
           <SettingsEmpty>{t('passwords.unreadableBody')}</SettingsEmpty>
         ) : (
-          <dl className="passwords-fields">
-            {item.itemKind === 'login' && (
-              <>
-                {item.fields.userName && (
-                  <Row label={t('passwords.fieldUserName')}>
-                    <PlainValue label={t('passwords.fieldUserName')} value={item.fields.userName} />
-                  </Row>
-                )}
-                {item.fields.password && (
-                  <Row label={t('passwords.fieldPassword')}>
-                    <SecretValue label={t('passwords.fieldPassword')} value={item.fields.password} />
-                  </Row>
-                )}
-                {item.fields.oneTimeCodeUri && (
-                  <Row label={t('passwords.fieldOneTimeCode')}>
-                    <OneTimeCodeValue uri={item.fields.oneTimeCodeUri} />
-                  </Row>
-                )}
-                {sites.shown.length > 0 && (
-                  <Row label={t('passwords.fieldSites')}>
-                    <ul className="passwords-sites">
-                      {sites.shown.map((site) => (
-                        <li key={site}>
-                          {isWebAddress(site) ? (
-                            <a href={site} target="_blank" rel="noopener noreferrer">
-                              {siteHost(site)}
-                            </a>
-                          ) : (
-                            site
-                          )}
-                        </li>
-                      ))}
-                      {sites.hiddenCount > 0 && (
-                        <li className="muted">{t('passwords.sitesMore', { count: sites.hiddenCount })}</li>
-                      )}
-                    </ul>
-                  </Row>
-                )}
-                {item.fields.passkeys.length > 0 && (
-                  <Row label={t('passwords.fieldPasskeys')}>
-                    <ul className="passwords-passkeys">
-                      {item.fields.passkeys.map((passkey) => (
-                        <li key={passkey.credentialId}>
-                          <strong>{passkey.relyingPartyId}</strong>
-                          {passkey.userName && <span className="muted"> · {passkey.userName}</span>}
-                          <span className="muted">
-                            {' · '}
-                            {t('passwords.passkeyCreated', {
-                              date: new Date(passkey.createdAt).toLocaleDateString(language),
-                            })}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </Row>
-                )}
-              </>
-            )}
-            {item.itemKind === 'card' && (
-              <>
-                {item.fields.cardholderName && (
-                  <Row label={t('passwords.fieldCardholderName')}>
-                    <PlainValue label={t('passwords.fieldCardholderName')} value={item.fields.cardholderName} />
-                  </Row>
-                )}
-                {item.fields.number && (
-                  <Row label={t('passwords.fieldCardNumber')}>
-                    <SecretValue label={t('passwords.fieldCardNumber')} value={item.fields.number} />
-                  </Row>
-                )}
-                {(item.fields.expiryMonth || item.fields.expiryYear) && (
-                  <Row label={t('passwords.fieldExpiry')}>
-                    <PlainValue
-                      label={t('passwords.fieldExpiry')}
-                      value={[item.fields.expiryMonth, item.fields.expiryYear].filter(Boolean).join('/')}
-                    />
-                  </Row>
-                )}
-                {item.fields.securityCode && (
-                  <Row label={t('passwords.fieldSecurityCode')}>
-                    <SecretValue label={t('passwords.fieldSecurityCode')} value={item.fields.securityCode} />
-                  </Row>
-                )}
-                {item.fields.brand && (
-                  <Row label={t('passwords.fieldBrand')}>
-                    <PlainValue label={t('passwords.fieldBrand')} value={item.fields.brand} />
-                  </Row>
-                )}
-              </>
-            )}
-            {item.itemKind === 'note' && item.fields.text && (
-              <Row label={t('passwords.fieldNoteText')}>
-                <SecretValue label={t('passwords.fieldNoteText')} value={item.fields.text} isMultiline />
-              </Row>
-            )}
-            {item.itemKind !== 'note' && item.fields.notes && (
-              <Row label={t('passwords.fieldNotes')}>
-                <SecretValue label={t('passwords.fieldNotes')} value={item.fields.notes} isMultiline />
-              </Row>
-            )}
-            {item.fields.folder && <Row label={t('passwords.fieldFolder')}>{item.fields.folder}</Row>}
-          </dl>
+          <PasswordsFieldList view={item} />
         )}
       </SettingsSection>
 
@@ -427,6 +284,26 @@ export function PasswordsItemView({
         </SettingsSection>
       )}
 
+      {item.isOwnedByMe && !isDeleted && !item.isUnreadable && (
+        <SettingsSection card title={t('passwords.versionsTitle')}>
+          <p className="muted">{t('passwords.versionsBody')}</p>
+          <div className="page-actions">
+            <button type="button" onClick={() => setIsShowingVersions(true)}>
+              {t('passwords.versionsShow')}
+            </button>
+          </div>
+        </SettingsSection>
+      )}
+
+      {isShowingVersions && <PasswordsVersionsDialog item={item} onClose={() => setIsShowingVersions(false)} />}
+      {isConfirmingFinish && (
+        <FinishSharingDialog
+          itemIds={[item.id]}
+          busy={isBusy}
+          onClose={() => setIsConfirmingFinish(false)}
+          onConfirm={() => void finishSharing()}
+        />
+      )}
       {isSharing && <PasswordsShareDialog item={item} onClose={() => setIsSharing(false)} />}
       {isConfirmingDelete && (
         <ConfirmDialog

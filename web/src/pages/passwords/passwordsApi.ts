@@ -67,6 +67,21 @@ export type PasswordItemRecord = {
   shares: PasswordShare[]
 }
 
+// PasswordItemVersion is an earlier version of an owned item the server kept:
+// the fields and item key as they were sealed then, which only this person's
+// devices can open. isSavedByPerson is true for a version the person saved by
+// hand on the dashboard or the iPhone app, false for one saved by another
+// program or a token.
+export type PasswordItemVersion = {
+  versionId: string
+  savedAt: string
+  isSavedByPerson: boolean
+  encryptedFields: string
+  // The account-sealed item key of that version.
+  itemKey: string
+  itemKind: string
+}
+
 export type PasswordItemList = {
   items: PasswordItemRecord[]
   itemIds: string[]
@@ -229,6 +244,14 @@ export const DELETE_PASSWORD_ITEM = `mutation ($id: String!) {
 
 export const PURGE_PASSWORD_ITEM = `mutation ($id: String!) {
   PurgePasswordItem(id: $id)
+}`
+
+export const LIST_PASSWORD_ITEM_VERSIONS = `query ($itemId: String!) {
+  ListPasswordItemVersions(itemId: $itemId) { versionId savedAt isSavedByPerson encryptedFields itemKey itemKind }
+}`
+
+export const RESTORE_PASSWORD_ITEM_VERSION = `mutation ($itemId: String!, $versionId: String!, $baseRevision: Int64!) {
+  RestorePasswordItemVersion(itemId: $itemId, versionId: $versionId, baseRevision: $baseRevision) { ${ITEM_FIELDS} }
 }`
 
 export const RESTORE_PASSWORD_ITEM = `mutation ($id: String!) {

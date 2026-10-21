@@ -9,6 +9,7 @@ import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 import { ITEM_KINDS, ItemKind } from '../../passwords/fields'
 import { useFailureToast } from './passwordsErrors'
+import { FinishSharingDialog } from './passwordsFinishSharing'
 import { PasswordsEditor } from './passwordsEditor'
 import { PasswordsItemView } from './passwordsItemView'
 import {
@@ -56,6 +57,8 @@ export function PasswordsItems({
   // finishProgress is how many of the waiting items are done while the person's
   // one tap on Finish sharing is running, or null when it is not.
   const [finishProgress, setFinishProgress] = useState<{ doneCount: number; totalCount: number } | null>(null)
+  // The items the dialog asks the person to confirm finishing, until they do.
+  const [itemIdsToConfirm, setItemIdsToConfirm] = useState<string[] | null>(null)
 
   const filter: ItemFilter = {
     search,
@@ -121,14 +124,16 @@ export function PasswordsItems({
     }
   }
 
-  // finishAll finishes the sharing of every waiting item, with the person's
-  // one tap, and says how many it finished.
-  async function finishAll() {
+  // finishAll finishes the sharing of the items the person confirmed (the
+  // dialog lists who gets a key first), and says how many it finished.
+  async function finishAll(itemIds: string[]) {
     if (finishProgress !== null) return
-    setFinishProgress({ doneCount: 0, totalCount: snapshot.itemIdsToFinish.length })
+    setItemIdsToConfirm(null)
+    setFinishProgress({ doneCount: 0, totalCount: itemIds.length })
     try {
-      const { finishedCount, failedCount } = await passwordsSession.finishAllSharing((doneCount, totalCount) =>
-        setFinishProgress({ doneCount, totalCount }),
+      const { finishedCount, failedCount } = await passwordsSession.finishAllSharing(
+        (doneCount, totalCount) => setFinishProgress({ doneCount, totalCount }),
+        itemIds,
       )
       if (finishedCount > 0) {
         toast.done(plural(finishedCount, { one: 'passwords.finishAllDoneOne', other: 'passwords.finishAllDone' }))
@@ -170,7 +175,11 @@ export function PasswordsItems({
             <div className="passwords-finish-all">
               {snapshot.itemIdsToFinish.length > 0 && (
                 <div className="page-actions">
-                  <button type="button" disabled={finishProgress !== null} onClick={() => void finishAll()}>
+                  <button
+                    type="button"
+                    disabled={finishProgress !== null}
+                    onClick={() => setItemIdsToConfirm([...snapshot.itemIdsToFinish])}
+                  >
                     {finishProgress === null
                       ? plural(snapshot.itemIdsToFinish.length, {
                           one: 'passwords.finishAllOne',
@@ -247,6 +256,14 @@ export function PasswordsItems({
           item={item}
           onBack={() => changeParameters({ item: null, edit: null })}
           onEdit={() => changeParameters({ edit: '1' })}
+        />
+      )}
+
+      {itemIdsToConfirm !== null && (
+        <FinishSharingDialog
+          itemIds={itemIdsToConfirm}
+          onClose={() => setItemIdsToConfirm(null)}
+          onConfirm={() => void finishAll(itemIdsToConfirm)}
         />
       )}
 

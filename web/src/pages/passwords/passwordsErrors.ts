@@ -14,9 +14,12 @@ export type { PasswordsErrorCode } from '../../passwords/passwordsError'
 // a new key by itself: its sharing could not be checked (accessNotVerified), or
 // automatic new keys are used up for the moment (rekeyLimited), or the server
 // answered a change of sharing with a record older than the one just written
-// (sharingNotKept). The first needs the person to set sharing again, the second
-// a tap on Try again, the third another try.
-export type PasswordsAccessErrorCode = 'accessNotVerified' | 'rekeyLimited' | 'sharingNotKept'
+// (sharingNotKept), or the server answered about another item than the one
+// asked for (answeredAboutAnotherItem, and nothing more is done with that
+// answer). The first needs the person to set sharing again, the second a tap
+// on Try again, the third and fourth another try.
+export type PasswordsAccessErrorCode =
+  'accessNotVerified' | 'rekeyLimited' | 'sharingNotKept' | 'answeredAboutAnotherItem'
 
 export class PasswordsAccessError extends Error {
   readonly code: PasswordsAccessErrorCode
@@ -32,6 +35,7 @@ const ACCESS_ERROR_WORDS: Record<PasswordsAccessErrorCode, Key> = {
   accessNotVerified: 'passwords.errorAccessNotVerified',
   rekeyLimited: 'passwords.errorRekeyLimited',
   sharingNotKept: 'passwords.errorSharingNotKept',
+  answeredAboutAnotherItem: 'passwords.errorAnsweredAboutAnotherItem',
 }
 
 const ERROR_WORDS: Record<PasswordsErrorCode, Key> = {
