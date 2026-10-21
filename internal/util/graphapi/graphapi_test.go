@@ -141,6 +141,26 @@ func TestInt64ReadsALiteral(t *testing.T) {
 	}
 }
 
+// A variable arrives as a float64, and a fraction or a number past what a
+// float64 holds exactly must be refused rather than cut to some other
+// integer that then names a revision the caller never read.
+func TestInt64RefusesFractionsAndInexactNumbers(t *testing.T) {
+	t.Parallel()
+
+	schema := buildTestSchema(t)
+	for _, floor := range []interface{}{1.5, 1e30, -1e30, float64(1 << 60)} {
+		result := graphql.Do(graphql.Params{
+			Context:        context.Background(),
+			Schema:         schema,
+			RequestString:  `query ($floor: Int64!, $first: Int!) { Totals(floor: $floor, first: $first) { promptTokens } }`,
+			VariableValues: map[string]interface{}{"floor": floor, "first": 1},
+		})
+		if len(result.Errors) == 0 {
+			t.Errorf("floor %v was accepted: %#v", floor, result.Data)
+		}
+	}
+}
+
 // Limits and offsets stay Int. Every query the dashboard and the command
 // line already send declares its variables as Int, and a variable only
 // validates against the type the argument is declared with, so widening

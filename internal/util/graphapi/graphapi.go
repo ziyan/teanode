@@ -269,10 +269,21 @@ func asInt64(value interface{}) (int64, bool) {
 		}
 		return int64(unsigned), true
 	case reflect.Float32, reflect.Float64:
-		return int64(reflected.Float()), true
+		// A JSON number is a float64. Only a whole number that a float64
+		// holds exactly is read, so 1.5 or 1e30 is refused instead of being
+		// cut to some other integer.
+		float := reflected.Float()
+		if float != math.Trunc(float) || math.Abs(float) > maximumExactFloatInteger {
+			return 0, false
+		}
+		return int64(float), true
 	}
 	return 0, false
 }
+
+// maximumExactFloatInteger is the largest integer a float64 holds exactly,
+// 2^53 - 1; past it, neighboring integers read as the same number.
+const maximumExactFloatInteger = 1<<53 - 1
 
 type GraphAPI interface {
 	// Return the generated graphql schema
