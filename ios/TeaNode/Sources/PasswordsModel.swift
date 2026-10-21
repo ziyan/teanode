@@ -54,6 +54,10 @@ final class PasswordsModel {
     private(set) var hasFaceIDKey = false
     private(set) var lockAfterMinutes = PasswordsSession.defaultLockAfterMinutes
     private(set) var ownUserId: String?
+    /// Whether the screen is held covered after the app came back, until the
+    /// lock time has been checked, so no frame of items that should have locked
+    /// is shown (`sceneDidResignActive`, `sceneDidBecomeActive`).
+    private(set) var isHoldingCover = false
     var problemText: String?
     var doneText: String?
 
@@ -76,7 +80,7 @@ final class PasswordsModel {
             keyStore = PasswordsMemoryKeyStore()
             iterationCount = PasswordsCrypto.minimumPassphraseIterationCount
         } else {
-            keyStore = PasswordsKeychainKeyStore()
+            keyStore = PasswordsKeychainKeyStore.forThisBundle()
             iterationCount = PasswordsCrypto.passphraseIterationCount
         }
         isDemo = isDemoRequested
@@ -125,6 +129,9 @@ final class PasswordsModel {
             session = newSession
             lockAfterMinutes = setup.lockAfterMinutes
             hasFaceIDKey = UserDefaults.standard.bool(forKey: faceIDDefaultsKey)
+            // Without the choice on record, a key still in the keychain is a leftover of an earlier
+            // install (the keychain survives deleting the app, the choice does not): drop it.
+            if !hasFaceIDKey, !isDemo { try? await keyStore.delete(signInAccountKey: connection.accountKey) }
             phase = setup.isSetUp ? .locked : .notSetUp
         } catch {
             failedText = PasswordsWords.problemText(error, orSay: String(localized: "Check your connection and try again."))
@@ -238,6 +245,13 @@ final class PasswordsModel {
             // Passwords was set up again elsewhere: the kept key opens nothing.
             await forgetKeptKey()
             problemText = PasswordsWords.problemText(PasswordsError.needsPassphrase, orSay: "")
+        } catch let keyStoreError as PasswordsKeyStoreError {
+            // Anything but the person's own cancel (Face ID that did not recognize them, a key the
+            // system dropped because the faces or fingers changed): the key is no use. Forget it, so
+            // the screen asks for the passphrase, which can put it behind Face ID again.
+            await forgetKeptKey()
+            problemText = PasswordsWords.problemText(
+                keyStoreError, orSay: String(localized: "Face ID could not open Passwords. Type your passphrase instead."))
         } catch {
             problemText = PasswordsWords.problemText(error, orSay: String(localized: "Face ID could not open Passwords. Type your passphrase instead."))
         }
@@ -306,10 +320,21 @@ final class PasswordsModel {
         Task { await session.noteUse() }
     }
 
-    /// The app came to the front: lock if the time is up, else bring the items up to date.
-    func sceneDidBecomeActive() async {
-        guard phase == .unlocked else { return }
+    /// The app is leaving the front (the app switcher, another app, the lock
+    /// screen): keep the screen covered until it is back and the lock time has
+    /// been checked, and lock now if the time is already up.
+    func sceneDidResignActive() async {
+        guard phase == .unlocked || phase == .recoveryKey else { return }
+        isHoldingCover = true
         await lockIfAskRequired()
+    }
+
+    /// The app came to the front: lock if the time is up, and only then uncover
+    /// the screen, so that no frame of items that should have locked is shown;
+    /// then bring the items up to date.
+    func sceneDidBecomeActive() async {
+        await lockIfAskRequired()
+        isHoldingCover = false
         if phase == .unlocked { await sync() }
     }
 
@@ -475,19 +500,24 @@ final class PasswordsModel {
             try await session.confirmWaitingShare(waiting)
             waitingConfirmations.removeAll { $0 == waiting }
             doneText = String(localized: "\(waiting.recipient.name) can open the item now.")
+            // The key is known now, so this person's other waiting items complete without asking again.
+            await giveWaitingRecipientsTheirKeys()
         } catch {
             report(error, orSay: String(localized: "The key could not be given."))
         }
     }
 
     /// Accepts the new key of a person who shared items, after the person compared the codes with them.
+    /// Only the key whose code was shown is trusted: if the owner's key changed again meanwhile, nothing is
+    /// trusted and the screen shows the codes of the key it has now.
     func trustOwnerKey(of change: PasswordsOwnerKeyChange) async {
         guard let session else { return }
         do {
-            try await session.trustOwnerKey(userId: change.userId)
+            try await session.trustOwnerKey(userId: change.userId, expectedPublicKey: change.newPublicKey)
             await reload()
             doneText = String(localized: "You trust the new key of \(change.ownerName).")
         } catch {
+            await reload()
             report(error, orSay: String(localized: "The new key could not be trusted."))
         }
     }
@@ -504,6 +534,12 @@ final class PasswordsModel {
         try await session.changePassphrase(currentPassphrase: currentPassphrase, newPassphrase: newPassphrase, iterationCount: iterationCount)
     }
 
+    /// Changes the passphrase for a person who forgot the old one, proving it with the recovery key.
+    func changePassphrase(recoveryKey: String, newPassphrase: String) async throws {
+        let session = try requireSession()
+        try await session.changePassphrase(recoveryKey: recoveryKey, newPassphrase: newPassphrase, iterationCount: iterationCount)
+    }
+
     /// Makes a new recovery key (the old one stops working) and returns it as the person writes it down.
     func replaceRecoveryKey(passphrase: String) async throws -> String {
         let session = try requireSession()
@@ -513,6 +549,14 @@ final class PasswordsModel {
     func updateLockAfterMinutes(_ minutes: Int) async throws {
         let session = try requireSession()
         lockAfterMinutes = try await session.updateLockAfterMinutes(minutes)
+    }
+
+    /// Asks for Face ID (or the passcode) before something that must be the
+    /// person, when this iPhone can: true when they passed, or when it cannot ask
+    /// (no Face ID set up), in which case the confirmation dialog is the only check.
+    func confirmItIsThePerson(reason: String) async -> Bool {
+        guard canUseFaceID, !isDemo else { return true }
+        return await PasswordsKeychainKeyStore.confirmDeviceOwner(reason: reason)
     }
 
     /// Erases Passwords on the server and on this iPhone. Works while locked,
@@ -540,9 +584,32 @@ final class PasswordsModel {
                 try? await setUp(passphrase: PasswordsDemoStore.passphrase)
             case "passwords-setup", "passwords-intro":
                 break
+            case "passwords-share":
+                try? await unlock(passphrase: PasswordsDemoStore.passphrase, shouldRemember: false)
+                await makeDemoRecipientKeyChange()
             default:
                 try? await unlock(passphrase: PasswordsDemoStore.passphrase, shouldRemember: false)
             }
+        }
+
+        /// The share screen's shot shows a key that changed: the owner shared the item
+        /// with the circle and confirmed the safety code of Alex's key, and Alex has
+        /// since set Passwords up again, so the key is another one. Goes through the
+        /// real calls, so this iPhone really knows the old key and the server has the new.
+        private func makeDemoRecipientKeyChange() async {
+            let alexUserId = "alex"
+            guard let item = item(id: PasswordsDemoStore.sharedByMeItemId), let share = item.shares.first,
+                let granteeCircleId = share.granteeCircleId
+            else { return }
+            let grantees = item.shares.map {
+                PasswordShareGranteeInput(granteeUserId: $0.granteeUserId, granteeCircleId: $0.granteeCircleId)
+            }
+            PasswordsDemoStore.shared.changeKey(of: alexUserId)
+            guard let recipients = try? await recipients(for: .circle(granteeCircleId)),
+                (try? await setShares(of: item, grantees: grantees, recipients: recipients, confirmedUserIds: [alexUserId])) != nil
+            else { return }
+            PasswordsDemoStore.shared.changeKey(of: alexUserId)
+            await sync(isFull: true)
         }
     #endif
 }

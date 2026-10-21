@@ -77,11 +77,11 @@ struct PasswordsItemScreen: View {
     private func loginSections(_ login: PasswordsLoginFields) -> some View {
         Section {
             if !login.userName.isEmpty {
-                PasswordsFieldRow(model: model, title: String(localized: "User name"), value: login.userName)
+                PasswordsFieldRow(model: model, fieldTitle: String(localized: "User name"), fieldValue: login.userName)
             }
             if !login.password.isEmpty {
                 PasswordsFieldRow(
-                    model: model, title: String(localized: "Password"), value: login.password, isSecret: true,
+                    model: model, fieldTitle: String(localized: "Password"), fieldValue: login.password, isSecret: true,
                     isRevealed: isRevealed("password")
                 ) { toggleReveal("password") }
             }
@@ -108,7 +108,7 @@ struct PasswordsItemScreen: View {
         }
         if !login.notes.isEmpty {
             Section("Notes") {
-                PasswordsFieldRow(model: model, title: String(localized: "Notes"), value: login.notes, isProse: true)
+                PasswordsFieldRow(model: model, fieldTitle: String(localized: "Notes"), fieldValue: login.notes, isProse: true)
             }
         }
         folderSection(login.folder)
@@ -133,32 +133,32 @@ struct PasswordsItemScreen: View {
     private func cardSections(_ card: PasswordsCardFields) -> some View {
         Section {
             if !card.cardholderName.isEmpty {
-                PasswordsFieldRow(model: model, title: String(localized: "Name on card"), value: card.cardholderName, isProse: true)
+                PasswordsFieldRow(model: model, fieldTitle: String(localized: "Name on card"), fieldValue: card.cardholderName, isProse: true)
             }
             if !card.number.isEmpty {
                 PasswordsFieldRow(
-                    model: model, title: String(localized: "Card number"), value: PasswordsFormat.groupedCardNumber(card.number),
+                    model: model, fieldTitle: String(localized: "Card number"), fieldValue: PasswordsFormat.groupedCardNumber(card.number),
                     copiedValue: card.number.filter(\.isNumber), isSecret: true, isRevealed: isRevealed("number"),
                     maskedValue: PasswordsFormat.maskedCardNumber(card.number)
                 ) { toggleReveal("number") }
             }
             let expiryText = PasswordsFormat.expiryText(month: card.expiryMonth, year: card.expiryYear)
             if !expiryText.isEmpty {
-                PasswordsFieldRow(model: model, title: String(localized: "Expires"), value: expiryText)
+                PasswordsFieldRow(model: model, fieldTitle: String(localized: "Expires"), fieldValue: expiryText)
             }
             if !card.securityCode.isEmpty {
                 PasswordsFieldRow(
-                    model: model, title: String(localized: "Security code"), value: card.securityCode, isSecret: true,
+                    model: model, fieldTitle: String(localized: "Security code"), fieldValue: card.securityCode, isSecret: true,
                     isRevealed: isRevealed("securityCode")
                 ) { toggleReveal("securityCode") }
             }
             if !card.brand.isEmpty {
-                PasswordsFieldRow(model: model, title: String(localized: "Card brand"), value: card.brand)
+                PasswordsFieldRow(model: model, fieldTitle: String(localized: "Card brand"), fieldValue: card.brand)
             }
         }
         if !card.notes.isEmpty {
             Section("Notes") {
-                PasswordsFieldRow(model: model, title: String(localized: "Notes"), value: card.notes, isProse: true)
+                PasswordsFieldRow(model: model, fieldTitle: String(localized: "Notes"), fieldValue: card.notes, isProse: true)
             }
         }
         folderSection(card.folder)
@@ -167,7 +167,7 @@ struct PasswordsItemScreen: View {
     @ViewBuilder
     private func noteSections(_ note: PasswordsNoteFields) -> some View {
         Section {
-            PasswordsFieldRow(model: model, title: String(localized: "Note"), value: note.text, isProse: true)
+            PasswordsFieldRow(model: model, fieldTitle: String(localized: "Note"), fieldValue: note.text, isProse: true)
         }
         folderSection(note.folder)
     }
@@ -314,9 +314,9 @@ struct PasswordsItemScreen: View {
 /// copies the value; a secret shows as dots until the eye is pressed.
 struct PasswordsFieldRow: View {
     let model: PasswordsModel
-    let title: String
-    let value: String
-    /// What a tap copies, when it is not the value as shown (a card number without its spaces).
+    let fieldTitle: String
+    let fieldValue: String
+    /// What a tap copies, when it is not the field value as shown (a card number without its spaces).
     var copiedValue: String?
     /// Whether the value is sentences (a note) rather than a name, a number or a password.
     var isProse = false
@@ -329,10 +329,10 @@ struct PasswordsFieldRow: View {
     var body: some View {
         HStack {
             Button {
-                model.copy(copiedValue ?? value, fieldName: title)
+                model.copy(copiedValue ?? fieldValue, fieldName: fieldTitle)
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: title)
+                    Text(verbatim: fieldTitle)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     shownText
@@ -343,8 +343,8 @@ struct PasswordsFieldRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text(verbatim: title))
-            .accessibilityValue(Text(verbatim: isSecret && !isRevealed ? String(localized: "Hidden") : value))
+            .accessibilityLabel(Text(verbatim: fieldTitle))
+            .accessibilityValue(Text(verbatim: isSecret && !isRevealed ? String(localized: "Hidden") : fieldValue))
             .accessibilityHint(Text("Copies it"))
             if isSecret, let onToggleReveal {
                 Button(action: onToggleReveal) {
@@ -352,7 +352,7 @@ struct PasswordsFieldRow: View {
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel(isRevealed ? Text("Hide \(title)") : Text("Show \(title)"))
+                .accessibilityLabel(isRevealed ? Text("Hide \(fieldTitle)") : Text("Show \(fieldTitle)"))
             }
         }
     }
@@ -362,7 +362,7 @@ struct PasswordsFieldRow: View {
         if isSecret && !isRevealed {
             Text(verbatim: maskedValue)
         } else {
-            PasswordsValueText(value, isProse: isProse)
+            PasswordsValueText(fieldValue, isProse: isProse)
         }
     }
 }

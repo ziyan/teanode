@@ -47,7 +47,8 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         let assertion = AutoFillPasskeyAssertion(
             relyingPartyId: requestParameters.relyingPartyIdentifier, clientDataHash: requestParameters.clientDataHash,
             allowedCredentialIds: requestParameters.allowedCredentials)
-        let requestedSites = Self.requestedSites(serviceIdentifiers) + [requestParameters.relyingPartyIdentifier]
+        let requestedSites =
+            Self.requestedSites(serviceIdentifiers) + [AutoFillRequestedSite(address: requestParameters.relyingPartyIdentifier, isPageAddress: false)]
         model.start(.list(AutoFillListing(requestedSites: requestedSites, passkeyAssertion: assertion, isOneTimeCode: false)))
     }
 
@@ -72,7 +73,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         {
             model.start(
                 .providePassword(
-                    recordId: identity.recordIdentifier, userName: identity.user,
+                    itemId: identity.recordIdentifier, userName: identity.user,
                     requestedSites: Self.requestedSites([identity.serviceIdentifier])))
         } else if let passkeyRequest = credentialRequest as? ASPasskeyCredentialRequest,
             let identity = passkeyRequest.credentialIdentity as? ASPasskeyCredentialIdentity
@@ -80,7 +81,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
             let assertion = AutoFillPasskeyAssertion(
                 relyingPartyId: identity.relyingPartyIdentifier, clientDataHash: passkeyRequest.clientDataHash,
                 allowedCredentialIds: [identity.credentialID])
-            model.start(.providePasskey(assertion: assertion, recordId: identity.recordIdentifier, credentialId: identity.credentialID))
+            model.start(.providePasskey(assertion: assertion, itemId: identity.recordIdentifier, credentialId: identity.credentialID))
         } else {
             extensionContext.cancelRequest(withError: Self.error(.failed))
         }
@@ -117,7 +118,7 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
 
     private func makeModel() -> AutoFillModel {
         let model = AutoFillModel()
-        model.completion = AutoFillCompletion(
+        model.autoFillCompletion = AutoFillCompletion(
             fillPassword: { [weak self] userName, password in
                 self?.extensionContext.completeRequest(
                     withSelectedCredential: ASPasswordCredential(user: userName, password: password), completionHandler: nil)
@@ -159,9 +160,12 @@ final class CredentialProviderViewController: ASCredentialProviderViewController
         NSError(domain: ASExtensionErrorDomain, code: code.rawValue)
     }
 
-    /// The sites the system names for the page or app asking: a domain or an
-    /// address. An app is named by its bundle id, which matches no login.
-    private static func requestedSites(_ serviceIdentifiers: [ASCredentialServiceIdentifier]) -> [String] {
-        serviceIdentifiers.filter { $0.type == .domain || $0.type == .URL }.map(\.identifier)
+    /// The sites the system names for the page or app asking: a domain (a host
+    /// only) or an address (the page's full URL, whose port and scheme count). An
+    /// app is named by its bundle id, which matches no login.
+    private static func requestedSites(_ serviceIdentifiers: [ASCredentialServiceIdentifier]) -> [AutoFillRequestedSite] {
+        serviceIdentifiers.filter { $0.type == .domain || $0.type == .URL }.map {
+            AutoFillRequestedSite(address: $0.identifier, isPageAddress: $0.type == .URL)
+        }
     }
 }

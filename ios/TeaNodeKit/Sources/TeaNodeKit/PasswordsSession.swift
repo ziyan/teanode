@@ -36,6 +36,11 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
     /// An item's kind is fixed when it is made.
     case itemKindCannotChange
     case cardCannotBeUsedByAgent
+    /// A person's key changed between the moment the device read it and the
+    /// moment it sealed an item's key for it: read their key again.
+    case recipientKeyChangedSinceRead
+    /// The server counted too many tries (wrong passphrases) and asks for a wait.
+    case tooManyAttempts
     case unknownItemKind(String)
     /// The server sent a key or a value that is not the shape it should be.
     case invalidServerAnswer
@@ -60,6 +65,8 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
         case .onlyOwnerCanChangeItem: return "Only the person who owns an item can change it."
         case .itemKindCannotChange: return "An item cannot change from a login to a note or a card."
         case .cardCannotBeUsedByAgent: return "A card cannot be used by the agent."
+        case .recipientKeyChangedSinceRead: return "That person's key changed since it was read. Read their key again."
+        case .tooManyAttempts: return "Too many attempts. Wait a while and try again."
         case .unknownItemKind: return "This item is of a kind this version cannot open. Update the app."
         case .invalidServerAnswer: return "The server sent something this app cannot read."
         case .ownerKeyChanged: return "The owner of this item has a different key than before."
@@ -67,13 +74,25 @@ public enum PasswordsError: Error, Equatable, Sendable, LocalizedError {
         }
     }
 
+    /// The sentences the server refuses with, which have a case of their own.
+    /// The server sends no code beside its sentence, so a refusal is told by
+    /// the sentence (internal/api/v1api/apigraph/passwords.go and
+    /// internal/api/api.go), found anywhere in the reason.
+    private static let serverSentences: [(sentence: String, error: PasswordsError)] = [
+        ("That passphrase is not right.", .wrongPassphrase),
+        ("That recovery key is not right.", .wrongRecoveryKey),
+        ("This item changed on another device.", .itemChangedOnAnotherDevice),
+        ("That person's key changed since it was read.", .recipientKeyChangedSinceRead),
+        ("A card cannot be used by the agent.", .cardCannotBeUsedByAgent),
+        ("Passwords is already set up.", .alreadySetUp),
+        ("Passwords is not set up yet.", .notSetUp),
+        ("too many attempts, try again later", .tooManyAttempts),
+    ]
+
     /// The server's refusals that have a case of their own; any other error is returned as it is.
     static func mapped(_ error: Error) -> Error {
         guard let teaNodeError = error as? TeaNodeError, case .refused(let reason) = teaNodeError else { return error }
-        if reason.contains("That passphrase is not right.") { return PasswordsError.wrongPassphrase }
-        if reason.contains("That recovery key is not right.") { return PasswordsError.wrongRecoveryKey }
-        if reason.contains("This item changed on another device.") { return PasswordsError.itemChangedOnAnotherDevice }
-        if reason.contains("A card cannot be used by the agent.") { return PasswordsError.cardCannotBeUsedByAgent }
+        for known in serverSentences where reason.contains(known.sentence) { return known.error }
         return error
     }
 }
@@ -211,6 +230,9 @@ public struct PasswordsOwnerKeyChange: Identifiable, Hashable, Sendable {
     public let ownerName: String
     public let oldSafetyCode: String
     public let newSafetyCode: String
+    /// The key the owner has now, standard base64: what `trustOwnerKey` is given,
+    /// so it trusts the key whose code the person compared and no other.
+    public let newPublicKey: String
     /// How many of their shared items are held back.
     public let itemCount: Int
 
@@ -595,15 +617,29 @@ public actor PasswordsSession {
             try forgetEverything()
             throw PasswordsError.needsPassphrase
         }
-        let list = try await call { try await api.listPasswordItems(sinceRevision: isFull ? nil : before.revision) }
+        var list = try await call { try await api.listPasswordItems(sinceRevision: isFull ? nil : before.revision) }
         // The copy may have changed while the answer was on its way.
         guard var updated = loadedContents() else { throw PasswordsError.needsPassphrase }
+        // An incremental page carries only items newer than the copy's revision. If the
+        // server lists an item the copy does not hold and the page did not bring (the
+        // copy is ahead of it), the page is not enough: ask for everything, once.
+        if !isFull, Self.isMissingItem(listed: list.itemIds, in: updated, brought: list.items) {
+            list = try await call { try await api.listPasswordItems(sinceRevision: nil) }
+            guard let refreshed = loadedContents() else { throw PasswordsError.needsPassphrase }
+            updated = refreshed
+        }
         updated.lockAfterMinutes = setup.lockAfterMinutes
         let result = updated.merge(list)
         _ = Self.recordFirstSightOwnerKeys(in: &updated)
         try store(updated)
         for itemId in result.changedItemIds + result.removedItemIds { openedItems[itemId] = nil }
         return result
+    }
+
+    /// Whether the server lists an item (`listed`) that neither the copy holds nor the page brought.
+    private static func isMissingItem(listed itemIds: [String], in contents: PasswordsCacheContents, brought items: [PasswordItemView]) -> Bool {
+        let heldItemIds = Set(contents.items.map(\.id)).union(items.map(\.id))
+        return itemIds.contains { !heldItemIds.contains($0) }
     }
 
     private func forgetEverything() throws {
@@ -811,12 +847,13 @@ public actor PasswordsSession {
                 let earlier = changes[index]
                 changes[index] = PasswordsOwnerKeyChange(
                     userId: earlier.userId, ownerName: earlier.ownerName, oldSafetyCode: earlier.oldSafetyCode,
-                    newSafetyCode: earlier.newSafetyCode, itemCount: earlier.itemCount + 1)
+                    newSafetyCode: earlier.newSafetyCode, newPublicKey: earlier.newPublicKey, itemCount: earlier.itemCount + 1)
             } else {
                 changes.append(
                     PasswordsOwnerKeyChange(
                         userId: view.ownerUserId, ownerName: view.ownerName, oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: known),
-                        newSafetyCode: PasswordsOpener.safetyCodeText(publicKey: view.ownerPublicKey), itemCount: 1))
+                        newSafetyCode: PasswordsOpener.safetyCodeText(publicKey: view.ownerPublicKey), newPublicKey: view.ownerPublicKey,
+                        itemCount: 1))
             }
         }
         return changes
@@ -831,16 +868,25 @@ public actor PasswordsSession {
 
     /// Accepts the key a shared item's owner has now, after the person compared
     /// the old and new safety codes with the owner (`ownerKeyChanged`). Items of
-    /// that owner open with the new key from then on. `PasswordsError.itemNotFound`
-    /// when no shared item of that owner is in the phone's copy.
-    public func trustOwnerKey(userId ownerUserId: String) throws {
+    /// that owner open with the new key from then on. `expectedPublicKey` is the
+    /// key whose code the person was shown (`PasswordsOwnerKeyChange.newPublicKey`,
+    /// standard base64): if the owner's items carry another key by now, nothing is
+    /// trusted and `PasswordsError.ownerKeyChanged` is thrown with the code that
+    /// was shown and the code of the key now, for the screen to show again.
+    /// `PasswordsError.itemNotFound` when no shared item of that owner is in the
+    /// phone's copy.
+    public func trustOwnerKey(userId ownerUserId: String, expectedPublicKey: String) throws {
         _ = try requireOpener()
         guard var updated = loadedContents() else { throw PasswordsError.needsPassphrase }
+        let ownerViews = updated.items.filter { $0.isSharedWithMe && $0.ownerUserId == ownerUserId }
         guard
-            let view = updated.items.first(where: {
-                $0.isSharedWithMe && $0.ownerUserId == ownerUserId && Data(base64Encoded: $0.ownerPublicKey).map(PasswordsCrypto.isPublicKeyValid) == true
-            })
+            let view = ownerViews.first(where: { Data(base64Encoded: $0.ownerPublicKey).map(PasswordsCrypto.isPublicKeyValid) == true })
         else { throw PasswordsError.itemNotFound }
+        guard ownerViews.allSatisfy({ $0.ownerPublicKey == expectedPublicKey }) else {
+            throw PasswordsError.ownerKeyChanged(
+                userId: ownerUserId, oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: expectedPublicKey),
+                newSafetyCode: PasswordsOpener.safetyCodeText(publicKey: view.ownerPublicKey))
+        }
         updated.knownPublicKeys[ownerUserId] = view.ownerPublicKey
         try store(updated)
         openedItems = [:]
@@ -935,6 +981,8 @@ public actor PasswordsSession {
     public func setUsableByAgent(itemId: String, isUsable: Bool) async throws -> PasswordItem {
         let opener = try requireOpener()
         let view = try ownedView(itemId)
+        // The server keeps no key for the agent on a deleted item; do not ask it to.
+        guard view.deletedAt == nil else { throw PasswordsError.itemNotFound }
         var sealedItemKey: String?
         if isUsable {
             guard view.itemKind != PasswordsItemKind.card.rawValue else { throw PasswordsError.cardCannotBeUsedByAgent }

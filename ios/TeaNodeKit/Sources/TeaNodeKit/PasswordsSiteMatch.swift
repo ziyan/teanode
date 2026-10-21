@@ -7,7 +7,10 @@ import Foundation
 // is not, and neither is `example.com.evil.test`. A login for a parent domain
 // is offered below the exact ones (`.relatedHost`), never as a first choice, so
 // a page cannot be handed a password just by sitting under a domain the
-// person signed in to.
+// person signed in to. Where the page's full address is known (a URL, not a
+// bare domain), the port and the scheme count as well (`isOrigin`), so a
+// password saved for a secure site is never offered to its plain-text twin or
+// to another service on the same host.
 
 /// PasswordsSiteMatchLevel is how well a login's site fits the requested page.
 public enum PasswordsSiteMatchLevel: Int, Comparable, Sendable {
@@ -28,15 +31,23 @@ public enum PasswordsSiteMatch {
     /// The host of a site or a requested page, lower case, without a leading
     /// `www.`, a trailing dot, a port, a path or a user name. A site typed
     /// without a scheme (`example.com/sign-in`) is read as if it had one. Nil
-    /// when there is no host, or the scheme is not http or https.
+    /// when there is no host, the scheme is not http or https, or the address
+    /// holds a backslash or a control character (a browser reads those
+    /// differently from a person, so no host is trusted from them). It follows
+    /// `NormalizedHost` in internal/passwords/sitematch.go, and both pass the
+    /// cases in internal/passwords/testdata/sitematch.json.
     public static func normalizedHost(of site: String) -> String? {
         var text = site.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let schemeEnd = text.range(of: "://") {
-            let scheme = text[text.startIndex..<schemeEnd.lowerBound].lowercased()
+        if text.unicodeScalars.contains(where: isBackslashOrControl) { return nil }
+        if let split = splitScheme(text) {
+            let scheme = split.scheme.lowercased()
             guard scheme == "http" || scheme == "https" else { return nil }
-            text = String(text[schemeEnd.upperBound...])
+            text = split.rest
         } else if text.hasPrefix("//") {
             text = String(text.dropFirst(2))
+        } else if isSchemeWithoutSlashes(text) {
+            // "javascript:", "mailto:", "about:blank": not a host and a port.
+            return nil
         }
         if let authorityEnd = text.firstIndex(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
             text = String(text[text.startIndex..<authorityEnd])
@@ -52,14 +63,54 @@ public enum PasswordsSiteMatch {
         }
         if let colon = text.lastIndex(of: ":") {
             let port = text[text.index(after: colon)...]
-            guard port.allSatisfy(\.isNumber) else { return nil }
+            guard port.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
             text = String(text[text.startIndex..<colon])
         }
         var host = text.lowercased()
         while host.hasSuffix(".") { host.removeLast() }
         if host.hasPrefix("www."), host.dropFirst(4).contains(".") { host.removeFirst(4) }
-        guard !host.isEmpty, !host.contains(" ") else { return nil }
+        guard !host.isEmpty, !host.unicodeScalars.contains(where: { " \t\r\n".unicodeScalars.contains($0) }) else { return nil }
         return host
+    }
+
+    /// Splits `scheme://rest` when the text starts with a scheme followed by two
+    /// slashes. A `://` further on, in a path or a query, is not a scheme.
+    static func splitScheme(_ text: String) -> (scheme: String, rest: String)? {
+        guard let schemeEnd = text.range(of: "://"), schemeEnd.lowerBound > text.startIndex else { return nil }
+        let scheme = String(text[text.startIndex..<schemeEnd.lowerBound])
+        guard isSchemeToken(scheme) else { return nil }
+        return (scheme, String(text[schemeEnd.upperBound...]))
+    }
+
+    /// A letter followed by letters, digits, `+`, `-` and `.`.
+    private static func isSchemeToken(_ text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        for (index, byte) in text.utf8.enumerated() {
+            let isLetter = (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+            let isOther = (byte >= 48 && byte <= 57) || byte == 43 || byte == 45 || byte == 46
+            if !isLetter && (index == 0 || !isOther) { return false }
+        }
+        return true
+    }
+
+    /// A scheme and a colon that is not a host and a port: `mailto:ada@example.com` is,
+    /// `localhost:8080/sign-in` is not.
+    private static func isSchemeWithoutSlashes(_ text: String) -> Bool {
+        guard let colon = text.firstIndex(of: ":"), colon > text.startIndex, isSchemeToken(String(text[text.startIndex..<colon])) else {
+            return false
+        }
+        let rest = Array(text[text.index(after: colon)...].utf8)
+        var digitsEnd = 0
+        while digitsEnd < rest.count, rest[digitsEnd] >= 48, rest[digitsEnd] <= 57 { digitsEnd += 1 }
+        if digitsEnd > 0, digitsEnd == rest.count || [UInt8(ascii: "/"), UInt8(ascii: "?"), UInt8(ascii: "#")].contains(rest[digitsEnd]) {
+            return false
+        }
+        return true
+    }
+
+    /// A backslash or an ASCII control character, a delete included.
+    private static func isBackslashOrControl(_ scalar: Unicode.Scalar) -> Bool {
+        scalar == "\\" || scalar.value < 0x20 || scalar.value == 0x7f
     }
 
     /// How well one site fits the requested page.
@@ -80,6 +131,99 @@ public enum PasswordsSiteMatch {
         sites.map { level(site: $0, requested: requested) }.max() ?? .none
     }
 
+    /// How well one site fits a requested page. With `isPageAddress` (the
+    /// request is a full address, not a bare domain) the same host is an
+    /// `exactHost` only when the origin is the same too (`isOrigin`); the same
+    /// host on another port, or a secure site asked for by a plain-text page, is
+    /// `none`, so it is listed with the rest rather than suggested. A related
+    /// host is the same either way.
+    public static func level(site: String, requested: String, isPageAddress: Bool) -> PasswordsSiteMatchLevel {
+        let hostLevel = level(site: site, requested: requested)
+        guard isPageAddress, hostLevel == .exactHost else { return hostLevel }
+        return isOrigin(sites: [site], requested: requested) ? .exactHost : .none
+    }
+
+    /// The best level any of the sites reaches for a requested page; see `level(site:requested:isPageAddress:)`.
+    public static func level(sites: [String], requested: String, isPageAddress: Bool) -> PasswordsSiteMatchLevel {
+        sites.map { level(site: $0, requested: requested, isPageAddress: isPageAddress) }.max() ?? .none
+    }
+
+    // MARK: Origin
+
+    /// Whether the page is at the origin of one of the sites, which is stricter
+    /// than `isMatch` and is what a full address needs before a password is
+    /// offered for it: the host is the same, and so is the port. A site that
+    /// names a port (`example.com:8443`) matches only a page on that port; one
+    /// that names none matches only a page on the default port of the site's
+    /// scheme (443 for a site saved without a scheme or as https). A page on
+    /// http matches only a site saved as http. It follows `IsOriginOfSites` in
+    /// internal/passwords/sitematch.go, so the iPhone, the dashboard and the
+    /// agent agree.
+    public static func isOrigin(sites: [String], requested: String) -> Bool {
+        guard let requestedHost = normalizedHost(of: requested) else { return false }
+        let requestedScheme = scheme(of: requested)
+        let requestedPort = effectivePort(of: requested)
+        for site in sites {
+            guard normalizedHost(of: site) == requestedHost else { continue }
+            let siteScheme = scheme(of: site)
+            if requestedScheme == "http" && siteScheme != "http" { continue }
+            let sitePort = explicitPort(of: site) ?? defaultPort(ofScheme: siteScheme)
+            if sitePort == requestedPort { return true }
+        }
+        return false
+    }
+
+    /// The port a page is on: the one its address names, or the default of its
+    /// scheme. Zero when the address names a port that is not 1 to 65535.
+    static func effectivePort(of page: String) -> Int {
+        explicitPort(of: page) ?? defaultPort(ofScheme: scheme(of: page))
+    }
+
+    /// "http" when the address says so and "https" otherwise, which is what a
+    /// site typed without a scheme means.
+    static func scheme(of site: String) -> String {
+        if let split = splitScheme(site.trimmingCharacters(in: .whitespacesAndNewlines)), split.scheme.lowercased() == "http" {
+            return "http"
+        }
+        return "https"
+    }
+
+    static func defaultPort(ofScheme scheme: String) -> Int {
+        scheme == "http" ? 80 : 443
+    }
+
+    /// The port an address names; nil when it names none. A port that is not a
+    /// number from 1 to 65535 is named, and is zero, which matches no real port.
+    static func explicitPort(of site: String) -> Int? {
+        var text = site.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let split = splitScheme(text) {
+            text = split.rest
+        } else if text.hasPrefix("//") {
+            text = String(text.dropFirst(2))
+        }
+        if let authorityEnd = text.firstIndex(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
+            text = String(text[text.startIndex..<authorityEnd])
+        }
+        if let atSign = text.lastIndex(of: "@") {
+            text = String(text[text.index(after: atSign)...])
+        }
+        if text.hasPrefix("[") {
+            guard let closing = text.firstIndex(of: "]") else { return nil }
+            let afterBracket = text[text.index(after: closing)...]
+            guard afterBracket.hasPrefix(":") else { return nil }
+            text = String(afterBracket)
+        }
+        guard let colon = text.lastIndex(of: ":") else { return nil }
+        let digits = text[text.index(after: colon)...]
+        if digits.isEmpty { return nil }
+        var port = 0
+        for character in digits {
+            guard let digit = character.asciiValue, digit >= 48, digit <= 57, port <= 65535 else { return 0 }
+            port = port * 10 + Int(digit - 48)
+        }
+        return port >= 1 && port <= 65535 ? port : 0
+    }
+
     /// Whether a login is for the requested page: one of its sites has the same host.
     public static func isMatch(sites: [String], requested: String) -> Bool {
         level(sites: sites, requested: requested) == .exactHost
@@ -91,13 +235,16 @@ public enum PasswordsSiteMatch {
         level(sites: sites, requested: requested) >= .relatedHost
     }
 
-    /// Logins sorted for the requested page: the exact host first, then the
-    /// related hosts, then (when `isKeepingOthers`) the rest. Within a level
+    /// Logins sorted for the requested page: the exact host first (the exact
+    /// origin when `isPageAddress`), then the related hosts, then (when
+    /// `isKeepingOthers`) the rest. Within a level
     /// they keep the order they came in, so a caller sorts them by name first.
     public static func sorted<Login>(
-        _ logins: [Login], requested: String, isKeepingOthers: Bool = false, sites: (Login) -> [String]
+        _ logins: [Login], requested: String, isPageAddress: Bool = false, isKeepingOthers: Bool = false, sites: (Login) -> [String]
     ) -> [Login] {
-        let ranked = logins.enumerated().map { (index: $0.offset, login: $0.element, level: level(sites: sites($0.element), requested: requested)) }
+        let ranked = logins.enumerated().map {
+            (index: $0.offset, login: $0.element, level: level(sites: sites($0.element), requested: requested, isPageAddress: isPageAddress))
+        }
         return ranked.filter { isKeepingOthers || $0.level != .none }
             .sorted { first, second in
                 if first.level != second.level { return first.level > second.level }
@@ -115,7 +262,7 @@ public enum PasswordsSiteMatch {
 /// identifier, which Linux does not have.
 public struct PasswordsPasswordIdentity: Equatable, Hashable, Sendable {
     /// The item's id, handed back to the AutoFill extension when the person picks it.
-    public var recordId: String
+    public var itemId: String
     /// The site's host (a domain identifier).
     public var serviceDomain: String
     public var userName: String
@@ -124,7 +271,7 @@ public struct PasswordsPasswordIdentity: Equatable, Hashable, Sendable {
 /// PasswordsPasskeyIdentity is what the identity store keeps about one
 /// passkey, for `ASPasskeyCredentialIdentity`.
 public struct PasswordsPasskeyIdentity: Equatable, Hashable, Sendable {
-    public var recordId: String
+    public var itemId: String
     public var relyingPartyId: String
     public var userName: String
     public var credentialId: Data
@@ -150,7 +297,7 @@ public struct PasswordsIdentityRecords: Equatable, Sendable {
             var seenHosts = Set<String>()
             for site in login.sites {
                 guard let host = PasswordsSiteMatch.normalizedHost(of: site), seenHosts.insert(host).inserted else { continue }
-                passwordIdentities.append(PasswordsPasswordIdentity(recordId: itemId, serviceDomain: host, userName: login.userName))
+                passwordIdentities.append(PasswordsPasswordIdentity(itemId: itemId, serviceDomain: host, userName: login.userName))
             }
         }
         var passkeyIdentities: [PasswordsPasskeyIdentity] = []
@@ -160,7 +307,7 @@ public struct PasswordsIdentityRecords: Equatable, Sendable {
             else { continue }
             passkeyIdentities.append(
                 PasswordsPasskeyIdentity(
-                    recordId: itemId, relyingPartyId: passkey.relyingPartyId,
+                    itemId: itemId, relyingPartyId: passkey.relyingPartyId,
                     userName: passkey.userName.isEmpty ? login.userName : passkey.userName, credentialId: credentialId,
                     userHandle: userHandle))
         }

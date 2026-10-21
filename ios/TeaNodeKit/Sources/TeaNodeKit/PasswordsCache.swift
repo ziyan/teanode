@@ -90,8 +90,9 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
 
     /// Takes in a page of changes: the items it carries replace the copy's
     /// (or join it), and every item whose id the server no longer lists is
-    /// dropped. The revision becomes the page's, so an unshared item that
-    /// held the highest number does not keep the copy ahead of the server.
+    /// dropped. The revision never moves backwards: it becomes the page's only
+    /// when that is higher, so an answer that raced a change cannot make the next
+    /// read ask for revisions the copy already has.
     @discardableResult
     public mutating func merge(_ list: PasswordItemListView) -> PasswordsMergeResult {
         var changedItemIds: [String] = []
@@ -108,7 +109,7 @@ public struct PasswordsCacheContents: Codable, Equatable, Sendable {
         if !removedItemIds.isEmpty {
             items.removeAll { !reachableItemIds.contains($0.id) }
         }
-        revision = list.revision
+        revision = max(revision, list.revision)
         return PasswordsMergeResult(changedItemIds: changedItemIds, removedItemIds: removedItemIds)
     }
 
@@ -157,7 +158,8 @@ public struct PasswordsCache: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(contents)
-        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let directoryURL = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         #if os(iOS)
             try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         #else
@@ -169,6 +171,9 @@ public struct PasswordsCache: Sendable {
             values.isExcludedFromBackup = true
             var excludedURL = fileURL
             try excludedURL.setResourceValues(values)
+            // The folder too, so nothing else put there (a temporary file of an atomic write) is backed up.
+            var excludedDirectoryURL = directoryURL
+            try excludedDirectoryURL.setResourceValues(values)
         #endif
     }
 

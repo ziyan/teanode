@@ -54,6 +54,8 @@ targets:
           - $(TEANODE_BUNDLE_IDENTIFIER).health-history
         NSSupportsLiveActivities: true
         TeaNodeAppGroup: $(TEANODE_APP_GROUP)
+        # The keychain group the Passwords account key is kept in (PasswordsKeychainKeyStore).
+        TeaNodePasswordsKeychainGroup: $(AppIdentifierPrefix)$(TEANODE_PASSWORDS_KEYCHAIN_GROUP)
     entitlements:
       path: TeaNode/TeaNode.entitlements
       properties:
@@ -62,8 +64,11 @@ targets:
         com.apple.developer.associated-domains:
           - applinks:teanode.com
         aps-environment: development
+        # The shared group comes first, which is where an item goes when no group is named
+        # (the sign-in). The Passwords group is the app's and the AutoFill extension's alone.
         keychain-access-groups:
           - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+          - $(AppIdentifierPrefix)$(TEANODE_PASSWORDS_KEYCHAIN_GROUP)
         # TeaNode as a provider in Settings, General, AutoFill & Passwords
         # (the TeaNodeAutoFill extension): the app carries the capability too.
         com.apple.developer.authentication-services.autofill-credential-provider: true
@@ -226,9 +231,10 @@ targets:
   # TeaNode as an AutoFill provider: Safari, Chrome and other apps offer the
   # person's logins, passkeys and one-time codes from Passwords. It reads the
   # copy of Passwords the app keeps in the app group and the account key
-  # behind Face ID in the shared keychain group, and uses the network only to
-  # save a passkey it has just made. The sign-in comes from the same keychain
-  # group as the share extension's. The extension is killed at about 120 MB.
+  # behind Face ID in the keychain group of its own that only it and the app
+  # have, and uses the network only to save a passkey it has just made. The
+  # sign-in comes from the same keychain group as the share extension's. The
+  # extension is killed at about 120 MB.
   TeaNodeAutoFill:
     type: app-extension
     platform: iOS
@@ -248,10 +254,12 @@ targets:
           - $(TEANODE_APP_GROUP)
         keychain-access-groups:
           - $(AppIdentifierPrefix)$(TEANODE_KEYCHAIN_GROUP)
+          - $(AppIdentifierPrefix)$(TEANODE_PASSWORDS_KEYCHAIN_GROUP)
     info:
       path: TeaNodeAutoFill/Info.plist
       properties:
         TeaNodeAppGroup: $(TEANODE_APP_GROUP)
+        TeaNodePasswordsKeychainGroup: $(AppIdentifierPrefix)$(TEANODE_PASSWORDS_KEYCHAIN_GROUP)
         CFBundleDisplayName: TeaNode
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)

@@ -17,13 +17,13 @@ enum PasswordsIdentityStore {
         var identities: [any ASCredentialIdentity] = []
         for record in records.passwordIdentities {
             let service = ASCredentialServiceIdentifier(identifier: record.serviceDomain, type: .domain)
-            identities.append(ASPasswordCredentialIdentity(serviceIdentifier: service, user: record.userName, recordIdentifier: record.recordId))
+            identities.append(ASPasswordCredentialIdentity(serviceIdentifier: service, user: record.userName, recordIdentifier: record.itemId))
         }
         for record in records.passkeyIdentities {
             identities.append(
                 ASPasskeyCredentialIdentity(
                     relyingPartyIdentifier: record.relyingPartyId, userName: record.userName, credentialID: record.credentialId,
-                    userHandle: record.userHandle, recordIdentifier: record.recordId))
+                    userHandle: record.userHandle, recordIdentifier: record.itemId))
         }
         await replaceAll(identities, in: store)
     }
@@ -76,7 +76,7 @@ enum PasswordsAccountStorage {
             PasswordsLocation.removeCopy(groupContainer: support, signInAccountKey: signInAccountKey)
         }
         UserDefaults.standard.removeObject(forKey: "passwordsFaceID.\(signInAccountKey)")
-        try? await PasswordsKeychainKeyStore().delete(signInAccountKey: signInAccountKey)
+        try? await PasswordsKeychainKeyStore.forThisBundle().delete(signInAccountKey: signInAccountKey)
         if isInUse { await PasswordsIdentityStore.removeAll() }
     }
 }

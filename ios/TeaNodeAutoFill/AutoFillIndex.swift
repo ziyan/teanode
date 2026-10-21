@@ -100,13 +100,13 @@ enum AutoFillRowKind: Hashable {
 /// AutoFillRow is one line of the list.
 struct AutoFillRow: Identifiable, Hashable {
     let id: String
-    let loginId: String
-    let title: String
-    let subtitle: String
-    let kind: AutoFillRowKind
+    let itemId: String
+    let rowTitle: String
+    let rowSubtitle: String
+    let rowKind: AutoFillRowKind
 
     var isPasskey: Bool {
-        if case .passkey = kind { return true }
+        if case .passkey = rowKind { return true }
         return false
     }
 }
@@ -145,7 +145,10 @@ enum AutoFillIndex {
     // MARK: Sections
 
     /// The sections of the list: passkeys for the website that asked, the
-    /// logins for the requested site, then the rest. With words typed in the
+    /// logins for the requested site (the exact origin when the system gave a
+    /// full address, so the same host on another port or over plain http is not
+    /// among them), then the logins for a related site (a parent or a child
+    /// domain) under their own heading, then the rest. With words typed in the
     /// search field, the logins that contain them, across all sites.
     static func sections(logins: [AutoFillLoginSummary], listing: AutoFillListing, searchText: String) -> [AutoFillSection] {
         let words = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -160,12 +163,13 @@ enum AutoFillIndex {
 
         let fillable = candidates.filter { listing.isOneTimeCode ? $0.hasOneTimeCode : $0.hasPassword }
         var suggested: [AutoFillLoginSummary] = []
+        var related: [AutoFillLoginSummary] = []
         if !isSearching {
-            var seenIds = Set<String>()
-            for requested in listing.requestedSites where isUsable(site: requested) {
-                for login in PasswordsSiteMatch.sorted(fillable, requested: requested, sites: { $0.sites })
-                where seenIds.insert(login.id).inserted {
-                    suggested.append(login)
+            for login in fillable {
+                switch bestLevel(of: login, listing: listing) {
+                case .exactHost: suggested.append(login)
+                case .relatedHost: related.append(login)
+                case .none: break
                 }
             }
         }
@@ -173,21 +177,32 @@ enum AutoFillIndex {
             sections.append(
                 AutoFillSection(id: "suggested", title: String(localized: "Suggested"), rows: suggested.map { row(login: $0, listing: listing) }))
         }
-        let suggestedIds = Set(suggested.map(\.id))
-        let rest = fillable.filter { !suggestedIds.contains($0.id) }
+        if !related.isEmpty {
+            sections.append(
+                AutoFillSection(id: "related", title: String(localized: "Related sites"), rows: related.map { row(login: $0, listing: listing) }))
+        }
+        let shownIds = Set((suggested + related).map(\.id))
+        let rest = fillable.filter { !shownIds.contains($0.id) }
         if !rest.isEmpty {
             // A list with nothing above it needs no heading.
             var restTitle: String?
-            if !suggested.isEmpty || !passkeySectionRows.isEmpty { restTitle = String(localized: "All logins") }
+            if !shownIds.isEmpty || !passkeySectionRows.isEmpty { restTitle = String(localized: "All logins") }
             sections.append(AutoFillSection(id: "all", title: restTitle, rows: rest.map { row(login: $0, listing: listing) }))
         }
         return sections
     }
 
+    /// How well the login's sites fit the best of the sites the system named.
+    private static func bestLevel(of login: AutoFillLoginSummary, listing: AutoFillListing) -> PasswordsSiteMatchLevel {
+        listing.requestedSites.filter { isUsable(site: $0.address) }.map {
+            PasswordsSiteMatch.level(sites: login.sites, requested: $0.address, isPageAddress: $0.isPageAddress)
+        }.max() ?? .none
+    }
+
     private static func row(login: AutoFillLoginSummary, listing: AutoFillListing) -> AutoFillRow {
         AutoFillRow(
-            id: (listing.isOneTimeCode ? "code:" : "password:") + login.id, loginId: login.id, title: login.displayName,
-            subtitle: login.userName, kind: listing.isOneTimeCode ? .oneTimeCode : .password)
+            id: (listing.isOneTimeCode ? "code:" : "password:") + login.id, itemId: login.id, rowTitle: login.displayName,
+            rowSubtitle: login.userName, rowKind: listing.isOneTimeCode ? .oneTimeCode : .password)
     }
 
     /// The passkeys the website that asked can use: for its relying party, and
@@ -200,9 +215,9 @@ enum AutoFillIndex {
                 if !assertion.allowedCredentialIds.isEmpty && !assertion.allowedCredentialIds.contains(passkey.credentialId) { continue }
                 rows.append(
                     AutoFillRow(
-                        id: "passkey:" + login.id + ":" + passkey.credentialId.base64EncodedString(), loginId: login.id,
-                        title: login.displayName, subtitle: passkey.userName.isEmpty ? login.userName : passkey.userName,
-                        kind: .passkey(credentialId: passkey.credentialId)))
+                        id: "passkey:" + login.id + ":" + passkey.credentialId.base64EncodedString(), itemId: login.id,
+                        rowTitle: login.displayName, rowSubtitle: passkey.userName.isEmpty ? login.userName : passkey.userName,
+                        rowKind: .passkey(credentialId: passkey.credentialId)))
             }
         }
         return rows

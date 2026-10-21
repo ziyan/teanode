@@ -51,6 +51,21 @@ actor FakePasswordsServer {
         isOffline = offline
     }
 
+    /// When true, every unlock is refused the way the server refuses after too many wrong tries.
+    private var isRateLimited = false
+
+    func setRateLimited(_ limited: Bool) {
+        isRateLimited = limited
+    }
+
+    /// Gives an item another revision without touching anything else, as if it
+    /// had been changed (or shared with the person) earlier than the copies know of.
+    func setRevision(itemId: String, revision: Int64) {
+        guard var changed = items[itemId] else { return }
+        changed.revision = revision
+        items[itemId] = changed
+    }
+
     func item(_ itemId: String) -> StoredItem? { items[itemId] }
 
     /// A person's public key as standard base64; empty before they set up.
@@ -106,7 +121,7 @@ actor FakePasswordsServer {
     func setUp(userId: String, input: PasswordsSetUpInput) throws -> PasswordsSetupView {
         try requireOnline()
         var person = try person(userId)
-        guard person.setup == nil else { throw TeaNodeError.refused("Passwords is already set up.") }
+        guard person.setup == nil else { throw TeaNodeError.refused("api: already exists: Passwords is already set up.") }
         person.setup = input
         people[userId] = person
         return try readSetup(userId: userId)
@@ -119,7 +134,8 @@ actor FakePasswordsServer {
 
     func unlock(userId: String, proof: String, isRecoveryKey: Bool) throws -> PasswordsUnlockView {
         try requireOnline()
-        guard let setup = try person(userId).setup else { throw TeaNodeError.refused("Passwords is not set up.") }
+        if isRateLimited { throw TeaNodeError.refused("api: too many attempts, try again later") }
+        guard let setup = try person(userId).setup else { throw TeaNodeError.refused("Passwords is not set up yet.") }
         let hash = isRecoveryKey ? setup.recoveryKeyProofHash : setup.passphraseProofHash
         guard proofIsRight(proof, hash: hash) else {
             throw TeaNodeError.refused(isRecoveryKey ? "That recovery key is not right." : "That passphrase is not right.")
@@ -132,7 +148,7 @@ actor FakePasswordsServer {
     func changePassphrase(userId: String, input: PasswordsChangePassphraseInput) throws -> PasswordsSetupView {
         try requireOnline()
         var person = try person(userId)
-        guard var setup = person.setup else { throw TeaNodeError.refused("Passwords is not set up.") }
+        guard var setup = person.setup else { throw TeaNodeError.refused("Passwords is not set up yet.") }
         let hash = input.isRecoveryKey ? setup.recoveryKeyProofHash : setup.passphraseProofHash
         guard proofIsRight(input.proof, hash: hash) else {
             throw TeaNodeError.refused(input.isRecoveryKey ? "That recovery key is not right." : "That passphrase is not right.")
@@ -149,7 +165,7 @@ actor FakePasswordsServer {
     func replaceRecoveryKey(userId: String, input: PasswordsReplaceRecoveryKeyInput) throws -> PasswordsSetupView {
         try requireOnline()
         var person = try person(userId)
-        guard var setup = person.setup else { throw TeaNodeError.refused("Passwords is not set up.") }
+        guard var setup = person.setup else { throw TeaNodeError.refused("Passwords is not set up yet.") }
         guard proofIsRight(input.proof, hash: setup.passphraseProofHash) else { throw TeaNodeError.refused("That passphrase is not right.") }
         setup.accountKeyByRecoveryKey = input.accountKeyByRecoveryKey
         setup.recoveryKeyProofHash = input.recoveryKeyProofHash
@@ -316,7 +332,7 @@ actor FakePasswordsServer {
         for key in keys {
             guard reachedUserIds.contains(key.recipientUserId) else { throw TeaNodeError.refused("That person is not reached by this share.") }
             guard people[key.recipientUserId]?.setup?.publicKey == key.recipientPublicKey else {
-                throw TeaNodeError.refused("That person's key changed. Share again.")
+                throw TeaNodeError.refused("api: invalid arguments: That person's key changed since it was read. Read their key again and seal the item for it.")
             }
             item.keys[key.recipientUserId] = (key.itemKeyByRecipientKey, key.recipientPublicKey)
         }

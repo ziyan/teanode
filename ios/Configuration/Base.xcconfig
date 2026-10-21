@@ -12,6 +12,11 @@ TEANODE_BUNDLE_IDENTIFIER = com.teanode.app
 // sign-in and the key notifications are encrypted with.
 TEANODE_KEYCHAIN_GROUP = $(TEANODE_BUNDLE_IDENTIFIER).shared
 
+// The keychain group of the Passwords account key, which only the app and the
+// AutoFill extension are entitled to (the other extensions share the group
+// above, and must not be able to ask for the key that opens every password).
+TEANODE_PASSWORDS_KEYCHAIN_GROUP = $(TEANODE_BUNDLE_IDENTIFIER).passwords
+
 // Recording imports must outlive the share extension and reach the app upload queue.
 TEANODE_APP_GROUP = group.$(TEANODE_BUNDLE_IDENTIFIER)
 

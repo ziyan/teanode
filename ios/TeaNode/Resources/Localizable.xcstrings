@@ -80026,22 +80026,6 @@
         }
       }
     },
-    "The agent can use it": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントが使えます"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "助手可用"
-          }
-        }
-      }
-    },
     "The agent can use this item now.": {
       "localizations": {
         "ja": {
@@ -80374,22 +80358,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "要在 Safari 和其他 App 中填充登录信息、通行密钥和一次性验证码，请打开“设置”、“通用”、“自动填充与密码”，然后开启 TeaNode。"
-          }
-        }
-      }
-    },
-    "Too short.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "短すぎます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "太短了。"
           }
         }
       }
@@ -81326,6 +81294,182 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@，%lld 人等待中"
+          }
+        }
+      }
+    },
+    "Too short. Use at least %lld characters.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短すぎます。%lld文字以上にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "太短了。至少使用 %lld 个字符。"
+          }
+        }
+      }
+    },
+    "Face ID is not set up on this iPhone any more. Turn this off to go back to your passphrase.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone では Face ID が設定されていません。オフにすると、パスフレーズで開けるようになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台 iPhone 上已没有设置 Face ID。关闭此项即可改用口令。"
+          }
+        }
+      }
+    },
+    "Use the current passphrase": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のパスフレーズを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用当前口令"
+          }
+        }
+      }
+    },
+    "Use the recovery key instead": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代わりにリカバリーキーを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改用恢复密钥"
+          }
+        }
+      }
+    },
+    "Type the recovery key you saved when you set up Passwords. It stands in for the passphrase you forgot.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードを設定したときに保存したリカバリーキーを入力してください。忘れたパスフレーズの代わりになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入设置“密码”时保存的恢复密钥。它可以代替你忘记的口令。"
+          }
+        }
+      }
+    },
+    "Erase all of Passwords": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワードをすべて消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除全部密码"
+          }
+        }
+      }
+    },
+    "That person's key changed while you were sharing. Open the share again and compare the new safety code.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有している間に相手のキーが変わりました。共有をもう一度開いて、新しい安全コードを確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享期间对方的密钥变了。请重新打开共享，并核对新的安全码。"
+          }
+        }
+      }
+    },
+    "Too many attempts. Wait a while and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "試行回数が多すぎます。しばらく待ってからもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尝试次数过多。请稍等片刻再试。"
+          }
+        }
+      }
+    },
+    "This item changed on another device, but it could not be read again. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目は別のデバイスで変更されましたが、再読み込みできませんでした。接続を確認してもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目已在另一台设备上更改，但无法重新读取。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
+    "This item changed on another device. Your changes are kept. Check them, then save again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目は別のデバイスで変更されました。あなたの変更は残っています。確認してから、もう一度保存してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项目已在另一台设备上更改。你的修改仍然保留。请检查后再次保存。"
+          }
+        }
+      }
+    },
+    "Related sites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "関連するサイト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相关网站"
           }
         }
       }

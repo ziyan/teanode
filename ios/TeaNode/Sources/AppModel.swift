@@ -649,6 +649,10 @@ final class AppModel {
         agentName = ""
         phone = nil
         use(chosen)
+        // The suggestions above the keyboard were made from the account that was in use: they would
+        // offer its logins on the other account's screens. The other account's own are put back
+        // when its Passwords is opened.
+        await PasswordsIdentityStore.removeAll()
         await setUpNotifications()
     }
 

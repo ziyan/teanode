@@ -20,10 +20,19 @@ struct AutoFillPasskeyRegistration: Equatable {
     let clientDataHash: Data
 }
 
+/// AutoFillRequestedSite is a site the system names for the page or app asking.
+/// A service identifier of the URL kind carries the page's full address, so its
+/// port and scheme count in the match; one of the domain kind carries a host and
+/// nothing else, and so does a passkey's relying party id.
+struct AutoFillRequestedSite: Equatable {
+    let address: String
+    let isPageAddress: Bool
+}
+
 /// AutoFillListing is what a list of logins is for: the sites the page or app
 /// is on, a passkey sign-in if the website asked for one, or one-time codes.
 struct AutoFillListing: Equatable {
-    var requestedSites: [String]
+    var requestedSites: [AutoFillRequestedSite]
     var passkeyAssertion: AutoFillPasskeyAssertion?
     var isOneTimeCode: Bool
 }
@@ -33,9 +42,11 @@ enum AutoFillRequest {
     /// The person is choosing from a list: a password, a passkey or a one-time code.
     case list(AutoFillListing)
     /// The system picked a password from its suggestions; the extension only checks Face ID.
-    case providePassword(recordId: String?, userName: String, requestedSites: [String])
+    /// `itemId` is the item id the app gave the system when it made the suggestion
+    /// (the identity's record identifier); with it only that item is opened.
+    case providePassword(itemId: String?, userName: String, requestedSites: [AutoFillRequestedSite])
     /// The system picked a passkey from its suggestions.
-    case providePasskey(assertion: AutoFillPasskeyAssertion, recordId: String?, credentialId: Data)
+    case providePasskey(assertion: AutoFillPasskeyAssertion, itemId: String?, credentialId: Data)
     case registerPasskey(AutoFillPasskeyRegistration)
     /// The person turned TeaNode on in Settings.
     case configuration

@@ -73,16 +73,7 @@ struct PasswordsScreen: View {
             PasswordsEditorScreen(model: model, editing: shown)
         }
         // The picture iOS keeps of the app for the app switcher must not show passwords.
-        .overlay { appSwitcherCover }
-    }
-
-    @ViewBuilder
-    private var appSwitcherCover: some View {
-        if scenePhase != .active, model.phase == .unlocked || model.phase == .recoveryKey {
-            Color(.systemBackground)
-                .ignoresSafeArea()
-                .accessibilityHidden(true)
-        }
+        .passwordsAppSwitcherCover(model: model)
     }
 
     // MARK: Content
@@ -264,7 +255,7 @@ struct PasswordsListView: View {
 
     var body: some View {
         content
-            .navigationTitle(filter.title)
+            .navigationTitle(filter.filterTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarTitleMenu { titleMenu }
             .searchable(text: $searchText, prompt: Text("Search items"))
@@ -285,7 +276,7 @@ struct PasswordsListView: View {
             }
         } else if shownItems.isEmpty {
             if searchText.isEmpty {
-                ContentUnavailableView(filter.title, systemImage: "tray", description: Text("Nothing here."))
+                ContentUnavailableView(filter.filterTitle, systemImage: "tray", description: Text("Nothing here."))
             } else {
                 ContentUnavailableView.search(text: searchText)
             }
@@ -359,8 +350,9 @@ struct PasswordsListView: View {
     }
 }
 
-/// PasswordsItemRow is one item in the list: what it is, its name, and who it
-/// is for.
+/// PasswordsItemRow is one item in the list: what it is, its name, and whether
+/// it is shared. Whether the agent can use it is shown by the filter and on the
+/// item's own screen, not on every row.
 struct PasswordsItemRow: View {
     let item: PasswordItem
     @ScaledMetric private var iconWidth: CGFloat = 28
@@ -395,12 +387,6 @@ struct PasswordsItemRow: View {
                 .foregroundStyle(.secondary)
         } else if !item.shares.isEmpty {
             Label("Shared", systemImage: "person.2")
-                .labelStyle(.tag)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        if item.isUsableByAgent {
-            Label("The agent can use it", systemImage: "sparkles")
                 .labelStyle(.tag)
                 .font(.caption)
                 .foregroundStyle(.secondary)

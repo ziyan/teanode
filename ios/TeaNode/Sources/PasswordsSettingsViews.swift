@@ -99,10 +99,13 @@ struct PasswordsSettingsScreen: View {
                         }
                     })
             )
-            .disabled(!model.canUseFaceID)
+            // Turning it off is always possible while a key is kept, even when Face ID has gone from this iPhone.
+            .disabled(!model.canUseFaceID && !model.hasFaceIDKey)
         } footer: {
             if model.canUseFaceID {
                 Text("Face ID opens Passwords on this iPhone without the passphrase. Only this iPhone keeps the key, and it is removed if you change the faces or fingers Face ID knows.")
+            } else if model.hasFaceIDKey {
+                Text("Face ID is not set up on this iPhone any more. Turn this off to go back to your passphrase.")
             } else {
                 Text("Face ID is not set up on this iPhone.")
             }
@@ -111,7 +114,8 @@ struct PasswordsSettingsScreen: View {
 
     private var faceIDSheet: some View {
         PasswordsConfirmPassphraseSheet(
-            title: String(localized: "Open with Face ID"),
+            model: model,
+            sheetTitle: String(localized: "Open with Face ID"),
             explanation: String(localized: "Type your passphrase once so this iPhone can keep the key behind Face ID."),
             actionTitle: String(localized: "Turn on")
         ) { passphrase in
@@ -153,7 +157,7 @@ struct PasswordsSettingsScreen: View {
     private var eraseSection: some View {
         Section {
             Button(role: .destructive) {
-                isConfirmingErase = true
+                Task { await beginErase() }
             } label: {
                 Label("Erase Passwords", systemImage: "trash").foregroundStyle(.red)
             }
@@ -172,6 +176,13 @@ struct PasswordsSettingsScreen: View {
         }
     }
 
+    /// Asks for Face ID first when this iPhone has it (so a passer-by with the
+    /// unlocked phone cannot erase Passwords), then for the confirmation.
+    private func beginErase() async {
+        guard await model.confirmItIsThePerson(reason: String(localized: "Erase all of Passwords")) else { return }
+        isConfirmingErase = true
+    }
+
     private func erase() async {
         isErasing = true
         defer { isErasing = false }
@@ -188,7 +199,8 @@ struct PasswordsSettingsScreen: View {
 /// PasswordsConfirmPassphraseSheet asks for the passphrase once, to do one
 /// thing with it.
 struct PasswordsConfirmPassphraseSheet: View {
-    let title: String
+    let model: PasswordsModel
+    let sheetTitle: String
     let explanation: String
     let actionTitle: String
     let perform: (String) async throws -> Void
@@ -207,7 +219,7 @@ struct PasswordsConfirmPassphraseSheet: View {
                     Text(verbatim: explanation)
                 }
             }
-            .navigationTitle(title)
+            .navigationTitle(sheetTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -226,6 +238,7 @@ struct PasswordsConfirmPassphraseSheet: View {
         }
         .presentationDetents([.medium])
         .interactiveDismissDisabled(isWorking)
+        .passwordsAppSwitcherCover(model: model)
     }
 
     private func run() async {
@@ -245,6 +258,9 @@ struct PasswordsConfirmPassphraseSheet: View {
 struct PasswordsChangePassphraseSheet: View {
     let model: PasswordsModel
     @State private var currentPassphrase = ""
+    @State private var recoveryKeyText = ""
+    /// Whether the recovery key proves who is asking, for a person who forgot the passphrase.
+    @State private var isUsingRecoveryKey = false
     @State private var newPassphrase = ""
     @State private var repeated = ""
     @State private var isWorking = false
@@ -253,14 +269,13 @@ struct PasswordsChangePassphraseSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     private var isLongEnough: Bool { newPassphrase.count >= PasswordsPassphraseStrength.minimumLength }
-    private var canChange: Bool { !currentPassphrase.isEmpty && isLongEnough && newPassphrase == repeated }
+    private var hasProof: Bool { isUsingRecoveryKey ? !recoveryKeyText.isEmpty : !currentPassphrase.isEmpty }
+    private var canChange: Bool { hasProof && isLongEnough && newPassphrase == repeated }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    SecureField("Current passphrase", text: $currentPassphrase)
-                }
+                proofSection
                 Section {
                     SecureField("New passphrase", text: $newPassphrase)
                     SecureField("Type it again", text: $repeated)
@@ -270,7 +285,7 @@ struct PasswordsChangePassphraseSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 } footer: {
-                    Text("Use at least 8 characters. Longer is better.")
+                    Text("Use at least 12 characters. Longer is better.")
                 }
             }
             .navigationTitle("Change passphrase")
@@ -291,13 +306,44 @@ struct PasswordsChangePassphraseSheet: View {
             .toast(done: $doneText, problem: $problemText)
         }
         .interactiveDismissDisabled(isWorking)
+        .passwordsAppSwitcherCover(model: model)
+    }
+
+    /// The current passphrase, or the recovery key for a person who forgot it.
+    private var proofSection: some View {
+        Section {
+            if isUsingRecoveryKey {
+                TextField("Recovery key", text: $recoveryKeyText)
+                    .font(.body.monospaced())
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+            } else {
+                SecureField("Current passphrase", text: $currentPassphrase)
+            }
+            Button(
+                isUsingRecoveryKey ? String(localized: "Use the current passphrase") : String(localized: "Use the recovery key instead"),
+                systemImage: "key"
+            ) {
+                isUsingRecoveryKey.toggle()
+            }
+            .actionColor()
+            .disabled(isWorking)
+        } footer: {
+            if isUsingRecoveryKey {
+                Text("Type the recovery key you saved when you set up Passwords. It stands in for the passphrase you forgot.")
+            }
+        }
     }
 
     private func change() async {
         isWorking = true
         defer { isWorking = false }
         do {
-            try await model.changePassphrase(currentPassphrase: currentPassphrase, newPassphrase: newPassphrase)
+            if isUsingRecoveryKey {
+                try await model.changePassphrase(recoveryKey: recoveryKeyText, newPassphrase: newPassphrase)
+            } else {
+                try await model.changePassphrase(currentPassphrase: currentPassphrase, newPassphrase: newPassphrase)
+            }
             model.doneText = String(localized: "Your passphrase was changed.")
             dismiss()
         } catch {
@@ -358,6 +404,7 @@ struct PasswordsReplaceRecoveryKeySheet: View {
         }
         // The new key is shown once: it cannot be swiped away before it is kept.
         .interactiveDismissDisabled(isWorking || newRecoveryKeyText != nil)
+        .passwordsAppSwitcherCover(model: model)
     }
 
     private func makeKey() async {

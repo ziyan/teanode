@@ -8,6 +8,11 @@ import TeaNodeKit
 // person has just made: that needs the server, so the model opens a
 // PasswordsSession with the signed-in connection, saves the login, and only
 // then hands the passkey to the website.
+//
+// What Face ID opened is kept only for the request it was given for: the
+// account key, the opener and the summaries are dropped when the request
+// ends (completed, cancelled, or replaced by the next one), so a request
+// never runs on the Face ID of an earlier one.
 
 /// AutoFillUnlockOutcome is how an attempt to open Passwords ended.
 private enum AutoFillUnlockOutcome {
@@ -19,9 +24,9 @@ private enum AutoFillUnlockOutcome {
 
 @MainActor
 final class AutoFillModel: ObservableObject {
-    @Published private(set) var screen = AutoFillScreen.starting
+    @Published private(set) var autoFillScreen = AutoFillScreen.starting
     @Published var searchText = ""
-    @Published var problem: AutoFillProblem?
+    @Published var problemMessage: AutoFillProblem?
     /// Why Face ID did not open Passwords, shown on the locked screen; nil when the person cancelled it.
     @Published private(set) var lockedProblemText: String?
     @Published private(set) var isWorking = false
@@ -29,10 +34,10 @@ final class AutoFillModel: ObservableObject {
     @Published private(set) var hasSetUpPasswords = false
     @Published private(set) var logins: [AutoFillLoginSummary] = []
 
-    var completion = AutoFillCompletion.ignoring
+    var autoFillCompletion = AutoFillCompletion.ignoring
 
     private var request: AutoFillRequest?
-    private var listing = AutoFillListing(requestedSites: [], passkeyAssertion: nil, isOneTimeCode: false)
+    private var autoFillListing = AutoFillListing(requestedSites: [], passkeyAssertion: nil, isOneTimeCode: false)
     private var signedInAccount: Account?
     private var cacheFileURL: URL?
     private var cacheContents: PasswordsCacheContents?
@@ -42,19 +47,25 @@ final class AutoFillModel: ObservableObject {
     // MARK: Starting
 
     func start(_ newRequest: AutoFillRequest) {
+        // Nothing opened for an earlier request is used for this one: it asks for Face ID itself.
+        forgetOpenedPasswords()
+        searchText = ""
+        problemMessage = nil
+        lockedProblemText = nil
+        isWorking = false
         request = newRequest
         switch newRequest {
         case .configuration:
             hasSetUpPasswords = Self.hasCopyOfPasswords()
-            screen = .configuration
+            autoFillScreen = .configuration
         case .registerPasskey(let registration):
-            screen = .registration(registration)
+            autoFillScreen = .registration(registration)
         case .list(let newListing):
-            listing = newListing
-            screen = .starting
+            autoFillListing = newListing
+            autoFillScreen = .starting
             Task { await unlockAndContinue() }
         case .providePassword, .providePasskey:
-            screen = .starting
+            autoFillScreen = .starting
             Task { await unlockAndContinue() }
         }
     }
@@ -62,16 +73,34 @@ final class AutoFillModel: ObservableObject {
     /// The "Unlock with Face ID" button.
     func unlockTapped() {
         guard !isWorking else { return }
-        screen = .starting
+        autoFillScreen = .starting
         Task { await unlockAndContinue() }
     }
 
     func cancel() {
-        completion.cancel(.userCanceled)
+        complete { $0.cancel(.userCanceled) }
     }
 
     func finishConfiguration() {
-        completion.finishConfiguration()
+        complete { $0.finishConfiguration() }
+    }
+
+    /// Ends the request with one call on the completion, then forgets what was opened for it.
+    private func complete(_ ending: (AutoFillCompletion) -> Void) {
+        ending(autoFillCompletion)
+        forgetOpenedPasswords()
+        // The sheet is going away: not an empty list in its last moment.
+        autoFillScreen = .starting
+    }
+
+    /// Drops the account key, the opener, the copy of the items and the summaries.
+    private func forgetOpenedPasswords() {
+        opener = nil
+        accountKey = nil
+        cacheContents = nil
+        cacheFileURL = nil
+        signedInAccount = nil
+        logins = []
     }
 
     /// Whether the app has made a copy of Passwords for the signed-in account
@@ -90,9 +119,9 @@ final class AutoFillModel: ObservableObject {
             await continueRequest()
         case .notGiven(let problemText):
             lockedProblemText = problemText
-            screen = .locked
+            autoFillScreen = .locked
         case .needsApp:
-            screen = .needsApp
+            autoFillScreen = .needsApp
         }
     }
 
@@ -100,44 +129,75 @@ final class AutoFillModel: ObservableObject {
         guard let request else { return }
         switch request {
         case .list:
-            screen = .list
-        case .providePassword(let recordId, let userName, let requestedSites):
-            guard let login = loginToFill(recordId: recordId, userName: userName, requestedSites: requestedSites) else {
-                completion.cancel(.credentialIdentityNotFound)
+            await loadLoginSummaries()
+            autoFillScreen = .list
+        case .providePassword(let itemId, let userName, let requestedSites):
+            guard let login = await loginToFill(itemId: itemId, userName: userName, requestedSites: requestedSites) else {
+                complete { $0.cancel(.credentialIdentityNotFound) }
                 return
             }
-            await fill(loginId: login.id, kind: .password, isFromList: false)
-        case .providePasskey(let assertion, let recordId, let credentialId):
-            guard let login = loginWithPasskey(recordId: recordId, credentialId: credentialId) else {
-                completion.cancel(.credentialIdentityNotFound)
+            fill(login: login, rowKind: .password, isFromList: false)
+        case .providePasskey(let assertion, let itemId, let credentialId):
+            guard let login = await loginWithPasskey(itemId: itemId, credentialId: credentialId) else {
+                complete { $0.cancel(.credentialIdentityNotFound) }
                 return
             }
-            listing.passkeyAssertion = assertion
-            await fill(loginId: login.id, kind: .passkey(credentialId: credentialId), isFromList: false)
+            autoFillListing.passkeyAssertion = assertion
+            fill(login: login, rowKind: .passkey(credentialId: credentialId), isFromList: false)
         case .registerPasskey, .configuration:
             break
         }
     }
 
-    private func loginToFill(recordId: String?, userName: String, requestedSites: [String]) -> AutoFillLoginSummary? {
-        if let recordId, let byRecord = logins.first(where: { $0.id == recordId && $0.hasPassword }) { return byRecord }
-        return logins.first { login in
-            login.hasPassword && login.userName == userName
-                && requestedSites.contains { PasswordsSiteMatch.isRelatedOrBetter(sites: login.sites, requested: $0) }
+    /// The login the system picked, opened. With the item id the app gave the
+    /// system only that item is opened, and it must still be for the page
+    /// (the exact origin when the system named a full address, the host when it
+    /// named a domain): a suggestion made before the login's sites changed is
+    /// not filled into a site it is no longer for. Without an id, the logins
+    /// are searched by user name and site.
+    private func loginToFill(itemId: String?, userName: String, requestedSites: [AutoFillRequestedSite]) async -> PasswordsLoginFields? {
+        let login: PasswordsLoginFields?
+        if let itemId {
+            login = try? openLogin(id: itemId)
+        } else {
+            await loadLoginSummaries()
+            let found = logins.first { summary in
+                summary.hasPassword && summary.userName == userName && Self.isLogin(sites: summary.sites, for: requestedSites)
+            }
+            login = found.flatMap { try? openLogin(id: $0.id) }
         }
+        guard let login, !login.password.isEmpty, Self.isLogin(sites: login.sites, for: requestedSites) else { return nil }
+        return login
     }
 
-    private func loginWithPasskey(recordId: String?, credentialId: Data) -> AutoFillLoginSummary? {
-        if let recordId, let byRecord = logins.first(where: { $0.id == recordId && $0.passkeys.contains { $0.credentialId == credentialId } }) {
-            return byRecord
+    /// Whether a login's sites are for the sites the system named. Nothing named (an app) leaves the system's pick as it is.
+    private static func isLogin(sites: [String], for requestedSites: [AutoFillRequestedSite]) -> Bool {
+        requestedSites.isEmpty
+            || requestedSites.contains {
+                PasswordsSiteMatch.level(sites: sites, requested: $0.address, isPageAddress: $0.isPageAddress) == .exactHost
+            }
+    }
+
+    /// The login that holds the passkey the system picked: with the item id only that item is opened.
+    private func loginWithPasskey(itemId: String?, credentialId: Data) async -> PasswordsLoginFields? {
+        let login: PasswordsLoginFields?
+        if let itemId {
+            login = try? openLogin(id: itemId)
+        } else {
+            await loadLoginSummaries()
+            let found = logins.first { summary in summary.passkeys.contains { $0.credentialId == credentialId } }
+            login = found.flatMap { try? openLogin(id: $0.id) }
         }
-        return logins.first { login in login.passkeys.contains { $0.credentialId == credentialId } }
+        guard let login, login.passkeys.contains(where: { AutoFillBase64URL.decode($0.credentialId) == credentialId }) else { return nil }
+        return login
     }
 
     // MARK: Opening Passwords
 
-    /// Reads the phone's copy and the account key (Face ID), and works out
-    /// the summaries. Does nothing when it has been done.
+    /// Reads the phone's copy and the account key (Face ID). Does nothing when
+    /// it has been done for this request. It opens no item: the summaries of
+    /// the list (`loadLoginSummaries`) and the one login a request picks are
+    /// opened when they are needed.
     private func unlock() async -> AutoFillUnlockOutcome {
         if opener != nil { return .unlocked }
         guard let account = try? KeychainAccountStore().load(),
@@ -150,7 +210,7 @@ final class AutoFillModel: ObservableObject {
         let promptReason = String(localized: "Fill your logins from TeaNode Passwords.")
         let keptKey: Data?
         do {
-            keptKey = try await PasswordsKeychainKeyStore().load(signInAccountKey: account.accountKey, promptReason: promptReason)
+            keptKey = try await PasswordsKeychainKeyStore.forThisBundle().load(signInAccountKey: account.accountKey, promptReason: promptReason)
         } catch {
             if let keyStoreError = error as? PasswordsKeyStoreError, keyStoreError == .canceled { return .notGiven(problemText: nil) }
             return .notGiven(problemText: String(localized: "Face ID did not unlock Passwords. Try again."))
@@ -162,31 +222,35 @@ final class AutoFillModel: ObservableObject {
         } catch {
             return .needsApp
         }
-        let views = contents.items
-        let summaries = await Task.detached(priority: .userInitiated) {
-            AutoFillIndex.loginSummaries(views: views, opener: newOpener)
-        }.value
         signedInAccount = account
         cacheFileURL = fileURL
         cacheContents = contents
         opener = newOpener
         accountKey = keptKey
-        logins = summaries
         return .unlocked
+    }
+
+    /// Opens every login once and keeps its summary, for the list and for a
+    /// search by user name. Does nothing when it has been done.
+    private func loadLoginSummaries() async {
+        guard logins.isEmpty, let opener, let views = cacheContents?.items else { return }
+        logins = await Task.detached(priority: .userInitiated) {
+            AutoFillIndex.loginSummaries(views: views, opener: opener)
+        }.value
     }
 
     // MARK: The list
 
     var sections: [AutoFillSection] {
-        AutoFillIndex.sections(logins: logins, listing: listing, searchText: searchText)
+        AutoFillIndex.sections(logins: logins, listing: autoFillListing, searchText: searchText)
     }
 
     var emptyListTitle: String {
-        listing.isOneTimeCode ? String(localized: "No one-time codes yet") : String(localized: "No logins yet")
+        autoFillListing.isOneTimeCode ? String(localized: "No one-time codes yet") : String(localized: "No logins yet")
     }
 
     var emptyListDescription: String {
-        listing.isOneTimeCode
+        autoFillListing.isOneTimeCode
             ? String(localized: "Add a one-time code to a login in TeaNode Passwords and it shows up here.")
             : String(localized: "Logins you save in TeaNode Passwords show up here.")
     }
@@ -196,43 +260,53 @@ final class AutoFillModel: ObservableObject {
         guard !isWorking else { return }
         isWorking = true
         Task {
-            await fill(loginId: row.loginId, kind: row.kind, isFromList: true)
+            do {
+                fill(login: try openLogin(id: row.itemId), rowKind: row.rowKind, isFromList: true)
+            } catch {
+                tellFillFailed()
+            }
             isWorking = false
         }
     }
 
     // MARK: Filling
 
-    /// Opens the one login and hands what the request wants to the system.
-    /// From the list a failure is told to the person; when the system picked
-    /// the login there is no list to go back to, so the request ends.
-    private func fill(loginId: String, kind: AutoFillRowKind, isFromList: Bool) async {
+    /// Hands what the request wants from the one login to the system. From the
+    /// list a failure is told to the person; when the system picked the login
+    /// there is no list to go back to, so the request ends.
+    private func fill(login: PasswordsLoginFields, rowKind: AutoFillRowKind, isFromList: Bool) {
         do {
-            let login = try openLogin(id: loginId)
-            switch kind {
+            switch rowKind {
             case .password:
                 guard !login.password.isEmpty else { throw AutoFillError.nothingToFill }
-                completion.fillPassword(login.userName, login.password)
+                complete { $0.fillPassword(login.userName, login.password) }
             case .oneTimeCode:
                 let settings = try PasswordsOneTimeCode.parse(uri: login.oneTimeCodeUri)
-                completion.fillOneTimeCode(PasswordsOneTimeCode.code(settings: settings, date: Date()))
+                let code = PasswordsOneTimeCode.code(settings: settings, date: Date())
+                complete { $0.fillOneTimeCode(code) }
             case .passkey(let credentialId):
-                guard let assertion = listing.passkeyAssertion else { throw AutoFillError.nothingToFill }
-                completion.fillPasskeyAssertion(try sign(login: login, assertion: assertion, credentialId: credentialId))
+                guard let assertion = autoFillListing.passkeyAssertion else { throw AutoFillError.nothingToFill }
+                let signed = try sign(login: login, assertion: assertion, credentialId: credentialId)
+                complete { $0.fillPasskeyAssertion(signed) }
             }
         } catch {
             if isFromList {
-                problem = AutoFillProblem(
-                    title: String(localized: "Could not fill this login"),
-                    message: String(localized: "TeaNode could not read this item. Open TeaNode, unlock Passwords, and try again."))
+                tellFillFailed()
             } else {
-                completion.cancel(.failed)
+                complete { $0.cancel(.failed) }
             }
         }
     }
 
+    private func tellFillFailed() {
+        problemMessage = AutoFillProblem(
+            title: String(localized: "Could not fill this login"),
+            message: String(localized: "TeaNode could not read this item. Open TeaNode, unlock Passwords, and try again."))
+    }
+
+    /// Opens one login of the copy. A deleted item, a note or a card is not one.
     private func openLogin(id: String) throws -> PasswordsLoginFields {
-        guard let opener, let view = cacheContents?.item(id: id) else { throw AutoFillError.itemNotFound }
+        guard let opener, let view = cacheContents?.item(id: id), view.deletedAt == nil else { throw AutoFillError.itemNotFound }
         guard case .login(let login) = try opener.open(view).fields else { throw AutoFillError.itemNotFound }
         return login
     }
@@ -262,7 +336,7 @@ final class AutoFillModel: ObservableObject {
 
     /// The "Save passkey" button.
     func savePasskey() {
-        guard case .registration(let registration) = screen, !isWorking else { return }
+        guard case .registration(let registration) = autoFillScreen, !isWorking else { return }
         isWorking = true
         Task {
             await saveNewPasskey(registration)
@@ -276,15 +350,16 @@ final class AutoFillModel: ObservableObject {
             break
         case .notGiven(let problemText):
             if let problemText {
-                problem = AutoFillProblem(title: String(localized: "Could not save the passkey"), message: problemText)
+                problemMessage = AutoFillProblem(title: String(localized: "Could not save the passkey"), message: problemText)
             }
             return
         case .needsApp:
-            screen = .needsApp
+            autoFillScreen = .needsApp
             return
         }
+        await loadLoginSummaries()
         guard let signedInAccount, let cacheFileURL, let accountKey, let userId = cacheContents?.userId else {
-            screen = .needsApp
+            autoFillScreen = .needsApp
             return
         }
         do {
@@ -299,12 +374,12 @@ final class AutoFillModel: ObservableObject {
             try await session.open(accountKey: accountKey)
             try await keep(passkey, for: registration, in: session)
             // Only now, with the passkey on the server, does the website get it.
-            completion.fillPasskeyRegistration(
-                AutoFillCreatedPasskey(
-                    relyingPartyId: registration.relyingPartyId, clientDataHash: registration.clientDataHash,
-                    credentialId: created.credentialId, attestationObject: created.attestationObject))
+            let createdPasskey = AutoFillCreatedPasskey(
+                relyingPartyId: registration.relyingPartyId, clientDataHash: registration.clientDataHash,
+                credentialId: created.credentialId, attestationObject: created.attestationObject)
+            complete { $0.fillPasskeyRegistration(createdPasskey) }
         } catch {
-            problem = AutoFillProblem(title: String(localized: "Could not save the passkey"), message: Self.savingProblemText(for: error))
+            problemMessage = AutoFillProblem(title: String(localized: "Could not save the passkey"), message: Self.savingProblemText(for: error))
         }
     }
 

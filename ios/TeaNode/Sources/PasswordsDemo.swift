@@ -13,6 +13,18 @@
         let reason: String
     }
 
+    // The sentences the real server refuses with (internal/api/v1api/apigraph/passwords.go),
+    // so the screens meet the same words in a demo.
+    private enum PasswordsDemoSentence {
+        static let notFound = "api: not found"
+        static let itemChanged = "api: conflict: This item changed on another device. Open it again."
+        static let keyChanged =
+            "api: invalid arguments: That person's key changed since it was read. Read their key again and seal the item for it."
+        static let kindCannotChange = "api: invalid arguments: the kind of an item cannot change"
+        static let onATap =
+            "api: permission denied: a person's own tap is needed: setting up, erasing and changing the secrets of Passwords, sharing an item with someone new, and letting the agent use an item are done on the Passwords page of the dashboard or in the iPhone app, not from a command line or an API token"
+    }
+
     final class PasswordsDemoStore: @unchecked Sendable {
         static let shared = PasswordsDemoStore()
 
@@ -73,6 +85,10 @@
         }
 
         private let storeLock = NSLock()
+        /// Whether the calls are a person's own tap. The app's are, always; the real server
+        /// refuses setting up, erasing, changing the secrets, sharing with someone new and
+        /// letting the agent use an item to anything else.
+        private let isPersonsTap = true
         private var people: [String: Person] = [:]
         private let circles: [String: (name: String, memberUserIds: [String])] = [
             "circle-home": ("Home", ["robin", "sam", "alex", "jordan"]),
@@ -95,6 +111,15 @@
         }
 
         private static func name(of userId: String) -> String { DemoServer.demoPeople[userId]?.name ?? userId }
+
+        /// Gives a person another key pair, as if they had set Passwords up again: the item
+        /// keys sealed for the old one no longer reach them until the owner seals them again.
+        func changeKey(of userId: String) {
+            storeLock.lock()
+            defer { storeLock.unlock() }
+            guard let person = people[userId], person.keyPair != nil else { return }
+            people[userId] = Person(userId: person.userId, name: person.name, keyPair: PasswordsCrypto.makeKeyPair())
+        }
 
         // MARK: Seeding
 
@@ -371,6 +396,37 @@
             (variables[key] as? NSNumber)?.int64Value
         }
 
+        private func requireTap() throws {
+            guard isPersonsTap else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.onATap) }
+        }
+
+        /// The passphrase's key derivation cost must be within what every client accepts.
+        private func requireIterationCount(_ iterationCount: Int) throws {
+            guard iterationCount >= PasswordsCrypto.minimumPassphraseIterationCount,
+                iterationCount <= PasswordsCrypto.maximumPassphraseIterationCount
+            else {
+                throw PasswordsDemoFailure(
+                    reason:
+                        "api: invalid arguments: passphraseIterationCount is from \(PasswordsCrypto.minimumPassphraseIterationCount) to \(PasswordsCrypto.maximumPassphraseIterationCount)"
+                )
+            }
+        }
+
+        /// The key a person has now, standard base64; nil without Passwords.
+        private func currentPublicKey(of userId: String) -> String? {
+            if userId == Self.ownUserId, let setup { return setup.publicKey }
+            return people[userId]?.keyPair?.publicKey.base64EncodedString()
+        }
+
+        /// Checks a key made for a recipient the way the server does: the item reaches them,
+        /// and the key was made for the public key they have now.
+        private func requireKeyForCurrentKey(userId: String, publicKey: String, reached: Set<String>) throws {
+            guard reached.contains(userId) else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
+            guard let current = currentPublicKey(of: userId), current == publicKey else {
+                throw PasswordsDemoFailure(reason: PasswordsDemoSentence.keyChanged)
+            }
+        }
+
         // MARK: Setup
 
         private func setupView() -> PasswordsSetupView {
@@ -382,10 +438,13 @@
         }
 
         private func setUp(_ variables: [String: Any]) throws -> PasswordsSetupView {
-            guard setup == nil else { throw PasswordsDemoFailure(reason: "Passwords is already set up.") }
+            try requireTap()
+            let iterationCount = Int(integer(variables, "passphraseIterationCount") ?? 0)
+            try requireIterationCount(iterationCount)
+            guard setup == nil else { throw PasswordsDemoFailure(reason: "api: already exists: Passwords is already set up.") }
             setup = Setup(
                 accountKeyByPassphrase: try string(variables, "accountKeyByPassphrase"), passphraseSalt: try string(variables, "passphraseSalt"),
-                passphraseIterationCount: Int(integer(variables, "passphraseIterationCount") ?? 0),
+                passphraseIterationCount: iterationCount,
                 passphraseProofHash: try string(variables, "passphraseProofHash"),
                 accountKeyByRecoveryKey: try string(variables, "accountKeyByRecoveryKey"),
                 recoveryKeyProofHash: try string(variables, "recoveryKeyProofHash"), publicKey: try string(variables, "publicKey"),
@@ -403,7 +462,7 @@
         }
 
         private func unlock(_ variables: [String: Any]) throws -> PasswordsUnlockView {
-            guard let setup else { throw PasswordsDemoFailure(reason: "Passwords is not set up.") }
+            guard let setup else { throw PasswordsDemoFailure(reason: "api: not found: Passwords is not set up yet.") }
             let isRecoveryKey = (variables["isRecoveryKey"] as? Bool) ?? false
             let proof = try string(variables, "proof")
             guard proofIsRight(proof, hash: isRecoveryKey ? setup.recoveryKeyProofHash : setup.passphraseProofHash) else {
@@ -415,20 +474,24 @@
         }
 
         private func changePassphrase(_ variables: [String: Any]) throws -> PasswordsSetupView {
-            guard var current = setup else { throw PasswordsDemoFailure(reason: "Passwords is not set up.") }
+            try requireTap()
+            guard var current = setup else { throw PasswordsDemoFailure(reason: "api: not found: Passwords is not set up yet.") }
             let isRecoveryKey = (variables["isRecoveryKey"] as? Bool) ?? false
+            let iterationCount = Int(integer(variables, "passphraseIterationCount") ?? 0)
+            try requireIterationCount(iterationCount)
             guard proofIsRight(try string(variables, "proof"), hash: isRecoveryKey ? current.recoveryKeyProofHash : current.passphraseProofHash)
             else { throw PasswordsDemoFailure(reason: isRecoveryKey ? "That recovery key is not right." : "That passphrase is not right.") }
             current.accountKeyByPassphrase = try string(variables, "accountKeyByPassphrase")
             current.passphraseSalt = try string(variables, "passphraseSalt")
-            current.passphraseIterationCount = Int(integer(variables, "passphraseIterationCount") ?? 0)
+            current.passphraseIterationCount = iterationCount
             current.passphraseProofHash = try string(variables, "passphraseProofHash")
             setup = current
             return setupView()
         }
 
         private func replaceRecoveryKey(_ variables: [String: Any]) throws -> PasswordsSetupView {
-            guard var current = setup else { throw PasswordsDemoFailure(reason: "Passwords is not set up.") }
+            try requireTap()
+            guard var current = setup else { throw PasswordsDemoFailure(reason: "api: not found: Passwords is not set up yet.") }
             guard proofIsRight(try string(variables, "proof"), hash: current.passphraseProofHash) else {
                 throw PasswordsDemoFailure(reason: "That passphrase is not right.")
             }
@@ -438,7 +501,8 @@
             return setupView()
         }
 
-        private func erase() -> Bool {
+        private func erase() throws -> Bool {
+            try requireTap()
             setup = nil
             items = items.filter { $0.value.ownerUserId != Self.ownUserId }
             return true
@@ -473,29 +537,40 @@
         }
 
         private func ownedItem(_ itemId: String) throws -> StoredItem {
-            guard let item = items[itemId], item.ownerUserId == Self.ownUserId else { throw PasswordsDemoFailure(reason: "api: not found") }
+            guard let item = items[itemId], item.ownerUserId == Self.ownUserId else {
+                throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound)
+            }
             return item
         }
 
         private func presented(_ item: StoredItem) throws -> PasswordItemView {
-            guard let presented = view(item, for: Self.ownUserId) else { throw PasswordsDemoFailure(reason: "api: not found") }
+            guard let presented = view(item, for: Self.ownUserId) else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
             return presented
         }
 
         private func save(_ variables: [String: Any]) throws -> PasswordItemView {
             let itemId = try string(variables, "id")
+            let itemKind = try string(variables, "itemKind")
+            guard PasswordsItemKind(rawValue: itemKind) != nil else {
+                throw PasswordsDemoFailure(reason: "api: invalid arguments: itemKind is login, card or note")
+            }
+            guard setup != nil else { throw PasswordsDemoFailure(reason: "api: not found: Passwords is not set up yet.") }
             var item: StoredItem
             if var existing = items[itemId] {
-                guard existing.ownerUserId == Self.ownUserId else { throw PasswordsDemoFailure(reason: "api: not found") }
+                guard existing.ownerUserId == Self.ownUserId else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
+                guard existing.itemKind == itemKind else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.kindCannotChange) }
                 guard integer(variables, "baseRevision") == existing.revision else {
-                    throw PasswordsDemoFailure(reason: "This item changed on another device. Open it again.")
+                    throw PasswordsDemoFailure(reason: PasswordsDemoSentence.itemChanged)
                 }
+                // A deleted item is restored before it is changed.
+                guard existing.deletedAt == nil else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
                 existing.encryptedFields = try string(variables, "encryptedFields")
                 existing.itemKeyByAccountKey = try string(variables, "itemKey")
                 item = existing
             } else {
+                guard integer(variables, "baseRevision") == nil else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.itemChanged) }
                 item = StoredItem(
-                    id: itemId, ownerUserId: Self.ownUserId, itemKind: try string(variables, "itemKind"),
+                    id: itemId, ownerUserId: Self.ownUserId, itemKind: itemKind,
                     encryptedFields: try string(variables, "encryptedFields"), itemKeyByAccountKey: try string(variables, "itemKey"),
                     revision: 0, createdAt: day(daysAgo: 0))
             }
@@ -522,18 +597,50 @@
             return try presented(item)
         }
 
+        /// Whether the person shares a circle with another person.
+        private func hasMutualCircle(with userId: String) -> Bool {
+            circles.values.contains { $0.memberUserIds.contains(Self.ownUserId) && $0.memberUserIds.contains(userId) }
+        }
+
         private func setShares(_ variables: [String: Any]) throws -> PasswordItemView {
             var item = try ownedItem(try string(variables, "itemId"))
+            guard item.deletedAt == nil else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
             let granteeObjects = variables["grantees"] as? [[String: Any]] ?? []
-            item.grantees = granteeObjects.map {
+            let grantees = granteeObjects.map {
                 PasswordShareGranteeInput(granteeUserId: $0["granteeUserId"] as? String, granteeCircleId: $0["granteeCircleId"] as? String)
             }
+            for grantee in grantees {
+                guard (grantee.granteeUserId == nil) != (grantee.granteeCircleId == nil) else {
+                    throw PasswordsDemoFailure(reason: "api: invalid arguments: share with one person or one circle")
+                }
+                if let granteeUserId = grantee.granteeUserId {
+                    guard granteeUserId != Self.ownUserId else {
+                        throw PasswordsDemoFailure(reason: "api: invalid arguments: an item is already the owner's")
+                    }
+                    // A person who does not exist, or shares no circle with the owner, is not found.
+                    guard people[granteeUserId] != nil, hasMutualCircle(with: granteeUserId) else {
+                        throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound)
+                    }
+                }
+                if let granteeCircleId = grantee.granteeCircleId {
+                    guard circles[granteeCircleId]?.memberUserIds.contains(Self.ownUserId) == true else {
+                        throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound)
+                    }
+                }
+            }
+            // Adding somebody to who may be given the key discloses the password: a person's tap.
+            let isNewGrantee = grantees.contains { grantee in
+                !item.grantees.contains { $0.granteeUserId == grantee.granteeUserId && $0.granteeCircleId == grantee.granteeCircleId }
+            }
+            if isNewGrantee { try requireTap() }
+            item.grantees = grantees
             let reached = Set(reachedUserIds(item))
             item.keys = item.keys.filter { reached.contains($0.key) }
             for key in variables["keys"] as? [[String: Any]] ?? [] {
-                guard let userId = key["recipientUserId"] as? String, reached.contains(userId),
-                    let sealed = key["itemKeyByRecipientKey"] as? String, let publicKey = key["recipientPublicKey"] as? String
-                else { throw PasswordsDemoFailure(reason: "That person is not reached by this share.") }
+                guard let userId = key["recipientUserId"] as? String, let sealed = key["itemKeyByRecipientKey"] as? String,
+                    let publicKey = key["recipientPublicKey"] as? String
+                else { throw PasswordsDemoFailure(reason: "api: invalid arguments: a key names the recipient") }
+                try requireKeyForCurrentKey(userId: userId, publicKey: publicKey, reached: reached)
                 item.keys[userId] = (sealed, publicKey)
             }
             item.revision = nextRevision()
@@ -546,8 +653,10 @@
             for key in variables["keys"] as? [[String: Any]] ?? [] {
                 guard let itemId = key["itemId"] as? String, let userId = key["recipientUserId"] as? String,
                     let sealed = key["itemKeyByRecipientKey"] as? String, let publicKey = key["recipientPublicKey"] as? String
-                else { continue }
+                else { throw PasswordsDemoFailure(reason: "api: invalid arguments: a key names the item") }
                 var item = try ownedItem(itemId)
+                guard item.deletedAt == nil else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
+                try requireKeyForCurrentKey(userId: userId, publicKey: publicKey, reached: Set(reachedUserIds(item)))
                 item.keys[userId] = (sealed, publicKey)
                 item.revision = nextRevision()
                 items[itemId] = item
@@ -559,8 +668,16 @@
         private func setUsableByAgent(_ variables: [String: Any]) throws -> PasswordItemView {
             var item = try ownedItem(try string(variables, "itemId"))
             let isUsable = (variables["isUsableByAgent"] as? Bool) ?? false
-            if isUsable, item.itemKind == PasswordsItemKind.card.rawValue {
-                throw PasswordsDemoFailure(reason: "A card cannot be used by the agent.")
+            if isUsable {
+                // Handing an item to the agent sends its password to the model's provider: a person's tap.
+                try requireTap()
+                guard let sealedForAgent = variables["itemKeyByAgentKey"] as? String, !sealedForAgent.isEmpty else {
+                    throw PasswordsDemoFailure(reason: "api: invalid arguments: itemKeyByAgentKey must be the JSON a device sealed for the agent key")
+                }
+                if item.itemKind == PasswordsItemKind.card.rawValue {
+                    throw PasswordsDemoFailure(reason: "api: invalid arguments: A card cannot be used by the agent.")
+                }
+                guard item.deletedAt == nil else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
             }
             item.isUsableByAgent = isUsable
             if !isUsable { item.lastUsedByAgentAt = nil }

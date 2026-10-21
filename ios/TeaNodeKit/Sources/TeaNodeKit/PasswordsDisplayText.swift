@@ -2,8 +2,9 @@ import Foundation
 
 // Showing a stored value (a user name, a site, a password, a note) on a narrow
 // screen without SwiftUI adding characters to it. At large text sizes SwiftUI
-// hyphenates a word that does not fit a line, so "example.com" can read
-// "exam-ple.com", and a value must never show a character it does not have.
+// hyphenates a word that does not fit a line, so a site name can come out
+// with a hyphen in the middle of a word, and a value must never show a
+// character it does not have.
 // SwiftUI has no switch that turns the hyphenation off, so the value is shown
 // with a zero-width space wherever a line may end: after "@", "/" and the like,
 // and between the characters of a word too long to be a word. A line then

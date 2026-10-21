@@ -78,6 +78,8 @@ enum PasswordsWords {
         case .onlyOwnerCanChangeItem: String(localized: "Only the person who owns an item can change it.")
         case .itemKindCannotChange: String(localized: "An item cannot change from a login to a note or a card.")
         case .cardCannotBeUsedByAgent: String(localized: "A card cannot be used by the agent.")
+        case .recipientKeyChangedSinceRead: String(localized: "That person's key changed while you were sharing. Open the share again and compare the new safety code.")
+        case .tooManyAttempts: String(localized: "Too many attempts. Wait a while and try again.")
         case .unknownItemKind: String(localized: "This item is of a kind this version cannot open. Update the app.")
         case .invalidServerAnswer: String(localized: "The server sent something this app cannot read.")
         case .ownerKeyChanged: String(localized: "The key of the person who shared this changed. Compare the safety codes with them, then trust the new key.")
@@ -141,7 +143,7 @@ enum PasswordsFilter: Hashable {
     case usableByAgent
     case folder(String)
 
-    var title: String {
+    var filterTitle: String {
         switch self {
         case .everything: PasswordsWords.title
         case .kind(let itemKind): PasswordsWords.kindPluralName(itemKind)
@@ -214,17 +216,50 @@ extension PasswordItem {
 /// the value itself. Use it for every stored value that is shown; the copy
 /// buttons copy the value, never what is shown here.
 struct PasswordsValueText: View {
-    let value: String
+    let storedValue: String
     var isProse = false
 
-    init(_ value: String, isProse: Bool = false) {
-        self.value = value
+    init(_ storedValue: String, isProse: Bool = false) {
+        self.storedValue = storedValue
         self.isProse = isProse
     }
 
     var body: some View {
-        Text(verbatim: PasswordsDisplayText.breakable(value, isProse: isProse))
-            .accessibilityLabel(value)
+        Text(verbatim: PasswordsDisplayText.breakable(storedValue, isProse: isProse))
+            .accessibilityLabel(storedValue)
+    }
+}
+
+/// PasswordsAppSwitcherCover hides what Passwords shows while the app is not in
+/// front, so the picture iOS keeps of it for the app switcher (and what shows
+/// for a moment when the app comes back) holds no password. Every screen that
+/// can show a secret has it: the Passwords screen and each sheet over it, since
+/// a sheet is drawn above the screen's own cover. It stays on after the app is
+/// back until the lock time has been checked (`PasswordsModel.isHoldingCover`).
+struct PasswordsAppSwitcherCover: ViewModifier {
+    let model: PasswordsModel
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var isCovering: Bool {
+        let isOpen = model.phase == .unlocked || model.phase == .recoveryKey
+        return isOpen && (scenePhase != .active || model.isHoldingCover)
+    }
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if isCovering {
+                Color(.systemBackground)
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+extension View {
+    /// Covers the view while the app is away or Passwords has not yet been checked for locking.
+    func passwordsAppSwitcherCover(model: PasswordsModel) -> some View {
+        modifier(PasswordsAppSwitcherCover(model: model))
     }
 }
 

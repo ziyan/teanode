@@ -30,15 +30,18 @@ final class PasswordsCacheTests: XCTestCase {
         XCTAssertEqual(cache.revision, 6)
     }
 
-    func testAnEmptyPageChangesNothingAndTheRevisionFollowsTheServer() {
+    func testAnEmptyPageChangesNothingAndTheRevisionNeverMovesBackwards() {
         var cache = contents(items: [view("one", revision: 4)], revision: 4)
         let result = cache.merge(PasswordItemListView(items: [], itemIds: ["one"], revision: 4))
         XCTAssertEqual(result, PasswordsMergeResult())
         XCTAssertEqual(cache.items.count, 1)
-        // The item holding the highest number was unshared: the revision comes down with it.
+        // The item holding the highest number was unshared: it goes, and the revision stays,
+        // since every later change has a higher number still.
         _ = cache.merge(PasswordItemListView(items: [], itemIds: [], revision: 2))
         XCTAssertEqual(cache.items.count, 0)
-        XCTAssertEqual(cache.revision, 2)
+        XCTAssertEqual(cache.revision, 4)
+        _ = cache.merge(PasswordItemListView(items: [], itemIds: [], revision: 9))
+        XCTAssertEqual(cache.revision, 9)
     }
 
     func testReplaceKeepsTheRevisionOfTheCopy() {

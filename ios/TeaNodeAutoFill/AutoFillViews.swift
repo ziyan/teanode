@@ -17,21 +17,21 @@ struct AutoFillRootView: View {
             screenContent
         }
         .alert(
-            Text(model.problem?.title ?? ""), isPresented: isShowingProblem,
+            Text(model.problemMessage?.title ?? ""), isPresented: isShowingProblem,
             actions: { Button("OK", role: .cancel) {} },
-            message: { Text(model.problem?.message ?? "") })
+            message: { Text(model.problemMessage?.message ?? "") })
     }
 
     private var isShowingProblem: Binding<Bool> {
         Binding(
-            get: { model.problem != nil },
+            get: { model.problemMessage != nil },
             set: { isShowing in
-                if !isShowing { model.problem = nil }
+                if !isShowing { model.problemMessage = nil }
             })
     }
 
     @ViewBuilder private var screenContent: some View {
-        switch model.screen {
+        switch model.autoFillScreen {
         case .starting:
             AutoFillStartingView(model: model)
         case .locked:
@@ -216,17 +216,17 @@ struct AutoFillSectionView: View {
 /// name, a site) so that a line never ends in a hyphen SwiftUI made up: it may
 /// end only where `PasswordsDisplayText` allows. It reads aloud as the value.
 struct AutoFillValueText: View {
-    let value: String
+    let storedValue: String
     var isProse = false
 
-    init(_ value: String, isProse: Bool = false) {
-        self.value = value
+    init(_ storedValue: String, isProse: Bool = false) {
+        self.storedValue = storedValue
         self.isProse = isProse
     }
 
     var body: some View {
-        Text(verbatim: PasswordsDisplayText.breakable(value, isProse: isProse))
-            .accessibilityLabel(value)
+        Text(verbatim: PasswordsDisplayText.breakable(storedValue, isProse: isProse))
+            .accessibilityLabel(storedValue)
     }
 }
 
@@ -238,11 +238,11 @@ struct AutoFillRowView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                AutoFillValueText(row.title, isProse: true)
+                AutoFillValueText(row.rowTitle, isProse: true)
                     .font(.body)
                     .foregroundStyle(.primary)
-                if !row.subtitle.isEmpty {
-                    AutoFillValueText(row.subtitle)
+                if !row.rowSubtitle.isEmpty {
+                    AutoFillValueText(row.rowSubtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }

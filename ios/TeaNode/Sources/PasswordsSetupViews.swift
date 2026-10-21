@@ -79,8 +79,9 @@ struct PasswordsSetUpScreen: View {
 
     private var strengthText: String {
         switch strength {
-        case .empty: String(localized: "Use at least 8 characters. Longer is better.")
-        case .short: String(localized: "Too short.")
+        case .empty: String(localized: "Use at least 12 characters. Longer is better.")
+        case .short:
+            String(localized: "Too short. Use at least \(PasswordsPassphraseStrength.minimumLength) characters.")
         case .weak: String(localized: "Weak. Add more words or characters.")
         case .fair: String(localized: "Fair. A few more characters would make it strong.")
         case .strong: String(localized: "Strong.")
@@ -112,7 +113,6 @@ struct PasswordsRecoveryKeySections: View {
         Section {
             PasswordsValueText(PasswordsFormat.recoveryKeyLines(recoveryKeyText).joined(separator: "\n"))
                 .font(.body.monospaced())
-                .textSelection(.enabled)
                 .accessibilityLabel(Text("Recovery key"))
                 .accessibilityValue(Text(verbatim: recoveryKeyText))
             Button("Copy recovery key", systemImage: "doc.on.doc") {
@@ -160,7 +160,7 @@ struct PasswordsRecoveryKeyScreen: View {
         .navigationTitle("Recovery key")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            PasswordsPrimaryButton(title: String(localized: "Done"), isWorking: isFinishing, isEnabled: isSaved) {
+            PasswordsPrimaryButton(buttonTitle: String(localized: "Done"), isWorking: isFinishing, isEnabled: isSaved) {
                 Task { await finish() }
             }
         }
@@ -176,7 +176,7 @@ struct PasswordsRecoveryKeyScreen: View {
 /// PasswordsPrimaryButton is a screen's one prominent action, full width at
 /// the bottom, outside the list.
 struct PasswordsPrimaryButton: View {
-    let title: String
+    let buttonTitle: String
     var isWorking = false
     var isEnabled = true
     let action: () -> Void
@@ -186,7 +186,7 @@ struct PasswordsPrimaryButton: View {
             if isWorking {
                 ProgressView().frame(maxWidth: .infinity)
             } else {
-                Text(verbatim: title).frame(maxWidth: .infinity)
+                Text(verbatim: buttonTitle).frame(maxWidth: .infinity)
             }
         }
         .buttonStyle(.borderedProminent)
@@ -266,7 +266,7 @@ struct PasswordsUnlockScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .onSubmit { Task { await unlock() } }
         .safeAreaInset(edge: .bottom) {
-            PasswordsPrimaryButton(title: String(localized: "Unlock"), isWorking: isWorking, isEnabled: !typedText.isEmpty) {
+            PasswordsPrimaryButton(buttonTitle: String(localized: "Unlock"), isWorking: isWorking, isEnabled: !typedText.isEmpty) {
                 Task { await unlock() }
             }
         }

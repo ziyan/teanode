@@ -217,6 +217,31 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(list.items.map(\.name), ["Example", "Router"])
     }
 
+    func testASyncAsksForEverythingOnceWhenTheServerListsAnItemTheCopyMissed() async throws {
+        let server = await makeServer()
+        let first = makeDevice(server)
+        _ = try await first.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        _ = try await first.session.save(fields: loginFields())
+        let second = makeDevice(server)
+        _ = try await second.session.unlock(passphrase: "a long invented passphrase")
+        try await second.session.sync()
+        // An item the second copy has not seen, numbered below the copy's revision.
+        let late = try await first.session.save(fields: loginFields(name: "Late"))
+        await server.setRevision(itemId: late.id, revision: 1)
+        let result = try await second.session.sync()
+        XCTAssertTrue(result.changedItemIds.contains(late.id))
+        let calls = await server.listCalls
+        let expectedCalls: [Int64?] = [0, 1, nil]
+        XCTAssertEqual(calls, expectedCalls)
+        let list = try await second.session.list()
+        XCTAssertEqual(list.items.map(\.name), ["Example", "Late"])
+        // Nothing is missing now, so the next sync is one incremental read again.
+        try await second.session.sync()
+        let afterwards = await server.listCalls
+        let expectedAfterwards: [Int64?] = [0, 1, nil, 1]
+        XCTAssertEqual(afterwards, expectedAfterwards)
+    }
+
     func testAStaleBaseRevisionIsATypedError() async throws {
         let server = await makeServer()
         let first = makeDevice(server)
@@ -479,6 +504,31 @@ final class PasswordsSessionTests: XCTestCase {
         XCTAssertEqual(known["user-grace"], newKeyPair.publicKey.base64EncodedString())
     }
 
+    func testConfirmingOneWaitingShareLetsTheNextCompletionSealTheSameRecipientsOtherItems() async throws {
+        let server = await makeServer(people: [("user-ada", "Ada"), ("user-grace", "Grace")])
+        await server.setCircle("circle-one", members: ["user-ada", "user-grace"])
+        let ada = makeDevice(server, userId: "user-ada")
+        _ = try await ada.session.setUp(passphrase: "ada invented passphrase", iterationCount: iterationCount)
+        let first = try await ada.session.save(fields: loginFields(name: "First"))
+        let second = try await ada.session.save(fields: loginFields(name: "Second"))
+        let grantees = [PasswordShareGranteeInput(granteeCircleId: "circle-one")]
+        _ = try await ada.session.setShares(itemId: first.id, grantees: grantees, recipients: [])
+        _ = try await ada.session.setShares(itemId: second.id, grantees: grantees, recipients: [])
+        let grace = makeDevice(server, userId: "user-grace")
+        _ = try await grace.session.setUp(passphrase: "grace invented passphrase", iterationCount: iterationCount)
+
+        let unconfirmed = try await ada.session.completeWaitingShares()
+        XCTAssertEqual(unconfirmed.waitingForConfirmation.count, 2)
+        try await ada.session.confirmWaitingShare(try XCTUnwrap(unconfirmed.waitingForConfirmation.first))
+        // The key is known now, so the other item completes without another confirmation.
+        let completed = try await ada.session.completeWaitingShares()
+        XCTAssertEqual(completed.addedKeyCount, 1)
+        XCTAssertEqual(completed.waitingForConfirmation, [])
+        try await grace.session.sync()
+        let opened = try await grace.session.list()
+        XCTAssertEqual(opened.items.map(\.name), ["First", "Second"])
+    }
+
     func testWaitingSharesOfKnownKeysAreSealedByCompleteWaitingShares() async throws {
         let world = try await makeSharingWorld()
         _ = try await grantGrace(world)
@@ -569,13 +619,31 @@ final class PasswordsSessionTests: XCTestCase {
             [
                 PasswordsOwnerKeyChange(
                     userId: "user-ada", ownerName: "Ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: oldKey),
-                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey), itemCount: 1)
+                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey),
+                    newPublicKey: newOwner.publicKey.base64EncodedString(), itemCount: 1)
             ])
         // The file still holds the key that was known, which the AutoFill extension reads.
         let graceContents = try XCTUnwrap(try world.grace.cache.load())
         XCTAssertEqual(graceContents.knownPublicKeys["user-ada"], oldKey)
 
-        try await world.grace.session.trustOwnerKey(userId: "user-ada")
+        // Trusting a key other than the one whose code was shown is refused, and nothing is trusted.
+        let otherKey = PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString()
+        do {
+            try await world.grace.session.trustOwnerKey(userId: "user-ada", expectedPublicKey: otherKey)
+            XCTFail("the key shown was not the owner's key")
+        } catch {
+            XCTAssertEqual(
+                error as? PasswordsError,
+                .ownerKeyChanged(
+                    userId: "user-ada", oldSafetyCode: PasswordsOpener.safetyCodeText(publicKey: otherKey),
+                    newSafetyCode: try PasswordsCrypto.safetyCode(publicKey: newOwner.publicKey)))
+        }
+        let stillKnown = try XCTUnwrap(try world.grace.cache.load()).knownPublicKeys["user-ada"]
+        XCTAssertEqual(stillKnown, oldKey)
+        let stillChanged = await world.grace.session.ownerKeyChanges()
+        XCTAssertEqual(stillChanged.count, 1)
+
+        try await world.grace.session.trustOwnerKey(userId: "user-ada", expectedPublicKey: newOwner.publicKey.base64EncodedString())
         let trusted = try await world.grace.session.item(id: world.itemId)
         XCTAssertEqual(trusted.fields, loginFields())
         let remaining = await world.grace.session.ownerKeyChanges()
@@ -674,6 +742,22 @@ final class PasswordsSessionTests: XCTestCase {
             XCTFail("a card is never the agent's")
         } catch {
             XCTAssertEqual(error as? PasswordsError, .cardCannotBeUsedByAgent)
+        }
+    }
+
+    func testADeletedItemCannotBeGivenToTheAgentOrTakenBack() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        let login = try await device.session.save(fields: loginFields())
+        _ = try await device.session.delete(id: login.id)
+        for isUsable in [true, false] {
+            do {
+                _ = try await device.session.setUsableByAgent(itemId: login.id, isUsable: isUsable)
+                XCTFail("a deleted item is not the agent's to use")
+            } catch {
+                XCTAssertEqual(error as? PasswordsError, .itemNotFound)
+            }
         }
     }
 
@@ -799,6 +883,56 @@ final class PasswordsSessionTests: XCTestCase {
         let records = try await device.session.identityRecords()
         XCTAssertEqual(
             records.passwordIdentities,
-            [PasswordsPasswordIdentity(recordId: login.id, serviceDomain: "example.com", userName: "ada@example.com")])
+            [PasswordsPasswordIdentity(itemId: login.id, serviceDomain: "example.com", userName: "ada@example.com")])
+    }
+
+    // MARK: What the server says
+
+    func testTheServersSentencesHaveACaseOfTheirOwn() {
+        let sentences: [(String, PasswordsError)] = [
+            ("That passphrase is not right.", .wrongPassphrase),
+            ("api: invalid credential: That recovery key is not right.", .wrongRecoveryKey),
+            ("api: conflict: This item changed on another device. Open it again.", .itemChangedOnAnotherDevice),
+            ("api: invalid arguments: That person's key changed since it was read. Read their key again and seal the item for it.",
+                .recipientKeyChangedSinceRead),
+            ("api: invalid arguments: A card cannot be used by the agent.", .cardCannotBeUsedByAgent),
+            ("api: already exists: Passwords is already set up.", .alreadySetUp),
+            ("api: not found: Passwords is not set up yet.", .notSetUp),
+            ("api: too many attempts, try again later", .tooManyAttempts),
+        ]
+        for (sentence, expected) in sentences {
+            XCTAssertEqual(PasswordsError.mapped(TeaNodeError.refused(sentence)) as? PasswordsError, expected, sentence)
+        }
+        let other = TeaNodeError.refused("api: not found")
+        XCTAssertEqual(PasswordsError.mapped(other) as? TeaNodeError, other)
+    }
+
+    func testTooManyWrongTriesComeBackTyped() async throws {
+        let server = await makeServer()
+        let device = makeDevice(server)
+        _ = try await device.session.setUp(passphrase: "a long invented passphrase", iterationCount: iterationCount)
+        await server.setRateLimited(true)
+        let other = makeDevice(server)
+        do {
+            _ = try await other.session.unlock(passphrase: "a long invented passphrase")
+            XCTFail("the server asked to wait")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .tooManyAttempts)
+        }
+    }
+
+    func testAKeyThatChangedWhileSharingComesBackTyped() async throws {
+        let world = try await makeSharingWorld()
+        let recipients = try await world.ada.session.recipients(granteeUserId: "user-grace")
+        // Grace's key changes after Ada's device read it and before it sealed for it.
+        await world.server.replacePublicKey(userId: "user-grace", publicKey: PasswordsCrypto.makeKeyPair().publicKey.base64EncodedString())
+        do {
+            _ = try await world.ada.session.setShares(
+                itemId: world.itemId, grantees: [PasswordShareGranteeInput(granteeUserId: "user-grace")], recipients: recipients,
+                confirmedUserIds: ["user-grace"])
+            XCTFail("the key was stale")
+        } catch {
+            XCTAssertEqual(error as? PasswordsError, .recipientKeyChangedSinceRead)
+        }
     }
 }
