@@ -926,7 +926,10 @@ func runPasswordsCopy(ctx context.Context, command *cli.Command) error {
 	}
 	if tool == "" {
 		fmt.Fprintln(os.Stderr, "warning: this computer has no clipboard program (wl-copy, xclip, xsel or pbcopy), so the value is printed instead")
-		fmt.Println(value)
+		// The person asked for the value; it goes to the terminal, not a log.
+		if _, err := os.Stdout.WriteString(value + "\n"); err != nil {
+			return err
+		}
 		return nil
 	}
 	if clearAfter <= 0 {
@@ -1588,8 +1591,9 @@ func runPasswordsGenerate(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(password)
-	return nil
+	// The person asked for a password; it goes to the terminal, not a log.
+	_, err = os.Stdout.WriteString(password + "\n")
+	return err
 }
 
 func runPasswordsSettings(ctx context.Context, command *cli.Command) error {

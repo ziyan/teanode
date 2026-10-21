@@ -4,9 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -500,8 +498,8 @@ func (self *passwordsItem) Fields() any {
 }
 
 // duplicateKey is what makes two items the same one for an import: the kind,
-// the name, the folder, the first site, the user name (without case) and a
-// SHA-256 of the password or note text. Two logins that differ in any of them
+// the name, the folder, the first site, the user name (without case) and the
+// password or note text. Two logins that differ in any of them
 // are kept both, so a changed password is not lost to the old one.
 func (self *passwordsItem) duplicateKey() string {
 	return duplicateKeyOf(self.Kind, self.Name(), self.Folder(), self.FirstSite(), self.Login, self.Note)
@@ -515,14 +513,15 @@ func duplicateKeyOf(kind passwords.ItemKind, name, folder, firstSite string, log
 	if note != nil {
 		secret = note.Text
 	}
-	secretHash := sha256.Sum256([]byte(secret))
+	// The key lives only in memory for one import, so the secret itself is
+	// part of it rather than a digest of it.
 	return strings.Join([]string{
 		string(kind),
 		strings.ToLower(strings.TrimSpace(name)),
 		strings.ToLower(strings.TrimSpace(folder)),
 		strings.TrimSuffix(strings.ToLower(strings.TrimSpace(firstSite)), "/"),
 		strings.ToLower(strings.TrimSpace(userName)),
-		hex.EncodeToString(secretHash[:]),
+		secret,
 	}, "\x00")
 }
 

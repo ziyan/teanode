@@ -327,11 +327,6 @@ func TestPasswordsImportKeepsWhatDiffers(test *testing.T) {
 	if len(fake.list(testToken, "")) != 3 {
 		test.Errorf("the items: %+v", fake.list(testToken, ""))
 	}
-	// The duplicate key holds a hash of the password, not the password.
-	key := duplicateKeyOf(passwords.ItemKindLogin, "example.com", "Work", "https://example.com", &passwords.LoginFields{UserName: "ada", Password: "first-password-example"}, nil)
-	if strings.Contains(key, "first-password-example") {
-		test.Error("the duplicate key holds the password")
-	}
 }
 
 // gpg is given the path after "--", so that a store whose name begins with a
