@@ -5,9 +5,64 @@ import UIKit
 /// PhotoScaleBar floats over the bottom of the library: the switch of Years,
 /// Months and All in one capsule. Glass, because it floats over the photos.
 /// The library is searched from the Search tab, whose button is in the tab bar
-/// just below, so the bar has no search of its own.
+/// just below, so the bar has no search of its own. On a phone the tab bar
+/// holds the switch instead (PhotoScaleAccessory); this bar is the iPad's.
 struct PhotoScaleBar: View {
     @Binding var scale: PhotoScale
+
+    var body: some View {
+        GlassEffectContainer(spacing: 12) {
+            PhotoScaleSegments(scale: $scale, isCompact: false)
+                .padding(4)
+                .glassEffect(.regular, in: .capsule)
+        }
+    }
+}
+
+/// PhotoScaleAccessory puts the switch in the tab bar, as the Photos app does:
+/// over the tab bar while it is whole, and between the tab and Search once it
+/// collapses as the photos scroll. The bar draws the glass around it.
+struct PhotoScaleAccessory: ViewModifier {
+    let isShown: Bool
+    @Binding var scale: PhotoScale
+
+    /// Whether the tab bar holds the switch: on a phone, from the first system
+    /// that can take the accessory away again while the library is not shown.
+    static func isUsed(horizontalSizeClass: UserInterfaceSizeClass?) -> Bool {
+        guard #available(iOS 26.1, *) else { return false }
+        return UIDevice.current.userInterfaceIdiom != .pad || horizontalSizeClass != .regular
+    }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.1, *) {
+            content.tabViewBottomAccessory(isEnabled: isShown) {
+                PhotoScaleAccessoryContent(scale: $scale)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// PhotoScaleAccessoryContent is the switch in the tab bar, smaller once the
+/// bar has collapsed and it sits between the tab and Search.
+private struct PhotoScaleAccessoryContent: View {
+    @Binding var scale: PhotoScale
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+
+    var body: some View {
+        PhotoScaleSegments(scale: $scale, isCompact: placement == .inline)
+            .padding(.horizontal, 4)
+    }
+}
+
+/// PhotoScaleSegments is the three choices side by side, the one chosen
+/// marked with the accent. There is no floating segmented control in the
+/// system, so this is drawn: three buttons in whatever glass holds them.
+struct PhotoScaleSegments: View {
+    @Binding var scale: PhotoScale
+    /// Smaller words and height, for the collapsed tab bar.
+    let isCompact: Bool
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
 
     private var switchAnimation: Animation? {
@@ -15,20 +70,12 @@ struct PhotoScaleBar: View {
     }
 
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
-            HStack(spacing: 12) {
-                // There is no floating segmented control in the system, so this is drawn: three
-                // buttons in a glass capsule, the one chosen marked with the accent.
-                HStack(spacing: 0) {
-                    ForEach(PhotoScale.allCases) { option in
-                        segment(option)
-                    }
-                }
-                .padding(4)
-                .glassEffect(.regular, in: .capsule)
-                .animation(switchAnimation, value: scale)
+        HStack(spacing: 0) {
+            ForEach(PhotoScale.allCases) { option in
+                segment(option)
             }
         }
+        .animation(switchAnimation, value: scale)
     }
 
     private func segment(_ option: PhotoScale) -> some View {
@@ -37,11 +84,11 @@ struct PhotoScaleBar: View {
             scale = option
         } label: {
             Text(option.title)
-                .font(.subheadline.weight(.semibold))
+                .font(isCompact ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))
                 .foregroundStyle(isChosen ? Color.accentColor : Color.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: isCompact ? 32 : 44)
                 .background {
                     if isChosen {
                         Capsule().fill(Color.accentColor.opacity(0.18))

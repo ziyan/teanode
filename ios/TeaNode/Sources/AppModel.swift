@@ -133,6 +133,23 @@ final class AppModel {
     /// A narrowing of the photo library that Photos opens with, such as the
     /// moments of a visit: the section shows the library under it and clears it.
     var openedPhotoFilter: PhotoFilter?
+    /// How much of the photo library is shown, Years, Months or All. The app
+    /// holds it rather than the library, because on a phone the tab bar draws
+    /// the switch, beside its tabs once it collapses.
+    var photoScale: PhotoScale = AppModel.firstPhotoScale
+    /// Whether the photo library is on screen and offers the switch, so the tab
+    /// bar shows it.
+    var isPhotoScaleOffered = false
+
+    /// `-TeaNodeScreen photos-library-months` and `photos-library-years` are the
+    /// library under Months and Years.
+    private static var firstPhotoScale: PhotoScale {
+        #if DEBUG
+            if DemoServer.isRequested, DemoServer.screen == "photos-library-months" { return .months }
+            if DemoServer.isRequested, DemoServer.screen == "photos-library-years" { return .years }
+        #endif
+        return .all
+    }
     /// What the Health screen opens on, from a link such as `/health` or
     /// `/health?type=stepCount`. The screen takes it and clears it.
     var openedHealthLink: HealthLink?
