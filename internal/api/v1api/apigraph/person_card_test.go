@@ -221,8 +221,15 @@ func TestReadPersonCardAShareThatIsOffIsNotShared(test *testing.T) {
 	}
 
 	// Ada reports where she is, a visit today and steps, and shares them.
+	// The card counts today in UTC for a caller with no time zone, and just
+	// after midnight half an hour ago was yesterday, so the visit is kept
+	// inside today.
+	now := time.Now().UTC()
+	arrivedAt := laterOf(now.Add(-30*time.Minute), now.Truncate(24*time.Hour))
+	departedAt := laterOf(now.Add(-10*time.Minute), arrivedAt.Add(time.Second))
 	world.run(test, world.ada, fmt.Sprintf(`mutation { ReportLocation(points: [%s], visits: [%s]) { newPointCount } }`,
-		pointInput(40.0005, -75.0003, ago(5*time.Minute)), visitInput("card-visit", 40.0005, -75.0003, ago(30*time.Minute), ago(10*time.Minute))), nil)
+		pointInput(40.0005, -75.0003, ago(5*time.Minute)),
+		visitInput("card-visit", 40.0005, -75.0003, arrivedAt.Format(time.RFC3339), departedAt.Format(time.RFC3339))), nil)
 	world.run(test, world.ada, reportHealthQuery, map[string]any{"daySummaries": []any{
 		daySummaryInput("stepCount", time.Now().UTC().Format("2006-01-02"), map[string]any{"quantityUnit": "count", "sumValue": 1234}),
 	}})
@@ -782,4 +789,12 @@ func TestPersonCardDayIsTheCallersDay(test *testing.T) {
 			test.Errorf("%s: %s to %s, want %v", name, start.Format(time.RFC3339), end.Format(time.RFC3339), expected)
 		}
 	}
+}
+
+// laterOf is the later of two times.
+func laterOf(first, second time.Time) time.Time {
+	if first.After(second) {
+		return first
+	}
+	return second
 }
