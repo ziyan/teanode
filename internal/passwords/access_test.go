@@ -1,8 +1,11 @@
 package passwords
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -172,5 +175,258 @@ func TestParseAccessOfFields(test *testing.T) {
 	}
 	if _, err := ParseAccessOfFields([]byte(`{"access": 3}`)); err == nil {
 		test.Error("a number was read as a record")
+	}
+}
+
+func TestAccessRecordVersionAndMacRoundTrip(test *testing.T) {
+	mac := sequentialBytes(0x10, KeyLength)
+	access := &PasswordAccess{Grantees: []PasswordGrantee{{UserID: "user-ben"}}, RecordVersion: 3, RecordMac: mac}
+	encoded, err := json.Marshal(NoteFields{Name: "Example", Access: access})
+	if err != nil {
+		test.Fatal(err)
+	}
+	want := `"access":{"isUsableByAgent":false,"grantees":[{"userId":"user-ben"}],"recordVersion":3,"recordMac":"EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8="}`
+	if !strings.Contains(string(encoded), want) {
+		test.Fatalf("encoded = %s", encoded)
+	}
+	note := &NoteFields{}
+	if err := json.Unmarshal(encoded, note); err != nil || !reflect.DeepEqual(note.Access, access) {
+		test.Fatalf("decoded = %+v, %v", note.Access, err)
+	}
+}
+
+func TestAccessReadsARecordWithoutVersionOrMac(test *testing.T) {
+	access := &PasswordAccess{}
+	if err := json.Unmarshal([]byte(`{"isUsableByAgent": true, "grantees": []}`), access); err != nil {
+		test.Fatal(err)
+	}
+	if access.RecordVersion != 0 || access.RecordMac != nil || !access.IsUsableByAgent {
+		test.Errorf("access = %+v", access)
+	}
+}
+
+func TestAccessRefusesABadVersionOrMac(test *testing.T) {
+	for _, extra := range []string{
+		`"recordVersion": 0`,
+		`"recordVersion": -1`,
+		`"recordVersion": 1.5`,
+		`"recordVersion": "1"`,
+		`"recordVersion": null`,
+		`"recordVersion": 9007199254740992`,
+		`"recordMac": null`,
+		`"recordMac": 5`,
+		`"recordMac": ""`,
+		// No padding, unused bits that are not zero, and 24, 32 and 33 bytes.
+		`"recordMac": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8"`,
+		`"recordMac": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi9="`,
+		`"recordMac": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYn"`,
+		`"recordMac": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8v"`,
+	} {
+		record := `{"isUsableByAgent": true, "grantees": [], ` + extra + `}`
+		if err := json.Unmarshal([]byte(record), &PasswordAccess{}); err == nil {
+			test.Errorf("the record %s was read", record)
+		}
+	}
+}
+
+func TestAccessBuildersDropTheSignature(test *testing.T) {
+	signed := &PasswordAccess{Grantees: []PasswordGrantee{{UserID: "user-ben"}}, RecordVersion: 4, RecordMac: sequentialBytes(1, KeyLength)}
+	for name, changed := range map[string]*PasswordAccess{
+		"AccessWithGrantees": AccessWithGrantees(signed, nil),
+		"AccessWithAgentUse": AccessWithAgentUse(signed, true),
+	} {
+		if changed.RecordVersion != 0 || changed.RecordMac != nil {
+			test.Errorf("%s kept the signature: %+v", name, changed)
+		}
+	}
+}
+
+func accessTestRecord() *PasswordAccess {
+	return &PasswordAccess{IsUsableByAgent: true, Grantees: []PasswordGrantee{{UserID: "user-ben"}, {CircleID: "circle-1"}}}
+}
+
+func TestSignAccessAndCheckAccess(test *testing.T) {
+	accountKey := sequentialBytes(0xa0, KeyLength)
+	signed, err := SignAccess(accountKey, "item-1", ItemKindLogin, accessTestRecord(), 4)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if signed.RecordVersion != 5 || len(signed.RecordMac) != KeyLength {
+		test.Fatalf("signed = %+v", signed)
+	}
+	if err := CheckAccess(accountKey, "item-1", ItemKindLogin, signed); err != nil {
+		test.Fatalf("a signed record did not verify: %v", err)
+	}
+
+	// The order of grantees does not matter.
+	reversed := AccessWithGrantees(signed, []PasswordGrantee{{CircleID: "circle-1"}, {UserID: "user-ben"}})
+	reversed.RecordVersion, reversed.RecordMac = signed.RecordVersion, signed.RecordMac
+	if err := CheckAccess(accountKey, "item-1", ItemKindLogin, reversed); err != nil {
+		test.Errorf("the same grantees in another order were refused: %v", err)
+	}
+
+	// A version or a signature in the input is not used.
+	again, err := SignAccess(accountKey, "item-1", ItemKindLogin, signed, 4)
+	if err != nil || !reflect.DeepEqual(again, signed) {
+		test.Errorf("signing a signed record again = %+v, %v", again, err)
+	}
+
+	// Nothing the signature covers can change.
+	otherKey := sequentialBytes(0xb0, KeyLength)
+	changes := map[string]func() (string, ItemKind, *PasswordAccess, []byte){
+		"another account key": func() (string, ItemKind, *PasswordAccess, []byte) { return "item-1", ItemKindLogin, signed, otherKey },
+		"another item":        func() (string, ItemKind, *PasswordAccess, []byte) { return "item-2", ItemKindLogin, signed, accountKey },
+		"another kind":        func() (string, ItemKind, *PasswordAccess, []byte) { return "item-1", ItemKindNote, signed, accountKey },
+		"agent use": func() (string, ItemKind, *PasswordAccess, []byte) {
+			changed := *signed
+			changed.IsUsableByAgent = false
+			return "item-1", ItemKindLogin, &changed, accountKey
+		},
+		"version": func() (string, ItemKind, *PasswordAccess, []byte) {
+			changed := *signed
+			changed.RecordVersion++
+			return "item-1", ItemKindLogin, &changed, accountKey
+		},
+		"a grantee": func() (string, ItemKind, *PasswordAccess, []byte) {
+			changed := *signed
+			changed.Grantees = append(slices.Clone(signed.Grantees), PasswordGrantee{UserID: "user-cy"})
+			return "item-1", ItemKindLogin, &changed, accountKey
+		},
+		"a user turned into a circle": func() (string, ItemKind, *PasswordAccess, []byte) {
+			changed := *signed
+			changed.Grantees = []PasswordGrantee{{CircleID: "user-ben"}, {CircleID: "circle-1"}}
+			return "item-1", ItemKindLogin, &changed, accountKey
+		},
+		"a flipped signature bit": func() (string, ItemKind, *PasswordAccess, []byte) {
+			changed := *signed
+			changed.RecordMac = slices.Clone(signed.RecordMac)
+			changed.RecordMac[0] ^= 1
+			return "item-1", ItemKindLogin, &changed, accountKey
+		},
+		"no signature": func() (string, ItemKind, *PasswordAccess, []byte) {
+			changed := *signed
+			changed.RecordMac = nil
+			return "item-1", ItemKindLogin, &changed, accountKey
+		},
+		"no version": func() (string, ItemKind, *PasswordAccess, []byte) {
+			changed := *signed
+			changed.RecordVersion = 0
+			return "item-1", ItemKindLogin, &changed, accountKey
+		},
+		"no record": func() (string, ItemKind, *PasswordAccess, []byte) { return "item-1", ItemKindLogin, nil, accountKey },
+	}
+	for name, change := range changes {
+		itemId, itemKind, access, key := change()
+		if err := CheckAccess(key, itemId, itemKind, access); !errors.Is(err, ErrAccessNotVerified) {
+			test.Errorf("%s: err = %v, want ErrAccessNotVerified", name, err)
+		}
+	}
+}
+
+func TestSignAccessRefusesBadInput(test *testing.T) {
+	accountKey := sequentialBytes(0xa0, KeyLength)
+	if _, err := SignAccess(accountKey[:16], "item-1", ItemKindLogin, accessTestRecord(), 0); err == nil {
+		test.Error("a short account key was accepted")
+	}
+	if _, err := SignAccess(accountKey, "item-1", "secret", accessTestRecord(), 0); err == nil {
+		test.Error("an unknown kind was accepted")
+	}
+	if _, err := SignAccess(accountKey, "item-1", ItemKindLogin, accessTestRecord(), -1); err == nil {
+		test.Error("a negative version was accepted")
+	}
+	if _, err := SignAccess(accountKey, "item-1", ItemKindLogin, accessTestRecord(), MaximumRecordVersion); err == nil {
+		test.Error("a version past the maximum was accepted")
+	}
+	both := &PasswordAccess{Grantees: []PasswordGrantee{{UserID: "user-ben", CircleID: "circle-1"}}}
+	if _, err := SignAccess(accountKey, "item-1", ItemKindLogin, both, 0); err == nil {
+		test.Error("a grantee with both ids was accepted")
+	}
+	// No record is signed as one that grants nobody and no agent use.
+	empty, err := SignAccess(accountKey, "item-1", ItemKindLogin, nil, 0)
+	if err != nil || empty.RecordVersion != 1 || empty.IsUsableByAgent || len(empty.Grantees) != 0 {
+		test.Errorf("empty = %+v, %v", empty, err)
+	}
+}
+
+func TestAccessSignedBytesAreTheDocumentedOnes(test *testing.T) {
+	access := &PasswordAccess{
+		IsUsableByAgent: true,
+		Grantees:        []PasswordGrantee{{UserID: "user-ben"}, {CircleID: "circle-1"}},
+		RecordVersion:   12,
+	}
+	got, err := accessMacBytes("item-1", ItemKindNote, access)
+	if err != nil {
+		test.Fatal(err)
+	}
+	want := "teanode passwords access record v1\x00item-1\x00note\x0012\x001\x00c:circle-1\x00u:user-ben\x00"
+	if string(got) != want {
+		test.Fatalf("signed bytes = %q, want %q", got, want)
+	}
+	access.IsUsableByAgent = false
+	access.Grantees = nil
+	got, _ = accessMacBytes("item-1", ItemKindNote, access)
+	if want := "teanode passwords access record v1\x00item-1\x00note\x0012\x000\x00"; string(got) != want {
+		test.Fatalf("signed bytes = %q, want %q", got, want)
+	}
+}
+
+func TestAccessGranteesAreSortedByUTF8Bytes(test *testing.T) {
+	// U+FF5E is three bytes starting 0xef and U+1F600 is four bytes starting
+	// 0xf0, so byte order puts the first one first; UTF-16 order would not.
+	access := &PasswordAccess{
+		Grantees:      []PasswordGrantee{{UserID: "\U0001F600"}, {UserID: "\uFF5E"}},
+		RecordVersion: 1,
+	}
+	got, err := accessMacBytes("item-1", ItemKindLogin, access)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !bytes.HasSuffix(got, []byte("u:\uFF5E\x00u:\U0001F600\x00")) {
+		test.Fatalf("signed bytes = %q", got)
+	}
+}
+
+func TestWithSignedAccessAndVerifyAccess(test *testing.T) {
+	accountKey := sequentialBytes(0xa0, KeyLength)
+	fieldsJSON := []byte(`{"name": "Example", "text": "hello", "folder": "", "futureKey": {"a": [1, 2]}}`)
+	signedJSON, err := WithSignedAccess(accountKey, "item-1", ItemKindNote, fieldsJSON, accessTestRecord(), 2)
+	if err != nil {
+		test.Fatal(err)
+	}
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(signedJSON, &parsed); err != nil {
+		test.Fatal(err)
+	}
+	if string(parsed["futureKey"]) != `{"a":[1,2]}` || string(parsed["name"]) != `"Example"` {
+		test.Errorf("another key changed: %s", signedJSON)
+	}
+	verified, err := VerifyAccess(accountKey, "item-1", ItemKindNote, signedJSON)
+	if err != nil || verified.RecordVersion != 3 || !verified.IsUsableByAgent || len(verified.Grantees) != 2 {
+		test.Fatalf("verified = %+v, %v", verified, err)
+	}
+	// The typed fields read it too, and the agent opener's rule is unchanged.
+	note := &NoteFields{}
+	if err := json.Unmarshal(signedJSON, note); err != nil || note.Access.RecordVersion != 3 {
+		test.Fatalf("note = %+v, %v", note, err)
+	}
+
+	if _, err := VerifyAccess(accountKey, "item-2", ItemKindNote, signedJSON); !errors.Is(err, ErrAccessNotVerified) {
+		test.Errorf("another item: %v", err)
+	}
+	if _, err := VerifyAccess(sequentialBytes(0xb0, KeyLength), "item-1", ItemKindNote, signedJSON); !errors.Is(err, ErrAccessNotVerified) {
+		test.Errorf("another account key: %v", err)
+	}
+	if verified, err := VerifyAccess(accountKey, "item-1", ItemKindNote, fieldsJSON); verified != nil || !errors.Is(err, ErrAccessNotVerified) {
+		test.Errorf("no record: %+v, %v", verified, err)
+	}
+	unsigned := []byte(`{"name": "Example", "access": {"isUsableByAgent": true, "grantees": []}}`)
+	if verified, err := VerifyAccess(accountKey, "item-1", ItemKindNote, unsigned); verified != nil || !errors.Is(err, ErrAccessNotVerified) {
+		test.Errorf("unsigned record: %+v, %v", verified, err)
+	}
+	if _, err := VerifyAccess(accountKey, "item-1", ItemKindNote, []byte(`{"access": 3}`)); err == nil || errors.Is(err, ErrAccessNotVerified) {
+		test.Errorf("a record of the wrong shape: %v", err)
+	}
+	if _, err := WithSignedAccess(accountKey, "item-1", ItemKindNote, []byte(`[]`), accessTestRecord(), 0); err == nil {
+		test.Error("fields that are not an object were accepted")
 	}
 }

@@ -263,32 +263,29 @@ func TestKeyPair(test *testing.T) {
 
 func TestSafetyCode(test *testing.T) {
 	keyPair, _ := KeyPairFromPrivateKey(sequentialBytes(1, 32))
-	code := keyPair.SafetyCode("user-ada")
+	code := keyPair.SafetyCode()
 	if !regexp.MustCompile(`^\d{4}( \d{4}){7}$`).MatchString(code) {
 		test.Fatalf("code = %q", code)
 	}
-	if code != SafetyCode("user-ada", keyPair.PublicKey()) {
+	if code != SafetyCode(keyPair.PublicKey()) {
 		test.Fatal("the method and the function disagree")
 	}
 	other, _ := KeyPairFromPrivateKey(sequentialBytes(2, 32))
-	if code == other.SafetyCode("user-ada") {
+	if code == other.SafetyCode() {
 		test.Fatal("two keys share a safety code")
-	}
-	if code == keyPair.SafetyCode("user-ben") {
-		test.Fatal("two people with one key share a safety code")
 	}
 }
 
 func TestSafetyCodeIsTheDocumentedHash(test *testing.T) {
 	keyPair, _ := KeyPairFromPrivateKey(sequentialBytes(1, 32))
-	input := append([]byte("teanode passwords safety code v2\x00user-ada\x00"), keyPair.PublicKey()...)
+	input := append([]byte("teanode passwords safety code v2\x00"), keyPair.PublicKey()...)
 	hash := sha256.Sum256(input)
 	groups := make([]string, 8)
 	for index := range groups {
 		groups[index] = fmt.Sprintf("%04d", (int(hash[index*2])<<8|int(hash[index*2+1]))%10000)
 	}
-	if want := strings.Join(groups, " "); keyPair.SafetyCode("user-ada") != want {
-		test.Fatalf("code = %q, want %q", keyPair.SafetyCode("user-ada"), want)
+	if want := strings.Join(groups, " "); keyPair.SafetyCode() != want {
+		test.Fatalf("code = %q, want %q", keyPair.SafetyCode(), want)
 	}
 }
 
@@ -305,7 +302,7 @@ func TestNormalizeSafetyCode(test *testing.T) {
 		}
 	}
 	keyPair, _ := KeyPairFromPrivateKey(sequentialBytes(1, 32))
-	code := keyPair.SafetyCode("user-ada")
+	code := keyPair.SafetyCode()
 	if got, err := NormalizeSafetyCode(strings.ReplaceAll(code, " ", "")); err != nil || got != code {
 		test.Errorf("a made code typed without spaces = %q, %v", got, err)
 	}

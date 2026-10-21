@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,7 @@ type vectors struct {
 	RecoveryKeyInvalid []string            `json:"recoveryKeyInvalid"`
 	Sealed             []sealedVector      `json:"sealed"`
 	PersonKey          personKeyVector     `json:"personKey"`
+	AccessRecord       accessRecordVector  `json:"accessRecord"`
 	Share              shareVector         `json:"share"`
 	OneTimeCodes       []oneTimeCodeVector `json:"oneTimeCodes"`
 	Passkey            passkeyVector       `json:"passkey"`
@@ -81,14 +83,42 @@ type sealedVector struct {
 type personKeyVector struct {
 	PrivateKey hexBytes `json:"privateKey"`
 	PublicKey  hexBytes `json:"publicKey"`
-	// UserID is the user id the safety code is bound to.
-	UserID     string `json:"userId"`
+	// SafetyCode is made from the public key alone.
 	SafetyCode string `json:"safetyCode"`
 	// TypedSafetyCodes are other spellings of the same code that every
 	// implementation reads back to SafetyCode: no spaces, extra white space.
 	TypedSafetyCodes []string `json:"typedSafetyCodes"`
 	// InvalidSafetyCodes are texts that every implementation refuses.
 	InvalidSafetyCodes []string `json:"invalidSafetyCodes"`
+}
+
+// accessRecordVector pins the signature of the access record. Access is the
+// record as an owner's device builds it before signing, its grantees not in
+// byte order on purpose. HighestVersionSeen is the highest version that device
+// had seen, so the signed record has the next one. MacKey and SignedBytes are
+// the key and the exact bytes of the HMAC. SignedAccess is the finished record,
+// which is also the one inside the sealed "item fields" value. Every record in
+// Forged must fail to verify with the same account key.
+type accessRecordVector struct {
+	AccountKey         hexBytes        `json:"accountKey"`
+	ItemID             string          `json:"itemId"`
+	ItemKind           string          `json:"itemKind"`
+	Access             *PasswordAccess `json:"access"`
+	HighestVersionSeen int             `json:"highestVersionSeen"`
+	MacKey             hexBytes        `json:"macKey"`
+	SignedBytes        hexBytes        `json:"signedBytes"`
+	SignedAccess       *PasswordAccess `json:"signedAccess"`
+	Forged             []forgedAccess  `json:"forged"`
+}
+
+// forgedAccess is a record that must not verify, for the item named. It is
+// the signed record with one thing changed, or the signed record presented for
+// another item.
+type forgedAccess struct {
+	Name     string          `json:"name"`
+	ItemID   string          `json:"itemId"`
+	ItemKind string          `json:"itemKind"`
+	Access   *PasswordAccess `json:"access"`
 }
 
 type shareVector struct {
@@ -170,7 +200,6 @@ const (
 	vectorItemID      = "00000000-0000-4000-8000-000000000001"
 	vectorRecipientID = "00000000-0000-4000-8000-000000000002"
 	vectorOwnerID     = "00000000-0000-4000-8000-000000000003"
-	vectorPersonID    = "00000000-0000-4000-8000-000000000004"
 	vectorCircleID    = "00000000-0000-4000-8000-000000000005"
 )
 
@@ -217,6 +246,18 @@ func buildVectors(test *testing.T) *vectors {
 	built.RecoveryKey.Proof = must(ProofKey(recoveryKeyBytes))
 	built.RecoveryKey.ProofHash = ProofHash(built.RecoveryKey.Proof)
 
+	accountKey := sequentialBytes(0xa0, KeyLength)
+	unsignedAccess := &PasswordAccess{
+		IsUsableByAgent: true,
+		Grantees:        []PasswordGrantee{{UserID: vectorRecipientID}, {CircleID: vectorCircleID}},
+	}
+	const highestVersionSeen = 6
+	signedAccess, err := SignAccess(accountKey, vectorItemID, ItemKindLogin, unsignedAccess, highestVersionSeen)
+	if err != nil {
+		test.Fatal(err)
+	}
+	built.AccessRecord = buildAccessRecordVector(test, accountKey, unsignedAccess, highestVersionSeen, signedAccess)
+
 	fieldsJSON, err := json.Marshal(LoginFields{
 		Name:           "Example",
 		UserName:       "ada@example.com",
@@ -226,11 +267,8 @@ func buildVectors(test *testing.T) *vectors {
 		Notes:          "Invented for the test vectors.",
 		Folder:         "web",
 		// The agent may use this login, and it is shared with a person and a
-		// circle: the record every implementation keeps through an edit.
-		Access: &PasswordAccess{
-			IsUsableByAgent: true,
-			Grantees:        []PasswordGrantee{{UserID: vectorRecipientID}, {CircleID: vectorCircleID}},
-		},
+		// circle: the signed record every implementation keeps through an edit.
+		Access: signedAccess,
 	})
 	if err != nil {
 		test.Fatal(err)
@@ -242,9 +280,9 @@ func buildVectors(test *testing.T) *vectors {
 		associatedData string
 		plaintext      []byte
 	}{
-		{"account key", built.Passphrase.WrapKey, sequentialBytes(0x10, NonceLength), AccountKeyData(), sequentialBytes(0xa0, KeyLength)},
-		{"private key", sequentialBytes(0xa0, KeyLength), sequentialBytes(0x20, NonceLength), PrivateKeyData(), sequentialBytes(0x01, 32)},
-		{"item key", sequentialBytes(0xa0, KeyLength), sequentialBytes(0x30, NonceLength), ItemKeyData(vectorItemID), sequentialBytes(0xc0, KeyLength)},
+		{"account key", built.Passphrase.WrapKey, sequentialBytes(0x10, NonceLength), AccountKeyData(), accountKey},
+		{"private key", accountKey, sequentialBytes(0x20, NonceLength), PrivateKeyData(), sequentialBytes(0x01, 32)},
+		{"item key", accountKey, sequentialBytes(0x30, NonceLength), ItemKeyData(vectorItemID), sequentialBytes(0xc0, KeyLength)},
 		{"item fields", sequentialBytes(0xc0, KeyLength), sequentialBytes(0x40, NonceLength), ItemFieldsData(vectorItemID, ItemKindLogin), fieldsJSON},
 	}
 	for _, input := range sealedInputs {
@@ -266,11 +304,10 @@ func buildVectors(test *testing.T) *vectors {
 	if err != nil {
 		test.Fatal(err)
 	}
-	personSafetyCode := personKeyPair.SafetyCode(vectorPersonID)
+	personSafetyCode := personKeyPair.SafetyCode()
 	built.PersonKey = personKeyVector{
 		PrivateKey: personKeyPair.PrivateKey(),
 		PublicKey:  personKeyPair.PublicKey(),
-		UserID:     vectorPersonID,
 		SafetyCode: personSafetyCode,
 		TypedSafetyCodes: []string{
 			strings.ReplaceAll(personSafetyCode, " ", ""),
@@ -537,8 +574,8 @@ func TestVectors(test *testing.T) {
 		}
 	}
 
-	// The safety code is bound to the user id, and a typed code reads back to it.
-	if code := SafetyCode(stored.PersonKey.UserID, stored.PersonKey.PublicKey); code != stored.PersonKey.SafetyCode {
+	// The safety code is made from the public key alone, and a typed code reads back to it.
+	if code := SafetyCode(stored.PersonKey.PublicKey); code != stored.PersonKey.SafetyCode {
 		test.Errorf("safety code = %q, want %q", code, stored.PersonKey.SafetyCode)
 	}
 	for _, text := range append([]string{stored.PersonKey.SafetyCode}, stored.PersonKey.TypedSafetyCodes...) {
@@ -552,6 +589,22 @@ func TestVectors(test *testing.T) {
 		}
 	}
 
+	// The signed access record verifies, signing the unsigned one gives it back,
+	// and every forged record is refused.
+	record := stored.AccessRecord
+	if err := CheckAccess(record.AccountKey, record.ItemID, ItemKind(record.ItemKind), record.SignedAccess); err != nil {
+		test.Errorf("the signed access record does not verify: %v", err)
+	}
+	signedAgain, err := SignAccess(record.AccountKey, record.ItemID, ItemKind(record.ItemKind), record.Access, record.HighestVersionSeen)
+	if err != nil || !reflect.DeepEqual(signedAgain, record.SignedAccess) {
+		test.Errorf("signing the record again gave %+v, %v", signedAgain, err)
+	}
+	for _, forged := range record.Forged {
+		if err := CheckAccess(record.AccountKey, forged.ItemID, ItemKind(forged.ItemKind), forged.Access); !errors.Is(err, ErrAccessNotVerified) {
+			test.Errorf("the forged access record %q was not refused: %v", forged.Name, err)
+		}
+	}
+
 	// Verify the stored signature, and one made now.
 	publicKey := verifyingKey(test, stored.Passkey.PublicKeyX, stored.Passkey.PublicKeyY)
 	digest := sha256.Sum256(append(append([]byte(nil), stored.Passkey.AssertionAuthenticatorData...), stored.Passkey.ClientDataHash...))
@@ -560,6 +613,53 @@ func TestVectors(test *testing.T) {
 	}
 	if !ecdsa.VerifyASN1(publicKey, digest[:], freshSignature) {
 		test.Error("a new signature does not verify")
+	}
+}
+
+// buildAccessRecordVector makes the access record section: the signed record,
+// the key and bytes behind it, and records that must be refused.
+func buildAccessRecordVector(test *testing.T, accountKey []byte, unsigned *PasswordAccess, highestVersionSeen int, signed *PasswordAccess) accessRecordVector {
+	test.Helper()
+	macKey, err := accessMacKey(accountKey)
+	if err != nil {
+		test.Fatal(err)
+	}
+	signedBytes, err := accessMacBytes(vectorItemID, ItemKindLogin, signed)
+	if err != nil {
+		test.Fatal(err)
+	}
+	// changed is the signed record with one thing different, the signature kept.
+	changed := func(change func(access *PasswordAccess)) *PasswordAccess {
+		copied := AccessWithAgentUse(signed, signed.IsUsableByAgent)
+		copied.RecordVersion = signed.RecordVersion
+		copied.RecordMac = signed.RecordMac
+		change(copied)
+		return copied
+	}
+	return accessRecordVector{
+		AccountKey:         accountKey,
+		ItemID:             vectorItemID,
+		ItemKind:           string(ItemKindLogin),
+		Access:             unsigned,
+		HighestVersionSeen: highestVersionSeen,
+		MacKey:             macKey,
+		SignedBytes:        signedBytes,
+		SignedAccess:       signed,
+		Forged: []forgedAccess{
+			{"agent use turned off", vectorItemID, string(ItemKindLogin), changed(func(access *PasswordAccess) { access.IsUsableByAgent = false })},
+			{"a person added", vectorItemID, string(ItemKindLogin), changed(func(access *PasswordAccess) {
+				access.Grantees = append(access.Grantees, PasswordGrantee{UserID: vectorOwnerID})
+			})},
+			{"a circle removed", vectorItemID, string(ItemKindLogin), changed(func(access *PasswordAccess) { access.Grantees = access.Grantees[:1] })},
+			{"a person listed as a circle", vectorItemID, string(ItemKindLogin), changed(func(access *PasswordAccess) {
+				access.Grantees = []PasswordGrantee{{CircleID: vectorRecipientID}, {CircleID: vectorCircleID}}
+			})},
+			{"an older version", vectorItemID, string(ItemKindLogin), changed(func(access *PasswordAccess) { access.RecordVersion-- })},
+			{"no signature", vectorItemID, string(ItemKindLogin), changed(func(access *PasswordAccess) { access.RecordMac = nil })},
+			{"no version", vectorItemID, string(ItemKindLogin), changed(func(access *PasswordAccess) { access.RecordVersion = 0 })},
+			{"another item", vectorOwnerID, string(ItemKindLogin), signed},
+			{"another kind", vectorItemID, string(ItemKindNote), signed},
+		},
 	}
 }
 
