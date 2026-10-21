@@ -184,7 +184,8 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 			return err
 		}
 	}
-	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: turnMessage, Surface: surface, Headless: true, IsPersonsSchedule: isPersonsOwnSchedule(schedule, run.Agent, run.Owner), UsageKind: string(models.AgentJobSchedule)})
+	isPersons := isPersonsOwnSchedule(schedule, run.Agent, run.Owner)
+	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: turnMessage, Surface: surface, Headless: true, IsPersonsSchedule: isPersons, IsAgentsSchedule: !isPersons && !isBuiltInSchedule(schedule, run.Agent, run.Owner), UsageKind: string(models.AgentJobSchedule)})
 	if err != nil {
 		return err
 	}

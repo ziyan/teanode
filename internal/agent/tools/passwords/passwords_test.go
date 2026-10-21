@@ -51,8 +51,12 @@ type fakeRun struct {
 	// isStartedByOthers is a run that content began (a mail, a webhook, a
 	// goal, a schedule the agent wrote) rather than the person.
 	isStartedByOthers bool
-	configuration     *config.Configuration
+	// isWokenByAgentsSchedule is a schedule the agent wrote waking the run.
+	isWokenByAgentsSchedule bool
+	configuration           *config.Configuration
 }
+
+func (self *fakeRun) IsWokenByAgentsSchedule() bool { return self.isWokenByAgentsSchedule }
 
 func (self *fakeRun) Owner() *models.User   { return self.owner }
 func (self *fakeRun) Database() db.Database { return self.database }
@@ -92,7 +96,7 @@ type world struct {
 	database       db.Database
 	ada, ben, cora *models.User
 
-	grantedLogin, ungrantedLogin, grantedNote, card, othersNote string
+	grantedLogin, ungrantedLogin, grantedNote, card, othersNote, unmarkedNote, unmarkedLogin string
 }
 
 // people are the key pairs of ada and ben, made when they set up Passwords.
@@ -199,6 +203,7 @@ func newWorld(test *testing.T) *world {
 		}
 		found.grantedLogin = seal(tx, found.ada, keyPairs.ada, 1, models.PasswordItemKindLogin, passwords.LoginFields{
 			Name: "Example shop", UserName: "ada@example.test", Password: loginPassword, Sites: []string{"https://shop.example.test"},
+			Access:         passwords.AccessWithAgentUse(nil, true),
 			OneTimeCodeURI: "otpauth://totp/Example:ada?secret=" + loginOneTimeSecret,
 			Notes:          "the notes of the login are not listed",
 			Passkeys:       []passwords.LoginPasskey{{CredentialID: []byte("credential"), RelyingPartyID: "shop.example.test", PrivateKey: loginPasskeyKey}},
@@ -206,9 +211,13 @@ func newWorld(test *testing.T) *world {
 		found.ungrantedLogin = seal(tx, found.ada, keyPairs.ada, 2, models.PasswordItemKindLogin, passwords.LoginFields{
 			Name: "Example bank", UserName: "ada.bank", Password: "never-given-to-the-agent", Sites: []string{"https://bank.example.test"},
 		}, false)
-		found.grantedNote = seal(tx, found.ada, keyPairs.ada, 3, models.PasswordItemKindNote, passwords.NoteFields{Name: "Shed", Text: "The shed padlock opens with 0000."}, true)
+		found.grantedNote = seal(tx, found.ada, keyPairs.ada, 3, models.PasswordItemKindNote, passwords.NoteFields{Name: "Shed", Text: "The shed padlock opens with 0000.", Access: passwords.AccessWithAgentUse(nil, true)}, true)
 		found.card = seal(tx, found.ada, keyPairs.ada, 4, models.PasswordItemKindCard, passwords.CardFields{Name: "Example card", Number: cardNumber, SecurityCode: "123"}, true)
-		found.othersNote = seal(tx, found.ben, keyPairs.ben, 5, models.PasswordItemKindNote, passwords.NoteFields{Name: "Garage", Text: otherPersonsText}, true)
+		found.othersNote = seal(tx, found.ben, keyPairs.ben, 5, models.PasswordItemKindNote, passwords.NoteFields{Name: "Garage", Text: otherPersonsText, Access: passwords.AccessWithAgentUse(nil, true)}, true)
+		// Turned on in the database, but the sealed fields do not say the agent
+		// may use them (the record the person's device writes is what counts).
+		found.unmarkedNote = seal(tx, found.ada, keyPairs.ada, 6, models.PasswordItemKindNote, passwords.NoteFields{Name: "Loft", Text: "The loft hatch sticks."}, true)
+		found.unmarkedLogin = seal(tx, found.ada, keyPairs.ada, 7, models.PasswordItemKindLogin, passwords.LoginFields{Name: "Example club", UserName: "ada.club", Password: "an-invented-club-password", Sites: []string{"https://club.example.test"}}, true)
 		return nil
 	}); err != nil {
 		test.Fatal(err)
@@ -341,7 +350,15 @@ func TestListShowsOnlyGrantedItemsAndNoSecrets(test *testing.T) {
 	if !listed || !card.IsUnreadable || card.ItemName != "" || strings.Contains(content, "Example card") {
 		test.Fatalf("the card: %+v in %s", card, content)
 	}
-	if answer.ItemCount != 3 {
+	// An item whose sealed record does not let the agent use it is listed the
+	// same way, by id only.
+	for _, itemId := range []string{found.unmarkedNote, found.unmarkedLogin} {
+		unmarked, listed := byID[itemId]
+		if !listed || !unmarked.IsUnreadable || unmarked.ItemName != "" || strings.Contains(content, "Loft") || strings.Contains(content, "Example club") {
+			test.Fatalf("an item whose sealed record does not allow the agent: %+v in %s", unmarked, content)
+		}
+	}
+	if answer.ItemCount != 5 {
 		test.Fatalf("item_count %d in %s", answer.ItemCount, content)
 	}
 }
@@ -492,6 +509,54 @@ func TestARunThatContentStartedUsesNothing(test *testing.T) {
 	// A run that cannot say who started it is not the person's.
 	if err := CheckSignInHere(runWithoutOrigin{found.runOf()}); err == nil {
 		test.Fatal("a run that cannot say who started it signed in")
+	}
+}
+
+// A run woken by a schedule the agent wrote is told so, and how the person
+// opens it: the same words from every action and from the browser's sign-in
+// check, and no item text. Any other run content started keeps the general
+// words.
+func TestARunOfAnAgentsScheduleIsToldHowThePersonOpensIt(test *testing.T) {
+	found := newWorld(test)
+	run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: "schedule", isHeadless: true, isStartedByOthers: true, isWokenByAgentsSchedule: true}
+	wanted := "The person can save the schedule themselves on the dashboard or in the app (Agent, Schedules) to let its runs use Passwords."
+	for _, action := range []string{"list", "read_note"} {
+		content, _ := mustAct(test, run, action, fmt.Sprintf(`{"item_id":%q}`, found.grantedNote))
+		if !strings.Contains(content, "schedule that the agent wrote") || !strings.Contains(content, wanted) {
+			test.Errorf("%s: %s", action, content)
+		}
+		if strings.Contains(content, "padlock") || strings.Contains(content, "Example shop") {
+			test.Errorf("%s: %s", action, content)
+		}
+	}
+	err := CheckSignInHere(run)
+	if err == nil || !strings.Contains(err.Error(), wanted) {
+		test.Errorf("sign in: %v", err)
+	}
+	// A run that content started, which no schedule woke, keeps the general words.
+	other := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: "mail", isHeadless: true, isStartedByOthers: true}
+	content, _ := mustAct(test, other, "list", `{}`)
+	if strings.Contains(content, "Agent, Schedules") || !strings.Contains(content, "content started") {
+		test.Errorf("a mail's run: %s", content)
+	}
+}
+
+// An item the server lists as usable by the agent, but whose sealed fields do
+// not carry the person's own record saying so, is refused in the same words as
+// any other item the agent may not use, and nothing of it is given out.
+func TestAnItemWhoseSealedRecordDoesNotAllowTheAgentIsRefused(test *testing.T) {
+	found := newWorld(test)
+	run := found.runOf()
+	content, _ := mustAct(test, run, "read_note", fmt.Sprintf(`{"item_id":%q}`, found.unmarkedNote))
+	if !strings.HasPrefix(content, "This item is not one you may use.") || strings.Contains(content, "hatch") {
+		test.Errorf("read_note: %s", content)
+	}
+	if found.lastUsedAt(test, found.unmarkedNote) {
+		test.Error("a refused read was recorded as a use")
+	}
+	_, err := OpenLoginToSignIn(context.Background(), run, found.unmarkedLogin)
+	if err == nil || !strings.HasPrefix(err.Error(), "This item is not one you may use.") || strings.Contains(err.Error(), "club-password") {
+		test.Errorf("sign in: %v", err)
 	}
 }
 

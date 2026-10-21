@@ -34,6 +34,13 @@ type ChatMessage struct {
 	// was: what a compaction records to say where the verbatim transcript
 	// resumes. Never sent to a provider.
 	SourceID string
+
+	// IsFromPrivateTurn says the stored message belongs to a turn in which a
+	// private tool was called, judged over the whole stored conversation when
+	// it was loaded. A history that starts after a compaction may begin in the
+	// middle of such a turn, where the call that makes it private is no longer
+	// in the history. Never sent to a provider.
+	IsFromPrivateTurn bool
 }
 
 // ContentPart is one piece of a multimodal message.

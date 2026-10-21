@@ -440,3 +440,46 @@ func TestAPhoneIsNotToldAnAnswerOfAPrivateTurn(t *testing.T) {
 		t.Error("no answer notification arrived")
 	}
 }
+
+// A schedule the person wrote reads a note and says what it holds. The answer
+// of an own turn reaches the phone through pushOwnTurns, which sends only that
+// there is one when the turn called a private tool, and the whole answer of a
+// turn that did not.
+func TestTheOwnTurnAnswerOfAPrivateTurnIsNotPrinted(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		conversation, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: fixture.agent.ID, Kind: models.AgentConversationMain, Surface: "drawer", LastAt: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, message := range []*models.AgentMessage{
+			{ConversationID: conversation.ID, Role: "user", Content: models.ScheduleMarker + " every morning, tell me my shed note"},
+			{ConversationID: conversation.ID, Role: "assistant", ToolCalls: []models.AgentToolCall{{ID: "c1", Name: "passwords", Arguments: `{"action":"read_note","item_id":"x"}`}}},
+			{ConversationID: conversation.ID, Role: "tool", ToolCallID: "c1", Name: "passwords", Content: `{"note_text":"the padlock opens with 0000-invented"}`},
+			{ConversationID: conversation.ID, Role: "assistant", Content: "Your shed padlock opens with 0000-invented."},
+			{ConversationID: conversation.ID, Role: "user", Content: models.ScheduleMarker + " every evening, tell me the weather"},
+			{ConversationID: conversation.ID, Role: "assistant", Content: "Sunny until nine."},
+		} {
+			if _, err := tx.AppendAgentMessage(message); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	fixture.worker.pushOwnTurns(context.Background(), time.Now().Add(time.Minute))
+	fixture.worker.waitGroup.Wait()
+
+	bodies := []string{}
+	for _, delivery := range fixture.relay.to("sealed:a-registration") {
+		content := fixture.read(t, delivery)
+		if content.NotificationKind != models.NotificationMessage {
+			continue
+		}
+		if strings.Contains(content.Body, "0000-invented") {
+			t.Errorf("the lock screen shows the note: %q", content.Body)
+		}
+		bodies = append(bodies, content.Body)
+	}
+	if len(bodies) != 2 || bodies[0] != "Your answer is ready" || bodies[1] != "Sunny until nine." {
+		t.Errorf("the phone was sent %q, want the private answer as the marker and the other whole", bodies)
+	}
+}

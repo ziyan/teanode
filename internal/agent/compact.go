@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -57,7 +58,10 @@ func compactionNote(note string) llm.ChatMessage {
 // historyOf is the stored conversation as the model gets it: the latest
 // note, then every message after the one the note stands in for. When
 // that message is not in the transcript, everything is replayed rather
-// than nothing.
+// than nothing. Which messages belong to a private turn is judged over the
+// whole stored list before the compacted part is dropped, since the cut may
+// fall inside a turn and leave its answer without the call that makes it
+// private.
 func historyOf(stored []*models.AgentMessage, compactedThrough string) []llm.ChatMessage {
 	var note *models.AgentMessage
 	found := compactedThrough == ""
@@ -76,8 +80,9 @@ func historyOf(stored []*models.AgentMessage, compactedThrough string) []llm.Cha
 	if note != nil {
 		history = append(history, compactionNote(note.Content))
 	}
+	isPrivate := tools.PrivateTurns(stored)
 	skipping := compactedThrough != ""
-	for _, message := range stored {
+	for index, message := range stored {
 		if skipping {
 			if message.ID == compactedThrough {
 				skipping = false
@@ -88,9 +93,9 @@ func historyOf(stored []*models.AgentMessage, compactedThrough string) []llm.Cha
 		case string(llm.RoleUser):
 			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: withReactionNote(historyTurn(message), message.Reactions), SourceID: message.ID})
 		case string(llm.RoleAssistant):
-			history = append(history, llm.ChatMessage{Role: llm.RoleAssistant, Content: withReactionNote(message.Content, message.Reactions), ToolCalls: toolCallsFrom(message.ToolCalls), SourceID: message.ID})
+			history = append(history, llm.ChatMessage{Role: llm.RoleAssistant, Content: withReactionNote(message.Content, message.Reactions), ToolCalls: toolCallsFrom(message.ToolCalls), SourceID: message.ID, IsFromPrivateTurn: isPrivate[index]})
 		case string(llm.RoleTool):
-			history = append(history, llm.ChatMessage{Role: llm.RoleTool, ToolCallID: message.ToolCallID, Name: message.Name, Content: message.Content, SourceID: message.ID})
+			history = append(history, llm.ChatMessage{Role: llm.RoleTool, ToolCallID: message.ToolCallID, Name: message.Name, Content: message.Content, SourceID: message.ID, IsFromPrivateTurn: isPrivate[index]})
 		}
 	}
 	return repairHistory(history)

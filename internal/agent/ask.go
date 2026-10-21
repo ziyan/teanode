@@ -84,6 +84,12 @@ type AskSettings struct {
 	// write.
 	IsPersonsSchedule bool
 
+	// IsAgentsSchedule says a turn of the schedule surface was woken by a
+	// schedule the agent wrote (or one of unknown origin), not one the person
+	// wrote and not a built-in one. Passwords is closed to it, and says so in
+	// words that tell the person how to open it (IsWokenByAgentsSchedule).
+	IsAgentsSchedule bool
+
 	// IsAnswerToCard says the turn carries on an answer given to a card after
 	// the turn that raised it had ended (see ResumeInteraction), and
 	// IsCardRaisedByPerson that the turn that raised it was one the person
@@ -797,6 +803,17 @@ func (self *AskRun) IsStartedByPerson() bool {
 	}
 	return false
 }
+
+// IsWokenByAgentsSchedule says a schedule the agent wrote woke this run, so that
+// Passwords can tell the person to save the schedule themselves. A subagent is
+// its parent's.
+func (self *AskRun) IsWokenByAgentsSchedule() bool {
+	if parent := self.settings.confirmVia; parent != nil {
+		return parent.IsWokenByAgentsSchedule()
+	}
+	return self.settings.IsAgentsSchedule && !self.IsStartedByPerson()
+}
+
 func (self *AskRun) CanAsk() bool {
 	if self.settings.isUnattended {
 		return false

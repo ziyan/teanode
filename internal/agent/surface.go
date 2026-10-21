@@ -48,6 +48,11 @@ const dashboardOverlay = "<surface>\nThe dashboard: Markdown renders, and a tabl
 // picturesLine is how a picture is shown where the dashboard draws one.
 const picturesLine = "A picture shows in the answer when written as ![what it shows](address), with an address a tool showed you (an image on a page you read, a search result's picture) and never one you put together; [![what it shows](address)](page) links it to its page. Show a picture when it helps choose or recognize something, not as a link to one."
 
+// agentCommandSurface is the surface the command line sends when the agent's
+// own shell ran it (TEANODE_AGENT_COMMAND is set). The server keeps it as given
+// and does not count it as the person's.
+const agentCommandSurface = "agent_command"
+
 // surfaces is every surface the prompt says something particular about.
 // A surface not listed is named in the situation and nothing more.
 var surfaces = map[string]surface{
@@ -110,6 +115,13 @@ var surfaces = map[string]surface{
 	},
 	"api": {
 		situationLine: talkingThrough("api"),
+		overlay:       terminalOverlay,
+	},
+	// A turn started by a command the agent's own shell ran. It reads like the
+	// command line, but it is not the person typing: IsStartedByPerson does
+	// not list it.
+	agentCommandSurface: {
+		situationLine: "This turn was started by a command you ran in your own shell, not by the person.",
 		overlay:       terminalOverlay,
 	},
 	"mail": {

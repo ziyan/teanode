@@ -2,6 +2,7 @@ package schedule_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,4 +119,76 @@ func TestTheAgentChangingAPersonsScheduleMakesItTheAgents(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A schedule the agent makes or rewords, whose prompt is about signing in,
+// answers with words that tell the model to tell the person how to let its
+// runs use Passwords. A schedule that is not about signing in, and one the
+// person still owns, answer without them.
+func TestAScheduleAboutSigningInTellsTheModelWhatThePersonCanDo(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &fakeRun{database: database}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if run.owner, err = tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: run.owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if run.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t)
+	wanted := "they can save the schedule themselves on the dashboard or in the app (Agent, Schedules) to let its runs use Passwords"
+
+	for _, prompt := range []string{"Sign in to the Example shop and check my order.", "Log in to example.test and read the balance", "Check the password for the router is still set", "signin to the portal"} {
+		result, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"add","name":"Check","cron":"@in 5m","prompt":"` + prompt + `","deliver":"drawer"}`)})
+		if err != nil {
+			t.Fatalf("add %q: %s", prompt, err)
+		}
+		if !strings.Contains(result.Content, wanted) {
+			t.Errorf("add %q: %s", prompt, result.Content)
+		}
+	}
+	for _, prompt := range []string{"Look at the queue.", "Tell me when the design is signed off.", "Check the design inbox"} {
+		result, err := tool.Run(ctx, &tools.Call{ID: "c2", Arguments: []byte(`{"action":"add","name":"Queue","cron":"@in 5m","prompt":"` + prompt + `","deliver":"drawer"}`)})
+		if err != nil {
+			t.Fatalf("add %q: %s", prompt, err)
+		}
+		if strings.Contains(result.Content, "Passwords") {
+			t.Errorf("add %q: %s", prompt, result.Content)
+		}
+	}
+
+	// Rewording a schedule the person wrote makes it the agent's and says so;
+	// renaming it leaves it theirs and says nothing.
+	var theirs *models.AgentSchedule
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if theirs, err = tx.CreateAgentSchedule(&models.AgentSchedule{
+			AgentID: run.agent.ID, Name: "Morning", Cron: "0 8 * * *", Prompt: "Sign in to the Example shop and tell me what shipped.",
+			WrittenBy: models.WrittenByPerson, Deliver: models.AgentDeliverMail, Enabled: true,
+		}); err != nil {
+			t.Fatalf("CreateAgentSchedule: %s", err)
+		}
+	})
+	renamed, err := tool.Run(ctx, &tools.Call{ID: "c3", Arguments: []byte(`{"action":"update","id":"` + theirs.ID + `","name":"Shop"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(renamed.Content, "Passwords") {
+		t.Errorf("a rename: %s", renamed.Content)
+	}
+	reworded, err := tool.Run(ctx, &tools.Call{ID: "c4", Arguments: []byte(`{"action":"update","id":"` + theirs.ID + `","prompt":"Log in to the Example shop and list the new orders."}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reworded.Content, wanted) {
+		t.Errorf("a reworded prompt: %s", reworded.Content)
+	}
 }

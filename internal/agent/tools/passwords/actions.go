@@ -19,6 +19,11 @@ import (
 // to every request for an item the agent may not use.
 const turnOnWords = "They can open the item in Passwords and turn on \"Let the agent use this\", then ask again."
 
+// notUsableWords is the answer when the item's sealed access record does not
+// let the agent use it (passwords.ErrNotUsableByAgent), although the server's
+// own list had it: the person's device is what writes that record.
+const notUsableWords = "This item is not one you may use. " + turnOnWords
+
 // noItemsWords is the answer of list when the person has let the agent use
 // nothing. It is an answer, not an error, so that the model tells the person
 // how rather than trying again.
@@ -35,6 +40,27 @@ const elsewhereWords = "Passwords is used only in the TeaNode app and on the das
 // wrote for itself began. What such a run does is steered by content the
 // person did not write, and a login is the last thing to hand to that.
 const notTheirsWords = "Passwords is used only in a conversation with the person or in a schedule the person wrote themselves, not in a run that a mail, a message, a webhook, a goal, a dream or any other content started."
+
+// agentsScheduleWords is the answer in place of notTheirsWords for a run that
+// a schedule the agent wrote woke. It says what the person can do about it, so
+// the model tells them instead of trying again: a schedule they save
+// themselves is theirs, and its runs may use Passwords.
+const agentsScheduleWords = "This run was woken by a schedule that the agent wrote, not one the person wrote, so Passwords is closed to it. The person can save the schedule themselves on the dashboard or in the app (Agent, Schedules) to let its runs use Passwords. Tell them so."
+
+// agentsScheduleRun is a run that can say a schedule the agent wrote woke it.
+type agentsScheduleRun interface {
+	IsWokenByAgentsSchedule() bool
+}
+
+// notTheirsAnswer is the words for a run the person did not start: the ones
+// for a schedule the agent wrote when that is what woke it, otherwise
+// notTheirsWords.
+func notTheirsAnswer(run tools.Run) string {
+	if woken, ok := run.(agentsScheduleRun); ok && woken.IsWokenByAgentsSchedule() {
+		return agentsScheduleWords
+	}
+	return notTheirsWords
+}
 
 // notAllowedWords is the answer when the person's account no longer holds the
 // permission to use Passwords.
@@ -78,7 +104,7 @@ func withGate(run func(ctx context.Context, call *tools.Call, current tools.Run)
 			return tools.TextResult("%s", elsewhereWords), nil
 		}
 		if !tools.IsStartedByPerson(current) {
-			return tools.TextResult("%s", notTheirsWords), nil
+			return tools.TextResult("%s", notTheirsAnswer(current)), nil
 		}
 		return run(ctx, call, current)
 	}
@@ -293,7 +319,10 @@ var runReadNote = withGate(func(ctx context.Context, call *tools.Call, run tools
 		if err != nil {
 			return err
 		}
-		if note, err = opener.OpenNote(agentItemOf(found, ownerPublicKey)); err != nil {
+		if note, err = opener.OpenNote(agentItemOf(found, ownerPublicKey)); errors.Is(err, passwords.ErrNotUsableByAgent) {
+			refusal = notUsableWords
+			return nil
+		} else if err != nil {
 			return fmt.Errorf("the note cannot be opened: %w", err)
 		}
 		// The use is recorded before the text is given out: a note that

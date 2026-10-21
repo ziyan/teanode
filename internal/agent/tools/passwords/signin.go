@@ -30,7 +30,7 @@ func CheckSignInHere(run tools.Run) error {
 		return answerError(elsewhereWords)
 	}
 	if !tools.IsStartedByPerson(run) {
-		return answerError(notTheirsWords)
+		return answerError(notTheirsAnswer(run))
 	}
 	return nil
 }
@@ -95,7 +95,10 @@ func OpenLoginToSignIn(ctx context.Context, run tools.Run, itemId string) (*pass
 			return err
 		}
 		// The error of opening names the item, never what is in it.
-		if login, err = opener.OpenLogin(agentItemOf(found, ownerPublicKey)); err != nil {
+		if login, err = opener.OpenLogin(agentItemOf(found, ownerPublicKey)); errors.Is(err, passwords.ErrNotUsableByAgent) {
+			refusal = notUsableWords
+			return nil
+		} else if err != nil {
 			return fmt.Errorf("the login cannot be opened: %w", err)
 		}
 		return nil

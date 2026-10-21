@@ -68,3 +68,45 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 		}
 	}
 }
+
+// A command the agent's own shell ran sends the surface "agent_command", not
+// "cli": the turn it starts is not the person's, so it cannot use Passwords,
+// and the server keeps the surface as given (it is not normalized to "cli").
+func TestACommandTheAgentRanIsNotTheirs(t *testing.T) {
+	run := &AskRun{settings: &AskSettings{Surface: agentCommandSurface, Message: "sign in to my shop"}}
+	if run.IsStartedByPerson() {
+		t.Error("a turn started by a command the agent ran counts as the person's")
+	}
+	if agentCommandSurface != "agent_command" {
+		t.Errorf("the surface the command line sends is %q", agentCommandSurface)
+	}
+	if !(&AskRun{settings: &AskSettings{Surface: "cli", Message: "sign in to my shop"}}).IsStartedByPerson() {
+		t.Error("a turn the person typed at their terminal must stay theirs")
+	}
+	if surfaceOf(agentCommandSurface).situationLine == "" {
+		t.Error("the prompt says nothing of where the turn is")
+	}
+}
+
+// A run that a schedule the agent wrote woke can say so, so that Passwords
+// tells the person how to open it; the person's own schedule, a built-in one
+// and a typed turn cannot, and a subagent is its parent's.
+func TestARunWokenByAnAgentsScheduleSaysSo(t *testing.T) {
+	agents := &AskRun{settings: &AskSettings{Surface: "schedule", Headless: true, IsAgentsSchedule: true}}
+	if !agents.IsWokenByAgentsSchedule() {
+		t.Error("the agent's schedule")
+	}
+	for name, run := range map[string]*AskRun{
+		"the person's schedule": {settings: &AskSettings{Surface: "schedule", Headless: true, IsPersonsSchedule: true}},
+		"a built-in schedule":   {settings: &AskSettings{Surface: "schedule", Headless: true}},
+		"a typed turn":          {settings: &AskSettings{Surface: "drawer", Message: "hello"}},
+	} {
+		if run.IsWokenByAgentsSchedule() {
+			t.Errorf("%s", name)
+		}
+	}
+	child := &AskRun{settings: &AskSettings{Surface: "subagent", Headless: true, confirmVia: agents}}
+	if !child.IsWokenByAgentsSchedule() {
+		t.Error("a subagent of the agent's schedule")
+	}
+}

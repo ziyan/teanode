@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/push"
@@ -106,17 +107,24 @@ func (self *Agent) pushOwnTurns(ctx context.Context, now time.Time) {
 		if !phone.Wants(models.NotificationMessage) {
 			continue
 		}
-		answers, agentName, err := self.claimOwnTurns(ctx, phone, now)
+		answers, privateAnswers, agentName, err := self.claimOwnTurns(ctx, phone, now)
 		if err != nil {
 			log.Warningf("cannot read what to send phone %s: %s", phone.ID, err)
 			continue
 		}
 		for _, answer := range answers {
+			// A notification is read on a lock screen. A turn that called a
+			// private tool (a schedule the person wrote that reads a note)
+			// may quote it, so the phone is told only that there is an answer.
+			body := PhoneBody(answer.Content)
+			if privateAnswers[answer.ID] {
+				body = phonePrivateAnswerBody
+			}
 			content := &push.Content{
 				NotificationKind: models.NotificationMessage,
 				ConversationID:   answer.ConversationID,
 				Title:            agentName,
-				Body:             PhoneBody(answer.Content),
+				Body:             body,
 				ThreadID:         answer.ConversationID,
 				Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
 			}
@@ -138,8 +146,13 @@ func (self *Agent) pushOwnTurns(ctx context.Context, now time.Time) {
 // once: a send that fails is not tried again, which for a notification is
 // the better failure than a second copy. Turns are read only once they are
 // phonePushSettle old, so one still being written is not stepped past.
-func (self *Agent) claimOwnTurns(ctx context.Context, phone *models.AgentPhone, now time.Time) ([]*models.AgentMessage, string, error) {
+//
+// The second result holds the ids of the answers that belong to a private turn
+// (see tools.PrivateTurns), judged over the whole conversation since the turn
+// that made an answer begins before it.
+func (self *Agent) claimOwnTurns(ctx context.Context, phone *models.AgentPhone, now time.Time) ([]*models.AgentMessage, map[string]bool, string, error) {
 	var answers []*models.AgentMessage
+	privateAnswers := map[string]bool{}
 	agentName := "TeaNode"
 	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		person, err := tx.GetAgent(phone.AgentID)
@@ -171,10 +184,22 @@ func (self *Agent) claimOwnTurns(ctx context.Context, phone *models.AgentPhone, 
 		if err != nil || !isAdvanced {
 			return err
 		}
+		if len(found) > 0 {
+			stored, err := tx.ListAgentMessages(mains[0].ID, nil)
+			if err != nil {
+				return err
+			}
+			isPrivate := tools.PrivateTurns(stored)
+			for index, message := range stored {
+				if isPrivate[index] {
+					privateAnswers[message.ID] = true
+				}
+			}
+		}
 		answers = found
 		return nil
 	})
-	return answers, agentName, err
+	return answers, privateAnswers, agentName, err
 }
 
 // notifyInteraction tells the person's phones about a card raised while

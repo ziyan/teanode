@@ -15,7 +15,9 @@ import (
 // privateMessages says, for each message of a history, whether it belongs to
 // a private turn. It reads the history the way tools.PrivateTurns reads the
 // stored messages, so it also covers the messages of the turn being run, which
-// are not stored with a source yet.
+// are not stored with a source yet. A message loaded from a private turn
+// (llm.ChatMessage.IsFromPrivateTurn) stays private even when the call that
+// made the turn private was compacted away or is not in this history.
 func privateMessages(history []llm.ChatMessage) []bool {
 	stored := make([]*models.AgentMessage, 0, len(history))
 	for _, message := range history {
@@ -25,7 +27,13 @@ func privateMessages(history []llm.ChatMessage) []bool {
 		}
 		stored = append(stored, found)
 	}
-	return tools.PrivateTurns(stored)
+	isPrivate := tools.PrivateTurns(stored)
+	for index, message := range history {
+		if message.IsFromPrivateTurn {
+			isPrivate[index] = true
+		}
+	}
+	return isPrivate
 }
 
 // withoutPrivateHistory is the history with what the agent said and its tools

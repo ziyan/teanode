@@ -6,6 +6,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"github.com/ziyan/teanode/internal/agent/indexed"
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/passwords"
 	"strings"
 	"testing"
 	"time"
@@ -294,5 +295,23 @@ func TestTheTranscriptLeavesOutWhatTheDashboardHides(test *testing.T) {
 	}
 	if printed := written.String(); strings.Contains(printed, "<!--") || !strings.Contains(printed, "agent: Signed.") {
 		test.Errorf("the transcript printed:\n%s", printed)
+	}
+}
+
+// A command the agent's own shell runs (the computer program marks it) must
+// not start a turn that counts as the person's: it sends the surface
+// "agent_command" where the person's terminal sends "cli". Any other surface
+// is sent as given.
+func TestAgentChatSendsAgentCommandSurfaceWhenTheAgentRunsIt(test *testing.T) {
+	test.Setenv(passwords.AgentCommandEnvironmentName, "")
+	if surface := terminalSurface("cli"); surface != "cli" {
+		test.Errorf("the person's terminal sent %q", surface)
+	}
+	test.Setenv(passwords.AgentCommandEnvironmentName, "1")
+	if surface := terminalSurface("cli"); surface != "agent_command" {
+		test.Errorf("the agent's shell sent %q", surface)
+	}
+	if surface := terminalSurface("api"); surface != "api" {
+		test.Errorf("another surface was changed to %q", surface)
 	}
 }

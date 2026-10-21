@@ -782,7 +782,7 @@ func runChatFollow(ctx context.Context, command *cli.Command, connection *client
 		// "@agent" at the start addresses your own agent, which answers in the
 		// chat; the words are said as they are.
 		addressesAgent := strings.HasPrefix(strings.ToLower(message), "@agent ") || strings.ToLower(message) == "@agent"
-		if _, sendError := client.AskAgentWith(ctx, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: "cli", ShouldAddressOwnAgent: addressesAgent}); sendError != nil {
+		if _, sendError := client.AskAgentWith(ctx, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: terminalSurface("cli"), ShouldAddressOwnAgent: addressesAgent}); sendError != nil {
 			return describeError(command, sendError)
 		}
 		if err != nil {
