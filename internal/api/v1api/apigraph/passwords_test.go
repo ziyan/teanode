@@ -268,11 +268,14 @@ func TestUnlockingPasswordsChecksTheProofAndLimitsTries(test *testing.T) {
 		}
 		failures = events
 	})
-	failureCount := 0
+	failureCount, unlockedCount := 0, 0
 	for _, event := range failures {
 		text := string(event.Before) + string(event.After)
 		if strings.Contains(text, "unlock_failed") {
 			failureCount++
+		}
+		if strings.Contains(text, `"unlocked"`) {
+			unlockedCount++
 		}
 		for _, secret := range []string{wrongProof, passphraseProof, recoveryProof, sealedOf("private key")} {
 			if strings.Contains(text, secret) {
@@ -283,6 +286,9 @@ func TestUnlockingPasswordsChecksTheProofAndLimitsTries(test *testing.T) {
 	if failureCount != 3 {
 		test.Fatalf("%d unlock failures were audited, want 3: %v", failureCount, failures)
 	}
+	if unlockedCount != 2 {
+		test.Fatalf("%d unlocks were audited, want 2 (the passphrase and the recovery key): %v", unlockedCount, failures)
+	}
 
 	// Seven more wrong ones empty the ten allowed; then even the right proof
 	// waits, for Ada alone.
@@ -292,6 +298,28 @@ func TestUnlockingPasswordsChecksTheProofAndLimitsTries(test *testing.T) {
 	if message := world.refusal(test, world.ada, unlockPasswordsQuery, map[string]any{"proof": passphraseProof}); !strings.Contains(message, "too many attempts") {
 		test.Fatalf("the right proof after too many wrong ones: %s", message)
 	}
+	// The try that was turned away is in the audit log, with no proof in it.
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		events, err := tx.ListAuditEvents(&db.AuditOptions{ResourceType: string(models.AuditResourcePasswords), ResourceID: world.ada.ID, Limit: 100})
+		if err != nil {
+			test.Fatal(err)
+		}
+		refusedCount := 0
+		for _, event := range events {
+			text := string(event.Before) + string(event.After)
+			if strings.Contains(text, "unlock_rate_limited") {
+				refusedCount++
+			}
+			for _, secret := range []string{wrongProof, passphraseProof, recoveryProof} {
+				if strings.Contains(text, secret) {
+					test.Errorf("an audit event holds a secret: %s", text)
+				}
+			}
+		}
+		if refusedCount != 1 {
+			test.Fatalf("%d refused tries were audited, want 1", refusedCount)
+		}
+	})
 	benProof, _ := proofOf(ben.passphrase)
 	world.run(test, world.ben, unlockPasswordsQuery, map[string]any{"proof": benProof})
 }

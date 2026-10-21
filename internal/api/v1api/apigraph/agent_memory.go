@@ -241,8 +241,13 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		if arguments.Cron != "" {
 			schedule.Cron = strings.TrimSpace(arguments.Cron)
 		}
-		if arguments.Prompt != "" {
-			schedule.Prompt = strings.TrimSpace(arguments.Prompt)
+		// Words the person typed are theirs: saving a changed prompt makes
+		// the schedule the person's, whoever wrote the one it replaces.
+		// Saving the same prompt again (the dashboard sends it with every
+		// edit) leaves the writer as it was.
+		if prompt := strings.TrimSpace(arguments.Prompt); prompt != "" && prompt != strings.TrimSpace(schedule.Prompt) {
+			schedule.Prompt = prompt
+			schedule.WrittenBy = models.WrittenByPerson
 		}
 		if arguments.Deliver != "" {
 			schedule.Deliver = arguments.Deliver

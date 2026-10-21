@@ -67,14 +67,7 @@ func passwordsRuntimeDirectory() string {
 // change, or one that belongs to somebody else. A file that is not there is
 // os.ErrNotExist.
 func readPrivateFile(path string) ([]byte, error) {
-	linkInformation, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !linkInformation.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a plain file; remove it with 'teanode passwords lock' and try again", path)
-	}
-	file, err := os.Open(path)
+	file, err := openPrivateFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +78,9 @@ func readPrivateFile(path string) ([]byte, error) {
 	information, err := file.Stat()
 	if err != nil {
 		return nil, err
+	}
+	if !information.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a plain file; remove it with 'teanode passwords lock' and try again", path)
 	}
 	if err := checkPrivateFile(path, information); err != nil {
 		return nil, err

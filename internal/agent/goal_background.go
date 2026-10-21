@@ -364,6 +364,9 @@ func (self *Agent) MoveScheduleToGoal(tx db.Transaction, agent *models.Agent, sc
 			// Its answer is read where the goal's turns run; a mailed
 			// schedule would mail the person every run instead.
 			changing.ConversationID, changing.Deliver = goal.ID, models.AgentDeliverDrawer
+			// The agent changed where the schedule answers, so it is the
+			// agent's schedule from now on, as when the schedule tool does it.
+			changing.WrittenBy = models.WrittenByAgent
 			return nil
 		}); err != nil {
 			return err

@@ -132,10 +132,14 @@ func TestALockedTabAnswersOnlyInputAndNavigationOfTheDevToolsProtocol(test *test
 	if len(run.tab.actions()) != asked {
 		test.Fatalf("the tab was asked while locked: %v", run.tab.actions()[asked:])
 	}
-	for _, method := range []string{"Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.dispatchTouchEvent", "Input.insertText", "Page.navigate", "Page.reload", "Page.getNavigationHistory"} {
+	for _, method := range []string{"Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.dispatchTouchEvent", "Input.insertText", "Page.reload", "Page.getNavigationHistory"} {
 		if _, err := browse(run, fmt.Sprintf(`{"action":"cdp","method":%q}`, method)); err != nil {
 			test.Errorf("%s on a locked tab: %s", method, err)
 		}
+	}
+	// Typing a script address is typing: it goes to the page like any text.
+	if _, err := browse(run, `{"action":"cdp","method":"Input.insertText","params":{"text":"javascript:note to self"}}`); err != nil {
+		test.Errorf("typed text on a locked tab: %s", err)
 	}
 	if _, err := browse(run, `{"action":"cdp_stop"}`); err != nil {
 		test.Fatalf("cdp_stop on a locked tab: %s", err)
@@ -145,6 +149,58 @@ func TestALockedTabAnswersOnlyInputAndNavigationOfTheDevToolsProtocol(test *test
 	for _, method := range []string{"Runtime.evaluate", "Network.enable", "Network.getResponseBody"} {
 		if _, err := browse(run, fmt.Sprintf(`{"action":"cdp","method":%q}`, method)); err != nil {
 			test.Errorf("%s on an unlocked tab: %s", method, err)
+		}
+	}
+}
+
+// Moving a locked page is allowed so the sign-in can go on, but only the plain
+// forms: a navigation to an http or https address and nothing else sent with
+// it, a reload with at most ignoreCache. A script or data address, a script to
+// run on load, or such an address in any other parameter of a command is
+// refused, as is a navigate action to one, and none reaches the tab.
+func TestALockedTabIsOnlyMovedToWebAddressesWithNothingElse(test *testing.T) {
+	found := newWorld(test)
+	run := found.filledTab(test)
+	asked := len(run.tab.actions())
+	for _, arguments := range []string{
+		`{"action":"cdp","method":"Page.navigate"}`,
+		`{"action":"cdp","method":"Page.navigate","params":{}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"javascript:alert(1)"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"JaVaScRiPt:alert(1)"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":" javascript:alert(1)"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"java\tscript:alert(1)"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"data:text/html,<script>1</script>"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"file:///etc/hostname"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"about:blank"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"https://"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":42}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"https://shop.example.test/","referrer":"javascript:1"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"https://shop.example.test/","transitionType":"typed"}}`,
+		`{"action":"cdp","method":"Page.reload","params":{"scriptToEvaluateOnLoad":"document.title"}}`,
+		`{"action":"cdp","method":"Page.reload","params":{"ignoreCache":"yes"}}`,
+		`{"action":"cdp","method":"Page.reload","params":{"ignoreCache":true,"scriptToEvaluateOnLoad":"1"}}`,
+		`{"action":"cdp","method":"Page.getFrameTree","params":{"x":{"y":["data:text/html,1"]}}}`,
+		`{"action":"cdp","method":"Page.getLayoutMetrics","params":{"x":"javascript:1"}}`,
+		`{"action":"navigate","url":"javascript:alert(1)"}`,
+		`{"action":"navigate","url":"data:text/html,1"}`,
+		`{"action":"navigate","url":"shop.example.test/cart"}`,
+		`{"action":"navigate"}`,
+	} {
+		mustRefuse(test, run, arguments, "http or https")
+	}
+	if len(run.tab.actions()) != asked {
+		test.Fatalf("the tab was asked while locked: %v", run.tab.actions()[asked:])
+	}
+	for _, arguments := range []string{
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"https://shop.example.test/account"}}`,
+		`{"action":"cdp","method":"Page.navigate","params":{"url":"http://shop.example.test/account"}}`,
+		`{"action":"cdp","method":"Page.reload"}`,
+		`{"action":"cdp","method":"Page.reload","params":{}}`,
+		`{"action":"cdp","method":"Page.reload","params":{"ignoreCache":true}}`,
+		`{"action":"navigate","url":"https://shop.example.test/cart"}`,
+	} {
+		if _, err := browse(run, arguments); err != nil {
+			test.Errorf("%s on a locked tab: %s", arguments, err)
 		}
 	}
 }

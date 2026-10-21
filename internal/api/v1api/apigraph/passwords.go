@@ -585,10 +585,16 @@ func requirePasswordsSetUp(tx db.Transaction, userId string) (*models.PasswordSe
 // looked at, so that many tries at once cannot all be judged before the first
 // wrong one is counted. A right proof (or a failure that says nothing about the
 // proof) gives the token back; a wrong one keeps it and is written to the audit
-// log. Without a token the caller is told to wait.
+// log. Without a token the caller is told to wait, and that is written to the
+// audit log too.
 func (self *graph) checkPasswordsProof(tx db.Transaction, userId, proof string, isRecoveryKey bool) error {
 	bucket := self.passwordsUnlockLimiter().For(userId)
 	if !bucket.Allow() {
+		// A try turned away is written down too: a run of them is what a
+		// guess at the passphrase looks like from outside.
+		if err := tx.RecordPasswordsUnlockRefused(userId, isRecoveryKey); err != nil {
+			return err
+		}
 		return api.ErrTooManyRequests
 	}
 	isRight, err := tx.CheckPasswordsProof(userId, proof, isRecoveryKey)
@@ -686,9 +692,12 @@ func (self *graph) UnlockPasswords(ctx context.Context, arguments UnlockPassword
 	}
 	isRecoveryKey := arguments.IsRecoveryKey != nil && *arguments.IsRecoveryKey
 	tx := self.transaction(ctx)
-	// The audit event of a wrong proof is written in the request's
-	// transaction, which commits whatever the answer is.
+	// The audit event of a wrong proof, or of a try turned away, is written in
+	// the request's transaction, which commits whatever the answer is.
 	if err := self.checkPasswordsProof(tx, principal.User.ID, arguments.Proof, isRecoveryKey); err != nil {
+		return nil, err
+	}
+	if err := tx.RecordPasswordsUnlocked(principal.User.ID, isRecoveryKey); err != nil {
 		return nil, err
 	}
 	setup, err := tx.GetPasswordsSetup(principal.User.ID)

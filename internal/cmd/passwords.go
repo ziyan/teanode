@@ -927,12 +927,13 @@ func runPasswordsCopy(ctx context.Context, command *cli.Command) error {
 	}
 	clearAfter := int(command.Int("clear-after"))
 	// Whatever ends the wait, the secret is not left on the clipboard: the time
-	// passing, Ctrl-C, or the process being asked to end. The signals are caught
+	// passing, Ctrl-C, the terminal closing (SIGHUP), or the process being asked
+	// to end. The signals are caught
 	// before the secret is copied, so there is no moment it is there and they
 	// are not.
 	signals := make(chan os.Signal, 1)
 	if clearAfter > 0 {
-		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		defer signal.Stop(signals)
 	}
 	tool, err := copyToClipboard(ctx, value)

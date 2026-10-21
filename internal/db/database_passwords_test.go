@@ -669,9 +669,29 @@ func TestLettingTheAgentUseAPasswordItem(test *testing.T) {
 		if err := tx.RecordPasswordItemAgentUse(world.ada.ID, card.ID, "example.test", usedAt); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("an item the agent may not use: %v", err)
 		}
-		used := mustListPasswordItems(test, tx, world.ada, usable.Revision)
-		if len(used.Items) != 1 || used.Items[0].LastUsedByAgentAt == nil || !used.Items[0].LastUsedByAgentAt.Equal(usedAt.Truncate(time.Microsecond)) && used.Items[0].LastUsedByAgentAt.Sub(usedAt).Abs() > time.Second {
-			test.Fatalf("the use is on the item: %+v", used.Items)
+		// The use does not raise the revision, which a device saves against, so
+		// the changes after the revision do not list the item; a full read does,
+		// with the time of the use and the revision the device already has.
+		if later := mustListPasswordItems(test, tx, world.ada, usable.Revision); len(later.Items) != 0 {
+			test.Fatalf("an agent's use raised the item's revision: %+v", later.Items)
+		}
+		used := mustListPasswordItems(test, tx, world.ada, 0)
+		var usedItem *models.PasswordItem
+		for _, listedItem := range used.Items {
+			if listedItem.ID == login.ID {
+				usedItem = listedItem
+			}
+		}
+		if usedItem == nil || usedItem.LastUsedByAgentAt == nil || usedItem.Revision != usable.Revision ||
+			usedItem.LastUsedByAgentAt.Sub(usedAt).Abs() > time.Second {
+			test.Fatalf("the use is on the item, at the same revision: %+v", usedItem)
+		}
+		baseRevision := usable.Revision
+		if _, err := tx.SavePasswordItem(&models.PasswordItem{
+			ID: login.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindLogin,
+			EncryptedFields: `{"sealed":"edited fields"}`, ItemKeyByAccountKey: `{"sealed":"key"}`,
+		}, &baseRevision); err != nil {
+			test.Fatalf("a save from the revision the device has, after the agent used the item: %v", err)
 		}
 
 		off, err := tx.SetPasswordItemUsableByAgent(world.ada.ID, login.ID, false, "")

@@ -11,8 +11,10 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/urfave/cli/v3"
 
@@ -72,9 +74,10 @@ func (self *passwordsImportCounts) print(command *cli.Command) error {
 
 // importItems saves the items the person does not have yet. An item is the
 // same as one they have when the kind, the name, the folder, the first site,
-// the user name and a hash of the password (or note text) are the same (see
-// duplicateKey). The names of the ones skipped are listed, and nothing else is
-// printed about an item.
+// the user name and the password (or note text) are the same (see
+// duplicateKey; the secret itself is compared in memory, no hash of it is
+// made). The names of the ones skipped are listed, and nothing else is printed
+// about an item.
 func importItems(session *passwordsSession, imported []passwords.ImportedItem, isDryRun bool, counts *passwordsImportCounts) error {
 	existing, err := session.loadItems(false)
 	if err != nil {
@@ -329,6 +332,70 @@ func writeExportJSON(writer io.Writer, items []*passwordsItem) error {
 	return encoder.Encode(map[string]any{"items": exported})
 }
 
+// writeExportFile writes the export to a temporary file made private to its
+// owner from the start, beside the file asked for, and puts it in place only
+// when it is complete, never over a file that is there by then. A failure, or
+// an interrupt (Ctrl-C, the terminal closing, the process asked to end) while
+// it is written, removes the temporary file, so a half-written copy of the
+// passwords is never left under either name.
+func writeExportFile(path, format string, items []*passwordsItem) (leftOutCount int, err error) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
+
+	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".partial-*")
+	if err != nil {
+		return 0, fmt.Errorf("cannot write %s: %w", path, err)
+	}
+	temporaryPath := file.Name()
+	isPlaced := false
+	defer func() {
+		if !isPlaced {
+			_ = file.Close()
+			_ = os.Remove(temporaryPath)
+		}
+	}()
+	// CreateTemp makes the file 0600 already; say so rather than rely on it.
+	if err := file.Chmod(0o600); err != nil {
+		return 0, fmt.Errorf("cannot write %s: %w", path, err)
+	}
+	if format == "csv" {
+		leftOutCount, err = writeExportCSV(file, items)
+	} else {
+		err = writeExportJSON(file, items)
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return 0, fmt.Errorf("cannot write %s: %w", path, err)
+	}
+	select {
+	case received := <-signals:
+		return 0, fmt.Errorf("stopped by %s before the export was complete; nothing was written to %s", received, path)
+	default:
+	}
+	// A hard link fails when the name is taken, which a rename would not.
+	if err := os.Link(temporaryPath, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return 0, fmt.Errorf("%s already exists; export does not overwrite a file", path)
+		}
+		// A file system without hard links: look, then rename.
+		if _, statErr := os.Lstat(path); statErr == nil {
+			return 0, fmt.Errorf("%s already exists; export does not overwrite a file", path)
+		}
+		if err := os.Rename(temporaryPath, path); err != nil {
+			return 0, fmt.Errorf("cannot write %s: %w", path, err)
+		}
+		isPlaced = true
+		return leftOutCount, nil
+	}
+	return leftOutCount, nil
+}
+
 func runPasswordsExport(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() != 1 {
 		return usage("usage: teanode passwords export <file> [--format json|csv]")
@@ -365,25 +432,9 @@ func runPasswordsExport(ctx context.Context, command *cli.Command) error {
 		countWords(len(items), "item"), path)); err != nil {
 		return err
 	}
-	// Created private, and not over a file that appeared since: the secrets
-	// are written into it.
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	leftOutCount, err := writeExportFile(path, format, items)
 	if err != nil {
-		return fmt.Errorf("cannot write %s: %w", path, err)
-	}
-	leftOutCount := 0
-	if format == "csv" {
-		leftOutCount, err = writeExportCSV(file, items)
-	} else {
-		err = writeExportJSON(file, items)
-	}
-	closeErr := file.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		_ = os.Remove(path)
-		return fmt.Errorf("cannot write %s: %w", path, err)
+		return err
 	}
 	if command.Bool("json") {
 		return PrintJSON(map[string]any{"exportedCount": len(items) - leftOutCount, "leftOutCount": leftOutCount, "exportedFilePath": path})

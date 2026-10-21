@@ -34,16 +34,24 @@ type passwordsKnownKey struct {
 	ConfirmedAt time.Time `json:"confirmedAt"`
 }
 
+// passwordsKnownKeysFile is what is in the file: the known keys of each server
+// by that server's name, then by user id. Keeping every server in one file means
+// a profile that is pointed at another server, and back, does not lose the keys
+// it had written down for the first.
 type passwordsKnownKeysFile struct {
-	Server string `json:"server"`
-	// People are the known keys by user id.
-	People map[string]*passwordsKnownKey `json:"people"`
+	Servers map[string]map[string]*passwordsKnownKey `json:"servers"`
+
+	// Server and People are the file as it was first written, for one server.
+	// They are read and moved into Servers, and not written again.
+	LegacyServer string                        `json:"server,omitempty"`
+	LegacyPeople map[string]*passwordsKnownKey `json:"people,omitempty"`
 }
 
-// passwordsKnownKeys is the file, read into memory.
+// passwordsKnownKeys is the file, read into memory, for one server.
 type passwordsKnownKeys struct {
-	path string
-	file passwordsKnownKeysFile
+	path   string
+	server string
+	file   passwordsKnownKeysFile
 }
 
 // passwordsKnownKeysPath is where the known keys of the profile this command
@@ -61,44 +69,79 @@ func passwordsKnownKeysPath(command *cli.Command) (path, server string, err erro
 	return filepath.Join(directory, "passwords-keys-"+name+".json"), server, nil
 }
 
-// loadPasswordsKnownKeys reads the known keys. None, or the keys of another
-// server, are an empty set. A file others could have changed is an error.
+// readPasswordsKnownKeysFile reads the file as it is now. None is an empty
+// file. A file others could have changed is an error. A file written before
+// the keys were kept by server is moved to the server it names.
+func readPasswordsKnownKeysFile(path string) (passwordsKnownKeysFile, error) {
+	empty := passwordsKnownKeysFile{Servers: map[string]map[string]*passwordsKnownKey{}}
+	content, err := readPrivateFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return empty, nil
+	}
+	if err != nil {
+		return empty, err
+	}
+	var stored passwordsKnownKeysFile
+	if err := json.Unmarshal(content, &stored); err != nil {
+		return empty, fmt.Errorf("%s is not readable (%w); remove it to start the list of known keys again", path, err)
+	}
+	if stored.Servers == nil {
+		stored.Servers = map[string]map[string]*passwordsKnownKey{}
+	}
+	if stored.LegacyServer != "" && stored.LegacyPeople != nil && stored.Servers[stored.LegacyServer] == nil {
+		stored.Servers[stored.LegacyServer] = stored.LegacyPeople
+	}
+	stored.LegacyServer, stored.LegacyPeople = "", nil
+	return stored, nil
+}
+
+// loadPasswordsKnownKeys reads the known keys. None is an empty set, and so
+// are the keys of another server, which stay in the file. A file others could
+// have changed is an error.
 func loadPasswordsKnownKeys(command *cli.Command) (*passwordsKnownKeys, error) {
 	path, server, err := passwordsKnownKeysPath(command)
 	if err != nil {
 		return nil, err
 	}
-	known := &passwordsKnownKeys{path: path, file: passwordsKnownKeysFile{Server: server, People: map[string]*passwordsKnownKey{}}}
-	content, err := readPrivateFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return known, nil
-	}
+	file, err := readPasswordsKnownKeysFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var stored passwordsKnownKeysFile
-	if err := json.Unmarshal(content, &stored); err != nil {
-		return nil, fmt.Errorf("%s is not readable (%w); remove it to start the list of known keys again", path, err)
-	}
-	if stored.Server == server && stored.People != nil {
-		known.file = stored
-	}
-	return known, nil
+	return &passwordsKnownKeys{path: path, server: server, file: file}, nil
 }
 
 // lookup is what is known of a person, nil if nothing.
 func (self *passwordsKnownKeys) lookup(userID string) *passwordsKnownKey {
-	return self.file.People[userID]
+	return self.file.Servers[self.server][userID]
 }
 
-// remember writes down a person's key as the one to trust.
+// remember writes down a person's key as the one to trust. The file is read
+// again under a lock and written whole through a temporary file, so that
+// another teanode command writing a key at the same moment does not lose this
+// one, and the other servers' keys are kept.
 func (self *passwordsKnownKeys) remember(userID, username, name, publicKey string) error {
-	self.file.People[userID] = &passwordsKnownKey{Username: username, Name: name, PublicKey: publicKey, ConfirmedAt: time.Now().Truncate(time.Second)}
-	content, err := json.MarshalIndent(self.file, "", "  ")
+	release, err := lockPrivateFile(self.path)
 	if err != nil {
 		return err
 	}
-	return writePrivateFile(self.path, append(content, '\n'))
+	defer release()
+	current, err := readPasswordsKnownKeysFile(self.path)
+	if err != nil {
+		return err
+	}
+	if current.Servers[self.server] == nil {
+		current.Servers[self.server] = map[string]*passwordsKnownKey{}
+	}
+	current.Servers[self.server][userID] = &passwordsKnownKey{Username: username, Name: name, PublicKey: publicKey, ConfirmedAt: time.Now().Truncate(time.Second)}
+	content, err := json.MarshalIndent(current, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := writePrivateFile(self.path, append(content, '\n')); err != nil {
+		return err
+	}
+	self.file = current
+	return nil
 }
 
 // knownKeys is the known keys, read when first needed.

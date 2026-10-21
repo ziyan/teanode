@@ -421,6 +421,65 @@ func TestParseSealedRefusesOtherSpellings(test *testing.T) {
 	}
 }
 
+// The parse is strict about the JSON itself: key names exactly as written
+// (not in another capitalization), no key twice, no key that is not in the
+// format, every key there, and the right kind of value for each.
+func TestParseSealedIsStrictAboutTheJSON(test *testing.T) {
+	nonce := base64.StdEncoding.EncodeToString(sequentialBytes(1, NonceLength))
+	ciphertext := base64.StdEncoding.EncodeToString(sequentialBytes(1, 20))
+	ephemeral := base64.StdEncoding.EncodeToString(append([]byte{4}, make([]byte, 64)...))
+	plain := func(fields ...string) string { return "{" + strings.Join(fields, ",") + "}" }
+	version, nonceField, ciphertextField := `"version":1`, `"nonce":"`+nonce+`"`, `"ciphertext":"`+ciphertext+`"`
+	ephemeralField := `"ephemeralPublicKey":"` + ephemeral + `"`
+
+	// The same keys in another order are the same value.
+	if _, err := ParseSealed(plain(ciphertextField, nonceField, version)); err != nil {
+		test.Errorf("another order: %v", err)
+	}
+	for name, text := range map[string]string{
+		"capitalized version":  plain(`"Version":1`, nonceField, ciphertextField),
+		"upper case nonce":     plain(version, `"NONCE":"`+nonce+`"`, ciphertextField),
+		"capitalized key":      plain(version, nonceField, `"Ciphertext":"`+ciphertext+`"`),
+		"duplicate version":    plain(version, version, nonceField, ciphertextField),
+		"duplicate nonce":      plain(version, nonceField, nonceField, ciphertextField),
+		"duplicate differing":  plain(version, nonceField, `"ciphertext":"`+ciphertext+`"`, `"ciphertext":"`+ciphertext+`"`),
+		"unknown key":          plain(version, nonceField, ciphertextField, `"extra":1`),
+		"ephemeral key":        plain(version, ephemeralField, nonceField, ciphertextField),
+		"empty ephemeral key":  plain(version, `"ephemeralPublicKey":""`, nonceField, ciphertextField),
+		"no version":           plain(nonceField, ciphertextField),
+		"null nonce":           plain(version, `"nonce":null`, ciphertextField),
+		"number for nonce":     plain(version, `"nonce":1`, ciphertextField),
+		"version as text":      plain(`"version":"1"`, nonceField, ciphertextField),
+		"version as fraction":  plain(`"version":1.5`, nonceField, ciphertextField),
+		"version in exponent":  plain(`"version":1e0`, nonceField, ciphertextField),
+		"an array":             `[` + plain(version, nonceField, ciphertextField) + `]`,
+		"a string":             `"text"`,
+		"two objects":          plain(version, nonceField, ciphertextField) + plain(),
+		"an object not closed": `{` + version + `,` + nonceField + `,` + ciphertextField,
+	} {
+		if _, err := ParseSealed(text); err == nil {
+			test.Errorf("%s was accepted", name)
+		}
+	}
+
+	// The form sealed for a key pair has the ephemeral key, and needs it.
+	if _, err := ParseSealedForKeyPair(plain(version, ephemeralField, nonceField, ciphertextField)); err != nil {
+		test.Errorf("a valid key pair form: %v", err)
+	}
+	for name, text := range map[string]string{
+		"no ephemeral key":          plain(version, nonceField, ciphertextField),
+		"capitalized ephemeral key": plain(version, `"EphemeralPublicKey":"`+ephemeral+`"`, nonceField, ciphertextField),
+		"duplicate ephemeral key":   plain(version, ephemeralField, ephemeralField, nonceField, ciphertextField),
+		"unknown key":               plain(version, ephemeralField, nonceField, ciphertextField, `"extra":"x"`),
+		"capitalized nonce":         plain(version, ephemeralField, `"Nonce":"`+nonce+`"`, ciphertextField),
+		"text after":                plain(version, ephemeralField, nonceField, ciphertextField) + ` 1`,
+	} {
+		if _, err := ParseSealedForKeyPair(text); err == nil {
+			test.Errorf("%s was accepted on the key pair form", name)
+		}
+	}
+}
+
 func TestParseSealedForKeyPairChecksTheEphemeralKey(test *testing.T) {
 	owner, _ := GenerateKeyPair()
 	recipient, _ := GenerateKeyPair()

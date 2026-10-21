@@ -2,6 +2,7 @@ package browser
 
 import (
 	"encoding/json"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,11 @@ import (
 
 // scriptsLockedWords is the answer to what the lock refuses.
 const scriptsLockedWords = "Scripts, pictures, storage, network logs and DevTools commands that read a page are not run on a page TeaNode filled a password or code into, until that tab loads a new page. Click and type the rest of the sign-in; once the site has taken you to another page, or you navigate to one, it works again."
+
+// addressLockedWords is the answer to a move of a locked page that is not a
+// plain one: an address that is not http or https, or a navigation or reload
+// that carries anything else.
+const addressLockedWords = "A page TeaNode filled a password or code into can only be sent to an http or https address (and reloaded as it is) until that tab loads a new page. Script and data addresses, and anything else sent along with a navigation or reload, are not done."
 
 // lockedRefusedActions are the actions refused on a locked tab: each can read
 // a filled field or what was sent from it.
@@ -57,6 +63,79 @@ func isProtocolMethodAllowedWhileLocked(method string) bool {
 	return false
 }
 
+// isLockedNavigationAllowed says the parameters of a Page.navigate or a
+// Page.reload may be sent to a locked tab. Moving the page is allowed so the
+// sign-in can go on, but both commands can also run script in the page they
+// leave (a javascript: address, a script to evaluate on load) or load a
+// document that reads the field back, so only the plain form is: navigate with
+// a url that is an http or https address and nothing else, reload with at most
+// ignoreCache.
+func isLockedNavigationAllowed(method string, parameters map[string]any) bool {
+	switch strings.TrimSpace(method) {
+	case "Page.navigate":
+		if len(parameters) != 1 {
+			return false
+		}
+		address, isText := parameters["url"].(string)
+		return isText && isWebAddress(address)
+	case "Page.reload":
+		for name, value := range parameters {
+			if _, isBoolean := value.(bool); name != "ignoreCache" || !isBoolean {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// isWebAddress says an address is an http or https one with a host, written
+// without anything before it that a browser would strip (a space, a newline)
+// to find a different scheme.
+func isWebAddress(address string) bool {
+	if address != strings.TrimSpace(address) {
+		return false
+	}
+	parsed, err := url.Parse(address)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
+// hasScriptAddress says a DevTools parameter, anywhere in it, holds an address
+// that runs script or carries a document in itself (javascript:, data:,
+// vbscript:), written in any case and with the spaces and control characters a
+// browser ignores before and inside the scheme.
+func hasScriptAddress(value any) bool {
+	switch typed := value.(type) {
+	case string:
+		squeezed := strings.Map(func(character rune) rune {
+			if character <= ' ' || character == 0x7f {
+				return -1
+			}
+			return character
+		}, strings.ToLower(typed))
+		for _, scheme := range []string{"javascript:", "data:", "vbscript:"} {
+			if strings.HasPrefix(squeezed, scheme) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, inner := range typed {
+			if hasScriptAddress(inner) {
+				return true
+			}
+		}
+	case []any:
+		for _, inner := range typed {
+			if hasScriptAddress(inner) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // refuseWhileLocked is the refusal for an action on a tab, or nil. The tab is
 // named as the browser names it (empty for the headless browser's one page).
 func refuseWhileLocked(filled *devtools.FilledValues, tab string, arguments *browserArguments) error {
@@ -66,8 +145,24 @@ func refuseWhileLocked(filled *devtools.FilledValues, tab string, arguments *bro
 	if lockedRefusedActions[arguments.Action] {
 		return refusal(scriptsLockedWords)
 	}
-	if arguments.Action == "cdp" && !isProtocolMethodAllowedWhileLocked(arguments.Method) {
-		return refusal(scriptsLockedWords)
+	switch arguments.Action {
+	case "cdp":
+		if !isProtocolMethodAllowedWhileLocked(arguments.Method) {
+			return refusal(scriptsLockedWords)
+		}
+		if !isLockedNavigationAllowed(arguments.Method, arguments.Params) {
+			return refusal(addressLockedWords)
+		}
+		// What is typed with the keyboard is the page's to receive; any other
+		// parameter holding a javascript: or data: address is a way to run
+		// script in the page.
+		if !strings.HasPrefix(strings.TrimSpace(arguments.Method), "Input.") && hasScriptAddress(arguments.Params) {
+			return refusal(addressLockedWords)
+		}
+	case "navigate":
+		if !isWebAddress(arguments.URL) {
+			return refusal(addressLockedWords)
+		}
 	}
 	return nil
 }

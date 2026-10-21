@@ -112,21 +112,65 @@ type sealedText struct {
 	Ciphertext         string `json:"ciphertext"`
 }
 
-// parseSealedText reads the JSON of a sealed value. It refuses a field that is
-// not in the format, and a field that is missing when isForKeyPair says it must
-// be there, so that one value has exactly one spelling.
+// parseSealedText reads the JSON of a sealed value strictly, so that one value
+// has exactly one spelling: one object, the key names exactly as written here
+// (the standard decoder would also take any capitalization), no key twice (it
+// would keep the last), no key that is not in the format, every key there
+// (ephemeralPublicKey only on the form sealed for a key pair, and then
+// required), a whole number for the version, text for the rest, and nothing
+// after the object.
 func parseSealedText(text string, isForKeyPair bool) (*sealedText, error) {
+	refused := func() (*sealedText, error) {
+		return nil, fmt.Errorf("passwords: read sealed value: %w", ErrCannotOpen)
+	}
 	decoder := json.NewDecoder(strings.NewReader(text))
-	decoder.DisallowUnknownFields()
+	if opening, err := decoder.Token(); err != nil || opening != json.Delim('{') {
+		return refused()
+	}
+	allowed := map[string]bool{"version": true, "nonce": true, "ciphertext": true}
+	if isForKeyPair {
+		allowed["ephemeralPublicKey"] = true
+	}
 	parsed := &sealedText{}
-	if err := decoder.Decode(parsed); err != nil {
-		return nil, fmt.Errorf("passwords: read sealed value: %w", err)
+	seen := map[string]bool{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		name, isText := token.(string)
+		if err != nil || !isText || !allowed[name] || seen[name] {
+			return refused()
+		}
+		seen[name] = true
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return refused()
+		}
+		if name == "version" {
+			if err := json.Unmarshal(raw, &parsed.Version); err != nil {
+				return refused()
+			}
+			continue
+		}
+		var value string
+		if len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &value) != nil {
+			return refused()
+		}
+		switch name {
+		case "nonce":
+			parsed.Nonce = value
+		case "ciphertext":
+			parsed.Ciphertext = value
+		case "ephemeralPublicKey":
+			parsed.EphemeralPublicKey = value
+		}
+	}
+	if closing, err := decoder.Token(); err != nil || closing != json.Delim('}') {
+		return refused()
 	}
 	if _, err := decoder.Token(); err != io.EOF {
-		return nil, fmt.Errorf("passwords: read sealed value: %w", ErrCannotOpen)
+		return refused()
 	}
-	if !isForKeyPair && parsed.EphemeralPublicKey != "" {
-		return nil, fmt.Errorf("passwords: read sealed value: %w", ErrCannotOpen)
+	if len(seen) != len(allowed) {
+		return refused()
 	}
 	return parsed, nil
 }

@@ -180,15 +180,25 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				if arguments.Name != "" {
 					schedule.Name = arguments.Name
 				}
+				// Anything the agent changes about when a schedule runs, what
+				// it says, where its answer goes or whether it runs makes it
+				// the agent's schedule from then on: its prompt then arrives as
+				// a note the agent wrote for itself, and a run it wakes is not
+				// the person asking. Otherwise the agent could take a schedule
+				// the person wrote, change what it does, and have it keep
+				// running with the person's authority.
 				if arguments.Prompt != "" {
 					schedule.Prompt = arguments.Prompt
+					schedule.WrittenBy = models.WrittenByAgent
 				}
 				// One that belongs to a goal keeps answering there.
 				if arguments.Deliver != "" && !isGoalsSchedule(tx, schedule) {
 					schedule.Deliver = arguments.Deliver
+					schedule.WrittenBy = models.WrittenByAgent
 				}
 				if arguments.Enabled != nil {
 					schedule.Enabled = *arguments.Enabled
+					schedule.WrittenBy = models.WrittenByAgent
 				}
 				if arguments.Cron != "" {
 					cron, err := tools.ResolveRelative(arguments.Cron, time.Now(), location)
@@ -196,6 +206,7 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 						return err
 					}
 					schedule.Cron = cron
+					schedule.WrittenBy = models.WrittenByAgent
 				}
 				if arguments.Cron != "" || (arguments.Enabled != nil && *arguments.Enabled) {
 					next, err := tools.NextCron(schedule.Cron, time.Now(), location)

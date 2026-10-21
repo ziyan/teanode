@@ -52,7 +52,12 @@ type PasswordsOperation interface {
 	CheckPasswordsProof(userId, proof string, isRecoveryKey bool) (bool, error)
 
 	// RecordPasswordsUnlockFailure writes the audit event for a wrong proof.
+	// RecordPasswordsUnlocked writes the one for a right proof that unlocked,
+	// and RecordPasswordsUnlockRefused the one for a try turned away because
+	// there were too many. None holds a proof, a key or a hash.
 	RecordPasswordsUnlockFailure(userId string, isRecoveryKey bool) error
+	RecordPasswordsUnlocked(userId string, isRecoveryKey bool) error
+	RecordPasswordsUnlockRefused(userId string, isRecoveryKey bool) error
 
 	// ChangePasswordsPassphrase replaces what the passphrase makes.
 	ChangePasswordsPassphrase(userId string, change *models.PasswordPassphraseChange) (*models.PasswordSetup, error)
@@ -137,8 +142,11 @@ type PasswordsOperation interface {
 	ListAgentUsablePasswordItems(ownerUserId string) ([]*models.PasswordItem, error)
 
 	// RecordPasswordItemAgentUse notes that the agent used the item on a host,
-	// for the item's page and the audit log. ErrNotFound unless the item is
-	// the owner's and usable by the agent.
+	// for the item's page and the audit log. It sets the time of the use and
+	// nothing else: the item's revision does not change, so a device that has
+	// the item open can still save it, and a device learns the new time on its
+	// next full read of the item, not from the changes after a revision.
+	// ErrNotFound unless the item is the owner's and usable by the agent.
 	RecordPasswordItemAgentUse(ownerUserId, itemId, host string, usedAt time.Time) error
 
 	// GetPasswordAgentKey is the server's agent key, nil if none was made.
@@ -445,6 +453,16 @@ func (self *transaction) CheckPasswordsProof(userId, proof string, isRecoveryKey
 func (self *transaction) RecordPasswordsUnlockFailure(userId string, isRecoveryKey bool) error {
 	return self.applyMutation(models.AuditResourcePasswords, userId, models.AuditActionUpdate, nil,
 		&passwordsAudit{Event: "unlock_failed", IsRecoveryKey: isRecoveryKey}, func(*gorm.DB) error { return nil })
+}
+
+func (self *transaction) RecordPasswordsUnlocked(userId string, isRecoveryKey bool) error {
+	return self.applyMutation(models.AuditResourcePasswords, userId, models.AuditActionUpdate, nil,
+		&passwordsAudit{Event: "unlocked", IsRecoveryKey: isRecoveryKey}, func(*gorm.DB) error { return nil })
+}
+
+func (self *transaction) RecordPasswordsUnlockRefused(userId string, isRecoveryKey bool) error {
+	return self.applyMutation(models.AuditResourcePasswords, userId, models.AuditActionUpdate, nil,
+		&passwordsAudit{Event: "unlock_rate_limited", IsRecoveryKey: isRecoveryKey}, func(*gorm.DB) error { return nil })
 }
 
 func (self *transaction) ChangePasswordsPassphrase(userId string, change *models.PasswordPassphraseChange) (*models.PasswordSetup, error) {
@@ -1543,9 +1561,6 @@ func (self *transaction) ListAgentUsablePasswordItems(ownerUserId string) ([]*mo
 }
 
 func (self *transaction) RecordPasswordItemAgentUse(ownerUserId, itemId, host string, usedAt time.Time) error {
-	if err := lockPasswordRevisions(self.tx); err != nil {
-		return err
-	}
 	row, err := self.loadOwnedPasswordItem(ownerUserId, itemId, true)
 	if err != nil {
 		return err
@@ -1553,16 +1568,16 @@ func (self *transaction) RecordPasswordItemAgentUse(ownerUserId, itemId, host st
 	if row.DeletedAt != nil || !row.IsUsableByAgent {
 		return ErrNotFound
 	}
-	revision, err := nextPasswordRevision(self.tx)
-	if err != nil {
-		return err
-	}
 	usedAt = usedAt.UTC()
-	row.LastUsedByAgentAt, row.Revision, row.UpdatedAt = &usedAt, revision, time.Now()
+	row.LastUsedByAgentAt = &usedAt
 	audit := auditedPasswordItem("used_by_agent", row)
 	audit.Host = host
 	return self.applyMutation(models.AuditResourcePasswordItem, row.ID, models.AuditActionUpdate, nil, audit, func(tx *gorm.DB) error {
-		return tx.Save(row).Error
+		// Only the time of the use is written. The revision stays where it
+		// is, because it is the number a device saves against: raising it
+		// would make a device that has the item open fail to save with
+		// "changed on another device" for a change that was not an edit.
+		return tx.Model(&passwordItemModel{}).Where("\"id\" = ?", row.ID).Update("last_used_by_agent_at", usedAt).Error
 	})
 }
 

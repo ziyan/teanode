@@ -82,10 +82,16 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 		return output
 	}
 
+	// The command line refuses what needs the person's tap in one sentence
+	// that says where it is approved, not with the server's own words.
+	isTapRefusal := func(err error) bool {
+		return err != nil && strings.Contains(err.Error(), "approved on the Passwords page") && !strings.Contains(err.Error(), api.TapRequiredPhrase)
+	}
+
 	const adaPassphrase, benPassphrase = "ada passphrase example", "ben passphrase example"
 
 	// A token that is not a person's tap cannot set up; a session can.
-	if _, err := run("ada-token", adaPassphrase+"\n", "setup", "--passphrase-stdin"); err == nil || !strings.Contains(err.Error(), api.TapRequiredPhrase) || !strings.Contains(err.Error(), "dashboard") {
+	if _, err := run("ada-token", adaPassphrase+"\n", "setup", "--passphrase-stdin"); !isTapRefusal(err) {
 		test.Fatalf("setup with a token: %v", err)
 	}
 	if output := mustRun("ada-session", adaPassphrase+"\n", "setup", "--passphrase-stdin"); !strings.Contains(output, "recovery key") {
@@ -136,7 +142,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	}
 	// Confirming his safety code writes his key down, even though the server
 	// then refuses a token for want of a tap.
-	if _, err := run("ada-token", "", "share", "example.com", world.ben.Username, "--force"); err == nil || !strings.Contains(err.Error(), api.TapRequiredPhrase) {
+	if _, err := run("ada-token", "", "share", "example.com", world.ben.Username, "--force"); !isTapRefusal(err) {
 		test.Fatalf("sharing from a token: %v", err)
 	}
 	mustRun("ada-session", "", "share", "example.com", world.ben.Username)
@@ -170,7 +176,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if _, err := run("ada-session", "", "agent", "on", "Travel card", "--force"); err == nil || !strings.Contains(err.Error(), "card cannot be used by the agent") {
 		test.Fatalf("a card for the agent: %v", err)
 	}
-	if _, err := run("ada-token", "", "agent", "on", "example.com", "--force"); err == nil || !strings.Contains(err.Error(), api.TapRequiredPhrase) {
+	if _, err := run("ada-token", "", "agent", "on", "example.com", "--force"); !isTapRefusal(err) {
 		test.Fatalf("the agent from a token: %v", err)
 	}
 
@@ -184,7 +190,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	}
 
 	// Changing the passphrase, and erasing, need a tap.
-	if _, err := run("ada-token", adaPassphrase+"\nnew passphrase example\n", "change-passphrase", "--passphrase-stdin"); err == nil || !strings.Contains(err.Error(), api.TapRequiredPhrase) {
+	if _, err := run("ada-token", adaPassphrase+"\nnew passphrase example\n", "change-passphrase", "--passphrase-stdin"); !isTapRefusal(err) {
 		test.Fatalf("change-passphrase from a token: %v", err)
 	}
 	mustRun("ada-session", adaPassphrase+"\nnew passphrase example\n", "change-passphrase", "--passphrase-stdin")
@@ -193,7 +199,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if output := strings.TrimSpace(mustRun("ada-session", "", "copy", "example.com")); output != "real-server-secret-example" {
 		test.Fatalf("after changing the passphrase: %q", output)
 	}
-	if _, err := run("ada-token", "", "erase", "--force"); err == nil || !strings.Contains(err.Error(), api.TapRequiredPhrase) {
+	if _, err := run("ada-token", "", "erase", "--force"); !isTapRefusal(err) {
 		test.Fatalf("erase from a token: %v", err)
 	}
 	mustRun("ada-session", "", "erase", "--force")

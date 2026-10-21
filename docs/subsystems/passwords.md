@@ -291,7 +291,10 @@ locked after the sign-in; navigating to a page of the app loads one and ends it.
 - **Each use is recorded.** Reading a note records the time on the item
   (`last_used_by_agent_at`) and writes a `password_item` "used by the agent"
   event to the audit log, without the text. The use is recorded before the text
-  is given out; a note that cannot be recorded is not read.
+  is given out; a note that cannot be recorded is not read. A use does not raise
+  the item's revision (a device that has the item open can still save it), so a
+  device shows the new time after a full read of the item, not from the changes
+  after a revision.
 - **Memory and titles.** When conversations are filed into memory, what the agent
   said and its tools answered in a turn that read a note or made up a password is
   left out, and the conversation's title and summary are not refreshed from it.
