@@ -44,7 +44,9 @@ type PasswordsQuery interface {
 	// when their revision is above sinceRevision (all with none); itemIds are
 	// every item the caller can open now, so that a device drops what is gone,
 	// and a device that finds an identifier there that it does not hold asks
-	// again from the start. Needs passwords:use.
+	// again from the start. Each answers all the person holds, so a document
+	// may run it once, and a second one while the person's first is still
+	// running is refused: try again. Needs passwords:use.
 	ListPasswordItems(ctx context.Context, arguments ListPasswordItemsArguments) (*PasswordItemListView, error)
 
 	// The people a share reaches, to seal keys for: the person, if they are in
@@ -101,8 +103,10 @@ type PasswordsMutation interface {
 	// change. Needs passwords:use.
 	SavePasswordItem(ctx context.Context, arguments SavePasswordItemArguments) (*PasswordItemView, error)
 
-	// Marks one of the caller's items deleted. It is kept 30 days. Its
-	// recipients lose it and the agent's use of it ends. Needs passwords:use.
+	// Marks one of the caller's items deleted. It is kept 30 days, and counts
+	// toward the room Passwords has until then. Its recipients lose it and the
+	// agent's use of it ends, and the item is marked needsNewKey if anybody
+	// held a copy of its key. Needs passwords:use.
 	DeletePasswordItem(ctx context.Context, arguments PasswordItemIDArguments) (*PasswordItemView, error)
 
 	// Brings back an item that was deleted less than 30 days ago. Its
@@ -118,8 +122,12 @@ type PasswordsMutation interface {
 	SetPasswordItemShares(ctx context.Context, arguments SetPasswordItemSharesArguments) (*PasswordItemView, error)
 
 	// Stores keys sealed for recipients the caller's items already reach, such
-	// as the waiting ones. It widens nothing, so it needs no tap. Answers how
-	// many were stored. Needs passwords:use.
+	// as the waiting ones. Each key names, in itemKey, the item key the device
+	// opened to seal it, and is refused as changed on another device when that
+	// is no longer the item's. A key already stored for the same public key is
+	// left as it is; only a re-key replaces it. It widens nothing, so it needs
+	// no tap. Counts one write for each item named. Answers how many keys it
+	// stored. Needs passwords:use.
 	AddPasswordShareKeys(ctx context.Context, arguments AddPasswordShareKeysArguments) (int, error)
 
 	// Lets the agent use one of the caller's items, with the item key sealed
@@ -137,7 +145,8 @@ type PasswordsMutation interface {
 	// recipient is replaced by the ones given; a recipient the item reaches
 	// and is given none waits. It never widens access, so it needs no tap, and
 	// it can end the agent's use of an item (a null itemKeyByAgentKey) but
-	// never begin it. Needs passwords:use.
+	// never begin it. It clears the item's needsNewKey, and works on a deleted
+	// item too, so that a restore can follow. Needs passwords:use.
 	RekeyPasswordItem(ctx context.Context, arguments RekeyPasswordItemArguments) (*PasswordItemView, error)
 }
 
@@ -190,11 +199,17 @@ type PasswordItemView struct {
 	EncryptedFields string `json:"encryptedFields"`
 	ItemKey         string `json:"itemKey"`
 
-	IsSharedWithMe bool `json:"isSharedWithMe"`
-	Revision       int  `json:"revision"`
+	IsSharedWithMe bool  `json:"isSharedWithMe"`
+	Revision       int64 `json:"revision"`
 
 	IsUsableByAgent   bool       `json:"isUsableByAgent"`
 	LastUsedByAgentAt *time.Time `json:"lastUsedByAgentAt"`
+
+	// NeedsNewKey is set when access to the item narrowed (somebody removed,
+	// the agent's use ended, the item deleted while shared) so that a copy of
+	// its old key may still be held. The owner's device clears it with
+	// RekeyPasswordItem. Always false for an item shared with the reader.
+	NeedsNewKey bool `json:"needsNewKey"`
 
 	// DeletedAt is set on a deleted item, which only its owner lists.
 	DeletedAt *time.Time `json:"deletedAt"`
@@ -239,7 +254,7 @@ type PasswordItemListView struct {
 	ItemIDs []string            `json:"itemIds"`
 
 	// Revision is the highest revision visible to the caller; 0 with none.
-	Revision int `json:"revision"`
+	Revision int64 `json:"revision"`
 }
 
 // PasswordWaitingShareView is a recipient an item still needs a key for.
@@ -250,7 +265,7 @@ type PasswordWaitingShareView struct {
 
 type ListPasswordItemsArguments struct {
 	// SinceRevision is the highest revision the device has; leave out for all.
-	SinceRevision *int `json:"sinceRevision" graphapi:"nullable"`
+	SinceRevision *int64 `json:"sinceRevision" graphapi:"nullable"`
 }
 
 type ListPasswordRecipientsArguments struct {
@@ -330,7 +345,7 @@ type PasswordItem struct {
 
 	// BaseRevision is the revision the change is based on; null for a new
 	// item.
-	BaseRevision *int `json:"baseRevision" graphapi:"nullable"`
+	BaseRevision *int64 `json:"baseRevision" graphapi:"nullable"`
 }
 
 type SavePasswordItemArguments struct {
@@ -377,6 +392,13 @@ type PasswordItemShareKey struct {
 	RecipientUserID       string `json:"recipientUserId"`
 	ItemKeyByRecipientKey string `json:"itemKeyByRecipientKey"`
 	RecipientPublicKey    string `json:"recipientPublicKey"`
+
+	// ItemKey is the item key, sealed by the account key as the item view
+	// shows it, that the device opened to seal this key. AddPasswordShareKeys
+	// requires it and refuses a key whose ItemKey is no longer the item's;
+	// RekeyPasswordItem's share keys leave it out, because they are sealed from
+	// the new key in the same call.
+	ItemKey *string `json:"itemKey" graphapi:"nullable"`
 }
 
 type AddPasswordShareKeysArguments struct {
@@ -404,7 +426,7 @@ type PasswordItemRekey struct {
 	ID string `json:"id"`
 
 	// BaseRevision is the revision the device read the item at.
-	BaseRevision int `json:"baseRevision"`
+	BaseRevision int64 `json:"baseRevision"`
 
 	// EncryptedFields are the same fields, sealed with the new item key.
 	EncryptedFields string `json:"encryptedFields"`
@@ -465,6 +487,7 @@ const (
 	passwordsCardSentence             = "A card cannot be used by the agent."
 	passwordsFullSentence             = "Passwords is full: delete items or make notes shorter."
 	passwordsTooManyWritesSentence    = "Too many changes to Passwords in a short time. Try again in a few minutes."
+	passwordsListRunningSentence      = "Passwords is already being read for you. Try again in a moment."
 	passwordsAlreadySetUpSentence     = "Passwords is already set up."
 	passwordsNotSetUpSentence         = "Passwords is not set up yet."
 )
@@ -523,6 +546,11 @@ type passwordsLimiters struct {
 
 	// writes holds the writes made.
 	writes *ratelimit.Registry
+
+	// listing holds the people whose ListPasswordItems is running now, with
+	// when it began.
+	listing      map[string]time.Time
+	listingMutex sync.Mutex
 }
 
 func (self *graph) passwordsLimiters() *passwordsLimiters {
@@ -533,6 +561,36 @@ func (self *graph) passwordsLimiters() *passwordsLimiters {
 			passwordWritesPerHour/3600.0, passwordWritesBurst, 20000, time.Hour)
 	})
 	return &self.passwordsLimits
+}
+
+// passwordsListStaleAfter is how long a listing counts as running. A listing
+// is released when its resolver returns, so this only matters for one that
+// never did.
+const passwordsListStaleAfter = time.Minute
+
+// takePasswordsListing lets one ListPasswordItems for a person run at a time:
+// each answers every item the person holds, up to the whole of their limit,
+// and several at once multiply the memory the server needs. A second one is
+// turned away to try again. The function it answers gives the place back.
+func (self *graph) takePasswordsListing(userId string) (func(), error) {
+	limiters := self.passwordsLimiters()
+	limiters.listingMutex.Lock()
+	defer limiters.listingMutex.Unlock()
+	if limiters.listing == nil {
+		limiters.listing = map[string]time.Time{}
+	}
+	if beganAt, isRunning := limiters.listing[userId]; isRunning && time.Since(beganAt) < passwordsListStaleAfter {
+		return nil, fmt.Errorf("%w: %s", api.ErrTooManyRequests, passwordsListRunningSentence)
+	}
+	began := time.Now()
+	limiters.listing[userId] = began
+	return func() {
+		limiters.listingMutex.Lock()
+		defer limiters.listingMutex.Unlock()
+		if limiters.listing[userId].Equal(began) {
+			delete(limiters.listing, userId)
+		}
+	}, nil
 }
 
 // passwordsLimitKey is the bucket a call is counted in: one for the person's
@@ -549,8 +607,18 @@ func passwordsLimitKey(principal *api.Principal) string {
 // takePasswordsWrite counts one write to Passwords, and refuses it when the
 // person has made too many. The check comes before the call is looked at, so
 // that refused calls count too: each one costs the server a transaction.
-func (self *graph) takePasswordsWrite(principal *api.Principal) error {
-	if !self.passwordsLimiters().writes.Allow(passwordsLimitKey(principal)) {
+//
+// A call that changes several items counts one write for each item it names
+// (itemCount), not one for the call, so that naming a thousand items in one
+// call costs what a thousand calls do.
+func (self *graph) takePasswordsWrite(principal *api.Principal, itemCount int) error {
+	if itemCount < 1 {
+		itemCount = 1
+	}
+	bucket := self.passwordsLimiters().writes.For(passwordsLimitKey(principal))
+	taken := bucket.TakeAvailable(int64(itemCount))
+	if taken < int64(itemCount) {
+		bucket.Give(taken)
 		return fmt.Errorf("%w: %s", api.ErrTooManyRequests, passwordsTooManyWritesSentence)
 	}
 	return nil
@@ -620,7 +688,7 @@ func describePasswordItem(item *models.PasswordItem) *PasswordItemView {
 	view := &PasswordItemView{
 		ID: item.ID, OwnerUserID: item.OwnerUserID, OwnerName: item.OwnerName, OwnerPublicKey: item.OwnerPublicKey, ItemKind: string(item.ItemKind),
 		EncryptedFields: item.EncryptedFields, ItemKey: item.ItemKeyByAccountKey, IsSharedWithMe: item.IsSharedWithMe,
-		Revision: int(item.Revision), IsUsableByAgent: item.IsUsableByAgent, LastUsedByAgentAt: item.LastUsedByAgentAt,
+		Revision: item.Revision, IsUsableByAgent: item.IsUsableByAgent, LastUsedByAgentAt: item.LastUsedByAgentAt,
 		DeletedAt: item.DeletedAt, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 		Shares: []*PasswordShareView{},
 	}
@@ -628,6 +696,7 @@ func describePasswordItem(item *models.PasswordItem) *PasswordItemView {
 		view.ItemKey = item.ItemKeyByRecipientKey
 		return view
 	}
+	view.NeedsNewKey = item.NeedsNewKey
 	for _, share := range item.Shares {
 		shareView := &PasswordShareView{ID: share.ID, GranteeName: share.GranteeName, Recipients: describePasswordRecipients(share.Recipients)}
 		if share.GranteeUserID != "" {
@@ -901,15 +970,20 @@ func (self *graph) ListPasswordItems(ctx context.Context, arguments ListPassword
 	if err != nil {
 		return nil, err
 	}
-	sinceRevision := 0
+	release, err := self.takePasswordsListing(principal.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	var sinceRevision int64
 	if arguments.SinceRevision != nil && *arguments.SinceRevision > 0 {
 		sinceRevision = *arguments.SinceRevision
 	}
-	list, err := self.transaction(ctx).ListPasswordItems(principal.User.ID, int64(sinceRevision))
+	list, err := self.transaction(ctx).ListPasswordItems(principal.User.ID, sinceRevision)
 	if err != nil {
 		return nil, passwordsFailure(err)
 	}
-	view := &PasswordItemListView{Items: make([]*PasswordItemView, 0, len(list.Items)), ItemIDs: list.ItemIDs, Revision: int(list.Revision)}
+	view := &PasswordItemListView{Items: make([]*PasswordItemView, 0, len(list.Items)), ItemIDs: list.ItemIDs, Revision: list.Revision}
 	if view.ItemIDs == nil {
 		view.ItemIDs = []string{}
 	}
@@ -998,7 +1072,7 @@ func (self *graph) SavePasswordItem(ctx context.Context, arguments SavePasswordI
 	if err != nil {
 		return nil, err
 	}
-	if err := self.takePasswordsWrite(principal); err != nil {
+	if err := self.takePasswordsWrite(principal, 1); err != nil {
 		return nil, err
 	}
 	input := arguments.Input
@@ -1014,11 +1088,6 @@ func (self *graph) SavePasswordItem(ctx context.Context, arguments SavePasswordI
 	if !isSealedText(input.ItemKey, passwordsKeyMostBytes) {
 		return nil, passwordsInvalid("itemKey must be the JSON a device sealed")
 	}
-	var baseRevision *int64
-	if input.BaseRevision != nil {
-		revision := int64(*input.BaseRevision)
-		baseRevision = &revision
-	}
 	tx := self.transaction(ctx)
 	if _, err := requirePasswordsSetUp(tx, principal.User.ID); err != nil {
 		return nil, err
@@ -1026,7 +1095,8 @@ func (self *graph) SavePasswordItem(ctx context.Context, arguments SavePasswordI
 	saved, err := tx.SavePasswordItem(&models.PasswordItem{
 		ID: input.ID, OwnerUserID: principal.User.ID, ItemKind: models.PasswordItemKind(input.ItemKind),
 		EncryptedFields: input.EncryptedFields, ItemKeyByAccountKey: input.ItemKey,
-	}, baseRevision)
+		IsSavedByPerson: principal.IsPersonsTap(),
+	}, input.BaseRevision)
 	if err != nil {
 		return nil, passwordsFailure(err)
 	}
@@ -1048,7 +1118,7 @@ func (self *graph) DeletePasswordItem(ctx context.Context, arguments PasswordIte
 	if err != nil {
 		return nil, err
 	}
-	if err := self.takePasswordsWrite(principal); err != nil {
+	if err := self.takePasswordsWrite(principal, 1); err != nil {
 		return nil, err
 	}
 	deleted, err := self.transaction(ctx).DeletePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID))
@@ -1063,7 +1133,7 @@ func (self *graph) RestorePasswordItem(ctx context.Context, arguments PasswordIt
 	if err != nil {
 		return nil, err
 	}
-	if err := self.takePasswordsWrite(principal); err != nil {
+	if err := self.takePasswordsWrite(principal, 1); err != nil {
 		return nil, err
 	}
 	restored, err := self.transaction(ctx).RestorePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID))
@@ -1078,7 +1148,7 @@ func (self *graph) SetPasswordItemShares(ctx context.Context, arguments SetPassw
 	if err != nil {
 		return nil, err
 	}
-	if err := self.takePasswordsWrite(principal); err != nil {
+	if err := self.takePasswordsWrite(principal, 1); err != nil {
 		return nil, err
 	}
 	input := arguments.Input
@@ -1166,11 +1236,17 @@ func (self *graph) AddPasswordShareKeys(ctx context.Context, arguments AddPasswo
 	if err != nil {
 		return 0, err
 	}
-	if err := self.takePasswordsWrite(principal); err != nil {
-		return 0, err
-	}
 	if len(arguments.Keys) > passwordShareKeysMost {
 		return 0, passwordsInvalid("at most %d keys at a time", passwordShareKeysMost)
+	}
+	// One write for each item the call names: a call is not cheaper than the
+	// same changes made one by one.
+	namedItemIds := map[string]bool{}
+	for _, key := range arguments.Keys {
+		namedItemIds[strings.TrimSpace(key.ItemID)] = true
+	}
+	if err := self.takePasswordsWrite(principal, len(namedItemIds)); err != nil {
+		return 0, err
 	}
 	keys := make([]*models.PasswordShareKey, 0, len(arguments.Keys))
 	for _, key := range arguments.Keys {
@@ -1178,10 +1254,14 @@ func (self *graph) AddPasswordShareKeys(ctx context.Context, arguments AddPasswo
 		if itemId == "" {
 			return 0, passwordsInvalid("a key names the item")
 		}
+		if key.ItemKey == nil || !isSealedText(*key.ItemKey, passwordsKeyMostBytes) {
+			return 0, passwordsInvalid("itemKey is the item key the device opened, as the item shows it")
+		}
 		checked, err := checkedPasswordShareKey(itemId, key.RecipientUserID, key.ItemKeyByRecipientKey, key.RecipientPublicKey)
 		if err != nil {
 			return 0, err
 		}
+		checked.ItemKeyByAccountKey = *key.ItemKey
 		keys = append(keys, checked)
 	}
 	stored, err := self.transaction(ctx).AddPasswordShareKeys(principal.User.ID, keys)
@@ -1196,7 +1276,7 @@ func (self *graph) SetPasswordItemUsableByAgent(ctx context.Context, arguments S
 	if err != nil {
 		return nil, err
 	}
-	if err := self.takePasswordsWrite(principal); err != nil {
+	if err := self.takePasswordsWrite(principal, 1); err != nil {
 		return nil, err
 	}
 	input := arguments.Input
@@ -1226,7 +1306,7 @@ func (self *graph) RekeyPasswordItem(ctx context.Context, arguments RekeyPasswor
 	if err != nil {
 		return nil, err
 	}
-	if err := self.takePasswordsWrite(principal); err != nil {
+	if err := self.takePasswordsWrite(principal, 1); err != nil {
 		return nil, err
 	}
 	input := arguments.Input
@@ -1265,8 +1345,9 @@ func (self *graph) RekeyPasswordItem(ctx context.Context, arguments RekeyPasswor
 		return nil, err
 	}
 	rekeyed, err := tx.RekeyPasswordItem(principal.User.ID, &models.PasswordItemRekey{
-		ItemID: itemId, BaseRevision: int64(input.BaseRevision), EncryptedFields: input.EncryptedFields,
+		ItemID: itemId, BaseRevision: input.BaseRevision, EncryptedFields: input.EncryptedFields,
 		ItemKeyByAccountKey: input.ItemKey, ShareKeys: shareKeys, ItemKeyByAgentKey: input.ItemKeyByAgentKey,
+		IsSavedByPerson: principal.IsPersonsTap(),
 	})
 	if err != nil {
 		// Somebody else's item, a deleted one, a key for somebody the item

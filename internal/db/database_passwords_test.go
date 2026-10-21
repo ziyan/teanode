@@ -75,6 +75,8 @@ func passwordKeyFor(item *models.PasswordItem, recipient *models.User) *models.P
 	return &models.PasswordShareKey{
 		ItemID: item.ID, RecipientUserID: recipient.ID,
 		ItemKeyByRecipientKey: "key-of-" + recipient.Username, RecipientPublicKey: passwordsPublicKeyOf(recipient),
+		// The item key savePasswordItemFor saves items with, as the device opened it.
+		ItemKeyByAccountKey: `{"sealed":"key"}`,
 	}
 }
 
@@ -1026,33 +1028,36 @@ func TestPasswordsHoldAtMostABoundedNumberOfBytes(test *testing.T) {
 			test.Fatalf("refused changes drew revisions: %s then %s", revisionBefore, got)
 		}
 
-		// A smaller item still fits, and making an item smaller always does.
-		small, err := save(world.ada, 5, passwordItemFieldsOf("small", 1<<20))
-		if err != nil {
+		// A smaller item still fits. Making an item shorter keeps the version it
+		// replaces, which does not fit at the limit: a token's save is refused
+		// (the content it would overwrite could not be kept), and the person's
+		// own tap goes ahead without keeping it, which is how they make room.
+		if _, err := save(world.ada, 5, passwordItemFieldsOf("small", 1<<20)); err != nil {
 			test.Fatalf("a small note below the limit: %v", err)
 		}
-		if _, err := tx.SavePasswordItem(&models.PasswordItem{
+		shorter := &models.PasswordItem{
 			ID: first.ID, OwnerUserID: world.ada.ID, ItemKind: models.PasswordItemKindNote,
 			EncryptedFields: passwordItemFieldsOf("first", 10<<20), ItemKeyByAccountKey: `{"sealed":"key"}`,
-		}, &first.Revision); err != nil {
-			test.Fatalf("a shorter note: %v", err)
+		}
+		if _, err := tx.SavePasswordItem(shorter, &first.Revision); !errors.Is(err, db.ErrPasswordsFull) {
+			test.Fatalf("a shorter note from a token at the limit: %v", err)
+		}
+		shorter.IsSavedByPerson = true
+		if _, err := tx.SavePasswordItem(shorter, &first.Revision); err != nil {
+			test.Fatalf("a shorter note from the person's tap: %v", err)
 		}
 
-		// A deleted item makes room, and a restore that does not fit is refused.
+		// A deleted item still counts until it is swept, so deleting makes no
+		// room, and restoring it needs none.
 		if _, err := tx.DeletePasswordItem(world.ada.ID, second.ID); err != nil {
 			test.Fatal(err)
 		}
-		if _, err := save(world.ada, 6, passwordItemFieldsOf("replacement", thirtyMebibytes)); err != nil {
-			test.Fatalf("a save into the room a delete made: %v", err)
+		if _, err := save(world.ada, 6, passwordItemFieldsOf("replacement", thirtyMebibytes)); !errors.Is(err, db.ErrPasswordsFull) {
+			test.Fatalf("a save after a delete: %v", err)
 		}
-		if _, err := tx.RestorePasswordItem(world.ada.ID, second.ID); !errors.Is(err, db.ErrPasswordsFull) {
-			test.Fatalf("a restore past the limit: %v", err)
-		}
-		if _, err := tx.DeletePasswordItem(world.ada.ID, small.ID); err != nil {
-			test.Fatal(err)
-		}
-		if got, err := tx.GetPasswordItem(world.ada.ID, second.ID); err != nil || got.DeletedAt == nil {
-			test.Fatalf("a refused restore changed the item: %+v %v", got, err)
+		restored, err := tx.RestorePasswordItem(world.ada.ID, second.ID)
+		if err != nil || restored.DeletedAt != nil {
+			test.Fatalf("a restore: %+v %v", restored, err)
 		}
 	})
 }
@@ -1223,13 +1228,13 @@ func TestRekeyingAPasswordItem(test *testing.T) {
 		if _, err := rekey(again.Revision, nil, &agentKey); !errors.Is(err, db.ErrInvalidArguments) {
 			test.Fatalf("an agent copy for an item the agent does not use: %v", err)
 		}
-		// A deleted item cannot be re-keyed.
+		// A deleted item can be re-keyed, so that a restore can follow.
 		if _, err := tx.DeletePasswordItem(world.ada.ID, item.ID); err != nil {
 			test.Fatal(err)
 		}
 		deleted, _ := tx.GetPasswordItem(world.ada.ID, item.ID)
-		if _, err := rekey(deleted.Revision, nil, nil); !errors.Is(err, db.ErrNotFound) {
-			test.Fatalf("a deleted item: %v", err)
+		if rekeyedDeleted, err := rekey(deleted.Revision, nil, nil); err != nil || rekeyedDeleted.DeletedAt == nil || rekeyedDeleted.NeedsNewKey {
+			test.Fatalf("a deleted item: %+v %v", rekeyedDeleted, err)
 		}
 	})
 	// Each re-key kept what it replaced, as a save does, once in the hour.

@@ -51,10 +51,20 @@ const PasswordItemDeletedDays = 30
 // before the burst and not the burst itself. Versions are kept
 // PasswordItemVersionDays days, and at most PasswordItemVersionsMost for one
 // item; past that the one just before the newest is dropped, never the oldest.
+//
+// A save that did not come from the person's own tap (a command line token,
+// the extension) always keeps the version it replaces when that content was
+// saved by a tap, whatever the spacing, so that the person's newest edit
+// cannot be lost to a program that saves within the hour. Those versions have
+// a count of their own, PasswordItemVersionsByPersonMost for one item, the
+// oldest of them dropped first, so that a flood of saves cannot push them out
+// and they cannot push out the others.
 const (
-	PasswordItemVersionSpacing = time.Hour
-	PasswordItemVersionDays    = 30
-	PasswordItemVersionsMost   = 60
+	PasswordItemVersionSpacing         = time.Hour
+	PasswordItemVersionDays            = 30
+	PasswordItemVersionsMost           = 60
+	PasswordItemVersionsByPersonMost   = 20
+	PasswordsUnlockRefusedAuditSpacing = 5 * time.Minute
 )
 
 // PasswordItemsMost is how many items one person may keep, deleted ones
@@ -62,8 +72,11 @@ const (
 const PasswordItemsMost = 20000
 
 // PasswordsBytesMost is how many bytes of sealed text (the fields and the
-// sealed keys) one person's items that are not deleted may hold together. A
-// listing answers all of it, so it bounds what one request costs the server.
+// sealed keys) one person's items may hold together, deleted items and the
+// versions that saves replaced included: a deleted item stays 30 days and a
+// version as long, so a person who deletes and saves again cannot grow past it.
+// A listing answers the part that is not deleted, so it also bounds what one
+// request costs the server.
 const PasswordsBytesMost = 64 << 20
 
 // PasswordItemRekey is an item's fields sealed again under a new item key by
@@ -77,6 +90,10 @@ type PasswordItemRekey struct {
 	ItemKeyByAccountKey string
 	ShareKeys           []*PasswordShareKey
 	ItemKeyByAgentKey   *string
+
+	// IsSavedByPerson says the call was the person's own tap, which decides
+	// which replaced versions are kept.
+	IsSavedByPerson bool
 }
 
 // PasswordSetup is what a person set up: their account key sealed by the key
@@ -129,9 +146,19 @@ type PasswordItem struct {
 	IsUsableByAgent   bool       `json:"isUsableByAgent"`
 	ItemKeyByAgentKey string     `json:"itemKeyByAgentKey,omitempty"`
 	LastUsedByAgentAt *time.Time `json:"lastUsedByAgentAt,omitempty"`
-	DeletedAt         *time.Time `json:"deletedAt,omitempty"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
+
+	// NeedsNewKey is set when access to the item narrowed, so that a copy of
+	// its old key may still be held; only a re-key by the owner's device
+	// clears it.
+	NeedsNewKey bool `json:"needsNewKey"`
+
+	// IsSavedByPerson says the current fields were saved by the person's own
+	// tap. A save sets it from the call; the database keeps it with the item.
+	IsSavedByPerson bool `json:"isSavedByPerson"`
+
+	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 
 	// IsSharedWithMe is filled by the listing: the reader is not the owner.
 	// OwnerName is the owner's name then, and for the owner's own items too.
@@ -196,6 +223,11 @@ type PasswordShareKey struct {
 	RecipientUserID       string
 	ItemKeyByRecipientKey string
 	RecipientPublicKey    string
+
+	// ItemKeyByAccountKey is the item key the device opened to seal this key,
+	// as the owner's copy of it is stored. When it is not empty, the key is
+	// stored only while it is still the item's current one.
+	ItemKeyByAccountKey string
 }
 
 // PasswordItemList is what a person can reach now, as a device asks for it.

@@ -45,6 +45,18 @@ CREATE SEQUENCE "password_item_revision";
 -- bound to it). A deleted item stays 30 days with deleted_at set, then a sweep
 -- removes it. An item the agent may use has is_usable_by_agent set and an
 -- item_key_by_agent_key; a card is never usable by the agent.
+--
+-- needs_new_key is set, in the transaction that does it, when access to the
+-- item narrowed (a person removed from its shares, a member who left a circle
+-- it was shared with, the item deleted while shared or usable by the agent,
+-- the agent's use switched off): a copy of the old item key may still be held,
+-- and only the owner's device can seal a new one. Only a re-key clears it; a
+-- restore keeps it.
+--
+-- is_saved_by_person says the current sealed fields were saved by the
+-- person's own tap on a screen, not by a command line token or another
+-- program that holds one. It decides which replaced versions are kept (see
+-- password_item_version).
 CREATE TABLE "password_item" (
     "id"                       character varying(36)    NOT NULL PRIMARY KEY
         CHECK ("id" ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
@@ -56,6 +68,8 @@ CREATE TABLE "password_item" (
     "is_usable_by_agent"       boolean                  NOT NULL DEFAULT false,
     "item_key_by_agent_key"    text,
     "last_used_by_agent_at"    timestamp with time zone,
+    "needs_new_key"            boolean                  NOT NULL DEFAULT false,
+    "is_saved_by_person"       boolean                  NOT NULL DEFAULT false,
     "deleted_at"               timestamp with time zone,
     "created_at"               timestamp with time zone NOT NULL,
     "updated_at"               timestamp with time zone NOT NULL,
@@ -76,11 +90,17 @@ CREATE INDEX "password_item_deleted" ON "password_item" ("deleted_at") WHERE "de
 -- thing, would have destroyed the only copy. The revision is the one the item
 -- had before the save. Nothing reads these rows through the API: they are for
 -- an operator to put back from the database.
+--
+-- is_saved_by_person says the replaced content was saved by the person's own
+-- tap. A save that did not come from a tap always keeps such a version (at
+-- most 20 for an item, the oldest of them dropped first), so that a program
+-- holding a token cannot push the person's newest edit out of the history.
 CREATE TABLE "password_item_version" (
     "item_id"                  character varying(36)    NOT NULL REFERENCES "password_item" ("id") ON DELETE CASCADE,
     "revision"                 bigint                   NOT NULL,
     "encrypted_fields"         text                     NOT NULL,
     "item_key_by_account_key"  text                     NOT NULL,
+    "is_saved_by_person"       boolean                  NOT NULL DEFAULT false,
     "replaced_at"              timestamp with time zone NOT NULL,
     PRIMARY KEY ("item_id", "revision")
 );

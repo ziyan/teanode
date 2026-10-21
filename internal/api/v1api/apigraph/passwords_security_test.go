@@ -157,10 +157,15 @@ func TestRekeyingAPasswordItemReplacesItsKeys(test *testing.T) {
 		}
 	})
 
-	// A deleted item cannot be re-keyed.
+	// A deleted item can be re-keyed, so that a restore can follow; it takes
+	// no key for anybody.
 	deleted := world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": id})["DeletePasswordItem"].(map[string]any)
-	if message := world.refusal(test, world.ada, rekeyPasswordItemQuery, rekeyInput(id, deleted["revision"], nil, nil)); !strings.Contains(message, "not found") {
-		test.Fatalf("a deleted item: %s", message)
+	if message := world.refusal(test, world.ada, rekeyPasswordItemQuery, rekeyInput(id, deleted["revision"], []any{shareKeyInput(id, world.ben, ben)}, nil)); !strings.Contains(message, "not found") {
+		test.Fatalf("a key for a deleted item: %s", message)
+	}
+	rekeyedDeleted := world.run(test, world.ada, rekeyPasswordItemQuery, rekeyInput(id, deleted["revision"], nil, nil))["RekeyPasswordItem"].(map[string]any)
+	if rekeyedDeleted["deletedAt"] == nil || rekeyedDeleted["itemKey"] != sealedOf("new item key of "+id) {
+		test.Fatalf("a deleted item re-keyed: %v", rekeyedDeleted)
 	}
 }
 
@@ -257,16 +262,101 @@ func TestPasswordsRefuseMoreThanTheBytesAPersonMayKeep(test *testing.T) {
 	input["encryptedFields"] = sealedOfSize(500000)
 	world.run(test, world.ben, savePasswordItemQuery, map[string]any{"input": input})
 
-	// Deleting makes room, and a restore that does not fit is refused.
+	// A deleted item still counts until it is swept, so deleting makes no
+	// room for a new note; restoring it takes no more room than it holds.
 	world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": firstID})
 	input = ada.itemInput("note", nil)
 	input["encryptedFields"] = sealedOfSize(500000)
-	world.run(test, world.ada, savePasswordItemQuery, map[string]any{"input": input})
-	input = ada.itemInput("note", nil)
-	input["encryptedFields"] = sealedOfSize(500000)
-	world.refusal(test, world.ada, savePasswordItemQuery, map[string]any{"input": input})
-	if restoreMessage := world.refusal(test, world.ada, restorePasswordItemQuery, map[string]any{"id": firstID}); !strings.Contains(restoreMessage, "Passwords is full") {
-		test.Fatalf("a restore with no room: %s", restoreMessage)
+	if message := world.refusal(test, world.ada, savePasswordItemQuery, map[string]any{"input": input}); !strings.Contains(message, "Passwords is full") {
+		test.Fatalf("a save after deleting: %s", message)
+	}
+	world.run(test, world.ada, restorePasswordItemQuery, map[string]any{"id": firstID})
+}
+
+// Deleted items and the versions that saves keep count toward the same limit
+// as items that are not deleted: a program that deletes and saves again, or
+// saves the same item hour after hour, cannot take the table far past it.
+func TestDeletedPasswordItemsAndKeptVersionsCountTowardTheLimit(test *testing.T) {
+	world := newPasswordsWorld(test)
+	ada := newPasswordsDevice(test, world.ada)
+	world.setUp(test, ada)
+	const size = 512*1024 - 200
+	save := func(id string, base any) (map[string]any, []string) {
+		input := ada.namedItemInput(id, "note", base)
+		input["encryptedFields"] = sealedOfSize(size)
+		return world.callWithCredential(test, world.ada, models.CredentialToken, savePasswordItemQuery, map[string]any{"input": input})
+	}
+	passwordsRowBytes := func() int64 {
+		total := dbtest.QueryString(test, world.database, `SELECT (
+			(SELECT coalesce(sum(octet_length(encrypted_fields)), 0) FROM password_item WHERE owner_user_id = '`+world.ada.ID+`') +
+			(SELECT coalesce(sum(octet_length(encrypted_fields)), 0) FROM password_item_version WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+world.ada.ID+`')))::text`)
+		return numberOfText(test, total)
+	}
+
+	// Fill the room with items, delete them all, and try again for three
+	// rounds: the first round after the deletions is already refused.
+	itemID := func(round, index int) string { return fmt.Sprintf("%08x-0000-4000-8000-%012d", round+1, index) }
+	fullAt := -1
+	for index := 0; index < 200; index++ {
+		if _, failures := save(itemID(0, index), nil); len(failures) > 0 {
+			fullAt = index
+			break
+		}
+	}
+	if fullAt < 100 {
+		test.Fatalf("the room ran out after %d notes of about 0.5 MiB", fullAt)
+	}
+	for index := 0; index < fullAt; index++ {
+		world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": itemID(0, index)})
+	}
+	for round := 1; round <= 3; round++ {
+		if _, failures := save(itemID(round, 0), nil); len(failures) == 0 {
+			test.Fatalf("round %d: a save was accepted with %d bytes held in deleted items", round, passwordsRowBytes())
+		}
+	}
+	if held := passwordsRowBytes(); held > models.PasswordsBytesMost {
+		test.Fatalf("the person's rows hold %d bytes, past the %d limit", held, models.PasswordsBytesMost)
+	}
+
+	// Versions: saving three notes again and again, an hour apart, keeps a
+	// version each time (up to 60 for each note, about 90 MiB in all); they
+	// count too, so the saves stop at the limit.
+	ben := newPasswordsDevice(test, world.ben)
+	world.setUp(test, ben)
+	revisions := map[string]any{}
+	for index := 0; index < 3; index++ {
+		id := itemID(9, index)
+		input := ben.namedItemInput(id, "note", nil)
+		input["encryptedFields"] = sealedOfSize(size)
+		revisions[id] = world.run(test, world.ben, savePasswordItemQuery, map[string]any{"input": input})["SavePasswordItem"].(map[string]any)["revision"]
+	}
+	refusedAt := -1
+	for step := 0; step < 70 && refusedAt < 0; step++ {
+		dbtest.Exec(test, world.database, `UPDATE password_item_version SET replaced_at = replaced_at - interval '2 hours' WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+world.ben.ID+`')`)
+		for index := 0; index < 3; index++ {
+			id := itemID(9, index)
+			input := ben.namedItemInput(id, "note", revisions[id])
+			input["encryptedFields"] = sealedOfSize(size - 4*(step+1))
+			data, failures := world.callWithCredential(test, world.ben, models.CredentialToken, savePasswordItemQuery, map[string]any{"input": input})
+			if len(failures) > 0 {
+				if !strings.Contains(strings.Join(failures, "; "), "Passwords is full") {
+					test.Fatalf("step %d: %v", step, failures)
+				}
+				refusedAt = step
+				break
+			}
+			revisions[id] = data["SavePasswordItem"].(map[string]any)["revision"]
+		}
+	}
+	if refusedAt < 0 {
+		test.Fatalf("every save of three 0.5 MiB notes was accepted; the kept versions are outside the limit")
+	}
+	held := dbtest.QueryString(test, world.database, `SELECT (
+		(SELECT coalesce(sum(octet_length(encrypted_fields)), 0) FROM password_item WHERE owner_user_id = '`+world.ben.ID+`') +
+		(SELECT coalesce(sum(octet_length(encrypted_fields)), 0) FROM password_item_version WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+world.ben.ID+`')))::text`)
+	heldBytes := numberOfText(test, held)
+	if heldBytes > models.PasswordsBytesMost {
+		test.Fatalf("ben's rows hold %d bytes, past the %d limit", heldBytes, models.PasswordsBytesMost)
 	}
 }
 

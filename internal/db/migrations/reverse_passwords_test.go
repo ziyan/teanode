@@ -51,6 +51,22 @@ func TestThePasswordsMigrationKeepsItsConstraintsAndReverses(test *testing.T) {
 		test.Errorf("a new setup locks after %q minutes", got)
 	}
 
+	// The columns the migration adds to existing and new tables take their
+	// defaults, and exist until the reverse file runs.
+	if got := dbtest.QueryString(test, database, `SELECT needs_new_key::text || ',' || is_saved_by_person::text FROM "password_item" WHERE "id" = '`+firstItemId+`'`); got != "false,false" {
+		test.Errorf("a new item has needs_new_key and is_saved_by_person %q", got)
+	}
+	if got := dbtest.QueryString(test, database, `SELECT is_saved_by_person::text FROM "password_item_version" WHERE "item_id" = '`+firstItemId+`'`); got != "false" {
+		test.Errorf("a new version has is_saved_by_person %q", got)
+	}
+	addedColumns := `SELECT count(*)::text FROM information_schema.columns WHERE table_schema = current_schema() AND (
+		(table_name = 'agent_interaction' AND column_name = 'is_started_by_person') OR
+		(table_name = 'password_item' AND column_name IN ('needs_new_key', 'is_saved_by_person')) OR
+		(table_name = 'password_item_version' AND column_name = 'is_saved_by_person'))`
+	if got := dbtest.QueryString(test, database, addedColumns); got != "4" {
+		test.Errorf("%s of the 4 columns the migration adds are there before the reverse", got)
+	}
+
 	for name, statement := range map[string]string{
 		"badkind":        `INSERT INTO "password_item" ("id", "owner_user_id", "item_kind", "encrypted_fields", "item_key_by_account_key", "created_at", "updated_at") VALUES ('33333333-3333-4333-8333-333333333333', '` + userId + `', 'vault', '{}', '{}', now(), now())`,
 		"upperid":        `INSERT INTO "password_item" ("id", "owner_user_id", "item_kind", "encrypted_fields", "item_key_by_account_key", "created_at", "updated_at") VALUES ('AAAAAAAA-3333-4333-8333-333333333333', '` + userId + `', 'login', '{}', '{}', now(), now())`,
@@ -102,6 +118,9 @@ func TestThePasswordsMigrationKeepsItsConstraintsAndReverses(test *testing.T) {
 		if got := dbtest.QueryString(test, database, `SELECT coalesce(to_regclass('"`+table+`"')::text, '')`); got != "" {
 			test.Errorf("the %s table is still there: %q", table, got)
 		}
+	}
+	if got := dbtest.QueryString(test, database, addedColumns); got != "0" {
+		test.Errorf("%s of the columns the migration added are still there after the reverse", got)
 	}
 	if got := dbtest.QueryString(test, database, `SELECT coalesce(to_regclass('"password_item_revision"')::text, '')`); got != "" {
 		test.Errorf("the revision sequence is still there: %q", got)

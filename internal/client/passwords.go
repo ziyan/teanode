@@ -57,6 +57,9 @@ type PasswordShareView struct {
 // sealed for the reader: by their account key for the owner, by their key pair
 // for a person it is shared with, who opens it with OwnerPublicKey (the owner's
 // current public key, base64 of 65 bytes) once their device knows that key.
+// NeedsNewKey is set on the owner's item when access to it narrowed, so that a
+// copy of the old key may be held: the owner's device re-keys it
+// (RekeyPasswordItem), which clears it. It is always false for a reader.
 type PasswordItemView struct {
 	ID                string               `json:"id"`
 	OwnerUserID       string               `json:"ownerUserId"`
@@ -69,6 +72,7 @@ type PasswordItemView struct {
 	Revision          int64                `json:"revision"`
 	IsUsableByAgent   bool                 `json:"isUsableByAgent"`
 	LastUsedByAgentAt *time.Time           `json:"lastUsedByAgentAt"`
+	NeedsNewKey       bool                 `json:"needsNewKey"`
 	DeletedAt         *time.Time           `json:"deletedAt"`
 	CreatedAt         time.Time            `json:"createdAt"`
 	UpdatedAt         time.Time            `json:"updatedAt"`
@@ -151,12 +155,17 @@ type PasswordShareKeyInput struct {
 }
 
 // PasswordItemShareKeyInput is a PasswordShareKeyInput that names its item, for
-// AddPasswordShareKeys.
+// AddPasswordShareKeys and for the share keys of a re-key. ItemKey is the item
+// key the device opened to seal the key, as the item view shows it (the
+// account-sealed text): AddPasswordShareKeys requires it and refuses the key
+// when the item has another now. A re-key leaves it out, because its keys are
+// sealed from the new key in the same call.
 type PasswordItemShareKeyInput struct {
 	ItemID                string `json:"itemId"`
 	RecipientUserID       string `json:"recipientUserId"`
 	ItemKeyByRecipientKey string `json:"itemKeyByRecipientKey"`
 	RecipientPublicKey    string `json:"recipientPublicKey"`
+	ItemKey               string `json:"itemKey,omitempty"`
 }
 
 // ForShare is the same key as SetPasswordItemShares takes it, without the item.
@@ -191,7 +200,7 @@ type SetPasswordItemUsableByAgentInput struct {
 // device read; a newer one is refused as changed on another device.
 type PasswordItemRekeyInput struct {
 	ID                string                       `json:"id"`
-	BaseRevision      int                          `json:"baseRevision"`
+	BaseRevision      int64                        `json:"baseRevision"`
 	EncryptedFields   string                       `json:"encryptedFields"`
 	ItemKey           string                       `json:"itemKey"`
 	ShareKeys         []*PasswordItemShareKeyInput `json:"shareKeys"`
@@ -204,7 +213,7 @@ const (
 	passwordRecipientFields = `userId name username publicKey hasKey`
 
 	passwordItemFields = `id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision isUsableByAgent
-    lastUsedByAgentAt deletedAt createdAt updatedAt
+    lastUsedByAgentAt needsNewKey deletedAt createdAt updatedAt
     shares { id granteeUserId granteeCircleId granteeName recipients { ` + passwordRecipientFields + ` } }`
 
 	DocumentReadPasswordsSetup = `query { ReadPasswordsSetup { ` + passwordsSetupFields + ` } }`
@@ -231,7 +240,7 @@ const (
 
 	DocumentErasePasswords = `mutation { ErasePasswords }`
 
-	DocumentListPasswordItems = `query ($sinceRevision: Int) {
+	DocumentListPasswordItems = `query ($sinceRevision: Int64) {
   ListPasswordItems(sinceRevision: $sinceRevision) {
     itemIds revision
     items { ` + passwordItemFields + ` }

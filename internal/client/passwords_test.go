@@ -74,6 +74,23 @@ func TestListPasswordItemsSendsTheRevisionOnlyWhenGiven(test *testing.T) {
 	if variables()["sinceRevision"] != float64(3) {
 		test.Errorf("variables=%v", variables())
 	}
+	// Revisions are 64-bit: the document declares the Int64 scalar, and a
+	// revision past 32 bits is read back whole.
+	if !strings.Contains(DocumentListPasswordItems, "$sinceRevision: Int64") {
+		test.Error("the listing does not declare sinceRevision as Int64")
+	}
+	big := int64(5_000_000_000)
+	bigConnection, bigVariables := passwordsServer(test, `{"ListPasswordItems":{"itemIds":["a"],"revision":5000000001,"items":[{"id":"a","itemKind":"login","revision":5000000001,"needsNewKey":true,"shares":[]}]}}`)
+	bigList, err := ListPasswordItems(test.Context(), bigConnection, &big)
+	if err != nil || bigList.Revision != 5_000_000_001 || bigList.Items[0].Revision != 5_000_000_001 || !bigList.Items[0].NeedsNewKey {
+		test.Fatalf("big list=%+v, %v", bigList, err)
+	}
+	if bigVariables()["sinceRevision"] != float64(5_000_000_000) {
+		test.Errorf("variables=%v", bigVariables())
+	}
+	if !strings.Contains(passwordItemFields, "needsNewKey") {
+		test.Error("the item documents do not ask for needsNewKey")
+	}
 }
 
 // A new item is sent without a base revision, a changed one with it.
@@ -123,12 +140,12 @@ func TestPasswordSharesAreSentInTheShapeTheSchemaTakes(test *testing.T) {
 	}
 
 	waitingConnection, waitingVariables := passwordsServer(test, `{"AddPasswordShareKeys":1}`)
-	stored, err := AddPasswordShareKeys(test.Context(), waitingConnection, []*PasswordItemShareKeyInput{{ItemID: "a", RecipientUserID: "user-ben", ItemKeyByRecipientKey: "{}", RecipientPublicKey: "key"}})
+	stored, err := AddPasswordShareKeys(test.Context(), waitingConnection, []*PasswordItemShareKeyInput{{ItemID: "a", RecipientUserID: "user-ben", ItemKeyByRecipientKey: "{}", RecipientPublicKey: "key", ItemKey: `{"sealed":"item key"}`}})
 	if err != nil || stored != 1 {
 		test.Fatalf("stored=%d, %v", stored, err)
 	}
 	encoded, _ = json.Marshal(waitingVariables())
-	if !strings.Contains(string(encoded), `"itemId":"a"`) {
+	if !strings.Contains(string(encoded), `"itemId":"a"`) || !strings.Contains(string(encoded), `"itemKey":"{\"sealed\":\"item key\"}"`) {
 		test.Errorf("a waiting key sent %s", encoded)
 	}
 }

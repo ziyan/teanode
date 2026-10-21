@@ -249,12 +249,16 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		if arguments.Cron != "" {
 			schedule.Cron = strings.TrimSpace(arguments.Cron)
 		}
-		// Words the person typed on a screen are theirs: saving a changed
-		// prompt makes the schedule the person's, whoever wrote the one it
-		// replaces. The same words from the command line are the agent's,
-		// even over a schedule that was the person's, since the agent's shell
-		// can send them. Saving the same prompt again (the dashboard sends it
-		// with every edit) leaves the writer as it was.
+		// A save the person made with a tap on a screen is theirs, whether or
+		// not it changed anything: pressing Save on the dashboard or in the app
+		// is how a person takes over a schedule the agent wrote. A caller that
+		// is not a tap (the command line holds a token the agent's own shell
+		// can use too) makes the schedule the agent's by changing its words,
+		// when it runs, where its answer goes or whether it runs, as the
+		// agent's own schedule tool does: otherwise the agent could move a
+		// schedule the person wrote and have it keep running with the
+		// person's authority. Saving the same prompt again from there, or
+		// renaming, leaves the writer as it was.
 		if prompt := strings.TrimSpace(arguments.Prompt); prompt != "" && prompt != strings.TrimSpace(schedule.Prompt) {
 			schedule.Prompt = prompt
 			schedule.WrittenBy = writtenBy
@@ -264,6 +268,11 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		}
 		if arguments.Enabled != nil {
 			schedule.Enabled = *arguments.Enabled
+		}
+		if principal.IsPersonsTap() {
+			schedule.WrittenBy = models.WrittenByPerson
+		} else if arguments.Cron != "" || arguments.Deliver != "" || arguments.Enabled != nil {
+			schedule.WrittenBy = models.WrittenByAgent
 		}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {

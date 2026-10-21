@@ -91,10 +91,10 @@ const (
 	readPasswordsSetupQuery = `query { ReadPasswordsSetup { ` + passwordsSetupFields + ` } }`
 	unlockPasswordsQuery    = `mutation ($proof: String!, $isRecoveryKey: Boolean) { UnlockPasswords(proof: $proof, isRecoveryKey: $isRecoveryKey) { accountKeyWrapped privateKeyByAccountKey publicKey } }`
 	erasePasswordsQuery     = `mutation { ErasePasswords }`
-	passwordItemFields      = `id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision isUsableByAgent lastUsedByAgentAt deletedAt createdAt updatedAt
+	passwordItemFields      = `id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision isUsableByAgent lastUsedByAgentAt needsNewKey deletedAt createdAt updatedAt
   shares { id granteeUserId granteeCircleId granteeName recipients { userId name username publicKey hasKey } }`
 	savePasswordItemQuery      = `mutation ($input: PasswordItemInput!) { SavePasswordItem(input: $input) { ` + passwordItemFields + ` } }`
-	listPasswordItemsQuery     = `query ($sinceRevision: Int) { ListPasswordItems(sinceRevision: $sinceRevision) { items { ` + passwordItemFields + ` } itemIds revision } }`
+	listPasswordItemsQuery     = `query ($sinceRevision: Int64) { ListPasswordItems(sinceRevision: $sinceRevision) { items { ` + passwordItemFields + ` } itemIds revision } }`
 	deletePasswordItemQuery    = `mutation ($id: String!) { DeletePasswordItem(id: $id) { ` + passwordItemFields + ` } }`
 	restorePasswordItemQuery   = `mutation ($id: String!) { RestorePasswordItem(id: $id) { ` + passwordItemFields + ` } }`
 	passwordRecipientsQuery    = `query ($granteeUserId: String, $granteeCircleId: String) { ListPasswordRecipients(granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId) { userId name username publicKey hasKey } }`
@@ -155,6 +155,8 @@ func shareKeyInput(itemId string, recipient *models.User, device *passwordsDevic
 	return map[string]any{
 		"itemId": itemId, "recipientUserId": recipient.ID, "itemKeyByRecipientKey": sealedForKeyPairOf("item key for " + recipient.Username),
 		"recipientPublicKey": device.publicKey,
+		// The item key the device opened: the one passwordsDevice saves items with.
+		"itemKey": sealedOf("item key of " + itemId),
 	}
 }
 
@@ -163,6 +165,7 @@ func shareKeyInput(itemId string, recipient *models.User, device *passwordsDevic
 func shareSetKeyInput(itemId string, recipient *models.User, device *passwordsDevice) map[string]any {
 	key := shareKeyInput(itemId, recipient, device)
 	delete(key, "itemId")
+	delete(key, "itemKey")
 	return key
 }
 
