@@ -48,6 +48,64 @@ func (self *Context) PageURL(ctx context.Context) (string, error) {
 	return history.Entries[history.CurrentIndex].URL, nil
 }
 
+// ScriptedPageWords is what the model is told when a page is not filled
+// because the agent ran script in it, here and by the tab target.
+const ScriptedPageWords = "This page has run the agent's script, so it is not filled. Open the sign-in page again (navigate) and fill it before running any script."
+
+// ScriptOnEveryPageWords is what the model is told when a tab was given a
+// script that runs in every page it loads.
+const ScriptOnEveryPageWords = "This tab was given a script that runs in every page it loads, so nothing is filled in it. Open a new tab (open) and fill the sign-in page there before running any script."
+
+// currentDocument is the document the main frame shows now, as the browser says.
+func (self *Context) currentDocument(ctx context.Context) (Document, error) {
+	var tree struct {
+		FrameTree struct {
+			Frame struct {
+				LoaderID string `json:"loaderId"`
+				URL      string `json:"url"`
+			} `json:"frame"`
+		} `json:"frameTree"`
+	}
+	if err := self.call(ctx, "Page.getFrameTree", nil, &tree); err != nil || tree.FrameTree.Frame.LoaderID == "" {
+		return Document{}, errors.New("browser: the browser did not say which page this is")
+	}
+	return Document{ID: tree.FrameTree.Frame.LoaderID, Address: tree.FrameTree.Frame.URL}, nil
+}
+
+// noteScript records that a script is about to run in the page, in the
+// document it shows now (see FilledValues.NoteScripted). When the browser
+// does not say which document that is, the page is taken to be scripted for
+// good: a script that cannot be placed cannot be ruled out later.
+func (self *Context) noteScript(ctx context.Context) {
+	document, err := self.currentDocument(ctx)
+	if err != nil {
+		self.filled.NoteScriptOnEveryPage("")
+		return
+	}
+	self.filled.NoteScripted("", document)
+}
+
+// CheckNotScripted says the page can be filled: the agent has run no script in
+// the document it shows now. The error is the words for the model. The browser
+// is asked which document that is only if a script was ever run, and when it
+// does not answer the page is refused.
+func (self *Context) CheckNotScripted(ctx context.Context) error {
+	if self.filled.HasScriptOnEveryPage("") {
+		return errors.New(ScriptOnEveryPageWords)
+	}
+	if !self.filled.HasBeenScripted("") {
+		return nil
+	}
+	document, err := self.currentDocument(ctx)
+	if err != nil {
+		return err
+	}
+	if self.filled.IsScripted("", document.ID) {
+		return errors.New(ScriptedPageWords)
+	}
+	return nil
+}
+
 // Filled is what a sign-in put into this page: the values to hide from the
 // model and whether the page is locked.
 func (self *Context) Filled() *FilledValues {
@@ -269,13 +327,46 @@ type FillRequest struct {
 // the kind of field asked for, visible and enabled, and the value is put in
 // the way the page's own typing would (the browser's own setter of the input's
 // value, then input and change events), so there is no gap between the check
-// and the value going in. A password or a code is also noted as filled by the
+// and the value going in. A field whose form sends to another site than the
+// page is not filled either. A password or a code is also noted as filled by the
 // agent, so that a snapshot never shows it, whatever the field's type becomes.
 const fillScript = `(function (host, port, ref, kind, text, isSecret) {
   let pageHost = location.hostname.toLowerCase().replace(/\.+$/, '');
   if (pageHost.startsWith('www.') && pageHost.slice(4).includes('.')) pageHost = pageHost.slice(4);
   const pagePort = Number(location.port || (location.protocol === 'https:' ? 443 : 80));
   if (pageHost !== host || (port !== 0 && pagePort !== port)) return {isFilled: false, problem: 'the page is no longer on the site this was meant for'};
+  // Whether the form the field is in sends to another site than this page:
+  // the form's action and the formaction of every control that submits it,
+  // including an image input and a control outside the form that names it
+  // with form=. The attributes are read with the browser's own getters, not
+  // from the properties of the form, which a field named "action" or
+  // "elements" replaces. An address that does not resolve to http or https is
+  // not a place to send to, and a secure page sending to a plain-text address
+  // counts as sending elsewhere.
+  const isFormSendingElsewhere = (field) => {
+    const getAttribute = Element.prototype.getAttribute;
+    const inputForm = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'form').get;
+    const buttonForm = Object.getOwnPropertyDescriptor(HTMLButtonElement.prototype, 'form').get;
+    const form = inputForm.call(field);
+    if (!form) return false;
+    const attributes = [getAttribute.call(form, 'action')];
+    for (const control of Array.from(Document.prototype.querySelectorAll.call(document, '[formaction]'))) {
+      let owner = null;
+      if (control instanceof HTMLButtonElement) owner = buttonForm.call(control);
+      else if (control instanceof HTMLInputElement) owner = inputForm.call(control);
+      if (owner === form) attributes.push(getAttribute.call(control, 'formaction'));
+    }
+    return attributes.some((attribute) => {
+      if (attribute === null || attribute.trim() === '') return false;
+      try {
+        const target = new URL(attribute, document.baseURI);
+        if (target.protocol !== 'http:' && target.protocol !== 'https:') return false;
+        return target.host !== location.host || (location.protocol === 'https:' && target.protocol === 'http:');
+      } catch (error) {
+        return false;
+      }
+    });
+  };
   const node = %s(ref, '');
   if (!node || !node.isConnected || node.ownerDocument !== document) return {isFilled: false, problem: 'no field has that ref; take a snapshot first'};
   if (!(node instanceof HTMLInputElement)) return {isFilled: false, problem: 'that ref is not an input; a textarea, a select and an editable region are never filled'};
@@ -305,6 +396,7 @@ const fillScript = `(function (host, port, ref, kind, text, isSecret) {
   }
   const rect = node.getBoundingClientRect();
   if (opacity < 0.1 || rect.width < 5 || rect.height < 5) return {isFilled: false, problem: 'that field cannot be typed into'};
+  if (isFormSendingElsewhere(node)) return {isFilled: false, problem: 'the form around that field sends to another site than this page'};
   if (isSecret) {
     if (!window.__teanodeFilled) window.__teanodeFilled = new WeakSet();
     window.__teanodeFilled.add(node);
@@ -337,6 +429,10 @@ func (self *Context) FillSecret(ctx context.Context, request FillRequest) error 
 	case FieldKindUserName, FieldKindPassword, FieldKindOneTimeCode:
 	default:
 		return errors.New("browser: say what kind of field this is")
+	}
+	// A page the agent's script ran in could send the value anywhere.
+	if err := self.CheckNotScripted(ctx); err != nil {
+		return err
 	}
 	arguments := make([]string, 0, 6)
 	for _, argument := range []any{request.Host, request.Port, request.Ref, string(request.Kind), request.Text, request.Kind != FieldKindUserName} {
@@ -379,6 +475,11 @@ func (self *Context) AddPasskey(ctx context.Context, passkey Passkey) error {
 	self.touch()
 	if len(passkey.CredentialID) == 0 || len(passkey.PrivateKey) == 0 || passkey.RelyingPartyID == "" {
 		return errors.New("browser: the passkey is incomplete")
+	}
+	// A page the agent's script ran in could wrap the sign-in and send what the
+	// authenticator signs anywhere.
+	if err := self.CheckNotScripted(ctx); err != nil {
+		return err
 	}
 	self.RemovePasskey()
 	if err := self.call(ctx, "WebAuthn.enable", map[string]any{"enableUI": false}, nil); err != nil {

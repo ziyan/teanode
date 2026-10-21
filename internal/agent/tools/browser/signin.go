@@ -211,6 +211,11 @@ func runPasswordAction(ctx context.Context, run tools.Run, page *devtools.Contex
 	if err != nil {
 		return nil, err
 	}
+	// A page the agent ran script in is not filled: the script may have left
+	// a listener or changed a form that sends what is typed elsewhere.
+	if err := page.CheckNotScripted(ctx); err != nil {
+		return nil, refusal(err.Error())
+	}
 	switch arguments.Action {
 	case "fill_login":
 		target, err := prepareSignIn(ctx, run, arguments.ItemID, pageURL, true)
@@ -229,6 +234,7 @@ func runPasswordAction(ctx context.Context, run tools.Run, page *devtools.Contex
 		// off, before the first value goes in.
 		if isPassword {
 			page.Filled().Remember(target.login.Password)
+			page.Filled().RememberSecretHost("", target.host)
 			page.PrepareToFill(ctx)
 		}
 		if isUserName {
@@ -258,6 +264,7 @@ func runPasswordAction(ctx context.Context, run tools.Run, page *devtools.Contex
 			return nil, err
 		}
 		page.Filled().RememberOneTimeCode(period, code)
+		page.Filled().RememberSecretHost("", target.host)
 		page.PrepareToFill(ctx)
 		if err := page.FillSecret(ctx, devtools.FillRequest{Ref: arguments.Ref, Host: target.host, Port: target.port, Kind: devtools.FieldKindOneTimeCode, Text: code}); err != nil {
 			return nil, signInSecrets{code}.hide(fmt.Errorf("the one-time code was not filled: %w", err))
@@ -341,6 +348,9 @@ func runPasswordActionOnTab(ctx context.Context, run tools.Run, tab tools.Tab, a
 	if !tab.CanFillPasswords() {
 		return nil, refusal(oldExtensionWords)
 	}
+	if err := refuseScriptedTab(tab.Filled(), tab.CurrentTabID()); err != nil {
+		return nil, err
+	}
 	target, err := prepareSignIn(ctx, run, arguments.ItemID, tab.URL(), true)
 	if err != nil {
 		return nil, err
@@ -367,6 +377,7 @@ func runPasswordActionOnTab(ctx context.Context, run tools.Run, tab tools.Tab, a
 		// asked; the answer says which document it went into.
 		if isPassword {
 			tab.Filled().Remember(target.login.Password)
+			tab.Filled().RememberSecretHost(tabKey, target.host)
 			tab.Filled().Lock(tabKey, devtools.Document{Address: tab.URL()})
 		}
 		if err := askTabToFill(ctx, run, tab, arguments, target, sent, signInSecrets{sent.UserName, sent.Password}, isPassword); err != nil {
@@ -384,6 +395,7 @@ func runPasswordActionOnTab(ctx context.Context, run tools.Run, tab tools.Tab, a
 		tabKey := tab.CurrentTabID()
 		sent := tabFillOneTimeCodeArguments{Host: target.host, Port: target.port, ExpectedTab: tabKey, Ref: arguments.Ref, Code: code}
 		tab.Filled().RememberOneTimeCode(period, code)
+		tab.Filled().RememberSecretHost(tabKey, target.host)
 		tab.Filled().Lock(tabKey, devtools.Document{Address: tab.URL()})
 		if err := askTabToFill(ctx, run, tab, arguments, target, sent, signInSecrets{code}, true); err != nil {
 			return nil, err
@@ -421,6 +433,7 @@ func askTabToFill(ctx context.Context, run tools.Run, tab tools.Tab, arguments *
 			tabKey = strconv.FormatInt(*answer.Tab, 10)
 			tab.NoteCurrentTab(tabKey)
 		}
+		tab.Filled().RememberSecretHost(tabKey, target.host)
 		tab.Filled().Lock(tabKey, devtools.Document{ID: answer.DocumentID, Address: tab.URL(), CommitCount: answer.CommitCount})
 	}
 	return nil

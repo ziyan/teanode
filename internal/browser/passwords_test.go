@@ -348,6 +348,21 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 		test.Fatal(err)
 	}
 	defer func() { _ = page.Close() }()
+	// read runs a script the way the test needs to look at the page. The
+	// agent's own Evaluate marks the document as one its script ran in, which
+	// a page is not filled after (see passwords_script_test.go), so a test
+	// that fills the same document again and again looks without it.
+	read := func(ctx context.Context, expression string, maximum int) (string, error) {
+		var value json.RawMessage
+		if err := page.evaluate(ctx, expression, &value); err != nil {
+			return "", err
+		}
+		text := string(value)
+		if maximum > 0 && len(text) > maximum {
+			text = text[:maximum]
+		}
+		return text, nil
+	}
 	if _, err := page.Navigate(ctx, address); err != nil {
 		test.Fatal(err)
 	}
@@ -376,7 +391,7 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 		return page.FillSecret(ctx, FillRequest{Ref: ref, Host: host, Kind: kind, Text: text})
 	}
 	valueOf := func(id string) string {
-		value, _ := page.Evaluate(ctx, `document.getElementById('`+id+`').value`, 200)
+		value, _ := read(ctx, `document.getElementById('`+id+`').value`, 200)
 		return value
 	}
 	// The wrong site, and the wrong port, fill nothing.
@@ -403,7 +418,7 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 		}
 	}
 	for _, id := range []string{"area", "editable", "choice", "agree", "plain"} {
-		if value, _ := page.Evaluate(ctx, `document.getElementById('`+id+`').value || document.getElementById('`+id+`').textContent`, 200); strings.Contains(value, secret) || strings.Contains(value, "123456") {
+		if value, _ := read(ctx, `document.getElementById('`+id+`').value || document.getElementById('`+id+`').textContent`, 200); strings.Contains(value, secret) || strings.Contains(value, "123456") {
 			test.Fatalf("%s holds %s", id, value)
 		}
 	}
@@ -428,7 +443,7 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 	}
 	// The page sees its own input event, and the value is set the way its
 	// typing would.
-	if value, _ := page.Evaluate(ctx, `(function () { let seen = 0; const node = document.getElementById('secret'); node.addEventListener('input', () => seen++); return seen; })()`, 20); value != "0" {
+	if value, _ := read(ctx, `(function () { let seen = 0; const node = document.getElementById('secret'); node.addEventListener('input', () => seen++); return seen; })()`, 20); value != "0" {
 		test.Fatalf("listener: %s", value)
 	}
 	if err := fill(refOf(`"code"`), "localhost", FieldKindOneTimeCode, "123456"); err != nil {
@@ -459,7 +474,7 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 	if _, _, err := page.Click(ctx, Target{Ref: refOf(`"Show"`)}); err != nil {
 		test.Fatal(err)
 	}
-	if value, _ := page.Evaluate(ctx, `document.getElementById('secret').type`, 20); value != `"text"` {
+	if value, _ := read(ctx, `document.getElementById('secret').type`, 20); value != `"text"` {
 		test.Fatalf("the field is a %s", value)
 	}
 	snapshot, err := page.Snapshot(ctx, "interactive", 0)
@@ -472,7 +487,7 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 	}
 	// A long value in a field the agent did not fill is not cut and shown:
 	// it is not shown.
-	if _, err := page.Evaluate(ctx, `document.getElementById('plain').value = 'q'.repeat(100); true`, 20); err != nil {
+	if _, err := read(ctx, `document.getElementById('plain').value = 'q'.repeat(100); true`, 20); err != nil {
 		test.Fatal(err)
 	}
 	snapshot, err = page.Snapshot(ctx, "interactive", 0)
@@ -490,7 +505,7 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 	}
 	// Text pasted or typed into any input, textarea or editable region is
 	// not shown in a snapshot or named by a click while the page is locked.
-	if _, err := page.Evaluate(ctx, `(function () { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(document.getElementById('plain'), 'pasted-copy-1'); document.getElementById('area').value = 'pasted-copy-2'; document.getElementById('editable').textContent = 'pasted-copy-3'; return true; })()`, 20); err != nil {
+	if _, err := read(ctx, `(function () { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(document.getElementById('plain'), 'pasted-copy-1'); document.getElementById('area').value = 'pasted-copy-2'; document.getElementById('editable').textContent = 'pasted-copy-3'; return true; })()`, 20); err != nil {
 		test.Fatal(err)
 	}
 	for _, mode := range []string{"interactive", "text"} {
@@ -511,7 +526,7 @@ func TestARealChromeFillsASecretAndSignsWithAPasskey(test *testing.T) {
 	if _, _, err := page.Click(ctx, Target{Ref: refOf(`"Push"`)}); err != nil {
 		test.Fatal(err)
 	}
-	if _, err := page.Evaluate(ctx, `location.hash = '#next'; true`, 20); err != nil {
+	if _, err := read(ctx, `location.hash = '#next'; true`, 20); err != nil {
 		test.Fatal(err)
 	}
 	time.Sleep(300 * time.Millisecond)

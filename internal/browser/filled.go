@@ -72,6 +72,26 @@ type filledTab struct {
 	// latest is the newest commit seen, for a fill that is reported after
 	// the tab already moved on.
 	latest *Commit
+
+	// isScripted says the agent ran a script in the document the tab shows,
+	// or changed it with a DevTools command, so that a listener or a form
+	// address it set could be there. It is kept the way isLocked is, in the
+	// other direction: it ends when the tab commits a new document that is not
+	// a move through the history, and comes back with the scripted document.
+	isScripted bool
+	// scriptedDocuments and scriptedAddresses are where the agent ran script.
+	scriptedDocuments map[string]bool
+	scriptedAddresses map[string]bool
+	// hasScriptOnEveryPage says the tab was given something that runs in every
+	// page it loads from now on (a script to run on each new document, a
+	// binding, a debugger, a request interception). A navigation does not end
+	// it, so the tab is never filled again.
+	hasScriptOnEveryPage bool
+
+	// secretHosts are the sites a password or a one-time code was put into
+	// in this tab, for the rest of the tab's life: the session that sign-in
+	// made is theirs.
+	secretHosts map[string]bool
 }
 
 // Document is where a value was put: a tab's document.
@@ -183,7 +203,7 @@ func (self *FilledValues) tabLocked(tab string) *filledTab {
 	}
 	found := self.tabs[tab]
 	if found == nil {
-		found = &filledTab{documents: map[string]bool{}, addresses: map[string]bool{}}
+		found = &filledTab{documents: map[string]bool{}, addresses: map[string]bool{}, scriptedDocuments: map[string]bool{}, scriptedAddresses: map[string]bool{}, secretHosts: map[string]bool{}}
 		self.tabs[tab] = found
 	}
 	return found
@@ -288,6 +308,20 @@ func (self *FilledValues) Committed(tab string, commit Commit) {
 }
 
 func (self *filledTab) applyLocked(commit Commit) {
+	// The same rules end the mark of a scripted document as end the lock.
+	// A document the browser names is scripted if it is one the agent ran
+	// script in, wherever it came from: a page loaded again has lost the
+	// script, and one restored from the history's cache has not.
+	switch {
+	case commit.DocumentID != "":
+		self.isScripted = self.scriptedDocuments[commit.DocumentID]
+	case commit.IsBackForward:
+		if self.scriptedAddresses[withoutFragment(commit.Address)] {
+			self.isScripted = true
+		}
+	default:
+		self.isScripted = false
+	}
 	switch {
 	case commit.DocumentID != "" && self.documents[commit.DocumentID]:
 		// The filled document is back (restored from the history's cache).
@@ -317,6 +351,142 @@ func (self *FilledValues) ResetCommitCounts() {
 		found.lastCount = 0
 		found.latest = nil
 	}
+}
+
+// NoteScripted says the agent ran script in a document of the tab, or changed
+// it with a DevTools command, before anything was filled into it. A page that
+// has run the agent's script can hold a listener that sends a field's value
+// out or a form that sends it to another site, neither of which the lock or
+// the check of the form (which look at the page as it is) can rule out, so it
+// is not filled. A document with no id is taken to be the newest one the tab
+// committed.
+func (self *FilledValues) NoteScripted(tab string, document Document) {
+	if self == nil {
+		return
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	found := self.tabLocked(tab)
+	found.isScripted = true
+	if document.ID == "" && found.latest != nil {
+		document.ID, document.Address = found.latest.DocumentID, found.latest.Address
+	}
+	if document.ID != "" {
+		found.scriptedDocuments[document.ID] = true
+	}
+	if address := withoutFragment(document.Address); address != "" {
+		found.scriptedAddresses[address] = true
+	}
+}
+
+// NoteScriptOnEveryPage says the tab was given something that runs in every
+// page it loads (see filledTab.hasScriptOnEveryPage).
+func (self *FilledValues) NoteScriptOnEveryPage(tab string) {
+	if self == nil {
+		return
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	found := self.tabLocked(tab)
+	found.hasScriptOnEveryPage = true
+	found.isScripted = true
+}
+
+// HasScriptOnEveryPage says the tab, or a tab the browser did not name, was
+// given something that runs in every page it loads.
+func (self *FilledValues) HasScriptOnEveryPage(tab string) bool {
+	if self == nil {
+		return false
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for _, name := range []string{tab, ""} {
+		if found := self.tabs[name]; found != nil && found.hasScriptOnEveryPage {
+			return true
+		}
+	}
+	return false
+}
+
+// HasBeenScripted says the agent ran script in some document of the tab, so
+// that asking the browser which document it shows now is worth a round trip.
+func (self *FilledValues) HasBeenScripted(tab string) bool {
+	if self == nil {
+		return false
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for _, name := range []string{tab, ""} {
+		if found := self.tabs[name]; found != nil && (found.isScripted || len(found.scriptedDocuments) > 0 || found.hasScriptOnEveryPage) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsScripted says the document the tab shows now is one the agent ran script
+// in. With the document's id (the headless browser asks the browser for it)
+// the answer is exact; without it the answer is the tab's mark, which the
+// commits the extension reports keep.
+func (self *FilledValues) IsScripted(tab, documentID string) bool {
+	if self == nil {
+		return false
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for _, name := range []string{tab, ""} {
+		found := self.tabs[name]
+		if found == nil {
+			continue
+		}
+		if found.hasScriptOnEveryPage {
+			return true
+		}
+		if documentID != "" {
+			if found.scriptedDocuments[documentID] {
+				return true
+			}
+			continue
+		}
+		if found.isScripted {
+			return true
+		}
+	}
+	return false
+}
+
+// RememberSecretHost says a password or a one-time code was put into a page
+// of this host in the tab. It lasts as long as the tab: the cookies and the
+// storage that sign-in made are then the site's session, which the agent does
+// not read back.
+func (self *FilledValues) RememberSecretHost(tab, host string) {
+	if self == nil || host == "" {
+		return
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.tabLocked(tab).secretHosts[strings.ToLower(host)] = true
+}
+
+// HasSecretHost says a secret was put into a page of the host in the tab. An
+// empty host asks whether one was put into any host.
+func (self *FilledValues) HasSecretHost(tab, host string) bool {
+	if self == nil {
+		return false
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	host = strings.ToLower(host)
+	for _, name := range []string{tab, ""} {
+		found := self.tabs[name]
+		if found == nil {
+			continue
+		}
+		if (host == "" && len(found.secretHosts) > 0) || found.secretHosts[host] {
+			return true
+		}
+	}
+	return false
 }
 
 // Scrub replaces every remembered value in the text with [hidden], in every

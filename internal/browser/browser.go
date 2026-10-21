@@ -682,8 +682,13 @@ func (self *Context) Back(ctx context.Context) (*Location, error) {
 }
 
 // Evaluate runs an expression and returns its JSON value, bounded.
+//
+// A script is the agent's, and can leave a listener or a changed form behind
+// that a later sign-in would feed, so the document it ran in is marked and is
+// not filled (see CheckNotScripted).
 func (self *Context) Evaluate(ctx context.Context, expression string, maximum int) (string, error) {
 	self.touch()
+	self.noteScript(ctx)
 	var value json.RawMessage
 	if err := self.evaluate(ctx, expression, &value); err != nil {
 		return "", err

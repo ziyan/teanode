@@ -950,10 +950,13 @@ func TestAFilledTabRefusesScriptsUntilItCommitsANewDocument(test *testing.T) {
 	evaluate := `{"action":"evaluate","expression":"1+1"}`
 	cdp := `{"action":"cdp","method":"Runtime.evaluate","params":{"expression":"1"}}`
 
-	// Before any fill, scripts run.
+	// Before any fill, scripts run; the page they ran in is then not filled
+	// (see TestAScriptedPageIsNotFilled), until the tab commits a new document.
 	if _, err := browse(run, evaluate); err != nil {
 		test.Fatalf("a script before a fill: %s", err)
 	}
+	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedPageWords)
+	run.tab.Filled().Committed("7", devtools.Commit{DocumentID: "doc-0", Address: shopAddress, Count: 2})
 	if _, err := browse(run, fillLogin(found.grantedLogin)); err != nil {
 		test.Fatal(err)
 	}
@@ -994,8 +997,9 @@ func TestAFilledTabRefusesScriptsUntilItCommitsANewDocument(test *testing.T) {
 		test.Fatalf("a script after the tab committed a new document: %s", err)
 	}
 
-	// A one-time code locks the tab too.
-	run.tab.fillAnswer = `{"isFilled":true,"tab":7,"documentId":"doc-2","commitCount":4}`
+	// A one-time code locks the tab too (on a document no script ran in).
+	run.tab.Filled().Committed("7", devtools.Commit{DocumentID: "doc-3", Address: "https://shop.example.test/verify", Count: 5})
+	run.tab.fillAnswer = `{"isFilled":true,"tab":7,"documentId":"doc-3","commitCount":5}`
 	if _, err := browse(run, fmt.Sprintf(`{"action":"fill_one_time_code","item_id":%q,"ref":6}`, found.grantedLogin)); err != nil {
 		test.Fatal(err)
 	}
@@ -1069,6 +1073,11 @@ func TestAFilledHeadlessPageRefusesScriptsUntilItNavigatesAndHidesValues(test *t
 	if _, err := browse(run, evaluate); err != nil {
 		test.Fatalf("a script before a fill: %s", err)
 	}
+	// The document the script ran in is not filled; a new one is.
+	mustRefuse(test, run, fillLogin(found.grantedLogin), devtools.ScriptedPageWords)
+	chrome.mutex.Lock()
+	chrome.loader = "loader-1b"
+	chrome.mutex.Unlock()
 	if _, err := browse(run, fillLogin(found.grantedLogin)); err != nil {
 		test.Fatal(err)
 	}

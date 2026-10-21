@@ -146,11 +146,14 @@ func TestALockedTabAnswersOnlyInputAndNavigationOfTheDevToolsProtocol(test *test
 	}
 	// Unlocked, they all go through.
 	run.tab.Filled().Committed("7", devtools.Commit{DocumentID: "doc-2", Address: "https://shop.example.test/account", Count: 4})
-	for _, method := range []string{"Runtime.evaluate", "Network.enable", "Network.getResponseBody"} {
+	for _, method := range []string{"Runtime.evaluate", "Network.getResponseBody"} {
 		if _, err := browse(run, fmt.Sprintf(`{"action":"cdp","method":%q}`, method)); err != nil {
 			test.Errorf("%s on an unlocked tab: %s", method, err)
 		}
 	}
+	// The network log would carry the session's cookies, so a tab signed in to
+	// does not turn it on again (see script.go).
+	mustRefuse(test, run, `{"action":"cdp","method":"Network.enable"}`, sessionReadWords)
 }
 
 // Moving a locked page is allowed so the sign-in can go on, but only the plain
@@ -231,7 +234,11 @@ func TestTheModelCannotNameTheTabACallIsCheckedFor(test *testing.T) {
 	if asked := run.tab.actions(); strings.Contains(asked[len(asked)-1].arguments, "expectedTab") {
 		test.Fatalf("a click carries a tab: %s", asked[len(asked)-1].arguments)
 	}
-	// The fill carries it too.
+	// The fill carries it too (on a document no script ran in).
+	// The first script ran before the server heard the tab's number.
+	for _, tab := range []string{"", "7"} {
+		run.tab.Filled().Committed(tab, devtools.Commit{DocumentID: "doc-1", Address: shopAddress, Count: 1})
+	}
 	if _, err := browse(run, fillLogin(found.grantedLogin)); err != nil {
 		test.Fatal(err)
 	}
