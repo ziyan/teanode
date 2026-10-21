@@ -7180,26 +7180,20 @@ export const en = {
   'passwords.purgeBody': 'It and its earlier versions are removed at once and cannot be brought back.',
   'passwords.itemPurged': '{name} was deleted forever.',
   'passwords.purgeFailed': 'The item could not be deleted forever.',
-  'passwords.keyChangedTitle': "{name}'s key changed",
-  'passwords.keyChangedBody':
-    'This is not the key you shared with before. It changes when they set Passwords up again, but it could also be somebody else. Confirming it also lets you share with them.',
   'passwords.keyChangedOld': 'Safety code before',
+  'passwords.somebody': 'Somebody',
+  'passwords.theirSafetyCode': 'Their safety code',
+  'passwords.keyNoticeDismiss': 'Dismiss',
+  'passwords.codesCompared': 'Codes compared',
+  'passwords.compareMatch': 'The codes match',
+  'passwords.compareTitle': 'Compare codes with {name}',
+  'passwords.compareCodes': 'Compare codes',
+  'passwords.keyChangedNotice':
+    "{name}'s key changed. This happens when they erase Passwords and set it up again. If you did not expect it, compare safety codes with them.",
   'passwords.keyChangedNew': 'Safety code now',
   'passwords.keyChangedWarning': 'Their key changed.',
-  'passwords.keyFirstTitle': "Confirm {name}'s safety code",
-  'passwords.keyFirstBody':
-    'This device has not confirmed their key yet, and they should not get the items you shared until you know it is theirs. Confirming it also lets you share with them.',
-  'passwords.keyFirstWarning': 'This device has not confirmed their key yet.',
-  'passwords.keyFirstConfirm': 'The safety code matches',
   'passwords.errorPublicKeyMismatch':
     'The server sent a public key that is not the one your private key makes, so Passwords stays locked.',
-  'passwords.ownerKeyChangedTitle': "Its owner's key changed",
-  'passwords.ownerKeyChangedBody':
-    '{name} shared this item, and their key is not the one you saw before. It changes when they set Passwords up again, but it could also be somebody else. The item stays closed until you confirm the new key. Confirming it also lets you share with them.',
-  'passwords.shareSavedUnconfirmedOne':
-    'Sharing saved. {count} person was left out until you confirm their safety code.',
-  'passwords.shareSavedUnconfirmed':
-    'Sharing saved. {count} people were left out until you confirm their safety codes.',
   'passwords.itemCountOne': '1 item',
   'passwords.itemCount': '{count} items',
   'passwords.reloadFailed': 'The item could not be read again.',
@@ -7207,18 +7201,10 @@ export const en = {
   'passwords.importProgress': 'Importing {done} of {total}',
   'passwords.safetyCodeUnreadable': 'could not be read',
   'passwords.compareWords':
-    'Ask {name} to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.',
-  'passwords.confirmIsPerBrowser':
-    'Your confirmations are kept on this browser only. Other devices and the iPhone app ask you again.',
-  'passwords.keyChangedConfirm': 'The new safety code matches',
-  'passwords.keyConfirmed': 'You confirmed this key.',
-  'passwords.keyConfirmedOnThisBrowser': 'You confirmed this person on this browser.',
-  'passwords.ownerKeyConfirmFailed': 'The new key could not be confirmed.',
+    'Ask {name} to open Passwords settings and read you their safety code. If it matches yours, say so below.',
   'passwords.ownSafetyCodeTitle': 'Your safety code',
   'passwords.ownSafetyCodeBody':
-    'Somebody who shares with you compares this code with the one on their screen. It is made on this device from your key, not from what the server says.',
-  'passwords.rekeyWaitingOne': '{count} person waits until you confirm their safety code.',
-  'passwords.rekeyWaiting': '{count} people wait until you confirm their safety codes.',
+    'Somebody who shares with you can compare this code with the one on their screen. It is made on this device from your key, not from what the server says.',
   'passwords.itemChangedNotRead':
     'This item changed on another device, but it could not be read again. Check your connection and try again.',
   'passwords.sitesMore': 'and {count} more',

@@ -2,26 +2,50 @@
 // not secret, so localStorage is fine; everything is kept per signed-in
 // person, so two people on one browser do not share it. Every access is
 // guarded: a browser that refuses storage remembers nothing, and every key is
-// then a new one. What a device confirmed stays on that device: another
-// browser, the iPhone app and the command line each ask again.
+// then a first key. What a device knows stays on that device: another
+// browser, the iPhone app and the command line each keep their own.
 //
-// There are two kinds of record about a person's key, and they mean different
-// things:
+// There is one known key per person (by user id): the first key this device
+// saw for them, from any source (sharing with them, an item they shared, a
+// share waiting for them). It is sealed for without asking anybody. When the
+// server later gives another key for the same person, the new key becomes the
+// known one at once and a notice about the change is kept until the person
+// dismisses it. The notice never gates anything: it only offers to compare
+// safety codes, and comparing is optional.
 //
-// - A confirmed key is one the owner compared the safety code of with that
-//   person (the share dialog's confirm button, confirming a changed key, the
-//   first-time confirm). Only a confirmed key lets this device seal an item
-//   key for the person without asking.
-// - A seen key is the key a person's own items came with the first time one
-//   of them opened here. The server chooses what it sends, so seeing a key
-//   proves nothing about whose it is. It is used only to warn when that
-//   person's key later changes. The records written before this split are all
-//   seen keys, so the person is asked once about each.
+// The records written before this one kept two lists, the keys the person had
+// confirmed and the keys that were only seen. They are moved into the one
+// list the first time it is read: a confirmed key is a compared key.
 
-const SEEN_PREFIX = 'teanode.passwords.pins:'
-const CONFIRMED_PREFIX = 'teanode.passwords.confirmedKeys:'
+const KNOWN_PREFIX = 'teanode.passwords.knownKeys:'
+const LEGACY_SEEN_PREFIX = 'teanode.passwords.pins:'
+const LEGACY_CONFIRMED_PREFIX = 'teanode.passwords.confirmedKeys:'
 
-function readKeys(prefix: string, userId: string): Record<string, string> {
+export type KnownKey = {
+  publicKey: string
+  // name is how the person was called when the key was recorded, for a notice
+  // shown when the person is not on screen.
+  name: string
+  // isCompared is true once the owner compared the safety code with the
+  // person. It is shown beside the person and gates nothing.
+  isCompared: boolean
+  // previousPublicKey is the key known before the latest change, or null when
+  // the key never changed.
+  previousPublicKey: string | null
+  // hasChangeNotice is true from a change until the person dismisses it.
+  hasChangeNotice: boolean
+}
+
+export type KeyChangeNotice = {
+  otherUserId: string
+  name: string
+  oldPublicKey: string
+  newPublicKey: string
+}
+
+export type KeyRecordOutcome = 'first' | 'same' | 'changed'
+
+function readStrings(prefix: string, userId: string): Record<string, string> {
   try {
     const raw = window.localStorage.getItem(prefix + userId)
     const parsed: unknown = raw ? JSON.parse(raw) : {}
@@ -36,59 +60,149 @@ function readKeys(prefix: string, userId: string): Record<string, string> {
   }
 }
 
-function writeKey(prefix: string, userId: string, otherUserId: string, publicKey: string) {
-  try {
-    window.localStorage.setItem(
-      prefix + userId,
-      JSON.stringify({ ...readKeys(prefix, userId), [otherUserId]: publicKey }),
-    )
-  } catch {
-    // Nothing is remembered, and the next key is a new one again.
+function parseKnownKey(value: unknown): KnownKey | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.publicKey !== 'string') return null
+  return {
+    publicKey: record.publicKey,
+    name: typeof record.name === 'string' ? record.name : '',
+    isCompared: record.isCompared === true,
+    previousPublicKey: typeof record.previousPublicKey === 'string' ? record.previousPublicKey : null,
+    hasChangeNotice: record.hasChangeNotice === true && typeof record.previousPublicKey === 'string',
   }
 }
 
-// seenKeyOf is the key first seen for this person, or null if none was.
-export function seenKeyOf(userId: string, otherUserId: string): string | null {
+function writeKnownKeys(userId: string, keys: Record<string, KnownKey>) {
+  try {
+    window.localStorage.setItem(KNOWN_PREFIX + userId, JSON.stringify(keys))
+  } catch {
+    // Nothing is remembered, and the next key is a first key again.
+  }
+}
+
+// readKnownKeys reads the one list. When it has never been written, the two
+// lists of the earlier version are moved into it (and removed): the seen keys
+// first, then the confirmed ones over them, marked as compared.
+function readKnownKeys(userId: string): Record<string, KnownKey> {
+  try {
+    const raw = window.localStorage.getItem(KNOWN_PREFIX + userId)
+    if (raw === null) return migrateLegacyKeys(userId)
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+    const keys: Record<string, KnownKey> = {}
+    for (const [otherUserId, value] of Object.entries(parsed)) {
+      const key = parseKnownKey(value)
+      if (key !== null) keys[otherUserId] = key
+    }
+    return keys
+  } catch {
+    return {}
+  }
+}
+
+function migrateLegacyKeys(userId: string): Record<string, KnownKey> {
+  const seen = readStrings(LEGACY_SEEN_PREFIX, userId)
+  const confirmed = readStrings(LEGACY_CONFIRMED_PREFIX, userId)
+  const keys: Record<string, KnownKey> = {}
+  for (const [otherUserId, publicKey] of Object.entries(seen)) {
+    keys[otherUserId] = { publicKey, name: '', isCompared: false, previousPublicKey: null, hasChangeNotice: false }
+  }
+  for (const [otherUserId, publicKey] of Object.entries(confirmed)) {
+    keys[otherUserId] = { publicKey, name: '', isCompared: true, previousPublicKey: null, hasChangeNotice: false }
+  }
+  if (Object.keys(keys).length === 0) return keys
+  writeKnownKeys(userId, keys)
+  try {
+    window.localStorage.removeItem(LEGACY_SEEN_PREFIX + userId)
+    window.localStorage.removeItem(LEGACY_CONFIRMED_PREFIX + userId)
+  } catch {
+    // The earlier lists stay; the new one is read first from now on.
+  }
+  return keys
+}
+
+// knownKeyRecordOf is what this device knows of the person's key, or null.
+export function knownKeyRecordOf(userId: string, otherUserId: string): KnownKey | null {
   if (userId === '') return null
-  return readKeys(SEEN_PREFIX, userId)[otherUserId] ?? null
+  return readKnownKeys(userId)[otherUserId] ?? null
 }
 
-// markKeySeen keeps the key an item of this person's came with, replacing an
-// earlier one. It does not make the key confirmed, so nothing is sealed for it.
-export function markKeySeen(userId: string, otherUserId: string, publicKey: string) {
-  if (userId === '') return
-  writeKey(SEEN_PREFIX, userId, otherUserId, publicKey)
-}
-
-// confirmedKeyOf is the key the owner confirmed for this person, or null.
-export function confirmedKeyOf(userId: string, otherUserId: string): string | null {
-  if (userId === '') return null
-  return readKeys(CONFIRMED_PREFIX, userId)[otherUserId] ?? null
-}
-
-// confirmKey keeps this key as confirmed, after the owner compared the safety
-// code with the person. It is also the seen key from then on, so a later
-// change of it is noticed on that person's own items too.
-export function confirmKey(userId: string, otherUserId: string, publicKey: string) {
-  if (userId === '') return
-  writeKey(CONFIRMED_PREFIX, userId, otherUserId, publicKey)
-  writeKey(SEEN_PREFIX, userId, otherUserId, publicKey)
-}
-
-// isKeyConfirmed says whether this very key is the confirmed one for the person.
-export function isKeyConfirmed(userId: string, otherUserId: string, publicKey: string): boolean {
-  return confirmedKeyOf(userId, otherUserId) === publicKey
-}
-
-// knownKeyOf is the key an owner's items are checked against: the confirmed
-// one if there is one, else the one first seen.
+// knownKeyOf is the key this device knows for the person, or null.
 export function knownKeyOf(userId: string, otherUserId: string): string | null {
-  return confirmedKeyOf(userId, otherUserId) ?? seenKeyOf(userId, otherUserId)
+  return knownKeyRecordOf(userId, otherUserId)?.publicKey ?? null
+}
+
+// recordKey keeps the key the server gives for a person. A person never seen
+// before is a 'first' key; the known key again is 'same' and changes nothing;
+// any other key replaces the known one at once, is 'changed', and leaves a
+// notice (with the key before) until it is dismissed. A changed key is not a
+// compared one.
+export function recordKey(userId: string, otherUserId: string, publicKey: string, name: string): KeyRecordOutcome {
+  if (userId === '') return 'same'
+  const keys = readKnownKeys(userId)
+  const known = keys[otherUserId]
+  if (known?.publicKey === publicKey) {
+    if (known.name === '' && name !== '') writeKnownKeys(userId, { ...keys, [otherUserId]: { ...known, name } })
+    return 'same'
+  }
+  keys[otherUserId] = {
+    publicKey,
+    name: name || known?.name || '',
+    isCompared: false,
+    previousPublicKey: known?.publicKey ?? null,
+    hasChangeNotice: known !== undefined,
+  }
+  writeKnownKeys(userId, keys)
+  return known === undefined ? 'first' : 'changed'
+}
+
+// markKeyCompared records that the owner compared the safety code of this very
+// key with the person. A key that is not the known one becomes the known one
+// without a notice, since the owner is looking at it now. Its notice, if there
+// was one, is done with.
+export function markKeyCompared(userId: string, otherUserId: string, publicKey: string, name: string) {
+  if (userId === '') return
+  const keys = readKnownKeys(userId)
+  const known = keys[otherUserId]
+  keys[otherUserId] = {
+    publicKey,
+    name: name || known?.name || '',
+    isCompared: true,
+    previousPublicKey:
+      known !== undefined && known.publicKey !== publicKey ? known.publicKey : (known?.previousPublicKey ?? null),
+    hasChangeNotice: false,
+  }
+  writeKnownKeys(userId, keys)
+}
+
+// isKeyCompared says whether the owner compared this very key with the person.
+export function isKeyCompared(userId: string, otherUserId: string, publicKey: string): boolean {
+  const known = knownKeyRecordOf(userId, otherUserId)
+  return known !== null && known.publicKey === publicKey && known.isCompared
+}
+
+// dismissKeyChangeNotice stops showing the notice for a person's changed key.
+export function dismissKeyChangeNotice(userId: string, otherUserId: string) {
+  if (userId === '') return
+  const keys = readKnownKeys(userId)
+  const known = keys[otherUserId]
+  if (known === undefined || !known.hasChangeNotice) return
+  writeKnownKeys(userId, { ...keys, [otherUserId]: { ...known, hasChangeNotice: false } })
+}
+
+// keyChangeNotices are the changed keys the person has not dismissed.
+export function keyChangeNotices(userId: string): KeyChangeNotice[] {
+  if (userId === '') return []
+  return Object.entries(readKnownKeys(userId)).flatMap(([otherUserId, known]) =>
+    known.hasChangeNotice && known.previousPublicKey !== null
+      ? [{ otherUserId, name: known.name, oldPublicKey: known.previousPublicKey, newPublicKey: known.publicKey }]
+      : [],
+  )
 }
 
 // earlierKeyOf is a key this device knew for the person that is not the one
-// given, or null when it knew none (or only this one). A confirmed key counts
-// before a seen one.
+// given, or null when it knew none (or only this one).
 export function earlierKeyOf(userId: string, otherUserId: string, publicKey: string): string | null {
   const known = knownKeyOf(userId, otherUserId)
   return known !== null && known !== publicKey ? known : null

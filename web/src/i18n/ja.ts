@@ -7125,25 +7125,20 @@ export const ja: Catalog = {
   'passwords.purgeBody': '項目と以前のバージョンがすぐに消え、元に戻せません。',
   'passwords.itemPurged': '{name} を完全に削除しました。',
   'passwords.purgeFailed': '項目を完全に削除できませんでした。',
-  'passwords.keyChangedTitle': '{name} さんの鍵が変わりました',
-  'passwords.keyChangedBody':
-    '以前に共有した鍵ではありません。相手がパスワードを設定し直すと変わりますが、別の人である可能性もあります。確認すると、その人と共有もできるようになります。',
   'passwords.keyChangedOld': '以前の安全コード',
+  'passwords.somebody': '相手',
+  'passwords.theirSafetyCode': '相手の安全コード',
+  'passwords.keyNoticeDismiss': '閉じる',
+  'passwords.codesCompared': 'コード照合済み',
+  'passwords.compareMatch': 'コードが一致しました',
+  'passwords.compareTitle': '{name} さんとコードを照合',
+  'passwords.compareCodes': 'コードを照合',
+  'passwords.keyChangedNotice':
+    '{name} さんの鍵が変わりました。パスワードを消去して設定し直すと起こります。心当たりがない場合は、相手と安全コードを照合してください。',
   'passwords.keyChangedNew': '現在の安全コード',
   'passwords.keyChangedWarning': '相手の鍵が変わりました。',
-  'passwords.keyFirstTitle': '{name} さんの安全コードを確認',
-  'passwords.keyFirstBody':
-    'この端末は相手の鍵をまだ確認していません。相手本人の鍵だと確認できるまで、共有した項目は渡されません。確認すると、その人と共有もできるようになります。',
-  'passwords.keyFirstWarning': 'この端末は相手の鍵をまだ確認していません。',
-  'passwords.keyFirstConfirm': '安全コードが一致する',
   'passwords.errorPublicKeyMismatch':
     'サーバーから届いた公開鍵が、あなたの秘密鍵から作られる公開鍵と一致しないため、パスワードはロックされたままです。',
-  'passwords.ownerKeyChangedTitle': '所有者の鍵が変わりました',
-  'passwords.ownerKeyChangedBody':
-    '{name} さんがこの項目を共有しましたが、以前に見た鍵とは異なります。相手がパスワードを設定し直したときにも起こりますが、別の人である可能性もあります。新しい鍵を確認するまで、この項目は開かれません。確認すると、その人と共有もできるようになります。',
-  'passwords.shareSavedUnconfirmedOne':
-    '共有を保存しました。{count} 人は、安全コードを確認するまで対象から外れています。',
-  'passwords.shareSavedUnconfirmed': '共有を保存しました。{count} 人は、安全コードを確認するまで対象から外れています。',
   'passwords.itemCountOne': '1件の項目',
   'passwords.itemCount': '{count}件の項目',
   'passwords.reloadFailed': '項目を読み直せませんでした。',
@@ -7151,18 +7146,10 @@ export const ja: Catalog = {
   'passwords.importProgress': '{total} 件中 {done} 件をインポート中',
   'passwords.safetyCodeUnreadable': '読み取れません',
   'passwords.compareWords':
-    '{name} さんに、ご自身の端末でパスワードの設定を開いて安全コードを読み上げてもらってください。一致する場合のみ確認してください。',
-  'passwords.confirmIsPerBrowser':
-    '確認はこのブラウザにだけ保存されます。ほかの端末や iPhone アプリでは、もう一度確認が必要です。',
-  'passwords.keyChangedConfirm': '新しい安全コードが一致する',
-  'passwords.keyConfirmed': 'この鍵を確認しました。',
-  'passwords.keyConfirmedOnThisBrowser': 'この人をこのブラウザで確認済みです。',
-  'passwords.ownerKeyConfirmFailed': '新しい鍵を確認できませんでした。',
+    '{name} さんにパスワードの設定を開いて安全コードを読み上げてもらってください。自分のものと一致する場合は、下で知らせてください。',
   'passwords.ownSafetyCodeTitle': 'あなたの安全コード',
   'passwords.ownSafetyCodeBody':
-    'あなたに共有する人は、このコードを相手の画面のものと照合します。サーバーの報告ではなく、この端末であなたの鍵から作られています。',
-  'passwords.rekeyWaitingOne': '{count} 人が、安全コードの確認を待っています。',
-  'passwords.rekeyWaiting': '{count} 人が、安全コードの確認を待っています。',
+    'あなたと共有する人は、このコードを相手の画面のものと照合できます。サーバーの報告ではなく、この端末であなたの鍵から作られています。',
   'passwords.itemChangedNotRead':
     'この項目は別のデバイスで変更されましたが、読み直せませんでした。接続を確認してもう一度お試しください。',
   'passwords.sitesMore': 'ほか {count} 件',

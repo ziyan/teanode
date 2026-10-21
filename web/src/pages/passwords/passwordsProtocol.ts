@@ -204,8 +204,8 @@ export async function makeReplaceRecoveryKeyInput(
 // Items
 
 // OwnerKeyChange is a shared item whose owner now has a public key other than
-// the one this device kept for them. The item is not opened until the person
-// has compared the two safety codes and confirmed the new key.
+// the one the caller kept for them. The item is opened with the new key all the
+// same: the change is only information, for a notice the person may dismiss.
 export type OwnerKeyChange = {
   oldPublicKey: string
   newPublicKey: string
@@ -243,12 +243,13 @@ type ItemShape = {
   createdAt: string
   updatedAt: string
   shares: PasswordShare[]
+  // ownerKeyChange is set on a shared item opened with an owner key other
+  // than the one the caller passed as the key kept for them. Nothing waits on
+  // it.
+  ownerKeyChange: OwnerKeyChange | null
   // isUnreadable is true when a sealed value would not open: the item is
   // listed, with no fields, rather than hiding that it exists.
   isUnreadable: boolean
-  // ownerKeyChange is set instead of opening the item when its owner's key is
-  // not the one this device kept. The item is also unreadable then.
-  ownerKeyChange: OwnerKeyChange | null
   // verifiedAccess is the sealed access record of an item the person owns when
   // its signature is right and it is not an old one; null otherwise, and for an
   // item somebody shared (whose record is only shown, in fields.access).
@@ -333,28 +334,22 @@ function itemShape(
 // openPasswordItem opens one item the server sent. An owned item's key opens
 // with the account key. A shared one's opens with the person's key pair and
 // the owner's public key, naming the owner and the person's own user id in the
-// associated data. pinnedOwnerKey is the public key this device kept for the
-// owner (null if none): when the server sends another, the item is not opened
-// and carries ownerKeyChange instead. A kind this version does not know is
-// left out (null), since there is nothing it could show. An item whose fields
-// do not have the kind's shape is returned unreadable, like one whose key did
-// not open.
+// associated data, whatever key the owner had before: only a key that opens
+// the item is accepted, and the caller records it. keptOwnerKey is the key the
+// caller kept for the owner (null if none); when the server sends another, the
+// item still opens with the new key and carries ownerKeyChange. A kind this version does
+// not know is left out (null), since there is nothing it could show. An item
+// whose fields do not have the kind's shape is returned unreadable, like one
+// whose key did not open.
 export async function openPasswordItem(
   record: PasswordItemRecord,
   accountKey: Uint8Array,
   keyPair: PersonKeyPair,
   userId: string,
-  pinnedOwnerKey: string | null,
+  keptOwnerKey: string | null = null,
 ): Promise<PasswordItem | null> {
   if (!isItemKind(record.itemKind)) return null
   const itemKind = record.itemKind
-  if (record.isSharedWithMe && pinnedOwnerKey !== null && pinnedOwnerKey !== record.ownerPublicKey) {
-    return {
-      ...itemShape(record, null, { oldPublicKey: pinnedOwnerKey, newPublicKey: record.ownerPublicKey }),
-      itemKind,
-      fields: fillMissingFields(itemKind, {}),
-    } as PasswordItem
-  }
   try {
     const itemKey = record.isSharedWithMe
       ? await openForKeyPair(
@@ -375,8 +370,12 @@ export async function openPasswordItem(
       itemKey.fill(0)
       throw new PasswordsError('itemUnreadable')
     }
+    const ownerKeyChange =
+      record.isSharedWithMe && keptOwnerKey !== null && keptOwnerKey !== record.ownerPublicKey
+        ? { oldPublicKey: keptOwnerKey, newPublicKey: record.ownerPublicKey }
+        : null
     return {
-      ...itemShape(record, itemKey),
+      ...itemShape(record, itemKey, ownerKeyChange),
       itemKind,
       fields,
     } as PasswordItem

@@ -11,7 +11,7 @@ import { Translation, useTranslation } from '../../i18n/i18n'
 import { useFailureToast } from './passwordsErrors'
 import { siteFromText } from './passwordsEditor'
 import { KIND_WORDS, siteHost } from './passwordsList'
-import { OneTimeCodeValue, PlainValue, SafetyCode, SecretValue } from './passwordsParts'
+import { OneTimeCodeValue, PlainValue, SecretValue } from './passwordsParts'
 import { PasswordShare } from './passwordsApi'
 import { isAgentAllowed, PasswordItem, splitSharesByRecord } from './passwordsProtocol'
 import { useRekeyFailedToast } from './passwordsRekey'
@@ -153,17 +153,6 @@ export function PasswordsItemView({
     }
   }
 
-  async function confirmOwnerKey() {
-    setIsBusy(true)
-    try {
-      await passwordsSession.confirmOwnerKey(item)
-    } catch (failure) {
-      reportFailure(failure, t('passwords.ownerKeyConfirmFailed'))
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
   async function changeAgent(isUsableByAgent: boolean) {
     if (isBusy) return
     setIsBusy(true)
@@ -282,27 +271,7 @@ export function PasswordsItemView({
             )}
           </div>
         )}
-        {item.ownerKeyChange !== null ? (
-          <div className="passwords-key-changed">
-            <h3>{t('passwords.ownerKeyChangedTitle')}</h3>
-            <p className="muted">{t('passwords.ownerKeyChangedBody', { name: item.ownerName })}</p>
-            <p>
-              <span className="muted">{t('passwords.keyChangedOld')} </span>
-              <SafetyCode publicKey={item.ownerKeyChange.oldPublicKey} />
-            </p>
-            <p>
-              <span className="muted">{t('passwords.keyChangedNew')} </span>
-              <SafetyCode publicKey={item.ownerKeyChange.newPublicKey} />
-            </p>
-            <p className="muted">{t('passwords.compareWords', { name: item.ownerName })}</p>
-            <p className="muted">{t('passwords.confirmIsPerBrowser')}</p>
-            <div className="page-actions">
-              <button type="button" className="primary" disabled={isBusy} onClick={() => void confirmOwnerKey()}>
-                {t('passwords.keyChangedConfirm')}
-              </button>
-            </div>
-          </div>
-        ) : item.isUnreadable ? (
+        {item.isUnreadable ? (
           <SettingsEmpty>{t('passwords.unreadableBody')}</SettingsEmpty>
         ) : (
           <dl className="passwords-fields">

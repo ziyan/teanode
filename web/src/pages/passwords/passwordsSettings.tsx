@@ -140,8 +140,8 @@ function LockTime({ setup, onChanged }: { setup: PasswordsSetup; onChanged: () =
   )
 }
 
-// OwnSafetyCode is the person's own safety code, for somebody who is about to
-// confirm them. It is made from the key pair this device opened at unlock,
+// OwnSafetyCode is the person's own safety code, for somebody who wants to
+// compare it. It is made from the key pair this device opened at unlock,
 // never from what the server reports, so a server that swapped the key it
 // hands out cannot make this agree with it.
 function OwnSafetyCode() {
