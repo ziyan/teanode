@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   encodeBase64,
   generatePersonKeyPair,
+  isAccessVerified,
   safetyCode,
   openItemFields,
   openItemKey,
@@ -766,6 +767,22 @@ describe('saving a login after a sign-in', () => {
     })
   })
 
+  it('signs the access record of a new login, which grants nobody', async () => {
+    const { environment, server } = await unlocked()
+    await withOpenedKeys(environment, async (keys) => {
+      await saveCapturedLogin(environment, keys, [], { pageUrl, userName: 'ada', password: 'first-pass' })
+    })
+    const input = server.saved[0].input
+    const fields = await readFields(input)
+    expect(fields.access).toMatchObject({ isUsableByAgent: false, grantees: [], recordVersion: 1 })
+    expect(typeof fields.access?.recordMac).toBe('string')
+    expect(await isAccessVerified(fixture.accountKey, input.id, 'login', fields.access)).toBe(true)
+    // The signature is for this item and no other.
+    expect(
+      await isAccessVerified(fixture.accountKey, '00000000-0000-4000-8000-000000000009', 'login', fields.access),
+    ).toBe(false)
+  })
+
   it('offers to update when the password changed, and keeps the item key and revision', async () => {
     const id = '00000000-0000-4000-8000-000000000001'
     const { environment, server } = await unlocked([
@@ -862,6 +879,21 @@ describe('passkeys in logins', () => {
       sites: ['https://login.example.com'],
       passkeys: [passkey],
     })
+  })
+
+  it('signs the access record of a login made for a new passkey', async () => {
+    const { environment, server } = await unlocked()
+    await withOpenedKeys(environment, async (keys) => {
+      await savePasskey(environment, keys, [], {
+        pageUrl: 'https://login.example.com/',
+        relyingPartyName: 'Example Inc',
+        passkey,
+      })
+    })
+    const input = server.saved[0].input
+    const fields = await readFields(input)
+    expect(fields.access).toMatchObject({ isUsableByAgent: false, grantees: [], recordVersion: 1 })
+    expect(await isAccessVerified(fixture.accountKey, input.id, 'login', fields.access)).toBe(true)
   })
 
   it('replaces a passkey for the same relying party and user handle', async () => {

@@ -162,6 +162,8 @@ async function showLogins(popupState: PopupState) {
       return
     }
     clear(listArea)
+    // A changed key comes first: after up to 100 logins nobody would reach it.
+    for (const change of answer.ownerKeyChanges) listArea.append(ownerKeyChangeCard(change, loadList))
     if (answer.forThisSite.length > 0) {
       listArea.append(
         element('h2', {}, `For ${popupState.frameHost || 'this site'}`),
@@ -174,7 +176,6 @@ async function showLogins(popupState: PopupState) {
         loginList(answer.others, popupState),
       )
     }
-    for (const change of answer.ownerKeyChanges) listArea.append(ownerKeyChangeCard(change, loadList))
     if (answer.forThisSite.length === 0 && answer.others.length === 0) {
       listArea.append(element('p', { className: 'muted' }, query ? 'Nothing matches.' : 'There are no logins yet.'))
     } else if (query && answer.others.length === 0) {

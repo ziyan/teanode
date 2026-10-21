@@ -220,6 +220,19 @@ describe("a shared login's owner whose key changed", () => {
     expect(sent.some((message) => message.type === 'passwords:dismiss-owner-key')).toBe(false)
   })
 
+  it('comes before the logins, so a long list does not push it out of sight', async () => {
+    answers['passwords:search'] = () => ({
+      forThisSite: [OWN_LOGIN, SHARED_LOGIN],
+      others: [OTHER_LOGIN],
+      ownerKeyChanges: [change],
+    })
+    await load()
+    const area = document.querySelector('.list-area') as HTMLElement
+    expect(area.firstElementChild?.getAttribute('role')).toBe('alert')
+    expect(buttonIn(area.firstElementChild as HTMLElement, 'Compare codes')).toBeTruthy()
+    expect(area.querySelectorAll('.list').length).toBe(2)
+  })
+
   it('shows both codes of the owner and the own one with Compare codes', async () => {
     await load()
     const card = document.querySelector('.card[role="alert"]') as HTMLElement

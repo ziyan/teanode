@@ -20,6 +20,7 @@ import {
   parseSealedValue,
   PersonKeyPair,
   safetyCode,
+  withSignedAccess,
 } from '../../../src/passwords/crypto'
 import { emptyLoginFields, LoginFields, PasskeyFields } from '../../../src/passwords/fields'
 import { oneTimeCode, oneTimeCodeSecondsLeft, parseOneTimeCodeUri } from '../../../src/passwords/oneTimeCode'
@@ -677,7 +678,13 @@ async function saveLoginFields(
   existing: LoginItem | null,
 ): Promise<void> {
   if (existing !== null && doesItemNeedNewKey(existing)) throw new Error(NEEDS_NEW_KEY_WORDS)
-  const sealed = await sealPasswordItem(keys.accountKey, itemId, 'login', fields, existing?.itemKey ?? null)
+  // A new item gets an access record that grants nobody, signed at version 1
+  // (highest version seen 0), so the dashboard and the phone can check it.
+  // Without one every other surface says "Sharing could not be checked". An
+  // item that exists keeps the record its fields carry.
+  const signedFields =
+    existing === null ? await withSignedAccess(keys.accountKey, itemId, 'login', fields, undefined, 0) : fields
+  const sealed = await sealPasswordItem(keys.accountKey, itemId, 'login', signedFields, existing?.itemKey ?? null)
   await environment.call(SAVE_PASSWORD_ITEM, {
     input: {
       id: itemId,
