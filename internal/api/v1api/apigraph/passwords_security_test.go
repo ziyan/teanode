@@ -235,19 +235,33 @@ func TestPasswordsRefuseMoreThanTheBytesAPersonMayKeep(test *testing.T) {
 	world.setUp(test, ada)
 	world.setUp(test, ben)
 
-	var firstID string
-	savedCount := 0
-	var message string
-	for savedCount < 200 {
+	saveNote := func() (map[string]any, []string) {
 		input := ada.itemInput("note", nil)
 		input["encryptedFields"] = sealedOfSize(500000)
-		data, failures := world.callWithCredential(test, world.ada, models.CredentialToken, savePasswordItemQuery, map[string]any{"input": input})
+		return world.callWithCredential(test, world.ada, models.CredentialToken, savePasswordItemQuery, map[string]any{"input": input})
+	}
+	// The first note goes through the API. Copies of it fill the room to within
+	// a few notes of the limit with one SQL statement, and the API takes over
+	// again for the notes that are meant to run into it.
+	data, failures := saveNote()
+	if len(failures) > 0 {
+		test.Fatalf("the first note: %v", failures)
+	}
+	firstID := data["SavePasswordItem"].(map[string]any)["id"].(string)
+	savedCount := 1
+	noteBytes := numberOfText(test, dbtest.QueryString(test, world.database, `SELECT item_bytes::text FROM password_item WHERE id = '`+firstID+`'`))
+	var copyIDs []string
+	for index := 0; int64(index) < models.PasswordsBytesMost/noteBytes-5; index++ {
+		copyIDs = append(copyIDs, fmt.Sprintf("%08x-0000-4000-8000-%012d", 0xada, index))
+	}
+	world.copyPasswordItems(test, firstID, copyIDs)
+	savedCount += len(copyIDs)
+	var message string
+	for savedCount < 200 {
+		_, failures := saveNote()
 		if len(failures) > 0 {
 			message = strings.Join(failures, "; ")
 			break
-		}
-		if savedCount == 0 {
-			firstID = data["SavePasswordItem"].(map[string]any)["id"].(string)
 		}
 		savedCount++
 	}
@@ -305,12 +319,26 @@ func TestDeletedPasswordItemsAndKeptVersionsHaveTheirOwnAllowance(test *testing.
 
 	// A token fills the room with junk; the person deletes all of it, and the
 	// room is free again at once. Three rounds put about 192 MiB in the deleted
-	// items, which the person's taps are never refused for.
+	// items, which the person's taps are never refused for. In each round the
+	// token saves the first note and the last notes through the API, up to the
+	// refusal; copies of the first one, made by SQL, fill the room between them
+	// (see copyPasswordItems), and the person's delete goes through the API for
+	// the notes that were saved by it and by SQL for the copies.
 	itemID := func(round, index int) string { return fmt.Sprintf("%08x-0000-4000-8000-%012d", round+1, index) }
 	var fullCounts []int
 	for round := 0; round < 3; round++ {
+		if _, failures := save(world.ada, ada, itemID(round, 0), nil, size, models.CredentialToken); len(failures) > 0 {
+			test.Fatalf("round %d: the first note: %v", round, failures)
+		}
+		noteBytes := numberOfText(test, dbtest.QueryString(test, world.database, `SELECT item_bytes::text FROM password_item WHERE id = '`+itemID(round, 0)+`'`))
+		copiedCount := int(models.PasswordsBytesMost/noteBytes) - 4
+		var copyIDs []string
+		for index := 1; index < copiedCount; index++ {
+			copyIDs = append(copyIDs, itemID(round, index))
+		}
+		world.copyPasswordItems(test, itemID(round, 0), copyIDs)
 		fullAt := -1
-		for index := 0; index < 200; index++ {
+		for index := copiedCount; index < 200; index++ {
 			if _, failures := save(world.ada, ada, itemID(round, index), nil, size, models.CredentialToken); len(failures) > 0 {
 				if !strings.Contains(strings.Join(failures, "; "), "Passwords is full") {
 					test.Fatalf("round %d: %v", round, failures)
@@ -325,8 +353,13 @@ func TestDeletedPasswordItemsAndKeptVersionsHaveTheirOwnAllowance(test *testing.
 		if held := rowBytes(world.ada, false); held > models.PasswordsBytesMost {
 			test.Fatalf("round %d: the person's items hold %d bytes, past the %d limit", round, held, models.PasswordsBytesMost)
 		}
-		for index := 0; index < fullAt; index++ {
+		world.deletePasswordItemsInBulk(test, copyIDs)
+		world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": itemID(round, 0)})
+		for index := copiedCount; index < fullAt; index++ {
 			world.run(test, world.ada, deletePasswordItemQuery, map[string]any{"id": itemID(round, index)})
+		}
+		if held := rowBytes(world.ada, false); held != 0 {
+			test.Fatalf("round %d: the person's items still hold %d bytes after deleting them all", round, held)
 		}
 		fullCounts = append(fullCounts, fullAt)
 	}
@@ -375,11 +408,22 @@ func TestDeletedPasswordItemsAndKeptVersionsHaveTheirOwnAllowance(test *testing.
 	if message := world.refusal(test, world.ada, purgePasswordItemQuery, map[string]any{"id": itemID(9, 0)}); !strings.Contains(message, "only a deleted item") {
 		test.Fatalf("deleting forever an item that is not deleted: %q", message)
 	}
+	// The first and the last note of each round are deleted forever through the
+	// API, and each frees its bytes; the notes between them are removed by SQL.
 	before := rowBytes(world.ada, true)
 	for round := 0; round < 2; round++ {
-		for index := 0; index < fullCounts[round]; index++ {
+		for _, index := range []int{0, fullCounts[round] - 1} {
+			beforeOne := rowBytes(world.ada, true)
 			world.run(test, world.ada, purgePasswordItemQuery, map[string]any{"id": itemID(round, index)})
+			if freed := beforeOne - rowBytes(world.ada, true); freed < size {
+				test.Fatalf("deleting note %d of round %d forever freed %d bytes", index, round, freed)
+			}
 		}
+		var restIDs []string
+		for index := 1; index < fullCounts[round]-1; index++ {
+			restIDs = append(restIDs, itemID(round, index))
+		}
+		world.purgePasswordItemsInBulk(test, restIDs)
 	}
 	if freed := before - rowBytes(world.ada, true); freed < int64(fullCounts[0]+fullCounts[1]-2)*size {
 		test.Fatalf("the purged items freed %d bytes", freed)
@@ -393,16 +437,23 @@ func TestDeletedPasswordItemsAndKeptVersionsHaveTheirOwnAllowance(test *testing.
 
 	// Versions count toward the same allowance. Five notes saved again and
 	// again, an hour apart, keep a version each time (up to 60 for each note,
-	// about 150 MiB in all); the saves stop at the allowance.
+	// about 150 MiB in all); the saves stop at the allowance. The first save of
+	// each note goes through the API; copies of what it holds, made by SQL
+	// (see addKeptVersionsInBulk), stand for the early saves, up to a few short
+	// of the allowance, and the saves that run into it go through the API.
 	ben := newPasswordsDevice(test, world.ben)
 	world.setUp(test, ben)
 	revisions := map[string]any{}
+	var noteIDs []string
 	for index := 0; index < 5; index++ {
 		id := itemID(8, index)
+		noteIDs = append(noteIDs, id)
 		input := ben.namedItemInput(id, "note", nil)
 		input["encryptedFields"] = sealedOfSize(size)
 		revisions[id] = world.run(test, world.ben, savePasswordItemQuery, map[string]any{"input": input})["SavePasswordItem"].(map[string]any)["revision"]
 	}
+	versionBytesEach := numberOfText(test, dbtest.QueryString(test, world.database, `SELECT item_bytes::text FROM password_item WHERE id = '`+noteIDs[0]+`'`))
+	world.addKeptVersionsInBulk(test, noteIDs, int(models.PasswordsKeptBytesMost/versionBytesEach-12)/len(noteIDs))
 	refusedAt := -1
 	for step := 0; step < 70 && refusedAt < 0; step++ {
 		dbtest.Exec(test, world.database, `UPDATE password_item_version SET replaced_at = replaced_at - interval '2 hours' WHERE item_id IN (SELECT id FROM password_item WHERE owner_user_id = '`+world.ben.ID+`')`)
