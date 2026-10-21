@@ -77369,6 +77369,22 @@
           }
         }
       }
+    },
+    "Lists who is here, to choose one": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここにいる人を一覧にして選べるようにします"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "列出在这里的人，供你选择"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
