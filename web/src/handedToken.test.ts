@@ -30,15 +30,34 @@ describe('the token the extension hands the drawer', () => {
     expect(peekHandedToken()).toBe('')
   })
 
-  it('is taken once: afterwards the function is gone and nothing replaces the token', () => {
+  it('is taken once: afterwards the function refuses and nothing replaces the token', () => {
     const target = newWindow()
     offerHandedToken(target)
     const hand = target[HAND_TOKEN_FUNCTION] as (token: string) => boolean
     expect(hand('first-token')).toBe(true)
-    expect(HAND_TOKEN_FUNCTION in target).toBe(false)
-    // Whoever kept the function cannot put another token in its place.
     expect(hand('second-token')).toBe(false)
+    // Whoever kept the function cannot put another token in its place.
     expect(peekHandedToken()).toBe('first-token')
+  })
+
+  it('is a function nothing on the page can replace, before the hand-over or after it', () => {
+    const target = newWindow()
+    offerHandedToken(target)
+    const hand = target[HAND_TOKEN_FUNCTION]
+    // Modules are strict, so a refused write throws instead of being ignored.
+    expect(() => {
+      target[HAND_TOKEN_FUNCTION] = () => true
+    }).toThrow()
+    expect(() => Object.defineProperty(target, HAND_TOKEN_FUNCTION, { value: () => true })).toThrow()
+    expect(() => {
+      delete target[HAND_TOKEN_FUNCTION]
+    }).toThrow()
+    expect(target[HAND_TOKEN_FUNCTION]).toBe(hand)
+    // Offered again, as a bundle run twice would, it leaves the first alone.
+    offerHandedToken(target)
+    expect(target[HAND_TOKEN_FUNCTION]).toBe(hand)
+    ;(hand as (token: string) => boolean)('example-token')
+    expect(target[HAND_TOKEN_FUNCTION]).toBe(hand)
   })
 
   it('is refused when it is not a token', () => {

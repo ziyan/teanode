@@ -1276,7 +1276,7 @@ async function handToken(tabId, nonce) {
           target: { tabId, frameIds: [match.frameId] },
           world: 'MAIN',
           func: handOverToken,
-          args: [secret],
+          args: [secret, own, nonce],
         })
         if (handed && handed.result === true) return true
       }

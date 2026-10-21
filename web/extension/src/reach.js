@@ -351,11 +351,18 @@ export function panelRefusal(method, params, panel) {
 //      world, which the page around it cannot read.
 //   2. isPanelFrame, run in every frame of the tab, says which is the one
 //      with that nonce, whose parent is the page the panel is on, on the
-//      server's origin. It carries no secret.
+//      server's origin. It carries no secret, and it only finds the frame: a
+//      frame keeps its id when it is navigated, so it is not the guard.
 //   3. handOverToken, run in that frame alone, in the frame's own world,
-//      calls the function the drawer page leaves on its window for the
-//      purpose. The page around the frame cannot call into a frame of
-//      another origin, and the drawer takes the token once.
+//      checks where it is running, in the same call that uses the token, and
+//      only if it is the panel's own drawer (the server's origin, /drawer,
+//      this panel's nonce, a child of the top page) calls the function the
+//      drawer page leaves on its window for the purpose. The check cannot be
+//      a call of its own: between two calls the page around the panel, or the
+//      agent, can navigate the frame, and the token would go to whatever is
+//      there, in a world where that page can define the function itself. The
+//      page around the frame cannot call into a frame of another origin, and
+//      the drawer takes the token once.
 //
 // Both are self-contained: nothing from this file is in scope where they run.
 
@@ -378,7 +385,20 @@ export function isPanelFrame(serverOrigin, nonce) {
   }
 }
 
-export function handOverToken(token) {
-  const hand = window.__teanodeHandToken
-  return typeof hand === 'function' ? hand(token) === true : false
+export function handOverToken(token, serverOrigin, nonce) {
+  // Where this is running, read before anything else is touched. The location
+  // cannot be replaced by a page, so what it says is where the code is.
+  try {
+    const isPanel =
+      window !== window.top &&
+      window.parent === window.top &&
+      location.origin === serverOrigin &&
+      location.pathname === '/drawer' &&
+      new URLSearchParams(location.search).get('handoff') === nonce
+    if (!isPanel) return false
+    const hand = window.__teanodeHandToken
+    return typeof hand === 'function' ? hand(token) === true : false
+  } catch {
+    return false
+  }
 }

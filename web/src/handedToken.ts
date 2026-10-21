@@ -37,17 +37,23 @@ export function whenTokenIsHanded(callback: (token: string) => void): () => void
 }
 
 // offerHandedToken puts the function on the window, in a framed drawer only.
-// The worker calls it until it says it took the token, and it takes one:
-// afterwards it is gone, so that nothing replaces the person's token with
-// another.
+// The worker calls it, from the frame's own world and only after checking that
+// this is the drawer it means, and it takes one token: afterwards it refuses.
+// It is defined so that nothing on the page can replace it before then, or
+// after: not writable, not configurable.
 export function offerHandedToken(target: HandTokenWindow = window as HandTokenWindow) {
+  if (HAND_TOKEN_FUNCTION in target) return
   let isTaken = false
-  target[HAND_TOKEN_FUNCTION] = (token: string) => {
-    if (isTaken || typeof token !== 'string' || token === '') return false
-    isTaken = true
-    delete target[HAND_TOKEN_FUNCTION]
-    if (waiting.size === 0) handedToken = token
-    else for (const callback of [...waiting]) callback(token)
-    return true
-  }
+  Object.defineProperty(target, HAND_TOKEN_FUNCTION, {
+    value: (token: string) => {
+      if (isTaken || typeof token !== 'string' || token === '') return false
+      isTaken = true
+      if (waiting.size === 0) handedToken = token
+      else for (const callback of [...waiting]) callback(token)
+      return true
+    },
+    writable: false,
+    configurable: false,
+    enumerable: false,
+  })
 }

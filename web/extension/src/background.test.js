@@ -588,7 +588,8 @@ describe("the person's token and the panel", () => {
     // The token goes to the one frame, in its own world.
     expect(handing.target).toEqual({ tabId: 7, frameIds: [9] })
     expect(handing.world).toBe('MAIN')
-    expect(handing.args).toEqual(['a-token'])
+    // What the frame is, checked where it runs, in the same call.
+    expect(handing.args).toEqual(['a-token', serverOrigin, nonce])
     // Once: the same nonce again hands nothing.
     chrome.scripting.executeScript.mockClear()
     expect(await fromPanel({ type: 'panel:handoff', nonce })).toBe(false)

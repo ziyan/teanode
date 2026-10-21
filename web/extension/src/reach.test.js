@@ -399,25 +399,69 @@ describe('what the tab watched', () => {
 })
 
 describe('handing the token to the panel frame', () => {
-  afterEach(() => {
-    delete window.__teanodeHandToken
-  })
-
-  it('finds the frame by its nonce, on the server, under the page the panel is on', () => {
-    // A test page is the top window, so it is the page and not the panel.
-    expect(isPanelFrame('http://localhost:3000', 'n')).toBe(false)
-  })
-
-  it('calls the function the drawer left, and says whether it took the token', () => {
-    expect(handOverToken('example-token')).toBe(false)
+  // The functions are self-contained, so they run here against a window and a
+  // location that are made up for the test, as they run against the frame's.
+  const origin = 'https://mail.example.com'
+  const nonce = '0b9c5f0e6a534d3e8d0a0a1b2c3d4e5f'
+  const top = { name: 'the page the panel is on' }
+  const frame = (overrides = {}) => {
     const taken = []
-    window.__teanodeHandToken = (token) => {
-      taken.push(token)
-      return true
+    const window = { top, parent: top, __teanodeHandToken: (token) => (taken.push(token), true), ...overrides.window }
+    window.self = window
+    const location = { origin, pathname: '/drawer', search: `?handoff=${nonce}`, ...overrides.location }
+    return { window, location, taken }
+  }
+  const run = (func, { window, location }, ...args) =>
+    new Function('window', 'location', `return (${func.toString()})`)(window, location)(...args)
+
+  it("is handed to the drawer that is the panel's, and says so", () => {
+    const here = frame()
+    expect(run(handOverToken, here, 'example-token', origin, nonce)).toBe(true)
+    expect(here.taken).toEqual(['example-token'])
+    expect(run(isPanelFrame, frame(), origin, nonce)).toBe(true)
+  })
+
+  it('is not handed to a document that is somewhere else than the panel, whatever it defines', () => {
+    for (const [what, overrides] of [
+      ['another origin', { location: { origin: 'https://evil.example.org' } }],
+      ['a sibling host of the server', { location: { origin: 'https://app.example.com' } }],
+      ['another port', { location: { origin: 'https://mail.example.com:8443' } }],
+      ['another path', { location: { pathname: '/login' } }],
+      ['a path that only starts like it', { location: { pathname: '/drawer/x' } }],
+      ['another nonce', { location: { search: '?handoff=0000000000000000' } }],
+      ['no nonce', { location: { search: '' } }],
+      ['a nonce among others', { location: { search: `?a=1&handoff=${nonce}x` } }],
+      ['a parent that is not the top page', { window: { parent: { name: 'a frame in between' } } }],
+      ['being the top page itself', { window: { top: undefined } }],
+    ]) {
+      const here = frame(overrides)
+      if (what === 'being the top page itself') here.window.top = here.window
+      expect(run(handOverToken, here, 'example-token', origin, nonce), what).toBe(false)
+      expect(here.taken, what).toEqual([])
+      expect(run(isPanelFrame, here, origin, nonce), what).toBe(false)
     }
-    expect(handOverToken('example-token')).toBe(true)
-    expect(taken).toEqual(['example-token'])
-    window.__teanodeHandToken = () => 'yes'
-    expect(handOverToken('example-token')).toBe(false)
+  })
+
+  it('is not handed to a function that is not one, or one that does not say it took the token', () => {
+    expect(
+      run(handOverToken, frame({ window: { __teanodeHandToken: undefined } }), 'example-token', origin, nonce),
+    ).toBe(false)
+    expect(
+      run(handOverToken, frame({ window: { __teanodeHandToken: () => 'yes' } }), 'example-token', origin, nonce),
+    ).toBe(false)
+    expect(
+      run(handOverToken, frame({ window: { __teanodeHandToken: () => false } }), 'example-token', origin, nonce),
+    ).toBe(false)
+  })
+
+  it("is not handed on when the frame's own location cannot be read", () => {
+    const here = frame()
+    Object.defineProperty(here.location, 'origin', {
+      get() {
+        throw new Error('no access')
+      },
+    })
+    expect(run(handOverToken, here, 'example-token', origin, nonce)).toBe(false)
+    expect(here.taken).toEqual([])
   })
 })
