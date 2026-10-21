@@ -1060,38 +1060,15 @@ it('keeps the address buttons off while the editor has unsaved changes', async (
   expect(calls('SavePlace')).toHaveLength(0)
 })
 
-it('offers Photos for a shared person the caller has a contact for, opening the library on them', async () => {
+it('leaves Photos of a shared person to their card', async () => {
   answerWith({
     sharedViews: [PERSON_B_VIEW],
     circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
   })
   renderAt('/location?person=person-b', { canUsePhotos: true })
-  const photos = await screen.findByRole('link', { name: /^Photos of / })
-  expect(photos.getAttribute('href')).toBe(`/photos?person=${encodeURIComponent(PERSON_B_VIEW.userId)}`)
-  fireEvent.click(photos)
-  expect(await screen.findByText('The photos page')).toBeTruthy()
-})
-
-it('offers no Photos for the person themselves, a person with no linked contact, or when Photos is not usable', async () => {
-  answerWith({ sharedViews: [PERSON_B_VIEW], circles: [{ members: [{ userId: 'person-b', linkedContactId: '' }] }] })
-  renderAt('/location?person=person-b', { canUsePhotos: true })
   await screen.findByText('Visits of Person B')
   expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
-  cleanup()
-
-  answerWith({
-    sharedViews: [PERSON_B_VIEW],
-    circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
-  })
-  renderAt('/location?person=person-b')
-  await screen.findByText('Visits of Person B')
-  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
-  cleanup()
-
-  answerWith({ circles: [{ members: [{ userId: 'person-a', linkedContactId: 'contact-1' }] }] })
-  renderAt('/location', { canUsePhotos: true })
-  await screen.findByRole('heading', { name: 'Visits' })
-  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
+  expect(screen.getByRole('link', { name: 'Profile' })).toBeTruthy()
 })
 
 it("opens the card of the person whose location is shown, and none for the person's own", async () => {
