@@ -10,6 +10,20 @@ import { PasswordsError, PasswordsErrorCode } from '../../passwords/passwordsErr
 export { PasswordsError } from '../../passwords/passwordsError'
 export type { PasswordsErrorCode } from '../../passwords/passwordsError'
 
+// PasswordsAccessError is what the session throws when it will not give an item
+// a new key by itself: its sharing could not be checked (accessNotVerified), or
+// automatic new keys are used up for the moment (rekeyLimited). The first needs
+// the person to set sharing again, the second a tap on Try again.
+export class PasswordsAccessError extends Error {
+  readonly code: 'accessNotVerified' | 'rekeyLimited'
+
+  constructor(code: 'accessNotVerified' | 'rekeyLimited') {
+    super(code)
+    this.name = 'PasswordsAccessError'
+    this.code = code
+  }
+}
+
 const ERROR_WORDS: Record<PasswordsErrorCode, Key> = {
   locked: 'passwords.errorLocked',
   notSetUp: 'passwords.errorNotSetUp',
@@ -30,6 +44,9 @@ export function failureText(
   fallback: string,
 ): string {
   if (failure instanceof PasswordsError) return t(ERROR_WORDS[failure.code])
+  if (failure instanceof PasswordsAccessError) {
+    return t(failure.code === 'accessNotVerified' ? 'passwords.errorAccessNotVerified' : 'passwords.errorRekeyLimited')
+  }
   if (failure instanceof APIError && failure.message) return failure.message
   return fallback
 }

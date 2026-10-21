@@ -12,6 +12,8 @@ import {
   parseSealedValue,
   PersonKeyPair,
   randomBytes,
+  verifyAccess,
+  withSignedAccess,
 } from '../../passwords/crypto'
 import {
   accessWithAgentUse,
@@ -35,6 +37,7 @@ import {
   PasswordRecipient,
   PasswordShare,
   PasswordShareGranteeInput,
+  PasswordShareKeyInput,
   PasswordsSetup,
   PasswordsUnlock,
   PasswordItemRekeyInput,
@@ -42,6 +45,7 @@ import {
   READ_PASSWORDS_AGENT_KEY,
   REKEY_PASSWORD_ITEM,
   REPLACE_PASSWORDS_RECOVERY_KEY,
+  PURGE_PASSWORD_ITEM,
   RESTORE_PASSWORD_ITEM,
   SAVE_PASSWORD_ITEM,
   SET_PASSWORD_ITEM_SHARES,
@@ -51,7 +55,8 @@ import {
   UNLOCK_PASSWORDS,
   WaitingShareKeyInput,
 } from './passwordsApi'
-import { PasswordsError } from './passwordsErrors'
+import { addKeyHolders, memoryOf, rememberKeyHolders, rememberRecordVersion } from './passwordsAccessMemory'
+import { PasswordsAccessError, PasswordsError } from './passwordsErrors'
 import { registerLock } from './passwordsLock'
 import { confirmKey, earlierKeyOf, isKeyConfirmed, knownKeyOf, markKeySeen } from './passwordsPins'
 import {
@@ -173,20 +178,13 @@ function fieldsWithAccess(fields: ItemFields, access: ItemAccess | undefined): I
   return copy
 }
 
-// accessKeptByServer is the sealed access record cut down to what the server
-// still lists: a grantee with no share is dropped, and the agent stays only if
-// the server's flag is still on as well. A re-key with nothing else to go by
-// writes this, so the record never keeps somebody the server has already
-// taken off, and the server's own flag never widens it.
-function accessKeptByServer(item: PasswordItem): ItemAccess | undefined {
-  const access = item.fields.access
-  if (access === undefined) return undefined
-  const sharedKeys = new Set(item.shares.map(keyOfShare))
-  return {
-    isUsableByAgent: access.isUsableByAgent && item.isUsableByAgent,
-    grantees: access.grantees.filter((grantee) => sharedKeys.has(keyOfGrantee(grantee))),
-  }
-}
+// How long an item waits after an automatic new key before it may have another
+// one, and the most automatic new keys in one unlocked session. A server that
+// keeps marking an item cannot make a device re-key it over and over; past
+// either limit the item is shown as needing attention and the person gives the
+// new key with a tap.
+export const AUTOMATIC_REKEY_COOLDOWN_MILLISECONDS = 10 * 60_000
+export const MOST_AUTOMATIC_REKEYS = 20
 
 export class PasswordsSession {
   private accountKey: Uint8Array | null = null
@@ -205,6 +203,10 @@ export class PasswordsSession {
   // rekeysUnderWay are the re-keys started because the server marked an item,
   // so opening the item while the page re-keys it does not make a second one.
   private rekeysUnderWay = new Map<string, Promise<PasswordItem>>()
+  // lastAutomaticRekeyAtMilliseconds is when each item last had an automatic
+  // new key tried, and automaticRekeyCount how many were tried since unlocking.
+  private lastAutomaticRekeyAtMilliseconds = new Map<string, number>()
+  private automaticRekeyCount = 0
   private waitingListeners = new Set<(result: WaitingSharesResult) => void>()
   private hasLoadedItems = false
   private lastUsedAtMilliseconds = 0
@@ -266,6 +268,8 @@ export class PasswordsSession {
     this.unshowableItemIds = new Set()
     this.rereadForWaiting = new Set()
     this.rekeysUnderWay = new Map()
+    this.lastAutomaticRekeyAtMilliseconds = new Map()
+    this.automaticRekeyCount = 0
     this.hasLoadedItems = false
     if (this.idleTimer !== null) clearInterval(this.idleTimer)
     this.idleTimer = null
@@ -335,11 +339,50 @@ export class PasswordsSession {
   ): Promise<PasswordItem | null> {
     const userId = this.userId
     const pinnedOwnerKey = record.isSharedWithMe ? knownKeyOf(userId, record.ownerUserId) : null
-    const item = await openPasswordItem(record, accountKey, keyPair, userId, pinnedOwnerKey)
-    if (item !== null && record.isSharedWithMe && pinnedOwnerKey === null && item.itemKey !== null) {
+    const opened = await openPasswordItem(record, accountKey, keyPair, userId, pinnedOwnerKey)
+    if (opened !== null && record.isSharedWithMe && pinnedOwnerKey === null && opened.itemKey !== null) {
       markKeySeen(userId, record.ownerUserId, record.ownerPublicKey)
     }
-    return item
+    if (opened === null || record.isSharedWithMe || opened.itemKey === null) return opened
+    return this.withCheckedAccess(opened, accountKey, userId)
+  }
+
+  // withCheckedAccess checks the sealed access record of an item the person
+  // owns. Anybody who holds the item key (a person it is shared with, or the
+  // server through the agent's copy) can seal new fields with a record of their
+  // own, so the record counts only when its signature is the one only this
+  // person's devices can make, and only when its version is not lower than the
+  // highest this device has seen (a lower one is an old record the server
+  // brought back). The highest version seen is kept when the record is good.
+  // What the server lists for the item is remembered too, as the base for what
+  // an automatic new key may give (see giveNewKey), but only while the server
+  // has not marked the item: its mark comes with changes to who has a key.
+  private async withCheckedAccess(item: PasswordItem, accountKey: Uint8Array, userId: string): Promise<PasswordItem> {
+    const verified = await verifyAccess(accountKey, item.id, item.itemKind, item.fields)
+    if (verified === null) return { ...item, accessProblem: 'notVerified' } as PasswordItem
+    const version = verified.recordVersion ?? 0
+    if (version < memoryOf(userId, item.id).highestRecordVersion) {
+      return { ...item, accessProblem: 'replayed' } as PasswordItem
+    }
+    rememberRecordVersion(userId, item.id, version)
+    if (!item.needsNewKey && item.deletedAt === null) {
+      rememberKeyHolders(
+        userId,
+        item.id,
+        item.shares.flatMap((share) =>
+          share.recipients.filter((recipient) => recipient.hasKey).map((recipient) => recipient.userId),
+        ),
+        item.isUsableByAgent,
+      )
+    }
+    return { ...item, verifiedAccess: verified } as PasswordItem
+  }
+
+  // highestRecordVersionOf is the highest access record version this device
+  // has seen with a valid signature for the item, from what it kept and from
+  // the record the item was opened with. A new record is signed with one more.
+  private highestRecordVersionOf(item: PasswordItem): number {
+    return Math.max(memoryOf(this.userId, item.id).highestRecordVersion, item.verifiedAccess?.recordVersion ?? 0)
   }
 
   // openRecords opens a list of items. The items of one owner are opened one
@@ -523,9 +566,9 @@ export class PasswordsSession {
 
   // completeWaitingShares gives the people who set up Passwords after an item
   // was shared with them (or whom a re-key left without a key) the key to it.
-  // It seals only for a person the item's sealed access record reaches (a
+  // It seals only for a person the item's verified access record reaches (a
   // person grantee by user id, a circle grantee when the cached shares list
-  // them as a member), and only when their key is one the owner confirmed on
+  // them as a member; an item whose record is not verified is left alone), and only when their key is one the owner confirmed on
   // this device or has just confirmed (confirmedKeys, by user id). A key that
   // was only seen (it came with an item of theirs) does not count. A person
   // whose key is not confirmed is returned in keysToConfirm and nothing is
@@ -559,7 +602,10 @@ export class PasswordsSession {
           continue
         }
         if (!item.isOwnedByMe || item.itemKey === null || item.needsNewKey) continue
-        if (!isReachedByAccess(item.fields.access, recipient.userId, circleIdsOf(recipient.userId, item.shares))) {
+        // A record that is not verified reaches nobody, and a replayed one is
+        // left alone until the person sets sharing again.
+        if (item.verifiedAccess === null) continue
+        if (!isReachedByAccess(item.verifiedAccess, recipient.userId, circleIdsOf(recipient.userId, item.shares))) {
           notReached.push(waitingKey)
           continue
         }
@@ -607,6 +653,7 @@ export class PasswordsSession {
       }
       if (keys.length > 0) {
         await graphql(ADD_PASSWORD_SHARE_KEYS, { keys })
+        for (const { item, recipient } of toSeal) addKeyHolders(this.userId, item.id, [recipient.userId])
       }
       return { sharedCount: people.size, keysToConfirm: [...keysToConfirm.values()] }
     }
@@ -652,22 +699,36 @@ export class PasswordsSession {
   // saveItem seals the fields (and, for a new item, a new key) and sends them
   // with the revision they were based on. The id is made here because the
   // encryption names it. The access record is the one the item was opened
-  // with, whatever the draft carries: an edit never drops or widens who may
-  // have the item or whether the agent may use it.
+  // with, whatever the draft carries, signed again: an edit never drops or
+  // widens who may have the item or whether the agent may use it. A new item
+  // gets a signed record that grants nobody. An item whose record is not
+  // verified keeps the record it has, unsigned by this save: a save does not
+  // vouch for a record nobody checked, and only setting sharing again does.
   async saveItem(draft: PasswordItemDraft, existing: PasswordItem | null, shouldPublish = true): Promise<PasswordItem> {
     const { accountKey } = this.keys()
     if (existing && existing.itemKey === null) throw new PasswordsError('itemUnreadable')
-    const fields = fieldsWithAccess(draft.fields, existing?.fields.access)
     // The server marked this item: the save gives it a new key with the fields
-    // the person just wrote.
-    if (existing && existing.needsNewKey) {
+    // the person just wrote (the new key signs the record).
+    if (existing && existing.needsNewKey && existing.accessProblem === null) {
       return this.giveNewKey(existing.id, {
-        replacingFields: fields,
+        replacingFields: draft.fields,
         baseRevision: existing.revision,
         shouldPublish,
+        isAutomatic: true,
       })
     }
     const itemId = existing?.id ?? crypto.randomUUID()
+    const fields =
+      existing && existing.accessProblem !== null
+        ? fieldsWithAccess(draft.fields, existing.fields.access)
+        : await withSignedAccess(
+            accountKey,
+            itemId,
+            draft.itemKind,
+            draft.fields as ItemFields,
+            existing?.verifiedAccess ?? undefined,
+            existing === null ? 0 : this.highestRecordVersionOf(existing),
+          )
     const sealed = await sealPasswordItem(
       accountKey,
       itemId,
@@ -687,12 +748,22 @@ export class PasswordsSession {
     return this.keepAnswer(answer.SavePasswordItem, shouldPublish)
   }
 
-  // saveFields saves an owned item with these fields and its own item key, based
-  // on the revision this session holds. Sharing and the agent switch use it to
-  // write the access record before the server is asked for anything wider.
-  private async saveFields(item: PasswordItem, fields: ItemFields): Promise<PasswordItem> {
+  // saveAccess saves an owned item with its own item key and fields and this
+  // access record, signed with one version above the highest this device has
+  // seen, based on the revision this session holds. Sharing and the agent
+  // switch use it to write the access record before the server is asked for
+  // anything wider.
+  private async saveAccess(item: PasswordItem, access: ItemAccess): Promise<PasswordItem> {
     const { accountKey } = this.keys()
     if (item.itemKey === null) throw new PasswordsError('itemUnreadable')
+    const fields = await withSignedAccess(
+      accountKey,
+      item.id,
+      item.itemKind,
+      item.fields,
+      access,
+      this.highestRecordVersionOf(item),
+    )
     const sealed = await sealPasswordItem(accountKey, item.id, item.itemKind, fields as never, item.itemKey)
     const answer = await graphql<{ SavePasswordItem: PasswordItemRecord }>(SAVE_PASSWORD_ITEM, {
       input: {
@@ -731,6 +802,17 @@ export class PasswordsSession {
     return this.keepAnswer(answer.DeletePasswordItem)
   }
 
+  // purgeItem deletes an item that is in Recently deleted for good, with its
+  // earlier versions. The server refuses it unless the person tapped.
+  async purgeItem(itemId: string): Promise<void> {
+    this.keys()
+    await graphql(PURGE_PASSWORD_ITEM, { id: itemId })
+    const gone = this.itemsById.get(itemId)
+    gone?.itemKey?.fill(0)
+    this.itemsById.delete(itemId)
+    this.publish()
+  }
+
   // restoreItem brings an item back. The server keeps its needsNewKey mark
   // through a delete, so a restored item that still has it is given a new key
   // at once; if that fails the restore stands and the item is re-keyed when
@@ -741,7 +823,7 @@ export class PasswordsSession {
     const restored = await this.keepAnswer(answer.RestorePasswordItem)
     if (!restored.isOwnedByMe || !restored.needsNewKey || restored.itemKey === null) return restored
     try {
-      return await this.giveNewKey(restored.id)
+      return await this.giveNewKey(restored.id, { isAutomatic: true })
     } catch {
       return restored
     }
@@ -765,25 +847,35 @@ export class PasswordsSession {
     return current
   }
 
-  // shareItem replaces who the item is shared with. The order keeps the sealed
-  // access record from ever being narrower than what the server grants, and a
-  // person from being granted without it:
+  // shareItem replaces who the item is shared with. The person's tap writes
+  // the sealed access record first, signed, and only then is the server asked
+  // for anything, so the record is never missing a person the server grants
+  // and never keeps one the person took off:
   //
-  // - Adding somebody: the fields are saved with the wider record first, then
-  //   the server is asked for the new shares.
-  // - Taking somebody off: the server is asked for the narrower list first,
-  //   then the item is given a new key (giveNewKey), whose fields carry the
-  //   narrower record. If that fails the removal stands, the server keeps its
-  //   needsNewKey mark, and hasRekeyFailed is true.
+  // - The item's fields are saved with the record that lists exactly the
+  //   people now chosen. If the server call then fails, the server may list
+  //   somebody the record does not (named to the owner, removed by saving
+  //   again), never the other way round.
+  // - Then the server is asked for the new shares, with the item key sealed
+  //   for each recipient who has set up Passwords and does not have a key yet.
+  // - Taking somebody off then gives the item a new key (giveNewKey), whose
+  //   fields carry the same record. If that fails the removal stands, the
+  //   server keeps its needsNewKey mark, and hasRekeyFailed is true.
+  //
+  // An item whose record is not verified starts from nothing: the record
+  // written is the people now chosen and the agent off, since nothing about
+  // the old one can be trusted. That is how a person sets sharing again.
   //
   // The item key is sealed only for a recipient who has set up Passwords and
-  // does not have a key yet, whom the sealed record reaches (a person by user
-  // id, a circle through the people the server lists for it), and whose key
-  // the owner has confirmed on this device or confirmed just now
-  // (confirmedKeys, by user id). Anybody else who would get a key is returned
-  // in unconfirmedUserIds. A recipient who has not set up Passwords is left
-  // out as well: the owner's device adds their key when they have. The keys
-  // sealed for are kept as confirmed keys.
+  // does not have a key yet, whom the record reaches (a person by user id, a
+  // circle through the people the server lists for it), and whose key the
+  // owner has confirmed on this device or confirmed just now (confirmedKeys, by
+  // user id). Anybody else who would get a key is returned in
+  // unconfirmedUserIds. A recipient who has not set up Passwords is left out
+  // as well: the owner's device adds their key when they have. Each key names
+  // the item key it was sealed from, so the server refuses one sealed from a
+  // key another device has replaced since. The keys sealed for are kept as
+  // confirmed keys.
   async shareItem(
     item: PasswordItem,
     targets: ShareTarget[],
@@ -791,38 +883,34 @@ export class PasswordsSession {
   ): Promise<{ item: PasswordItem; unconfirmedUserIds: string[]; hasRekeyFailed: boolean }> {
     const { keyPair } = this.keys()
     let current = this.ownedItem(item)
-    // An item the server already marked is given its new key first, so what
-    // follows starts from an item that matches its record.
-    if (current.needsNewKey) current = this.ownedItem(await this.giveNewKey(current.id))
     const finalGrantees: ItemGrantee[] = []
     for (const target of targets) {
       const grantee = granteeOfInput(target.grantee)
       if (!finalGrantees.some((other) => keyOfGrantee(other) === keyOfGrantee(grantee))) finalGrantees.push(grantee)
     }
     const finalKeys = new Set(finalGrantees.map(keyOfGrantee))
-    const recordedGrantees = current.fields.access?.grantees ?? []
+    if (current.accessProblem !== null) {
+      // Setting sharing again: a new record from nothing, by the person's tap.
+      current = this.ownedItem(await this.saveAccess(current, accessWithGrantees(undefined, finalGrantees)))
+    }
+    // An item the server already marked is given its new key first, so what
+    // follows starts from an item that matches its record.
+    if (current.needsNewKey) current = this.ownedItem(await this.giveNewKey(current.id))
+    const recordedGrantees = current.verifiedAccess?.grantees ?? []
     const recordedKeys = new Set(recordedGrantees.map(keyOfGrantee))
-    const isWidened = finalGrantees.some((grantee) => !recordedKeys.has(keyOfGrantee(grantee)))
+    const isChanged =
+      finalGrantees.some((grantee) => !recordedKeys.has(keyOfGrantee(grantee))) ||
+      recordedGrantees.some((grantee) => !finalKeys.has(keyOfGrantee(grantee)))
     const isNarrowed =
       recordedGrantees.some((grantee) => !finalKeys.has(keyOfGrantee(grantee))) ||
       current.shares.some((share) => !finalKeys.has(keyOfShare(share)))
-    if (isWidened) {
-      const widerGrantees = [
-        ...finalGrantees,
-        ...recordedGrantees.filter((grantee) => !finalKeys.has(keyOfGrantee(grantee))),
-      ]
+    if (isChanged) {
       current = this.ownedItem(
-        await this.saveFields(
-          current,
-          fieldsWithAccess(current.fields, accessWithGrantees(current.fields.access, widerGrantees)),
-        ),
+        await this.saveAccess(current, accessWithGrantees(current.verifiedAccess ?? undefined, finalGrantees)),
       )
     }
 
-    const sealedFor = new Map<
-      string,
-      { recipientUserId: string; itemKeyByRecipientKey: string; recipientPublicKey: string }
-    >()
+    const sealedFor = new Map<string, PasswordShareKeyInput>()
     const unconfirmedUserIds: string[] = []
     const seenUserIds = new Set<string>()
     const circleIdsByUserId = new Map<string, string[]>()
@@ -840,7 +928,13 @@ export class PasswordsSession {
         continue
       seenUserIds.add(recipient.userId)
       if (recipient.hasKey) continue
-      if (!isReachedByAccess(current.fields.access, recipient.userId, circleIdsByUserId.get(recipient.userId) ?? [])) {
+      if (
+        !isReachedByAccess(
+          current.verifiedAccess ?? undefined,
+          recipient.userId,
+          circleIdsByUserId.get(recipient.userId) ?? [],
+        )
+      ) {
         continue
       }
       if (
@@ -861,16 +955,33 @@ export class PasswordsSession {
           recipient.userId,
         ),
         recipientPublicKey: recipient.publicKey,
+        itemKey: current.sealedItemKey,
       })
     }
-    const answer = await graphql<{ SetPasswordItemShares: PasswordItemRecord }>(SET_PASSWORD_ITEM_SHARES, {
-      input: { itemId: current.id, grantees: targets.map((target) => target.grantee), keys: [...sealedFor.values()] },
-    })
+    let answer: { SetPasswordItemShares: PasswordItemRecord }
+    try {
+      answer = await graphql<{ SetPasswordItemShares: PasswordItemRecord }>(SET_PASSWORD_ITEM_SHARES, {
+        input: {
+          itemId: current.id,
+          grantees: targets.map((target) => target.grantee),
+          keys: [...sealedFor.values()],
+        },
+      })
+    } catch (failure) {
+      // Another device replaced the item key, so the keys sealed here are
+      // refused. The item is read again, so the next try starts from the key
+      // the server has.
+      if (failure instanceof Error && failure.message.includes(STALE_REVISION_PHRASE)) {
+        await this.refresh().catch(() => undefined)
+      }
+      throw failure
+    }
     for (const sealed of sealedFor.values()) confirmKey(this.userId, sealed.recipientUserId, sealed.recipientPublicKey)
+    addKeyHolders(this.userId, current.id, [...sealedFor.keys()])
     const kept = await this.keepAnswer(answer.SetPasswordItemShares)
     if (!isNarrowed) return { item: kept, unconfirmedUserIds, hasRekeyFailed: false }
     try {
-      const rekeyed = await this.giveNewKey(kept.id, { access: accessWithGrantees(kept.fields.access, finalGrantees) })
+      const rekeyed = await this.giveNewKey(kept.id)
       return { item: rekeyed, unconfirmedUserIds, hasRekeyFailed: false }
     } catch {
       return { item: kept, unconfirmedUserIds, hasRekeyFailed: true }
@@ -878,21 +989,34 @@ export class PasswordsSession {
   }
 
   // setUsableByAgent lets the server's agent key open this one item (or stops
-  // it). Turning it on saves the fields with the access record saying so
-  // first, then seals the item key on this device for the agent's public key
+  // it). Turning it on saves the fields with the signed access record saying
+  // so first, then seals the item key on this device for the agent's public key
   // and asks the server. Turning it off gives the item a new key
   // (giveNewKey) whose fields carry the record with the agent off, so an old
   // sealed copy of the key held for the agent opens nothing saved later.
+  //
+  // An item whose record is not verified starts from nothing, as in shareItem:
+  // the person's tap writes a record that grants nobody and has the agent as
+  // asked.
   async setUsableByAgent(item: PasswordItem, isUsableByAgent: boolean): Promise<PasswordItem> {
     const { keyPair } = this.keys()
     let current = this.ownedItem(item)
     if (!isUsableByAgent) {
-      if (!current.isUsableByAgent && current.fields.access?.isUsableByAgent !== true) return current
-      return this.giveNewKey(current.id, { access: accessWithAgentUse(accessKeptByServer(current), false) })
+      if (
+        !current.isUsableByAgent &&
+        current.verifiedAccess?.isUsableByAgent !== true &&
+        current.accessProblem === null
+      ) {
+        return current
+      }
+      return this.giveNewKey(current.id, { access: accessWithAgentUse(current.verifiedAccess ?? undefined, false) })
+    }
+    if (current.accessProblem !== null) {
+      current = this.ownedItem(await this.saveAccess(current, accessWithAgentUse(undefined, true)))
     }
     if (current.needsNewKey) current = this.ownedItem(await this.giveNewKey(current.id))
     current = this.ownedItem(
-      await this.saveFields(current, fieldsWithAccess(current.fields, accessWithAgentUse(current.fields.access, true))),
+      await this.saveAccess(current, accessWithAgentUse(current.verifiedAccess ?? undefined, true)),
     )
     const agentKey = await graphql<{ ReadPasswordsAgentKey: string }>(READ_PASSWORDS_AGENT_KEY)
     const itemKeyByAgentKey = await sealItemKeyFor(
@@ -914,17 +1038,32 @@ export class PasswordsSession {
 
   // giveNewKey makes a new random item key for an item the person owns, and
   // seals everything with it: the fields (replacingFields when a save brings
-  // new ones, else the item's own) carrying the access record, the person's
-  // copy, a copy for each recipient whom the record reaches and whose key the
-  // owner confirmed on this device, and the agent's copy only when the record
-  // says the agent may use the item (and the server's flag is still on, since
-  // the server refuses a copy for an item it does not list as used).
+  // new ones, else the item's own) carrying the access record signed again,
+  // the person's copy, a copy for each recipient whom the record reaches and
+  // whose key the owner confirmed on this device, and the agent's copy only
+  // when the record says the agent may use the item (and the server's flag is
+  // still on, since the server refuses a copy for an item it does not list as
+  // used).
   //
-  // access is the record to write; without it the sealed record is cut down to
-  // what the server still lists (accessKeptByServer). A recipient whose key is
-  // not confirmed is left without a key; completeWaitingShares then asks the
-  // owner about them, at once (subscribeToWaiting), because sealing for a key
-  // nobody checked is what the confirmation is there to stop.
+  // The record written is the item's verified record, or the one given in
+  // access, which is the person's own change (sharing narrowed, the agent
+  // turned off). It is never cut down to what the server lists: no device
+  // narrows the record on the server's word. An item without a verified record
+  // and without one given has nothing to go by and is refused
+  // (PasswordsAccessError accessNotVerified).
+  //
+  // isAutomatic is a new key the person did not start (the server's mark on
+  // open, on the 30 second read, or before a save). It never widens: it seals
+  // only for people the record reaches whose keys were confirmed here and who
+  // already had a key when this device last saw the item, and makes the agent a
+  // copy only if the item had one then. Anybody else is left waiting for the
+  // person. It is tried at most once in AUTOMATIC_REKEY_COOLDOWN_MILLISECONDS
+  // for an item and MOST_AUTOMATIC_REKEYS times in all; past that it is
+  // refused (PasswordsAccessError rekeyLimited) and the person's tap gives the
+  // key. A recipient whose key is not confirmed is left without a key;
+  // completeWaitingShares then asks the owner about them, at once
+  // (subscribeToWaiting), because sealing for a key nobody checked is what
+  // the confirmation is there to stop.
   //
   // With no baseRevision the item's revision is the one this session holds,
   // and when another device changed the item first it is read again and this
@@ -937,8 +1076,21 @@ export class PasswordsSession {
       access?: ItemAccess
       baseRevision?: number
       shouldPublish?: boolean
+      isAutomatic?: boolean
     } = {},
   ): Promise<PasswordItem> {
+    if (options.isAutomatic === true) {
+      const nowMilliseconds = Date.now()
+      const lastMilliseconds = this.lastAutomaticRekeyAtMilliseconds.get(itemId)
+      if (
+        this.automaticRekeyCount >= MOST_AUTOMATIC_REKEYS ||
+        (lastMilliseconds !== undefined && nowMilliseconds - lastMilliseconds < AUTOMATIC_REKEY_COOLDOWN_MILLISECONDS)
+      ) {
+        throw new PasswordsAccessError('rekeyLimited')
+      }
+      this.lastAutomaticRekeyAtMilliseconds.set(itemId, nowMilliseconds)
+      this.automaticRekeyCount += 1
+    }
     try {
       return await this.giveNewKeyOnce(itemId, options)
     } catch (failure) {
@@ -956,6 +1108,7 @@ export class PasswordsSession {
       access?: ItemAccess
       baseRevision?: number
       shouldPublish?: boolean
+      isAutomatic?: boolean
     },
   ): Promise<PasswordItem> {
     const { accountKey, keyPair } = this.keys()
@@ -963,15 +1116,20 @@ export class PasswordsSession {
     if (item === undefined || item.deletedAt !== null) throw new PasswordsError('itemUnknown')
     if (!item.isOwnedByMe) throw new PasswordsError('ownerOnly')
     if (item.itemKey === null) throw new PasswordsError('itemUnreadable')
-    const access = options.access ?? accessKeptByServer(item)
+    const access = options.access ?? item.verifiedAccess ?? undefined
+    if (access === undefined) throw new PasswordsAccessError('accessNotVerified')
+    const isAutomatic = options.isAutomatic === true
+    const memory = memoryOf(this.userId, item.id)
     const newItemKey = randomBytes(KEY_BYTE_COUNT)
-    const sealed = await sealPasswordItem(
+    const signedFields = await withSignedAccess(
       accountKey,
       item.id,
       item.itemKind,
-      fieldsWithAccess(options.replacingFields ?? item.fields, access) as never,
-      newItemKey,
+      options.replacingFields ?? item.fields,
+      access,
+      this.highestRecordVersionOf(item),
     )
+    const sealed = await sealPasswordItem(accountKey, item.id, item.itemKind, signedFields as never, newItemKey)
     const shareKeys: AddPasswordShareKeyInput[] = []
     let hasWaitingRecipient = false
     const seenUserIds = new Set<string>()
@@ -994,6 +1152,9 @@ export class PasswordsSession {
         hasWaitingRecipient = true
         continue
       }
+      // An automatic new key leaves out somebody who did not already have a
+      // key; the person's confirmation gives it to them (see the note above).
+      if (isAutomatic && !memory.keyHolderUserIds.includes(recipient.userId)) continue
       shareKeys.push({
         itemId: item.id,
         recipientUserId: recipient.userId,
@@ -1009,7 +1170,7 @@ export class PasswordsSession {
       })
     }
     let itemKeyByAgentKey: string | null = null
-    if (access?.isUsableByAgent === true && item.isUsableByAgent) {
+    if (access.isUsableByAgent && item.isUsableByAgent && (!isAutomatic || memory.hadAgentCopy)) {
       const agentKey = await graphql<{ ReadPasswordsAgentKey: string }>(READ_PASSWORDS_AGENT_KEY)
       itemKeyByAgentKey = await sealItemKeyFor(
         newItemKey,
@@ -1030,21 +1191,31 @@ export class PasswordsSession {
     }
     const answer = await graphql<{ RekeyPasswordItem: PasswordItemRecord }>(REKEY_PASSWORD_ITEM, { input })
     const kept = await this.keepAnswer(answer.RekeyPasswordItem, options.shouldPublish ?? true)
+    // The old keys are gone: the people given one now, and the agent if it was
+    // given a copy, are who held a key.
+    rememberKeyHolders(
+      this.userId,
+      kept.id,
+      shareKeys.map((key) => key.recipientUserId),
+      itemKeyByAgentKey !== null,
+    )
     if (hasWaitingRecipient) void this.announceWaiting()
     return kept
   }
 
   // rekeyIfNeeded gives an owned item the server marked a new key. It does
-  // nothing for any other item, and joins a re-key already under way for the
-  // same item. Opening Passwords and opening the item call it.
+  // nothing for any other item, nor for one whose record is not verified or
+  // was replayed (the person sets sharing again there), and joins a re-key
+  // already under way for the same item. Opening Passwords and opening the item
+  // call it. The key is an automatic one (see giveNewKey).
   async rekeyIfNeeded(itemId: string): Promise<PasswordItem | null> {
     this.keys(false)
     const underWay = this.rekeysUnderWay.get(itemId)
     if (underWay !== undefined) return underWay
     const item = this.itemsById.get(itemId)
     if (item === undefined || !item.isOwnedByMe || !item.needsNewKey || item.deletedAt !== null) return null
-    if (item.itemKey === null) return null
-    const rekey = this.giveNewKey(itemId)
+    if (item.itemKey === null || item.accessProblem !== null) return null
+    const rekey = this.giveNewKey(itemId, { isAutomatic: true })
     this.rekeysUnderWay.set(itemId, rekey)
     try {
       return await rekey
@@ -1060,6 +1231,7 @@ export class PasswordsSession {
     const failedItemIds: string[] = []
     for (const item of [...this.itemsById.values()]) {
       if (!item.isOwnedByMe || !item.needsNewKey || item.deletedAt !== null || item.itemKey === null) continue
+      if (item.accessProblem !== null) continue
       try {
         await this.rekeyIfNeeded(item.id)
       } catch {

@@ -158,11 +158,45 @@ describe('the access record', () => {
       { isUsableByAgent: true, grantees: [{ groupId: 'group-1' }] },
       { isUsableByAgent: true, grantees: [{ userId: 'user-ben', extra: true }] },
       { isUsableByAgent: true, grantees: [], extra: true },
+      { isUsableByAgent: true, grantees: [], recordVersion: 0 },
+      { isUsableByAgent: true, grantees: [], recordVersion: -1 },
+      { isUsableByAgent: true, grantees: [], recordVersion: 1.5 },
+      { isUsableByAgent: true, grantees: [], recordVersion: '1' },
+      { isUsableByAgent: true, grantees: [], recordVersion: null },
+      { isUsableByAgent: true, grantees: [], recordVersion: 2 ** 53 },
+      { isUsableByAgent: true, grantees: [], recordMac: null },
+      { isUsableByAgent: true, grantees: [], recordMac: 5 },
+      { isUsableByAgent: true, grantees: [], recordMac: '' },
+      // No padding, unused bits that are not zero, and 24 and 33 bytes.
+      { isUsableByAgent: true, grantees: [], recordMac: 'EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8' },
+      { isUsableByAgent: true, grantees: [], recordMac: 'EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi9=' },
+      { isUsableByAgent: true, grantees: [], recordMac: 'EBESExQVFhcYGRobHB0eHyAhIiMkJSYn' },
+      { isUsableByAgent: true, grantees: [], recordMac: 'EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8v' },
     ]
     for (const record of wrong) {
       for (const itemKind of ITEM_KINDS) {
         expect(parseItemFields(itemKind, { name: 'x', access: record }), JSON.stringify(record)).toBeNull()
       }
+    }
+  })
+
+  it('keeps a version and a signature through parsing and an edit, and reads a record without them', () => {
+    const signed: ItemAccess = {
+      ...access,
+      recordVersion: 3,
+      recordMac: 'EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8=',
+    }
+    for (const itemKind of ITEM_KINDS) {
+      const parsed = parseItemFields(itemKind, { name: 'x', access: signed })!
+      expect(parsed.access).toEqual(signed)
+      const edited = parseItemFields(itemKind, JSON.parse(JSON.stringify({ ...parsed, name: 'edited' })))!
+      expect(edited.access).toEqual(signed)
+      // Either one may be missing: the record is read, and verifyAccess then refuses it.
+      expect(parseItemFields(itemKind, { name: 'x', access: { ...access, recordVersion: 3 } })!.access).toEqual({
+        ...access,
+        recordVersion: 3,
+      })
+      expect(parseItemFields(itemKind, { name: 'x', access: { ...access } })!.access).toEqual(access)
     }
   })
 
@@ -177,6 +211,13 @@ describe('the access record', () => {
   })
 
   it('builds a new record without changing the one it was given', () => {
+    const signed: ItemAccess = {
+      ...access,
+      recordVersion: 3,
+      recordMac: 'EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8=',
+    }
+    expect(accessWithGrantees(signed, [])).toEqual({ isUsableByAgent: true, grantees: [] })
+    expect(accessWithAgentUse(signed, false)).toEqual({ isUsableByAgent: false, grantees: access.grantees })
     const narrowed = accessWithGrantees(access, [])
     expect(narrowed).toEqual({ isUsableByAgent: true, grantees: [] })
     const agentOff = accessWithAgentUse(access, false)

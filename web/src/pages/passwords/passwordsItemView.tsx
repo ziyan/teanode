@@ -121,7 +121,7 @@ export function PasswordsItemView({
   // An item the server marked as needing a new key (a removal could not give
   // it one) is given one when it is opened.
   useEffect(() => {
-    if (!item.isOwnedByMe || !item.needsNewKey) return
+    if (!item.isOwnedByMe || !item.needsNewKey || item.accessProblem !== null) return
     void passwordsSession.rekeyIfNeeded(item.id).catch(() => sayRekeyFailed(item.id))
     // Once per item opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,7 +246,28 @@ export function PasswordsItemView({
           {isDeleted && <Tag value={t('passwords.tagDeleted')} tone="warn" />}
         </p>
         {item.isSharedWithMe && <p className="muted">{t('passwords.sharedReadOnly', { name: item.ownerName })}</p>}
-        {item.isOwnedByMe && unrecordedShares.length > 0 && (
+        {item.isOwnedByMe && item.accessProblem !== null && !isDeleted && !item.isUnreadable && (
+          <div className="passwords-key-changed" role="status">
+            <h3>
+              {t(
+                item.accessProblem === 'replayed'
+                  ? 'passwords.accessReplayedTitle'
+                  : 'passwords.accessNotVerifiedTitle',
+              )}
+            </h3>
+            <p className="muted">
+              {t(
+                item.accessProblem === 'replayed' ? 'passwords.accessReplayedBody' : 'passwords.accessNotVerifiedBody',
+              )}
+            </p>
+            <div className="page-actions">
+              <button type="button" onClick={() => setIsSharing(true)}>
+                {t('passwords.accessSetAgain')}
+              </button>
+            </div>
+          </div>
+        )}
+        {item.isOwnedByMe && item.accessProblem === null && unrecordedShares.length > 0 && (
           <p className="muted">
             {t('passwords.shareNotFromYou', { names: unrecordedShares.map((share) => share.granteeName).join(', ') })}
           </p>
@@ -267,11 +288,11 @@ export function PasswordsItemView({
             <p className="muted">{t('passwords.ownerKeyChangedBody', { name: item.ownerName })}</p>
             <p>
               <span className="muted">{t('passwords.keyChangedOld')} </span>
-              <SafetyCode userId={item.ownerUserId} publicKey={item.ownerKeyChange.oldPublicKey} />
+              <SafetyCode publicKey={item.ownerKeyChange.oldPublicKey} />
             </p>
             <p>
               <span className="muted">{t('passwords.keyChangedNew')} </span>
-              <SafetyCode userId={item.ownerUserId} publicKey={item.ownerKeyChange.newPublicKey} />
+              <SafetyCode publicKey={item.ownerKeyChange.newPublicKey} />
             </p>
             <p className="muted">{t('passwords.compareWords', { name: item.ownerName })}</p>
             <p className="muted">{t('passwords.confirmIsPerBrowser')}</p>

@@ -10,7 +10,7 @@
 // tests only (testSupport.ts re-exports them, and a test checks that no other
 // file imports them).
 
-import type { ItemFieldsByKind, ItemKind } from './fields'
+import type { ItemAccess, ItemFields, ItemFieldsByKind, ItemGrantee, ItemKind } from './fields'
 
 export const SEALED_VALUE_VERSION = 1
 
@@ -514,20 +514,15 @@ export async function isKeyPairConsistent(keyPair: PersonKeyPair): Promise<boole
 const SAFETY_CODE_LABEL = 'teanode passwords safety code v2'
 const SAFETY_CODE_GROUP_COUNT = 8
 
-// safetyCode is the short form of a person's public key two people compare:
-// eight groups of four digits. It is the SHA-256 of the label, a zero byte,
-// the user id in UTF-8, a zero byte and the 65 key bytes; the first 16 bytes of
-// the hash are eight big-endian 16 bit numbers, each modulo 10000. The user id
-// is part of it so a search for a key with a wanted code only works for one
-// person.
-export async function safetyCode(userId: string, publicKey: Uint8Array): Promise<string> {
-  const input = concatenateBytes(
-    encodeUtf8(SAFETY_CODE_LABEL),
-    new Uint8Array([0]),
-    encodeUtf8(userId),
-    new Uint8Array([0]),
-    readPublicKey(publicKey),
-  )
+// safetyCode is the short form of a public key two people compare: eight groups
+// of four digits. It is the SHA-256 of the label, a zero byte and the 65 key
+// bytes; the first 16 bytes of the hash are eight big-endian 16 bit numbers,
+// each modulo 10000. Nothing the server supplies goes into it, so a server
+// cannot pick an identifier to make a search for a matching code easier:
+// matching a fixed code means finding a key whose hash matches it, about 2^106
+// key generations.
+export async function safetyCode(publicKey: Uint8Array): Promise<string> {
+  const input = concatenateBytes(encodeUtf8(SAFETY_CODE_LABEL), new Uint8Array([0]), readPublicKey(publicKey))
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', copyBytes(input)))
   const view = new DataView(digest.buffer, digest.byteOffset, digest.byteLength)
   const groups: string[] = []
@@ -549,6 +544,161 @@ export function normalizeSafetyCode(text: string): string | null {
     groups.push(digits.slice(index, index + 4))
   }
   return groups.join(' ')
+}
+
+// ---------------------------------------------------------------------------
+// The access record's signature
+
+const ACCESS_RECORD_LABEL = 'teanode passwords access record v1'
+
+// The highest record version any implementation accepts: the largest integer a
+// JavaScript number holds exactly.
+export const MAXIMUM_RECORD_VERSION = Number.MAX_SAFE_INTEGER
+
+// compareBytes orders two byte strings the way Go's sort of strings does, one
+// byte at a time. JavaScript's own sort of text compares UTF-16 units, which
+// differs from byte order for characters outside the Basic Multilingual Plane.
+function compareBytes(first: Uint8Array, second: Uint8Array): number {
+  const shared = Math.min(first.length, second.length)
+  for (let index = 0; index < shared; index++) {
+    if (first[index] !== second[index]) return first[index] - second[index]
+  }
+  return first.length - second.length
+}
+
+// deriveAccessMacKey is the key the access record is signed with: HKDF-SHA256 of
+// the account key with no salt and the label as the info. Exported for the test
+// vectors.
+export function deriveAccessMacKey(accountKey: Uint8Array): Promise<Uint8Array> {
+  if (accountKey.length !== KEY_BYTE_COUNT) {
+    return Promise.reject(new PasswordsCryptoError(`An account key is ${KEY_BYTE_COUNT} bytes`))
+  }
+  return deriveHkdfBytes(accountKey, new Uint8Array(0), ACCESS_RECORD_LABEL)
+}
+
+function accessGranteeText(grantee: ItemGrantee): string {
+  if (grantee.userId !== undefined && grantee.userId !== '' && grantee.circleId === undefined)
+    return `u:${grantee.userId}`
+  if (grantee.circleId !== undefined && grantee.circleId !== '' && grantee.userId === undefined)
+    return `c:${grantee.circleId}`
+  throw new PasswordsCryptoError('A grantee needs exactly one non-empty user id or circle id')
+}
+
+// accessSignedBytes is what the signature covers: the label, a zero byte, the
+// item id, a zero byte, the item kind, a zero byte, the record version in
+// decimal, a zero byte, "1" or "0" for agent use, a zero byte, then each
+// grantee as "u:" and the user id or "c:" and the circle id, in byte order,
+// each followed by a zero byte. Exported for the test vectors.
+export function accessSignedBytes(itemId: string, itemKind: ItemKind, access: ItemAccess): Uint8Array {
+  const version = access.recordVersion
+  if (version === undefined || !Number.isSafeInteger(version) || version < 1) {
+    throw new PasswordsCryptoError('The access record needs a positive version to be signed')
+  }
+  if (itemKind !== 'login' && itemKind !== 'card' && itemKind !== 'note') {
+    throw new PasswordsCryptoError('The item kind is not one of the kinds')
+  }
+  const parts: Uint8Array[] = []
+  for (const text of [ACCESS_RECORD_LABEL, itemId, itemKind, String(version), access.isUsableByAgent ? '1' : '0']) {
+    parts.push(encodeUtf8(text), new Uint8Array([0]))
+  }
+  const granteeBytes = access.grantees.map((grantee) => encodeUtf8(accessGranteeText(grantee))).sort(compareBytes)
+  for (const bytes of granteeBytes) parts.push(bytes, new Uint8Array([0]))
+  return concatenateBytes(...parts)
+}
+
+// macOfAccess is the signature of an access record for an item: HMAC-SHA256
+// over accessSignedBytes, under HKDF-SHA256 of the account key (no salt, the
+// label as the info), as standard base64 with padding. It uses the record's
+// recordVersion, which must be set, and ignores its recordMac.
+export async function macOfAccess(
+  accountKey: Uint8Array,
+  itemId: string,
+  itemKind: ItemKind,
+  access: ItemAccess,
+): Promise<string> {
+  const signedBytes = accessSignedBytes(itemId, itemKind, access)
+  const macKey = await crypto.subtle.importKey(
+    'raw',
+    copyBytes(await deriveAccessMacKey(accountKey)),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  return encodeBase64(new Uint8Array(await crypto.subtle.sign('HMAC', macKey, copyBytes(signedBytes))))
+}
+
+// signAccess returns a copy of the record with its version set to one more than
+// the highest version this device has seen with a valid signature for the item
+// (0 if none), and the signature for that version. The version and signature
+// the given record has are ignored: a version the server supplied is never a
+// reason to count higher.
+export async function signAccess(
+  accountKey: Uint8Array,
+  itemId: string,
+  itemKind: ItemKind,
+  access: ItemAccess | undefined,
+  highestVersionSeen: number,
+): Promise<ItemAccess> {
+  if (
+    !Number.isSafeInteger(highestVersionSeen) ||
+    highestVersionSeen < 0 ||
+    highestVersionSeen >= MAXIMUM_RECORD_VERSION
+  ) {
+    throw new PasswordsCryptoError('The highest record version seen is out of range')
+  }
+  const unsigned: ItemAccess = {
+    isUsableByAgent: access?.isUsableByAgent ?? false,
+    grantees: (access?.grantees ?? []).map((grantee) => ({ ...grantee })),
+    recordVersion: highestVersionSeen + 1,
+  }
+  return { ...unsigned, recordMac: await macOfAccess(accountKey, itemId, itemKind, unsigned) }
+}
+
+// withSignedAccess returns the fields with the given access record signed (see
+// signAccess) in place of the one they had. Every other key is kept.
+export async function withSignedAccess<Fields extends ItemFields>(
+  accountKey: Uint8Array,
+  itemId: string,
+  itemKind: ItemKind,
+  fields: Fields,
+  access: ItemAccess | undefined,
+  highestVersionSeen: number,
+): Promise<Fields> {
+  return { ...fields, access: await signAccess(accountKey, itemId, itemKind, access, highestVersionSeen) }
+}
+
+// isAccessVerified reports whether the record is signed by the owner's devices
+// for this item: it has a version and a signature, and the signature is the one
+// macOfAccess gives. A missing record, version or signature, and a wrong
+// signature, are all false. The comparison takes the same time whatever the
+// bytes.
+export async function isAccessVerified(
+  accountKey: Uint8Array,
+  itemId: string,
+  itemKind: ItemKind,
+  access: ItemAccess | undefined,
+): Promise<boolean> {
+  if (!access || access.recordVersion === undefined || access.recordMac === undefined) return false
+  try {
+    const given = decodeBase64(access.recordMac)
+    if (given.length !== KEY_BYTE_COUNT) return false
+    return areBytesEqual(given, decodeBase64(await macOfAccess(accountKey, itemId, itemKind, access)))
+  } catch {
+    return false
+  }
+}
+
+// verifyAccess returns the fields' access record when it is signed for this
+// item (see isAccessVerified), and null when there is none or it is not signed.
+// A device treats null as a record that reaches nobody: it re-keys nothing and
+// makes no agent copy from the item, and asks the person to set sharing again.
+export async function verifyAccess(
+  accountKey: Uint8Array,
+  itemId: string,
+  itemKind: ItemKind,
+  fields: ItemFields,
+): Promise<ItemAccess | null> {
+  return (await isAccessVerified(accountKey, itemId, itemKind, fields.access)) ? (fields.access ?? null) : null
 }
 
 // ---------------------------------------------------------------------------

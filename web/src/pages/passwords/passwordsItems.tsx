@@ -49,6 +49,10 @@ export function PasswordsItems({
   const [isChoosingKind, setIsChoosingKind] = useState(false)
   const [search, setSearch] = useState('')
   const [folder, setFolder] = useState('')
+  // itemToPurge is the deleted item the person asked to delete for good, until
+  // they confirm or leave.
+  const [itemToPurge, setItemToPurge] = useState<PasswordItem | null>(null)
+  const [isPurging, setIsPurging] = useState(false)
 
   const filter: ItemFilter = {
     search,
@@ -98,6 +102,20 @@ export function PasswordsItems({
   function lockNow() {
     passwordsSession.lock()
     toast.done(t('passwords.lockedNow'))
+  }
+
+  async function purge() {
+    if (itemToPurge === null) return
+    setIsPurging(true)
+    try {
+      await passwordsSession.purgeItem(itemToPurge.id)
+      toast.done(t('passwords.itemPurged', { name: itemToPurge.fields.name }))
+      setItemToPurge(null)
+    } catch (failure) {
+      reportFailure(failure, t('passwords.purgeFailed'))
+    } finally {
+      setIsPurging(false)
+    }
   }
 
   async function restore(restored: PasswordItem) {
@@ -172,6 +190,7 @@ export function PasswordsItems({
               filter={filter}
               addressOf={addressOf}
               onRestore={(restored) => void restore(restored)}
+              onPurge={setItemToPurge}
             />
           )}
         </SettingsSection>
@@ -183,6 +202,17 @@ export function PasswordsItems({
           item={item}
           onBack={() => changeParameters({ item: null, edit: null })}
           onEdit={() => changeParameters({ edit: '1' })}
+        />
+      )}
+
+      {itemToPurge !== null && (
+        <ConfirmDialog
+          title={t('passwords.purgeTitle', { name: itemToPurge.fields.name })}
+          body={t('passwords.purgeBody')}
+          confirmLabel={t('passwords.deleteForever')}
+          busy={isPurging}
+          onClose={() => setItemToPurge(null)}
+          onConfirm={() => void purge()}
         />
       )}
 

@@ -28,9 +28,17 @@ export type ItemGrantee = { userId: string; circleId?: undefined } | { circleId:
 // the fields, written only by the owner's device, so the server cannot widen
 // it. An item with no record grants nobody and is not usable by the agent. A
 // recipient's copy may show the record but never acts on it.
+//
+// recordVersion and recordMac are its signature: the version counts the owner's
+// changes, and the mac is the base64 of an HMAC-SHA256 under a key made from
+// the account key, which only the owner's devices hold (see macOfAccess in
+// crypto.ts). A record may lack both, as one written before they existed;
+// verifyAccess does not trust such a record.
 export interface ItemAccess {
   isUsableByAgent: boolean
   grantees: ItemGrantee[]
+  recordVersion?: number
+  recordMac?: string
 }
 
 export interface LoginFields {
@@ -134,14 +142,16 @@ export function isReachedByAccess(
 }
 
 // accessWithGrantees returns a new record with these grantees and the same
-// agent use. No record counts as one that grants nobody and is not usable by
-// the agent. The given record is not changed.
+// agent use, without a version or signature: sign it again (withSignedAccess)
+// before it is sealed. No record counts as one that grants nobody and is not
+// usable by the agent. The given record is not changed.
 export function accessWithGrantees(access: ItemAccess | undefined, grantees: readonly ItemGrantee[]): ItemAccess {
   return { isUsableByAgent: access?.isUsableByAgent ?? false, grantees: grantees.map((grantee) => ({ ...grantee })) }
 }
 
 // accessWithAgentUse returns a new record with agent use turned on or off and
-// the same grantees. The given record is not changed.
+// the same grantees, without a version or signature: sign it again
+// (withSignedAccess) before it is sealed. The given record is not changed.
 export function accessWithAgentUse(access: ItemAccess | undefined, isUsableByAgent: boolean): ItemAccess {
   return { isUsableByAgent, grantees: (access?.grantees ?? []).map((grantee) => ({ ...grantee })) }
 }
@@ -221,16 +231,21 @@ function readPasskeyList(value: unknown): PasskeyFields[] | null {
   return passkeys
 }
 
+// A signature is 32 bytes: the output of HMAC-SHA256.
+const ACCESS_MAC_BYTE_COUNT = 32
+
 // readAccess reads the access record. Nothing or null is no record
 // (undefined). Anything that is not exactly the shape of ItemAccess is refused
-// (null): an object with exactly isUsableByAgent, a boolean, and grantees, a
-// list of objects each with exactly one of userId and circleId as a non-empty
-// text. The item is then unreadable instead of half understood.
+// (null): an object with isUsableByAgent, a boolean, and grantees, a list of
+// objects each with exactly one of userId and circleId as a non-empty text,
+// and optionally recordVersion, a positive integer, and recordMac, canonical
+// base64 of 32 bytes. The item is then unreadable instead of half understood.
 function readAccess(value: unknown): ItemAccess | undefined | null {
   if (value === undefined || value === null) return undefined
   if (!isPlainObject(value)) return null
   const keys = Object.keys(value)
-  if (keys.length !== 2 || !keys.includes('isUsableByAgent') || !keys.includes('grantees')) return null
+  if (!keys.includes('isUsableByAgent') || !keys.includes('grantees')) return null
+  if (keys.some((key) => !['isUsableByAgent', 'grantees', 'recordVersion', 'recordMac'].includes(key))) return null
   if (typeof value.isUsableByAgent !== 'boolean' || !Array.isArray(value.grantees)) return null
   const grantees: ItemGrantee[] = []
   for (const element of value.grantees) {
@@ -239,7 +254,29 @@ function readAccess(value: unknown): ItemAccess | undefined | null {
     if (grantee === null) return null
     grantees.push(grantee)
   }
-  return { isUsableByAgent: value.isUsableByAgent, grantees }
+  const access: ItemAccess = { isUsableByAgent: value.isUsableByAgent, grantees }
+  if (keys.includes('recordVersion')) {
+    const version = value.recordVersion
+    if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) return null
+    access.recordVersion = version
+  }
+  if (keys.includes('recordMac')) {
+    const mac = value.recordMac
+    if (typeof mac !== 'string' || !isCanonicalMac(mac)) return null
+    access.recordMac = mac
+  }
+  return access
+}
+
+// isCanonicalMac reports whether the text is standard base64 with padding of
+// exactly 32 bytes and no other spelling of them.
+function isCanonicalMac(text: string): boolean {
+  try {
+    const bytes = Uint8Array.from(atob(text), (character) => character.charCodeAt(0))
+    return bytes.length === ACCESS_MAC_BYTE_COUNT && btoa(String.fromCharCode(...bytes)) === text
+  } catch {
+    return false
+  }
 }
 
 function readGrantee(element: Record<string, unknown>): ItemGrantee | null {
@@ -260,7 +297,7 @@ function readGrantee(element: Record<string, unknown>): ItemGrantee | null {
 // is not trusted to be an item: the screens and the sort read these fields
 // as the types above and would fail on a number where a name goes. Keys the
 // kind does not define are kept, so a newer client's fields survive an edit. The access
-// record, if there is one, must have exactly the shape of ItemAccess.
+// record, if there is one, must have the shape of ItemAccess.
 export function parseItemFields<Kind extends ItemKind>(itemKind: Kind, value: unknown): ItemFieldsByKind[Kind] | null {
   if (!isPlainObject(value)) return null
   const checked: Record<string, unknown> = {}

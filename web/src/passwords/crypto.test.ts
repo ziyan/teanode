@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createCipheriv, createDecipheriv, createECDH, createHash, hkdfSync, pbkdf2Sync } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createECDH, createHash, createHmac, hkdfSync, pbkdf2Sync } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
+  accessSignedBytes,
   AGENT_RECIPIENT_ID,
   areBytesEqual,
   decodeBase32,
@@ -17,10 +18,13 @@ import {
   formatRecoveryKey,
   generatePersonKeyPair,
   hashProof,
+  isAccessVerified,
   isKeyPairConsistent,
   itemFieldsAssociatedData,
   itemKeyAssociatedData,
+  macOfAccess,
   makeRecoveryKey,
+  MAXIMUM_RECORD_VERSION,
   MAXIMUM_ITERATION_COUNT,
   MINIMUM_ITERATION_COUNT,
   openAccountKey,
@@ -42,8 +46,11 @@ import {
   sealValue,
   serializeSealed,
   shareAssociatedData,
+  signAccess,
+  verifyAccess,
+  withSignedAccess,
 } from './crypto'
-import { emptyCardFields, emptyLoginFields, emptyNoteFields } from './fields'
+import { emptyCardFields, emptyLoginFields, emptyNoteFields, type ItemAccess } from './fields'
 import {
   bytesFilledWith,
   bytesFromText,
@@ -250,17 +257,17 @@ describe('person key pair', () => {
     expectBytes(await deriveSharedSecret(second, first.publicKey), expected)
   })
 
-  it('writes a safety code as eight groups of four digits from the SHA-256 of the label, user id and key', async () => {
+  it('writes a safety code as eight groups of four digits from the SHA-256 of the label and key', async () => {
     const keyPair = await generatePersonKeyPair()
     const digest = createHash('sha256')
-      .update(Buffer.concat([Buffer.from('teanode passwords safety code v2\0user-ada\0'), keyPair.publicKey]))
+      .update(Buffer.concat([Buffer.from('teanode passwords safety code v2\0'), keyPair.publicKey]))
       .digest()
     const expected = [0, 1, 2, 3, 4, 5, 6, 7]
       .map((index) => String(digest.readUInt16BE(index * 2) % 10000).padStart(4, '0'))
       .join(' ')
-    expect(await safetyCode('user-ada', keyPair.publicKey)).toBe(expected)
+    expect(await safetyCode(keyPair.publicKey)).toBe(expected)
     expect(expected).toMatch(/^\d{4}( \d{4}){7}$/)
-    expect(await safetyCode('user-ben', keyPair.publicKey)).not.toBe(expected)
+    expect(await safetyCode((await generatePersonKeyPair()).publicKey)).not.toBe(expected)
   })
 
   it('reads a typed safety code with or without spaces and refuses anything else', () => {
@@ -282,7 +289,7 @@ describe('person key pair', () => {
   })
 
   it('refuses a public key that is not an uncompressed point', async () => {
-    await expect(safetyCode('user-ada', new Uint8Array(33))).rejects.toThrow(/65 byte/)
+    await expect(safetyCode(new Uint8Array(33))).rejects.toThrow(/65 byte/)
   })
 })
 
@@ -467,5 +474,120 @@ describe('the values of an account and its items', () => {
     expect(await openItemFields(itemKey, await sealItemFields(itemKey, note, itemId, 'note'), itemId, 'note')).toEqual(
       note,
     )
+  })
+})
+
+describe('the access record signature', () => {
+  const accountKey = bytesFilledWith(32, 0xa0)
+  const access: ItemAccess = {
+    isUsableByAgent: true,
+    grantees: [{ userId: 'user-ben' }, { circleId: 'circle-1' }],
+  }
+
+  it('signs the documented bytes with HMAC-SHA256 under HKDF of the account key', async () => {
+    const record: ItemAccess = { ...access, recordVersion: 12 }
+    const signedBytes = accessSignedBytes('item-1', 'note', record)
+    expect(Buffer.from(signedBytes).toString('latin1')).toBe(
+      'teanode passwords access record v1\0item-1\0note\x0012\x001\0c:circle-1\0u:user-ben\0',
+    )
+    const macKey = Buffer.from(
+      hkdfSync('sha256', accountKey, Buffer.alloc(0), 'teanode passwords access record v1', 32),
+    )
+    const expected = createHmac('sha256', macKey).update(signedBytes).digest('base64')
+    expect(await macOfAccess(accountKey, 'item-1', 'note', record)).toBe(expected)
+    const off = accessSignedBytes('item-1', 'note', { isUsableByAgent: false, grantees: [], recordVersion: 12 })
+    expect(Buffer.from(off).toString('latin1')).toBe('teanode passwords access record v1\0item-1\0note\x0012\x000\0')
+  })
+
+  it('puts the grantees in UTF-8 byte order, not UTF-16 order', () => {
+    // U+FF5E is three bytes starting 0xef and U+1F600 is four bytes starting
+    // 0xf0, so byte order puts the first one first; UTF-16 order would not.
+    const bytes = accessSignedBytes('item-1', 'login', {
+      isUsableByAgent: false,
+      grantees: [{ userId: '\u{1F600}' }, { userId: '\uFF5E' }],
+      recordVersion: 1,
+    })
+    expect(Buffer.from(bytes).toString('utf8').endsWith('u:\uFF5E\0u:\u{1F600}\0')).toBe(true)
+  })
+
+  it('signs one more than the highest version seen and ignores the version and signature it was given', async () => {
+    const signed = await signAccess(accountKey, 'item-1', 'login', access, 4)
+    expect(signed.recordVersion).toBe(5)
+    expect(await isAccessVerified(accountKey, 'item-1', 'login', signed)).toBe(true)
+    const again = await signAccess(accountKey, 'item-1', 'login', { ...signed, recordVersion: 900, recordMac: 'x' }, 4)
+    expect(again).toEqual(signed)
+    expect(access).not.toHaveProperty('recordVersion')
+    const fromNothing = await signAccess(accountKey, 'item-1', 'login', undefined, 0)
+    expect(fromNothing).toMatchObject({ isUsableByAgent: false, grantees: [], recordVersion: 1 })
+  })
+
+  it('does not care about the order of the grantees', async () => {
+    const signed = await signAccess(accountKey, 'item-1', 'login', access, 0)
+    const reversed = { ...signed, grantees: [...signed.grantees].reverse() }
+    expect(await isAccessVerified(accountKey, 'item-1', 'login', reversed)).toBe(true)
+  })
+
+  it('refuses a record that changed in anything the signature covers', async () => {
+    const signed = await signAccess(accountKey, 'item-1', 'login', access, 4)
+    const flipped = Buffer.from(signed.recordMac!, 'base64')
+    flipped[0] ^= 1
+    const cases: Array<[string, Uint8Array, string, 'login' | 'note', ItemAccess | undefined]> = [
+      ['another account key', bytesFilledWith(32, 0xb0), 'item-1', 'login', signed],
+      ['another item', accountKey, 'item-2', 'login', signed],
+      ['another kind', accountKey, 'item-1', 'note', signed],
+      ['agent use', accountKey, 'item-1', 'login', { ...signed, isUsableByAgent: false }],
+      ['version', accountKey, 'item-1', 'login', { ...signed, recordVersion: 6 }],
+      [
+        'a grantee',
+        accountKey,
+        'item-1',
+        'login',
+        { ...signed, grantees: [...signed.grantees, { userId: 'user-cy' }] },
+      ],
+      [
+        'a user turned into a circle',
+        accountKey,
+        'item-1',
+        'login',
+        { ...signed, grantees: [{ circleId: 'user-ben' }, { circleId: 'circle-1' }] },
+      ],
+      ['a flipped signature bit', accountKey, 'item-1', 'login', { ...signed, recordMac: flipped.toString('base64') }],
+      ['a signature that is not base64', accountKey, 'item-1', 'login', { ...signed, recordMac: '%%%' }],
+      ['no signature', accountKey, 'item-1', 'login', { ...signed, recordMac: undefined }],
+      ['no version', accountKey, 'item-1', 'login', { ...signed, recordVersion: undefined }],
+      ['no record', accountKey, 'item-1', 'login', undefined],
+    ]
+    for (const [name, key, itemId, itemKind, record] of cases) {
+      expect(await isAccessVerified(key, itemId, itemKind, record), name).toBe(false)
+      expect(await verifyAccess(key, itemId, itemKind, { ...emptyNoteFields(), access: record }), name).toBeNull()
+    }
+  })
+
+  it('refuses bad input to sign', async () => {
+    await expect(signAccess(bytesFilledWith(16, 1), 'item-1', 'login', access, 0)).rejects.toThrow()
+    await expect(signAccess(accountKey, 'item-1', 'secret' as 'login', access, 0)).rejects.toThrow()
+    await expect(signAccess(accountKey, 'item-1', 'login', access, -1)).rejects.toThrow()
+    await expect(signAccess(accountKey, 'item-1', 'login', access, 1.5)).rejects.toThrow()
+    await expect(signAccess(accountKey, 'item-1', 'login', access, MAXIMUM_RECORD_VERSION)).rejects.toThrow()
+    await expect(
+      signAccess(
+        accountKey,
+        'item-1',
+        'login',
+        { isUsableByAgent: false, grantees: [{ userId: 'a', circleId: 'b' }] } as unknown as ItemAccess,
+        0,
+      ),
+    ).rejects.toThrow()
+  })
+
+  it('puts the signed record into the fields and verifies it from them', async () => {
+    const fields = { ...emptyNoteFields(), name: 'Example', text: 'hello', futureKey: [1, 2] }
+    const signedFields = await withSignedAccess(accountKey, 'item-1', 'note', fields, access, 2)
+    expect(signedFields).toMatchObject({ name: 'Example', futureKey: [1, 2] })
+    expect(signedFields.access?.recordVersion).toBe(3)
+    expect(await verifyAccess(accountKey, 'item-1', 'note', signedFields)).toEqual(signedFields.access)
+    expect(await verifyAccess(accountKey, 'item-2', 'note', signedFields)).toBeNull()
+    expect(await verifyAccess(accountKey, 'item-1', 'note', fields)).toBeNull()
+    expect(fields).not.toHaveProperty('access')
   })
 })

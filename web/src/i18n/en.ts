@@ -586,7 +586,8 @@ export const en = {
   'profile.picture': 'Picture',
   'profile.pictureChoose': 'Choose a picture',
   'profile.pictureRemove': 'Remove',
-  'profile.pictureHint': 'Shown beside your name to the people you share a circle with. Without one, your initial is shown.',
+  'profile.pictureHint':
+    'Shown beside your name to the people you share a circle with. Without one, your initial is shown.',
   'profile.pictureSaved': 'Picture saved.',
   'profile.pictureRemoved': 'Picture removed.',
   'profile.pictureFailed': 'Could not save the picture.',
@@ -1213,8 +1214,10 @@ export const en = {
   'agentDrawer.note.goalChanged': 'Goal changed: {detail}',
   'agentDrawer.note.goalCleared': 'Goal cleared: {detail}',
   'agentDrawer.note.goalMet': 'Goal met: {detail}',
-  'agentDrawer.note.circleInvited': '{invitedByName} invited you to {circleName}. Answer it under Circles in your account menu.',
-  'agentDrawer.note.goalStalled': 'Goal stalled: {detail} turns since you last wrote and it is not met. Write to keep going, or clear or change it.',
+  'agentDrawer.note.circleInvited':
+    '{invitedByName} invited you to {circleName}. Answer it under Circles in your account menu.',
+  'agentDrawer.note.goalStalled':
+    'Goal stalled: {detail} turns since you last wrote and it is not met. Write to keep going, or clear or change it.',
   'agentDrawer.todoTitle': "The agent's steps",
   'agentDrawer.todoDone': 'Done',
   'agentDrawer.todoOpen': 'Still to do',
@@ -2549,7 +2552,8 @@ export const en = {
   'access.permission.location:use': 'Record where you go, and share it',
   'access.permission.photos:use': 'Keep a photo library, and back up a device to it',
   'access.permission.health:use': 'Keep your Health data from the iPhone, and share some of it',
-  'access.permission.passwords:use': 'Keep passwords, passkeys, cards and notes that only your devices can read, and share some of them',
+  'access.permission.passwords:use':
+    'Keep passwords, passkeys, cards and notes that only your devices can read, and share some of them',
   'access.permission.agent:audit':
     "See every person's agent: what it may reach, its usage and limits, never its content",
   'access.permission.agent:act': "Read every person's agent conversations and runs, and speak to their agent as them",
@@ -2791,7 +2795,8 @@ export const en = {
   'calendar.findTimeWith': 'With',
   'calendar.findTimeNobody':
     'Nobody has shared their calendar with you yet. Ask the people you share a circle with to share theirs, at busy times or more.',
-  'calendar.findTimeLeftOut': 'Some people in your circles have not shared their calendar with you, so they are not listed.',
+  'calendar.findTimeLeftOut':
+    'Some people in your circles have not shared their calendar with you, so they are not listed.',
   'calendar.findTimeFrom': 'First day',
   'calendar.findTimeTo': 'Last day',
   'calendar.findTimeEarliest': 'Earliest hour',
@@ -4368,7 +4373,8 @@ export const en = {
   'finance.entryLineKindFee': 'Fee',
   'finance.entryLineKindTip': 'Tip',
   'finance.entryReceiptTitle': 'Add a receipt',
-  'finance.entryReceiptHint': 'Type the receipt as it is printed. Preview shows what recording it would do before anything is written.',
+  'finance.entryReceiptHint':
+    'Type the receipt as it is printed. Preview shows what recording it would do before anything is written.',
   'finance.entryMerchantName': 'Merchant',
   'finance.entryMerchantReceiptNumber': 'Receipt number',
   'finance.entryPurchasedOn': 'Date of purchase',
@@ -4436,7 +4442,8 @@ export const en = {
   'finance.entryPaystubDeductionCommuter': 'Commuter benefits',
   'finance.entryPaystubDeductionInsurance': 'Other insurance',
   'finance.entryPaystubFile': 'Paystub file',
-  'finance.entryTaxDocumentFileHint': 'A PDF or a picture. The paystub or form is kept with it, and its text is never stored.',
+  'finance.entryTaxDocumentFileHint':
+    'A PDF or a picture. The paystub or form is kept with it, and its text is never stored.',
   'finance.entryFileNotStored': 'The file could not be stored. Try again.',
   'finance.entryRecordPaystub': 'Record paystub',
   'finance.entryPaystubRecorded': 'Recorded the paystub from {employer} paid on {day}.',
@@ -4448,7 +4455,8 @@ export const en = {
   'finance.entryRecipientTaxIdMask': 'Your tax ID, last four digits',
   'finance.entryIsCorrected': 'This is a corrected form',
   'finance.entryTaxFormEntries': 'Boxes',
-  'finance.entryTaxFormEntriesHint': "The number as printed, a qualifier for boxes of one number (box 12's letter, a state), and its amount, text or mark.",
+  'finance.entryTaxFormEntriesHint':
+    "The number as printed, a qualifier for boxes of one number (box 12's letter, a state), and its amount, text or mark.",
   'finance.entryBoxCode': 'Box number',
   'finance.entryBoxQualifier': 'Qualifier',
   'finance.entryBoxAmount': 'Amount',
@@ -4458,7 +4466,8 @@ export const en = {
   'finance.entryRecordTaxForm': 'Record tax form',
   'finance.entryTaxFormRecorded': 'Recorded the {year} {form} from {payer}.',
   'finance.entryRowsTitle': 'Add transactions',
-  'finance.entryRowsHint': 'For an account no provider reaches. Type its transactions, and preview what importing them would do.',
+  'finance.entryRowsHint':
+    'For an account no provider reaches. Type its transactions, and preview what importing them would do.',
   'finance.entryNewAccount': 'A new account',
   'finance.entryAccountName': 'Account name',
   'finance.entryAccountNumber': 'Account number',
@@ -5717,8 +5726,7 @@ export const en = {
   'welcome.servicesWaiting': 'You already chose services for this server. They start after a restart.',
   'welcome.servicesContinue': 'Continue with service setup',
   'services.addAssistant': 'Add the personal assistant',
-  'services.addAssistantNote':
-    'Connect a model provider and enable the assistant if you want one on this server.',
+  'services.addAssistantNote': 'Connect a model provider and enable the assistant if you want one on this server.',
   'services.optional': 'Optional',
   'services.openPhotos': 'Open Photos',
   'services.openPhotosReady': 'Photos is running. Upload photos, or back up an iPhone with the TeaNode app.',
@@ -5901,8 +5909,7 @@ export const en = {
   'photos.notThisPerson': 'Not this person',
   'photos.faceRemoved': 'Removed this photo from this person.',
   'photos.showHidden': 'Show hidden people',
-  'photos.everyoneHidden':
-    'Everyone found is hidden. Turn on "Show hidden people" to see them.',
+  'photos.everyoneHidden': 'Everyone found is hidden. Turn on "Show hidden people" to see them.',
   'photos.hiddenHint': 'The people you hid are shown dimmed.',
   'photos.emptyPeople': 'No people yet. A person appears here once they are in at least three photos.',
   'photos.emptyPeopleOff': 'Finding people is off. Turn it on to see the people in your photos.',
@@ -5998,7 +6005,7 @@ export const en = {
   'photos.share': 'Share',
   'photos.shareTitle': 'Share “{title}”',
   'photos.shareIntro':
-    "Share the album with somebody you share a circle with, or with a whole circle. They see its photos without where they were taken, unless you include that.",
+    'Share the album with somebody you share a circle with, or with a whole circle. They see its photos without where they were taken, unless you include that.',
   'photos.shareNobody': 'This album is not shared with anybody yet.',
   'photos.shareCurrent': 'Already shared with',
   'photos.shareWith': 'Share with',
@@ -6113,7 +6120,8 @@ export const en = {
   'serverSettings.photosTrashRetention': 'Time in the Trash',
   'serverSettings.photosTrashRetentionHint':
     'How long a deleted photo can be restored before it is deleted forever, such as 30d.',
-  'deviceSetup.noServices': 'No services are available for device setup. An operator can enable Mail, Calendar, Reminders or Contacts and grant access.',
+  'deviceSetup.noServices':
+    'No services are available for device setup. An operator can enable Mail, Calendar, Reminders or Contacts and grant access.',
   'circles.title': 'Circles',
   'circles.off': 'Circles are not on for your account. Ask whoever runs this server to turn them on.',
   'circles.open': 'Open Circles',
@@ -6161,7 +6169,8 @@ export const en = {
   'circles.shareSuggestion.locationLabel': 'Share where I am',
   'circles.shareSuggestion.locationNone': 'Not now',
   'circles.shareSuggestion.locationTitle': 'Share where you are with {name}?',
-  'circles.shareSuggestion.locationBody': 'Everyone in {name} would see it on the Location page. You can change this at any time under Sharing.',
+  'circles.shareSuggestion.locationBody':
+    'Everyone in {name} would see it on the Location page. You can change this at any time under Sharing.',
   'circles.shareSuggestion.bothSaved': 'Shared your calendar and where you are with {name}',
   'circles.admin': 'Admin',
   'circles.you': 'you',
@@ -6291,7 +6300,8 @@ export const en = {
   'skillShare.title': 'Share a skill',
   'skillShare.intro':
     'Let someone in a circle you share run a skill of yours. It runs on your own computer, as you. Anything above the limits you set, or that cannot be priced, waits for your word.',
-  'skillShare.noPeople': 'You do not share a circle with anybody yet. Start or join one under Circles to share a skill.',
+  'skillShare.noPeople':
+    'You do not share a circle with anybody yet. Start or join one under Circles to share a skill.',
   'skillShare.share': 'Share',
   'skillShare.shareTitle': 'Share {skill}',
   'skillShare.shareIntro':
@@ -6357,14 +6367,14 @@ export const en = {
   'skillShare.callTool': 'Tool',
   'skillShare.callAmount': 'Amount',
   'skillShare.callAmountUnknown': 'No amount is stated. Only you can say whether it is fine.',
-  'skillShare.callReasonFrom': '{name}\'s agent wrote',
+  'skillShare.callReasonFrom': "{name}'s agent wrote",
   'skillShare.callNotePlaceholder': 'A word for {name} (optional)',
   'skillShare.callApprove': 'Approve and run it',
   'skillShare.callDecline': 'Decline',
   'skillShare.callExpires': 'Waits until {time}, then expires.',
   'skillShare.callWaitingForOwner': 'Waiting for {name} to answer.',
   'skillShare.callTheirNote': 'Their note: {note}',
-  'skillShare.callOutcome.ran': 'Approved. It ran on the owner\'s computer.',
+  'skillShare.callOutcome.ran': "Approved. It ran on the owner's computer.",
   'skillShare.callOutcome.failed': 'It was tried and did not complete.',
   'skillShare.callOutcome.refused': 'It was refused before it ran.',
   'skillShare.callOutcome.declined': 'Declined.',
@@ -6381,8 +6391,10 @@ export const en = {
   'location.off': 'Location is not turned on for your account. Ask whoever runs this server to allow it.',
   'location.mapLabel': 'Map of where people are',
   'location.you': 'You',
-  'location.browserHere': 'On the map is where this browser is, within {meters} m. Nothing is recorded until the TeaNode app on your phone records it.',
-  'location.nowhere': 'No position has been recorded yet. The TeaNode app on your phone records where you go, and it appears here.',
+  'location.browserHere':
+    'On the map is where this browser is, within {meters} m. Nothing is recorded until the TeaNode app on your phone records it.',
+  'location.nowhere':
+    'No position has been recorded yet. The TeaNode app on your phone records where you go, and it appears here.',
   'location.atSince': 'At {place} since {time}',
   'location.lastSeen': 'Last seen',
   'location.checkIn': 'Check in',
@@ -6488,7 +6500,8 @@ export const en = {
   'location.setupDone': 'Done',
   'location.setupToDo': 'To do',
   'location.setupShare': 'Share with {name}',
-  'location.setupShareNote': 'Choose what they see: where you are now, or also your visits and the places they were at.',
+  'location.setupShareNote':
+    'Choose what they see: where you are now, or also your visits and the places they were at.',
   'location.address': 'Address',
   'location.noAddress': 'No address',
   'location.changeAddress': 'Change address',
@@ -6520,8 +6533,10 @@ export const en = {
   'location.nowhereOther': 'No position yet.',
   'location.personNotSharing': 'That person does not share their location with you.',
   'location.personNotRead': 'The people who share with you could not be read, so this list cannot be shown.',
-  'location.browserCoarse': 'Your browser can only place you within {accuracyMeters} m. A computer has no GPS; your iPhone is exact.',
-  'location.setupHomeNotFound': 'Not found on the map. Use where I am now on your iPhone, or make home and move its pin.',
+  'location.browserCoarse':
+    'Your browser can only place you within {accuracyMeters} m. A computer has no GPS; your iPhone is exact.',
+  'location.setupHomeNotFound':
+    'Not found on the map. Use where I am now on your iPhone, or make home and move its pin.',
   'location.keepAddressTyped': 'Keep this address as typed',
   'location.keepAddressTypedNote': 'Keeps "{address}" as the address, without moving the place.',
   'location.addressKept': 'Kept the address {address}',
@@ -6892,11 +6907,11 @@ export const en = {
   'recordingProcessing.changeContact': 'Change contact',
   'recordingProcessing.untieContact': 'Untie from contact',
   'recordingProcessing.speakerContactTitle': 'Which contact is {name}?',
-  'recordingProcessing.speakerContactHint': 'Only you see this. The recordings this speaker is in then show on the contact\'s card.',
+  'recordingProcessing.speakerContactHint':
+    "Only you see this. The recordings this speaker is in then show on the contact's card.",
   'recordingProcessing.nameTiesContact': 'Also ties this speaker to the contact {name}.',
   'passwords.title': 'Passwords',
-  'passwords.off':
-    'Your account cannot use Passwords. Whoever runs your TeaNode server can turn it on for you.',
+  'passwords.off': 'Your account cannot use Passwords. Whoever runs your TeaNode server can turn it on for you.',
   'passwords.tabItems': 'Items',
   'passwords.tabSettings': 'Settings',
   'passwords.introTitle': 'Keep your passwords here',
@@ -6940,8 +6955,7 @@ export const en = {
   'passwords.useRecoveryKey': 'Use the recovery key',
   'passwords.usePassphrase': 'Use the passphrase',
   'passwords.unlockFailed': 'Passwords could not be unlocked.',
-  'passwords.recoveryKeyInvalid':
-    'That is not a recovery key. It is 52 letters and digits, in groups of four.',
+  'passwords.recoveryKeyInvalid': 'That is not a recovery key. It is 52 letters and digits, in groups of four.',
   'passwords.lostBoth':
     'If you lost both your passphrase and your recovery key, you can erase Passwords in Settings and start again.',
   'passwords.lock': 'Lock',
@@ -7073,20 +7087,16 @@ export const en = {
   'passwords.shareNeedsCircles': 'Your account cannot use circles, so there is nobody to share with.',
   'passwords.shareNoPeople': 'You do not share a circle with anyone yet.',
   'passwords.shareSaved': 'Sharing saved.',
-  'passwords.shareSavedWaitingOne':
-    'Sharing saved. {count} person will get access when they set up Passwords.',
+  'passwords.shareSavedWaitingOne': 'Sharing saved. {count} person will get access when they set up Passwords.',
   'passwords.shareSavedWaiting': 'Sharing saved. {count} people will get access when they set up Passwords.',
   'passwords.shareFailed': 'Sharing could not be saved.',
   'passwords.shareRecipientsFailed': 'The people in that share could not be read.',
-  'passwords.waitingSharedOne':
-    'Gave {count} person access to the items you shared, now that they set up Passwords.',
-  'passwords.waitingShared':
-    'Gave {count} people access to the items you shared, now that they set up Passwords.',
+  'passwords.waitingSharedOne': 'Gave {count} person access to the items you shared, now that they set up Passwords.',
+  'passwords.waitingShared': 'Gave {count} people access to the items you shared, now that they set up Passwords.',
   'passwords.settingsLocked': 'Unlock Passwords to change the passphrase, import or export.',
   'passwords.settingsFailed': 'The setting could not be saved.',
   'passwords.lockAfterTitle': 'Lock',
-  'passwords.lockAfterBody':
-    'Passwords locks itself after this long without use, and when the page is reloaded.',
+  'passwords.lockAfterBody': 'Passwords locks itself after this long without use, and when the page is reloaded.',
   'passwords.lockAfterLabel': 'Lock after',
   'passwords.lockAfter1': '1 minute',
   'passwords.lockAfter5': '5 minutes',
@@ -7107,8 +7117,7 @@ export const en = {
   'passwords.replaceRecoveryKeyBody':
     'Type your passphrase to make a new recovery key. Once you finish, the old recovery key no longer unlocks Passwords.',
   'passwords.replaceRecoveryKeyConfirm': 'Replace recovery key',
-  'passwords.recoveryKeyReplaceBody':
-    'This is your new recovery key. The old one still works until you finish.',
+  'passwords.recoveryKeyReplaceBody': 'This is your new recovery key. The old one still works until you finish.',
   'passwords.recoveryKeyReplaced': 'Your recovery key was replaced.',
   'passwords.importTitle': 'Import',
   'passwords.importBody':
@@ -7156,6 +7165,21 @@ export const en = {
   'passwords.errorItemUnreadable': 'This item could not be opened.',
   'passwords.errorItemUnknown': 'The server sent an item this version cannot show.',
   'passwords.errorOwnerOnly': 'Only the owner can do this.',
+  'passwords.errorAccessNotVerified': "This item's sharing could not be checked. Set its sharing again first.",
+  'passwords.errorRekeyLimited':
+    'This item was given a new key a short while ago, or too many were given. Try again to give it one now.',
+  'passwords.accessNotVerifiedTitle': 'Sharing could not be checked',
+  'passwords.accessNotVerifiedBody':
+    "This item's sharing record is missing or was not written by your devices. Nobody else can open it and the agent cannot use it until you set sharing again.",
+  'passwords.accessReplayedTitle': "This item's sharing was changed back by the server",
+  'passwords.accessReplayedBody':
+    'An older copy of its sharing came back. Nothing is shared, re-keyed or given to the agent for this item until you set sharing again.',
+  'passwords.accessSetAgain': 'Set sharing again',
+  'passwords.deleteForever': 'Delete forever',
+  'passwords.purgeTitle': 'Delete {name} forever?',
+  'passwords.purgeBody': 'It and its earlier versions are removed at once and cannot be brought back.',
+  'passwords.itemPurged': '{name} was deleted forever.',
+  'passwords.purgeFailed': 'The item could not be deleted forever.',
   'passwords.keyChangedTitle': "{name}'s key changed",
   'passwords.keyChangedBody':
     'This is not the key you shared with before. It changes when they set Passwords up again, but it could also be somebody else. Confirming it also lets you share with them.',

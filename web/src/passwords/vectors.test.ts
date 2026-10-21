@@ -10,7 +10,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  accessSignedBytes,
   decodeBase64,
+  deriveAccessMacKey,
   derivePassphraseKey,
   deriveProofKey,
   deriveSharedSecret,
@@ -19,16 +21,20 @@ import {
   formatRecoveryKey,
   generatePersonKeyPair,
   hashProof,
+  macOfAccess,
   openForKeyPair,
   openItemFields,
   openValue,
   normalizeSafetyCode,
   parseRecoveryKey,
   safetyCode,
+  signAccess,
   type SealedForKeyPair,
   type SealedValue,
+  verifyAccess,
+  withSignedAccess,
 } from './crypto'
-import { type ItemKind, parseItemFields } from './fields'
+import { emptyLoginFields, type ItemAccess, type ItemKind, parseItemFields } from './fields'
 import { oneTimeCode, parseOneTimeCodeUri } from './oneTimeCode'
 import {
   assertionAuthenticatorData,
@@ -71,10 +77,20 @@ interface Vectors {
   personKey: {
     privateKey: string
     publicKey: string
-    userId: string
     safetyCode: string
     typedSafetyCodes: string[]
     invalidSafetyCodes: string[]
+  }
+  accessRecord: {
+    accountKey: string
+    itemId: string
+    itemKind: ItemKind
+    access: ItemAccess
+    highestVersionSeen: number
+    macKey: string
+    signedBytes: string
+    signedAccess: ItemAccess
+    forged: Array<{ name: string; itemId: string; itemKind: ItemKind; access: ItemAccess }>
   }
   share: {
     ownerId: string
@@ -196,10 +212,17 @@ describe.skipIf(!hasVectors && !isRequired)('the shared test vectors', () => {
     const [, itemId, itemKind] = vector.associatedData.split(':')
     const opened = await openItemFields(bytesOf(vector.key), vector.sealed, itemId, itemKind as ItemKind)
     const parsed = parseItemFields(itemKind as ItemKind, opened)
+    expect(parsed?.access).toEqual(vectors.accessRecord.signedAccess)
     expect(parsed?.access).toEqual({
       isUsableByAgent: true,
       grantees: [{ userId: vectors.share.recipientId }, { circleId: expect.any(String) }],
+      recordVersion: vectors.accessRecord.highestVersionSeen + 1,
+      recordMac: expect.any(String),
     })
+    // The record in the sealed fields is signed for this item by the account key.
+    expect(await verifyAccess(bytesOf(vectors.accessRecord.accountKey), itemId, itemKind as ItemKind, parsed!)).toEqual(
+      parsed?.access,
+    )
     const edited = parseItemFields(itemKind as ItemKind, JSON.parse(JSON.stringify({ ...parsed, name: 'edited' })))
     expect(edited?.access).toEqual(parsed?.access)
   })
@@ -207,8 +230,7 @@ describe.skipIf(!hasVectors && !isRequired)('the shared test vectors', () => {
   it('has a person key pair whose scalar, point and safety code agree', async () => {
     const vector = vectors.personKey
     const keyPair = { privateKey: bytesOf(vector.privateKey), publicKey: bytesOf(vector.publicKey) }
-    expect(await safetyCode(vector.userId, keyPair.publicKey)).toBe(vector.safetyCode)
-    expect(await safetyCode(`${vector.userId}x`, keyPair.publicKey)).not.toBe(vector.safetyCode)
+    expect(await safetyCode(keyPair.publicKey)).toBe(vector.safetyCode)
     for (const text of [vector.safetyCode, ...vector.typedSafetyCodes]) {
       expect(normalizeSafetyCode(text), JSON.stringify(text)).toBe(vector.safetyCode)
     }
@@ -219,6 +241,45 @@ describe.skipIf(!hasVectors && !isRequired)('the shared test vectors', () => {
     // Two key pairs agree on a shared secret only if each point belongs to its scalar.
     const other = await generatePersonKeyPair()
     expectBytes(await deriveSharedSecret(keyPair, other.publicKey), await deriveSharedSecret(other, keyPair.publicKey))
+  })
+
+  it('signs the access record to the same bytes and refuses every forged record', async () => {
+    const vector = vectors.accessRecord
+    const accountKey = bytesOf(vector.accountKey)
+    expectBytes(await deriveAccessMacKey(accountKey), bytesOf(vector.macKey))
+    expectBytes(accessSignedBytes(vector.itemId, vector.itemKind, vector.signedAccess), bytesOf(vector.signedBytes))
+    expect(await macOfAccess(accountKey, vector.itemId, vector.itemKind, vector.signedAccess)).toBe(
+      vector.signedAccess.recordMac,
+    )
+    expect(
+      await signAccess(accountKey, vector.itemId, vector.itemKind, vector.access, vector.highestVersionSeen),
+    ).toEqual(vector.signedAccess)
+    expect(
+      await withSignedAccess(
+        accountKey,
+        vector.itemId,
+        vector.itemKind,
+        emptyLoginFields(),
+        vector.access,
+        vector.highestVersionSeen,
+      ),
+    ).toEqual({ ...emptyLoginFields(), access: vector.signedAccess })
+    expect(
+      await verifyAccess(accountKey, vector.itemId, vector.itemKind, {
+        ...emptyLoginFields(),
+        access: vector.signedAccess,
+      }),
+    ).toEqual(vector.signedAccess)
+    expect(vector.forged.length).toBeGreaterThan(0)
+    for (const forged of vector.forged) {
+      expect(
+        await verifyAccess(accountKey, forged.itemId, forged.itemKind, {
+          ...emptyLoginFields(),
+          access: forged.access,
+        }),
+        forged.name,
+      ).toBeNull()
+    }
   })
 
   it('shares an item key to the same bytes from the owner and ephemeral keys and opens it', async () => {

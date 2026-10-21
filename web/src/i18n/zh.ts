@@ -1167,7 +1167,8 @@ export const zh: Catalog = {
   'agentDrawer.note.goalCleared': '目标已清除：{detail}',
   'agentDrawer.note.goalMet': '目标已达成：{detail}',
   'agentDrawer.note.circleInvited': '{invitedByName} 邀请你加入「{circleName}」。请在账户菜单的圈子中回复。',
-  'agentDrawer.note.goalStalled': '目标停滞：自你上次发言后已过 {detail} 轮，目标仍未达成。发消息以继续，或清除、更改目标。',
+  'agentDrawer.note.goalStalled':
+    '目标停滞：自你上次发言后已过 {detail} 轮，目标仍未达成。发消息以继续，或清除、更改目标。',
   'agentDrawer.todoTitle': '助手的步骤',
   'agentDrawer.todoDone': '已完成',
   'agentDrawer.todoOpen': '待完成',
@@ -3734,7 +3735,8 @@ export const zh: Catalog = {
   'goals.reopened': '已重新开始。',
   'goals.useSchedule': '使用计划',
   'goals.useScheduleTitle': '让这个目标按计划运行',
-  'goals.useScheduleHint': '计划的每次运行都会成为这个目标的一轮，目标自己不再另外行动。回答会出现在目标的对话里，而不是通过邮件发送。',
+  'goals.useScheduleHint':
+    '计划的每次运行都会成为这个目标的一轮，目标自己不再另外行动。回答会出现在目标的对话里，而不是通过邮件发送。',
   'goals.useScheduleLabel': '计划',
   'goals.useScheduleNone': '没有其他可用的计划。',
   'goals.useScheduleSubmit': '使用',
@@ -4243,7 +4245,8 @@ export const zh: Catalog = {
   'finance.entryRecipientTaxIdMask': '你的税号后四位',
   'finance.entryIsCorrected': '这是更正后的税表',
   'finance.entryTaxFormEntries': '栏位',
-  'finance.entryTaxFormEntriesHint': '按印刷的栏位编号填写；同一编号的栏位用限定项区分（如第 12 栏的字母、州），再填金额、文字或标记。',
+  'finance.entryTaxFormEntriesHint':
+    '按印刷的栏位编号填写；同一编号的栏位用限定项区分（如第 12 栏的字母、州），再填金额、文字或标记。',
   'finance.entryBoxCode': '栏位编号',
   'finance.entryBoxQualifier': '限定项',
   'finance.entryBoxAmount': '金额',
@@ -5459,7 +5462,8 @@ export const zh: Catalog = {
   'photoBackup.needsHttps':
     'iPhone 应用需要这台服务器使用 https 地址，而 {address} 手机无法使用。请先为服务器配置 https，再用那个地址登录。{guide}',
   'photoBackup.httpsGuide': '如何为服务器启用 https',
-  'photoBackup.connectHint': '最快的方式：用 iPhone 相机扫描代码。它会打开应用（尚未安装则打开 App Store），并以你的身份登录。',
+  'photoBackup.connectHint':
+    '最快的方式：用 iPhone 相机扫描代码。它会打开应用（尚未安装则打开 App Store），并以你的身份登录。',
   'deviceSetup.noServicesPhotos': '这台服务器没有设置邮件、日历、提醒事项和联系人。照片通过上方的 TeaNode 应用备份。',
   'photos.search': '搜索照片',
   'photos.show': '显示',
@@ -5659,7 +5663,8 @@ export const zh: Catalog = {
   'photos.facesTurnedOn': '正在查找照片中的人物。读取照片后，人物会陆续出现。',
   'photos.facesTurnedOff': '已停止查找人物，并删除了已找到的内容。',
   'photos.facesOffTitle': '停止查找人物？',
-  'photos.facesOffBody': '这会删除在你的照片中找到的所有人物以及你为他们起的名称。你的照片和联系人会保留。重新打开后会再次查找人物，但名称不会恢复。',
+  'photos.facesOffBody':
+    '这会删除在你的照片中找到的所有人物以及你为他们起的名称。你的照片和联系人会保留。重新打开后会再次查找人物，但名称不会恢复。',
   'photos.facesOffConfirm': '关闭并删除',
   'photos.stateInTrash': '在废纸篓中',
   'photos.uploadInTrashOne': '那张照片在废纸篓中。',
@@ -5825,7 +5830,8 @@ export const zh: Catalog = {
   'circles.open': '打开圈子',
   'circles.mine': '你的圈子',
   'circles.intro': '与你共用这台服务器的人，按家人、朋友或同事分组。',
-  'circles.empty': '你还没有加入任何圈子。创建一个，然后邀请该加入的人。如果没有列出任何人，请让运营这台服务器的人为他们创建账号。',
+  'circles.empty':
+    '你还没有加入任何圈子。创建一个，然后邀请该加入的人。如果没有列出任何人，请让运营这台服务器的人为他们创建账号。',
   'circles.emptyOperator': '你还没有加入任何圈子。创建一个，然后添加使用这台服务器的人，无论他们是否已有账号。',
   'circles.new': '新建圈子',
   'circles.name': '名称',
@@ -5877,7 +5883,8 @@ export const zh: Catalog = {
   'circles.removeBody': '{name} 将不再属于 {circle}，之后仍可再次邀请。',
   'circles.removed': '已移出 {name}。',
   'circles.invite.title': '邀请成员',
-  'circles.invite.intro': '输入这台服务器上某个账号的用户名。如果没有列出任何人，请让运营这台服务器的人为他们创建账号。',
+  'circles.invite.intro':
+    '输入这台服务器上某个账号的用户名。如果没有列出任何人，请让运营这台服务器的人为他们创建账号。',
   'circles.invite.introOperator': '通过用户名邀请这台服务器上的账号，或为还没有账号的人创建一个账号。',
   'circles.account.title': '为某人创建账号',
   'circles.account.intro': '对方用这个用户名和密码登录，并可以在自己的设置中修改密码。无需邀请。',
@@ -5902,8 +5909,10 @@ export const zh: Catalog = {
   'circles.deleted': '已删除圈子。',
   'circles.leave': '退出',
   'circles.leaveTitle': '退出 {name}？',
-  'circles.leaveBody': '你将不再属于 {name}，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。',
-  'circles.leaveBodyOnlyAdmin': '你将不再属于 {name}，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。',
+  'circles.leaveBody':
+    '你将不再属于 {name}，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。',
+  'circles.leaveBodyOnlyAdmin':
+    '你将不再属于 {name}，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。',
   'circles.left': '你已退出 {name}。',
   'chat.open': '打开聊天',
   'chat.unreadOne': '1 条未读消息',
@@ -5985,7 +5994,8 @@ export const zh: Catalog = {
   'agentConversations.kindChats': '人员',
   'agentConversations.kindLabel': '显示',
   'skillShare.title': '共享技能',
-  'skillShare.intro': '让同一圈子里的人运行你的技能。它在你自己的电脑上、以你的身份运行。超过你设定的上限，或无法确定金额的操作，会等待你的确认。',
+  'skillShare.intro':
+    '让同一圈子里的人运行你的技能。它在你自己的电脑上、以你的身份运行。超过你设定的上限，或无法确定金额的操作，会等待你的确认。',
   'skillShare.noPeople': '你还没有和任何人共享圈子。要共享技能，请先在“圈子”中创建或加入一个圈子。',
   'skillShare.share': '共享',
   'skillShare.shareTitle': '共享{skill}',
@@ -6006,7 +6016,8 @@ export const zh: Catalog = {
   'skillShare.currencyBad': '请使用三个字母的代码，例如 usd。',
   'skillShare.amountUnreadable': '请用{currency}输入金额，例如 {example}',
   'skillShare.amountUnreadableCurrency': '下面的币种',
-  'skillShare.limitsHint': '超过上限，或无法读出金额时，这次调用会等待你的确认。失败的调用也计入当月，因为钱可能已经付出。',
+  'skillShare.limitsHint':
+    '超过上限，或无法读出金额时，这次调用会等待你的确认。失败的调用也计入当月，因为钱可能已经付出。',
   'skillShare.needsBound': '会付款的工具需要设置上限，或选择“每次都问我”才能共享。',
   'skillShare.shared': '已把{skill}共享给{name}。',
   'skillShare.failed': '没有共享这个技能。请检查网络连接后再试一次。',
@@ -6020,7 +6031,8 @@ export const zh: Catalog = {
   'skillShare.activity': '记录',
   'skillShare.noActivity': '还没有通过这次共享发起过任何内容。',
   'skillShare.ended': '已结束的共享',
-  'skillShare.endedHint': '已被收回，或在你和对方不再同属一个圈子时结束。通过它们发起过的请求会留在这里作为你的记录；等待中的请求不能再被确认。',
+  'skillShare.endedHint':
+    '已被收回，或在你和对方不再同属一个圈子时结束。通过它们发起过的请求会留在这里作为你的记录；等待中的请求不能再被确认。',
   'skillShare.endedRow': '{skill}，{tool}，与 {name}',
   'skillShare.stop': '停止共享',
   'skillShare.stopTitle': '停止把{skill}共享给{name}？',
@@ -6070,7 +6082,8 @@ export const zh: Catalog = {
   'location.off': '你的账号没有开启位置功能。请联系管理这台服务器的人开启。',
   'location.mapLabel': '显示人所在位置的地图',
   'location.you': '你',
-  'location.browserHere': '地图上显示的是此浏览器的位置，误差在 {meters} 米以内。在您手机上的 TeaNode 应用记录之前，不会保存任何位置。',
+  'location.browserHere':
+    '地图上显示的是此浏览器的位置，误差在 {meters} 米以内。在您手机上的 TeaNode 应用记录之前，不会保存任何位置。',
   'location.nowhere': '还没有记录到任何位置。手机上的 TeaNode 应用会记录你去过的地方，并显示在这里。',
   'location.atSince': '{time}起在{place}',
   'location.lastSeen': '最后出现',
@@ -6584,10 +6597,12 @@ export const zh: Catalog = {
   'passwords.tabItems': '项目',
   'passwords.tabSettings': '设置',
   'passwords.introTitle': '把密码保存在这里',
-  'passwords.introBody': '保存只有你的设备才能读取的登录信息、通行密钥、银行卡和备忘。它们在你的设备上加密后才会发送到服务器。如果同时丢失口令和恢复密钥，这些内容将永久丢失。',
+  'passwords.introBody':
+    '保存只有你的设备才能读取的登录信息、通行密钥、银行卡和备忘。它们在你的设备上加密后才会发送到服务器。如果同时丢失口令和恢复密钥，这些内容将永久丢失。',
   'passwords.setUp': '开始设置',
   'passwords.passphraseTitle': '设置口令',
-  'passwords.passphraseBody': '口令用于在每台设备上打开密码功能。它与 TeaNode 登录无关，服务器永远看不到它。较长的一句话比短而古怪的字符更好。',
+  'passwords.passphraseBody':
+    '口令用于在每台设备上打开密码功能。它与 TeaNode 登录无关，服务器永远看不到它。较长的一句话比短而古怪的字符更好。',
   'passwords.passphrase': '口令',
   'passwords.passphraseRepeat': '再输入一次',
   'passwords.passphraseCurrent': '当前口令',
@@ -6602,13 +6617,15 @@ export const zh: Catalog = {
   'passwords.strengthStrong': '很强。',
   'passwords.continue': '继续',
   'passwords.recoveryKeyTitle': '保存你的恢复密钥',
-  'passwords.recoveryKeyBody': '如果忘记口令，可以用这个密钥打开密码功能。它只显示这一次。请复制或下载，并保存在这台设备以外的安全地方。',
+  'passwords.recoveryKeyBody':
+    '如果忘记口令，可以用这个密钥打开密码功能。它只显示这一次。请复制或下载，并保存在这台设备以外的安全地方。',
   'passwords.recoveryKeyLabel': '恢复密钥',
   'passwords.recoveryKey': '恢复密钥',
   'passwords.recoveryKeyCopy': '复制恢复密钥',
   'passwords.recoveryKeyDownload': '下载',
   'passwords.recoveryKeySaved': '我已保存恢复密钥',
-  'passwords.recoveryKeyFile': 'TeaNode 密码恢复密钥\n\n{recoveryKey}\n\n忘记口令时，可以用这个密钥打开你的密码。请保存在安全且私密的地方。\n',
+  'passwords.recoveryKeyFile':
+    'TeaNode 密码恢复密钥\n\n{recoveryKey}\n\n忘记口令时，可以用这个密钥打开你的密码。请保存在安全且私密的地方。\n',
   'passwords.finishSetUp': '完成设置',
   'passwords.setUpDone': '密码功能已设置完成并已打开。',
   'passwords.setUpFailed': '无法设置密码功能。',
@@ -6729,7 +6746,8 @@ export const zh: Catalog = {
   'passwords.sharedWithCircleWaitingOne': '{name}：{count} 人，{waitingCount} 人在等待',
   'passwords.sharedWithCircleWaiting': '{name}：{count} 人，{waitingCount} 人在等待',
   'passwords.shareTitle': '共享 {name}',
-  'passwords.shareIntro': '选择一个圈子或一个人。每位已设置密码功能的人都会得到该项目的密钥，它在这台设备上只为对方的密钥加密。只有你可以修改该项目。',
+  'passwords.shareIntro':
+    '选择一个圈子或一个人。每位已设置密码功能的人都会得到该项目的密钥，它在这台设备上只为对方的密钥加密。只有你可以修改该项目。',
   'passwords.shareNobody': '尚未与任何人共享。',
   'passwords.shareEveryoneIn': '{name} 中的所有人',
   'passwords.shareStop': '停止与 {name} 共享',
@@ -6777,7 +6795,8 @@ export const zh: Catalog = {
   'passwords.recoveryKeyReplaceBody': '这是你的新恢复密钥。完成之前旧密钥仍然有效。',
   'passwords.recoveryKeyReplaced': '恢复密钥已更换。',
   'passwords.importTitle': '导入',
-  'passwords.importBody': '从 Chrome、Apple 密码或 Bitwarden 导出的 CSV 文件中添加项目。名称、网站和用户名与已有项目相同的会被跳过。',
+  'passwords.importBody':
+    '从 Chrome、Apple 密码或 Bitwarden 导出的 CSV 文件中添加项目。名称、网站和用户名与已有项目相同的会被跳过。',
   'passwords.importFile': 'CSV 文件',
   'passwords.importEmpty': '该文件是空的。',
   'passwords.importUnknown': '这不是 Chrome、Apple 密码或 Bitwarden 导出的文件。',
@@ -6817,13 +6836,29 @@ export const zh: Catalog = {
   'passwords.errorItemUnreadable': '无法打开该项目。',
   'passwords.errorItemUnknown': '服务器发来了此版本无法显示的项目。',
   'passwords.errorOwnerOnly': '只有所有者可以这样做。',
+  'passwords.errorAccessNotVerified': '无法确认该项目的共享设置。请先重新设置共享。',
+  'passwords.errorRekeyLimited': '该项目刚刚换过密钥，或换密钥的次数过多。请再试一次，立即为它换密钥。',
+  'passwords.accessNotVerifiedTitle': '无法确认共享设置',
+  'passwords.accessNotVerifiedBody':
+    '该项目的共享记录缺失，或不是由你的设备写入的。在你重新设置共享之前，其他人无法打开它，助手也不能使用它。',
+  'passwords.accessReplayedTitle': '该项目的共享设置被服务器改回了旧的样子',
+  'passwords.accessReplayedBody':
+    '服务器送回了共享记录的旧副本。在你重新设置共享之前，不会共享该项目、不会为它换密钥，也不会交给助手。',
+  'passwords.accessSetAgain': '重新设置共享',
+  'passwords.deleteForever': '永久删除',
+  'passwords.purgeTitle': '永久删除 {name}？',
+  'passwords.purgeBody': '它和它的旧版本会立即被移除，无法找回。',
+  'passwords.itemPurged': '已永久删除 {name}。',
+  'passwords.purgeFailed': '无法永久删除该项目。',
   'passwords.keyChangedTitle': '{name} 的密钥已更改',
-  'passwords.keyChangedBody': '这不是你之前共享时使用的密钥。对方重新设置密码功能时会这样，但也可能是别人。确认后，你也可以与对方共享项目。',
+  'passwords.keyChangedBody':
+    '这不是你之前共享时使用的密钥。对方重新设置密码功能时会这样，但也可能是别人。确认后，你也可以与对方共享项目。',
   'passwords.keyChangedOld': '之前的安全码',
   'passwords.keyChangedNew': '现在的安全码',
   'passwords.keyChangedWarning': '对方的密钥已更改。',
   'passwords.keyFirstTitle': '确认 {name} 的安全码',
-  'passwords.keyFirstBody': '此设备还没有确认过对方的密钥。在你确认这是对方本人的密钥之前，对方不会拿到你共享的项目。确认后，你也可以与对方共享项目。',
+  'passwords.keyFirstBody':
+    '此设备还没有确认过对方的密钥。在你确认这是对方本人的密钥之前，对方不会拿到你共享的项目。确认后，你也可以与对方共享项目。',
   'passwords.keyFirstWarning': '此设备还没有确认过对方的密钥。',
   'passwords.keyFirstConfirm': '安全码一致',
   'passwords.errorPublicKeyMismatch': '服务器发来的公钥与你的私钥生成的公钥不一致，所以密码功能保持锁定。',
@@ -6845,7 +6880,8 @@ export const zh: Catalog = {
   'passwords.keyConfirmedOnThisBrowser': '你已在此浏览器上确认过此人。',
   'passwords.ownerKeyConfirmFailed': '无法确认新的密钥。',
   'passwords.ownSafetyCodeTitle': '你的安全码',
-  'passwords.ownSafetyCodeBody': '与你共享的人会把此安全码与他们屏幕上的对照。它由此设备根据你的密钥生成，而不是来自服务器的说法。',
+  'passwords.ownSafetyCodeBody':
+    '与你共享的人会把此安全码与他们屏幕上的对照。它由此设备根据你的密钥生成，而不是来自服务器的说法。',
   'passwords.rekeyWaitingOne': '{count} 人在等你确认其安全码。',
   'passwords.rekeyWaiting': '{count} 人在等你确认其安全码。',
   'passwords.itemChangedNotRead': '该项目已在另一台设备上更改，但无法重新读取。请检查网络连接后重试。',

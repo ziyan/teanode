@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 
 import { Tag } from '../../components/common'
 import { Column, DataTable } from '../../components/dataTable'
-import { RestoreIcon } from '../../components/icons'
+import { RestoreIcon, TrashIcon } from '../../components/icons'
 import { RelativeTime } from '../../components/relativeTime'
 import { Tooltip } from '../../components/tooltip'
 import { Key, useTranslation } from '../../i18n/i18n'
@@ -93,6 +93,7 @@ export function PasswordsList({
   filter,
   addressOf,
   onRestore,
+  onPurge,
 }: {
   // items are the items already filtered.
   items: PasswordItem[]
@@ -103,6 +104,8 @@ export function PasswordsList({
   // addressOf is the search part of the address that opens an item.
   addressOf: (itemId: string) => string
   onRestore: (item: PasswordItem) => void
+  // onPurge asks to delete an item in Recently deleted for good.
+  onPurge: (item: PasswordItem) => void
 }) {
   const { t, plural } = useTranslation()
 
@@ -125,16 +128,28 @@ export function PasswordsList({
       <span className="passwords-marks">
         {filter.isDeleted ? (
           item.isOwnedByMe && (
-            <Tooltip label={t('passwords.restore')}>
-              <button
-                type="button"
-                className="icon-action"
-                aria-label={`${item.fields.name}: ${t('passwords.restore')}`}
-                onClick={() => onRestore(item)}
-              >
-                <RestoreIcon size={16} />
-              </button>
-            </Tooltip>
+            <>
+              <Tooltip label={t('passwords.restore')}>
+                <button
+                  type="button"
+                  className="icon-action"
+                  aria-label={`${item.fields.name}: ${t('passwords.restore')}`}
+                  onClick={() => onRestore(item)}
+                >
+                  <RestoreIcon size={16} />
+                </button>
+              </Tooltip>
+              <Tooltip label={t('passwords.deleteForever')}>
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  aria-label={`${item.fields.name}: ${t('passwords.deleteForever')}`}
+                  onClick={() => onPurge(item)}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </Tooltip>
+            </>
           )
         ) : (
           <>

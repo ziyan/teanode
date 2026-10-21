@@ -35,7 +35,15 @@ const FORMAT_NAMES = { chrome: 'Chrome', apple: 'Apple Passwords', bitwarden: 'B
 // exportText is the person's own items, readable, as JSON. It is not
 // encrypted: the confirmation before it says so. The shape is the same as the
 // command line's export: {version, exportedAt, items: [{id, itemKind,
-// fields}]}.
+// fields}]}. The access record (who may have the item, and its signature) is
+// left out, as the command line leaves it out: it belongs to this account's
+// devices and means nothing in another place.
+function fieldsWithoutAccess(fields: PasswordItem['fields']): PasswordItem['fields'] {
+  const exported = { ...fields }
+  delete exported.access
+  return exported
+}
+
 export function exportText(items: PasswordItem[], exportedAt: Date): string {
   return JSON.stringify(
     {
@@ -43,7 +51,7 @@ export function exportText(items: PasswordItem[], exportedAt: Date): string {
       exportedAt: exportedAt.toISOString(),
       items: items
         .filter((item) => item.isOwnedByMe && item.deletedAt === null && !item.isUnreadable)
-        .map((item) => ({ id: item.id, itemKind: item.itemKind, fields: item.fields })),
+        .map((item) => ({ id: item.id, itemKind: item.itemKind, fields: fieldsWithoutAccess(item.fields) })),
     },
     null,
     2,
@@ -133,16 +141,16 @@ function LockTime({ setup, onChanged }: { setup: PasswordsSetup; onChanged: () =
 }
 
 // OwnSafetyCode is the person's own safety code, for somebody who is about to
-// confirm them. It is made from the key pair this device opened at unlock and
-// the person's own user id, never from what the server reports, so a server
-// that swapped the key it hands out cannot make this agree with it.
+// confirm them. It is made from the key pair this device opened at unlock,
+// never from what the server reports, so a server that swapped the key it
+// hands out cannot make this agree with it.
 function OwnSafetyCode() {
   const { t } = useTranslation()
-  const { userId, publicKey } = usePasswordsSession()
+  const { publicKey } = usePasswordsSession()
   return (
     <SettingsSection card title={t('passwords.ownSafetyCodeTitle')} description={t('passwords.ownSafetyCodeBody')}>
       <p>
-        <SafetyCode userId={userId} publicKey={publicKey} />
+        <SafetyCode publicKey={publicKey} />
       </p>
     </SettingsSection>
   )

@@ -261,14 +261,14 @@ function PasswordsContent({ userId }: { userId: string }) {
               {keyToConfirm.oldPublicKey !== null && (
                 <p>
                   <span className="muted">{t('passwords.keyChangedOld')} </span>
-                  <SafetyCode userId={keyToConfirm.recipientUserId} publicKey={keyToConfirm.oldPublicKey} />
+                  <SafetyCode publicKey={keyToConfirm.oldPublicKey} />
                 </p>
               )}
               <p>
                 <span className="muted">
                   {keyToConfirm.oldPublicKey === null ? t('passwords.safetyCode') : t('passwords.keyChangedNew')}{' '}
                 </span>
-                <SafetyCode userId={keyToConfirm.recipientUserId} publicKey={keyToConfirm.newPublicKey} />
+                <SafetyCode publicKey={keyToConfirm.newPublicKey} />
               </p>
               <p className="muted">
                 {t('passwords.compareWords', { name: keyToConfirm.recipientName || keyToConfirm.recipientUsername })}

@@ -203,7 +203,12 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
       title={t('passwords.shareTitle', { name: item.fields.name })}
       submitLabel={t('passwords.shareConfirm')}
       busy={isBusy}
-      canSubmit={rows.length > 0 || item.shares.length > 0 || (item.fields.access?.grantees.length ?? 0) > 0}
+      canSubmit={
+        rows.length > 0 ||
+        item.shares.length > 0 ||
+        (item.verifiedAccess?.grantees.length ?? 0) > 0 ||
+        item.accessProblem !== null
+      }
       onSubmit={() => void save()}
       onClose={onClose}
     >
@@ -257,7 +262,7 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                   ) : (
                     <span>
                       <span className="muted">{t('passwords.safetyCode')} </span>
-                      <SafetyCode userId={recipient.userId} publicKey={recipient.publicKey} />
+                      <SafetyCode publicKey={recipient.publicKey} />
                     </span>
                   )}
                   {isConfirmedBefore && <p className="muted">{t('passwords.keyConfirmedOnThisBrowser')}</p>}
@@ -269,7 +274,7 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                       {isKeyChanged && earlierKey !== null && (
                         <p>
                           <span className="muted">{t('passwords.keyChangedOld')} </span>
-                          <SafetyCode userId={recipient.userId} publicKey={earlierKey} />
+                          <SafetyCode publicKey={earlierKey} />
                         </p>
                       )}
                       <p className="muted">{t('passwords.compareWords', { name: personName })}</p>

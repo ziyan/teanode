@@ -117,6 +117,11 @@ export type PasswordShareKeyInput = {
   recipientUserId: string
   itemKeyByRecipientKey: string
   recipientPublicKey: string
+  // itemKey is the account-sealed item key text this device opened to seal the
+  // key. The server refuses a key whose itemKey is not the item's current one
+  // ("changed on another device"), so a key sealed from a key another device
+  // has replaced is never stored.
+  itemKey: string
 }
 
 export type SetPasswordItemSharesInput = {
@@ -214,6 +219,10 @@ export const SAVE_PASSWORD_ITEM = `mutation ($input: PasswordItemInput!) {
 
 export const DELETE_PASSWORD_ITEM = `mutation ($id: String!) {
   DeletePasswordItem(id: $id) { ${ITEM_FIELDS} }
+}`
+
+export const PURGE_PASSWORD_ITEM = `mutation ($id: String!) {
+  PurgePasswordItem(id: $id)
 }`
 
 export const RESTORE_PASSWORD_ITEM = `mutation ($id: String!) {

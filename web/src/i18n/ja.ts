@@ -909,7 +909,8 @@ export const ja: Catalog = {
   'serverSettings.placesProviderKindHint':
     'OpenStreetMap 財団の公開 Nominatim サーバーは、名乗ったうえで場所ごとに一度だけ尋ねる軽い利用を認めており、このサーバーはそのとおりに動きます。オフにすると場所は市区町村の名前のままになり、本人が名前を付けることはできます。OpenStreetMap の場所名：サーバーは新しい場所の位置を場所の提供元に送り、その名前を調べます。',
   'serverSettings.placesProviderUrl': '提供元のアドレス',
-  'serverSettings.placesProviderUrlHint': 'https のアドレスです。このマシンや自分のネットワーク上のサーバーなら http も使えます。',
+  'serverSettings.placesProviderUrlHint':
+    'https のアドレスです。このマシンや自分のネットワーク上のサーバーなら http も使えます。',
   'serverSettings.placesMapStyleUrl': '地図スタイルのアドレス',
   'serverSettings.placesMapStyleUrlHint':
     '地図の描画に使う MapLibre スタイルです。このサーバーがそのアドレスのホストからスタイルとタイルを取得し、ブラウザーに渡します。',
@@ -1210,8 +1211,10 @@ export const ja: Catalog = {
   'agentDrawer.note.goalChanged': '目標を変更しました：{detail}',
   'agentDrawer.note.goalCleared': '目標を解除しました：{detail}',
   'agentDrawer.note.goalMet': '目標を達成しました：{detail}',
-  'agentDrawer.note.circleInvited': '{invitedByName} さんから「{circleName}」に招待されました。アカウントメニューのサークルから返事をしてください。',
-  'agentDrawer.note.goalStalled': '目標が停滞しています：最後の発言から {detail} ターンが経過しましたが、まだ達成されていません。続けるにはメッセージを送るか、目標を解除・変更してください。',
+  'agentDrawer.note.circleInvited':
+    '{invitedByName} さんから「{circleName}」に招待されました。アカウントメニューのサークルから返事をしてください。',
+  'agentDrawer.note.goalStalled':
+    '目標が停滞しています：最後の発言から {detail} ターンが経過しましたが、まだ達成されていません。続けるにはメッセージを送るか、目標を解除・変更してください。',
   'agentDrawer.todoTitle': 'エージェントの手順',
   'agentDrawer.todoDone': '完了',
   'agentDrawer.todoOpen': '未完了',
@@ -2544,7 +2547,8 @@ export const ja: Catalog = {
   'access.permission.location:use': '行った場所を記録し、共有する',
   'access.permission.photos:use': '写真ライブラリを持ち、デバイスをそこにバックアップする',
   'access.permission.health:use': 'iPhone のヘルスケアデータを保存し、その一部を共有する',
-  'access.permission.passwords:use': 'あなたのデバイスだけが読めるパスワード、パスキー、カード、メモを保存し、その一部を共有する',
+  'access.permission.passwords:use':
+    'あなたのデバイスだけが読めるパスワード、パスキー、カード、メモを保存し、その一部を共有する',
   'access.permission.agent:audit': '全員のエージェントを見る：使える範囲、使用量、上限（内容は見ない）',
   'access.permission.agent:act': '全員のエージェントの会話と実行を読み、本人としてエージェントに話しかける',
   'access.audit.filter': '表示する変更',
@@ -3874,7 +3878,8 @@ export const ja: Catalog = {
   'goals.reopened': '再開しました。',
   'goals.useSchedule': 'スケジュールを使う',
   'goals.useScheduleTitle': 'このゴールをスケジュールで動かす',
-  'goals.useScheduleHint': 'スケジュールの実行ごとにこのゴールの1回の動きになり、ゴール自身は動きません。回答はメールではなく、ゴールの会話に表示されます。',
+  'goals.useScheduleHint':
+    'スケジュールの実行ごとにこのゴールの1回の動きになり、ゴール自身は動きません。回答はメールではなく、ゴールの会話に表示されます。',
   'goals.useScheduleLabel': 'スケジュール',
   'goals.useScheduleNone': '使えるほかのスケジュールはありません。',
   'goals.useScheduleSubmit': '使う',
@@ -4324,7 +4329,8 @@ export const ja: Catalog = {
   'finance.entryLineKindFee': '手数料',
   'finance.entryLineKindTip': 'チップ',
   'finance.entryReceiptTitle': 'レシートを追加',
-  'finance.entryReceiptHint': 'レシートに印字されたとおりに入力します。プレビューで、記録する前にどうなるかを確認できます。',
+  'finance.entryReceiptHint':
+    'レシートに印字されたとおりに入力します。プレビューで、記録する前にどうなるかを確認できます。',
   'finance.entryMerchantName': '店名',
   'finance.entryMerchantReceiptNumber': 'レシート番号',
   'finance.entryPurchasedOn': '購入日',
@@ -4392,7 +4398,8 @@ export const ja: Catalog = {
   'finance.entryPaystubDeductionCommuter': '通勤手当',
   'finance.entryPaystubDeductionInsurance': 'その他の保険',
   'finance.entryPaystubFile': '給与明細ファイル',
-  'finance.entryTaxDocumentFileHint': 'PDFまたは画像。給与明細や税務書類はこれとともに保存され、文字情報は保存されません。',
+  'finance.entryTaxDocumentFileHint':
+    'PDFまたは画像。給与明細や税務書類はこれとともに保存され、文字情報は保存されません。',
   'finance.entryFileNotStored': 'ファイルを保存できませんでした。もう一度お試しください。',
   'finance.entryRecordPaystub': '給与明細を記録',
   'finance.entryPaystubRecorded': '{employer} の {day} 支払いの給与明細を記録しました。',
@@ -4404,7 +4411,8 @@ export const ja: Catalog = {
   'finance.entryRecipientTaxIdMask': 'あなたの納税者番号の下4桁',
   'finance.entryIsCorrected': '訂正後の書類です',
   'finance.entryTaxFormEntries': 'ボックス',
-  'finance.entryTaxFormEntriesHint': '印字されたボックス番号、同じ番号のボックスを区別する項目（ボックス12の英字、州など）、金額・文字・チェックを入力します。',
+  'finance.entryTaxFormEntriesHint':
+    '印字されたボックス番号、同じ番号のボックスを区別する項目（ボックス12の英字、州など）、金額・文字・チェックを入力します。',
   'finance.entryBoxCode': 'ボックス番号',
   'finance.entryBoxQualifier': '区別項目',
   'finance.entryBoxAmount': '金額',
@@ -4414,7 +4422,8 @@ export const ja: Catalog = {
   'finance.entryRecordTaxForm': '税務書類を記録',
   'finance.entryTaxFormRecorded': '{payer} の {year} 年分 {form} を記録しました。',
   'finance.entryRowsTitle': '取引を追加',
-  'finance.entryRowsHint': '提供元が接続していない口座向けです。取引を入力し、取り込むとどうなるかをプレビューできます。',
+  'finance.entryRowsHint':
+    '提供元が接続していない口座向けです。取引を入力し、取り込むとどうなるかをプレビューできます。',
   'finance.entryNewAccount': '新しい口座',
   'finance.entryAccountName': '口座名',
   'finance.entryAccountNumber': '口座番号',
@@ -5649,17 +5658,21 @@ export const ja: Catalog = {
   'deviceSetup.manualMail': 'アプリ用パスワードを作成',
   'nav.photos': '写真',
   'services.photos': '写真とビデオを保存し、iPhone をバックアップします。',
-  'welcome.servicesPrompt': '写真、メール、カレンダー、連絡先のためにお越しですか？このサーバーで保存するものを選んでください。アシスタントは後から追加できます。',
+  'welcome.servicesPrompt':
+    '写真、メール、カレンダー、連絡先のためにお越しですか？このサーバーで保存するものを選んでください。アシスタントは後から追加できます。',
   'welcome.servicesButton': '写真などのサービスを設定',
-  'welcome.servicesRunning': '写真、メール、カレンダー、連絡先のためにお越しですか？すでに動いています。アシスタントは後から追加できます。',
+  'welcome.servicesRunning':
+    '写真、メール、カレンダー、連絡先のためにお越しですか？すでに動いています。アシスタントは後から追加できます。',
   'welcome.openService': '{service}を開く',
   'welcome.servicesWaiting': 'このサーバーのサービスはすでに選択済みです。再起動後に開始します。',
   'welcome.servicesContinue': 'サービスの設定を続ける',
   'services.addAssistant': 'パーソナルアシスタントを追加',
-  'services.addAssistantNote': 'このサーバーでアシスタントを使うには、モデルプロバイダーを接続してアシスタントを有効にします。',
+  'services.addAssistantNote':
+    'このサーバーでアシスタントを使うには、モデルプロバイダーを接続してアシスタントを有効にします。',
   'services.optional': '任意',
   'services.openPhotos': '写真を開く',
-  'services.openPhotosReady': '写真が動いています。写真をアップロードするか、TeaNode アプリで iPhone をバックアップしてください。',
+  'services.openPhotosReady':
+    '写真が動いています。写真をアップロードするか、TeaNode アプリで iPhone をバックアップしてください。',
   'services.openPhotosWaiting': 'サーバーを再起動すると写真を開けます。',
   'services.restartStarting': '{services}は再起動後に使えるようになります。',
   'services.savedRestartBelow': '{note}下の手順でサーバーを再起動してください。',
@@ -5673,8 +5686,10 @@ export const ja: Catalog = {
   'photoBackup.needsHttps':
     'iPhone アプリにはこのサーバーの https アドレスが必要ですが、{address} はスマートフォンから使えません。先にサーバーを https にして、そのアドレスでサインインしてください。{guide}',
   'photoBackup.httpsGuide': 'サーバーを https にする方法',
-  'photoBackup.connectHint': 'いちばん手軽なのは、iPhone のカメラでコードを読み取る方法です。アプリが開き（未インストールなら App Store が開きます）、あなたとしてサインインします。',
-  'deviceSetup.noServicesPhotos': 'このサーバーではメール、カレンダー、リマインダー、連絡先は設定されていません。写真は上の TeaNode アプリでバックアップします。',
+  'photoBackup.connectHint':
+    'いちばん手軽なのは、iPhone のカメラでコードを読み取る方法です。アプリが開き（未インストールなら App Store が開きます）、あなたとしてサインインします。',
+  'deviceSetup.noServicesPhotos':
+    'このサーバーではメール、カレンダー、リマインダー、連絡先は設定されていません。写真は上の TeaNode アプリでバックアップします。',
   'photos.search': '写真を検索',
   'photos.show': '表示',
   'photos.neighbors': '前後の写真',
@@ -5691,12 +5706,14 @@ export const ja: Catalog = {
   'photos.upload': 'アップロード',
   'photos.dropToUpload': '写真やビデオをここにドロップしてアップロード',
   'photos.uploadIgnored': '写真でもビデオでもないファイルは除外されました。',
-  'photos.emptyLibrary': '写真はまだありません。アップロードするか、iPhone アプリで写真のバックアップをオンにしてください。',
+  'photos.emptyLibrary':
+    '写真はまだありません。アップロードするか、iPhone アプリで写真のバックアップをオンにしてください。',
   'photos.emptyLibraryWays': '写真はまだありません。追加する方法は 3 つあります。',
   'photos.wayComputerTitle': 'このコンピュータからアップロード',
   'photos.wayComputer': '写真やビデオを選ぶか、このページのどこかにドロップします。',
   'photos.wayCommandLineTitle': 'コマンドラインからアップロード',
-  'photos.wayCommandLine': '一度サインインしてから、フォルダをアップロードします。すでにライブラリにある写真はスキップされます。{guide}',
+  'photos.wayCommandLine':
+    '一度サインインしてから、フォルダをアップロードします。すでにライブラリにある写真はスキップされます。{guide}',
   'photos.wayCommandLineGuide': 'コマンドラインの説明',
   'photos.copySignInCommand': 'サインインのコマンドをコピー',
   'photos.copyUploadCommand': 'アップロードのコマンドをコピー',
@@ -5875,7 +5892,8 @@ export const ja: Catalog = {
   'photos.facesTurnedOn': '写真から人物を見つけています。写真が読み込まれると人物が表示されます。',
   'photos.facesTurnedOff': '人物の検出を停止し、見つけた内容を削除しました。',
   'photos.facesOffTitle': '人物の検出を停止しますか？',
-  'photos.facesOffBody': '写真から見つけたすべての人物と、付けた名前を削除します。写真と連絡先は残ります。再びオンにすると人物は見つけ直されますが、名前は戻りません。',
+  'photos.facesOffBody':
+    '写真から見つけたすべての人物と、付けた名前を削除します。写真と連絡先は残ります。再びオンにすると人物は見つけ直されますが、名前は戻りません。',
   'photos.facesOffConfirm': 'オフにして削除',
   'photos.stateInTrash': 'ゴミ箱にあります',
   'photos.uploadInTrashOne': 'その写真はゴミ箱にあります。',
@@ -5928,11 +5946,13 @@ export const ja: Catalog = {
   'photos.addPhotosCountOther': '写真 {count} 件を追加',
   'photos.share': '共有',
   'photos.shareTitle': '「{title}」を共有',
-  'photos.shareIntro': '同じサークルにいる人か、サークル全体と共有します。含めるように選ばない限り、撮影場所のない写真が表示されます。',
+  'photos.shareIntro':
+    '同じサークルにいる人か、サークル全体と共有します。含めるように選ばない限り、撮影場所のない写真が表示されます。',
   'photos.shareNobody': 'このアルバムはまだ誰とも共有されていません。',
   'photos.shareCurrent': '共有先',
   'photos.shareWith': '共有する相手',
-  'photos.shareNoPeople': '同じサークルにいる人がまだいません。サークルを作って人を招待すると、アルバムを共有できます。',
+  'photos.shareNoPeople':
+    '同じサークルにいる人がまだいません。サークルを作って人を招待すると、アルバムを共有できます。',
   'photos.shareEveryoneIn': '{name}の全員',
   'photos.shareLevelLabel': '相手にできること',
   'photos.levelView': '閲覧',
@@ -5940,8 +5960,10 @@ export const ja: Catalog = {
   'photos.levelContribute': '追加も可能',
   'photos.levelContributeHint': '自分の写真を追加し、追加した写真を外すこともできます。',
   'photos.shareIncludePlaces': '撮影場所を含める',
-  'photos.shareIncludePlacesHint': '含めない場合、場所のない写真が表示され、元のファイルではなく大きな画像が渡されます。',
-  'photos.sharePeopleNamesHint': '写真に写っている人物は、場所を含めても含めなくても、あなたが付けた名前で表示されます。',
+  'photos.shareIncludePlacesHint':
+    '含めない場合、場所のない写真が表示され、元のファイルではなく大きな画像が渡されます。',
+  'photos.sharePeopleNamesHint':
+    '写真に写っている人物は、場所を含めても含めなくても、あなたが付けた名前で表示されます。',
   'photos.sharePlacesIncluded': '場所を含む',
   'photos.shareAdd': '共有する',
   'photos.shareSaid': '{name}と共有しました。',
@@ -6019,8 +6041,10 @@ export const ja: Catalog = {
   'photos.describeVideo': 'このビデオの説明を作成',
   'photos.askNamedVideo': 'このビデオについて{name}に聞く',
   'photos.askAssistantVideo': 'このビデオについてアシスタントに聞く',
-  'photos.describeHintVideo': 'アシスタントがビデオのポスター画像を見て内容を書き出すので、検索で見つけられるようになります。',
-  'photos.describeHintNamedVideo': '{name}がビデオのポスター画像を見て内容を書き出すので、検索で見つけられるようになります。',
+  'photos.describeHintVideo':
+    'アシスタントがビデオのポスター画像を見て内容を書き出すので、検索で見つけられるようになります。',
+  'photos.describeHintNamedVideo':
+    '{name}がビデオのポスター画像を見て内容を書き出すので、検索で見つけられるようになります。',
   'serverSettings.photosNoLimit': '上限なし',
   'serverSettings.photosFacesReason': '現在の状態: {reason}',
   'photos.askNamed': 'この写真について{name}に聞く',
@@ -6028,22 +6052,26 @@ export const ja: Catalog = {
   'services.photosOnlyPassword':
     'この名前のデバイスが写真をバックアップして読み取れるようにします。それ以外はできません。',
   'serverSettings.photosFaces': '写真から人物を見つける',
-  'serverSettings.photosFacesHint': '写真に写っている人を見つけてグループにします。オフにすると、このサーバーの全員について人物を見つけなくなります。',
+  'serverSettings.photosFacesHint':
+    '写真に写っている人を見つけてグループにします。オフにすると、このサーバーの全員について人物を見つけなくなります。',
   'serverSettings.photosTitle': '写真',
   'serverSettings.photosIntro': '各ユーザーの写真ライブラリの上限です。変更は次のアップロードから有効になります。',
   'serverSettings.photosMaxFileBytes': '最大ファイルサイズ',
   'serverSettings.photosMaxFileBytesHint': 'アップロードできる写真またはビデオ 1 件の最大サイズです（例：8GB）。',
   'serverSettings.photosMaxAccountBytes': 'ユーザーごとの容量',
-  'serverSettings.photosMaxAccountBytesHint': '1 人のライブラリが使える最大容量です（ゴミ箱を含む）。空欄にすると、ディスク容量以外の制限はありません。',
+  'serverSettings.photosMaxAccountBytesHint':
+    '1 人のライブラリが使える最大容量です（ゴミ箱を含む）。空欄にすると、ディスク容量以外の制限はありません。',
   'serverSettings.photosTrashRetention': 'ゴミ箱に残る期間',
   'serverSettings.photosTrashRetentionHint': '削除した写真が完全に削除されるまで復元できる期間です（例：30d）。',
-  'deviceSetup.noServices': 'デバイス設定で利用できるサービスがありません。管理者がメール、カレンダー、リマインダー、連絡先を有効にしてアクセスを許可できます。',
+  'deviceSetup.noServices':
+    'デバイス設定で利用できるサービスがありません。管理者がメール、カレンダー、リマインダー、連絡先を有効にしてアクセスを許可できます。',
   'circles.title': 'サークル',
   'circles.off': 'このアカウントではサークルを使えません。このサーバーを運用している人に頼んでください。',
   'circles.open': 'サークルを開く',
   'circles.mine': 'あなたのサークル',
   'circles.intro': 'このサーバーを共有する人たちを、家族、友人、同僚に分けて表示します。',
-  'circles.empty': 'まだどのサークルにも入っていません。サークルを作成して、入れたい人を招待してください。誰も表示されない場合は、このサーバーを運用している人にアカウントの作成を頼んでください。',
+  'circles.empty':
+    'まだどのサークルにも入っていません。サークルを作成して、入れたい人を招待してください。誰も表示されない場合は、このサーバーを運用している人にアカウントの作成を頼んでください。',
   'circles.emptyOperator':
     'まだどのサークルにも入っていません。サークルを作成して、このサーバーを使う人を、アカウントの有無にかかわらず追加してください。',
   'circles.new': 'サークルを作成',
@@ -6084,7 +6112,8 @@ export const ja: Catalog = {
   'circles.shareSuggestion.locationLabel': '今いる場所を共有する',
   'circles.shareSuggestion.locationNone': '今はしない',
   'circles.shareSuggestion.locationTitle': '{name}と今いる場所を共有しますか？',
-  'circles.shareSuggestion.locationBody': '{name}の全員が位置情報のページで見られます。共有はいつでも「共有」から変更できます。',
+  'circles.shareSuggestion.locationBody':
+    '{name}の全員が位置情報のページで見られます。共有はいつでも「共有」から変更できます。',
   'circles.shareSuggestion.bothSaved': '{name}にカレンダーと今いる場所を共有しました',
   'circles.admin': '管理者',
   'circles.you': 'あなた',
@@ -6098,8 +6127,10 @@ export const ja: Catalog = {
   'circles.removeBody': '{name}は{circle}から外れます。あとでもう一度招待できます。',
   'circles.removed': '{name}を外しました。',
   'circles.invite.title': '招待する',
-  'circles.invite.intro': 'このサーバーにあるアカウントのユーザー名を入力してください。誰も表示されない場合は、このサーバーを運用している人にアカウントの作成を頼んでください。',
-  'circles.invite.introOperator': 'このサーバーのアカウントをユーザー名で招待するか、アカウントのない人のためにアカウントを作成します。',
+  'circles.invite.intro':
+    'このサーバーにあるアカウントのユーザー名を入力してください。誰も表示されない場合は、このサーバーを運用している人にアカウントの作成を頼んでください。',
+  'circles.invite.introOperator':
+    'このサーバーのアカウントをユーザー名で招待するか、アカウントのない人のためにアカウントを作成します。',
   'circles.account.title': '誰かのためにアカウントを作成',
   'circles.account.intro':
     'その人はこのユーザー名とパスワードでサインインし、パスワードは自分の設定で変更できます。招待は不要です。',
@@ -6125,7 +6156,8 @@ export const ja: Catalog = {
   'circles.deleted': 'サークルを削除しました。',
   'circles.leave': '退出',
   'circles.leaveTitle': '{name}から退出しますか？',
-  'circles.leaveBody': '{name}から外れ、共有されていたものは届かなくなります。管理者がもう一度招待できます。最後のメンバーが抜けるとサークルは削除されます。',
+  'circles.leaveBody':
+    '{name}から外れ、共有されていたものは届かなくなります。管理者がもう一度招待できます。最後のメンバーが抜けるとサークルは削除されます。',
   'circles.leaveBodyOnlyAdmin':
     '{name}から外れ、共有されていたものは届かなくなります。管理者がもう一度招待できます。最後のメンバーが抜けるとサークルは削除されます。唯一の管理者の場合は、先に別の人を管理者にしてください。',
   'circles.left': '{name}から退出しました。',
@@ -6196,7 +6228,8 @@ export const ja: Catalog = {
   'agentDrawer.note.chatAgentOwnerOnly': 'このチャットでそのエージェントに頼めるのは持ち主だけです。',
   'agentDrawer.note.chatAgentOwnerOnlyNamed': 'このチャットで{detail}に頼めるのは持ち主だけです。',
   'agentDrawer.note.chatAgentOwnerOnlyOwned': 'このチャットで{owner}のエージェントに頼めるのは{owner}だけです。',
-  'agentDrawer.note.chatAgentOwnerOnlyOwnedNamed': 'このチャットで{owner}のエージェントの{agent}に頼めるのは{owner}だけです。',
+  'agentDrawer.note.chatAgentOwnerOnlyOwnedNamed':
+    'このチャットで{owner}のエージェントの{agent}に頼めるのは{owner}だけです。',
   'agentDrawer.note.chatAgentOff': 'そのエージェントはオフになっています。',
   'agentDrawer.note.chatAgentOffNamed': '{detail}はオフになっています。',
   'agentDrawer.note.chatAgentAbsent': 'そのエージェントはこのチャットにいません。',
@@ -6211,15 +6244,18 @@ export const ja: Catalog = {
   'skillShare.title': 'スキルを共有',
   'skillShare.intro':
     '同じサークルの人に、あなたのスキルを実行させることができます。実行はあなたのコンピューターで、あなたとして行われます。設定した上限を超えるものや、金額が読み取れないものは、あなたの承認を待ちます。',
-  'skillShare.noPeople': 'まだ誰ともサークルを共有していません。スキルを共有するには、サークルを作るか参加してください。',
+  'skillShare.noPeople':
+    'まだ誰ともサークルを共有していません。スキルを共有するには、サークルを作るか参加してください。',
   'skillShare.share': '共有',
   'skillShare.shareTitle': '{skill}を共有',
-  'skillShare.shareIntro': '選んだツールが相手のエージェントに提供されます。ツールの実行にはあなたのコンピューターが接続されている必要があり、共有はいつでもやめられます。',
+  'skillShare.shareIntro':
+    '選んだツールが相手のエージェントに提供されます。ツールの実行にはあなたのコンピューターが接続されている必要があり、共有はいつでもやめられます。',
   'skillShare.with': '共有する相手',
   'skillShare.choose': '相手を選ぶ',
   'skillShare.tools': '共有するツール',
   'skillShare.toolPays': 'お金を使います。上限内の呼び出しはそのまま実行され、それを超えるものは承認を待ちます。',
-  'skillShare.toolScoped': 'それ自体に費用はかかりません。この共有の以前の呼び出しが作ったものにだけ使えます（確認や取り消しなど）。',
+  'skillShare.toolScoped':
+    'それ自体に費用はかかりません。この共有の以前の呼び出しが作ったものにだけ使えます（確認や取り消しなど）。',
   'skillShare.toolAlwaysAsks': 'このツールは費用を示さないため、毎回確認します',
   'skillShare.askEveryTime': '毎回確認する',
   'skillShare.askEveryTimeHint': '金額にかかわらず、すべて承認を待ちます',
@@ -6231,14 +6267,16 @@ export const ja: Catalog = {
   'skillShare.currencyBad': 'usd のように3文字のコードで入力してください。',
   'skillShare.amountUnreadable': '金額は{currency}で入力してください。例: {example}',
   'skillShare.amountUnreadableCurrency': '下の通貨',
-  'skillShare.limitsHint': '上限を超える場合や金額が読み取れない場合、呼び出しはあなたの承認を待ちます。失敗した呼び出しも、お金が動いた可能性があるため、その月の合計に数えます。',
+  'skillShare.limitsHint':
+    '上限を超える場合や金額が読み取れない場合、呼び出しはあなたの承認を待ちます。失敗した呼び出しも、お金が動いた可能性があるため、その月の合計に数えます。',
   'skillShare.needsBound': '支払うツールは、上限を付けるか「毎回確認する」にして共有します。',
   'skillShare.shared': '{skill}を{name}さんと共有しました。',
   'skillShare.failed': 'スキルを共有できませんでした。接続を確認して、もう一度お試しください。',
   'skillShare.byYou': 'あなたが共有',
   'skillShare.byYouHint': '各共有の下に、求められたことが表示されます。承認待ちが先頭です。',
   'skillShare.withYou': 'あなたと共有',
-  'skillShare.withYouHint': '他の人があなたのエージェントに貸しているスキルです。実行は相手のコンピューターで、相手が決めた上限が適用されます。',
+  'skillShare.withYouHint':
+    '他の人があなたのエージェントに貸しているスキルです。実行は相手のコンピューターで、相手が決めた上限が適用されます。',
   'skillShare.rowTitle': '{skill}（{name}さんへ）',
   'skillShare.rowTitleFrom': '{skill}（{name}さんから）',
   'skillShare.waiting': '承認待ち{count}件',
@@ -6255,7 +6293,8 @@ export const ja: Catalog = {
   'skillShare.stopFailed': '共有を停止できませんでした。接続を確認して、もう一度お試しください。',
   'skillShare.loadFailed': '共有スキルを読み込めませんでした。接続を確認して、もう一度お試しください。',
   'skillShare.limitsAskEveryTime': '毎回確認',
-  'skillShare.limitsNone': '上限なし：この共有の以前の呼び出しが作ったものにだけ使える呼び出しを除き、すべての呼び出しは承認を待ちます',
+  'skillShare.limitsNone':
+    '上限なし：この共有の以前の呼び出しが作ったものにだけ使える呼び出しを除き、すべての呼び出しは承認を待ちます',
   'skillShare.limitsPayment': '1回あたり{amount}まで',
   'skillShare.limitsMonthly': '月{amount}まで',
   'skillShare.monthSoFar': '今月ここまで{amount}',
@@ -6293,18 +6332,22 @@ export const ja: Catalog = {
   'skillShare.callLoadFailed': 'この呼び出しを読み込めませんでした。読み込みを続けます。',
   'skillShare.callGone': 'この呼び出しはもうありません。共有が取り消されたか、サークルを共有しなくなりました。',
   'location.title': '位置情報',
-  'location.off': 'このアカウントでは位置情報が有効になっていません。このサーバーの管理者に有効にしてもらってください。',
+  'location.off':
+    'このアカウントでは位置情報が有効になっていません。このサーバーの管理者に有効にしてもらってください。',
   'location.mapLabel': '人の居場所を示す地図',
   'location.you': 'あなた',
-  'location.browserHere': '地図にはこのブラウザの位置を表示しています（誤差 {meters} m 以内）。スマートフォンの TeaNode アプリが記録するまで、位置は保存されません。',
-  'location.nowhere': 'まだ位置が記録されていません。スマートフォンの TeaNode アプリがあなたの行き先を記録し、ここに表示します。',
+  'location.browserHere':
+    '地図にはこのブラウザの位置を表示しています（誤差 {meters} m 以内）。スマートフォンの TeaNode アプリが記録するまで、位置は保存されません。',
+  'location.nowhere':
+    'まだ位置が記録されていません。スマートフォンの TeaNode アプリがあなたの行き先を記録し、ここに表示します。',
   'location.atSince': '{time}から{place}',
   'location.lastSeen': '最後に確認',
   'location.checkIn': 'チェックイン',
   'location.checkInTitle': 'チェックイン',
   'location.checkInFinding': '現在地を確認しています…',
   'location.checkInNothing': '近くに名前のある場所がありません。',
-  'location.checkInNoPosition': 'ブラウザーが現在地を知らせませんでした。このサイトに位置情報を許可してから、もう一度お試しください。',
+  'location.checkInNoPosition':
+    'ブラウザーが現在地を知らせませんでした。このサイトに位置情報を許可してから、もう一度お試しください。',
   'location.checkedIn': '{place}にチェックインしました',
   'location.checkInFailed': 'チェックインできませんでした。',
   'location.metersAway': '{distance} m 先',
@@ -6415,7 +6458,8 @@ export const ja: Catalog = {
   'location.addressSearchFailed': '住所を検索できませんでした',
   'location.setupHomeTypeButton': '住所を入力',
   'location.setupHomeTypeTitle': '自宅の住所を入力',
-  'location.placeNamesNote': '場所の名前は OpenStreetMap から取得します。サーバーは新しい場所の位置を場所の提供元に送り、その名前を調べます。',
+  'location.placeNamesNote':
+    '場所の名前は OpenStreetMap から取得します。サーバーは新しい場所の位置を場所の提供元に送り、その名前を調べます。',
   'location.eraseDay': 'この日を消去…',
   'location.eraseDayTitle': 'この日を消去しますか？',
   'location.eraseDayBody':
@@ -6434,12 +6478,15 @@ export const ja: Catalog = {
   'location.nowhereOther': 'まだ位置がありません。',
   'location.personNotSharing': 'その人はあなたに位置情報を共有していません。',
   'location.personNotRead': 'あなたと共有している人を読み込めなかったため、この一覧を表示できません。',
-  'location.browserCoarse': 'ブラウザーはあなたを {accuracyMeters} m 以内までしか特定できません。パソコンには GPS がありません。iPhone なら正確です。',
-  'location.setupHomeNotFound': '地図に見つかりません。iPhone で「今いる場所を使う」を選ぶか、自宅を作ってピンを動かしてください。',
+  'location.browserCoarse':
+    'ブラウザーはあなたを {accuracyMeters} m 以内までしか特定できません。パソコンには GPS がありません。iPhone なら正確です。',
+  'location.setupHomeNotFound':
+    '地図に見つかりません。iPhone で「今いる場所を使う」を選ぶか、自宅を作ってピンを動かしてください。',
   'location.keepAddressTyped': '入力した住所のまま保存',
   'location.keepAddressTypedNote': '「{address}」を住所として保存します。場所は動かしません。',
   'location.addressKept': '住所「{address}」を保存しました',
-  'location.placeMapHint': 'ピンをドラッグするか地図をクリックして、場所を正確な位置に置きます。保存すると反映されます。',
+  'location.placeMapHint':
+    'ピンをドラッグするか地図をクリックして、場所を正確な位置に置きます。保存すると反映されます。',
   'location.saveBeforeAddress': '住所を変更する前に、変更を保存してください。住所の変更でこのウィンドウが閉じます。',
   'relationship.spouse.neutral': '配偶者',
   'relationship.spouse.masculine': '夫',
@@ -6807,7 +6854,8 @@ export const ja: Catalog = {
   'recordingProcessing.changeContact': '連絡先を変更',
   'recordingProcessing.untieContact': '連絡先との関連付けを解除',
   'recordingProcessing.speakerContactTitle': '{name}はどの連絡先ですか？',
-  'recordingProcessing.speakerContactHint': 'あなただけに表示されます。この話者が含まれる録音は、その連絡先のカードに表示されます。',
+  'recordingProcessing.speakerContactHint':
+    'あなただけに表示されます。この話者が含まれる録音は、その連絡先のカードに表示されます。',
   'recordingProcessing.nameTiesContact': 'この話者を連絡先「{name}」にも関連付けます。',
   'passwords.title': 'パスワード',
   'passwords.off': 'このアカウントではパスワードを使えません。TeaNode サーバーの管理者が有効にできます。',
@@ -6824,7 +6872,8 @@ export const ja: Catalog = {
   'passwords.passphraseRepeat': 'もう一度入力',
   'passwords.passphraseCurrent': '現在のパスフレーズ',
   'passwords.passphraseNew': '新しいパスフレーズ',
-  'passwords.passphraseLoss': 'パスフレーズとリカバリーキーの両方を失うと、パスワードは復元できません。消去してやり直すしかありません。',
+  'passwords.passphraseLoss':
+    'パスフレーズとリカバリーキーの両方を失うと、パスワードは復元できません。消去してやり直すしかありません。',
   'passwords.passphraseTooShort': '{count} 文字以上にしてください。',
   'passwords.passphrasesDiffer': '2 つのパスフレーズが一致しません。',
   'passwords.strengthEmpty': '12 文字以上にしてください。長いほど安全です。',
@@ -6891,7 +6940,8 @@ export const ja: Catalog = {
   'passwords.restoreFailed': '項目を復元できませんでした。',
   'passwords.itemRestored': '{name} を復元しました。',
   'passwords.unreadableItem': '開けなかった項目',
-  'passwords.unreadableBody': 'この項目はこのデバイスで開けませんでした。新しいバージョンで保存されたか、壊れている可能性があります。',
+  'passwords.unreadableBody':
+    'この項目はこのデバイスで開けませんでした。新しいバージョンで保存されたか、壊れている可能性があります。',
   'passwords.tagShared': '共有中',
   'passwords.tagSharedBy': '{name} が共有',
   'passwords.tagAgent': 'エージェント',
@@ -6921,7 +6971,8 @@ export const ja: Catalog = {
   'passwords.hideField': '{field}を隠す',
   'passwords.oneTimeCodeSeconds': '{seconds} 秒後に変わります',
   'passwords.oneTimeCodeUnreadable': 'このワンタイムコードを読み取れませんでした。',
-  'passwords.oneTimeCodeInvalid': 'ワンタイムコードではありません。サイトに表示された otpauth アドレスまたはシークレットキーを貼り付けてください。',
+  'passwords.oneTimeCodeInvalid':
+    'ワンタイムコードではありません。サイトに表示された otpauth アドレスまたはシークレットキーを貼り付けてください。',
   'passwords.passkeyCreated': '{date} に作成',
   'passwords.showPassword': 'パスワードを表示',
   'passwords.hidePassword': 'パスワードを隠す',
@@ -6936,12 +6987,14 @@ export const ja: Catalog = {
   'passwords.generatorLookAlikes': '紛らわしい文字を除く',
   'passwords.itemSaved': '{name} を保存しました。',
   'passwords.saveFailed': '項目を保存できませんでした。',
-  'passwords.itemChangedElsewhere': 'この項目は別のデバイスで変更されました。ここでの編集は残してあります。確認してから、もう一度保存してください。',
+  'passwords.itemChangedElsewhere':
+    'この項目は別のデバイスで変更されました。ここでの編集は残してあります。確認してから、もう一度保存してください。',
   'passwords.itemNotFound': 'その項目はもうありません。',
   'passwords.itemDeleted': '{name} を削除しました。30 日間は「最近削除した項目」に残ります。',
   'passwords.deleteFailed': '項目を削除できませんでした。',
   'passwords.deleteTitle': '{name} を削除しますか？',
-  'passwords.deleteBody': '30 日間は「最近削除した項目」に移ります。共有している相手はすぐに使えなくなり、エージェントも使えなくなります。',
+  'passwords.deleteBody':
+    '30 日間は「最近削除した項目」に移ります。共有している相手はすぐに使えなくなり、エージェントも使えなくなります。',
   'passwords.agentTitle': 'エージェント',
   'passwords.agentSwitch': 'エージェントにこの項目の使用を許可する',
   'passwords.agentLoginBody': 'エージェントはこのログインでサイトにサインインしますが、パスワードは見えません。',
@@ -7007,7 +7060,8 @@ export const ja: Catalog = {
   'passwords.changePassphraseConfirm': 'パスフレーズを変更',
   'passwords.passphraseChanged': 'パスフレーズを変更しました。',
   'passwords.replaceRecoveryKey': 'リカバリーキーを作り直す',
-  'passwords.replaceRecoveryKeyBody': 'パスフレーズを入力して新しいリカバリーキーを作ります。完了すると、古いリカバリーキーではパスワードを開けなくなります。',
+  'passwords.replaceRecoveryKeyBody':
+    'パスフレーズを入力して新しいリカバリーキーを作ります。完了すると、古いリカバリーキーではパスワードを開けなくなります。',
   'passwords.replaceRecoveryKeyConfirm': 'リカバリーキーを作り直す',
   'passwords.recoveryKeyReplaceBody': 'これが新しいリカバリーキーです。完了するまで古いキーも使えます。',
   'passwords.recoveryKeyReplaced': 'リカバリーキーを作り直しました。',
@@ -7021,7 +7075,8 @@ export const ja: Catalog = {
   'passwords.importNothingNew': 'インポートする新しい項目がありません。',
   'passwords.importConfirmTitleOne': '{format} から {count} 件をインポートしますか？',
   'passwords.importConfirmTitle': '{format} から {count} 件をインポートしますか？',
-  'passwords.importConfirmBody': 'ファイルはデバイスに残ります。パスワードが平文で入っているので、終わったら削除してください。',
+  'passwords.importConfirmBody':
+    'ファイルはデバイスに残ります。パスワードが平文で入っているので、終わったら削除してください。',
   'passwords.importDuplicatesOne': '{count} 件はすでにあるためスキップされます。',
   'passwords.importDuplicates': '{count} 件はすでにあるためスキップされます。',
   'passwords.importSkippedOne': '{count} 件は別の種類（カードや個人情報）のため除外されます。',
@@ -7035,7 +7090,8 @@ export const ja: Catalog = {
   'passwords.exportBody': '項目を読める JSON ファイルとしてダウンロードします。',
   'passwords.exportAction': '項目をエクスポート',
   'passwords.exportConfirmTitle': '項目をエクスポートしますか？',
-  'passwords.exportConfirmBody': 'このファイルは暗号化されていません。入手した人は中のすべてのパスワードを読めます。安全な場所に保管し、使い終わったら削除してください。',
+  'passwords.exportConfirmBody':
+    'このファイルは暗号化されていません。入手した人は中のすべてのパスワードを読めます。安全な場所に保管し、使い終わったら削除してください。',
   'passwords.exportConfirm': 'ダウンロード',
   'passwords.eraseTitle': 'パスワードを消去',
   'passwords.eraseBody': 'このサーバーからすべての項目、共有、キーを削除します。',
@@ -7046,13 +7102,29 @@ export const ja: Catalog = {
   'passwords.eraseConfirm': 'すべて消去',
   'passwords.erased': 'パスワードを消去しました。',
   'passwords.eraseFailed': 'パスワードを消去できませんでした。',
-  'passwords.needsSecureContext': 'パスワードには安全な接続が必要です。https:// で始まるアドレスでこのダッシュボードを開いてください。',
+  'passwords.needsSecureContext':
+    'パスワードには安全な接続が必要です。https:// で始まるアドレスでこのダッシュボードを開いてください。',
   'passwords.errorLocked': 'パスワードはロックされています。ロックを解除してからもう一度お試しください。',
   'passwords.errorNotSetUp': 'パスワードはまだ設定されていません。',
   'passwords.errorIterationCount': 'サーバーから安全でないパスフレーズ設定が送られたため、使用しません。',
   'passwords.errorItemUnreadable': 'この項目を開けませんでした。',
   'passwords.errorItemUnknown': 'このバージョンでは表示できない項目がサーバーから送られました。',
   'passwords.errorOwnerOnly': 'この操作は所有者だけができます。',
+  'passwords.errorAccessNotVerified': 'この項目の共有設定を確認できませんでした。先に共有を設定し直してください。',
+  'passwords.errorRekeyLimited':
+    'この項目は少し前に新しい鍵に替えたか、替えた回数が多すぎます。もう一度試すと、今すぐ新しい鍵に替えます。',
+  'passwords.accessNotVerifiedTitle': '共有設定を確認できませんでした',
+  'passwords.accessNotVerifiedBody':
+    'この項目の共有記録がないか、お使いの端末が書いたものではありません。共有を設定し直すまで、ほかの人は開けず、エージェントも使えません。',
+  'passwords.accessReplayedTitle': 'この項目の共有設定がサーバーによって元に戻されました',
+  'passwords.accessReplayedBody':
+    '共有記録の古いコピーが戻ってきました。共有を設定し直すまで、この項目の共有、鍵の交換、エージェントへの提供は行われません。',
+  'passwords.accessSetAgain': '共有を設定し直す',
+  'passwords.deleteForever': '完全に削除',
+  'passwords.purgeTitle': '{name} を完全に削除しますか？',
+  'passwords.purgeBody': '項目と以前のバージョンがすぐに消え、元に戻せません。',
+  'passwords.itemPurged': '{name} を完全に削除しました。',
+  'passwords.purgeFailed': '項目を完全に削除できませんでした。',
   'passwords.keyChangedTitle': '{name} さんの鍵が変わりました',
   'passwords.keyChangedBody':
     '以前に共有した鍵ではありません。相手がパスワードを設定し直すと変わりますが、別の人である可能性もあります。確認すると、その人と共有もできるようになります。',
@@ -7060,7 +7132,8 @@ export const ja: Catalog = {
   'passwords.keyChangedNew': '現在の安全コード',
   'passwords.keyChangedWarning': '相手の鍵が変わりました。',
   'passwords.keyFirstTitle': '{name} さんの安全コードを確認',
-  'passwords.keyFirstBody': 'この端末は相手の鍵をまだ確認していません。相手本人の鍵だと確認できるまで、共有した項目は渡されません。確認すると、その人と共有もできるようになります。',
+  'passwords.keyFirstBody':
+    'この端末は相手の鍵をまだ確認していません。相手本人の鍵だと確認できるまで、共有した項目は渡されません。確認すると、その人と共有もできるようになります。',
   'passwords.keyFirstWarning': 'この端末は相手の鍵をまだ確認していません。',
   'passwords.keyFirstConfirm': '安全コードが一致する',
   'passwords.errorPublicKeyMismatch':
@@ -7068,7 +7141,8 @@ export const ja: Catalog = {
   'passwords.ownerKeyChangedTitle': '所有者の鍵が変わりました',
   'passwords.ownerKeyChangedBody':
     '{name} さんがこの項目を共有しましたが、以前に見た鍵とは異なります。相手がパスワードを設定し直したときにも起こりますが、別の人である可能性もあります。新しい鍵を確認するまで、この項目は開かれません。確認すると、その人と共有もできるようになります。',
-  'passwords.shareSavedUnconfirmedOne': '共有を保存しました。{count} 人は、安全コードを確認するまで対象から外れています。',
+  'passwords.shareSavedUnconfirmedOne':
+    '共有を保存しました。{count} 人は、安全コードを確認するまで対象から外れています。',
   'passwords.shareSavedUnconfirmed': '共有を保存しました。{count} 人は、安全コードを確認するまで対象から外れています。',
   'passwords.itemCountOne': '1件の項目',
   'passwords.itemCount': '{count}件の項目',
@@ -7076,20 +7150,25 @@ export const ja: Catalog = {
   'passwords.exportFailed': '項目をエクスポートできませんでした。',
   'passwords.importProgress': '{total} 件中 {done} 件をインポート中',
   'passwords.safetyCodeUnreadable': '読み取れません',
-  'passwords.compareWords': '{name} さんに、ご自身の端末でパスワードの設定を開いて安全コードを読み上げてもらってください。一致する場合のみ確認してください。',
-  'passwords.confirmIsPerBrowser': '確認はこのブラウザにだけ保存されます。ほかの端末や iPhone アプリでは、もう一度確認が必要です。',
+  'passwords.compareWords':
+    '{name} さんに、ご自身の端末でパスワードの設定を開いて安全コードを読み上げてもらってください。一致する場合のみ確認してください。',
+  'passwords.confirmIsPerBrowser':
+    '確認はこのブラウザにだけ保存されます。ほかの端末や iPhone アプリでは、もう一度確認が必要です。',
   'passwords.keyChangedConfirm': '新しい安全コードが一致する',
   'passwords.keyConfirmed': 'この鍵を確認しました。',
   'passwords.keyConfirmedOnThisBrowser': 'この人をこのブラウザで確認済みです。',
   'passwords.ownerKeyConfirmFailed': '新しい鍵を確認できませんでした。',
   'passwords.ownSafetyCodeTitle': 'あなたの安全コード',
-  'passwords.ownSafetyCodeBody': 'あなたに共有する人は、このコードを相手の画面のものと照合します。サーバーの報告ではなく、この端末であなたの鍵から作られています。',
+  'passwords.ownSafetyCodeBody':
+    'あなたに共有する人は、このコードを相手の画面のものと照合します。サーバーの報告ではなく、この端末であなたの鍵から作られています。',
   'passwords.rekeyWaitingOne': '{count} 人が、安全コードの確認を待っています。',
   'passwords.rekeyWaiting': '{count} 人が、安全コードの確認を待っています。',
-  'passwords.itemChangedNotRead': 'この項目は別のデバイスで変更されましたが、読み直せませんでした。接続を確認してもう一度お試しください。',
+  'passwords.itemChangedNotRead':
+    'この項目は別のデバイスで変更されましたが、読み直せませんでした。接続を確認してもう一度お試しください。',
   'passwords.sitesMore': 'ほか {count} 件',
   'passwords.showCardSecrets': 'カード番号とセキュリティコードを表示',
   'passwords.hideCardSecrets': 'カード番号とセキュリティコードを隠す',
-  'passwords.shareNotFromYou': 'サーバーは {names} も一覧に出していますが、この項目をその人たちと共有した覚えはありません。保存すると削除されます。',
+  'passwords.shareNotFromYou':
+    'サーバーは {names} も一覧に出していますが、この項目をその人たちと共有した覚えはありません。保存すると削除されます。',
   'passwords.generatorDone': '完了',
 }

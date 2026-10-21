@@ -35,6 +35,7 @@ import {
 import {
   CardFields,
   fillMissingFields,
+  ItemAccess,
   ItemFieldsByKind,
   ItemKind,
   ITEM_KINDS,
@@ -210,6 +211,19 @@ export type OwnerKeyChange = {
   newPublicKey: string
 }
 
+// AccessProblem is why the sealed access record of an item the person owns is
+// not used:
+//
+// - notVerified: the item has no record, or its signature is missing or wrong,
+//   so it was not written by the owner's devices (somebody holding the item
+//   key can seal any fields). It reaches nobody and gives the agent nothing.
+// - replayed: the signature is right but the version is lower than one this
+//   device saw before, so the server brought an older record back.
+//
+// Nothing happens automatically with such an item (no new key, no waiting
+// shares, no agent copy) until the person sets its sharing again.
+export type AccessProblem = 'notVerified' | 'replayed'
+
 type ItemShape = {
   id: string
   ownerUserId: string
@@ -235,6 +249,12 @@ type ItemShape = {
   // ownerKeyChange is set instead of opening the item when its owner's key is
   // not the one this device kept. The item is also unreadable then.
   ownerKeyChange: OwnerKeyChange | null
+  // verifiedAccess is the sealed access record of an item the person owns when
+  // its signature is right and it is not an old one; null otherwise, and for an
+  // item somebody shared (whose record is only shown, in fields.access).
+  verifiedAccess: ItemAccess | null
+  // accessProblem says why an owned, readable item has no verifiedAccess.
+  accessProblem: AccessProblem | null
   // itemKey is kept so the owner can seal it for a recipient or the agent.
   itemKey: Uint8Array | null
   // sealedItemKey is the item key as the server holds it, sealed by the account
@@ -249,22 +269,23 @@ export type NoteItem = ItemShape & { itemKind: 'note'; fields: NoteFields }
 export type PasswordItem = LoginItem | CardItem | NoteItem
 
 // isAgentAllowed says whether the agent may use an item the person owns: the
-// server's flag and the owner's own sealed record must both say so. A flag the
-// server set alone does not count, since the agent's opener refuses without
-// the record. For an item somebody shared, the record is the owner's and is
-// only shown.
+// server's flag and the owner's own sealed record, with a valid signature, must
+// both say so. A flag the server set alone does not count, since the agent's
+// opener refuses without the record, and neither does a record nobody signed.
+// For an item somebody shared, the record is the owner's and is only shown.
 export function isAgentAllowed(item: PasswordItem): boolean {
-  return item.isUsableByAgent && (!item.isOwnedByMe || item.fields.access?.isUsableByAgent === true)
+  return item.isUsableByAgent && (!item.isOwnedByMe || item.verifiedAccess?.isUsableByAgent === true)
 }
 
 // splitSharesByRecord separates the shares the server lists for an item into
 // those the owner's sealed access record also has and those it does not. Only
 // the owner's own device grants access, so a share the record does not have is
 // not the owner's doing; it is named to the owner and removed by saving the
-// item's sharing.
+// item's sharing. A record that is not verified has none, so every share is
+// one of those.
 export function splitSharesByRecord(item: PasswordItem): { recorded: PasswordShare[]; unrecorded: PasswordShare[] } {
   const recordedKeys = new Set(
-    (item.fields.access?.grantees ?? []).map((grantee) =>
+    (item.verifiedAccess?.grantees ?? []).map((grantee) =>
       grantee.userId !== undefined ? `user:${grantee.userId}` : `circle:${grantee.circleId}`,
     ),
   )
@@ -302,6 +323,8 @@ function itemShape(
     shares: record.shares ?? [],
     isUnreadable: itemKey === null,
     ownerKeyChange,
+    verifiedAccess: null,
+    accessProblem: null,
     itemKey,
     sealedItemKey: record.itemKey,
   }

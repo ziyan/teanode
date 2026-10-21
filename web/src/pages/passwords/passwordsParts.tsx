@@ -23,11 +23,15 @@ import {
 // hidden value with Show, the running one-time code, the recovery key with
 // its Copy and Download, the password generator, and a safety code.
 
-// Attributes that tell the browser's own manager and the common password
-// manager extensions to leave a field alone: Passwords keeps its own, and a
-// passphrase or an item's password typed here must not be offered for saving
-// somewhere else. autoComplete does the browsers; the data attributes are the
-// ones the extensions document.
+// Attributes that ask the common password manager extensions to leave a field
+// alone (the data attributes are the ones those extensions document), so a
+// passphrase or an item's password typed here is not offered for saving
+// somewhere else. They do not keep the browser's own manager out: the browser
+// decides that, and ignores autoComplete="off" on a password field. The
+// fields that take the person's passphrase say autoComplete="current-password"
+// on purpose, which offers the browser's own saved passphrase if the person
+// chose to save one; the fields that take an item's text say "off" or
+// "new-password" and are only a request.
 export const NO_PASSWORD_MANAGER = {
   'data-1p-ignore': true,
   'data-lpignore': 'true',
@@ -396,9 +400,8 @@ export function PasswordGenerator({
 
 // SafetyCode is the short form of a person's public key, which two people
 // compare to be sure the key is the one they think it is. It is made from the
-// person's user id as well as the key, so the same key has a different code for
-// each person.
-export function SafetyCode({ userId, publicKey }: { userId: string; publicKey: string }) {
+// key alone, so nothing the server supplies goes into it.
+export function SafetyCode({ publicKey }: { publicKey: string }) {
   const { t } = useTranslation()
   const [code, setCode] = useState('')
   const [isUnreadable, setIsUnreadable] = useState(false)
@@ -414,7 +417,7 @@ export function SafetyCode({ userId, publicKey }: { userId: string; publicKey: s
       setIsUnreadable(true)
       return
     }
-    safetyCode(userId, keyBytes).then(
+    safetyCode(keyBytes).then(
       (made) => {
         if (isCurrent) setCode(made)
       },
@@ -425,7 +428,7 @@ export function SafetyCode({ userId, publicKey }: { userId: string; publicKey: s
     return () => {
       isCurrent = false
     }
-  }, [userId, publicKey])
+  }, [publicKey])
   if (isUnreadable) return <span className="muted">{t('passwords.safetyCodeUnreadable')}</span>
   return <code className="passwords-safety-code">{code}</code>
 }
