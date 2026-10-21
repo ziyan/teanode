@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.192.0] - 2026-10-21
+
+### Added
+
+- iPhone: pinch the photo library to show more or fewer photos a row. (#619)
+
+### Changed
+
+- iPhone: Years, Months and All are in the tab bar, between the tab and Search once it collapses, as in the Photos app. (#619)
+
 ## [0.191.0] - 2026-10-21
 
 ### Added
