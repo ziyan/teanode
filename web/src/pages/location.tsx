@@ -524,7 +524,15 @@ function LocationContent({ userId }: { userId: string }) {
       changeParameters({ person: null, place: null, page: null, placesPage: null })
     } else {
       setSelectedUserId(null)
-      changeParameters({ person: view.userId, place: null, page: null, placesPage: null })
+      // Sharing is the person's own, so somebody chosen from it opens on
+      // their visits, and the address says so.
+      changeParameters({
+        person: view.userId,
+        place: null,
+        page: null,
+        placesPage: null,
+        ...(shownTab === 'sharing' ? { tab: null } : {}),
+      })
     }
   }
 

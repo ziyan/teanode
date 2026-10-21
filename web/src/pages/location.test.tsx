@@ -1249,3 +1249,16 @@ it("offers neither checking in nor Sharing while somebody else's location is sho
   expect(screen.queryByRole('button', { name: 'Sharing' })).toBeNull()
   expect(screen.getByRole('button', { name: 'Places' })).toBeTruthy()
 })
+
+it('opens on the visits of somebody chosen from the Sharing tab, and comes back to Visits', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location?tab=sharing')
+  await screen.findByRole('combobox', { name: 'Share with' })
+  fireEvent.click(await screen.findByRole('button', { name: /Person B/ }))
+  expect(await screen.findByText('Visits of Person B')).toBeTruthy()
+  expect(screen.queryByRole('combobox', { name: 'Share with' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Sharing' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /You/ }))
+  expect(await screen.findByRole('heading', { name: 'Visits' })).toBeTruthy()
+  expect(screen.queryByRole('combobox', { name: 'Share with' })).toBeNull()
+})
