@@ -51,9 +51,10 @@ func NewPasswordsCommand() *cli.Command {
 			"that is not your sign-in password; the server, whoever runs it and a copy of its\n" +
 			"database see only encrypted data, except for an item you let the agent use.\n" +
 			"'teanode passwords unlock' asks for the passphrase and keeps the opened keys in a\n" +
-			"file only you can read (in $XDG_RUNTIME_DIR when it is set) until the lock time\n" +
-			"passes, at most 8 hours, or 'teanode passwords lock' removes them, as gpg-agent\n" +
-			"keeps a passphrase; without it, each command asks.\n" +
+			"file only you can read, in $XDG_RUNTIME_DIR, until the lock time passes, at most\n" +
+			"8 hours, or 'teanode passwords lock' removes them, as gpg-agent keeps a\n" +
+			"passphrase. A computer with no $XDG_RUNTIME_DIR does not unlock; there, each\n" +
+			"command asks.\n" +
 			"The passphrase is never an argument or an environment variable; scripts pass it\n" +
 			"on standard input with --passphrase-stdin. An item is named by its name, a word\n" +
 			"in its name, site or user name, or its id from 'teanode passwords list'.\n\n" +
@@ -85,9 +86,12 @@ func NewPasswordsCommand() *cli.Command {
 					"with the server, and keeps the opened keys in a file only you can read, named for\n" +
 					"the profile, until the lock time you chose in 'teanode passwords settings' passes\n" +
 					"(but at most 8 hours) or 'teanode passwords lock' removes it. The file is in\n" +
-					"$XDG_RUNTIME_DIR when that is set, and in the configuration directory otherwise;\n" +
-					"a file anybody else could read or change is refused. The keys in it are not\n" +
-					"encrypted: anyone who can read your files while it exists can open your passwords.",
+					"$XDG_RUNTIME_DIR, a directory of your login that is emptied at logout. A computer\n" +
+					"with none (macOS, some Linux sessions) refuses to unlock, because the keys are not\n" +
+					"encrypted and would sit on a disk and in backups; there each command asks for the\n" +
+					"passphrase (--passphrase-stdin for scripts). A file anybody else could read or\n" +
+					"change is refused. The keys in it are not encrypted: anyone who can read your\n" +
+					"files while it exists can open your passwords.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag(), &cli.BoolFlag{Name: "recovery-key", Usage: "unlock with the recovery key instead of the passphrase"}},
 				Action: runPasswordsUnlock,
 			},
@@ -145,7 +149,9 @@ func NewPasswordsCommand() *cli.Command {
 				Description: "A login by default; --kind card or --kind note for the others. A password is\n" +
 					"typed at a prompt when you do not give --password, --password-stdin (the line\n" +
 					"after the passphrase) or --generate; --password is in your shell history and in\n" +
-					"the process list while the command runs.\n\n" +
+					"the process list while the command runs. The same goes for --one-time-code, whose\n" +
+					"secret other programs on this computer can see in the process list; use\n" +
+					"--one-time-code-stdin (the line after the password) instead.\n\n" +
 					"  teanode passwords add example.com --user-name ada@example.com --site https://example.com --generate\n" +
 					"  teanode passwords add \"Spare key\" --kind note --text \"under the blue pot\"",
 				Flags:  append([]cli.Flag{JSONFlag(), passphraseFlag(), &cli.StringFlag{Name: "kind", Usage: "login, card or note", Value: "login"}}, passwordsFieldFlags()...),
@@ -170,29 +176,53 @@ func NewPasswordsCommand() *cli.Command {
 				Usage:     "share an item with a person or a circle",
 				ArgsUsage: "<item> <username|circle>",
 				Description: "Seals the item's key for each person it newly reaches, with the public key they\n" +
-					"set up. It seals only for a key this computer knows: one you confirmed before\n" +
-					"(kept in a file in the configuration directory) or one you confirm now by its\n" +
-					"safety code, which it prints and asks you to check with the person (in person,\n" +
-					"or a call you trust). A server that swapped their key for its own could otherwise\n" +
-					"read what you share. When a person's key has changed it shows the code you knew\n" +
-					"and the new one, and without a terminal it refuses unless you pass --force. A\n" +
-					"person who has not set Passwords up yet waits, and 'teanode passwords share\n" +
-					"--waiting' seals for them once they have. People who already have the item keep\n" +
-					"the key they have. The people it reaches can use the item; only you change it.\n" +
-					"Adding somebody new is done on the Passwords page of the dashboard or in the\n" +
-					"iPhone app; a command line cannot do this. Taking somebody away works here.",
+					"set up. It seals only for a key you confirmed: one you confirmed before (kept in a\n" +
+					"file in the configuration directory) or one you confirm now by its safety code,\n" +
+					"which it prints and asks you to check with the person (in person, or on a call you\n" +
+					"trust); with no terminal, compare the code with them, then run 'teanode passwords\n" +
+					"trust <username> <code>' and share again. A server that swapped their key for its\n" +
+					"own could otherwise read what you share. A key you only saw on an item they shared with you does not count as\n" +
+					"confirmed. When a person's key has changed it shows the code you confirmed and the\n" +
+					"new one. Confirming needs you at a terminal: without one the command refuses, and\n" +
+					"--force does not skip it. A person who has not set Passwords up yet waits, and\n" +
+					"'teanode passwords share --waiting' seals for them once they have. People who\n" +
+					"already have the item keep the key they have. The people it reaches can use the\n" +
+					"item; only you change it. Adding somebody new is done on the Passwords page of the\n" +
+					"dashboard or in the iPhone app; a command line cannot do this. Taking somebody away\n" +
+					"works here.",
 				Flags: []cli.Flag{
-					JSONFlag(), passphraseFlag(), ForceFlag(),
+					JSONFlag(), passphraseFlag(),
 					&cli.BoolFlag{Name: "waiting", Usage: "instead, seal your items for the people who have set Passwords up since you shared them"},
 				},
 				Action: runPasswordsShare,
 			},
 			{
+				Name:      "trust",
+				Usage:     "confirm a person's key by its safety code, without a terminal",
+				ArgsUsage: "<username> [safety code]",
+				Description: "Reads the person's current Passwords public key from the server, works out its\n" +
+					"safety code, and records the key as confirmed only if the code you give matches\n" +
+					"it (spaces are optional). Otherwise it refuses and records nothing. This is for a\n" +
+					"script or a session with no terminal: the code must still come from the person\n" +
+					"(in person or on a call you trust, read off their own screen), not from this\n" +
+					"computer, or it proves nothing. --code-stdin reads the code from a line of\n" +
+					"standard input so it is not in the process list. A confirmed key is what 'share'\n" +
+					"and 'unshare' seal for.\n\n" +
+					"  teanode passwords trust ben 0412 9930 0007 5121 8800\n" +
+					"  echo 0412993000075121 8800 | teanode passwords trust ben --code-stdin",
+				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "code-stdin", Usage: "read the safety code from a line of standard input"}},
+				Action: runPasswordsTrust,
+			},
+			{
 				Name:      "unshare",
 				Usage:     "stop sharing an item with a person or a circle",
 				ArgsUsage: "<item> [username|circle]",
-				Description: "With no person or circle it stops sharing the item with everyone. It sends no\n" +
-					"keys: the people who still have the item keep the key they have.",
+				Description: "With no person or circle it stops sharing the item with everyone. It then gives\n" +
+					"the item a new key, so that the key the people you removed held opens nothing saved\n" +
+					"later: the new key is sealed for each person who still has the item, if you\n" +
+					"confirmed their key (you are asked about the others at a terminal; until you answer\n" +
+					"they wait, and 'teanode passwords share --waiting' seals for them). If the new key\n" +
+					"cannot be made the command says so, and running it again makes it.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
 				Action: runPasswordsUnshare,
 			},
@@ -207,7 +237,9 @@ func NewPasswordsCommand() *cli.Command {
 					"cannot be used by the agent, and only the owner can turn it on. Turning it on is\n" +
 					"done on the Passwords page of the dashboard or in the iPhone app; a command line\n" +
 					"cannot do this, and says so before it asks for anything. Turning it off works\n" +
-					"here.",
+					"here, and gives the item a new key so that a copy of the old key the agent\n" +
+					"could open (in a copy of the database, say) opens nothing saved later; the new\n" +
+					"key is sealed again for the people it is shared with whose keys you confirmed.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag(), ForceFlag()},
 				Action: runPasswordsAgent,
 			},
@@ -300,7 +332,10 @@ func NewPasswordsCommand() *cli.Command {
 				Description: "Writes the items you own, in the clear, as JSON (everything, passkeys and cards\n" +
 					"included) or as a Bitwarden-style CSV (logins and notes). The file is readable by\n" +
 					"you only, an existing file is not overwritten, and the command asks first. Anybody\n" +
-					"who gets the file has your passwords: delete it when you are done.",
+					"who gets the file has your passwords: delete it when you are done. The CSV is for\n" +
+					"importing into another password manager, which needs every value exactly as it\n" +
+					"is, so a value that starts with = + - or @ is written as it is: do not open the\n" +
+					"file in a spreadsheet, which would run such a value as a formula.",
 				Flags: []cli.Flag{
 					JSONFlag(), passphraseFlag(), ForceFlag(),
 					&cli.StringFlag{Name: "format", Usage: "json or csv; by the file's ending, json otherwise"},
@@ -335,7 +370,8 @@ func passwordsFieldFlags() []cli.Flag {
 		&cli.IntFlag{Name: "length", Usage: "characters of a generated password, 8 to 128", Value: generatedPasswordLengthUsual},
 		&cli.BoolFlag{Name: "no-symbols", Usage: "a generated password has letters and digits only"},
 		&cli.StringSliceFlag{Name: "site", Usage: "a login's site, such as https://example.com; repeat it for more"},
-		&cli.StringFlag{Name: "one-time-code", Usage: "a login's one-time code: an otpauth:// address, or its base32 secret"},
+		&cli.StringFlag{Name: "one-time-code", Usage: "a login's one-time code: an otpauth:// address, or its base32 secret; other programs on this computer can see it in the process list, prefer --one-time-code-stdin"},
+		&cli.BoolFlag{Name: "one-time-code-stdin", Usage: "read the login's one-time code (an otpauth:// address or a base32 secret) from a line of standard input, after the passphrase and the password"},
 		&cli.StringFlag{Name: "notes", Usage: "a login's or card's notes"},
 		&cli.StringFlag{Name: "cardholder-name", Usage: "a card's holder"},
 		&cli.StringFlag{Name: "number", Usage: "a card's number; typed at a prompt when left out"},
@@ -351,24 +387,25 @@ func passwordsFieldFlags() []cli.Flag {
 // passwordsFlagKinds are the kinds of item a field flag is for. A flag not
 // listed is for every kind.
 var passwordsFlagKinds = map[string][]passwords.ItemKind{
-	"user-name":       {passwords.ItemKindLogin},
-	"password":        {passwords.ItemKindLogin},
-	"password-stdin":  {passwords.ItemKindLogin},
-	"generate":        {passwords.ItemKindLogin},
-	"length":          {passwords.ItemKindLogin},
-	"no-symbols":      {passwords.ItemKindLogin},
-	"site":            {passwords.ItemKindLogin},
-	"add-site":        {passwords.ItemKindLogin},
-	"one-time-code":   {passwords.ItemKindLogin},
-	"notes":           {passwords.ItemKindLogin, passwords.ItemKindCard},
-	"cardholder-name": {passwords.ItemKindCard},
-	"number":          {passwords.ItemKindCard},
-	"expiry-month":    {passwords.ItemKindCard},
-	"expiry-year":     {passwords.ItemKindCard},
-	"security-code":   {passwords.ItemKindCard},
-	"brand":           {passwords.ItemKindCard},
-	"text":            {passwords.ItemKindNote},
-	"text-stdin":      {passwords.ItemKindNote},
+	"user-name":           {passwords.ItemKindLogin},
+	"password":            {passwords.ItemKindLogin},
+	"password-stdin":      {passwords.ItemKindLogin},
+	"generate":            {passwords.ItemKindLogin},
+	"length":              {passwords.ItemKindLogin},
+	"no-symbols":          {passwords.ItemKindLogin},
+	"site":                {passwords.ItemKindLogin},
+	"add-site":            {passwords.ItemKindLogin},
+	"one-time-code":       {passwords.ItemKindLogin},
+	"one-time-code-stdin": {passwords.ItemKindLogin},
+	"notes":               {passwords.ItemKindLogin, passwords.ItemKindCard},
+	"cardholder-name":     {passwords.ItemKindCard},
+	"number":              {passwords.ItemKindCard},
+	"expiry-month":        {passwords.ItemKindCard},
+	"expiry-year":         {passwords.ItemKindCard},
+	"security-code":       {passwords.ItemKindCard},
+	"brand":               {passwords.ItemKindCard},
+	"text":                {passwords.ItemKindNote},
+	"text-stdin":          {passwords.ItemKindNote},
 }
 
 // checkFlagsForKind refuses a field flag that the kind of item has no field
@@ -604,6 +641,13 @@ func sealAccountKeyUnder(accountKey, secret []byte) (sealedAccountKey, proofHash
 }
 
 func runPasswordsUnlock(ctx context.Context, command *cli.Command) error {
+	if err := refuseAgentCommand(); err != nil {
+		return err
+	}
+	// Said before the passphrase is asked for, so nothing is typed for nothing.
+	if passwordsRuntimeDirectory() == "" {
+		return errPasswordsNoRuntimeDirectory
+	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
@@ -970,6 +1014,13 @@ func runPasswordsCopy(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if tool == "" {
+		// A terminal acts on control characters, and a value that has some (from
+		// a shared item, an owner chose it) could rewrite the screen or load the
+		// clipboard. Showing it with the characters escaped would show a value
+		// that is not the one saved, so it is not printed.
+		if strings.ContainsFunc(value, isTerminalControl) {
+			return fmt.Errorf("this computer has no clipboard program (wl-copy, xclip, xsel or pbcopy), and the %s of %s has control characters that a terminal would act on, so it is not printed; 'teanode passwords show --reveal --json' shows it with them escaped", what, item.Name())
+		}
 		fmt.Fprintln(os.Stderr, "warning: this computer has no clipboard program (wl-copy, xclip, xsel or pbcopy), so the value is printed instead")
 		// The person asked for the value; it goes to the terminal, not a log.
 		if _, err := os.Stdout.WriteString(value + "\n"); err != nil {
@@ -978,10 +1029,10 @@ func runPasswordsCopy(ctx context.Context, command *cli.Command) error {
 		return nil
 	}
 	if clearAfter <= 0 {
-		fmt.Printf("copied the %s of %s to the clipboard\n", what, item.Name())
+		fmt.Printf("copied the %s of %s to the clipboard\n", what, forTerminal(item.Name()))
 		return nil
 	}
-	fmt.Printf("copied the %s of %s to the clipboard; clearing it in %d seconds (Ctrl-C clears it now)\n", what, item.Name(), clearAfter)
+	fmt.Printf("copied the %s of %s to the clipboard; clearing it in %d seconds (Ctrl-C clears it now)\n", what, forTerminal(item.Name()), clearAfter)
 	select {
 	case <-time.After(time.Duration(clearAfter) * time.Second):
 	case <-signals:
@@ -1124,12 +1175,8 @@ func applyLoginFlags(command *cli.Command, item *passwordsItem, isNew bool) erro
 	if command.IsSet("notes") {
 		login.Notes = command.String("notes")
 	}
-	if command.IsSet("one-time-code") {
-		address, err := oneTimeCodeAddress(command.String("one-time-code"), login.Name)
-		if err != nil {
-			return err
-		}
-		login.OneTimeCodeURI = address
+	if command.IsSet("one-time-code") && command.Bool("one-time-code-stdin") {
+		return usage("give the one-time code one way: --one-time-code or --one-time-code-stdin")
 	}
 	isPasswordGiven := 0
 	for _, flag := range []string{"password", "password-stdin", "generate"} {
@@ -1162,6 +1209,26 @@ func applyLoginFlags(command *cli.Command, item *passwordsItem, isNew bool) erro
 		}
 		login.Password = password
 	}
+	// Standard input is read in the order the flags are described: the
+	// passphrase, then the password, then the one-time code.
+	var typedOneTimeCode string
+	switch {
+	case command.IsSet("one-time-code"):
+		typedOneTimeCode = command.String("one-time-code")
+	case command.Bool("one-time-code-stdin"):
+		line, err := readHiddenLine(command, "", true, "one-time-code-stdin")
+		if err != nil {
+			return err
+		}
+		typedOneTimeCode = line
+	default:
+		return nil
+	}
+	address, err := oneTimeCodeAddress(typedOneTimeCode, login.Name)
+	if err != nil {
+		return err
+	}
+	login.OneTimeCodeURI = address
 	return nil
 }
 
@@ -1256,9 +1323,9 @@ func runPasswordsAdd(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
-	fmt.Printf("added %s (%s)\n", item.Name(), view.ID)
+	fmt.Printf("added %s (%s)\n", forTerminal(item.Name()), forTerminal(view.ID))
 	if command.Bool("generate") {
-		fmt.Printf("it has a generated password; 'teanode passwords copy %s' copies it\n", view.ID)
+		fmt.Printf("it has a generated password; 'teanode passwords copy %s' copies it\n", forTerminal(view.ID))
 	}
 	return nil
 }
@@ -1286,7 +1353,7 @@ func runPasswordsEdit(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
-	fmt.Printf("changed %s\n", item.Name())
+	fmt.Printf("changed %s\n", forTerminal(item.Name()))
 	return nil
 }
 
@@ -1310,7 +1377,7 @@ func runPasswordsDelete(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
-	fmt.Printf("deleted %s; 'teanode passwords restore %s' brings it back for 30 days\n", item.Name(), view.ID)
+	fmt.Printf("deleted %s; 'teanode passwords restore %s' brings it back for 30 days\n", forTerminal(item.Name()), forTerminal(view.ID))
 	return nil
 }
 
@@ -1331,7 +1398,7 @@ func runPasswordsRestore(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
-	fmt.Printf("restored %s\n", item.Name())
+	fmt.Printf("restored %s\n", forTerminal(item.Name()))
 	return nil
 }
 
@@ -1369,7 +1436,7 @@ func runPasswordsShare(ctx context.Context, command *cli.Command) error {
 	if !isAlreadyShared {
 		grantees = append(grantees, newGrantee(granteeUserID, granteeCircleID))
 	}
-	return setItemShares(ctx, command, session, item, grantees, append(existingRecipients(item.View), newRecipients...), "sharing "+item.Name()+" with "+forTerminal(described))
+	return setItemShares(ctx, command, session, item, grantees, append(existingRecipients(item.View), newRecipients...), "sharing "+forTerminal(item.Name())+" with "+forTerminal(described))
 }
 
 func newGrantee(granteeUserID, granteeCircleID string) *client.PasswordShareGranteeInput {
@@ -1451,7 +1518,7 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 	}
 	fmt.Printf("%s: %s can open it\n", doing, peopleWords(reachedCount+len(keys)))
 	for _, recipient := range waiting {
-		fmt.Printf("%s (%s) has not set up Passwords yet; run 'teanode passwords share --waiting' once they have\n", recipient.Name, recipient.Username)
+		fmt.Printf("%s (%s) has not set up Passwords yet; run 'teanode passwords share --waiting' once they have\n", forTerminal(recipient.Name), forTerminal(recipient.Username))
 	}
 	return nil
 }
@@ -1468,7 +1535,7 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 		return fmt.Errorf("%s is shared with you by %s, and only its owner changes who it is shared with", item.Name(), item.View.OwnerName)
 	}
 	remaining := []*client.PasswordShareView{}
-	doing := "stopped sharing " + item.Name()
+	doing := "stopped sharing " + forTerminal(item.Name())
 	if command.Args().Len() == 2 {
 		typed := command.Args().Get(1)
 		granteeUserID, granteeCircleID, described, err := shareTarget(ctx, session.connection, typed)
@@ -1484,13 +1551,17 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 			remaining = append(remaining, share)
 		}
 		if !isShared {
-			return fmt.Errorf("%s is not shared with %s", item.Name(), forTerminal(described))
+			// The item may be shared with nobody new here because an earlier
+			// run took them off but could not give the item a new key. Running
+			// the command again must finish that, so it goes on to the new key.
+			doing = forTerminal(item.Name()) + " was not shared with " + forTerminal(described) + ", and now has a new key anyway"
+		} else {
+			doing = "stopped sharing " + forTerminal(item.Name()) + " with " + forTerminal(described)
 		}
-		doing = "stopped sharing " + item.Name() + " with " + forTerminal(described)
 	}
-	// No keys are sent: the people who are still reached keep the key they
-	// have, and the server forgets the keys of the people no longer reached.
-	// Sealing again here would be sealing for public keys nobody checked.
+	// Nobody new is reached, so no key is sealed here. The server forgets the
+	// keys of the people no longer reached; the people who are still reached
+	// get a key for the new item key below.
 	remainingView := &client.PasswordItemView{Shares: remaining}
 	view, err := client.SetPasswordItemShares(ctx, session.connection, &client.SetPasswordItemSharesInput{
 		ItemID: item.View.ID, Grantees: existingGrantees(remainingView), Keys: []*client.PasswordShareKeyInput{},
@@ -1499,10 +1570,17 @@ func runPasswordsUnshare(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	item.View = view
+	// The people taken off may hold a sealed copy of the item key. A new key
+	// means the copy opens nothing saved from now on.
+	waiting, err := session.rekeyItem(item, true)
+	if err != nil {
+		return fmt.Errorf("%s: %w", passwordsRekeyFailedWords, describeError(command, err))
+	}
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
 	fmt.Println(doing)
+	printWaitingRecipients(waiting)
 	return nil
 }
 
@@ -1597,32 +1675,23 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	if item.Card != nil {
 		return errors.New("a card cannot be used by the agent")
 	}
+	if !isOn {
+		return turnOffAgentUse(command, session, item)
+	}
 	input := &client.SetPasswordItemUsableByAgentInput{ItemID: item.View.ID, IsUsableByAgent: isOn}
 	if isOn {
-		warning := "This lets TeaNode's agent sign in with " + item.Name() + " in its browser, on the item's own sites, in any run of your agent, scheduled ones included. It never shows the password to the model."
+		warning := "This lets TeaNode's agent sign in with " + forTerminal(item.Name()) + " in its browser, on the item's own sites, in any run of your agent, scheduled ones included. It never shows the password to the model."
 		if item.Note != nil {
-			warning = "This lets TeaNode's agent read the note " + item.Name() + ", which goes to your agent's model provider."
+			warning = "This lets TeaNode's agent read the note " + forTerminal(item.Name()) + ", which goes to your agent's model provider."
 		}
 		if err := confirm(command, warning); err != nil {
 			return err
 		}
-		agentKey, err := client.ReadPasswordsAgentKey(ctx, session.connection)
+		itemKeyByAgentKey, err := session.sealItemKeyForAgent(item.View.ID, item.ItemKey)
 		if err != nil {
 			return describeError(command, err)
 		}
-		publicKey, err := decodePublicKey(agentKey)
-		if err != nil {
-			return errors.New("the agent key the server gave is not a key")
-		}
-		ownerID, err := session.currentUserID()
-		if err != nil {
-			return describeError(command, err)
-		}
-		sealed, err := passwords.SealForKeyPair(session.keys.KeyPair, publicKey, item.ItemKey, passwords.ShareData(item.View.ID, ownerID, passwords.AgentRecipientID))
-		if err != nil {
-			return fmt.Errorf("cannot seal the item for the agent key: %w", err)
-		}
-		input.ItemKeyByAgentKey = sealed.String()
+		input.ItemKeyByAgentKey = itemKeyByAgentKey
 	}
 	view, err := client.SetPasswordItemUsableByAgent(ctx, session.connection, input)
 	if err != nil {
@@ -1632,11 +1701,32 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
-	if isOn {
-		fmt.Printf("the agent may use %s\n", item.Name())
-	} else {
-		fmt.Printf("the agent may no longer use %s\n", item.Name())
+	fmt.Printf("the agent may use %s\n", forTerminal(item.Name()))
+	return nil
+}
+
+// turnOffAgentUse stops the agent using an item and gives the item a new item
+// key in the same call, so that a copy of the old key the agent could open
+// (from a copy of the database taken while it could) opens nothing saved later.
+// People the item is shared with keep access if their keys are confirmed. An
+// item the agent could not use already has nothing to turn off.
+func turnOffAgentUse(command *cli.Command, session *passwordsSession, item *passwordsItem) error {
+	if !item.View.IsUsableByAgent {
+		if command.Bool("json") {
+			return PrintJSON(summarizeItem(item))
+		}
+		fmt.Printf("the agent could not use %s\n", forTerminal(item.Name()))
+		return nil
 	}
+	waiting, err := session.rekeyItem(item, false)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(summarizeItem(item))
+	}
+	fmt.Printf("the agent may no longer use %s, and it has a new key\n", forTerminal(item.Name()))
+	printWaitingRecipients(waiting)
 	return nil
 }
 

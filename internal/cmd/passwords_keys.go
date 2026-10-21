@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/passwords"
@@ -18,20 +20,40 @@ import (
 // The public keys this computer knows. Sharing an item seals its key for a
 // public key that the server hands out, so a server that swapped a person's
 // key for its own could read what is shared with that person. The defence is
-// trust on first use: the key a person's safety code was checked for (or that
-// they shared with first) is written down here, a share is sealed only for a
-// key that is written down, and a key that changes is shown with both safety
-// codes and asked about, never accepted quietly. The same goes for the key of
-// an owner whose item is opened. The keys are public, so the file is not
-// secret, but it is kept private to its owner because changing it is the same
-// as changing who is trusted.
+// to write a key down only when it can be trusted, and to keep two kinds apart.
+//
+// A confirmed key is one the person checked: its safety code was shown, the
+// person compared it with the other person, and said yes. Only a confirmed key
+// is sealed for, whether sharing, sharing with the people who were waiting, or
+// giving an item a new key. A key that changes after it was confirmed is shown
+// with both safety codes and asked about, never accepted quietly.
+//
+// A seen key is the key an owner had on an item shared with the person. It is
+// not trusted for anything: a server can make an account of its own, share one
+// item "from" it, and so put its key in front of the person. It is kept only to
+// warn when the owner's key later changes.
+//
+// The keys are public, so the file is not secret, but it is kept private to its
+// owner because changing it is the same as changing who is trusted.
 
 // passwordsKnownKey is what is known of one person.
 type passwordsKnownKey struct {
-	Username    string    `json:"username"`
-	Name        string    `json:"name"`
-	PublicKey   string    `json:"publicKey"`
-	ConfirmedAt time.Time `json:"confirmedAt"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
+
+	// ConfirmedPublicKey is the key the person confirmed by its safety code, and
+	// when. Empty until they have.
+	ConfirmedPublicKey string     `json:"confirmedPublicKey,omitempty"`
+	ConfirmedAt        *time.Time `json:"confirmedAt,omitempty"`
+
+	// SeenPublicKey is the key the person had on the last item they shared with
+	// this one, and when it was first seen. It is never sealed for.
+	SeenPublicKey string     `json:"seenPublicKey,omitempty"`
+	SeenAt        *time.Time `json:"seenAt,omitempty"`
+
+	// LegacyPublicKey is a key written by an earlier version, which did not tell
+	// a key that was confirmed from one that was only seen. It is read as seen.
+	LegacyPublicKey string `json:"publicKey,omitempty"`
 }
 
 // passwordsKnownKeysFile is what is in the file: the known keys of each server
@@ -92,6 +114,26 @@ func readPasswordsKnownKeysFile(path string) (passwordsKnownKeysFile, error) {
 		stored.Servers[stored.LegacyServer] = stored.LegacyPeople
 	}
 	stored.LegacyServer, stored.LegacyPeople = "", nil
+	for _, people := range stored.Servers {
+		for _, known := range people {
+			if known == nil {
+				continue
+			}
+			// An earlier version trusted any key it had written down, whether
+			// the person had compared its safety code or it had only been seen
+			// on an item. Which of the two it was is not known, so it is read as
+			// seen, and the person is asked once more before it is sealed for.
+			if known.LegacyPublicKey != "" {
+				if known.SeenPublicKey == "" {
+					known.SeenPublicKey = known.LegacyPublicKey
+				}
+				known.LegacyPublicKey = ""
+				if known.ConfirmedPublicKey == "" {
+					known.ConfirmedAt = nil
+				}
+			}
+		}
+	}
 	return stored, nil
 }
 
@@ -115,11 +157,48 @@ func (self *passwordsKnownKeys) lookup(userID string) *passwordsKnownKey {
 	return self.file.Servers[self.server][userID]
 }
 
-// remember writes down a person's key as the one to trust. The file is read
-// again under a lock and written whole through a temporary file, so that
-// another teanode command writing a key at the same moment does not lose this
-// one, and the other servers' keys are kept.
-func (self *passwordsKnownKeys) remember(userID, username, name, publicKey string) error {
+// confirmedKey is the key the person confirmed for somebody, empty if none.
+func (self *passwordsKnownKeys) confirmedKey(userID string) string {
+	if known := self.lookup(userID); known != nil {
+		return known.ConfirmedPublicKey
+	}
+	return ""
+}
+
+// seenKey is the key somebody had on an item shared with the person, empty if
+// none was seen.
+func (self *passwordsKnownKeys) seenKey(userID string) string {
+	if known := self.lookup(userID); known != nil {
+		return known.SeenPublicKey
+	}
+	return ""
+}
+
+// rememberConfirmed writes down a key the person confirmed by its safety code,
+// the only kind of key an item is sealed for.
+func (self *passwordsKnownKeys) rememberConfirmed(userID, username, name, publicKey string) error {
+	return self.update(userID, func(known *passwordsKnownKey) {
+		moment := time.Now().Truncate(time.Second)
+		known.Username, known.Name = username, name
+		known.ConfirmedPublicKey, known.ConfirmedAt = publicKey, &moment
+	})
+}
+
+// rememberSeen writes down the key an owner had on an item shared with the
+// person. It never changes a confirmed key.
+func (self *passwordsKnownKeys) rememberSeen(userID, name, publicKey string) error {
+	return self.update(userID, func(known *passwordsKnownKey) {
+		moment := time.Now().Truncate(time.Second)
+		known.Name = name
+		known.SeenPublicKey, known.SeenAt = publicKey, &moment
+	})
+}
+
+// update changes one person's record. The file is read again under a lock and
+// written whole through a temporary file, so that another teanode command
+// writing a key at the same moment does not lose this one, and the other
+// servers' keys are kept.
+func (self *passwordsKnownKeys) update(userID string, change func(known *passwordsKnownKey)) error {
 	release, err := lockPrivateFile(self.path)
 	if err != nil {
 		return err
@@ -132,7 +211,12 @@ func (self *passwordsKnownKeys) remember(userID, username, name, publicKey strin
 	if current.Servers[self.server] == nil {
 		current.Servers[self.server] = map[string]*passwordsKnownKey{}
 	}
-	current.Servers[self.server][userID] = &passwordsKnownKey{Username: username, Name: name, PublicKey: publicKey, ConfirmedAt: time.Now().Truncate(time.Second)}
+	known := current.Servers[self.server][userID]
+	if known == nil {
+		known = &passwordsKnownKey{}
+		current.Servers[self.server][userID] = known
+	}
+	change(known)
 	content, err := json.MarshalIndent(current, "", "  ")
 	if err != nil {
 		return err
@@ -167,13 +251,32 @@ func decodePublicKey(text string) ([]byte, error) {
 	return publicKey, nil
 }
 
-// confirmRecipientKeys makes sure every recipient's public key is one this
-// computer knows, or that the person confirms now by its safety code. A person
-// whose key is already known and unchanged is not asked about. A person met
-// for the first time, and a person whose key changed, are shown together with
-// their safety codes (both the known one and the new one on a change), and the
-// command goes on only if the person says yes (or passes --force; without a
-// terminal it refuses). Nothing is written down until they do.
+// askAboutKeys shows what is about to be trusted and asks the person at the
+// terminal whether to go on. A person's key is confirmed only by comparing its
+// safety code with them, which a script or --force (or TEANODE_FORCE) cannot
+// do, so unlike confirm it does not skip the question: without a terminal it
+// refuses. A test replaces it.
+var askAboutKeys = func(warning string) error {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return usage(warning + "\nRefusing: a key is confirmed by comparing its safety code with the person, at a terminal, and --force does not skip that; " +
+			"without a terminal, compare the code with them and run 'teanode passwords trust <username> <code>'")
+	}
+	fmt.Printf("%s Type 'yes' to continue: ", warning)
+	var answer string
+	_, _ = fmt.Scanln(&answer)
+	if answer != "yes" {
+		return errors.New("canceled")
+	}
+	return nil
+}
+
+// confirmRecipientKeys makes sure every recipient's public key is one the
+// person confirmed, or confirms it now by its safety code. A person whose
+// confirmed key is unchanged is not asked about. A person whose key was never
+// confirmed (even if it was seen on an item they shared) and a person whose
+// key changed are shown together with their safety codes (both the confirmed
+// one and the new one on a change), and the command goes on only if the person
+// says yes at a terminal. Nothing is written down until they do.
 func (self *passwordsSession) confirmRecipientKeys(recipients []*client.PasswordRecipientView) error {
 	known, err := self.knownKeys()
 	if err != nil {
@@ -192,17 +295,17 @@ func (self *passwordsSession) confirmRecipientKeys(recipients []*client.Password
 		if err != nil {
 			return fmt.Errorf("%s: %w", recipient.Username, err)
 		}
-		previous := known.lookup(recipient.UserID)
+		confirmed := known.confirmedKey(recipient.UserID)
 		switch {
-		case previous != nil && previous.PublicKey == recipient.PublicKey:
+		case confirmed == recipient.PublicKey:
 			continue
-		case previous == nil:
+		case confirmed == "":
 			lines = append(lines, fmt.Sprintf("  %s (%s)  safety code %s", recipient.Name, recipient.Username, passwords.SafetyCode(publicKey)))
 		default:
 			isChange = true
-			previousKey, _ := passwords.DecodeCanonicalBase64(previous.PublicKey)
+			confirmedKey, _ := passwords.DecodeCanonicalBase64(confirmed)
 			lines = append(lines, fmt.Sprintf("  %s (%s)  KEY CHANGED  safety code before %s, now %s",
-				recipient.Name, recipient.Username, passwords.SafetyCode(previousKey), passwords.SafetyCode(publicKey)))
+				recipient.Name, recipient.Username, passwords.SafetyCode(confirmedKey), passwords.SafetyCode(publicKey)))
 		}
 		toWrite = append(toWrite, recipient)
 	}
@@ -214,11 +317,11 @@ func (self *passwordsSession) confirmRecipientKeys(recipients []*client.Password
 	if isChange {
 		warning += "\nA key that changed is either a person who erased Passwords and set it up again, or a server that put its own key in their place. Go on only if the person tells you they did the first."
 	}
-	if err := confirm(self.command, warning); err != nil {
+	if err := askAboutKeys(warning); err != nil {
 		return err
 	}
 	for _, recipient := range toWrite {
-		if err := known.remember(recipient.UserID, recipient.Username, recipient.Name, recipient.PublicKey); err != nil {
+		if err := known.rememberConfirmed(recipient.UserID, recipient.Username, recipient.Name, recipient.PublicKey); err != nil {
 			return err
 		}
 	}
@@ -230,9 +333,11 @@ func (self *passwordsSession) confirmRecipientKeys(recipients []*client.Password
 // owner's key, so a share planted by anybody else does not open; this guards
 // the other half, that the key the server calls the owner's is the one this
 // computer saw before. The first time an owner is seen, their key is written
-// down and their safety code is told, to be checked when it can be. A key that
-// differs from the one written down is shown with both safety codes and the
-// item is not opened unless the person confirms (or passes --force).
+// down as seen (never as confirmed: seeing a key on an item proves nothing about
+// whose it is) and their safety code is told, to be checked when it can be. A
+// key that differs from the confirmed or the seen one is shown with both safety
+// codes and the item is not opened unless the person confirms (or passes
+// --force, which only reading an item honors).
 func (self *passwordsSession) checkedOwnerKey(view *client.PasswordItemView) ([]byte, error) {
 	publicKey, err := decodePublicKey(view.OwnerPublicKey)
 	if err != nil {
@@ -247,22 +352,26 @@ func (self *passwordsSession) checkedOwnerKey(view *client.PasswordItemView) ([]
 		if err != nil {
 			return err
 		}
-		previous := known.lookup(view.OwnerUserID)
+		confirmed, seen := known.confirmedKey(view.OwnerUserID), known.seenKey(view.OwnerUserID)
 		switch {
-		case previous != nil && previous.PublicKey == view.OwnerPublicKey:
+		case view.OwnerPublicKey == confirmed || view.OwnerPublicKey == seen:
 			return nil
-		case previous == nil:
+		case confirmed == "" && seen == "":
 			fmt.Fprintf(os.Stderr, "note: this is the first item %s shared with you; their safety code is %s, to check with them\n",
 				forTerminal(view.OwnerName), passwords.SafetyCode(publicKey))
 		default:
-			previousKey, _ := passwords.DecodeCanonicalBase64(previous.PublicKey)
+			previous := confirmed
+			if previous == "" {
+				previous = seen
+			}
+			previousKey, _ := passwords.DecodeCanonicalBase64(previous)
 			if err := confirm(self.command, fmt.Sprintf("The key of %s, who shared this with you, changed. Their safety code was %s and is now %s. "+
 				"Either they erased Passwords and set it up again, or the server put its own key in their place; go on only if they tell you the first.",
 				forTerminal(view.OwnerName), passwords.SafetyCode(previousKey), passwords.SafetyCode(publicKey))); err != nil {
 				return fmt.Errorf("the key of its owner changed and was not confirmed: %w", err)
 			}
 		}
-		if err := known.remember(view.OwnerUserID, "", view.OwnerName, view.OwnerPublicKey); err != nil {
+		if err := known.rememberSeen(view.OwnerUserID, view.OwnerName, view.OwnerPublicKey); err != nil {
 			// Reading an item does not depend on being able to write this down.
 			fmt.Fprintf(os.Stderr, "note: could not write down the key of %s: %s\n", forTerminal(view.OwnerName), err)
 		}
@@ -277,8 +386,17 @@ func (self *passwordsSession) checkedOwnerKey(view *client.PasswordItemView) ([]
 }
 
 // sealItemKeyFor seals an item key, as the owner, for a recipient's public key.
-// The recipient must have been through confirmRecipientKeys.
+// The recipient must have been through confirmRecipientKeys: a key that is not
+// the one the person confirmed is refused here too, so that no path to sealing
+// can skip the question.
 func (self *passwordsSession) sealItemKeyFor(itemID string, itemKey []byte, recipient *client.PasswordRecipientView) (*client.PasswordItemShareKeyInput, error) {
+	known, err := self.knownKeys()
+	if err != nil {
+		return nil, err
+	}
+	if known.confirmedKey(recipient.UserID) != recipient.PublicKey {
+		return nil, fmt.Errorf("the key of %s is not one you confirmed by its safety code, so nothing is sealed for it", recipient.Username)
+	}
 	publicKey, err := decodePublicKey(recipient.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", recipient.Username, err)
@@ -294,4 +412,83 @@ func (self *passwordsSession) sealItemKeyFor(itemID string, itemKey []byte, reci
 	return &client.PasswordItemShareKeyInput{
 		ItemID: itemID, RecipientUserID: recipient.UserID, ItemKeyByRecipientKey: sealed.String(), RecipientPublicKey: recipient.PublicKey,
 	}, nil
+}
+
+// runPasswordsTrust confirms a person's key without the question at a
+// terminal, for a script or a session without one, and is still a comparison:
+// the safety code the person gave (read from them in person or on a call you
+// trust) must be the code of the key the server hands out for them right now.
+// A code that does not match records nothing.
+func runPasswordsTrust(ctx context.Context, command *cli.Command) error {
+	if err := refuseAgentCommand(); err != nil {
+		return err
+	}
+	const usageLine = "usage: teanode passwords trust <username> <safety code>  (or --code-stdin to read the code from a line of standard input)"
+	arguments := command.Args().Len()
+	if command.Bool("code-stdin") {
+		if arguments != 1 {
+			return usage(usageLine)
+		}
+	} else if arguments != 2 {
+		return usage(usageLine)
+	}
+	typed := command.Args().Get(0)
+	givenCode := ""
+	if command.Bool("code-stdin") {
+		line, err := readHiddenLine(command, "", true, "code-stdin")
+		if err != nil {
+			return err
+		}
+		givenCode = line
+	} else {
+		givenCode = command.Args().Get(1)
+	}
+	givenDigits := strings.Join(strings.Fields(givenCode), "")
+	if len(givenDigits) != 20 || strings.Trim(givenDigits, "0123456789") != "" {
+		return usage("a safety code is five groups of four digits, such as 0412 9930 0007 5121 8800")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	granteeUserID, granteeCircleID, _, err := shareTarget(ctx, connection, typed)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if granteeCircleID != "" || granteeUserID == "" {
+		return usage("trust takes the user name of one person, not a circle")
+	}
+	recipients, err := client.ListPasswordRecipients(ctx, connection, granteeUserID, "")
+	if err != nil {
+		return describeNotFound(command, err, typed)
+	}
+	if len(recipients) != 1 {
+		return fmt.Errorf("the server did not give one person for %q", typed)
+	}
+	recipient := recipients[0]
+	if recipient.PublicKey == "" {
+		return fmt.Errorf("%s has not set up Passwords yet, so there is no key to confirm", forTerminal(recipient.Username))
+	}
+	publicKey, err := decodePublicKey(recipient.PublicKey)
+	if err != nil {
+		return fmt.Errorf("%s: %w", forTerminal(recipient.Username), err)
+	}
+	actualCode := passwords.SafetyCode(publicKey)
+	if strings.Join(strings.Fields(actualCode), "") != givenDigits {
+		return fmt.Errorf("that is not the safety code of the key the server gives for %s (it is %s); nothing was recorded. "+
+			"Ask them for the code on their screen again: if it differs from this one, do not share",
+			forTerminal(recipient.Username), actualCode)
+	}
+	known, err := loadPasswordsKnownKeys(command)
+	if err != nil {
+		return err
+	}
+	if err := known.rememberConfirmed(recipient.UserID, recipient.Username, recipient.Name, recipient.PublicKey); err != nil {
+		return err
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"username": recipient.Username, "safetyCode": actualCode, "isConfirmed": true})
+	}
+	fmt.Printf("confirmed the key of %s (safety code %s)\n", forTerminal(recipient.Username), actualCode)
+	return nil
 }

@@ -54,10 +54,15 @@ func TestKnownKeysAreKeptByServer(test *testing.T) {
 	if two.lookup("user-1") != nil {
 		test.Fatal("a key known on one server is known on another")
 	}
-	if err := two.remember("user-2", "carol", "Carol", "key-two"); err != nil {
+	// A key an earlier version wrote might have been only seen on an item, so
+	// it is read as seen and is not one to seal for.
+	if one.confirmedKey("user-1") != "" || one.seenKey("user-1") != "key-one" {
+		test.Fatalf("the earlier key: confirmed %q, seen %q", one.confirmedKey("user-1"), one.seenKey("user-1"))
+	}
+	if err := two.rememberConfirmed("user-2", "carol", "Carol", "key-two"); err != nil {
 		test.Fatal(err)
 	}
-	if err := one.remember("user-3", "dave", "Dave", "key-three"); err != nil {
+	if err := one.rememberConfirmed("user-3", "dave", "Dave", "key-three"); err != nil {
 		test.Fatal(err)
 	}
 	reread, err := readPasswordsKnownKeysFile(path)
@@ -72,6 +77,12 @@ func TestKnownKeysAreKeptByServer(test *testing.T) {
 	var raw map[string]any
 	if err := json.Unmarshal(content, &raw); err != nil || raw["server"] != nil || raw["people"] != nil {
 		test.Fatalf("the old fields were written again: %s", content)
+	}
+	if strings.Contains(string(content), `"publicKey"`) || strings.Contains(string(content), "2030-01-02") {
+		test.Fatalf("the earlier key was written back as it was: %s", content)
+	}
+	if reread.Servers["https://two.example.test"]["user-2"].ConfirmedPublicKey != "key-two" {
+		test.Fatalf("a confirmed key: %+v", reread.Servers["https://two.example.test"]["user-2"])
 	}
 	if information, err := os.Stat(path); err != nil || information.Mode().Perm() != 0o600 {
 		test.Fatalf("the file: %v %v", information, err)
@@ -93,7 +104,7 @@ func TestKnownKeysWrittenAtTheSameMomentAreAllKept(test *testing.T) {
 			// Each is a command of its own: it read the file before any of the
 			// others wrote.
 			known := &passwordsKnownKeys{path: path, server: "https://one.example.test", file: passwordsKnownKeysFile{Servers: map[string]map[string]*passwordsKnownKey{}}}
-			failures <- known.remember("user-"+string(rune('a'+index)), "user", "User", "key")
+			failures <- known.rememberConfirmed("user-"+string(rune('a'+index)), "user", "User", "key")
 		}()
 	}
 	group.Wait()

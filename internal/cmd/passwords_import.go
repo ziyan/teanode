@@ -115,7 +115,7 @@ func importItems(session *passwordsSession, imported []passwords.ImportedItem, i
 		}
 		if _, err := session.saveNewItem(each.ItemKind, fields); err != nil {
 			counts.FailedCount++
-			fmt.Fprintf(os.Stderr, "note: could not save an item: %s\n", err)
+			fmt.Fprintf(os.Stderr, "note: could not save an item: %s\n", forTerminal(err.Error()))
 			continue
 		}
 		counts.ImportedCount++

@@ -34,7 +34,7 @@ func TestPasswordsParity(test *testing.T) {
 		"UpdatePasswordsSettings":      {"settings"},
 		"ErasePasswords":               {"erase"},
 		"ListPasswordItems":            {"list", "show", "copy"},
-		"ListPasswordRecipients":       {"share"},
+		"ListPasswordRecipients":       {"share", "trust"},
 		"ListWaitingPasswordShares":    {"share"},
 		"ReadPasswordsAgentKey":        {"agent"},
 		"SavePasswordItem":             {"add", "edit", "import"},
@@ -43,6 +43,7 @@ func TestPasswordsParity(test *testing.T) {
 		"SetPasswordItemShares":        {"share", "unshare"},
 		"AddPasswordShareKeys":         {"share"},
 		"SetPasswordItemUsableByAgent": {"agent"},
+		"RekeyPasswordItem":            {"agent", "unshare"},
 	}
 	for operation := range operations {
 		if _, isListed := table[operation]; !isListed {
@@ -130,6 +131,7 @@ func TestPasswordsDocumentsNameTheirOperations(test *testing.T) {
 		"DeletePasswordItem": client.DocumentDeletePasswordItem, "RestorePasswordItem": client.DocumentRestorePasswordItem,
 		"SetPasswordItemShares": client.DocumentSetPasswordItemShares, "AddPasswordShareKeys": client.DocumentAddPasswordShareKeys,
 		"SetPasswordItemUsableByAgent": client.DocumentSetPasswordItemUsableByAgent,
+		"RekeyPasswordItem":            client.DocumentRekeyPasswordItem,
 	} {
 		isMutation := !strings.HasPrefix(operation, "List") && !strings.HasPrefix(operation, "Read")
 		if client.IsMutationDocument(document) != isMutation {

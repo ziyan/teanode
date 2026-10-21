@@ -1,6 +1,8 @@
 package apigraph
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/passwords"
 )
 
 // `teanode passwords` is run against the real GraphQL handler and database,
@@ -140,9 +143,32 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if _, err := run("ada-session", "", "share", "example.com", world.ben.Username); err == nil || !strings.Contains(err.Error(), "safety code") {
 		test.Fatalf("sharing without checking the safety code: %v", err)
 	}
+	// With no terminal the key is confirmed by comparing his safety code, which
+	// Ben would read off his own screen; here it is worked out from his public
+	// key. A wrong code records nothing, so sharing still refuses.
+	var benSettings struct {
+		Setup struct {
+			PublicKey string `json:"publicKey"`
+		} `json:"setup"`
+	}
+	if err := json.Unmarshal([]byte(mustRun("ben-session", "", "settings", "--json")), &benSettings); err != nil {
+		test.Fatal(err)
+	}
+	benPublicKey, err := base64.StdEncoding.DecodeString(benSettings.Setup.PublicKey)
+	if err != nil || len(benPublicKey) == 0 {
+		test.Fatalf("Ben's public key: %v", err)
+	}
+	benSafetyCode := passwords.SafetyCode(benPublicKey)
+	if _, err := run("ada-token", "", "trust", world.ben.Username, "0000 0000 0000 0000 0001"); err == nil || !strings.Contains(err.Error(), "nothing was recorded") {
+		test.Fatalf("trust with a wrong code: %v", err)
+	}
+	if _, err := run("ada-session", "", "share", "example.com", world.ben.Username); err == nil || !strings.Contains(err.Error(), "safety code") {
+		test.Fatalf("sharing after a refused trust: %v", err)
+	}
 	// Confirming his safety code writes his key down, even though the server
 	// then refuses a token for want of a tap.
-	if _, err := run("ada-token", "", "share", "example.com", world.ben.Username, "--force"); !isTapRefusal(err) {
+	mustRun("ada-token", benSafetyCode+"\n", "trust", world.ben.Username, "--code-stdin")
+	if _, err := run("ada-token", "", "share", "example.com", world.ben.Username); !isTapRefusal(err) {
 		test.Fatalf("sharing from a token: %v", err)
 	}
 	mustRun("ada-session", "", "share", "example.com", world.ben.Username)

@@ -41,6 +41,16 @@ type fakePasswordsServer struct {
 	documents []string
 	// lastSetKeyCount is how many keys the last SetPasswordItemShares carried.
 	lastSetKeyCount int
+	// rekeyCount is how many RekeyPasswordItem calls were accepted, and
+	// lastRekeyKeyCount how many recipient keys the last one carried.
+	rekeyCount, lastRekeyKeyCount int
+	// rekeyFailure, when set, is the message RekeyPasswordItem answers with
+	// instead of re-keying, to see what the command line does when it fails.
+	rekeyFailure string
+	// staleOnce makes the next RekeyPasswordItem answer that the item changed
+	// on another device, and moves its revision on, as a save from elsewhere
+	// would have.
+	staleOnce bool
 }
 
 type fakePasswordsUser struct {
@@ -78,7 +88,7 @@ var fakePasswordsOperations = []string{
 	"ReadPasswordsSetup", "SetUpPasswords", "UnlockPasswords", "ChangePasswordsPassphrase", "ReplacePasswordsRecoveryKey",
 	"UpdatePasswordsSettings", "ErasePasswords", "ListPasswordItems", "ListPasswordRecipients", "ListWaitingPasswordShares",
 	"ReadPasswordsAgentKey", "SavePasswordItem", "DeletePasswordItem", "RestorePasswordItem", "SetPasswordItemShares",
-	"AddPasswordShareKeys", "SetPasswordItemUsableByAgent", "GetCurrentUser", "ListCirclePeople", "ListCircles",
+	"AddPasswordShareKeys", "SetPasswordItemUsableByAgent", "RekeyPasswordItem", "GetCurrentUser", "ListCirclePeople", "ListCircles",
 }
 
 func passwordsOperationOf(query string) string {
@@ -449,6 +459,53 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 			return nil, api.TapRequiredPhrase + ": letting the agent use an item is done on the dashboard"
 		}
 		item.isUsableByAgent, item.itemKeyByAgentKey = variables.Input.IsUsableByAgent, variables.Input.ItemKeyByAgentKey
+		self.revision++
+		item.revision = self.revision
+		return self.itemView(item, user), ""
+	case "RekeyPasswordItem":
+		var variables struct {
+			Input *client.PasswordItemRekeyInput `json:"input"`
+		}
+		decode(&variables)
+		input := variables.Input
+		item := self.items[input.ID]
+		switch {
+		case item == nil || item.ownerUserID != user.id || item.deletedAt != nil:
+			return nil, "not found"
+		case self.rekeyFailure != "":
+			return nil, self.rekeyFailure
+		case self.staleOnce:
+			self.staleOnce = false
+			self.revision++
+			item.revision = self.revision
+			return nil, "This item changed on another device. Open it again."
+		case int64(input.BaseRevision) != item.revision:
+			return nil, "This item changed on another device. Open it again."
+		case input.ItemKeyByAgentKey != nil && !item.isUsableByAgent:
+			return nil, "The agent does not use this item."
+		}
+		keys := map[string]*client.PasswordShareKeyInput{}
+		for _, key := range input.ShareKeys {
+			recipient := self.userByID(key.RecipientUserID)
+			if key.ItemID != item.id || recipient == nil || !self.reaches(item, recipient) {
+				return nil, "A key was given for somebody the item is not shared with."
+			}
+			if recipient.setup == nil || recipient.setup.PublicKey != key.RecipientPublicKey {
+				return nil, "That person's key changed since it was read. Read their key again and seal the item for it."
+			}
+			keys[key.RecipientUserID] = key.ForShare()
+		}
+		if item.isUsableByAgent {
+			item.itemKeyByAgentKey = ""
+			if input.ItemKeyByAgentKey != nil {
+				item.itemKeyByAgentKey = *input.ItemKeyByAgentKey
+			}
+			item.isUsableByAgent = input.ItemKeyByAgentKey != nil
+		}
+		item.keys = keys
+		item.encryptedFields, item.itemKey = input.EncryptedFields, input.ItemKey
+		self.rekeyCount++
+		self.lastRekeyKeyCount = len(input.ShareKeys)
 		self.revision++
 		item.revision = self.revision
 		return self.itemView(item, user), ""

@@ -291,18 +291,16 @@ func TestPasswordsUnlockFile(test *testing.T) {
 	}
 }
 
-// However long a lock time is chosen, the keys are left on disk for 8 hours at
-// most, and with no runtime directory they go in the configuration directory.
-func TestPasswordsUnlockFileLifetimeAndPlace(test *testing.T) {
+// However long a lock time is chosen, the keys are left in the runtime
+// directory for 8 hours at most.
+func TestPasswordsUnlockFileLifetime(test *testing.T) {
 	useConfigurationDirectory(test)
-	test.Setenv("XDG_RUNTIME_DIR", "")
 	fake := newFakePasswordsServer(test)
 	fake.setUpAs(testToken, testPassphrase)
 	fake.mustRun(testToken, "", "settings", "--lock-after-minutes", "10080")
 	fake.mustRun(testToken, testPassphrase+"\n", "unlock", "--passphrase-stdin")
 
-	configurationDirectory := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "teanode")
-	files := unlockFilesIn(configurationDirectory)
+	files := unlockFilesIn(filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "teanode"))
 	if len(files) != 1 {
 		test.Fatalf("unlock files: %v", files)
 	}
@@ -318,7 +316,7 @@ func TestPasswordsUnlockFileLifetimeAndPlace(test *testing.T) {
 		test.Errorf("the lock time on the server is still a week: %s", output)
 	}
 	fake.mustRun(testToken, "", "lock")
-	if left := unlockFilesIn(configurationDirectory); len(left) != 0 {
+	if left := unlockFilesIn(filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "teanode")); len(left) != 0 {
 		test.Errorf("lock left %v", left)
 	}
 }
@@ -554,7 +552,7 @@ func TestPasswordsShare(test *testing.T) {
 	fake.mustRun(testToken, "", "add", "example.com", "--user-name", "ada", "--password", "shared-secret-example")
 
 	// Ben has not set up Passwords: nothing can be sealed for him yet.
-	output := fake.mustRun(testToken, "", "share", "example.com", "ben", "--force")
+	output := fake.mustRun(testToken, "", "share", "example.com", "ben")
 	if !strings.Contains(output, "has not set up Passwords yet") {
 		test.Errorf("sharing with somebody who has not set up:\n%s", output)
 	}
@@ -580,9 +578,15 @@ func TestPasswordsShare(test *testing.T) {
 	if fake.items[firstItemID(fake)].keys["user-ben"] != nil {
 		test.Fatal("a key was sealed for Ben before the safety code was confirmed")
 	}
-	fake.mustRun(testToken, "", "share", "--waiting", "--force")
+	// The person at a terminal compares the safety code and says yes.
+	questions := recordKeyQuestions(test)
+	questions.isYes = true
+	fake.mustRun(testToken, "", "share", "--waiting")
 	if fake.items[firstItemID(fake)].keys["user-ben"] == nil {
 		test.Fatal("no key was sealed for Ben")
+	}
+	if len(questions.warnings) != 1 || !strings.Contains(questions.warnings[0], passwords.SafetyCode(benKey)) {
+		test.Errorf("the question about Ben's key: %q", questions.warnings)
 	}
 	fake.mustRun(testToken, "", "lock")
 
@@ -656,6 +660,7 @@ func TestPasswordsShare(test *testing.T) {
 	newBenKey, _ := base64.StdEncoding.DecodeString(fake.users[benToken].setup.PublicKey)
 	// Both people use one profile here, so locking Ben locked Ada too.
 	fake.mustRun(testToken, testPassphrase+"\n", "unlock", "--passphrase-stdin")
+	questions.isYes = false
 	_, err = fake.run(testToken, "", "share", "--waiting")
 	if err == nil || !strings.Contains(err.Error(), "KEY CHANGED") || !strings.Contains(err.Error(), passwords.SafetyCode(oldBenKey)) || !strings.Contains(err.Error(), passwords.SafetyCode(newBenKey)) {
 		test.Fatalf("a changed key was not shown with both safety codes:\n%v", err)
@@ -663,7 +668,8 @@ func TestPasswordsShare(test *testing.T) {
 	if key := fake.items[firstItemID(fake)].keys["user-ben"]; key.RecipientPublicKey == fake.users[benToken].setup.PublicKey {
 		test.Fatal("a key was sealed for a key nobody confirmed")
 	}
-	fake.mustRun(testToken, "", "share", "--waiting", "--force")
+	questions.isYes = true
+	fake.mustRun(testToken, "", "share", "--waiting")
 	if key := fake.items[firstItemID(fake)].keys["user-ben"]; key.RecipientPublicKey != fake.users[benToken].setup.PublicKey {
 		test.Fatal("a confirmed new key was not sealed for")
 	}
@@ -678,7 +684,8 @@ func TestPasswordsSharedItemsOpenOnlyFromTheirOwner(test *testing.T) {
 	fake.setUpAs(benToken, "ben passphrase example")
 	fake.mustRun(testToken, testPassphrase+"\n", "unlock", "--passphrase-stdin")
 	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
-	fake.mustRun(testToken, "", "share", "example.com", "ben", "--force")
+	recordKeyQuestions(test).isYes = true
+	fake.mustRun(testToken, "", "share", "example.com", "ben")
 	itemID := firstItemID(fake)
 	adaSession := fake.sessionAs(testToken, testPassphrase)
 	items, err := adaSession.loadItems(false)

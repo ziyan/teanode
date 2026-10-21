@@ -50,11 +50,14 @@ type passwordsKeys struct {
 
 // passwordsUnlockFile is what `teanode passwords unlock` leaves behind so that
 // the commands after it do not ask again. The two keys are base64 and not
-// encrypted: the file is readable by its owner only (it is in
-// $XDG_RUNTIME_DIR when that is set, which is emptied at logout, and in the
-// configuration directory otherwise), is refused when anyone else could have
-// read or changed it, is removed by `teanode passwords lock` and when ExpiresAt
-// passes, and never outlives passwordsUnlockLifetimeMost.
+// encrypted, so the file is kept only in $XDG_RUNTIME_DIR, a directory of the
+// person's login that is emptied at logout and is not backed up. Where there is
+// none (macOS, some Linux sessions) `unlock` refuses rather than write the keys
+// to a disk. The file is readable by its owner only and is refused when anyone
+// else could have read or changed it. It is removed by `teanode passwords lock`,
+// and by the next passwords command that finds it past ExpiresAt; nothing
+// removes it at ExpiresAt itself, which is why it is in a directory that is
+// emptied at logout. It never outlives passwordsUnlockLifetimeMost.
 type passwordsUnlockFile struct {
 	Server     string    `json:"server"`
 	AccountKey string    `json:"accountKey"`
@@ -64,24 +67,30 @@ type passwordsUnlockFile struct {
 
 var unlockFileUnsafeCharacters = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-// passwordsUnlockPaths are the places the opened keys of the profile this
-// command talks to may be, and the name of its server: first where they are
-// written now, then where an earlier version of this command wrote them, which
-// is only ever removed.
-func passwordsUnlockPaths(command *cli.Command) (paths []string, server string, err error) {
+// errPasswordsNoRuntimeDirectory is why `unlock` does not keep the keys on a
+// computer with no $XDG_RUNTIME_DIR.
+var errPasswordsNoRuntimeDirectory = errors.New("this computer has no per-login runtime directory ($XDG_RUNTIME_DIR), and the keys unlock keeps are not encrypted, so they are not written to a disk; " +
+	"each passwords command will ask for the passphrase instead, or pass --passphrase-stdin to read it from a script")
+
+// passwordsUnlockPaths are where the opened keys of the profile this command
+// talks to are kept, and the name of its server. The keys are kept only in the
+// runtime directory, so path is empty when there is none. leftover is where an
+// earlier version wrote them when it had no runtime directory, which is only
+// ever removed.
+func passwordsUnlockPaths(command *cli.Command) (path, leftover, server string, err error) {
 	name, server, err := passwordsProfile(command)
 	if err != nil {
-		return nil, "", err
+		return "", "", "", err
 	}
 	configurationDirectory, err := passwordsConfigurationDirectory()
 	if err != nil {
-		return nil, "", err
+		return "", "", "", err
 	}
 	filename := passwords.UnlockFileName(name)
 	if runtimeDirectory := passwordsRuntimeDirectory(); runtimeDirectory != "" {
-		paths = append(paths, filepath.Join(runtimeDirectory, "teanode", filename))
+		path = filepath.Join(runtimeDirectory, "teanode", filename)
 	}
-	return append(paths, filepath.Join(configurationDirectory, filename)), server, nil
+	return path, filepath.Join(configurationDirectory, filename), server, nil
 }
 
 // readPasswordsUnlock gives the keys kept by `unlock` and when they stop being
@@ -93,11 +102,16 @@ func readPasswordsUnlock(command *cli.Command) (*passwordsKeys, time.Time, error
 	if err := refuseAgentCommand(); err != nil {
 		return nil, time.Time{}, err
 	}
-	paths, server, err := passwordsUnlockPaths(command)
+	path, leftover, server, err := passwordsUnlockPaths(command)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	path := paths[0]
+	// Keys an earlier build left in the configuration directory are on a disk
+	// and in backups with no end time that anything enforces: delete them.
+	_, _ = removeFile(leftover)
+	if path == "" {
+		return nil, time.Time{}, nil
+	}
 	content, err := readPrivateFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, time.Time{}, nil
@@ -131,9 +145,12 @@ func writePasswordsUnlock(command *cli.Command, keys *passwordsKeys, lockAfter t
 	if err := refuseAgentCommand(); err != nil {
 		return time.Time{}, err
 	}
-	paths, server, err := passwordsUnlockPaths(command)
+	path, leftover, server, err := passwordsUnlockPaths(command)
 	if err != nil {
 		return time.Time{}, err
+	}
+	if path == "" {
+		return time.Time{}, errPasswordsNoRuntimeDirectory
 	}
 	lockAfter = min(lockAfter, passwordsUnlockLifetimeMost)
 	expiresAt := time.Now().Add(lockAfter).Truncate(time.Second)
@@ -146,27 +163,28 @@ func writePasswordsUnlock(command *cli.Command, keys *passwordsKeys, lockAfter t
 	if err != nil {
 		return time.Time{}, err
 	}
-	if err := writePrivateFile(paths[0], append(content, '\n')); err != nil {
+	if err := writePrivateFile(path, append(content, '\n')); err != nil {
 		return time.Time{}, err
 	}
-	// The one place the keys are kept now; a copy an earlier version left in
-	// the other place is not kept longer than the new one.
-	for _, other := range paths[1:] {
-		_, _ = removeFile(other)
-	}
+	// The one place the keys are kept; a copy an earlier version left in the
+	// configuration directory is not kept at all.
+	_, _ = removeFile(leftover)
 	return expiresAt, nil
 }
 
 // removePasswordsUnlock forgets the kept keys, wherever they are, and says
 // whether there were any.
 func removePasswordsUnlock(command *cli.Command) (bool, error) {
-	paths, _, err := passwordsUnlockPaths(command)
+	path, leftover, _, err := passwordsUnlockPaths(command)
 	if err != nil {
 		return false, err
 	}
 	wasUnlocked := false
-	for _, path := range paths {
-		wasRemoved, err := removeFile(path)
+	for _, each := range []string{path, leftover} {
+		if each == "" {
+			continue
+		}
+		wasRemoved, err := removeFile(each)
 		if err != nil {
 			return false, err
 		}
@@ -639,7 +657,7 @@ func (self *passwordsSession) loadItems(includeDeleted bool) ([]*passwordsItem, 
 		item, err := self.openItem(view)
 		if err != nil {
 			failedCount++
-			fmt.Fprintf(os.Stderr, "note: %s\n", err)
+			fmt.Fprintf(os.Stderr, "note: %s\n", forTerminal(err.Error()))
 			continue
 		}
 		items = append(items, item)
