@@ -626,7 +626,7 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 	if query := strings.TrimSpace(arguments.Query); query != "" {
 		matched := []*models.AgentConversation{}
 		if hasAgent && (kind == "" || kind != models.AgentConversationChat) {
-			if matched, err = tx.SearchAgentConversations(found.ID, query, 50); err != nil {
+			if matched, err = tx.SearchAgentConversations(found.ID, query, 50, principal.IsPersonsTap()); err != nil {
 				return nil, err
 			}
 			if kind != "" {

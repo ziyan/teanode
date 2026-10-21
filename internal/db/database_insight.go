@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/ziyan/teanode/internal/agent/privateturn"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -106,7 +108,10 @@ type InsightOperation interface {
 
 	// SearchAgentConversations finds a person's conversations by words in
 	// the title or in what was said, newest first, archived ones included.
-	SearchAgentConversations(agentId, query string, limit int) ([]*models.AgentConversation, error)
+	// What was said in a private turn (see privateturn) is searched only with
+	// isPrivateIncluded, which is for the person's own screen: a search that
+	// says where some words are is a way to read them out one letter at a time.
+	SearchAgentConversations(agentId, query string, limit int, isPrivateIncluded bool) ([]*models.AgentConversation, error)
 
 	// ListAgentConversationsToRemember is every conversation with
 	// something said in it that no remember run has read yet, quiet since
@@ -868,7 +873,7 @@ func (self *transaction) ListAgentConversations(agentId string, kinds []models.A
 	return conversations, nil
 }
 
-func (self *transaction) SearchAgentConversations(agentId, query string, limit int) ([]*models.AgentConversation, error) {
+func (self *transaction) SearchAgentConversations(agentId, query string, limit int, isPrivateIncluded bool) ([]*models.AgentConversation, error) {
 	// Escaped, so that somebody searching for "50%" or "a_b" is looking for
 	// those characters rather than for LIKE's wildcards.
 	pattern := "%" + escapeLike(strings.TrimSpace(query)) + "%"
@@ -880,11 +885,31 @@ func (self *transaction) SearchAgentConversations(agentId, query string, limit i
 	// pattern was matched against every message on the server, nearly all
 	// of them from runs nobody searches, and a search took half a minute.
 	chats := self.tx.Model(&agentConversationModel{}).Select("\"id\"").Where("\"agent_id\" = ? AND \"kind\" IN ?", agentId, kinds)
+	messages := self.tx.Model(&agentMessageModel{}).Select("\"conversation_id\"").Where("\"conversation_id\" IN (?) AND \"role\" IN ? AND \"content\" ILIKE ?", chats, []string{"user", "assistant"}, pattern)
+	// A search that says which conversations hold some words is a way to read
+	// those words out one letter at a time. What was said in a private turn
+	// (see privateturn) is therefore not searched, unless the caller is the
+	// person's own screen. A conversation that has no call of a private tool
+	// is searched in SQL as it always was; one that has is read through, since
+	// where its turns begin and end is not a thing SQL can say.
+	var matchedByPublicTurns []string
+	if !isPrivateIncluded {
+		withPrivateCalls := self.tx.Model(&agentMessageModel{}).Select("\"conversation_id\"").
+			Where("\"conversation_id\" IN (?) AND \"role\" = ? AND \"tool_calls\"::text ~* ?", chats, "assistant", privateToolCallPattern())
+		messages = messages.Where("\"conversation_id\" NOT IN (?)", withPrivateCalls)
+		var err error
+		if matchedByPublicTurns, err = self.searchConversationsWithPrivateCalls(withPrivateCalls, pattern); err != nil {
+			return nil, err
+		}
+	}
 	var found []agentConversationModel
-	if err := self.tx.Where("\"agent_id\" = ? AND \"kind\" IN ? AND (\"title\" ILIKE ? OR \"summary\" ILIKE ? OR \"id\" IN (?))",
-		agentId, kinds, pattern, pattern,
-		self.tx.Model(&agentMessageModel{}).Select("\"conversation_id\"").Where("\"conversation_id\" IN (?) AND \"role\" IN ? AND \"content\" ILIKE ?", chats, []string{"user", "assistant"}, pattern),
-	).Order("\"last_at\" DESC").Limit(limit).Find(&found).Error; err != nil {
+	where := "\"agent_id\" = ? AND \"kind\" IN ? AND (\"title\" ILIKE ? OR \"summary\" ILIKE ? OR \"id\" IN (?))"
+	arguments := []any{agentId, kinds, pattern, pattern, messages}
+	if len(matchedByPublicTurns) > 0 {
+		where = "\"agent_id\" = ? AND \"kind\" IN ? AND (\"title\" ILIKE ? OR \"summary\" ILIKE ? OR \"id\" IN (?) OR \"id\" IN ?)"
+		arguments = append(arguments, matchedByPublicTurns)
+	}
+	if err := self.tx.Where(where, arguments...).Order("\"last_at\" DESC").Limit(limit).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	conversations := make([]*models.AgentConversation, 0, len(found))
@@ -892,6 +917,56 @@ func (self *transaction) SearchAgentConversations(agentId, query string, limit i
 		conversations = append(conversations, conversationFromModel(&found[index]))
 	}
 	return conversations, nil
+}
+
+// privateToolCallPattern is a regular expression for a stored tool call that
+// may be a call of a private tool: it is looser than privateturn.IsToolCall,
+// which decides afterwards, and only has to leave out the conversations that
+// cannot hold one.
+func privateToolCallPattern() string {
+	names := privateturn.ToolNames()
+	for index, name := range names {
+		names[index] = regexp.QuoteMeta(name)
+	}
+	return `"name":\s*"(` + strings.Join(names, "|") + `)`
+}
+
+// searchConversationsWithPrivateCalls is the conversations, of those the
+// subquery names, in which some words were said outside any private turn.
+func (self *transaction) searchConversationsWithPrivateCalls(conversations any, pattern string) ([]string, error) {
+	var conversationIds []string
+	if err := self.tx.Model(&agentMessageModel{}).Distinct().Where("\"conversation_id\" IN (?)", conversations).Pluck("\"conversation_id\"", &conversationIds).Error; err != nil {
+		return nil, err
+	}
+	var matched []string
+	for _, conversationId := range conversationIds {
+		var rows []struct {
+			ConversationID string `gorm:"column:conversation_id"`
+			Role           string `gorm:"column:role"`
+			ToolCalls      []byte `gorm:"column:tool_calls"`
+			IsMatch        bool   `gorm:"column:is_match"`
+		}
+		if err := self.tx.Raw(`SELECT "conversation_id", "role", "tool_calls", ("role" IN ('user', 'assistant') AND "content" ILIKE ?) AS "is_match"
+			FROM "agent_message" WHERE "conversation_id" = ? ORDER BY "created_at" ASC, "id" ASC`, pattern, conversationId).Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		stored := make([]*models.AgentMessage, 0, len(rows))
+		for _, row := range rows {
+			message := &models.AgentMessage{ConversationID: row.ConversationID, Role: row.Role}
+			if err := decodeJSON(row.ToolCalls, &message.ToolCalls); err != nil {
+				return nil, fmt.Errorf("db: cannot read the tool calls of a message of conversation %q: %w", conversationId, err)
+			}
+			stored = append(stored, message)
+		}
+		isPrivate := privateturn.Turns(stored)
+		for index, row := range rows {
+			if row.IsMatch && !isPrivate[index] {
+				matched = append(matched, conversationId)
+				break
+			}
+		}
+	}
+	return matched, nil
 }
 
 func (self *transaction) ListAgentConversationsToDescribe(quietSince time.Time, limit int) ([]*models.AgentConversation, error) {

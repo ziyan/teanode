@@ -4,18 +4,31 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The person editing a schedule on the dashboard or the command line is the
-// person writing it. A schedule they wrote stays theirs through any edit. One
-// the agent wrote becomes theirs only when they save a different prompt;
-// turning it off, or saving the same prompt again, leaves it the agent's.
+// asCredential runs one step as the person, signed in with the credential
+// kind given, in a transaction of its own: the dashboard's session is a tap on
+// a screen, a command line token is not.
+func (self *financeFixture) asCredential(test *testing.T, credentialKind models.CredentialKind, run func(ctx context.Context, tx db.Transaction)) {
+	test.Helper()
+	principal := &api.Principal{User: self.owner, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}}), CredentialKind: credentialKind}
+	dbtest.RunTransactionOn(test, self.database, func(tx db.Transaction) {
+		run(api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx), tx)
+	})
+}
+
+// The person editing a schedule on the dashboard is the person writing it. A
+// schedule they wrote stays theirs through any edit. One the agent wrote
+// becomes theirs only when they save a different prompt; turning it off, or
+// saving the same prompt again, leaves it the agent's.
 func TestEditingAScheduleKeepsOrTakesItsWriter(t *testing.T) {
 	fixture := newFinanceFixture(t, false)
 	var theirsId, agentsId string
-	fixture.as(t, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+	fixture.asCredential(t, models.CredentialSession, func(ctx context.Context, tx db.Transaction) {
 		theirs, err := tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: fixture.ownerAgent.ID, Name: "Morning", Cron: "0 8 * * *", Prompt: "Tell me what is on today.", WrittenBy: models.WrittenByPerson, Deliver: "drawer", Enabled: true})
 		if err != nil {
 			t.Fatal(err)
@@ -33,7 +46,7 @@ func TestEditingAScheduleKeepsOrTakesItsWriter(t *testing.T) {
 		}
 		return schedule.WrittenBy
 	}
-	fixture.as(t, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+	fixture.asCredential(t, models.CredentialSession, func(ctx context.Context, tx db.Transaction) {
 		off := false
 		if _, err := fixture.resolver.SaveAgentSchedule(ctx, SaveAgentScheduleArguments{ScheduleID: theirsId, Prompt: "Tell me what is on today and tomorrow.", Enabled: &off}); err != nil {
 			t.Fatal(err)
@@ -62,7 +75,7 @@ func TestEditingAScheduleKeepsOrTakesItsWriter(t *testing.T) {
 // The person rewriting its prompt makes it theirs.
 func TestTheBriefSwitchWritesABuiltInSchedule(t *testing.T) {
 	fixture := newFinanceFixture(t, false)
-	fixture.as(t, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+	fixture.asCredential(t, models.CredentialSession, func(ctx context.Context, tx db.Transaction) {
 		brief, err := fixture.resolver.SetAgentBrief(ctx, SetAgentBriefArguments{Enabled: true})
 		if err != nil || brief == nil {
 			t.Fatalf("SetAgentBrief: %v %v", brief, err)
@@ -86,6 +99,54 @@ func TestTheBriefSwitchWritesABuiltInSchedule(t *testing.T) {
 		}
 		if stored, _ = tx.GetAgentSchedule(brief.ID); stored.WrittenBy != models.WrittenByPerson {
 			t.Errorf("a prompt the person wrote is theirs: %q", stored.WrittenBy)
+		}
+	})
+}
+
+// A schedule made or reworded from the command line is the agent's: the
+// agent's own shell holds the same token, so a schedule from there cannot be
+// told from one the agent made, and its runs must not use Passwords. A tap on
+// the dashboard or in the phone app is the person's.
+func TestAScheduleFromTheCommandLineIsTheAgents(t *testing.T) {
+	fixture := newFinanceFixture(t, false)
+	var theirsId string
+	for name, test := range map[string]struct {
+		credentialKind models.CredentialKind
+		want           string
+	}{
+		"the dashboard":       {models.CredentialSession, models.WrittenByPerson},
+		"the phone app":       {models.CredentialApp, models.WrittenByPerson},
+		"the command line":    {models.CredentialToken, models.WrittenByAgent},
+		"a request with none": {"", models.WrittenByAgent},
+	} {
+		fixture.asCredential(t, test.credentialKind, func(ctx context.Context, tx db.Transaction) {
+			created, err := fixture.resolver.SaveAgentSchedule(ctx, SaveAgentScheduleArguments{Name: name, Cron: "0 8 * * *", Prompt: "Tell me what is on today."})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if created.WrittenBy != test.want {
+				t.Errorf("a schedule made from %s is written by %q, want %q", name, created.WrittenBy, test.want)
+			}
+			if test.credentialKind == models.CredentialSession {
+				theirsId = created.ID
+			}
+		})
+	}
+	// Rewording the person's schedule from the command line takes it from
+	// them; turning it off does not.
+	fixture.asCredential(t, models.CredentialToken, func(ctx context.Context, tx db.Transaction) {
+		off := false
+		if _, err := fixture.resolver.SaveAgentSchedule(ctx, SaveAgentScheduleArguments{ScheduleID: theirsId, Enabled: &off}); err != nil {
+			t.Fatal(err)
+		}
+		if stored, _ := tx.GetAgentSchedule(theirsId); stored.WrittenBy != models.WrittenByPerson {
+			t.Errorf("switching a schedule off from the command line changed the writer to %q", stored.WrittenBy)
+		}
+		if _, err := fixture.resolver.SaveAgentSchedule(ctx, SaveAgentScheduleArguments{ScheduleID: theirsId, Prompt: "Read me the shed note."}); err != nil {
+			t.Fatal(err)
+		}
+		if stored, _ := tx.GetAgentSchedule(theirsId); stored.WrittenBy != models.WrittenByAgent {
+			t.Errorf("a prompt sent from the command line is written by %q, want the agent", stored.WrittenBy)
 		}
 	})
 }

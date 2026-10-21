@@ -140,6 +140,14 @@ CREATE TABLE "password_agent_key" (
     "created_at"         timestamp with time zone NOT NULL
 );
 
+-- A card the agent raised remembers whether the turn that raised it was one
+-- the person started. The turn that carries on an answer given later counts
+-- as the person's only when that turn did: otherwise a card raised by a turn
+-- a chat app, a mail or a program began would hand the person's standing to
+-- whatever the answer starts. A card from before this column is not the
+-- person's.
+ALTER TABLE "agent_interaction" ADD COLUMN "is_started_by_person" boolean NOT NULL DEFAULT false;
+
 -- Keeping one's own passwords is something a person does with their own
 -- account, so everybody who has the ordinary roles gets it. An operator can
 -- take it away from a role in the usual place.

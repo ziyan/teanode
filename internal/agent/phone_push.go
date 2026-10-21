@@ -41,6 +41,10 @@ const (
 
 	// phonePushTimeout bounds one notification's trip through the relay.
 	phonePushTimeout = 30 * time.Second
+
+	// phonePrivateAnswerBody is what a notification says in place of an
+	// answer that may quote something private.
+	phonePrivateAnswerBody = "Your answer is ready"
 )
 
 // Phones is what sends this agent's notifications, which is the chat hub's as
@@ -229,12 +233,21 @@ func (self *AskRun) notifyAnswer(answer string) {
 	if strings.TrimSpace(agentName) == "" {
 		agentName = "TeaNode"
 	}
+	// A notification is read on a lock screen. The answer of a turn that
+	// called a private tool may quote a note or a password, so the phone is
+	// told only that there is one.
+	body := PhoneBody(answer)
+	self.mutex.Lock()
+	if self.hasMadePrivateCall {
+		body = phonePrivateAnswerBody
+	}
+	self.mutex.Unlock()
 	self.agent.notifyPhones(self.settings.Agent.ID, models.NotificationAnswer, &push.Content{
 		NotificationKind: models.NotificationAnswer,
 		ConversationID:   self.settings.Conversation.ID,
 		RunID:            self.ID,
 		Title:            agentName,
-		Body:             PhoneBody(answer),
+		Body:             body,
 		ThreadID:         self.settings.Conversation.ID,
 		Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
 	})

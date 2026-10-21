@@ -84,6 +84,15 @@ type AskSettings struct {
 	// write.
 	IsPersonsSchedule bool
 
+	// IsAnswerToCard says the turn carries on an answer given to a card after
+	// the turn that raised it had ended (see ResumeInteraction), and
+	// IsCardRaisedByPerson that the turn that raised it was one the person
+	// started. The answer is the person's, but it is not typed into a chat
+	// app or a program: the turn counts as the person's only if the one it
+	// carries on did.
+	IsAnswerToCard       bool
+	IsCardRaisedByPerson bool
+
 	// DrawerID names the open drawer that sent the turn: the browser a
 	// location call asks, rather than any other the person has open. Empty
 	// for a turn no drawer sent, such as one begun after a card was
@@ -403,6 +412,12 @@ type AskRun struct {
 	// lastAnswer is the newest answer the turn gave, for the phone
 	// notification sent when the turn finishes; see isAnswerForPhone.
 	lastAnswer string
+
+	// hasMadePrivateCall says the turn called a private tool (see
+	// tools.IsPrivateToolCall): the person's Health, or a list, a note or a
+	// made-up password from Passwords. Its answer is not put on a lock
+	// screen.
+	hasMadePrivateCall bool
 	// lastWroteAt is when the person last wrote to the turn: when they
 	// asked it, or when a message of theirs was handed to it as it ran.
 	// It stands in for a presence report, which typing does not send.
@@ -632,7 +647,7 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	// handed to that turn instead, which reads it at its next round; the
 	// running turn stays the latest, so a third message goes to it too.
 	if previous := self.latest[settings.Conversation.ID]; previous != nil && !previous.isFinished() {
-		if isSteerable(settings) && isSteerable(previous.settings) && previous.steer(run) {
+		if isSteerable(settings) && run.IsStartedByPerson() && isSteerable(previous.settings) && previous.steer(run) {
 			run.steeredInto = previous
 		} else {
 			run.previous = previous
@@ -775,6 +790,9 @@ func (self *AskRun) IsStartedByPerson() bool {
 	case "schedule", "mail":
 		return self.settings.IsPersonsSchedule
 	case "drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api":
+		if self.settings.IsAnswerToCard && !self.settings.IsCardRaisedByPerson {
+			return false
+		}
 		return !self.settings.Headless && !models.IsOwnTurn(self.settings.Message)
 	}
 	return false
@@ -1656,6 +1674,13 @@ func (self *AskRun) turn() error {
 		// each answered is kept in the model's order whatever order they
 		// finished in.
 		var lookingAt []llm.ContentPart
+		for _, toolCall := range answer.ToolCalls {
+			if tools.IsPrivateToolCall(models.AgentToolCall{ID: toolCall.ID, Name: toolCall.Name, Arguments: toolCall.Arguments}) {
+				self.mutex.Lock()
+				self.hasMadePrivateCall = true
+				self.mutex.Unlock()
+			}
+		}
 		for _, batch := range self.roundBatches(configuration, sent, answer.ToolCalls) {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -2291,13 +2316,17 @@ func (self *AskRun) takeCardSlot(ctx context.Context) (release func(), err error
 // loadHistory is the conversation as the model gets it.
 func (self *AskRun) loadHistory(tx db.Transaction) ([]llm.ChatMessage, error) {
 	if self.settings.Chat != nil {
-		return self.loadChatHistory(tx)
+		history, err := self.loadChatHistory(tx)
+		if err != nil {
+			return nil, err
+		}
+		return self.historyForRun(history), nil
 	}
 	stored, err := tx.ListAgentMessages(self.settings.Conversation.ID, nil)
 	if err != nil {
 		return nil, err
 	}
-	return historyOf(stored, self.settings.Conversation.CompactedThrough), nil
+	return self.historyForRun(historyOf(stored, self.settings.Conversation.CompactedThrough)), nil
 }
 
 // repairHistory drops a tool message whose call is not in the history and

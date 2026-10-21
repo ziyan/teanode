@@ -176,7 +176,7 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			if words == "" {
 				return fmt.Errorf("searching needs words to look for")
 			}
-			if found, err = tx.SearchAgentConversations(agentId, words, limit); err != nil {
+			if found, err = tx.SearchAgentConversations(agentId, words, limit, false); err != nil {
 				return err
 			}
 			// A chat is found by its title or by who is in it, as the
@@ -640,7 +640,7 @@ const verbatimPrefix = "show_verbatim:"
 
 // hiddenPrivateWords stands for what the agent or one of its tools said in a
 // turn that used Health, or listed, read or made up something in Passwords.
-const hiddenPrivateWords = "[hidden: from a turn that used Health or Passwords]"
+const hiddenPrivateWords = tools.HiddenPrivateWords
 
 // cutRunes shortens text to a number of characters without cutting one
 // in half, which would leave the model reading a replacement character.

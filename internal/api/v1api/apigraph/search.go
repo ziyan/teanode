@@ -240,7 +240,10 @@ func (self *graph) searchChats(ctx context.Context, words string, limit int) ([]
 	if !canUseAgentConversations(principal, found) {
 		return nil, search.ErrNotAvailable
 	}
-	conversations, err := self.transaction(ctx).SearchAgentConversations(found.ID, words, limit)
+	// What was said in a private turn is searched only on the person's own
+	// screen: from the command line, or by the agent, it would say which
+	// words a note or a made-up password holds.
+	conversations, err := self.transaction(ctx).SearchAgentConversations(found.ID, words, limit, principal.IsPersonsTap())
 	if err != nil {
 		return nil, err
 	}

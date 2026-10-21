@@ -130,7 +130,10 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 			}
 		}
 	}
-	unread = worthReading(unread)
+	// A turn is judged by the whole conversation, not by the part after the
+	// mark: the mark can fall between the private call and the answer that
+	// quotes it, or a message steered into the turn can end a batch.
+	unread = worthReadingIn(messages, unread)
 	if len(unread) == 0 {
 		// Nothing to file, but the mark still moves: otherwise a
 		// conversation of nothing but tool chatter comes round every
@@ -249,7 +252,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 // meaning as those filed and are not filed twice.
 func (self *Agent) readLessonsOf(ctx context.Context, run *Run, conversation *models.AgentConversation, messages, unread []*models.AgentMessage, backlog int) ([]*models.AgentMessage, *models.AgentMessage, int, error) {
 	read := unread[len(unread)-1]
-	window := withoutPrivateTurns(lessonWindowOf(messages, conversation.RememberedThrough, read))
+	window := withoutPrivateTurnsIn(messages, lessonWindowOf(messages, conversation.RememberedThrough, read))
 	filedCount, readCount, err := self.readLessons(ctx, run, conversation, window)
 	if filedCount > 0 {
 		log.Debugf("filed %d lesson(s) from conversation %s", filedCount, conversation.ID)
@@ -359,8 +362,14 @@ func (self *Agent) markRemembered(ctx context.Context, conversation *models.Agen
 // What the agent said in a turn that read the person's Health or a note in
 // their Passwords is left out too (see withoutPrivateTurns).
 func worthReading(messages []*models.AgentMessage) []*models.AgentMessage {
-	kept := make([]*models.AgentMessage, 0, len(messages))
-	for _, message := range withoutPrivateTurns(messages) {
+	return worthReadingIn(messages, messages)
+}
+
+// worthReadingIn is worthReading for a window of a longer conversation, the
+// private turns being found in all of it (see withoutPrivateTurnsIn).
+func worthReadingIn(whole, window []*models.AgentMessage) []*models.AgentMessage {
+	kept := make([]*models.AgentMessage, 0, len(window))
+	for _, message := range withoutPrivateTurnsIn(whole, window) {
 		switch message.Role {
 		case string(llm.RoleUser), string(llm.RoleAssistant):
 			if strings.TrimSpace(message.Content) != "" {
@@ -393,10 +402,24 @@ func isPrivateToolCall(call models.AgentToolCall) bool {
 // message that made tool calls, and the turn goes on to the agent's final
 // answer. Only a message after an answer starts a turn.
 func withoutPrivateTurns(messages []*models.AgentMessage) []*models.AgentMessage {
-	isPrivate := tools.PrivateTurns(messages)
-	kept := make([]*models.AgentMessage, 0, len(messages))
-	for index, message := range messages {
-		if !isPrivate[index] || message.Role == string(llm.RoleUser) {
+	return withoutPrivateTurnsIn(messages, messages)
+}
+
+// withoutPrivateTurnsIn is withoutPrivateTurns for a window of a longer
+// conversation: whole is the conversation, and the turns are found in all of
+// it, so that a window starting after the call of a private tool, or after a
+// message steered into the turn, still leaves out the answer that quotes what
+// the call returned.
+func withoutPrivateTurnsIn(whole, window []*models.AgentMessage) []*models.AgentMessage {
+	isPrivate := map[*models.AgentMessage]bool{}
+	for index, found := range tools.PrivateTurns(whole) {
+		if found {
+			isPrivate[whole[index]] = true
+		}
+	}
+	kept := make([]*models.AgentMessage, 0, len(window))
+	for _, message := range window {
+		if !isPrivate[message] || message.Role == string(llm.RoleUser) {
 			kept = append(kept, message)
 		}
 	}

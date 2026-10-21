@@ -214,8 +214,16 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		return nil, agent.ErrUnavailable
 	}
 	tx := self.transaction(ctx)
+	// The schedule is the person's, and its runs may use Passwords, only when
+	// the person tapped save on a screen. The command line holds a token the
+	// agent's own shell can use too, so a schedule made from there is
+	// recorded as the agent's.
+	writtenBy := models.WrittenByAgent
+	if principal.IsPersonsTap() {
+		writtenBy = models.WrittenByPerson
+	}
 	if arguments.ScheduleID == "" {
-		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: models.WrittenByPerson, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
+		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: writtenBy, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {
 			return nil, translateError(err)
@@ -241,13 +249,15 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		if arguments.Cron != "" {
 			schedule.Cron = strings.TrimSpace(arguments.Cron)
 		}
-		// Words the person typed are theirs: saving a changed prompt makes
-		// the schedule the person's, whoever wrote the one it replaces.
-		// Saving the same prompt again (the dashboard sends it with every
-		// edit) leaves the writer as it was.
+		// Words the person typed on a screen are theirs: saving a changed
+		// prompt makes the schedule the person's, whoever wrote the one it
+		// replaces. The same words from the command line are the agent's,
+		// even over a schedule that was the person's, since the agent's shell
+		// can send them. Saving the same prompt again (the dashboard sends it
+		// with every edit) leaves the writer as it was.
 		if prompt := strings.TrimSpace(arguments.Prompt); prompt != "" && prompt != strings.TrimSpace(schedule.Prompt) {
 			schedule.Prompt = prompt
-			schedule.WrittenBy = models.WrittenByPerson
+			schedule.WrittenBy = writtenBy
 		}
 		if arguments.Deliver != "" {
 			schedule.Deliver = arguments.Deliver

@@ -414,3 +414,29 @@ func TestAPhoneIsToldNothingHidden(t *testing.T) {
 		t.Errorf("no notification of these kinds arrived: %v", want)
 	}
 }
+
+// The answer of a turn that called a private tool (the person's Health, or a
+// note or a made-up password from Passwords) is not printed on a lock screen:
+// the phone is told only that there is one.
+func TestAPhoneIsNotToldAnAnswerOfAPrivateTurn(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	run := &AskRun{agent: fixture.worker, settings: &AskSettings{Agent: fixture.agent, Surface: "ios", Conversation: &models.AgentConversation{ID: "side-1"}}}
+	run.hasMadePrivateCall = true
+	run.notifyAnswer("The shed padlock opens with 0000-invented.")
+	fixture.worker.waitGroup.Wait()
+
+	isTold := false
+	for _, delivery := range fixture.relay.to("sealed:a-registration") {
+		content := fixture.read(t, delivery)
+		if content.NotificationKind != models.NotificationAnswer {
+			continue
+		}
+		isTold = true
+		if content.Body != "Your answer is ready" {
+			t.Errorf("an answer of a private turn was printed as %q", content.Body)
+		}
+	}
+	if !isTold {
+		t.Error("no answer notification arrived")
+	}
+}

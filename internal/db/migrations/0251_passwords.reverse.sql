@@ -1,3 +1,4 @@
+ALTER TABLE "agent_interaction" DROP COLUMN "is_started_by_person";
 DELETE FROM "role_permission" WHERE "permission_key" = 'passwords:use';
 DROP TABLE "password_agent_key";
 DROP TABLE "password_share_key";

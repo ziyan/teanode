@@ -218,7 +218,12 @@ func compactWork(configuration *config.Configuration, turn config.AgentWork) con
 // for.
 func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, modelName string, history []llm.ChatMessage, tailMessages int) ([]llm.ChatMessage, error) {
 	cut := compactCut(history, tailMessages)
-	older, tail := history[:cut], history[cut:]
+	// The note is written from the older part, and its chunks are stored as
+	// runs the conversation tool can read, so a private turn (the person's
+	// Health, a Passwords note or a made-up password) is given to the model as
+	// the marker. The turn is judged by all of the history, since the cut may
+	// fall inside it. The tail stays as it is: it is the run's own to read.
+	older, tail := withoutPrivateHistory(history[:cut], privateMessages(history)), history[cut:]
 	// The last stored message the note stands in for. An earlier note has
 	// no row in the history and is folded into the new one.
 	through := ""

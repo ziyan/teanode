@@ -41,6 +41,9 @@ func (self *AskRun) raiseInteraction(ctx context.Context, interaction *models.Ag
 		return nil
 	}
 	interaction.AgentID, interaction.ConversationID, interaction.RunID = self.settings.Agent.ID, self.settings.Conversation.ID, self.ID
+	// Kept with the card, so that the turn a late answer starts is the
+	// person's only if this one was.
+	interaction.IsStartedByPerson = self.IsStartedByPerson()
 	var kept *models.AgentInteraction
 	if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		kept, err = tx.CreateAgentInteraction(interaction)
@@ -144,6 +147,7 @@ func (self *Agent) ResumeInteraction(settings *ResumeSettings, chatAboutIt strin
 	return self.Ask(&AskSettings{
 		Agent: settings.Agent, Owner: settings.Owner, Operations: settings.Operations,
 		Conversation: settings.Conversation, Message: message, Surface: "drawer", PreApproved: preApproved,
+		IsAnswerToCard: true, IsCardRaisedByPerson: interaction.IsStartedByPerson,
 	})
 }
 
