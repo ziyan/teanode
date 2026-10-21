@@ -56,6 +56,8 @@ const TABS: TabItem[] = [
   { id: 'places', label: 'location.tabPlaces' },
   { id: 'sharing', label: 'location.tabSharing' },
 ]
+// While somebody else is looked at: Sharing is only ever the person's own.
+const OTHERS_TABS = TABS.filter((each) => each.id !== 'sharing')
 
 // How often the people on the map are read again when the live feed says
 // nothing: a feed that dropped, or a person who moved while it was down.
@@ -176,7 +178,11 @@ function LocationContent({ userId }: { userId: string }) {
   const toast = useToast()
   const [parameters, setParameters] = useSearchParams()
   const requestedTab = parameters.get('tab')
-  const tab: TabID = TAB_IDS.find((each) => each === requestedTab) ?? 'visits'
+  // Somebody else named in the address: their visits and places are shown,
+  // and what is the person's own (sharing, checking in) is not offered.
+  const isViewingOther = Boolean(parameters.get('person'))
+  const shownTab = TAB_IDS.find((each) => each === requestedTab) ?? 'visits'
+  const tab: TabID = isViewingOther && shownTab === 'sharing' ? 'visits' : shownTab
   const dayStart = parseDayKey(parameters.get('day'))
   const dayKey = dayStart ? dayKeyOf(dayStart) : null
   const visitsPaging = usePageInAddress()
@@ -489,22 +495,24 @@ function LocationContent({ userId }: { userId: string }) {
     () => new Intl.DateTimeFormat(language, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
     [language],
   )
-  const dayTimeFormat = useMemo(
-    () =>
-      new Intl.DateTimeFormat(language, {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }),
+  const weekdayTimeFormat = useMemo(
+    () => new Intl.DateTimeFormat(language, { weekday: 'short', hour: 'numeric', minute: '2-digit' }),
+    [language],
+  )
+  const shortDayFormat = useMemo(
+    () => new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric' }),
     [language],
   )
   const timeOf = (moment: string) => timeFormat.format(new Date(moment))
   // A person's arrival with its day when it was not today, so a visit begun
-  // days ago does not read as this evening's.
-  const arrivalOf = (moment: string) =>
-    dayKeyOf(moment) === dayKeyOf(new Date()) ? timeOf(moment) : dayTimeFormat.format(new Date(moment))
+  // days ago does not read as this evening's: the weekday within the week,
+  // the date alone before it, short enough to stay on one line on a phone.
+  const arrivalOf = (moment: string) => {
+    if (dayKeyOf(moment) === dayKeyOf(new Date())) return timeOf(moment)
+    const arrivedAt = new Date(moment)
+    const isThisWeek = Date.now() - arrivedAt.getTime() < 6 * 24 * 60 * 60 * 1000
+    return isThisWeek ? weekdayTimeFormat.format(arrivedAt) : shortDayFormat.format(arrivedAt)
+  }
 
   // Choosing a person centers the map on them. Somebody else is put in the
   // address, with their visits and places; the person themselves is not.
@@ -737,9 +745,11 @@ function LocationContent({ userId }: { userId: string }) {
             {t('person.profile')}
           </Link>
         )}
-        <button type="button" className="primary" onClick={() => setIsCheckingIn(true)}>
-          {t('location.checkIn')}
-        </button>
+        {!isViewingOther && (
+          <button type="button" className="primary" onClick={() => setIsCheckingIn(true)}>
+            {t('location.checkIn')}
+          </button>
+        )}
       </PageHeadingActions>
 
       <ErrorMessage error={me.error} />
@@ -823,7 +833,7 @@ function LocationContent({ userId }: { userId: string }) {
         />
       )}
 
-      <Tabs items={TABS} active={tab} onSelect={selectTab} />
+      <Tabs items={isViewingOther ? OTHERS_TABS : TABS} active={tab} onSelect={selectTab} />
 
       {tab === 'visits' && (
         <SettingsSection

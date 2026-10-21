@@ -19618,6 +19618,93 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   border-color: var(--leaf);
 }
 
+/* People close enough to cover each other are one marker: their pictures
+   overlapping, the first in front, and a list of names under them. Above
+   single people, and the open one above everything. */
+.location-marker-group {
+  z-index: 3;
+}
+
+.location-marker-group.is-selected {
+  z-index: 4;
+}
+
+.location-marker-group.is-open {
+  z-index: 5;
+}
+
+.location-marker-stack {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.location-marker-stack-picture {
+  position: relative;
+  display: flex;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+}
+
+.location-marker-stack-picture + .location-marker-stack-picture {
+  margin-left: -18px;
+}
+
+.location-marker-stack-picture.is-selected {
+  border-color: var(--leaf);
+}
+
+.location-marker-stack-more {
+  margin-left: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-label);
+  font-weight: 600;
+  box-shadow: var(--shadow-raised);
+}
+
+.location-marker-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 50%;
+  min-width: 180px;
+  margin: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  list-style: none;
+  transform: translateX(-50%);
+}
+
+.location-marker-menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-2);
+  background: none;
+  color: var(--text);
+  font-weight: inherit;
+  text-align: left;
+}
+
+.location-marker-menu button.is-selected {
+  background: color-mix(in srgb, var(--leaf) 10%, var(--surface));
+}
+
 .location-place-visits {
   margin: 0 0 var(--space-3);
   padding-left: var(--space-4);

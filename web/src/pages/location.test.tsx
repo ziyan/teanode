@@ -325,6 +325,23 @@ it("gives a person's arrival its day when it was not today", async () => {
   expect(today).not.toContain(new Intl.DateTimeFormat('en', { weekday: 'short' }).format(now))
 })
 
+it('says a visit begun more than a week ago by its date alone', async () => {
+  const weeksAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000)
+  answerWith({
+    sharedViews: [
+      {
+        ...PERSON_B_VIEW,
+        openVisit: { id: 'visit-old', arrivedAt: weeksAgo.toISOString(), place: place({ placeName: 'Fixture Park' }) },
+      },
+    ] as never,
+  })
+  renderAt('/location')
+  const shown = (await screen.findByText(/At Fixture Park since/)).textContent ?? ''
+  expect(shown).toBe(
+    `At Fixture Park since ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(weeksAgo)}`,
+  )
+})
+
 it('reads a person again when the live feed says they moved', async () => {
   answerWith({
     sharedViews: [PERSON_B_VIEW],
@@ -1222,4 +1239,13 @@ it('ends the photo window of an open visit at one moment per answer, not at ever
   fireEvent.click(screen.getByText('Fixture Park').closest('button')!)
   await waitFor(() => expect(screen.getByTestId('address').textContent).toContain('place=place-one'))
   expect(screen.getByRole('link', { name: /^Photo taken during the visit/ }).getAttribute('href')).toBe(href)
+})
+
+it("offers neither checking in nor Sharing while somebody else's location is shown", async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location?person=person-b&tab=sharing')
+  await screen.findByText('Visits of Person B')
+  expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Sharing' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Places' })).toBeTruthy()
 })
