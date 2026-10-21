@@ -39,6 +39,11 @@ const (
 	passwordsShareTapSentence            = "Sharing with someone new" + passwordsTapPlace + ", but taking someone away works here."
 )
 
+// passwordsRestoreWords says where a deleted item is brought back. The command
+// line is refused that without the person's tap, so deleting and listing say
+// the same thing.
+const passwordsRestoreWords = "restore it on the Passwords page of the dashboard or in the iPhone app (Recently deleted) within 30 days"
+
 // clipboardClearSeconds is how long a copied secret stays on the clipboard
 // before the command clears it, the way pass does.
 const clipboardClearSeconds = 45
@@ -111,7 +116,7 @@ func NewPasswordsCommand() *cli.Command {
 					JSONFlag(), passphraseFlag(),
 					&cli.StringFlag{Name: "kind", Usage: "only login, card or note"},
 					&cli.StringFlag{Name: "folder", Usage: "only this folder"},
-					&cli.BoolFlag{Name: "deleted", Usage: "list the recently deleted items instead, which 'restore' brings back within 30 days"},
+					&cli.BoolFlag{Name: "deleted", Usage: "list the recently deleted items instead, which the dashboard or the iPhone app brings back within 30 days"},
 				},
 				Action: runPasswordsList,
 			},
@@ -177,16 +182,17 @@ func NewPasswordsCommand() *cli.Command {
 				Name:      "delete",
 				Usage:     "move an item to recently deleted, or remove it for good",
 				ArgsUsage: "<item>",
-				Description: "Moves the item to recently deleted, where 'teanode passwords restore' brings it\n" +
-					"back for 30 days. With --forever, an item that is already deleted is removed at\n" +
-					"once, with its old versions, instead of after 30 days. That is done on the\n" +
+				Description: "Moves the item to recently deleted, where the Passwords page of the dashboard or\n" +
+					"the iPhone app brings it back for 30 days (a command line cannot). With\n" +
+					"--forever, an item that is already deleted is removed at once, with its old\n" +
+					"versions, instead of after 30 days. That is done on the\n" +
 					"Passwords page of the dashboard or in the iPhone app; a command line cannot do\n" +
 					"this, and says so before it asks for the passphrase.",
 				Flags: []cli.Flag{JSONFlag(), passphraseFlag(), ForceFlag(),
 					&cli.BoolFlag{Name: "forever", Usage: "remove an item that is already deleted for good, which needs your tap in the dashboard or the iPhone app"}},
 				Action: runPasswordsDelete,
 			},
-			{Name: "restore", Usage: "bring back an item deleted in the last 30 days", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsRestore},
+			{Name: "restore", Usage: "bring back an item deleted in the last 30 days (needs your tap: done in the dashboard or the iPhone app)", ArgsUsage: "<item>", Flags: []cli.Flag{JSONFlag(), passphraseFlag()}, Action: runPasswordsRestore},
 			{
 				Name:      "share",
 				Usage:     "share an item with a person or a circle",
@@ -1479,7 +1485,7 @@ func runPasswordsDelete(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(summarizeItem(item))
 	}
-	fmt.Printf("deleted %s; 'teanode passwords restore %s' brings it back for 30 days\n", forTerminal(item.Name()), forTerminal(view.ID))
+	fmt.Printf("deleted %s; %s\n", forTerminal(item.Name()), passwordsRestoreWords)
 	return nil
 }
 
@@ -1691,7 +1697,7 @@ func existingRecipients(view *client.PasswordItemView) []*client.PasswordRecipie
 func setItemShares(ctx context.Context, command *cli.Command, session *passwordsSession, item *passwordsItem, newAccess *passwords.PasswordAccess,
 	grantees []*client.PasswordShareGranteeInput, recipients []*client.PasswordRecipientView, circleIDs map[string][]string, circleNames map[string]string,
 	targetUserIDs map[string]bool, typedUserNames map[string]string, doing string) error {
-	var newlyReached, waiting, notSealedFor []*client.PasswordRecipientView
+	var newlyReached, waiting, notSealedFor, tooMuchShared []*client.PasswordRecipientView
 	reachedCount := 0
 	seen := map[string]bool{}
 	for _, recipient := range recipients {
@@ -1708,6 +1714,9 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 		case recipient.HasKey:
 			// Already holds the item key; nothing is sealed for them again.
 			reachedCount++
+		case recipient.HasTooMuchShared:
+			// The server would refuse a key for them; they keep waiting.
+			tooMuchShared = append(tooMuchShared, recipient)
 		case !targetUserIDs[recipient.UserID] && !slices.Contains(item.SealedForUserIDs, recipient.UserID):
 			notSealedFor = append(notSealedFor, recipient)
 		default:
@@ -1761,6 +1770,9 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 	fmt.Printf("%s: %s can open it\n", doing, peopleWords(reachedCount+len(keys)))
 	for _, recipient := range waiting {
 		fmt.Printf("%s (%s) has not set up Passwords yet; run 'teanode passwords share --waiting' once they have\n", forTerminal(recipient.Name), forTerminal(recipient.Username))
+	}
+	for _, recipient := range tooMuchShared {
+		fmt.Printf("%s has too much shared with them\n", namesOf([]*client.PasswordRecipientView{recipient}))
 	}
 	return nil
 }
@@ -1910,9 +1922,22 @@ func runPasswordsShareWaiting(ctx context.Context, command *cli.Command) error {
 	var recipients []*client.PasswordRecipientView
 	seen := map[string]bool{}
 	isTold := map[string]bool{}
+	isTooMuchTold := map[string]bool{}
+	hasMoreWaiting := false
 	for _, each := range waiting {
+		if each.HasMoreWaiting {
+			hasMoreWaiting = true
+		}
 		item := owned[each.ItemID]
 		if item == nil || each.Recipient == nil || each.Recipient.PublicKey == "" || leftForPerson[item.View.ID] {
+			continue
+		}
+		if each.Recipient.HasTooMuchShared {
+			// The server would refuse a key for them, so none is tried; said once.
+			if !isTooMuchTold[each.Recipient.UserID] {
+				isTooMuchTold[each.Recipient.UserID] = true
+				keyNoticeLine(namesOf([]*client.PasswordRecipientView{each.Recipient}) + " has too much shared with them")
+			}
 			continue
 		}
 		if !item.isReachedBySealedAccess(each.Recipient, circleIDsOfRecipients(item.View.Shares)) {
@@ -1953,9 +1978,12 @@ func runPasswordsShareWaiting(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	if command.Bool("json") {
-		return PrintJSON(map[string]any{"sealedCount": sealedCount})
+		return PrintJSON(map[string]any{"sealedCount": sealedCount, "hasMoreWaiting": hasMoreWaiting})
 	}
 	fmt.Printf("sealed %s for the people who were waiting\n", countWords(sealedCount, "item"))
+	if hasMoreWaiting {
+		fmt.Println("more are waiting: run this again")
+	}
 	return nil
 }
 

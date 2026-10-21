@@ -66,12 +66,21 @@ key for all their devices, so a new device never changes it), the device accepts
 it, seals for it, opens that person's items with it, records it, and shows a
 notice that stays until dismissed: "Ben's key changed. This happens when they
 erase Passwords and set it up again. If you did not expect it, compare safety
-codes with them." The notice has a Compare codes action showing the old
+codes with them." It never mentions new devices: a person has one key for all
+their devices, so signing in on another device cannot change it. The notice has a Compare codes action showing the old
 and new codes and the person's own; nothing waits on it. Comparing marks the key
 "Codes compared" for display only. Known keys are per device, and a device
 records a person's key as known after an item from that owner opened with it. A
-recipient who has not set up Passwords has no key yet and is left waiting; the
-share completes on every device as soon as the recipient has a key. A prompt
+recipient who has not set up Passwords has no key yet and is left waiting. A
+waiting share completes by itself only on a device that sealed the item for that
+person before, or where the person chose them directly (named them in the share).
+Every other case waits for the person: a circle member who joins later, or a
+device that never saw the item. The person finishes it with "Finish sharing" on
+the dashboard and in the iPhone app (for one item, or for all of them at once
+from the list), or with `teanode passwords share --waiting` (all items) or
+`teanode passwords rekey <item>` on the command line. A recipient the server
+reports as having too much shared with them (see the server limits) is named and
+skipped instead of tried again on every pass. A prompt
 would not protect anyone, because nobody compares codes before sharing and anyone
 asked would press yes. What keeps the server from adding people is the signed
 access record below, not the key.
@@ -118,8 +127,9 @@ dashboard or the iPhone first. A re-key the person did not start never widens
 access. It seals only for people in the verified record who already had a key for
 the item when this device last saw it, and for the agent only when the record
 says so and the item already had an agent copy; anyone else the record reaches
-is sealed for when the device completes waiting shares (which is not a re-key) or
-the person asks for a re-key. An item
+is sealed for when the device completes waiting shares (which is not a re-key,
+and which a device does by itself only for people it sealed for before or the
+person chose directly) or the person asks for a re-key. An item
 is re-keyed automatically at most once in 10 minutes, and a session makes at most
 20 automatic re-keys; past that the item is shown as needing attention. No device
 ever cuts the record on the server's word. Only the person's own action narrows
@@ -581,10 +591,16 @@ grant are not taps.
 - **What sharing can add.** An owner's items reach at most 50,000 item and
   recipient pairs; a share that would go past it is refused with "Your items are
   shared with too many people", and a change that does not add pairs is always
-  allowed. What others share with one person is at most 64 MiB of sealed text:
-  a key that would push a recipient past it is not stored for them (the owner's
-  devices show "<name> has too much shared with them"), and a list answers the
-  oldest keys first up to that bound.
+  allowed. What others share with one person is at most 64 MiB of sealed text,
+  of which at most 8 MiB may come from any one owner, so one member of a circle
+  cannot use up another's room. A key that would push a recipient past either
+  bound is not stored for them: the recipient comes back with `hasTooMuchShared`
+  and the owner's devices show "<name> has too much shared with them" and skip
+  them when they complete waiting shares, instead of trying on every pass. An
+  item that grows (a save that makes its sealed text larger) is refused when a
+  person it is shared with would go past those bounds; a change that does not
+  make it larger is always allowed. A list answers the oldest keys first up to
+  the bound. `share --waiting` prints the number of keys the server stored.
 - **One list at a time.** A list answers every item at once, so the server lets
   one `ListPasswordItems` or `ListWaitingPasswordShares` run for a person at a
   time, with one place for the person's taps and another for every other
@@ -592,7 +608,9 @@ grant are not taps.
   a minute to write it), not only until the resolver returns. A second one is
   turned away with "Passwords is already being read for you. Try again in a
   moment." The waiting list answers at most 2,000 entries, newest items first,
-  and says when more wait. Paging is a follow-up in the plan.
+  and sets `hasMoreWaiting` on every entry when more wait; the devices say so
+  ("more are waiting: run this again"), and finishing the ones listed shows the
+  rest. Paging is a follow-up in the plan.
 - **Earlier versions of an item.** A save or a re-key keeps the version it
   replaces in `password_item_version` only when the item has no kept version
   younger than one hour. A program with a token needs no tap to save an item, so
@@ -829,8 +847,9 @@ equal; `docs/subsystems/devices.md` has the whole account).
 
 - **The dashboard** keeps its opened keys in memory, shows the person's own safety
   code in Passwords settings, seals by the access record and the known keys,
-  shows a notice when a person's key changed, completes waiting shares as soon as
-  the recipient has a key, and re-keys items the server marks. Its remembered record versions and key holders are in `localStorage` for
+  shows a notice when a person's key changed, completes waiting shares by itself
+  only for people it sealed for before or the person chose directly (the rest wait
+  for "Finish sharing"), and re-keys items the server marks. Its remembered record versions and key holders are in `localStorage` for
   each signed-in person. A conflicting save keeps what the person typed. Exports
   leave the access record out. Recently deleted offers Delete forever.
 - **The iPhone** keeps the person's known keys, the highest record

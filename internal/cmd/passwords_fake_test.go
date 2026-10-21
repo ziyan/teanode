@@ -54,6 +54,11 @@ type fakePasswordsServer struct {
 	// forgedWaiting is what a server that lies adds to the waiting list: an
 	// item id to a user id, shared or not.
 	forgedWaiting map[string]string
+	// tooMuchSharedUserIDs are people the server says have too much shared
+	// with them already; hasMoreWaiting is the flag its waiting list sets when
+	// more are waiting than it lists.
+	tooMuchSharedUserIDs map[string]bool
+	hasMoreWaiting       bool
 }
 
 type fakePasswordsUser struct {
@@ -167,9 +172,10 @@ func (self *fakePasswordsServer) userByID(id string) *fakePasswordsUser {
 }
 
 func (self *fakePasswordsServer) recipientView(item *fakePasswordsItem, user *fakePasswordsUser) map[string]any {
-	view := map[string]any{"userId": user.id, "name": user.name, "username": user.username, "publicKey": nil, "hasKey": false}
+	view := map[string]any{"userId": user.id, "name": user.name, "username": user.username, "publicKey": nil, "hasKey": false, "hasTooMuchShared": false}
 	if user.setup != nil {
 		view["publicKey"] = user.setup.PublicKey
+		view["hasTooMuchShared"] = self.tooMuchSharedUserIDs[user.id]
 		if item != nil {
 			if key := item.keys[user.id]; key != nil && key.RecipientPublicKey == user.setup.PublicKey {
 				view["hasKey"] = true
@@ -356,7 +362,7 @@ func (self *fakePasswordsServer) answer(user *fakePasswordsUser, operation strin
 				recipient := self.userByID(*grantee.GranteeUserID)
 				view := self.recipientView(item, recipient)
 				if view["publicKey"] != nil && view["hasKey"] == false {
-					waiting = append(waiting, map[string]any{"itemId": item.id, "recipient": view})
+					waiting = append(waiting, map[string]any{"itemId": item.id, "recipient": view, "hasMoreWaiting": self.hasMoreWaiting})
 				}
 			}
 		}

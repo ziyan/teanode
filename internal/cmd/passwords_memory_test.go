@@ -216,6 +216,40 @@ func TestPasswordsShareWaitingSealsOnlyForThePeopleThePersonNamed(test *testing.
 	}
 }
 
+// A person the server says has too much shared with them is named and skipped
+// by share --waiting, and a waiting list the server cut short says to run it
+// again.
+func TestPasswordsShareWaitingSkipsTooMuchSharedAndSaysMoreWait(test *testing.T) {
+	useConfigurationDirectory(test)
+	fake := newFakePasswordsServer(test)
+	fake.setUpAs(testToken, testPassphrase)
+	notices := recordKeyNotices(test)
+	fake.unlockAs(testToken)
+	fake.mustRun(testToken, "", "add", "example.com", "--password", "shared-secret-example")
+	itemID := firstItemID(fake)
+	fake.mustRun(testToken, "", "share", "example.com", "ben")
+	fake.setUpAs(benToken, benPassphrase)
+	fake.unlockAs(testToken)
+
+	fake.tooMuchSharedUserIDs = map[string]bool{"user-ben": true}
+	fake.hasMoreWaiting = true
+	notices.forget()
+	output := fake.mustRun(testToken, "", "share", "--waiting")
+	if fake.items[itemID].keys["user-ben"] != nil || !strings.Contains(notices.text.String(), "Ben has too much shared with them") {
+		test.Fatalf("a person with too much shared was not skipped and named:\n%s", notices.text.String())
+	}
+	if !strings.Contains(output, "more are waiting: run this again") {
+		test.Fatalf("a cut short waiting list did not say so: %q", output)
+	}
+
+	fake.tooMuchSharedUserIDs = nil
+	fake.hasMoreWaiting = false
+	output = fake.mustRun(testToken, "", "share", "--waiting")
+	if fake.items[itemID].keys["user-ben"] == nil || strings.Contains(output, "more are waiting") {
+		test.Fatalf("Ben was not given the key once he had room: %q", output)
+	}
+}
+
 // A member of a circle this computer never sealed the item for is told in one
 // line, with the circle's name; a person it sealed for before, or one the record
 // names itself, is not.

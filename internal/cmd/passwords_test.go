@@ -440,7 +440,10 @@ func TestPasswordsItemRoundTrip(test *testing.T) {
 	}
 
 	// Delete, list --deleted, restore.
-	fake.mustRun(testToken, "", "delete", "example.com")
+	deleteOutput := fake.mustRun(testToken, "", "delete", "example.com")
+	if !strings.Contains(deleteOutput, passwordsRestoreWords) || strings.Contains(deleteOutput, "passwords restore") {
+		test.Errorf("delete does not say where to restore: %q", deleteOutput)
+	}
 	if len(fake.list(testToken, "")) != 0 || len(fake.list(testToken, "", "--deleted")) != 1 {
 		test.Error("delete did not move the item to recently deleted")
 	}
