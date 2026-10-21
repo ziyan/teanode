@@ -7,7 +7,7 @@ import { RelativeTime } from '../../components/relativeTime'
 import { Tooltip } from '../../components/tooltip'
 import { Key, useTranslation } from '../../i18n/i18n'
 import { ItemKind } from '../../passwords/fields'
-import { PasswordItem } from './passwordsProtocol'
+import { isAgentAllowed, PasswordItem } from './passwordsProtocol'
 
 // The list of items: a DataTable, where the whole row opens the item. Search,
 // the kind and the folder narrow it before it gets here; the page, the search
@@ -140,7 +140,7 @@ export function PasswordsList({
           <>
             {item.isSharedWithMe && <Tag value={t('passwords.tagSharedBy', { name: item.ownerName })} />}
             {item.isOwnedByMe && item.shares.length > 0 && <Tag value={t('passwords.tagShared')} />}
-            {item.isUsableByAgent && <Tag value={t('passwords.tagAgent')} tone="good" />}
+            {isAgentAllowed(item) && <Tag value={t('passwords.tagAgent')} tone="good" />}
           </>
         )}
       </span>

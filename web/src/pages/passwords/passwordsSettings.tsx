@@ -10,7 +10,7 @@ import { parseRecoveryKey } from '../../passwords/crypto'
 import { ImportCsvError, importedItemKey, ImportedItem, parseCsv, withoutDuplicates } from '../../passwords/importCsv'
 import { useFailureToast } from './passwordsErrors'
 import { ERASE_PASSWORDS, LOCK_AFTER_CHOICES, PasswordsSetup, UPDATE_PASSWORDS_SETTINGS } from './passwordsApi'
-import { downloadText, RecoveryKeyPanel, NO_PASSWORD_MANAGER } from './passwordsParts'
+import { downloadText, NO_PASSWORD_MANAGER, RecoveryKeyPanel, SafetyCode } from './passwordsParts'
 import { MINIMUM_PASSPHRASE_LENGTH, passphraseSecret, PasswordItem, SealedRecoveryKey } from './passwordsProtocol'
 import { passwordsSession, usePasswordsSession } from './passwordsSession'
 
@@ -69,6 +69,7 @@ export function PasswordsSettings({
       <LockTime setup={setup} onChanged={onSetupChanged} />
       {isUnlocked ? (
         <>
+          <OwnSafetyCode />
           <Keys setup={setup} onChanged={onSetupChanged} />
           <ImportItems />
           <ExportItems setup={setup} />
@@ -127,6 +128,22 @@ function LockTime({ setup, onChanged }: { setup: PasswordsSetup; onChanged: () =
           onChange={(value) => void change(Number(value))}
         />
       </label>
+    </SettingsSection>
+  )
+}
+
+// OwnSafetyCode is the person's own safety code, for somebody who is about to
+// confirm them. It is made from the key pair this device opened at unlock and
+// the person's own user id, never from what the server reports, so a server
+// that swapped the key it hands out cannot make this agree with it.
+function OwnSafetyCode() {
+  const { t } = useTranslation()
+  const { userId, publicKey } = usePasswordsSession()
+  return (
+    <SettingsSection card title={t('passwords.ownSafetyCodeTitle')} description={t('passwords.ownSafetyCodeBody')}>
+      <p>
+        <SafetyCode userId={userId} publicKey={publicKey} />
+      </p>
     </SettingsSection>
   )
 }
@@ -244,7 +261,7 @@ function ChangePassphraseDialog({
           <span>{t('passwords.passphraseCurrent')}</span>
           <input
             type="password"
-            autoComplete="new-password"
+            autoComplete="current-password"
             {...NO_PASSWORD_MANAGER}
             value={current}
             onChange={(event) => setCurrent(event.target.value)}
@@ -341,7 +358,7 @@ function ReplaceRecoveryKeyDialog({ setup, onClose }: { setup: PasswordsSetup; o
         <span>{t('passwords.passphrase')}</span>
         <input
           type="password"
-          autoComplete="new-password"
+          autoComplete="current-password"
           {...NO_PASSWORD_MANAGER}
           value={passphrase}
           onChange={(event) => setPassphrase(event.target.value)}
@@ -545,7 +562,7 @@ function ExportItems({ setup }: { setup: PasswordsSetup }) {
             <span>{t('passwords.passphrase')}</span>
             <input
               type="password"
-              autoComplete="new-password"
+              autoComplete="current-password"
               {...NO_PASSWORD_MANAGER}
               value={passphrase}
               onChange={(event) => setPassphrase(event.target.value)}

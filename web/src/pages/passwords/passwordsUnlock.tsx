@@ -87,7 +87,7 @@ export function PasswordsUnlock({ userId }: { userId: string }) {
             <input
               type="password"
               name="passphrase"
-              autoComplete="new-password"
+              autoComplete="current-password"
               {...NO_PASSWORD_MANAGER}
               value={typedText}
               onChange={(event) => setTypedText(event.target.value)}

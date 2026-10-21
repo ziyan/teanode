@@ -21,7 +21,14 @@ import {
   safetyCode,
 } from '../../passwords/crypto'
 import { openItemFields } from '../../passwords/crypto'
-import { emptyCardFields, emptyLoginFields, emptyNoteFields, ItemKind } from '../../passwords/fields'
+import {
+  emptyCardFields,
+  emptyLoginFields,
+  emptyNoteFields,
+  ItemAccess,
+  ItemGrantee,
+  ItemKind,
+} from '../../passwords/fields'
 import { SessionProvider } from '../../session'
 import { PasswordItemRecord, PasswordRecipient, PasswordsSetup } from './passwordsApi'
 import { PasswordsPage } from './passwordsPage'
@@ -35,12 +42,13 @@ import {
   sealPasswordItem,
 } from './passwordsProtocol'
 import { filterItems, ItemFilter, NO_FOLDER } from './passwordsList'
+import { sitesToShow } from './passwordsItemView'
 import { exportText } from './passwordsSettings'
 import { passwordsSession } from './passwordsSession'
 import { lockPasswords } from './passwordsLock'
 import { PasswordsError, failureText } from './passwordsErrors'
 import { clearClipboardLater, RecoveryKeyPanel, SafetyCode, SecretValue } from './passwordsParts'
-import { oneTimeCodeUriFromText, sitesFromText } from './passwordsEditor'
+import { oneTimeCodeUriFromText, rebasedFields, sitesFromText } from './passwordsEditor'
 
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
@@ -144,7 +152,15 @@ function serve(overrides: Partial<Server> = {}): Server {
       } as never
     }
     if (document.includes('ListWaitingPasswordShares')) return { ListWaitingPasswordShares: server.waiting } as never
-    if (document.includes('AddPasswordShareKeys')) return { AddPasswordShareKeys: asked.keys.length } as never
+    if (document.includes('AddPasswordShareKeys')) {
+      // The server refuses a key that names an item key other than the item's
+      // current one (contract 4).
+      for (const key of asked.keys as { itemId: string; itemKey?: string }[]) {
+        const current = server.records.find((record) => record.id === key.itemId)
+        if (!current || key.itemKey !== current.itemKey) throw new APIError(STALE_MESSAGE)
+      }
+      return { AddPasswordShareKeys: asked.keys.length } as never
+    }
     if (document.includes('SavePasswordItem')) {
       const input = asked.input
       const existing = server.records.find((record) => record.id === input.id)
@@ -155,6 +171,7 @@ function serve(overrides: Partial<Server> = {}): Server {
         ownerPublicKey: fixture.input.publicKey,
         isSharedWithMe: false,
         isUsableByAgent: false,
+        needsNewKey: false,
         lastUsedByAgentAt: null,
         deletedAt: null,
         createdAt: '2026-10-01T10:00:00Z',
@@ -184,9 +201,19 @@ function serve(overrides: Partial<Server> = {}): Server {
     if (document.includes('SetPasswordItemShares')) {
       const input = asked.input
       const existing = server.records.find((record) => record.id === input.itemId)!
+      // The server marks an item whose shares got narrower.
+      const isNarrowed = existing.shares.some(
+        (share) =>
+          !input.grantees.some(
+            (grantee: { granteeUserId: string | null; granteeCircleId: string | null }) =>
+              (grantee.granteeUserId ?? null) === (share.granteeUserId ?? null) &&
+              (grantee.granteeCircleId ?? null) === (share.granteeCircleId ?? null),
+          ),
+      )
       const shared = {
         ...existing,
         revision: existing.revision + 10,
+        needsNewKey: existing.needsNewKey || isNarrowed,
         shares: input.grantees.map((grantee: { granteeUserId: string | null; granteeCircleId: string | null }) => ({
           id: 'share-one',
           ...grantee,
@@ -203,7 +230,12 @@ function serve(overrides: Partial<Server> = {}): Server {
     if (document.includes('SetPasswordItemUsableByAgent')) {
       const input = asked.input
       const existing = server.records.find((record) => record.id === input.itemId)!
-      const changed = { ...existing, revision: existing.revision + 10, isUsableByAgent: input.isUsableByAgent }
+      const changed = {
+        ...existing,
+        revision: existing.revision + 10,
+        isUsableByAgent: input.isUsableByAgent,
+        needsNewKey: existing.needsNewKey || (existing.isUsableByAgent && !input.isUsableByAgent),
+      }
       server.records = server.records.map((record) => (record.id === changed.id ? changed : record))
       return { SetPasswordItemUsableByAgent: changed } as never
     }
@@ -212,12 +244,38 @@ function serve(overrides: Partial<Server> = {}): Server {
       const existing = server.records.find((record) => record.id === input.id)!
       if (server.isRekeyFailing) throw new APIError('The server could not re-key the item.')
       if (input.baseRevision !== existing.revision) throw new APIError(STALE_MESSAGE)
+      // The server refuses an agent copy for an item it does not list as used.
+      if (input.itemKeyByAgentKey !== null && !existing.isUsableByAgent) {
+        throw new APIError('The agent does not use this item.')
+      }
       const changed: PasswordItemRecord = {
         ...existing,
         encryptedFields: input.encryptedFields,
         itemKey: input.itemKey,
         revision: existing.revision + 10,
         isUsableByAgent: existing.isUsableByAgent && input.itemKeyByAgentKey !== null,
+        needsNewKey: false,
+        // Old keys are dropped: only the people sealed for in this call have one.
+        shares: existing.shares.map((share) => ({
+          ...share,
+          recipients: share.recipients.map((recipient) => ({
+            ...recipient,
+            hasKey: input.shareKeys.some(
+              (key: { recipientUserId: string }) => key.recipientUserId === recipient.userId,
+            ),
+          })),
+        })),
+      }
+      // Whoever has a public key and no key now is waiting.
+      for (const share of changed.shares) {
+        for (const recipient of share.recipients) {
+          const isListed = server.waiting.some(
+            (waiting) => waiting.itemId === changed.id && waiting.recipient.userId === recipient.userId,
+          )
+          if (recipient.publicKey !== null && !recipient.hasKey && !isListed) {
+            server.waiting = [...server.waiting, { itemId: changed.id, recipient }]
+          }
+        }
       }
       server.records = server.records.map((record) => (record.id === changed.id ? changed : record))
       return { RekeyPasswordItem: changed } as never
@@ -251,6 +309,7 @@ async function recordFor(
     isSharedWithMe: false,
     revision: 3,
     isUsableByAgent: false,
+    needsNewKey: false,
     lastUsedByAgentAt: null,
     deletedAt: null,
     createdAt: '2026-10-01T10:00:00Z',
@@ -258,6 +317,11 @@ async function recordFor(
     shares: [],
     ...overrides,
   }
+}
+
+// accessOf is the access record an owner's device seals inside the fields.
+function accessOf(grantees: ItemGrantee[], isUsableByAgent = false): ItemAccess {
+  return { isUsableByAgent, grantees }
 }
 
 // sharedRecordFor is an item Person B owns, with its key sealed by Person B's
@@ -317,7 +381,13 @@ async function recordsToList(): Promise<PasswordItemRecord[]> {
     await recordFor(
       'login-agent',
       'login',
-      { ...emptyLoginFields(), name: 'Agent login', userName: 'agent-user', password: 'invented-password-3' },
+      {
+        ...emptyLoginFields(),
+        name: 'Agent login',
+        userName: 'agent-user',
+        password: 'invented-password-3',
+        access: accessOf([], true),
+      },
       { isUsableByAgent: true },
     ),
     await sharedRecordFor('login-shared', {
@@ -338,11 +408,11 @@ async function recordsToList(): Promise<PasswordItemRecord[]> {
 // confirmKeyOnDevice writes what a confirm leaves in localStorage: the key is
 // both the confirmed key and the seen one.
 function confirmKeyOnDevice(otherUserId: string, publicKey: string) {
-  window.localStorage.setItem(`teanode.passwords.pins:${USER_ID}`, JSON.stringify({ [otherUserId]: publicKey }))
-  window.localStorage.setItem(
-    `teanode.passwords.confirmedKeys:${USER_ID}`,
-    JSON.stringify({ [otherUserId]: publicKey }),
-  )
+  for (const kind of ['pins', 'confirmedKeys']) {
+    const name = `teanode.passwords.${kind}:${USER_ID}`
+    const kept = JSON.parse(window.localStorage.getItem(name) ?? '{}')
+    window.localStorage.setItem(name, JSON.stringify({ ...kept, [otherUserId]: publicKey }))
+  }
 }
 
 function storedKeys(kind: 'pins' | 'confirmedKeys'): Record<string, string> | null {
@@ -399,6 +469,31 @@ async function openSession() {
 
 function calls(operation: string) {
   return vi.mocked(graphql).mock.calls.filter(([document]) => document.includes(operation))
+}
+
+// orderOf lists the operations the page called, in order, by the short names
+// given (an operation not named is left out).
+function orderOf(names: Record<string, string>): string[] {
+  return vi
+    .mocked(graphql)
+    .mock.calls.map(
+      ([document]) => Object.entries(names).find(([operation]) => document.includes(operation))?.[1] ?? '',
+    )
+    .filter(Boolean)
+}
+
+// fieldsSentIn opens the fields a save or a re-key sent, the way the owner's
+// device would read them back.
+async function fieldsSentIn(
+  input: Record<string, any>,
+  itemId: string,
+  itemKind: ItemKind = 'login',
+): Promise<Record<string, any>> {
+  const itemKey = await openItemKey(fixture.accountKey, parseSealedValue(input.itemKey as string), itemId)
+  return (await openItemFields(itemKey, parseSealedValue(input.encryptedFields as string), itemId, itemKind)) as Record<
+    string,
+    any
+  >
 }
 
 function rowNames(): string[] {
@@ -676,7 +771,7 @@ it('does not keep the key of an owner whose share did not open', async () => {
   expect(passwordsSession.getSnapshot().items[0].isUnreadable).toBe(true)
 })
 
-it('shows a shared item whose owner key changed as closed, with both safety codes, until it is trusted', async () => {
+it('shows a shared item whose owner key changed as closed, with both safety codes, until it is confirmed', async () => {
   const oldKeyPair = await generatePersonKeyPair()
   window.localStorage.setItem(
     `teanode.passwords.pins:${USER_ID}`,
@@ -687,12 +782,20 @@ it('shows a shared item whose owner key changed as closed, with both safety code
   renderAt('/passwords?item=login-shared')
 
   expect(await screen.findByText("Its owner's key changed")).toBeTruthy()
-  expect(await screen.findByText(await safetyCode(oldKeyPair.publicKey))).toBeTruthy()
-  expect(await screen.findByText(await safetyCode(personB.publicKey))).toBeTruthy()
+  expect(await screen.findByText(await safetyCode('person-b', oldKeyPair.publicKey))).toBeTruthy()
+  expect(await screen.findByText(await safetyCode('person-b', personB.publicKey))).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Show Password' })).toBeNull()
   expect(passwordsSession.getSnapshot().items.find((item) => item.id === 'login-shared')?.itemKey).toBeNull()
+  // The words say how to compare, and that confirming also lets the person share with them.
+  expect(
+    screen.getByText(
+      'Ask Person B to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.',
+    ),
+  ).toBeTruthy()
+  expect(screen.getByText(/Confirming it also lets you share with them/)).toBeTruthy()
+  expect(screen.getByText(/kept on this browser only/)).toBeTruthy()
 
-  fireEvent.click(screen.getByRole('button', { name: 'Trust the new key' }))
+  fireEvent.click(screen.getByRole('button', { name: 'The new safety code matches' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Show Password' }))
   expect(screen.getByText('invented-password-4')).toBeTruthy()
   expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.pins:${USER_ID}`) ?? '{}')).toEqual({
@@ -767,39 +870,63 @@ it('makes the id on the device and sends no revision for a new item', async () =
   expect(await screen.findByText('Spare key place was saved.')).toBeTruthy()
 })
 
-it('keeps the editor open when another device changed the item first, and Reload brings in their change', async () => {
+it('keeps what was typed when another device changed the item first, and takes the other fields from their change', async () => {
   const server = serve({ records: await recordsToList() })
   await openSession()
   renderAt('/passwords?item=login-one&edit=1')
 
   const dialog = await screen.findByRole('dialog', { name: 'Edit login' })
+  // The other device saved a new user name and password at a later revision,
+  // while this person changed the name.
   server.isStale = true
-  fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Late change' } })
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-
-  expect(await screen.findByText(/Reload to see the change/)).toBeTruthy()
-  // Still open, with what was typed.
-  expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Late change')
-  expect(calls('SavePasswordItem')).toHaveLength(1)
-
-  // The other device saved a new name at a later revision.
-  server.isStale = false
   server.records[server.records.findIndex((record) => record.id === 'login-one')] = await recordFor(
     'login-one',
     'login',
-    { ...emptyLoginFields(), name: 'Name from the other device', userName: 'ada@example.test' },
+    {
+      ...emptyLoginFields(),
+      name: 'Example login',
+      userName: 'other@example.test',
+      password: 'password-from-the-other-device',
+      sites: ['https://login.example.test/start'],
+    },
     { revision: 9 },
   )
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Reload' }))
-  await waitFor(() =>
-    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Name from the other device'),
-  )
+  fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Late change' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  expect(await screen.findByText(/Your changes are kept/)).toBeTruthy()
+  expect(calls('SavePasswordItem')).toHaveLength(1)
+  // Still open, with the typed name and the other device's values elsewhere.
+  expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Late change')
+  expect((within(dialog).getByLabelText('User name') as HTMLInputElement).value).toBe('other@example.test')
+  expect((within(dialog).getByLabelText('Password') as HTMLInputElement).value).toBe('password-from-the-other-device')
   expect(within(dialog).queryByRole('button', { name: 'Reload' })).toBeNull()
 
-  // The next save is based on the revision just read.
+  // The next save is based on the revision just read, and carries both.
+  server.isStale = false
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(calls('SavePasswordItem')).toHaveLength(2))
-  expect((calls('SavePasswordItem')[1][1] as { input: { baseRevision: number } }).input.baseRevision).toBe(9)
+  const input = (calls('SavePasswordItem')[1][1] as { input: any }).input
+  expect(input.baseRevision).toBe(9)
+  expect(await fieldsSentIn(input, 'login-one')).toMatchObject({
+    name: 'Late change',
+    userName: 'other@example.test',
+    password: 'password-from-the-other-device',
+  })
+})
+
+it('moves typed fields onto a newer copy: an edited field stays, every other field is the new one', () => {
+  const original: Record<string, unknown> = { name: 'A', userName: 'ada', passkeys: [{ id: 'one' }] }
+  const fresh: Record<string, unknown> = {
+    name: 'B',
+    userName: 'grace',
+    passkeys: [{ id: 'one' }, { id: 'two' }],
+    access: { grantees: [] },
+  }
+  // Only the name was typed.
+  expect(rebasedFields({ ...original, name: 'Typed' }, original, fresh)).toEqual({ ...fresh, name: 'Typed' })
+  // Nothing typed: the new copy as it is.
+  expect(rebasedFields(original, original, fresh)).toEqual(fresh)
 })
 
 it('refuses text that is not a one-time code, and makes an address from a bare secret', async () => {
@@ -875,15 +1002,27 @@ it('shows each recipient with a safety code, or waiting if they have not set up 
 
   expect(await within(dialog).findByText('Everyone in Fixture Family')).toBeTruthy()
   expect(calls('ListPasswordRecipients')[0][1]).toEqual({ granteeUserId: null, granteeCircleId: 'circle-one' })
-  expect(await within(dialog).findByText(await safetyCode(personB.publicKey))).toBeTruthy()
+  expect(await within(dialog).findByText(await safetyCode('person-b', personB.publicKey))).toBeTruthy()
   expect(within(dialog).getByText('Waiting until they set up Passwords')).toBeTruthy()
   expect(within(dialog).getByText('Person C (person-c-login)')).toBeTruthy()
+
+  // The words say how to compare, and a code kept for this browser only.
+  expect(
+    within(dialog).getByText(
+      'Ask Person B (person-b-login) to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.',
+    ),
+  ).toBeTruthy()
 
   // Person B's key is new to this device: it is sealed for only after the
   // owner confirms the safety code here.
   fireEvent.click(within(dialog).getByRole('button', { name: 'The safety code matches' }))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
   await waitFor(() => expect(calls('SetPasswordItemShares')).toHaveLength(1))
+  // Widening: the fields are saved with the wider record first, then the
+  // server is asked for the share.
+  expect(orderOf({ SavePasswordItem: 'save', SetPasswordItemShares: 'shares' })).toEqual(['save', 'shares'])
+  const savedFields = await fieldsSentIn((calls('SavePasswordItem')[0][1] as { input: any }).input, 'login-one')
+  expect(savedFields.access).toEqual({ isUsableByAgent: false, grantees: [{ circleId: 'circle-one' }] })
   const input = (calls('SetPasswordItemShares')[0][1] as { input: Record<string, any> }).input
   expect(input.itemId).toBe('login-one')
   expect(input.grantees).toEqual([{ granteeUserId: null, granteeCircleId: 'circle-one' }])
@@ -909,12 +1048,13 @@ it('shows each recipient with a safety code, or waiting if they have not set up 
 })
 
 // sharedWithPersonB is a record of an item the person owns that is shared with
-// Person B, who had not set up Passwords then.
+// Person B, who had not set up Passwords then. The sealed access record names
+// Person B, as the owner's device wrote it when it shared.
 async function sharedWithPersonB(id: string, name: string): Promise<PasswordItemRecord> {
   return recordFor(
     id,
     'login',
-    { ...emptyLoginFields(), name },
+    { ...emptyLoginFields(), name, access: accessOf([{ userId: 'person-b' }]) },
     {
       shares: [
         {
@@ -943,7 +1083,7 @@ it('gives the key to a person who set up Passwords after the item was shared, an
   // Person B's key is one the owner confirmed on this device when they shared
   // with them before.
   confirmKeyOnDevice('person-b', personBPublicKey)
-  serve({
+  const server = serve({
     records: [...(await recordsToList()), await sharedWithPersonB('login-given', 'Given login')],
     waiting: [
       waitingFor('login-given', personBPublicKey),
@@ -968,6 +1108,8 @@ it('gives the key to a person who set up Passwords after the item was shared, an
     recipientUserId: 'person-b',
     recipientPublicKey: personBPublicKey,
   })
+  // The key names the item key it was sealed from, which the server checks.
+  expect(keys[0].itemKey).toBe(server.records.find((record) => record.id === 'login-given')!.itemKey)
   const opened = await openForKeyPair(
     parseSealedForKeyPair(keys[0].itemKeyByRecipientKey),
     personB,
@@ -979,7 +1121,7 @@ it('gives the key to a person who set up Passwords after the item was shared, an
   expect(opened).toHaveLength(32)
 })
 
-it('seals nothing for a person whose key is not the kept one until the owner trusts the new key', async () => {
+it('seals nothing for a person whose key is not the kept one until the owner confirms the new key', async () => {
   const oldKeyPair = await generatePersonKeyPair()
   const newPublicKey = encodeBase64(personB.publicKey)
   // Person B was shared with before, and this device kept the key it saw then.
@@ -996,11 +1138,11 @@ it('seals nothing for a person whose key is not the kept one until the owner tru
 
   const dialog = await screen.findByRole('alertdialog')
   expect(within(dialog).getByText("Person B's key changed")).toBeTruthy()
-  expect(await within(dialog).findByText(await safetyCode(oldKeyPair.publicKey))).toBeTruthy()
-  expect(await within(dialog).findByText(await safetyCode(personB.publicKey))).toBeTruthy()
+  expect(await within(dialog).findByText(await safetyCode('person-b', oldKeyPair.publicKey))).toBeTruthy()
+  expect(await within(dialog).findByText(await safetyCode('person-b', personB.publicKey))).toBeTruthy()
   expect(calls('AddPasswordShareKeys')).toHaveLength(0)
 
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Trust the new key' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'The new safety code matches' }))
   await waitFor(() => expect(calls('AddPasswordShareKeys')).toHaveLength(1))
   expect((calls('AddPasswordShareKeys')[0][1] as { keys: Record<string, string>[] }).keys[0]).toMatchObject({
     recipientUserId: 'person-b',
@@ -1046,7 +1188,13 @@ it('seals nothing for a waiting person this device has no key for until the owne
 
   const dialog = await screen.findByRole('alertdialog')
   expect(within(dialog).getByText("Confirm Person B's safety code")).toBeTruthy()
-  expect(await within(dialog).findByText(await safetyCode(personB.publicKey))).toBeTruthy()
+  expect(
+    within(dialog).getByText(
+      'Ask Person B to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.',
+    ),
+  ).toBeTruthy()
+  expect(within(dialog).getByText(/kept on this browser only/)).toBeTruthy()
+  expect(await within(dialog).findByText(await safetyCode('person-b', personB.publicKey))).toBeTruthy()
   // The background read has run, and nothing was sealed or kept.
   expect(calls('AddPasswordShareKeys')).toHaveLength(0)
   expect(window.localStorage.getItem(`teanode.passwords.pins:${USER_ID}`)).toBeNull()
@@ -1075,22 +1223,107 @@ it('returns an unpinned waiting person for confirmation, seals only the key that
 
   const first = await passwordsSession.completeWaitingShares()
   expect(first.sharedCount).toBe(0)
-  expect(first.changedKeys).toEqual([
+  expect(first.keysToConfirm).toEqual([
     expect.objectContaining({ recipientUserId: 'person-b', oldPublicKey: null, newPublicKey: personBPublicKey }),
   ])
   expect(calls('AddPasswordShareKeys')).toHaveLength(0)
 
   // The server lists another key after the owner looked at the first one.
   server.waiting = [waitingFor('login-given', swappedPublicKey)]
-  const swapped = await passwordsSession.trustChangedKey(first.changedKeys[0])
+  const swapped = await passwordsSession.confirmChangedKey(first.keysToConfirm[0])
   expect(swapped.sharedCount).toBe(0)
-  expect(swapped.changedKeys).toEqual([expect.objectContaining({ newPublicKey: swappedPublicKey })])
+  expect(swapped.keysToConfirm).toEqual([expect.objectContaining({ newPublicKey: swappedPublicKey })])
   expect(calls('AddPasswordShareKeys')).toHaveLength(0)
 
   server.waiting = [waitingFor('login-given', personBPublicKey)]
-  const confirmed = await passwordsSession.trustChangedKey(first.changedKeys[0])
+  const confirmed = await passwordsSession.confirmChangedKey(first.keysToConfirm[0])
   expect(confirmed.sharedCount).toBe(1)
   expect(calls('AddPasswordShareKeys')).toHaveLength(1)
+})
+
+it('gives nothing to a forged waiting share for a person the sealed record does not reach', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  confirmKeyOnDevice('person-b', personBPublicKey)
+  // The server lists a share with Person B, and lists Person B as waiting for
+  // it, but the owner's sealed record has no such grantee.
+  const forged = await recordFor(
+    'login-forged-share',
+    'login',
+    { ...emptyLoginFields(), name: 'Forged share', access: accessOf([{ userId: 'person-c' }]) },
+    { shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: false }]) },
+  )
+  serve({ records: [forged], waiting: [waitingFor('login-forged-share', personBPublicKey)] })
+  await openSession()
+
+  const result = await passwordsSession.completeWaitingShares()
+  expect(result.sharedCount).toBe(0)
+  expect(result.keysToConfirm).toEqual([])
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+})
+
+it('reads the items in full once when the waiting list names a person or an item the cached copies do not reach', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  confirmKeyOnDevice('person-b', personBPublicKey)
+  // The record shares with the circle, but the copy read at unlock does not
+  // list Person B as a member: they joined afterwards, which changes no item.
+  const withoutMember = await recordFor(
+    'login-circle',
+    'login',
+    { ...emptyLoginFields(), name: 'Circle login', access: accessOf([{ circleId: 'circle-one' }]) },
+    {
+      shares: [
+        {
+          id: 'share-circle',
+          granteeUserId: null,
+          granteeCircleId: 'circle-one',
+          granteeName: 'Fixture Family',
+          recipients: [],
+        },
+      ],
+    },
+  )
+  const server = serve({ records: [withoutMember], waiting: [waitingFor('login-circle', personBPublicKey)] })
+  await openSession()
+  server.records = [
+    {
+      ...withoutMember,
+      shares: [
+        {
+          id: 'share-circle',
+          granteeUserId: null,
+          granteeCircleId: 'circle-one',
+          granteeName: 'Fixture Family',
+          recipients: [personBRecipient(personBPublicKey)],
+        },
+      ],
+    },
+  ]
+  const readsBefore = calls('ListPasswordItems').length
+
+  const result = await passwordsSession.completeWaitingShares()
+  expect(result.sharedCount).toBe(1)
+  const reads = calls('ListPasswordItems').slice(readsBefore)
+  expect(reads.map((call) => (call[1] as { sinceRevision: number | null }).sinceRevision)).toEqual([null])
+  const keys = (calls('AddPasswordShareKeys')[0][1] as { keys: Record<string, string>[] }).keys
+  expect(keys).toHaveLength(1)
+  expect(keys[0]).toMatchObject({ itemId: 'login-circle', recipientUserId: 'person-b' })
+})
+
+it('reads in full once, not at every check, for a waiting person nobody reaches', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  confirmKeyOnDevice('person-b', personBPublicKey)
+  serve({
+    records: [await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' })],
+    waiting: [waitingFor('login-one', personBPublicKey), waitingFor('item-nobody-has', personBPublicKey)],
+  })
+  await openSession()
+  const readsBefore = calls('ListPasswordItems').length
+
+  await passwordsSession.completeWaitingShares()
+  await passwordsSession.completeWaitingShares()
+  await passwordsSession.completeWaitingShares()
+  expect(calls('ListPasswordItems').length - readsBefore).toBe(1)
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
 })
 
 // --- the agent --------------------------------------------------------------------
@@ -1140,14 +1373,20 @@ it('seals the item key for the agent key only when the switch is turned on', asy
   )
   expect(itemKey).toHaveLength(32)
   expect(await screen.findByText('The agent can use this item now.')).toBeTruthy()
+  // Widening: the fields are saved with the record that lets the agent in
+  // first, then the server is asked.
+  expect(orderOf({ SavePasswordItem: 'save', SetPasswordItemUsableByAgent: 'agent' })).toEqual(['save', 'agent'])
+  const savedFields = await fieldsSentIn((calls('SavePasswordItem')[0][1] as { input: any }).input, 'login-one')
+  expect(savedFields.access).toEqual({ isUsableByAgent: true, grantees: [] })
 
   // Turning it off re-keys the item instead (see the re-keying tests).
   fireEvent.click(screen.getByRole('checkbox', { name: /Let the agent use this/ }))
   await waitFor(() => expect(calls('RekeyPasswordItem')).toHaveLength(1))
   expect(calls('SetPasswordItemUsableByAgent')).toHaveLength(1)
-  expect(
-    (calls('RekeyPasswordItem')[0][1] as { input: { itemKeyByAgentKey: string | null } }).input.itemKeyByAgentKey,
-  ).toBeNull()
+  const rekey = (calls('RekeyPasswordItem')[0][1] as { input: any }).input
+  expect(rekey.itemKeyByAgentKey).toBeNull()
+  // The new fields carry the record with the agent off.
+  expect((await fieldsSentIn(rekey, 'login-one')).access).toEqual({ isUsableByAgent: false, grantees: [] })
 })
 
 // --- settings -----------------------------------------------------------------------
@@ -1253,6 +1492,14 @@ it('says Passwords is off for an account without the permission', async () => {
   expect(calls('ReadPasswordsSetup')).toHaveLength(0)
 })
 
+it("asks for revisions as 64-bit numbers and reads the server's needsNewKey mark", async () => {
+  serve({ records: [await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' })] })
+  await openSession()
+  const document = calls('ListPasswordItems')[0][0]
+  expect(document).toContain('$sinceRevision: Int64')
+  expect(document).toContain('needsNewKey')
+})
+
 it('does not take a background read for use, so a page left open still locks', async () => {
   serve({ records: await recordsToList() })
   await openSession()
@@ -1272,7 +1519,7 @@ it('reads the recipients again, with their new safety codes, when a key changed 
       await recordFor(
         'login-one',
         'login',
-        { ...emptyLoginFields(), name: 'Example login' },
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }]) },
         {
           shares: [
             {
@@ -1304,11 +1551,11 @@ it('reads the recipients again, with their new safety codes, when a key changed 
 
   fireEvent.click(await screen.findByRole('button', { name: 'Example login: Share' }))
   const dialog = await screen.findByRole('dialog', { name: 'Share Example login' })
-  expect(await within(dialog).findByText(await safetyCode(personB.publicKey))).toBeTruthy()
+  expect(await within(dialog).findByText(await safetyCode('person-b', personB.publicKey))).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
 
   expect(await screen.findByText(/key changed since it was read/)).toBeTruthy()
-  expect(await within(dialog).findByText(await safetyCode(newKeyPair.publicKey))).toBeTruthy()
+  expect(await within(dialog).findByText(await safetyCode('person-b', newKeyPair.publicKey))).toBeTruthy()
   expect(server.records).toHaveLength(1)
 })
 
@@ -1478,11 +1725,7 @@ it('seals nothing for a person whose key this device has never kept until the ow
   renderAt('/passwords?item=login-one')
 
   const dialog = await openShareWithCircle()
-  expect(
-    within(dialog).getByText(
-      'This device has not seen their key before. Compare the safety code with them before sharing.',
-    ),
-  ).toBeTruthy()
+  expect(within(dialog).getByText('This device has not confirmed their key yet.')).toBeTruthy()
   // Saved without confirming: the sharing is saved, with no key for Person B,
   // and nothing is kept as their known key.
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
@@ -1500,26 +1743,25 @@ it('refuses to seal in shareItem for an unconfirmed key unless that very key was
   serve({ records: await onlyExampleLogin() })
   await openSession()
   const item = passwordsSession.getSnapshot().items.find((candidate) => candidate.id === 'login-one')!
-  const grantees = [{ granteeUserId: 'person-b', granteeCircleId: null }]
-  const recipient = personBRecipient(personBPublicKey)
+  const targets = [
+    {
+      grantee: { granteeUserId: 'person-b', granteeCircleId: null },
+      recipients: [personBRecipient(personBPublicKey)],
+    },
+  ]
 
   // A different key was confirmed than the one the server lists now.
-  let shared = await passwordsSession.shareItem(item, grantees, [recipient], new Map([['person-b', otherPublicKey]]))
+  let shared = await passwordsSession.shareItem(item, targets, new Map([['person-b', otherPublicKey]]))
   expect(shared.unconfirmedUserIds).toEqual(['person-b'])
   expect((calls('SetPasswordItemShares')[0][1] as { input: { keys: unknown[] } }).input.keys).toEqual([])
 
-  shared = await passwordsSession.shareItem(
-    shared.item,
-    grantees,
-    [recipient],
-    new Map([['person-b', personBPublicKey]]),
-  )
+  shared = await passwordsSession.shareItem(shared.item, targets, new Map([['person-b', personBPublicKey]]))
   expect(shared.unconfirmedUserIds).toEqual([])
   expect((calls('SetPasswordItemShares')[1][1] as { input: { keys: unknown[] } }).input.keys).toHaveLength(1)
   expect(passwordsSession.isKeyConfirmed('person-b', personBPublicKey)).toBe(true)
 })
 
-it('flags a key that is not the known one and seals nothing for it until the owner trusts it', async () => {
+it('flags a key that is not the known one and seals nothing for it until the owner confirms it', async () => {
   const oldKeyPair = await generatePersonKeyPair()
   const newPublicKey = encodeBase64(personB.publicKey)
   window.localStorage.setItem(
@@ -1531,10 +1773,10 @@ it('flags a key that is not the known one and seals nothing for it until the own
   renderAt('/passwords?item=login-one')
 
   const dialog = await openShareWithCircle()
-  expect(within(dialog).getByText('Their key changed. Compare the safety code with them before sharing.')).toBeTruthy()
-  expect(await within(dialog).findByText(await safetyCode(oldKeyPair.publicKey))).toBeTruthy()
+  expect(within(dialog).getByText('Their key changed.')).toBeTruthy()
+  expect(await within(dialog).findByText(await safetyCode('person-b', oldKeyPair.publicKey))).toBeTruthy()
 
-  // Saved without trusting: the sharing is saved, with no key for Person B.
+  // Saved without confirming: the sharing is saved, with no key for Person B.
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
   await waitFor(() => expect(calls('SetPasswordItemShares')).toHaveLength(1))
   expect((calls('SetPasswordItemShares')[0][1] as { input: { keys: unknown[] } }).input.keys).toEqual([])
@@ -1546,7 +1788,7 @@ it('flags a key that is not the known one and seals nothing for it until the own
   })
 })
 
-it('seals for a changed key once the owner trusts it, and keeps it as the known key', async () => {
+it('seals for a changed key once the owner confirms it, and keeps it as the known key', async () => {
   const oldKeyPair = await generatePersonKeyPair()
   const newPublicKey = encodeBase64(personB.publicKey)
   window.localStorage.setItem(
@@ -1558,8 +1800,8 @@ it('seals for a changed key once the owner trusts it, and keeps it as the known 
   renderAt('/passwords?item=login-one')
 
   const dialog = await openShareWithCircle()
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Trust the new key' }))
-  expect(within(dialog).getByText('You trust this key.')).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'The new safety code matches' }))
+  expect(within(dialog).getByText('You confirmed this key.')).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
   await waitFor(() => expect(calls('SetPasswordItemShares')).toHaveLength(1))
   const keys = (calls('SetPasswordItemShares')[0][1] as { input: { keys: Record<string, string>[] } }).input.keys
@@ -1585,7 +1827,11 @@ it('says whom an item is shared with and names a person once in the share dialog
       await recordFor(
         'login-one',
         'login',
-        { ...emptyLoginFields(), name: 'Example login' },
+        {
+          ...emptyLoginFields(),
+          name: 'Example login',
+          access: accessOf([{ userId: 'person-b' }, { circleId: 'circle-one' }]),
+        },
         {
           shares: [
             {
@@ -1624,7 +1870,25 @@ it('says whom an item is shared with and names a person once in the share dialog
   expect(within(dialog).getAllByText('Person B (person-b-login)')).toHaveLength(1)
   expect(within(dialog).getByText('Everyone in Fixture Family')).toBeTruthy()
   expect(within(dialog).getByText('Member member-one (member-one)')).toBeTruthy()
-  expect(within(dialog).getAllByText(await safetyCode(personB.publicKey)).length).toBeGreaterThan(1)
+  // The code is made from the person's user id as well as the key, so two
+  // people who happen to hold the same key still have different codes.
+  expect(within(dialog).getAllByText(await safetyCode('person-b', personB.publicKey))).toHaveLength(1)
+  expect(within(dialog).getAllByText(await safetyCode('member-one', personB.publicKey))).toHaveLength(1)
+  expect(within(dialog).getAllByText(await safetyCode('member-two', personB.publicKey))).toHaveLength(1)
+})
+
+it('says a recipient was confirmed on this browser, with no button to confirm again', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  confirmKeyOnDevice('person-b', personBPublicKey)
+  serve({ records: await onlyExampleLogin(), recipients: [personBRecipient(personBPublicKey)] })
+  await openSession()
+  renderAt('/passwords?item=login-one')
+
+  const dialog = await openShareWithCircle()
+  expect(within(dialog).getByText('You confirmed this person on this browser.')).toBeTruthy()
+  expect(within(dialog).queryByRole('button', { name: 'The safety code matches' })).toBeNull()
+  // The known limit is said where it matters: the confirmation stays on this browser.
+  expect(within(dialog).getByText(/kept on this browser only/)).toBeTruthy()
 })
 
 it('does not seal again for a person who already has a key for the item', async () => {
@@ -1634,7 +1898,7 @@ it('does not seal again for a person who already has a key for the item', async 
       await recordFor(
         'login-one',
         'login',
-        { ...emptyLoginFields(), name: 'Example login' },
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }]) },
         {
           shares: [
             {
@@ -1659,10 +1923,43 @@ it('does not seal again for a person who already has a key for the item', async 
   expect((calls('SetPasswordItemShares')[0][1] as { input: { keys: unknown[] } }).input.keys).toEqual([])
 })
 
+it('names a share the server lists that the sealed record does not have, and removes it when sharing is saved', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  confirmKeyOnDevice('person-b', personBPublicKey)
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login' },
+        { shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: true }]) },
+      ),
+    ],
+  })
+  await openSession()
+  renderAt('/passwords?item=login-one')
+
+  // The view does not say it is shared with Person B; it says the server lists them.
+  expect(
+    await screen.findByText(/The server also lists Person B, but you did not share this item with them/),
+  ).toBeTruthy()
+  expect(screen.queryByText(/^Shared with/)).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Example login: Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share Example login' })
+  expect(within(dialog).getByText('Not shared with anyone.')).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
+  // The share is taken off, and the item gets a new key without Person B.
+  await waitFor(() => expect(calls('RekeyPasswordItem')).toHaveLength(1))
+  expect(orderOf({ SetPasswordItemShares: 'shares', RekeyPasswordItem: 'rekey' })).toEqual(['shares', 'rekey'])
+  const rekey = (calls('RekeyPasswordItem')[0][1] as { input: any }).input
+  expect(rekey.shareKeys).toEqual([])
+})
+
 it('shows a key that is not valid base64 as unreadable instead of throwing', async () => {
   render(
     <TranslationProvider>
-      <SafetyCode publicKey="not base64 !!!" />
+      <SafetyCode userId="person-b" publicKey="not base64 !!!" />
     </TranslationProvider>,
   )
   expect(await screen.findByText('could not be read')).toBeTruthy()
@@ -1756,6 +2053,29 @@ it('gives the locked Settings card a title and an Unlock button that goes to the
   fireEvent.click(screen.getByRole('button', { name: 'Unlock' }))
   await waitFor(() => expect(screen.getByTestId('address').textContent).toBe(''))
   expect(await screen.findByLabelText('Passphrase')).toBeTruthy()
+})
+
+it('lists at most 50 sites, counts the rest, and does not slow down for thousands written twice', async () => {
+  const many = Array.from({ length: 60 }, (_, index) => `site-${index}.example.test`)
+  expect(sitesToShow(many).shown).toHaveLength(50)
+  expect(sitesToShow(many).hiddenCount).toBe(10)
+  // A site written twice counts once, bare or with its scheme.
+  expect(sitesToShow(['example.test', 'https://example.test', ' ', 'other.example.test'])).toEqual({
+    shown: ['https://example.test', 'https://other.example.test'],
+    hiddenCount: 0,
+  })
+  const started = performance.now()
+  const repeated = Array.from({ length: 50_000 }, (_, index) => `site-${index % 70}.example.test`)
+  expect(sitesToShow(repeated)).toMatchObject({ hiddenCount: 20 })
+  expect(performance.now() - started).toBeLessThan(2000)
+
+  serve({
+    records: [await recordFor('login-sites', 'login', { ...emptyLoginFields(), name: 'Many sites', sites: many })],
+  })
+  await openSession()
+  renderAt('/passwords?item=login-sites')
+  expect(await screen.findByText('and 10 more')).toBeTruthy()
+  expect(screen.getAllByRole('link', { name: /^site-\d+\.example\.test$/ })).toHaveLength(50)
 })
 
 it('lists a site written bare as a link, once, and a site that is not a web address as text', async () => {
@@ -1966,7 +2286,7 @@ it('asks before sealing for a key that only a planted item came with', async () 
   // A hostile server sets Passwords up for Person B with a key pair of its own
   // (personB here), plants one item "shared by" Person B, and lists Person B as
   // waiting for the owner's item. Opening the planted item must not make the
-  // key trusted.
+  // key confirmed.
   const personBPublicKey = encodeBase64(personB.publicKey)
   serve({
     records: [
@@ -1980,7 +2300,7 @@ it('asks before sealing for a key that only a planted item came with', async () 
 
   const result = await passwordsSession.completeWaitingShares()
   expect(result.sharedCount).toBe(0)
-  expect(result.changedKeys).toEqual([
+  expect(result.keysToConfirm).toEqual([
     expect.objectContaining({ recipientUserId: 'person-b', oldPublicKey: null, newPublicKey: personBPublicKey }),
   ])
   expect(calls('AddPasswordShareKeys')).toHaveLength(0)
@@ -2004,15 +2324,15 @@ it('asks once about a key an earlier version kept, and does not ask again after 
 
   const first = await passwordsSession.completeWaitingShares()
   expect(first.sharedCount).toBe(0)
-  expect(first.changedKeys).toHaveLength(1)
+  expect(first.keysToConfirm).toHaveLength(1)
   expect(calls('AddPasswordShareKeys')).toHaveLength(0)
 
-  const confirmed = await passwordsSession.trustChangedKey(first.changedKeys[0])
+  const confirmed = await passwordsSession.confirmChangedKey(first.keysToConfirm[0])
   expect(confirmed.sharedCount).toBe(1)
   expect(storedKeys('confirmedKeys')).toEqual({ 'person-b': personBPublicKey })
 
   const later = await passwordsSession.completeWaitingShares()
-  expect(later.changedKeys).toEqual([])
+  expect(later.keysToConfirm).toEqual([])
   expect(later.sharedCount).toBe(1)
 })
 
@@ -2037,7 +2357,7 @@ it('asks in the share dialog about a key that was only seen, and seals nothing u
   expect(storedKeys('confirmedKeys')).toBeNull()
 })
 
-it('confirms the owner key once the person trusts it', async () => {
+it('confirms the owner key once the person confirms it', async () => {
   const oldKeyPair = await generatePersonKeyPair()
   window.localStorage.setItem(
     `teanode.passwords.pins:${USER_ID}`,
@@ -2046,7 +2366,7 @@ it('confirms the owner key once the person trusts it', async () => {
   serve({ records: await recordsToList() })
   await openSession()
   renderAt('/passwords?item=login-shared')
-  fireEvent.click(await screen.findByRole('button', { name: 'Trust the new key' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'The new safety code matches' }))
   await screen.findByRole('button', { name: 'Show Password' })
   expect(storedKeys('confirmedKeys')).toEqual({ 'person-b': encodeBase64(personB.publicKey) })
 })
@@ -2164,7 +2484,7 @@ it('gives the item a new key when "Let the agent use this" is turned off, and th
     await recordFor(
       'login-one',
       'login',
-      { ...emptyLoginFields(), name: 'Example login', password: 'invented-password-1' },
+      { ...emptyLoginFields(), name: 'Example login', password: 'invented-password-1', access: accessOf([], true) },
       { isUsableByAgent: true },
     ),
   ]
@@ -2184,6 +2504,8 @@ it('gives the item a new key when "Let the agent use this" is turned off, and th
   expect(await openItemFields(newKey, parseSealedValue(input.encryptedFields), 'login-one', 'login')).toMatchObject({
     name: 'Example login',
     password: 'invented-password-1',
+    // The record the new fields carry says the agent is off.
+    access: { isUsableByAgent: false, grantees: [] },
   })
   await expect(openItemFields(oldKey, parseSealedValue(input.encryptedFields), 'login-one', 'login')).rejects.toThrow()
   expect(await screen.findByText('The agent can no longer use this item.')).toBeTruthy()
@@ -2192,7 +2514,7 @@ it('gives the item a new key when "Let the agent use this" is turned off, and th
   expect(encodeBase64(passwordsSession.getSnapshot().items[0].itemKey!)).toBe(encodeBase64(newKey))
 })
 
-it('seals the new key only for people whose key the owner confirmed when the agent is turned off', async () => {
+it('seals the new key only for people the record reaches and whose key the owner confirmed, when the agent is turned off', async () => {
   const personBPublicKey = encodeBase64(personB.publicKey)
   confirmKeyOnDevice('person-b', personBPublicKey)
   serve({
@@ -2200,7 +2522,11 @@ it('seals the new key only for people whose key the owner confirmed when the age
       await recordFor(
         'login-one',
         'login',
-        { ...emptyLoginFields(), name: 'Example login' },
+        {
+          ...emptyLoginFields(),
+          name: 'Example login',
+          access: accessOf([{ userId: 'person-b' }, { userId: 'person-c' }, { userId: 'person-d' }], true),
+        },
         {
           isUsableByAgent: true,
           shares: sharedWith([
@@ -2208,11 +2534,14 @@ it('seals the new key only for people whose key the owner confirmed when the age
             // Person C has a key for the item, but this device never confirmed theirs.
             { userId: 'person-c', name: 'Person C', publicKey: personCPublicKey(), hasKey: true },
             { userId: 'person-d', name: 'Person D', publicKey: null, hasKey: false },
+            // A share the owner's record does not have, whose key is confirmed here.
+            { userId: 'person-e', name: 'Person E', publicKey: personBPublicKey, hasKey: true },
           ]),
         },
       ),
     ],
   })
+  confirmKeyOnDevice('person-e', personBPublicKey)
   await openSession()
   await passwordsSession.setUsableByAgent(passwordsSession.getSnapshot().items[0], false)
 
@@ -2234,6 +2563,80 @@ it('seals the new key only for people whose key the owner confirmed when the age
     'person-b',
   )
   expect(encodeBase64(sharedKey)).toBe(encodeBase64(newKey))
+  // Person E, whom the record does not reach, is not in the record the new
+  // fields carry either: only the grantees the server still lists stay.
+  expect((await fieldsSentIn(input, 'login-one')).access.grantees).toEqual([
+    { userId: 'person-b' },
+    { userId: 'person-c' },
+    { userId: 'person-d' },
+  ])
+})
+
+it('gives the agent no copy on a re-key when only the server says it may use the item', async () => {
+  // The server's flag is on, but the owner's sealed record never let the agent
+  // in: nothing the server says can widen it.
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login' },
+        { isUsableByAgent: true, needsNewKey: true },
+      ),
+    ],
+  })
+  await openSession()
+  await passwordsSession.rekeyIfNeeded('login-one')
+
+  expect(calls('RekeyPasswordItem')).toHaveLength(1)
+  expect(calls('ReadPasswordsAgentKey')).toHaveLength(0)
+  const input = (calls('RekeyPasswordItem')[0][1] as { input: Record<string, any> }).input
+  expect(input.itemKeyByAgentKey).toBeNull()
+})
+
+it('does not show the agent as allowed when only the server says so', async () => {
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login' },
+        { isUsableByAgent: true },
+      ),
+    ],
+  })
+  await openSession()
+  renderAt('/passwords?item=login-one')
+  const agentSwitch = await screen.findByRole('checkbox', { name: /Let the agent use this/ })
+  expect((agentSwitch as HTMLInputElement).checked).toBe(false)
+  expect(screen.queryByText('Agent', { selector: '.tag' })).toBeNull()
+})
+
+it('seals the agent copy on a re-key when the opened record lets the agent in', async () => {
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([], true) },
+        { isUsableByAgent: true, needsNewKey: true },
+      ),
+    ],
+  })
+  await openSession()
+  await passwordsSession.rekeyIfNeeded('login-one')
+
+  const input = (calls('RekeyPasswordItem')[0][1] as { input: Record<string, any> }).input
+  const newKey = await openedKeyOf(input.itemKey, 'login-one')
+  const agentKey = await openForKeyPair(
+    parseSealedForKeyPair(input.itemKeyByAgentKey),
+    agentKeyPair,
+    decodeBase64(fixture.input.publicKey),
+    'login-one',
+    USER_ID,
+    AGENT_RECIPIENT_ID,
+  )
+  expect(encodeBase64(agentKey)).toBe(encodeBase64(newKey))
 })
 
 it('gives the item a new key after somebody is taken off its shares, for the people who keep it and for the agent', async () => {
@@ -2242,7 +2645,11 @@ it('gives the item a new key after somebody is taken off its shares, for the peo
   const oldRecord = await recordFor(
     'login-one',
     'login',
-    { ...emptyLoginFields(), name: 'Example login' },
+    {
+      ...emptyLoginFields(),
+      name: 'Example login',
+      access: accessOf([{ userId: 'person-b' }, { userId: 'person-c' }], true),
+    },
     {
       isUsableByAgent: true,
       shares: sharedWith([
@@ -2261,16 +2668,18 @@ it('gives the item a new key after somebody is taken off its shares, for the peo
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
 
   await waitFor(() => expect(calls('RekeyPasswordItem')).toHaveLength(1))
-  // The narrower list is saved first, then the item is re-keyed.
-  const order = vi
-    .mocked(graphql)
-    .mock.calls.map(([document]) =>
-      document.includes('SetPasswordItemShares') ? 'shares' : document.includes('RekeyPasswordItem') ? 'rekey' : '',
-    )
-    .filter(Boolean)
-  expect(order).toEqual(['shares', 'rekey'])
+  // Narrowing: the narrower list is saved first, then the item is re-keyed.
+  expect(orderOf({ SetPasswordItemShares: 'shares', RekeyPasswordItem: 'rekey', SavePasswordItem: 'save' })).toEqual([
+    'shares',
+    'rekey',
+  ])
   const input = (calls('RekeyPasswordItem')[0][1] as { input: Record<string, any> }).input
   expect(input.shareKeys.map((key: { recipientUserId: string }) => key.recipientUserId)).toEqual(['person-b'])
+  // The fields the re-key carries have the narrower record.
+  expect((await fieldsSentIn(input, 'login-one')).access).toEqual({
+    isUsableByAgent: true,
+    grantees: [{ userId: 'person-b' }],
+  })
   const newKey = await openedKeyOf(input.itemKey, 'login-one')
   const agentKey = await openForKeyPair(
     parseSealedForKeyPair(input.itemKeyByAgentKey),
@@ -2284,7 +2693,7 @@ it('gives the item a new key after somebody is taken off its shares, for the peo
   expect(await screen.findByText('Sharing saved.')).toBeTruthy()
 })
 
-it('says the item could not be given a new key after a removal, offers to try again, and marks the item', async () => {
+it('says the item could not be given a new key after a removal, offers to try again, and the server keeps its mark', async () => {
   const personBPublicKey = encodeBase64(personB.publicKey)
   confirmKeyOnDevice('person-b', personBPublicKey)
   const server = serve({
@@ -2292,7 +2701,7 @@ it('says the item could not be given a new key after a removal, offers to try ag
       await recordFor(
         'login-one',
         'login',
-        { ...emptyLoginFields(), name: 'Example login' },
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }]) },
         { shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: true }]) },
       ),
     ],
@@ -2306,16 +2715,20 @@ it('says the item could not be given a new key after a removal, offers to try ag
   fireEvent.click(within(dialog).getByRole('button', { name: 'Stop sharing with Person B' }))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
 
-  expect(await screen.findByText('Removed. The item could not be given a new key.')).toBeTruthy()
-  // The removal itself went through.
+  expect(await screen.findByText('The item still needs a new key.')).toBeTruthy()
+  // The removal itself went through, and the server marked the item. Nothing
+  // is remembered on this device: the mark is the server's.
   expect(calls('SetPasswordItemShares')).toHaveLength(1)
-  expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.rekeyPending:${USER_ID}`)!)).toEqual(['login-one'])
+  expect(server.records[0].needsNewKey).toBe(true)
+  expect(passwordsSession.getSnapshot().items[0].needsNewKey).toBe(true)
+  expect(window.localStorage.getItem(`teanode.passwords.rekeyPending:${USER_ID}`)).toBeNull()
 
   server.isRekeyFailing = false
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByText('The item has a new key.')).toBeTruthy()
   expect(calls('RekeyPasswordItem')).toHaveLength(2)
-  expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.rekeyPending:${USER_ID}`)!)).toEqual([])
+  expect(server.records[0].needsNewKey).toBe(false)
+  expect(passwordsSession.getSnapshot().items[0].needsNewKey).toBe(false)
 })
 
 it('says so again when trying again fails too', async () => {
@@ -2325,7 +2738,7 @@ it('says so again when trying again fails too', async () => {
       await recordFor(
         'login-one',
         'login',
-        { ...emptyLoginFields(), name: 'Example login' },
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }]) },
         {
           shares: sharedWith([
             { userId: 'person-b', name: 'Person B', publicKey: encodeBase64(personB.publicKey), hasKey: true },
@@ -2341,12 +2754,12 @@ it('says so again when trying again fails too', async () => {
   const dialog = await screen.findByRole('dialog', { name: 'Share Example login' })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Stop sharing with Person B' }))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
-  await screen.findByText('Removed. The item could not be given a new key.')
+  await screen.findByText('The item still needs a new key.')
 
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   await waitFor(() => expect(calls('RekeyPasswordItem')).toHaveLength(2))
   expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy()
-  expect(window.localStorage.getItem(`teanode.passwords.rekeyPending:${USER_ID}`)).toContain('login-one')
+  expect(passwordsSession.getSnapshot().items[0].needsNewKey).toBe(true)
 })
 
 it('leaves the agent switch on and says why when the re-key is refused', async () => {
@@ -2355,7 +2768,7 @@ it('leaves the agent switch on and says why when the re-key is refused', async (
       await recordFor(
         'login-one',
         'login',
-        { ...emptyLoginFields(), name: 'Example login' },
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([], true) },
         { isUsableByAgent: true },
       ),
     ],
@@ -2366,7 +2779,6 @@ it('leaves the agent switch on and says why when the re-key is refused', async (
   fireEvent.click(await screen.findByRole('checkbox', { name: /Let the agent use this/ }))
   expect(await screen.findByText('The server could not re-key the item.')).toBeTruthy()
   expect(passwordsSession.getSnapshot().items[0].isUsableByAgent).toBe(true)
-  expect(window.localStorage.getItem(`teanode.passwords.rekeyPending:${USER_ID}`)).toBeNull()
 })
 
 it('reads the item again and tries once more when another device changed it before the re-key', async () => {
@@ -2375,7 +2787,7 @@ it('reads the item again and tries once more when another device changed it befo
       await recordFor(
         'login-one',
         'login',
-        { ...emptyLoginFields(), name: 'Example login' },
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([], true) },
         { isUsableByAgent: true },
       ),
     ],
@@ -2390,11 +2802,15 @@ it('reads the item again and tries once more when another device changed it befo
   expect((calls('RekeyPasswordItem')[1][1] as { input: { baseRevision: number } }).input.baseRevision).toBe(40)
 })
 
-it('gives an item that still has its old key a new one with the next save', async () => {
-  window.localStorage.setItem(`teanode.passwords.rekeyPending:${USER_ID}`, JSON.stringify(['login-one']))
-  serve({ records: [await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' })] })
+it('gives an item the server marked a new key with the next save', async () => {
+  serve({
+    records: [
+      await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' }, { needsNewKey: true }),
+    ],
+  })
   await openSession()
   const held = passwordsSession.getSnapshot().items[0]
+  expect(held.needsNewKey).toBe(true)
   await passwordsSession.saveItem(
     { itemKind: 'login', fields: { ...held.fields, password: 'invented-new-password' } as never },
     held,
@@ -2408,18 +2824,102 @@ it('gives an item that still has its old key a new one with the next save', asyn
   expect(await openItemFields(newKey, parseSealedValue(input.encryptedFields), 'login-one', 'login')).toMatchObject({
     password: 'invented-new-password',
   })
-  expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.rekeyPending:${USER_ID}`)!)).toEqual([])
+  expect(passwordsSession.getSnapshot().items[0].needsNewKey).toBe(false)
 })
 
-it('tries again to give an item that still has its old key a new one when it is opened', async () => {
-  window.localStorage.setItem(`teanode.passwords.rekeyPending:${USER_ID}`, JSON.stringify(['login-one']))
-  serve({ records: [await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' })] })
+it('gives every item the server marked a new key as Passwords opens, once', async () => {
+  const server = serve({
+    records: [
+      await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' }, { needsNewKey: true }),
+      await recordFor('login-two', 'login', { ...emptyLoginFields(), name: 'Bank' }),
+    ],
+  })
+  await openSession()
+  renderAt('/passwords')
+  await screen.findByRole('link', { name: 'Example login' })
+  await waitFor(() => expect(calls('RekeyPasswordItem')).toHaveLength(1))
+  expect((calls('RekeyPasswordItem')[0][1] as { input: { id: string } }).input.id).toBe('login-one')
+  await waitFor(() => expect(server.records.find((record) => record.id === 'login-one')?.needsNewKey).toBe(false))
+})
+
+it('does not make a second new key when the item is opened while the page gives it one', async () => {
+  serve({
+    records: [
+      await recordFor('login-one', 'login', { ...emptyLoginFields(), name: 'Example login' }, { needsNewKey: true }),
+    ],
+  })
   await openSession()
   renderAt('/passwords?item=login-one')
-  await waitFor(() => expect(calls('RekeyPasswordItem')).toHaveLength(1))
-  await waitFor(() =>
-    expect(JSON.parse(window.localStorage.getItem(`teanode.passwords.rekeyPending:${USER_ID}`)!)).toEqual([]),
-  )
+  await waitFor(() => expect(passwordsSession.getSnapshot().items[0].needsNewKey).toBe(false))
+  expect(calls('RekeyPasswordItem')).toHaveLength(1)
+})
+
+it('says how many people wait for their safety codes after a re-key that could not seal for them, and asks at once', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  // Nobody here has confirmed Person B's safety code.
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login', access: accessOf([{ userId: 'person-b' }]) },
+        {
+          needsNewKey: true,
+          shares: sharedWith([{ userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: true }]),
+        },
+      ),
+    ],
+  })
+  await openSession()
+  renderAt('/passwords')
+
+  expect(await screen.findByText('1 person waits until you confirm their safety code.')).toBeTruthy()
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText("Confirm Person B's safety code")).toBeTruthy()
+  const rekey = (calls('RekeyPasswordItem')[0][1] as { input: Record<string, any> }).input
+  expect(rekey.shareKeys).toEqual([])
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+
+  // Confirming gives them the key to the new item key at once.
+  fireEvent.click(within(dialog).getByRole('button', { name: 'The safety code matches' }))
+  await waitFor(() => expect(calls('AddPasswordShareKeys')).toHaveLength(1))
+  const keys = (calls('AddPasswordShareKeys')[0][1] as { keys: Record<string, string>[] }).keys
+  expect(keys[0]).toMatchObject({ itemId: 'login-one', recipientUserId: 'person-b' })
+  expect(keys[0].itemKey).toBe(rekey.itemKey)
+})
+
+it('says how many wait when taking somebody off leaves another person unconfirmed', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        {
+          ...emptyLoginFields(),
+          name: 'Example login',
+          access: accessOf([{ userId: 'person-b' }, { userId: 'person-c' }]),
+        },
+        {
+          shares: sharedWith([
+            { userId: 'person-b', name: 'Person B', publicKey: personBPublicKey, hasKey: true },
+            { userId: 'person-c', name: 'Person C', publicKey: personCPublicKey(), hasKey: true },
+          ]),
+        },
+      ),
+    ],
+    recipients: [personBRecipient(personBPublicKey, true)],
+  })
+  await openSession()
+  renderAt('/passwords?item=login-one')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Example login: Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share Example login' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Stop sharing with Person C' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save sharing' }))
+
+  expect(await screen.findByText('1 person waits until you confirm their safety code.')).toBeTruthy()
+  expect(await screen.findByRole('alertdialog')).toBeTruthy()
 })
 
 // --- the title, the fields' attributes and the wording ------------------------------
@@ -2438,7 +2938,8 @@ it('tells browsers and password managers to leave the passphrase and the editor 
   serve({ records: [] })
   renderAt('/passwords')
   const passphrase = await screen.findByLabelText('Passphrase')
-  expect(passphrase.getAttribute('autocomplete')).toBe('new-password')
+  // The passphrase already exists, so it is a current password and not a new one.
+  expect(passphrase.getAttribute('autocomplete')).toBe('current-password')
   expect(passphrase.getAttribute('data-1p-ignore')).toBe('true')
   expect(passphrase.getAttribute('data-lpignore')).toBe('true')
   expect(passphrase.getAttribute('data-bwignore')).toBe('true')
@@ -2483,6 +2984,53 @@ it('masks a card number and security code with CSS in text fields where the brow
   } finally {
     vi.unstubAllGlobals()
   }
+})
+
+it('shows the masked card number and security code with one Show button, and each field has the attributes once', async () => {
+  serve({ records: [] })
+  await openSession()
+  try {
+    vi.stubGlobal('CSS', { supports: () => true })
+    renderAt('/passwords?new=card')
+    const dialog = await screen.findByRole('dialog')
+    const number = within(dialog).getByLabelText('Card number')
+    const code = within(dialog).getByLabelText('Security code')
+    expect(number.classList.contains('passwords-masked')).toBe(true)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Show card number and security code' }))
+    for (const field of [number, code]) {
+      expect(field.getAttribute('type')).toBe('text')
+      expect(field.classList.contains('passwords-masked')).toBe(false)
+      // Still kept away from the browser's and the extensions' managers.
+      expect(field.getAttribute('autocomplete')).toBe('off')
+      expect(field.getAttribute('data-bwignore')).toBe('true')
+    }
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hide card number and security code' }))
+    expect(number.classList.contains('passwords-masked')).toBe(true)
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
+it('asks for the current passphrase as a current password and the new one as a new password', async () => {
+  serve({ records: [] })
+  await openSession()
+  renderAt('/passwords?tab=settings')
+  fireEvent.click(await screen.findByRole('button', { name: 'Change passphrase' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Change passphrase' })
+  expect(within(dialog).getByLabelText('Current passphrase').getAttribute('autocomplete')).toBe('current-password')
+  expect(within(dialog).getByLabelText('New passphrase').getAttribute('autocomplete')).toBe('new-password')
+  expect(within(dialog).getByLabelText('Type it again').getAttribute('autocomplete')).toBe('new-password')
+})
+
+it('shows the own safety code in Settings from the opened key pair and the own user id', async () => {
+  serve({ records: [], unlockPublicKey: null })
+  await openSession()
+  renderAt('/passwords?tab=settings')
+  expect(await screen.findByText('Your safety code')).toBeTruthy()
+  const code = await safetyCode(USER_ID, fixture.keyPair.publicKey)
+  expect(code).toMatch(/^(\d{4} ){7}\d{4}$/)
+  expect(await screen.findByText(code)).toBeTruthy()
+  expect(passwordsSession.getSnapshot().publicKey).toBe(encodeBase64(fixture.keyPair.publicKey))
 })
 
 it('says the old recovery key no longer unlocks Passwords, and nothing stronger', async () => {

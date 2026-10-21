@@ -37,8 +37,9 @@ export const NO_PASSWORD_MANAGER = {
 // secretNumberInputProps are the attributes of a card number or security code
 // field. It is a text field masked with CSS where the browser can (so the
 // browser does not offer to save a password or a card), and a password field
-// where it cannot.
-export function secretNumberInputProps(): { type: 'text' | 'password'; className?: string } {
+// where it cannot. isShown is the Show button: a plain text field.
+export function secretNumberInputProps(isShown = false): { type: 'text' | 'password'; className?: string } {
+  if (isShown) return { type: 'text' }
   const canMask =
     typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('-webkit-text-security', 'disc')
   return canMask ? { type: 'text', className: 'passwords-masked' } : { type: 'password' }
@@ -393,9 +394,11 @@ export function PasswordGenerator({
   )
 }
 
-// SafetyCode is the short form of a public key, which two people compare to
-// be sure the key is the one they think it is.
-export function SafetyCode({ publicKey }: { publicKey: string }) {
+// SafetyCode is the short form of a person's public key, which two people
+// compare to be sure the key is the one they think it is. It is made from the
+// person's user id as well as the key, so the same key has a different code for
+// each person.
+export function SafetyCode({ userId, publicKey }: { userId: string; publicKey: string }) {
   const { t } = useTranslation()
   const [code, setCode] = useState('')
   const [isUnreadable, setIsUnreadable] = useState(false)
@@ -411,7 +414,7 @@ export function SafetyCode({ publicKey }: { publicKey: string }) {
       setIsUnreadable(true)
       return
     }
-    safetyCode(keyBytes).then(
+    safetyCode(userId, keyBytes).then(
       (made) => {
         if (isCurrent) setCode(made)
       },
@@ -422,7 +425,7 @@ export function SafetyCode({ publicKey }: { publicKey: string }) {
     return () => {
       isCurrent = false
     }
-  }, [publicKey])
+  }, [userId, publicKey])
   if (isUnreadable) return <span className="muted">{t('passwords.safetyCodeUnreadable')}</span>
   return <code className="passwords-safety-code">{code}</code>
 }

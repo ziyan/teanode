@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { FormDialog } from '../../components/dialog'
 import { useToast } from '../../components/toast'
@@ -21,10 +21,12 @@ import { PasswordItemDraft, passwordsSession } from './passwordsSession'
 
 // The editor, one form per kind, for a new item and for a changed one. A
 // change is sent with the revision it was based on; if another device changed
-// the item first the server refuses it, the editor stays open with what was
-// typed, the person is told, and Reload reads the other device's change in its
-// place, so one device never overwrites another's change without anybody
-// seeing it.
+// the item first the server refuses it, the item is read again, and the form
+// keeps what was typed: a field the person edited keeps their text and every
+// other field takes the other device's value. The person is told, checks the
+// result and saves again, so one device never overwrites another's change
+// without anybody seeing it. Who the item is shared with and whether the agent
+// may use it are not in the form; a save keeps them as the item has them.
 
 // siteFromText is a site as it is kept: an address with its scheme, https
 // when none was typed.
@@ -61,6 +63,38 @@ export function oneTimeCodeUriFromText(text: string, name: string): string | nul
   return uri
 }
 
+// rebasedFields moves what was typed onto the item as it is now. A field the
+// person changed (typed differs from original, the item as the form opened)
+// keeps the typed value; every other field takes the fresh one, including the
+// passkeys and the access record, which the form does not show.
+export function rebasedFields<Fields extends object>(typed: Fields, original: Fields, fresh: Fields): Fields {
+  const result = { ...fresh }
+  for (const fieldName of Object.keys(typed) as (keyof Fields)[]) {
+    if (JSON.stringify(typed[fieldName]) !== JSON.stringify(original[fieldName])) result[fieldName] = typed[fieldName]
+  }
+  return result
+}
+
+// What the form shows, kept as it was when the form opened or was last moved
+// onto a newer copy, so a later conflict can tell what the person changed.
+type LoadedFields = {
+  login: LoginFields
+  card: CardFields
+  note: NoteFields
+  sitesText: string
+  oneTimeCodeText: string
+}
+
+function loadedFieldsOf(item: PasswordItem | null): LoadedFields {
+  return {
+    login: item?.itemKind === 'login' ? item.fields : emptyLoginFields(),
+    card: item?.itemKind === 'card' ? item.fields : emptyCardFields(),
+    note: item?.itemKind === 'note' ? item.fields : emptyNoteFields(),
+    sitesText: item?.itemKind === 'login' ? item.fields.sites.join('\n') : '',
+    oneTimeCodeText: item?.itemKind === 'login' ? item.fields.oneTimeCodeUri : '',
+  }
+}
+
 const TITLES: Record<ItemKind, { create: Key; change: Key }> = {
   login: { create: 'passwords.newLogin', change: 'passwords.editLogin' },
   card: { create: 'passwords.newCard', change: 'passwords.editCard' },
@@ -88,28 +122,19 @@ export function PasswordsEditor({
   const [isBusy, setIsBusy] = useState(false)
   // The item as it was when the editor opened, and so the revision a save is
   // based on: a newer one read in the background must not be saved over
-  // without the person having seen it. Only Reload replaces it.
+  // without the person having seen it. Only a conflict replaces it.
   const [existing, setExisting] = useState(openedItem)
-  const [isStale, setIsStale] = useState(false)
+  const loaded = useRef(loadedFieldsOf(openedItem))
 
-  const [login, setLogin] = useState<LoginFields>(() =>
-    existing?.itemKind === 'login' ? existing.fields : emptyLoginFields(),
-  )
-  const [card, setCard] = useState<CardFields>(() =>
-    existing?.itemKind === 'card' ? existing.fields : emptyCardFields(),
-  )
-  const [note, setNote] = useState<NoteFields>(() =>
-    existing?.itemKind === 'note' ? existing.fields : emptyNoteFields(),
-  )
+  const [login, setLogin] = useState<LoginFields>(loaded.current.login)
+  const [card, setCard] = useState<CardFields>(loaded.current.card)
+  const [note, setNote] = useState<NoteFields>(loaded.current.note)
   // The sites are typed one to a line, and the one-time code as the person
   // pasted it; both are read when the form is sent.
-  const [sitesText, setSitesText] = useState(() =>
-    existing?.itemKind === 'login' ? existing.fields.sites.join('\n') : '',
-  )
-  const [oneTimeCodeText, setOneTimeCodeText] = useState(() =>
-    existing?.itemKind === 'login' ? existing.fields.oneTimeCodeUri : '',
-  )
+  const [sitesText, setSitesText] = useState(loaded.current.sitesText)
+  const [oneTimeCodeText, setOneTimeCodeText] = useState(loaded.current.oneTimeCodeText)
   const [isPasswordShown, setIsPasswordShown] = useState(false)
+  const [isCardSecretShown, setIsCardSecretShown] = useState(false)
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false)
 
   const name = itemKind === 'login' ? login.name : itemKind === 'card' ? card.name : note.name
@@ -138,8 +163,7 @@ export function PasswordsEditor({
       onSaved(saved)
     } catch (failure) {
       if (failure instanceof Error && failure.message.includes(STALE_REVISION_PHRASE)) {
-        toast.failed(t('passwords.itemChangedElsewhere'))
-        setIsStale(true)
+        await rebaseOntoFreshItem()
       } else {
         reportFailure(failure, t('passwords.saveFailed'))
       }
@@ -148,11 +172,10 @@ export function PasswordsEditor({
     }
   }
 
-  // reload reads what the other device saved and puts it in the form in place
-  // of what was typed.
-  async function reload() {
+  // rebaseOntoFreshItem reads what the other device saved and moves the form
+  // onto it, keeping what the person typed.
+  async function rebaseOntoFreshItem() {
     if (existing === null) return
-    setIsBusy(true)
     try {
       await passwordsSession.refresh()
       const latest = passwordsSession.getSnapshot().items.find((candidate) => candidate.id === existing.id)
@@ -161,21 +184,23 @@ export function PasswordsEditor({
         onClose()
         return
       }
-      setExisting(latest)
-      if (latest.itemKind === 'login') {
-        setLogin(latest.fields)
-        setSitesText(latest.fields.sites.join('\n'))
-        setOneTimeCodeText(latest.fields.oneTimeCodeUri)
-      } else if (latest.itemKind === 'card') {
-        setCard(latest.fields)
-      } else {
-        setNote(latest.fields)
+      if (latest.revision === existing.revision) {
+        // The read did not bring anything newer, so there is nothing new to
+        // base the changes on.
+        toast.failed(t('passwords.itemChangedNotRead'))
+        return
       }
-      setIsStale(false)
+      const fresh = loadedFieldsOf(latest)
+      setExisting(latest)
+      setLogin(rebasedFields(login, loaded.current.login, fresh.login))
+      setCard(rebasedFields(card, loaded.current.card, fresh.card))
+      setNote(rebasedFields(note, loaded.current.note, fresh.note))
+      setSitesText(sitesText !== loaded.current.sitesText ? sitesText : fresh.sitesText)
+      setOneTimeCodeText(oneTimeCodeText !== loaded.current.oneTimeCodeText ? oneTimeCodeText : fresh.oneTimeCodeText)
+      loaded.current = fresh
+      toast.failed(t('passwords.itemChangedElsewhere'))
     } catch (failure) {
       reportFailure(failure, t('passwords.reloadFailed'))
-    } finally {
-      setIsBusy(false)
     }
   }
 
@@ -188,13 +213,6 @@ export function PasswordsEditor({
       submitLabel={t('common.save')}
       busy={isBusy}
       canSubmit={name.trim() !== ''}
-      otherAction={
-        isStale ? (
-          <button type="button" disabled={isBusy} onClick={() => void reload()}>
-            {t('passwords.reload')}
-          </button>
-        ) : undefined
-      }
       onSubmit={() => void save()}
       onClose={onClose}
     >
@@ -304,10 +322,9 @@ export function PasswordsEditor({
           <label>
             <span>{t('passwords.fieldCardNumber')}</span>
             <input
-              {...secretNumberInputProps()}
+              {...secretNumberInputProps(isCardSecretShown)}
               inputMode="numeric"
               autoComplete="off"
-              {...NO_PASSWORD_MANAGER}
               {...NO_PASSWORD_MANAGER}
               value={card.number}
               onChange={(event) => setCard({ ...card, number: event.target.value })}
@@ -340,15 +357,23 @@ export function PasswordsEditor({
           <label>
             <span>{t('passwords.fieldSecurityCode')}</span>
             <input
-              {...secretNumberInputProps()}
+              {...secretNumberInputProps(isCardSecretShown)}
               inputMode="numeric"
               autoComplete="off"
-              {...NO_PASSWORD_MANAGER}
               {...NO_PASSWORD_MANAGER}
               value={card.securityCode}
               onChange={(event) => setCard({ ...card, securityCode: event.target.value })}
             />
           </label>
+          <div className="page-actions">
+            <button
+              type="button"
+              onClick={() => setIsCardSecretShown(!isCardSecretShown)}
+              aria-pressed={isCardSecretShown}
+            >
+              {isCardSecretShown ? t('passwords.hideCardSecrets') : t('passwords.showCardSecrets')}
+            </button>
+          </div>
           <label>
             <span>{t('passwords.fieldBrand')}</span>
             <input

@@ -48,7 +48,14 @@ export type PasswordItemRecord = {
   itemKey: string
   isSharedWithMe: boolean
   revision: number
+  // isUsableByAgent is the server's flag. The device that re-keys or opens the
+  // item for the agent also needs the sealed access record to say so
+  // (access.isUsableByAgent in the fields), never the flag alone.
   isUsableByAgent: boolean
+  // needsNewKey is set by the server when access narrowed (somebody removed,
+  // the agent turned off, a delete) and only a re-key from the owner's device
+  // clears it. Only an owned item carries it.
+  needsNewKey: boolean
   lastUsedByAgentAt: string | null
   deletedAt: string | null
   createdAt: string
@@ -123,7 +130,16 @@ export type AddPasswordShareKeyInput = {
   recipientUserId: string
   itemKeyByRecipientKey: string
   recipientPublicKey: string
+  // itemKey is the account-sealed item key text this device opened to seal the
+  // key. AddPasswordShareKeys requires it and refuses a key whose itemKey is
+  // not the item's current one ("changed on another device"); a re-key's
+  // share keys are sealed from the new key in the same call and leave it out.
+  itemKey?: string
 }
+
+// WaitingShareKeyInput is a key for AddPasswordShareKeys, which names the item
+// key it was sealed from.
+export type WaitingShareKeyInput = AddPasswordShareKeyInput & { itemKey: string }
 
 export type SetPasswordItemUsableByAgentInput = {
   itemId: string
@@ -156,7 +172,7 @@ const SETUP_FIELDS = 'isSetUp passphraseSalt passphraseIterationCount publicKey 
 const RECIPIENT_FIELDS = 'userId name username publicKey hasKey'
 
 const ITEM_FIELDS = `id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision
-  isUsableByAgent lastUsedByAgentAt deletedAt createdAt updatedAt
+  isUsableByAgent needsNewKey lastUsedByAgentAt deletedAt createdAt updatedAt
   shares { id granteeUserId granteeCircleId granteeName recipients { ${RECIPIENT_FIELDS} } }`
 
 export const READ_PASSWORDS_SETUP = `query { ReadPasswordsSetup { ${SETUP_FIELDS} } }`
@@ -185,7 +201,7 @@ export const UPDATE_PASSWORDS_SETTINGS = `mutation ($lockAfterMinutes: Int!) {
 
 export const ERASE_PASSWORDS = `mutation { ErasePasswords }`
 
-export const LIST_PASSWORD_ITEMS = `query ($sinceRevision: Int) {
+export const LIST_PASSWORD_ITEMS = `query ($sinceRevision: Int64) {
   ListPasswordItems(sinceRevision: $sinceRevision) {
     revision itemIds
     items { ${ITEM_FIELDS} }

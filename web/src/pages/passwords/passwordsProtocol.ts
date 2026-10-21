@@ -204,7 +204,7 @@ export async function makeReplaceRecoveryKeyInput(
 
 // OwnerKeyChange is a shared item whose owner now has a public key other than
 // the one this device kept for them. The item is not opened until the person
-// has compared the two safety codes and trusted the new key.
+// has compared the two safety codes and confirmed the new key.
 export type OwnerKeyChange = {
   oldPublicKey: string
   newPublicKey: string
@@ -218,7 +218,12 @@ type ItemShape = {
   isOwnedByMe: boolean
   isSharedWithMe: boolean
   revision: number
+  // isUsableByAgent is the server's flag. What the agent may do is decided by
+  // fields.access.isUsableByAgent, which the owner's device sealed.
   isUsableByAgent: boolean
+  // needsNewKey is the server's mark that access narrowed and the owner's
+  // device has not made a new item key yet.
+  needsNewKey: boolean
   lastUsedByAgentAt: string | null
   deletedAt: string | null
   createdAt: string
@@ -232,12 +237,45 @@ type ItemShape = {
   ownerKeyChange: OwnerKeyChange | null
   // itemKey is kept so the owner can seal it for a recipient or the agent.
   itemKey: Uint8Array | null
+  // sealedItemKey is the item key as the server holds it, sealed by the account
+  // key. AddPasswordShareKeys names it, so the server can tell a key sealed
+  // from an old item key from one sealed from the current key.
+  sealedItemKey: string
 }
 
 export type LoginItem = ItemShape & { itemKind: 'login'; fields: LoginFields }
 export type CardItem = ItemShape & { itemKind: 'card'; fields: CardFields }
 export type NoteItem = ItemShape & { itemKind: 'note'; fields: NoteFields }
 export type PasswordItem = LoginItem | CardItem | NoteItem
+
+// isAgentAllowed says whether the agent may use an item the person owns: the
+// server's flag and the owner's own sealed record must both say so. A flag the
+// server set alone does not count, since the agent's opener refuses without
+// the record. For an item somebody shared, the record is the owner's and is
+// only shown.
+export function isAgentAllowed(item: PasswordItem): boolean {
+  return item.isUsableByAgent && (!item.isOwnedByMe || item.fields.access?.isUsableByAgent === true)
+}
+
+// splitSharesByRecord separates the shares the server lists for an item into
+// those the owner's sealed access record also has and those it does not. Only
+// the owner's own device grants access, so a share the record does not have is
+// not the owner's doing; it is named to the owner and removed by saving the
+// item's sharing.
+export function splitSharesByRecord(item: PasswordItem): { recorded: PasswordShare[]; unrecorded: PasswordShare[] } {
+  const recordedKeys = new Set(
+    (item.fields.access?.grantees ?? []).map((grantee) =>
+      grantee.userId !== undefined ? `user:${grantee.userId}` : `circle:${grantee.circleId}`,
+    ),
+  )
+  const recorded: PasswordShare[] = []
+  const unrecorded: PasswordShare[] = []
+  for (const share of item.shares) {
+    const key = share.granteeCircleId ? `circle:${share.granteeCircleId}` : `user:${share.granteeUserId ?? ''}`
+    ;(recordedKeys.has(key) ? recorded : unrecorded).push(share)
+  }
+  return { recorded, unrecorded }
+}
 
 export function isItemKind(text: string): text is ItemKind {
   return (ITEM_KINDS as readonly string[]).includes(text)
@@ -256,6 +294,7 @@ function itemShape(
     isSharedWithMe: record.isSharedWithMe,
     revision: record.revision,
     isUsableByAgent: record.isUsableByAgent,
+    needsNewKey: record.needsNewKey === true,
     lastUsedByAgentAt: record.lastUsedByAgentAt,
     deletedAt: record.deletedAt,
     createdAt: record.createdAt,
@@ -264,6 +303,7 @@ function itemShape(
     isUnreadable: itemKey === null,
     ownerKeyChange,
     itemKey,
+    sealedItemKey: record.itemKey,
   }
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
@@ -13,7 +13,7 @@ import { siteFromText } from './passwordsEditor'
 import { KIND_WORDS, siteHost } from './passwordsList'
 import { OneTimeCodeValue, PlainValue, SafetyCode, SecretValue } from './passwordsParts'
 import { PasswordShare } from './passwordsApi'
-import { PasswordItem } from './passwordsProtocol'
+import { isAgentAllowed, PasswordItem, splitSharesByRecord } from './passwordsProtocol'
 import { useRekeyFailedToast } from './passwordsRekey'
 import { passwordsSession } from './passwordsSession'
 import { PasswordsShareDialog } from './passwordsShare'
@@ -34,10 +34,16 @@ function isWebAddress(site: string): boolean {
   }
 }
 
+// The most sites one login lists. A login can carry thousands, and a page of
+// them is no use to read; the rest are counted.
+const MOST_SITES_SHOWN = 50
+
 // sitesToShow are the sites as they are listed: a bare "example.com" becomes
 // an https address, as the editor keeps it, and a site written twice is shown
-// once, so each is a link and the list's keys are different.
-function sitesToShow(sites: string[]): string[] {
+// once, so each is a link and the list's keys are different. At most
+// MOST_SITES_SHOWN are returned, with how many more there are.
+export function sitesToShow(sites: string[]): { shown: string[]; hiddenCount: number } {
+  const seen = new Set<string>()
   const shown: string[] = []
   for (const site of sites) {
     if (site.trim() === '') continue
@@ -45,9 +51,11 @@ function sitesToShow(sites: string[]): string[] {
     // it was saved.
     const normalized = siteFromText(site)
     const address = isWebAddress(normalized) ? normalized : site.trim()
-    if (!shown.includes(address)) shown.push(address)
+    if (seen.has(address)) continue
+    seen.add(address)
+    if (shown.length < MOST_SITES_SHOWN) shown.push(address)
   }
-  return shown
+  return { shown, hiddenCount: seen.size - shown.length }
 }
 
 // whoItIsSharedWith says what each share of an item is: a person by name, with
@@ -104,12 +112,17 @@ export function PasswordsItemView({
   const [isBusy, setIsBusy] = useState(false)
   const name = item.fields.name || t('passwords.unreadableItem')
   const isDeleted = item.deletedAt !== null
+  const { recorded: recordedShares, unrecorded: unrecordedShares } = useMemo(() => splitSharesByRecord(item), [item])
+  const sites = useMemo(
+    () => (item.itemKind === 'login' ? sitesToShow(item.fields.sites) : { shown: [], hiddenCount: 0 }),
+    [item],
+  )
 
-  // A removal that could not give this item a new key is tried again when the
-  // item is opened.
+  // An item the server marked as needing a new key (a removal could not give
+  // it one) is given one when it is opened.
   useEffect(() => {
-    if (!item.isOwnedByMe || !passwordsSession.isRekeyPending(item.id)) return
-    void passwordsSession.retryPendingRekey(item.id).catch(() => sayRekeyFailed(item.id))
+    if (!item.isOwnedByMe || !item.needsNewKey) return
+    void passwordsSession.rekeyIfNeeded(item.id).catch(() => sayRekeyFailed(item.id))
     // Once per item opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id])
@@ -140,12 +153,12 @@ export function PasswordsItemView({
     }
   }
 
-  async function trustOwnerKey() {
+  async function confirmOwnerKey() {
     setIsBusy(true)
     try {
-      await passwordsSession.trustOwnerKey(item)
+      await passwordsSession.confirmOwnerKey(item)
     } catch (failure) {
-      reportFailure(failure, t('passwords.ownerKeyTrustFailed'))
+      reportFailure(failure, t('passwords.ownerKeyConfirmFailed'))
     } finally {
       setIsBusy(false)
     }
@@ -229,13 +242,18 @@ export function PasswordsItemView({
         <p className="passwords-tags">
           <Tag value={t(KIND_WORDS[item.itemKind])} />
           {item.isSharedWithMe && <Tag value={t('passwords.tagSharedBy', { name: item.ownerName })} />}
-          {item.isUsableByAgent && <Tag value={t('passwords.tagAgent')} tone="good" />}
+          {isAgentAllowed(item) && <Tag value={t('passwords.tagAgent')} tone="good" />}
           {isDeleted && <Tag value={t('passwords.tagDeleted')} tone="warn" />}
         </p>
         {item.isSharedWithMe && <p className="muted">{t('passwords.sharedReadOnly', { name: item.ownerName })}</p>}
-        {item.isOwnedByMe && item.shares.length > 0 && (
+        {item.isOwnedByMe && unrecordedShares.length > 0 && (
+          <p className="muted">
+            {t('passwords.shareNotFromYou', { names: unrecordedShares.map((share) => share.granteeName).join(', ') })}
+          </p>
+        )}
+        {item.isOwnedByMe && recordedShares.length > 0 && (
           <div className="passwords-shared-with">
-            <p>{whoItIsSharedWith(item.shares, translation)}</p>
+            <p>{whoItIsSharedWith(recordedShares, translation)}</p>
             {!isDeleted && !item.isUnreadable && (
               <button type="button" onClick={() => setIsSharing(true)}>
                 {t('passwords.share')}
@@ -249,15 +267,17 @@ export function PasswordsItemView({
             <p className="muted">{t('passwords.ownerKeyChangedBody', { name: item.ownerName })}</p>
             <p>
               <span className="muted">{t('passwords.keyChangedOld')} </span>
-              <SafetyCode publicKey={item.ownerKeyChange.oldPublicKey} />
+              <SafetyCode userId={item.ownerUserId} publicKey={item.ownerKeyChange.oldPublicKey} />
             </p>
             <p>
               <span className="muted">{t('passwords.keyChangedNew')} </span>
-              <SafetyCode publicKey={item.ownerKeyChange.newPublicKey} />
+              <SafetyCode userId={item.ownerUserId} publicKey={item.ownerKeyChange.newPublicKey} />
             </p>
+            <p className="muted">{t('passwords.compareWords', { name: item.ownerName })}</p>
+            <p className="muted">{t('passwords.confirmIsPerBrowser')}</p>
             <div className="page-actions">
-              <button type="button" className="primary" disabled={isBusy} onClick={() => void trustOwnerKey()}>
-                {t('passwords.keyChangedTrust')}
+              <button type="button" className="primary" disabled={isBusy} onClick={() => void confirmOwnerKey()}>
+                {t('passwords.keyChangedConfirm')}
               </button>
             </div>
           </div>
@@ -282,10 +302,10 @@ export function PasswordsItemView({
                     <OneTimeCodeValue uri={item.fields.oneTimeCodeUri} />
                   </Row>
                 )}
-                {item.fields.sites.length > 0 && (
+                {sites.shown.length > 0 && (
                   <Row label={t('passwords.fieldSites')}>
                     <ul className="passwords-sites">
-                      {sitesToShow(item.fields.sites).map((site) => (
+                      {sites.shown.map((site) => (
                         <li key={site}>
                           {isWebAddress(site) ? (
                             <a href={site} target="_blank" rel="noopener noreferrer">
@@ -296,6 +316,9 @@ export function PasswordsItemView({
                           )}
                         </li>
                       ))}
+                      {sites.hiddenCount > 0 && (
+                        <li className="muted">{t('passwords.sitesMore', { count: sites.hiddenCount })}</li>
+                      )}
                     </ul>
                   </Row>
                 )}
@@ -371,7 +394,7 @@ export function PasswordsItemView({
           <label className="checkbox is-plain">
             <input
               type="checkbox"
-              checked={item.isUsableByAgent}
+              checked={isAgentAllowed(item)}
               aria-busy={isBusy}
               onChange={(event) => void changeAgent(event.target.checked)}
             />
@@ -382,7 +405,7 @@ export function PasswordsItemView({
               </span>
             </span>
           </label>
-          {item.isUsableByAgent && item.lastUsedByAgentAt && (
+          {isAgentAllowed(item) && item.lastUsedByAgentAt && (
             <p className="muted">
               {t('passwords.agentLastUsed')} <RelativeTime value={item.lastUsedByAgentAt} />
             </p>

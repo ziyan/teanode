@@ -14,7 +14,8 @@ import { PasswordsSetup, READ_PASSWORDS_SETUP } from './passwordsApi'
 import { useFailureToast } from './passwordsErrors'
 import { PasswordsItems } from './passwordsItems'
 import { SafetyCode } from './passwordsParts'
-import { KeyChange, passwordsSession, usePasswordsSession } from './passwordsSession'
+import { useRekeyFailedToast } from './passwordsRekey'
+import { KeyToConfirm, passwordsSession, usePasswordsSession, WaitingSharesResult } from './passwordsSession'
 import { PasswordsSettings } from './passwordsSettings'
 import { PasswordsSetUp } from './passwordsSetup'
 import { PasswordsUnlock } from './passwordsUnlock'
@@ -68,12 +69,16 @@ function PasswordsContent({ userId }: { userId: string }) {
   const { t, plural } = useTranslation()
   const toast = useToast()
   const reportFailure = useFailureToast()
-  // keyChange is the person whose key is new to this device or is not the one
-  // kept, being asked about; declinedKeys are the new keys already answered
-  // no to, so the 30 second read does not ask again.
-  const [keyChange, setKeyChange] = useState<KeyChange | null>(null)
-  const [isTrusting, setIsTrusting] = useState(false)
+  const sayRekeyFailed = useRekeyFailedToast()
+  // keyToConfirm is the person whose key is new to this device or is not the
+  // one kept, being asked about; declinedKeys are the new keys already
+  // answered no to, so the 30 second read does not ask again.
+  const [keyToConfirm, setKeyToConfirm] = useState<KeyToConfirm | null>(null)
+  const [isConfirming, setIsConfirming] = useState(false)
   const declinedKeys = useRef(new Set<string>())
+  // rekeyReportedItemIds are the items already said to be without a new key,
+  // so the 30 second read does not say it again.
+  const rekeyReportedItemIds = useRef(new Set<string>())
   const [parameters, setParameters] = useSearchParams()
   const snapshot = usePasswordsSession()
   const isUnlocked = snapshot.isUnlocked && snapshot.userId === userId
@@ -108,7 +113,10 @@ function PasswordsContent({ userId }: { userId: string }) {
 
   // A question about a key does not outlive the unlocked session.
   useEffect(() => {
-    if (!isUnlocked) setKeyChange(null)
+    if (!isUnlocked) {
+      setKeyToConfirm(null)
+      rekeyReportedItemIds.current = new Set()
+    }
   }, [isUnlocked])
 
   // Using the page puts the lock off.
@@ -116,20 +124,31 @@ function PasswordsContent({ userId }: { userId: string }) {
     passwordsSession.touch()
   }
 
-  // While open: read what other devices changed, and complete the shares of
-  // people who have set up Passwords since.
+  function sayHowManyGotAccess(sharedCount: number) {
+    if (sharedCount > 0) {
+      toast.done(plural(sharedCount, { one: 'passwords.waitingSharedOne', other: 'passwords.waitingShared' }))
+    }
+  }
+
+  // While open: read what other devices changed, give the items the server
+  // marked a new key, and complete the shares of people who have set up
+  // Passwords since.
   useEffect(() => {
     if (!isUnlocked) return
     let isCurrent = true
     async function run(shouldRefresh: boolean) {
       try {
         if (shouldRefresh) await passwordsSession.refresh()
-        const { sharedCount, changedKeys } = await passwordsSession.completeWaitingShares()
-        if (isCurrent && sharedCount > 0) {
-          toast.done(plural(sharedCount, { one: 'passwords.waitingSharedOne', other: 'passwords.waitingShared' }))
+        const failedItemIds = await passwordsSession.rekeyMarkedItems()
+        const unreportedItemId = failedItemIds.find((itemId) => !rekeyReportedItemIds.current.has(itemId))
+        if (isCurrent && unreportedItemId !== undefined) {
+          for (const itemId of failedItemIds) rekeyReportedItemIds.current.add(itemId)
+          sayRekeyFailed(unreportedItemId)
         }
-        const asked = changedKeys.find((change) => !declinedKeys.current.has(change.newPublicKey))
-        if (isCurrent && asked) setKeyChange((previous) => previous ?? asked)
+        const { sharedCount, keysToConfirm } = await passwordsSession.completeWaitingShares()
+        if (isCurrent) sayHowManyGotAccess(sharedCount)
+        const asked = keysToConfirm.find((change) => !declinedKeys.current.has(change.newPublicKey))
+        if (isCurrent && asked) setKeyToConfirm((previous) => previous ?? asked)
       } catch {
         // Tried again at the next turn; a person is not told about a refresh
         // that did not go through.
@@ -148,26 +167,40 @@ function PasswordsContent({ userId }: { userId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked])
 
-  async function trustKey(change: KeyChange) {
-    setIsTrusting(true)
+  // A re-key that leaves people without a key (their safety codes are not
+  // confirmed on this device) says how many, and asks about the first at once.
+  useEffect(() => {
+    if (!isUnlocked) return
+    return passwordsSession.subscribeToWaiting((result: WaitingSharesResult) => {
+      sayHowManyGotAccess(result.sharedCount)
+      if (result.keysToConfirm.length === 0) return
+      toast.done(
+        plural(result.keysToConfirm.length, { one: 'passwords.rekeyWaitingOne', other: 'passwords.rekeyWaiting' }),
+      )
+      setKeyToConfirm((previous) => previous ?? result.keysToConfirm[0])
+    })
+    // The toast and plural functions change with the language, not the subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUnlocked])
+
+  async function confirmKey(change: KeyToConfirm) {
+    setIsConfirming(true)
     try {
-      const { sharedCount, changedKeys } = await passwordsSession.trustChangedKey(change)
-      if (sharedCount > 0) {
-        toast.done(plural(sharedCount, { one: 'passwords.waitingSharedOne', other: 'passwords.waitingShared' }))
-      }
-      const next = changedKeys.find((other) => !declinedKeys.current.has(other.newPublicKey))
-      setKeyChange(next ?? null)
+      const { sharedCount, keysToConfirm } = await passwordsSession.confirmChangedKey(change)
+      sayHowManyGotAccess(sharedCount)
+      const next = keysToConfirm.find((other) => !declinedKeys.current.has(other.newPublicKey))
+      setKeyToConfirm(next ?? null)
     } catch (failure) {
       reportFailure(failure, t('passwords.shareFailed'))
-      setKeyChange(null)
+      setKeyToConfirm(null)
     } finally {
-      setIsTrusting(false)
+      setIsConfirming(false)
     }
   }
 
-  function declineKey(change: KeyChange) {
+  function declineKey(change: KeyToConfirm) {
     declinedKeys.current.add(change.newPublicKey)
-    setKeyChange(null)
+    setKeyToConfirm(null)
   }
 
   const tab = parameters.get('tab') === 'settings' ? 'settings' : 'items'
@@ -212,39 +245,43 @@ function PasswordsContent({ userId }: { userId: string }) {
         </>
       )}
 
-      {keyChange && (
+      {keyToConfirm && (
         <ConfirmDialog
           destructive={false}
           title={
-            keyChange.oldPublicKey === null
-              ? t('passwords.keyFirstTitle', { name: keyChange.recipientName || keyChange.recipientUsername })
-              : t('passwords.keyChangedTitle', { name: keyChange.recipientName || keyChange.recipientUsername })
+            keyToConfirm.oldPublicKey === null
+              ? t('passwords.keyFirstTitle', { name: keyToConfirm.recipientName || keyToConfirm.recipientUsername })
+              : t('passwords.keyChangedTitle', { name: keyToConfirm.recipientName || keyToConfirm.recipientUsername })
           }
           body={
             <>
               <p className="muted">
-                {keyChange.oldPublicKey === null ? t('passwords.keyFirstBody') : t('passwords.keyChangedBody')}
+                {keyToConfirm.oldPublicKey === null ? t('passwords.keyFirstBody') : t('passwords.keyChangedBody')}
               </p>
-              {keyChange.oldPublicKey !== null && (
+              {keyToConfirm.oldPublicKey !== null && (
                 <p>
                   <span className="muted">{t('passwords.keyChangedOld')} </span>
-                  <SafetyCode publicKey={keyChange.oldPublicKey} />
+                  <SafetyCode userId={keyToConfirm.recipientUserId} publicKey={keyToConfirm.oldPublicKey} />
                 </p>
               )}
               <p>
                 <span className="muted">
-                  {keyChange.oldPublicKey === null ? t('passwords.safetyCode') : t('passwords.keyChangedNew')}{' '}
+                  {keyToConfirm.oldPublicKey === null ? t('passwords.safetyCode') : t('passwords.keyChangedNew')}{' '}
                 </span>
-                <SafetyCode publicKey={keyChange.newPublicKey} />
+                <SafetyCode userId={keyToConfirm.recipientUserId} publicKey={keyToConfirm.newPublicKey} />
               </p>
+              <p className="muted">
+                {t('passwords.compareWords', { name: keyToConfirm.recipientName || keyToConfirm.recipientUsername })}
+              </p>
+              <p className="muted">{t('passwords.confirmIsPerBrowser')}</p>
             </>
           }
           confirmLabel={
-            keyChange.oldPublicKey === null ? t('passwords.keyFirstConfirm') : t('passwords.keyChangedTrust')
+            keyToConfirm.oldPublicKey === null ? t('passwords.keyFirstConfirm') : t('passwords.keyChangedConfirm')
           }
-          busy={isTrusting}
-          onClose={() => declineKey(keyChange)}
-          onConfirm={() => void trustKey(keyChange)}
+          busy={isConfirming}
+          onClose={() => declineKey(keyToConfirm)}
+          onConfirm={() => void confirmKey(keyToConfirm)}
         />
       )}
     </div>

@@ -17,13 +17,13 @@ import {
   LIST_CIRCLES,
   LIST_PASSWORD_RECIPIENTS,
   PasswordRecipient,
-  PasswordShareGranteeInput,
+  PasswordShare,
 } from './passwordsApi'
 import { useFailureToast } from './passwordsErrors'
 import { SafetyCode } from './passwordsParts'
-import { PasswordItem } from './passwordsProtocol'
+import { PasswordItem, splitSharesByRecord } from './passwordsProtocol'
 import { useRekeyFailedToast } from './passwordsRekey'
-import { passwordsSession } from './passwordsSession'
+import { passwordsSession, ShareTarget } from './passwordsSession'
 
 // Sharing one item with a circle or a person in one. The owner's device seals
 // the item's key for each person who has set up Passwords, so the server never
@@ -35,6 +35,11 @@ import { passwordsSession } from './passwordsSession'
 // not a confirmed one (a person met for the first time, or a key that changed)
 // is flagged, and nothing is sealed for it until the owner confirms it here.
 // Taking somebody off gives the item a new key, which is done after the save.
+//
+// Who the item is shared with is what the owner's sealed access record says.
+// The server's list of shares is shown only where it agrees with the record:
+// a share the record does not have is named in a notice and is removed by
+// saving, since only the owner's own device may grant access.
 
 type Person = { userId: string; username: string; name: string }
 type CircleChoice = { id: string; name: string; members: { userId: string }[] }
@@ -73,17 +78,19 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
     { refresh: false },
   )
 
-  const [rows, setRows] = useState<GranteeRow[]>(() =>
-    item.shares.map((share) => ({
-      kind: share.granteeCircleId ? 'circle' : 'user',
-      id: share.granteeCircleId ?? share.granteeUserId ?? '',
-      name: share.granteeName,
-      recipients: share.recipients,
-    })),
-  )
+  // The shares the server lists that the sealed record also has are the rows;
+  // the others are named in a notice and dropped when this is saved.
+  const shareRow = (share: PasswordShare): GranteeRow => ({
+    kind: share.granteeCircleId ? 'circle' : 'user',
+    id: share.granteeCircleId ?? share.granteeUserId ?? '',
+    name: share.granteeName,
+    recipients: share.recipients,
+  })
+  const [rows, setRows] = useState<GranteeRow[]>(() => splitSharesByRecord(item).recorded.map(shareRow))
+  const unrecordedNames = splitSharesByRecord(item).unrecorded.map((share) => share.granteeName)
   const [chosen, setChosen] = useState('')
-  // trustedKeys are the keys the owner confirmed in this dialog, by user id.
-  const [trustedKeys, setTrustedKeys] = useState<ReadonlyMap<string, string>>(new Map())
+  // confirmedKeys are the keys the owner confirmed in this dialog, by user id.
+  const [confirmedKeys, setConfirmedKeys] = useState<ReadonlyMap<string, string>>(new Map())
   const [isBusy, setIsBusy] = useState(false)
 
   const people = choices.data?.people ?? []
@@ -126,20 +133,19 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
   async function save() {
     setIsBusy(true)
     try {
-      const grantees: PasswordShareGranteeInput[] = rows.map((row) => ({
-        granteeUserId: row.kind === 'user' ? row.id : null,
-        granteeCircleId: row.kind === 'circle' ? row.id : null,
+      const targets: ShareTarget[] = rows.map((row) => ({
+        grantee: {
+          granteeUserId: row.kind === 'user' ? row.id : null,
+          granteeCircleId: row.kind === 'circle' ? row.id : null,
+        },
+        recipients: row.recipients,
       }))
       const recipients = rows.flatMap((row) => row.recipients)
-      const { unconfirmedUserIds, hasRekeyFailed } = await passwordsSession.shareItem(
-        item,
-        grantees,
-        recipients,
-        trustedKeys,
-      )
+      const { unconfirmedUserIds, hasRekeyFailed } = await passwordsSession.shareItem(item, targets, confirmedKeys)
       if (hasRekeyFailed) {
-        // The removal went through; only the new key is missing. The item is
-        // marked, so the next save or open tries again, and the toast can too.
+        // The removal went through; only the new key is missing. The server
+        // keeps its mark on the item, so the next save or open tries again,
+        // and the toast can too.
         sayRekeyFailed(item.id)
         onClose()
         return
@@ -197,12 +203,15 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
       title={t('passwords.shareTitle', { name: item.fields.name })}
       submitLabel={t('passwords.shareConfirm')}
       busy={isBusy}
-      canSubmit={rows.length > 0 || item.shares.length > 0}
+      canSubmit={rows.length > 0 || item.shares.length > 0 || (item.fields.access?.grantees.length ?? 0) > 0}
       onSubmit={() => void save()}
       onClose={onClose}
     >
       <p className="muted">{t('passwords.shareIntro')}</p>
       {rows.length === 0 && <p className="muted">{t('passwords.shareNobody')}</p>}
+      {unrecordedNames.length > 0 && (
+        <p className="muted">{t('passwords.shareNotFromYou', { names: unrecordedNames.join(', ') })}</p>
+      )}
       {rows.map((row) => (
         <fieldset key={granteeKey(row)} className="passwords-share">
           <legend>
@@ -232,7 +241,10 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                   ? passwordsSession.earlierKeyOf(recipient.userId, recipient.publicKey)
                   : null
               const isKeyChanged = needsConfirmation && earlierKey !== null
-              const isTrusted = needsConfirmation && trustedKeys.get(recipient.userId) === recipient.publicKey
+              const isConfirmedHere = needsConfirmation && confirmedKeys.get(recipient.userId) === recipient.publicKey
+              const isConfirmedBefore =
+                recipient.publicKey !== null && passwordsSession.isKeyConfirmed(recipient.userId, recipient.publicKey)
+              const personName = personLabel({ name: recipient.name, username: recipient.username })
               return (
                 <li key={recipient.userId}>
                   {/* A person is named once, as the title of their card; only a
@@ -245,9 +257,10 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                   ) : (
                     <span>
                       <span className="muted">{t('passwords.safetyCode')} </span>
-                      <SafetyCode publicKey={recipient.publicKey} />
+                      <SafetyCode userId={recipient.userId} publicKey={recipient.publicKey} />
                     </span>
                   )}
+                  {isConfirmedBefore && <p className="muted">{t('passwords.keyConfirmedOnThisBrowser')}</p>}
                   {needsConfirmation && recipient.publicKey !== null && (
                     <div className="passwords-key-changed">
                       <p className="muted">
@@ -256,21 +269,22 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                       {isKeyChanged && earlierKey !== null && (
                         <p>
                           <span className="muted">{t('passwords.keyChangedOld')} </span>
-                          <SafetyCode publicKey={earlierKey} />
+                          <SafetyCode userId={recipient.userId} publicKey={earlierKey} />
                         </p>
                       )}
-                      {isTrusted ? (
-                        <p className="muted">{t('passwords.keyTrusted')}</p>
+                      <p className="muted">{t('passwords.compareWords', { name: personName })}</p>
+                      {isConfirmedHere ? (
+                        <p className="muted">{t('passwords.keyConfirmed')}</p>
                       ) : (
                         <button
                           type="button"
                           onClick={() =>
-                            setTrustedKeys((previous) =>
+                            setConfirmedKeys((previous) =>
                               new Map(previous).set(recipient.userId, recipient.publicKey as string),
                             )
                           }
                         >
-                          {isKeyChanged ? t('passwords.keyChangedTrust') : t('passwords.keyFirstConfirm')}
+                          {isKeyChanged ? t('passwords.keyChangedConfirm') : t('passwords.keyFirstConfirm')}
                         </button>
                       )}
                     </div>
@@ -316,7 +330,7 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
           </>
         )
       )}
-      <p className="muted">{t('passwords.shareCompare')}</p>
+      <p className="muted">{t('passwords.confirmIsPerBrowser')}</p>
     </FormDialog>
   )
 }

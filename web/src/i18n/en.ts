@@ -7027,7 +7027,8 @@ export const en = {
   'passwords.generatorLookAlikes': 'Leave out look-alike characters',
   'passwords.itemSaved': '{name} was saved.',
   'passwords.saveFailed': 'The item could not be saved.',
-  'passwords.itemChangedElsewhere': 'This item changed on another device. Reload to see the change. Your edits here are lost, so copy them first if you need them.',
+  'passwords.itemChangedElsewhere':
+    'This item changed on another device. Your changes are kept. Check them, then save again.',
   'passwords.itemNotFound': 'That item is not there any more.',
   'passwords.itemDeleted': '{name} was deleted. It stays in Recently deleted for 30 days.',
   'passwords.deleteFailed': 'The item could not be deleted.',
@@ -7041,7 +7042,7 @@ export const en = {
   'passwords.agentTurnedOn': 'The agent can use this item now.',
   'passwords.agentTurnedOff': 'The agent can no longer use this item.',
   'passwords.agentFailed': 'The agent setting could not be changed.',
-  'passwords.rekeyFailed': 'Removed. The item could not be given a new key.',
+  'passwords.rekeyFailed': 'The item still needs a new key.',
   'passwords.rekeyDone': 'The item has a new key.',
   'errorBoundary.title': 'Something went wrong on this page',
   'errorBoundary.body': 'The page could not be shown. Reloading starts it again.',
@@ -7063,8 +7064,6 @@ export const en = {
   'passwords.shareNoRecipients': 'Nobody else is in this circle yet.',
   'passwords.safetyCode': 'Safety code',
   'passwords.recipientWaiting': 'Waiting until they set up Passwords',
-  'passwords.shareCompare':
-    'Compare each safety code with the person, in person or on a call. If it is not the same on their screen, do not share.',
   'passwords.shareConfirm': 'Save sharing',
   'passwords.shareWith': 'Share with',
   'passwords.shareChoose': 'Choose a person or a circle',
@@ -7159,34 +7158,49 @@ export const en = {
   'passwords.errorOwnerOnly': 'Only the owner can do this.',
   'passwords.keyChangedTitle': "{name}'s key changed",
   'passwords.keyChangedBody':
-    'This is not the key you shared with before. It changes when they set Passwords up again, but it could also be somebody else. Compare the new safety code with them, in person or on a call, before you trust it.',
+    'This is not the key you shared with before. It changes when they set Passwords up again, but it could also be somebody else. Confirming it also lets you share with them.',
   'passwords.keyChangedOld': 'Safety code before',
   'passwords.keyChangedNew': 'Safety code now',
-  'passwords.keyChangedTrust': 'Trust the new key',
-  'passwords.keyChangedWarning': 'Their key changed. Compare the safety code with them before sharing.',
-  'passwords.keyTrusted': 'You trust this key.',
+  'passwords.keyChangedWarning': 'Their key changed.',
   'passwords.keyFirstTitle': "Confirm {name}'s safety code",
   'passwords.keyFirstBody':
-    'This device has not seen their key before, and they should not get the items you shared until you know it is theirs. Compare the safety code with them, in person or on a call, before you confirm.',
-  'passwords.keyFirstWarning':
-    'This device has not seen their key before. Compare the safety code with them before sharing.',
+    'This device has not confirmed their key yet, and they should not get the items you shared until you know it is theirs. Confirming it also lets you share with them.',
+  'passwords.keyFirstWarning': 'This device has not confirmed their key yet.',
   'passwords.keyFirstConfirm': 'The safety code matches',
   'passwords.errorPublicKeyMismatch':
     'The server sent a public key that is not the one your private key makes, so Passwords stays locked.',
   'passwords.ownerKeyChangedTitle': "Its owner's key changed",
   'passwords.ownerKeyChangedBody':
-    '{name} shared this item, and their key is not the one you saw before. It changes when they set Passwords up again, but it could also be somebody else. Compare the new safety code with them, in person or on a call, before you trust it. The item stays closed until you do.',
-  'passwords.ownerKeyTrustFailed': 'The new key could not be trusted.',
+    '{name} shared this item, and their key is not the one you saw before. It changes when they set Passwords up again, but it could also be somebody else. The item stays closed until you confirm the new key. Confirming it also lets you share with them.',
   'passwords.shareSavedUnconfirmedOne':
     'Sharing saved. {count} person was left out until you confirm their safety code.',
   'passwords.shareSavedUnconfirmed':
     'Sharing saved. {count} people were left out until you confirm their safety codes.',
   'passwords.itemCountOne': '1 item',
   'passwords.itemCount': '{count} items',
-  'passwords.reload': 'Reload',
   'passwords.reloadFailed': 'The item could not be read again.',
   'passwords.exportFailed': 'The items could not be exported.',
   'passwords.importProgress': 'Importing {done} of {total}',
   'passwords.safetyCodeUnreadable': 'could not be read',
+  'passwords.compareWords':
+    'Ask {name} to open Passwords settings on their own device and read you their safety code. Confirm only if it matches.',
+  'passwords.confirmIsPerBrowser':
+    'Your confirmations are kept on this browser only. Other devices and the iPhone app ask you again.',
+  'passwords.keyChangedConfirm': 'The new safety code matches',
+  'passwords.keyConfirmed': 'You confirmed this key.',
+  'passwords.keyConfirmedOnThisBrowser': 'You confirmed this person on this browser.',
+  'passwords.ownerKeyConfirmFailed': 'The new key could not be confirmed.',
+  'passwords.ownSafetyCodeTitle': 'Your safety code',
+  'passwords.ownSafetyCodeBody':
+    'Somebody who shares with you compares this code with the one on their screen. It is made on this device from your key, not from what the server says.',
+  'passwords.rekeyWaitingOne': '{count} person waits until you confirm their safety code.',
+  'passwords.rekeyWaiting': '{count} people wait until you confirm their safety codes.',
+  'passwords.itemChangedNotRead':
+    'This item changed on another device, but it could not be read again. Check your connection and try again.',
+  'passwords.sitesMore': 'and {count} more',
+  'passwords.showCardSecrets': 'Show card number and security code',
+  'passwords.hideCardSecrets': 'Hide card number and security code',
+  'passwords.shareNotFromYou':
+    'The server also lists {names}, but you did not share this item with them. Saving removes them.',
   'passwords.generatorDone': 'Done',
 }
