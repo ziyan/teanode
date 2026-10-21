@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
@@ -14,6 +14,7 @@ import { KIND_WORDS, siteHost } from './passwordsList'
 import { OneTimeCodeValue, PlainValue, SafetyCode, SecretValue } from './passwordsParts'
 import { PasswordShare } from './passwordsApi'
 import { PasswordItem } from './passwordsProtocol'
+import { useRekeyFailedToast } from './passwordsRekey'
 import { passwordsSession } from './passwordsSession'
 import { PasswordsShareDialog } from './passwordsShare'
 
@@ -97,11 +98,21 @@ export function PasswordsItemView({
   const { t, language } = translation
   const toast = useToast()
   const reportFailure = useFailureToast()
+  const sayRekeyFailed = useRekeyFailedToast()
   const [isSharing, setIsSharing] = useState(false)
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const name = item.fields.name || t('passwords.unreadableItem')
   const isDeleted = item.deletedAt !== null
+
+  // A removal that could not give this item a new key is tried again when the
+  // item is opened.
+  useEffect(() => {
+    if (!item.isOwnedByMe || !passwordsSession.isRekeyPending(item.id)) return
+    void passwordsSession.retryPendingRekey(item.id).catch(() => sayRekeyFailed(item.id))
+    // Once per item opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id])
 
   async function remove() {
     setIsBusy(true)

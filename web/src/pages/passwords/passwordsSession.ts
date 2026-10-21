@@ -5,12 +5,14 @@ import {
   AGENT_RECIPIENT_ID,
   decodeBase64,
   isKeyPairConsistent,
+  KEY_BYTE_COUNT,
   openAccountKey,
   openPrivateKey,
   parseSealedValue,
   PersonKeyPair,
+  randomBytes,
 } from '../../passwords/crypto'
-import { ItemFieldsByKind, ItemKind } from '../../passwords/fields'
+import { ItemFields, ItemFieldsByKind, ItemKind } from '../../passwords/fields'
 import {
   ADD_PASSWORD_SHARE_KEYS,
   AddPasswordShareKeyInput,
@@ -24,19 +26,30 @@ import {
   PasswordShareGranteeInput,
   PasswordsSetup,
   PasswordsUnlock,
+  PasswordItemRekeyInput,
   PasswordWaitingShare,
   READ_PASSWORDS_AGENT_KEY,
+  REKEY_PASSWORD_ITEM,
   REPLACE_PASSWORDS_RECOVERY_KEY,
   RESTORE_PASSWORD_ITEM,
   SAVE_PASSWORD_ITEM,
   SET_PASSWORD_ITEM_SHARES,
   SET_PASSWORD_ITEM_USABLE_BY_AGENT,
   SET_UP_PASSWORDS,
+  STALE_REVISION_PHRASE,
   UNLOCK_PASSWORDS,
 } from './passwordsApi'
 import { PasswordsError } from './passwordsErrors'
 import { registerLock } from './passwordsLock'
-import { pinKey, pinnedKeyOf } from './passwordsPins'
+import {
+  confirmKey,
+  earlierKeyOf,
+  isKeyConfirmed,
+  isRekeyPending,
+  knownKeyOf,
+  markKeySeen,
+  setRekeyPending,
+} from './passwordsPins'
 import {
   makeChangePassphraseInput,
   makeReplaceRecoveryKeyInput,
@@ -68,11 +81,11 @@ export type SessionSnapshot = {
   hasLoadedItems: boolean
 }
 
-// A recipient whose public key is not one this device knows: either a person
-// this device has never kept a key for (oldPublicKey is null), or one whose
-// key is not the one it kept. The device seals nothing for them until the
-// person has compared the safety code (both codes, on a change) with them and
-// confirmed the key.
+// A recipient whose public key is not one the person has confirmed on this
+// device: either a person never confirmed (oldPublicKey is null), or one whose
+// key is not the one confirmed or first seen (oldPublicKey is that one). The
+// device seals nothing for them until the person has compared the safety code
+// (both codes, on a change) with them and confirmed the key.
 export type KeyChange = {
   recipientUserId: string
   recipientName: string
@@ -226,19 +239,22 @@ export class PasswordsSession {
 
   // openRecord opens one item the server sent. A shared item is opened with
   // the owner's public key the server names, checked against the key this
-  // device kept for the owner: the first key seen for an owner is kept, once
-  // an item of theirs has opened with it, and a different one later leaves
-  // the item closed with ownerKeyChange set (see trustOwnerKey).
+  // device knows for the owner: the first key seen for an owner is kept as a
+  // seen key, once an item of theirs has opened with it, and a different one
+  // later leaves the item closed with ownerKeyChange set (see trustOwnerKey).
+  // A seen key is only a warning for a later change. It is never confirmed by
+  // this: the server chose what it sent, so it says nothing about whose key it
+  // is, and sealing for it is not allowed until the person confirms it.
   private async openRecord(
     record: PasswordItemRecord,
     accountKey: Uint8Array,
     keyPair: PersonKeyPair,
   ): Promise<PasswordItem | null> {
     const userId = this.userId
-    const pinnedOwnerKey = record.isSharedWithMe ? pinnedKeyOf(userId, record.ownerUserId) : null
+    const pinnedOwnerKey = record.isSharedWithMe ? knownKeyOf(userId, record.ownerUserId) : null
     const item = await openPasswordItem(record, accountKey, keyPair, userId, pinnedOwnerKey)
     if (item !== null && record.isSharedWithMe && pinnedOwnerKey === null && item.itemKey !== null) {
-      pinKey(userId, record.ownerUserId, record.ownerPublicKey)
+      markKeySeen(userId, record.ownerUserId, record.ownerPublicKey)
     }
     return item
   }
@@ -405,12 +421,13 @@ export class PasswordsSession {
   // completeWaitingShares gives the people who set up Passwords after an item
   // was shared with them the key to it. It seals only for a person the item is
   // really shared with (one of the item's shares reaches them), and only when
-  // their key is the one this device kept for them or one the person has just
-  // confirmed (confirmedKeys, by user id). A person this device has no key
-  // for, or whose key is not the kept one, is returned in changedKeys and
-  // nothing is sealed for them: the person must compare the safety code and
-  // confirm the key first (trustChangedKey). The server is never trusted to
-  // name a key, so a recipient it lists with a key of its own gets nothing.
+  // their key is one the person confirmed on this device or has just confirmed
+  // (confirmedKeys, by user id). A key that was only seen (it came with an item
+  // of theirs) does not count. A person whose key is not confirmed is returned
+  // in changedKeys and nothing is sealed for them: the person must compare the
+  // safety code and confirm the key first (trustChangedKey). The server is
+  // never trusted to name a key, so a recipient it lists with a key of its own
+  // gets nothing.
   async completeWaitingShares(confirmedKeys: ReadonlyMap<string, string> = new Map()): Promise<WaitingSharesResult> {
     const { keyPair } = this.keys(false)
     const answer = await graphql<{ ListWaitingPasswordShares: PasswordWaitingShare[] | null }>(
@@ -427,14 +444,15 @@ export class PasswordsSession {
         share.recipients.some((reached) => reached.userId === recipient.userId),
       )
       if (!isReached) continue
-      const pinned = pinnedKeyOf(this.userId, recipient.userId)
-      const isKnownKey = pinned === recipient.publicKey || confirmedKeys.get(recipient.userId) === recipient.publicKey
-      if (!isKnownKey) {
+      const isConfirmed =
+        isKeyConfirmed(this.userId, recipient.userId, recipient.publicKey) ||
+        confirmedKeys.get(recipient.userId) === recipient.publicKey
+      if (!isConfirmed) {
         changedKeys.set(recipient.userId, {
           recipientUserId: recipient.userId,
           recipientName: recipient.name,
           recipientUsername: recipient.username,
-          oldPublicKey: pinned,
+          oldPublicKey: earlierKeyOf(this.userId, recipient.userId, recipient.publicKey),
           newPublicKey: recipient.publicKey,
         })
         continue
@@ -460,31 +478,43 @@ export class PasswordsSession {
     return { sharedCount: people.size, changedKeys: [...changedKeys.values()] }
   }
 
-  // trustChangedKey keeps the key shown for a person (a first key or a
+  // trustChangedKey confirms the key shown for a person (a first key or a
   // changed one), after the person has compared the safety code, and gives
   // them the keys that were waiting. Only that very key is sealed for: if the
   // server has swapped it since, the person is asked again.
   async trustChangedKey(change: KeyChange): Promise<WaitingSharesResult> {
     this.keys()
-    pinKey(this.userId, change.recipientUserId, change.newPublicKey)
+    confirmKey(this.userId, change.recipientUserId, change.newPublicKey)
     return this.completeWaitingShares(new Map([[change.recipientUserId, change.newPublicKey]]))
   }
 
-  // trustOwnerKey keeps the new key of the owner of a shared item, after the
-  // person has compared the safety codes, and opens that owner's items again
-  // with it.
+  // trustOwnerKey confirms the new key of the owner of a shared item, after
+  // the person has compared the safety codes, and opens that owner's items
+  // again with it.
   async trustOwnerKey(item: PasswordItem): Promise<void> {
     const { accountKey } = this.keys()
     if (item.ownerKeyChange === null) return
-    pinKey(this.userId, item.ownerUserId, item.ownerKeyChange.newPublicKey)
+    confirmKey(this.userId, item.ownerUserId, item.ownerKeyChange.newPublicKey)
     await this.readItems(accountKey, null)
     if (this.accountKey !== accountKey) return
     this.publish()
   }
 
-  // pinnedKeyOf is the public key this device kept for a person, or null.
-  pinnedKeyOf(recipientUserId: string): string | null {
-    return pinnedKeyOf(this.userId, recipientUserId)
+  // isKeyConfirmed says whether the person confirmed this very key for the
+  // person on this device.
+  isKeyConfirmed(recipientUserId: string, publicKey: string): boolean {
+    return isKeyConfirmed(this.userId, recipientUserId, publicKey)
+  }
+
+  // earlierKeyOf is a different key this device knew for a person (confirmed
+  // or first seen), or null when it knew none.
+  earlierKeyOf(recipientUserId: string, publicKey: string): string | null {
+    return earlierKeyOf(this.userId, recipientUserId, publicKey)
+  }
+
+  // isRekeyPending says whether a removal left this item with its old key.
+  isRekeyPending(itemId: string): boolean {
+    return isRekeyPending(this.userId, itemId)
   }
 
   // --- changing items ---------------------------------------------------
@@ -495,6 +525,15 @@ export class PasswordsSession {
   async saveItem(draft: PasswordItemDraft, existing: PasswordItem | null, shouldPublish = true): Promise<PasswordItem> {
     const { accountKey } = this.keys()
     if (existing && existing.itemKey === null) throw new PasswordsError('itemUnreadable')
+    // A removal left this item with its old key, so the save gives it a new
+    // one with the fields the person just wrote.
+    if (existing && this.isRekeyPending(existing.id)) {
+      return this.giveNewKey(existing.id, {
+        replacingFields: draft.fields,
+        baseRevision: existing.revision,
+        shouldPublish,
+      })
+    }
     const itemId = existing?.id ?? crypto.randomUUID()
     const sealed = await sealPasswordItem(
       accountKey,
@@ -559,18 +598,24 @@ export class PasswordsSession {
   // shareItem replaces the item's shares with these grantees. The item key is
   // sealed only for a recipient who has set up Passwords and does not have a
   // key yet: someone who already has one keeps it, and nothing is sealed
-  // again for them. A recipient whose key is not the one this device kept
-  // (including one it has never kept a key for) is left out unless the person
-  // confirmed that very key (trustedKeys, by user id), and is returned in
-  // unconfirmedUserIds. A recipient who has not set up Passwords is left out
-  // as well: the owner's device adds their key when they have. The keys
-  // sealed for are kept as the known keys.
+  // again for them. A recipient whose key the person has not confirmed on this
+  // device (a person never confirmed, a key that changed, or one that was only
+  // seen on an item of theirs) is left out unless the person confirmed that
+  // very key (trustedKeys, by user id), and is returned in unconfirmedUserIds.
+  // A recipient who has not set up Passwords is left out as well: the owner's
+  // device adds their key when they have. The keys sealed for are kept as
+  // confirmed keys.
+  //
+  // When a person or a circle that had the item is taken off, the item is then
+  // given a new key (giveNewKey), so what the removed person kept opens
+  // nothing saved later. If that fails the removal stands, the item is marked
+  // as still needing a new key, and hasRekeyFailed is true.
   async shareItem(
     item: PasswordItem,
     grantees: PasswordShareGranteeInput[],
     recipients: PasswordRecipient[],
     trustedKeys: ReadonlyMap<string, string> = new Map(),
-  ): Promise<{ item: PasswordItem; unconfirmedUserIds: string[] }> {
+  ): Promise<{ item: PasswordItem; unconfirmedUserIds: string[]; hasRekeyFailed: boolean }> {
     const { keyPair } = this.keys()
     if (!item.isOwnedByMe || item.itemKey === null) throw new PasswordsError('ownerOnly')
     const sealedFor = new Map<
@@ -585,7 +630,7 @@ export class PasswordsSession {
       seenUserIds.add(recipient.userId)
       if (recipient.hasKey) continue
       if (
-        pinnedKeyOf(this.userId, recipient.userId) !== recipient.publicKey &&
+        !isKeyConfirmed(this.userId, recipient.userId, recipient.publicKey) &&
         trustedKeys.get(recipient.userId) !== recipient.publicKey
       ) {
         unconfirmedUserIds.push(recipient.userId)
@@ -607,20 +652,133 @@ export class PasswordsSession {
     const answer = await graphql<{ SetPasswordItemShares: PasswordItemRecord }>(SET_PASSWORD_ITEM_SHARES, {
       input: { itemId: item.id, grantees, keys: [...sealedFor.values()] },
     })
-    for (const sealed of sealedFor.values()) pinKey(this.userId, sealed.recipientUserId, sealed.recipientPublicKey)
-    return { item: await this.keepAnswer(answer.SetPasswordItemShares), unconfirmedUserIds }
+    for (const sealed of sealedFor.values()) confirmKey(this.userId, sealed.recipientUserId, sealed.recipientPublicKey)
+    const kept = await this.keepAnswer(answer.SetPasswordItemShares)
+    const isNarrowed = item.shares.some(
+      (share) =>
+        !grantees.some(
+          (grantee) =>
+            (grantee.granteeUserId ?? null) === (share.granteeUserId ?? null) &&
+            (grantee.granteeCircleId ?? null) === (share.granteeCircleId ?? null),
+        ),
+    )
+    if (!isNarrowed) return { item: kept, unconfirmedUserIds, hasRekeyFailed: false }
+    setRekeyPending(this.userId, item.id, true)
+    try {
+      return { item: await this.giveNewKey(item.id), unconfirmedUserIds, hasRekeyFailed: false }
+    } catch {
+      return { item: kept, unconfirmedUserIds, hasRekeyFailed: true }
+    }
   }
 
   // setUsableByAgent lets the server's agent key open this one item (or stops
-  // it). The key is sealed on this device for the agent's public key.
+  // it). Turning it on seals the item key on this device for the agent's
+  // public key. Turning it off gives the item a new key (giveNewKey), so an
+  // old sealed copy of the key held for the agent opens nothing saved later.
   async setUsableByAgent(item: PasswordItem, isUsableByAgent: boolean): Promise<PasswordItem> {
     const { keyPair } = this.keys()
     if (!item.isOwnedByMe || item.itemKey === null) throw new PasswordsError('ownerOnly')
+    if (!isUsableByAgent) {
+      if (!item.isUsableByAgent) return item
+      return this.giveNewKey(item.id, { isLeavingAgent: true })
+    }
+    const agentKey = await graphql<{ ReadPasswordsAgentKey: string }>(READ_PASSWORDS_AGENT_KEY)
+    const itemKeyByAgentKey = await sealItemKeyFor(
+      item.itemKey,
+      keyPair,
+      agentKey.ReadPasswordsAgentKey,
+      item.id,
+      this.userId,
+      AGENT_RECIPIENT_ID,
+    )
+    const answer = await graphql<{ SetPasswordItemUsableByAgent: PasswordItemRecord }>(
+      SET_PASSWORD_ITEM_USABLE_BY_AGENT,
+      { input: { itemId: item.id, isUsableByAgent: true, itemKeyByAgentKey } },
+    )
+    return this.keepAnswer(answer.SetPasswordItemUsableByAgent)
+  }
+
+  // --- a new item key ------------------------------------------------------
+
+  // giveNewKey makes a new random item key for an item the person owns, and
+  // seals everything with it: the fields (replacingFields when a save brings
+  // new ones, else the item's own), the person's copy, a copy for each
+  // recipient who still has access and whose key the person confirmed on this
+  // device, and the agent's copy when the agent still uses the item
+  // (isLeavingAgent leaves it out). A recipient whose key is not confirmed is
+  // left waiting, and completeWaitingShares asks about them: sealing for a key
+  // nobody checked is what the confirmation is there to stop.
+  //
+  // With no baseRevision the item's revision is the one this session holds,
+  // and when another device changed the item first it is read again and this
+  // is tried once more. A save passes the revision its fields were based on,
+  // and is refused as changed on another device instead.
+  async giveNewKey(
+    itemId: string,
+    options: {
+      replacingFields?: ItemFields
+      isLeavingAgent?: boolean
+      baseRevision?: number
+      shouldPublish?: boolean
+    } = {},
+  ): Promise<PasswordItem> {
+    try {
+      return await this.giveNewKeyOnce(itemId, options)
+    } catch (failure) {
+      const isStale = failure instanceof Error && failure.message.includes(STALE_REVISION_PHRASE)
+      if (!isStale || options.baseRevision !== undefined) throw failure
+      await this.refresh()
+      return this.giveNewKeyOnce(itemId, options)
+    }
+  }
+
+  private async giveNewKeyOnce(
+    itemId: string,
+    options: {
+      replacingFields?: ItemFields
+      isLeavingAgent?: boolean
+      baseRevision?: number
+      shouldPublish?: boolean
+    },
+  ): Promise<PasswordItem> {
+    const { accountKey, keyPair } = this.keys()
+    const item = this.itemsById.get(itemId)
+    if (item === undefined || item.deletedAt !== null) throw new PasswordsError('itemUnknown')
+    if (!item.isOwnedByMe) throw new PasswordsError('ownerOnly')
+    if (item.itemKey === null) throw new PasswordsError('itemUnreadable')
+    const newItemKey = randomBytes(KEY_BYTE_COUNT)
+    const sealed = await sealPasswordItem(
+      accountKey,
+      item.id,
+      item.itemKind,
+      (options.replacingFields ?? item.fields) as never,
+      newItemKey,
+    )
+    const shareKeys: AddPasswordShareKeyInput[] = []
+    const seenUserIds = new Set<string>()
+    for (const recipient of item.shares.flatMap((share) => share.recipients)) {
+      if (recipient.userId === this.userId || seenUserIds.has(recipient.userId)) continue
+      seenUserIds.add(recipient.userId)
+      if (recipient.publicKey === null || !isKeyConfirmed(this.userId, recipient.userId, recipient.publicKey)) continue
+      shareKeys.push({
+        itemId: item.id,
+        recipientUserId: recipient.userId,
+        itemKeyByRecipientKey: await sealItemKeyFor(
+          newItemKey,
+          keyPair,
+          recipient.publicKey,
+          item.id,
+          this.userId,
+          recipient.userId,
+        ),
+        recipientPublicKey: recipient.publicKey,
+      })
+    }
     let itemKeyByAgentKey: string | null = null
-    if (isUsableByAgent) {
+    if (item.isUsableByAgent && !options.isLeavingAgent) {
       const agentKey = await graphql<{ ReadPasswordsAgentKey: string }>(READ_PASSWORDS_AGENT_KEY)
       itemKeyByAgentKey = await sealItemKeyFor(
-        item.itemKey,
+        newItemKey,
         keyPair,
         agentKey.ReadPasswordsAgentKey,
         item.id,
@@ -628,11 +786,28 @@ export class PasswordsSession {
         AGENT_RECIPIENT_ID,
       )
     }
-    const answer = await graphql<{ SetPasswordItemUsableByAgent: PasswordItemRecord }>(
-      SET_PASSWORD_ITEM_USABLE_BY_AGENT,
-      { input: { itemId: item.id, isUsableByAgent, itemKeyByAgentKey } },
-    )
-    return this.keepAnswer(answer.SetPasswordItemUsableByAgent)
+    const input: PasswordItemRekeyInput = {
+      id: item.id,
+      baseRevision: options.baseRevision ?? item.revision,
+      encryptedFields: sealed.encryptedFields,
+      itemKey: sealed.itemKey,
+      shareKeys,
+      itemKeyByAgentKey,
+    }
+    const answer = await graphql<{ RekeyPasswordItem: PasswordItemRecord }>(REKEY_PASSWORD_ITEM, { input })
+    const kept = await this.keepAnswer(answer.RekeyPasswordItem, options.shouldPublish ?? true)
+    setRekeyPending(this.userId, item.id, false)
+    return kept
+  }
+
+  // retryPendingRekey tries again for an item a removal left with its old key.
+  // It does nothing for any other item. Opening the item calls it.
+  async retryPendingRekey(itemId: string): Promise<PasswordItem | null> {
+    this.keys(false)
+    if (!this.isRekeyPending(itemId)) return null
+    const item = this.itemsById.get(itemId)
+    if (item === undefined || !item.isOwnedByMe || item.deletedAt !== null || item.itemKey === null) return null
+    return this.giveNewKey(itemId)
   }
 
   // --- the keys themselves ----------------------------------------------

@@ -35,12 +35,12 @@ import {
 import {
   CardFields,
   fillMissingFields,
-  ItemFields,
   ItemFieldsByKind,
   ItemKind,
   ITEM_KINDS,
   LoginFields,
   NoteFields,
+  parseItemFields,
 } from '../../passwords/fields'
 import {
   ChangePasswordsPassphraseInput,
@@ -273,7 +273,9 @@ function itemShape(
 // associated data. pinnedOwnerKey is the public key this device kept for the
 // owner (null if none): when the server sends another, the item is not opened
 // and carries ownerKeyChange instead. A kind this version does not know is
-// left out (null), since there is nothing it could show.
+// left out (null), since there is nothing it could show. An item whose fields
+// do not have the kind's shape is returned unreadable, like one whose key did
+// not open.
 export async function openPasswordItem(
   record: PasswordItemRecord,
   accountKey: Uint8Array,
@@ -302,10 +304,18 @@ export async function openPasswordItem(
         )
       : await openItemKey(accountKey, parseSealedValue(record.itemKey), record.id)
     const opened = await openItemFields(itemKey, parseSealedValue(record.encryptedFields), record.id, itemKind)
+    // What opened is checked against the kind's shape. Somebody who shared the
+    // item can seal anything with its key; a field of the wrong type is shown
+    // as an item that could not be read, not drawn.
+    const fields = parseItemFields(itemKind, opened)
+    if (fields === null) {
+      itemKey.fill(0)
+      throw new PasswordsError('itemUnreadable')
+    }
     return {
       ...itemShape(record, itemKey),
       itemKind,
-      fields: fillMissingFields(itemKind, opened as Partial<ItemFields>),
+      fields,
     } as PasswordItem
   } catch {
     return {

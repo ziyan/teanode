@@ -32,6 +32,7 @@ import { NavigationShortcuts } from './components/navigationShortcuts'
 import { RecordingBar } from './recording/recordingBar'
 import { MailboxesProvider } from './mailboxes'
 import { homePath } from './services'
+import { RouteErrorBoundary } from './components/errorBoundary'
 import { ServiceGate } from './components/serviceGate'
 import { Tooltip } from './components/tooltip'
 
@@ -530,7 +531,14 @@ export function App() {
                       <Route path="/reminders" element={<CalendarPage />} />
                       <Route path="/location" element={<LocationPage />} />
                       <Route path="/health" element={<HealthPage />} />
-                      <Route path="/passwords" element={<PasswordsPage />} />
+                      <Route
+                        path="/passwords"
+                        element={
+                          <RouteErrorBoundary>
+                            <PasswordsPage />
+                          </RouteErrorBoundary>
+                        }
+                      />
                       <Route path="/mailbox/contacts" element={<AddressBookPage />} />
                       <Route path="/mailbox/calendar" element={<CalendarPage />} />
                       <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />

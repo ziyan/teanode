@@ -61,7 +61,10 @@ export function PasswordsItems({
   const item = itemId ? (snapshot.items.find((candidate) => candidate.id === itemId) ?? null) : null
   const isEditing = parameters.get('edit') === '1' && item !== null && item.isOwnedByMe && !item.isUnreadable
 
-  useBreadcrumbDetail(item ? item.fields.name || null : null)
+  // The trail and the tab title name the kind ("Login"), never the item: a
+  // title is kept in the browser's history and sync, and the extension sends
+  // the title of the tab it is attached to to the server.
+  useBreadcrumbDetail(item ? t(KIND_WORDS[item.itemKind]) : null)
 
   // A link to an item that is gone (deleted for good, or no longer shared) is
   // taken out of the address once the items are read, and the person is told.

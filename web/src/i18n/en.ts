@@ -7041,6 +7041,11 @@ export const en = {
   'passwords.agentTurnedOn': 'The agent can use this item now.',
   'passwords.agentTurnedOff': 'The agent can no longer use this item.',
   'passwords.agentFailed': 'The agent setting could not be changed.',
+  'passwords.rekeyFailed': 'Removed. The item could not be given a new key.',
+  'passwords.rekeyDone': 'The item has a new key.',
+  'errorBoundary.title': 'Something went wrong on this page',
+  'errorBoundary.body': 'The page could not be shown. Reloading starts it again.',
+  'errorBoundary.reload': 'Reload page',
   'passwords.agentLastUsed': 'Last used by the agent',
   'passwords.share': 'Share',
   'passwords.sharedWith': 'Shared with {names}',
@@ -7101,7 +7106,7 @@ export const en = {
   'passwords.passphraseChanged': 'Your passphrase was changed.',
   'passwords.replaceRecoveryKey': 'Replace recovery key',
   'passwords.replaceRecoveryKeyBody':
-    'Type your passphrase to make a new recovery key. The old one stops working once you finish.',
+    'Type your passphrase to make a new recovery key. Once you finish, the old recovery key no longer unlocks Passwords.',
   'passwords.replaceRecoveryKeyConfirm': 'Replace recovery key',
   'passwords.recoveryKeyReplaceBody':
     'This is your new recovery key. The old one still works until you finish.',

@@ -98,3 +98,101 @@ export function fillMissingFields<Kind extends ItemKind>(
     itemKind === 'login' ? emptyLoginFields() : itemKind === 'card' ? emptyCardFields() : emptyNoteFields()
   return { ...empty, ...fields } as ItemFieldsByKind[Kind]
 }
+
+// How each field of a kind is typed. A list of text is a list whose every
+// element is text; a list of passkeys is a list of objects whose every field
+// is text.
+type FieldType = 'text' | 'textList' | 'passkeyList'
+
+const FIELD_TYPES: Record<ItemKind, Record<string, FieldType>> = {
+  login: {
+    name: 'text',
+    userName: 'text',
+    password: 'text',
+    sites: 'textList',
+    oneTimeCodeUri: 'text',
+    notes: 'text',
+    passkeys: 'passkeyList',
+    folder: 'text',
+  },
+  card: {
+    name: 'text',
+    cardholderName: 'text',
+    number: 'text',
+    expiryMonth: 'text',
+    expiryYear: 'text',
+    securityCode: 'text',
+    brand: 'text',
+    notes: 'text',
+    folder: 'text',
+  },
+  note: { name: 'text', text: 'text', folder: 'text' },
+}
+
+const PASSKEY_FIELD_NAMES: readonly (keyof PasskeyFields)[] = [
+  'credentialId',
+  'relyingPartyId',
+  'userHandle',
+  'userName',
+  'userDisplayName',
+  'privateKey',
+  'createdAt',
+]
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+// A field another client left out, or wrote as null (a Go program writes an
+// empty list as null), is an empty one. Anything else must have the field's
+// type, or the whole item is refused.
+function readText(value: unknown): string | null {
+  if (value === undefined || value === null) return ''
+  return typeof value === 'string' ? value : null
+}
+
+function readTextList(value: unknown): string[] | null {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value) || !value.every((element) => typeof element === 'string')) return null
+  return [...value] as string[]
+}
+
+function readPasskeyList(value: unknown): PasskeyFields[] | null {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) return null
+  const passkeys: PasskeyFields[] = []
+  for (const element of value) {
+    if (!isPlainObject(element)) return null
+    const passkey = {} as Record<string, string>
+    for (const fieldName of PASSKEY_FIELD_NAMES) {
+      const text = readText(element[fieldName])
+      if (text === null) return null
+      passkey[fieldName] = text
+    }
+    passkeys.push(passkey as unknown as PasskeyFields)
+  }
+  return passkeys
+}
+
+// parseItemFields checks what came out of decrypting an item against the
+// kind's shape and returns the fields with every key the kind defines, or null
+// when the value is not an object or any field has the wrong type. A person
+// the item is shared by can seal anything with the item's key, so what opens
+// is not trusted to be an item: the screens and the sort read these fields
+// as the types above and would fail on a number where a name goes. Keys the
+// kind does not define are kept, so a newer client's fields survive an edit.
+export function parseItemFields<Kind extends ItemKind>(itemKind: Kind, value: unknown): ItemFieldsByKind[Kind] | null {
+  if (!isPlainObject(value)) return null
+  const checked: Record<string, unknown> = {}
+  for (const [fieldName, fieldType] of Object.entries(FIELD_TYPES[itemKind])) {
+    const read =
+      fieldType === 'text'
+        ? readText(value[fieldName])
+        : fieldType === 'textList'
+          ? readTextList(value[fieldName])
+          : readPasskeyList(value[fieldName])
+    if (read === null) return null
+    checked[fieldName] = read
+  }
+  return { ...value, ...checked } as unknown as ItemFieldsByKind[Kind]
+}

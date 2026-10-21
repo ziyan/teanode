@@ -13,7 +13,7 @@ import {
 } from './passwordsProtocol'
 import { useFailureToast } from './passwordsErrors'
 import { passwordsSession } from './passwordsSession'
-import { RecoveryKeyPanel } from './passwordsParts'
+import { RecoveryKeyPanel, NO_PASSWORD_MANAGER } from './passwordsParts'
 
 // Setting up Passwords: what it is, the passphrase asked for twice, and the
 // recovery key shown once. Nothing is sent to the server until the person
@@ -111,7 +111,8 @@ export function PasswordsSetUp({ userId, onSetUp }: { userId: string; onSetUp: (
             <input
               type="password"
               name="passphrase"
-              autoComplete="off"
+              autoComplete="new-password"
+              {...NO_PASSWORD_MANAGER}
               value={passphrase}
               onChange={(event) => setPassphrase(event.target.value)}
             />
@@ -124,7 +125,8 @@ export function PasswordsSetUp({ userId, onSetUp }: { userId: string; onSetUp: (
             <input
               type="password"
               name="passphrase-repeat"
-              autoComplete="off"
+              autoComplete="new-password"
+              {...NO_PASSWORD_MANAGER}
               value={repeated}
               onChange={(event) => setRepeated(event.target.value)}
             />

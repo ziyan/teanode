@@ -131,6 +131,23 @@ export type SetPasswordItemUsableByAgentInput = {
   itemKeyByAgentKey: string | null
 }
 
+// PasswordItemRekeyInput gives an item a new item key when access narrows (the
+// agent stops using it, or somebody is removed from its shares): the fields
+// sealed with the new key, the key sealed for the owner, for each recipient who
+// keeps access and for the agent if it still may use the item. The server
+// drops every old share key.
+export type PasswordItemRekeyInput = {
+  id: string
+  // The revision this device read; a newer one is refused as "changed on
+  // another device".
+  baseRevision: number
+  encryptedFields: string
+  itemKey: string
+  shareKeys: AddPasswordShareKeyInput[]
+  // Null when the agent is not to use the item.
+  itemKeyByAgentKey: string | null
+}
+
 // The GraphQL input types are named by the server's schema (for example
 // PasswordItemInput); the TypeScript types above carry the same fields.
 
@@ -205,6 +222,10 @@ export const ADD_PASSWORD_SHARE_KEYS = `mutation ($keys: [PasswordItemShareKeyIn
 
 export const SET_PASSWORD_ITEM_USABLE_BY_AGENT = `mutation ($input: PasswordItemAgentUseInput!) {
   SetPasswordItemUsableByAgent(input: $input) { ${ITEM_FIELDS} }
+}`
+
+export const REKEY_PASSWORD_ITEM = `mutation ($input: PasswordItemRekeyInput!) {
+  RekeyPasswordItem(input: $input) { ${ITEM_FIELDS} }
 }`
 
 export const READ_PASSWORDS_AGENT_KEY = `query { ReadPasswordsAgentKey }`

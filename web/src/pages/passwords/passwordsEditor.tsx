@@ -14,7 +14,7 @@ import {
 } from '../../passwords/fields'
 import { parseOneTimeCodeUri } from '../../passwords/oneTimeCode'
 import { STALE_REVISION_PHRASE } from './passwordsApi'
-import { PasswordGenerator } from './passwordsParts'
+import { NO_PASSWORD_MANAGER, PasswordGenerator, secretNumberInputProps } from './passwordsParts'
 import { PasswordItem } from './passwordsProtocol'
 import { useFailureToast } from './passwordsErrors'
 import { PasswordItemDraft, passwordsSession } from './passwordsSession'
@@ -204,6 +204,7 @@ export function PasswordsEditor({
           type="text"
           value={name}
           autoComplete="off"
+          {...NO_PASSWORD_MANAGER}
           onChange={(event) => {
             if (itemKind === 'login') setLogin({ ...login, name: event.target.value })
             else if (itemKind === 'card') setCard({ ...card, name: event.target.value })
@@ -219,6 +220,7 @@ export function PasswordsEditor({
             <input
               type="text"
               autoComplete="off"
+              {...NO_PASSWORD_MANAGER}
               autoCapitalize="none"
               spellCheck={false}
               value={login.userName}
@@ -229,7 +231,8 @@ export function PasswordsEditor({
             <span>{t('passwords.fieldPassword')}</span>
             <input
               type={isPasswordShown ? 'text' : 'password'}
-              autoComplete="off"
+              autoComplete="new-password"
+              {...NO_PASSWORD_MANAGER}
               spellCheck={false}
               value={login.password}
               onChange={(event) => setLogin({ ...login, password: event.target.value })}
@@ -257,6 +260,7 @@ export function PasswordsEditor({
             <textarea
               rows={2}
               autoComplete="off"
+              {...NO_PASSWORD_MANAGER}
               spellCheck={false}
               value={sitesText}
               onChange={(event) => setSitesText(event.target.value)}
@@ -267,6 +271,7 @@ export function PasswordsEditor({
             <input
               type="text"
               autoComplete="off"
+              {...NO_PASSWORD_MANAGER}
               spellCheck={false}
               value={oneTimeCodeText}
               onChange={(event) => setOneTimeCodeText(event.target.value)}
@@ -291,6 +296,7 @@ export function PasswordsEditor({
             <input
               type="text"
               autoComplete="off"
+              {...NO_PASSWORD_MANAGER}
               value={card.cardholderName}
               onChange={(event) => setCard({ ...card, cardholderName: event.target.value })}
             />
@@ -298,9 +304,11 @@ export function PasswordsEditor({
           <label>
             <span>{t('passwords.fieldCardNumber')}</span>
             <input
-              type="text"
+              {...secretNumberInputProps()}
               inputMode="numeric"
               autoComplete="off"
+              {...NO_PASSWORD_MANAGER}
+              {...NO_PASSWORD_MANAGER}
               value={card.number}
               onChange={(event) => setCard({ ...card, number: event.target.value })}
             />
@@ -312,6 +320,7 @@ export function PasswordsEditor({
                 type="text"
                 inputMode="numeric"
                 autoComplete="off"
+                {...NO_PASSWORD_MANAGER}
                 value={card.expiryMonth}
                 onChange={(event) => setCard({ ...card, expiryMonth: event.target.value })}
               />
@@ -322,6 +331,7 @@ export function PasswordsEditor({
                 type="text"
                 inputMode="numeric"
                 autoComplete="off"
+                {...NO_PASSWORD_MANAGER}
                 value={card.expiryYear}
                 onChange={(event) => setCard({ ...card, expiryYear: event.target.value })}
               />
@@ -330,9 +340,11 @@ export function PasswordsEditor({
           <label>
             <span>{t('passwords.fieldSecurityCode')}</span>
             <input
-              type="password"
+              {...secretNumberInputProps()}
               inputMode="numeric"
               autoComplete="off"
+              {...NO_PASSWORD_MANAGER}
+              {...NO_PASSWORD_MANAGER}
               value={card.securityCode}
               onChange={(event) => setCard({ ...card, securityCode: event.target.value })}
             />
@@ -342,6 +354,7 @@ export function PasswordsEditor({
             <input
               type="text"
               autoComplete="off"
+              {...NO_PASSWORD_MANAGER}
               value={card.brand}
               onChange={(event) => setCard({ ...card, brand: event.target.value })}
             />
@@ -376,6 +389,7 @@ export function PasswordsEditor({
           type="text"
           list={folderListId}
           autoComplete="off"
+          {...NO_PASSWORD_MANAGER}
           value={itemKind === 'login' ? login.folder : itemKind === 'card' ? card.folder : note.folder}
           onChange={(event) => {
             if (itemKind === 'login') setLogin({ ...login, folder: event.target.value })

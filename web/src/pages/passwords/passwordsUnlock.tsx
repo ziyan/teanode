@@ -7,6 +7,7 @@ import { useTranslation } from '../../i18n/i18n'
 import { parseRecoveryKey } from '../../passwords/crypto'
 import { useFailureToast } from './passwordsErrors'
 import { PasswordsSetup, READ_PASSWORDS_SETUP } from './passwordsApi'
+import { NO_PASSWORD_MANAGER } from './passwordsParts'
 import { passphraseSecret } from './passwordsProtocol'
 import { passwordsSession } from './passwordsSession'
 
@@ -73,6 +74,7 @@ export function PasswordsUnlock({ userId }: { userId: string }) {
               rows={3}
               name="recovery-key"
               autoComplete="off"
+              {...NO_PASSWORD_MANAGER}
               spellCheck={false}
               className="mono"
               value={typedText}
@@ -85,7 +87,8 @@ export function PasswordsUnlock({ userId }: { userId: string }) {
             <input
               type="password"
               name="passphrase"
-              autoComplete="off"
+              autoComplete="new-password"
+              {...NO_PASSWORD_MANAGER}
               value={typedText}
               onChange={(event) => setTypedText(event.target.value)}
             />

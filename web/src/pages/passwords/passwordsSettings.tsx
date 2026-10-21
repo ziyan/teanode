@@ -10,7 +10,7 @@ import { parseRecoveryKey } from '../../passwords/crypto'
 import { ImportCsvError, importedItemKey, ImportedItem, parseCsv, withoutDuplicates } from '../../passwords/importCsv'
 import { useFailureToast } from './passwordsErrors'
 import { ERASE_PASSWORDS, LOCK_AFTER_CHOICES, PasswordsSetup, UPDATE_PASSWORDS_SETTINGS } from './passwordsApi'
-import { downloadText, RecoveryKeyPanel } from './passwordsParts'
+import { downloadText, RecoveryKeyPanel, NO_PASSWORD_MANAGER } from './passwordsParts'
 import { MINIMUM_PASSPHRASE_LENGTH, passphraseSecret, PasswordItem, SealedRecoveryKey } from './passwordsProtocol'
 import { passwordsSession, usePasswordsSession } from './passwordsSession'
 
@@ -232,6 +232,7 @@ function ChangePassphraseDialog({
           <textarea
             rows={3}
             autoComplete="off"
+            {...NO_PASSWORD_MANAGER}
             spellCheck={false}
             className="mono"
             value={current}
@@ -243,7 +244,8 @@ function ChangePassphraseDialog({
           <span>{t('passwords.passphraseCurrent')}</span>
           <input
             type="password"
-            autoComplete="off"
+            autoComplete="new-password"
+            {...NO_PASSWORD_MANAGER}
             value={current}
             onChange={(event) => setCurrent(event.target.value)}
           />
@@ -253,7 +255,8 @@ function ChangePassphraseDialog({
         <span>{t('passwords.passphraseNew')}</span>
         <input
           type="password"
-          autoComplete="off"
+          autoComplete="new-password"
+          {...NO_PASSWORD_MANAGER}
           value={replacement}
           onChange={(event) => setReplacement(event.target.value)}
         />
@@ -262,7 +265,8 @@ function ChangePassphraseDialog({
         <span>{t('passwords.passphraseRepeat')}</span>
         <input
           type="password"
-          autoComplete="off"
+          autoComplete="new-password"
+          {...NO_PASSWORD_MANAGER}
           value={repeated}
           onChange={(event) => setRepeated(event.target.value)}
         />
@@ -337,7 +341,8 @@ function ReplaceRecoveryKeyDialog({ setup, onClose }: { setup: PasswordsSetup; o
         <span>{t('passwords.passphrase')}</span>
         <input
           type="password"
-          autoComplete="off"
+          autoComplete="new-password"
+          {...NO_PASSWORD_MANAGER}
           value={passphrase}
           onChange={(event) => setPassphrase(event.target.value)}
         />
@@ -540,7 +545,8 @@ function ExportItems({ setup }: { setup: PasswordsSetup }) {
             <span>{t('passwords.passphrase')}</span>
             <input
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
+              {...NO_PASSWORD_MANAGER}
               value={passphrase}
               onChange={(event) => setPassphrase(event.target.value)}
             />

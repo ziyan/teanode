@@ -22,6 +22,7 @@ import {
 import { useFailureToast } from './passwordsErrors'
 import { SafetyCode } from './passwordsParts'
 import { PasswordItem } from './passwordsProtocol'
+import { useRekeyFailedToast } from './passwordsRekey'
 import { passwordsSession } from './passwordsSession'
 
 // Sharing one item with a circle or a person in one. The owner's device seals
@@ -30,9 +31,10 @@ import { passwordsSession } from './passwordsSession'
 // owner's device gives them their key the next time it is unlocked after they
 // have. The safety codes are shown so the owner can check each one with the
 // person: a code that does not match is a key that is not theirs. Saving
-// keeps each key sealed for as the known key of that person; a key that is
-// not the known one (a person met for the first time, or a key that changed)
+// keeps each key sealed for as the confirmed key of that person; a key that is
+// not a confirmed one (a person met for the first time, or a key that changed)
 // is flagged, and nothing is sealed for it until the owner confirms it here.
+// Taking somebody off gives the item a new key, which is done after the save.
 
 type Person = { userId: string; username: string; name: string }
 type CircleChoice = { id: string; name: string; members: { userId: string }[] }
@@ -54,6 +56,7 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
   const { t, plural } = useTranslation()
   const toast = useToast()
   const reportFailure = useFailureToast()
+  const sayRekeyFailed = useRekeyFailedToast()
   const navigate = useNavigate()
   const session = useSession()
   const canUseCircles = hasPermission(session.permissions, 'circle:use')
@@ -128,7 +131,19 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
         granteeCircleId: row.kind === 'circle' ? row.id : null,
       }))
       const recipients = rows.flatMap((row) => row.recipients)
-      const { unconfirmedUserIds } = await passwordsSession.shareItem(item, grantees, recipients, trustedKeys)
+      const { unconfirmedUserIds, hasRekeyFailed } = await passwordsSession.shareItem(
+        item,
+        grantees,
+        recipients,
+        trustedKeys,
+      )
+      if (hasRekeyFailed) {
+        // The removal went through; only the new key is missing. The item is
+        // marked, so the next save or open tries again, and the toast can too.
+        sayRekeyFailed(item.id)
+        onClose()
+        return
+      }
       const waitingCount = new Set(
         recipients.filter((recipient) => recipient.publicKey === null).map((recipient) => recipient.userId),
       ).size
@@ -208,10 +223,15 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
           )}
           <ul className="passwords-recipients">
             {row.recipients.map((recipient) => {
-              const pinnedKey = passwordsSession.pinnedKeyOf(recipient.userId)
               const needsConfirmation =
-                recipient.publicKey !== null && !recipient.hasKey && pinnedKey !== recipient.publicKey
-              const isKeyChanged = needsConfirmation && pinnedKey !== null
+                recipient.publicKey !== null &&
+                !recipient.hasKey &&
+                !passwordsSession.isKeyConfirmed(recipient.userId, recipient.publicKey)
+              const earlierKey =
+                needsConfirmation && recipient.publicKey !== null
+                  ? passwordsSession.earlierKeyOf(recipient.userId, recipient.publicKey)
+                  : null
+              const isKeyChanged = needsConfirmation && earlierKey !== null
               const isTrusted = needsConfirmation && trustedKeys.get(recipient.userId) === recipient.publicKey
               return (
                 <li key={recipient.userId}>
@@ -233,10 +253,10 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                       <p className="muted">
                         {isKeyChanged ? t('passwords.keyChangedWarning') : t('passwords.keyFirstWarning')}
                       </p>
-                      {isKeyChanged && pinnedKey !== null && (
+                      {isKeyChanged && earlierKey !== null && (
                         <p>
                           <span className="muted">{t('passwords.keyChangedOld')} </span>
-                          <SafetyCode publicKey={pinnedKey} />
+                          <SafetyCode publicKey={earlierKey} />
                         </p>
                       )}
                       {isTrusted ? (

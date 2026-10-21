@@ -21474,6 +21474,12 @@ button.person-row:focus-visible {
   white-space: pre-wrap;
 }
 
+.passwords-masked {
+  /* A card number or security code typed in a text field, hidden by the
+     browser's own mask so that it is not taken for a password to save. */
+  -webkit-text-security: disc;
+}
+
 .passwords-generator {
   margin: 0 0 var(--space-3);
   padding: var(--space-3);

@@ -23,27 +23,73 @@ import {
 // hidden value with Show, the running one-time code, the recovery key with
 // its Copy and Download, the password generator, and a safety code.
 
+// Attributes that tell the browser's own manager and the common password
+// manager extensions to leave a field alone: Passwords keeps its own, and a
+// passphrase or an item's password typed here must not be offered for saving
+// somewhere else. autoComplete does the browsers; the data attributes are the
+// ones the extensions document.
+export const NO_PASSWORD_MANAGER = {
+  'data-1p-ignore': true,
+  'data-lpignore': 'true',
+  'data-bwignore': 'true',
+} as const
+
+// secretNumberInputProps are the attributes of a card number or security code
+// field. It is a text field masked with CSS where the browser can (so the
+// browser does not offer to save a password or a card), and a password field
+// where it cannot.
+export function secretNumberInputProps(): { type: 'text' | 'password'; className?: string } {
+  const canMask =
+    typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('-webkit-text-security', 'disc')
+  return canMask ? { type: 'text', className: 'passwords-masked' } : { type: 'password' }
+}
+
 // How long a copied secret may stay on the clipboard.
 export const CLIPBOARD_CLEAR_MILLISECONDS = 30_000
 
-// clearClipboardLater empties the clipboard after 30 seconds, but only if it
-// still holds the copied secret (the person may have copied something else
-// since, and that is theirs) and the window has focus (the browser refuses to
-// read the clipboard otherwise). A browser that will not let the page read the
-// clipboard is left alone, since the page could not tell whose text it is
-// about to remove. It is not tied to a component, so it still runs when the
-// person has moved to another screen.
+// clearClipboardLater empties the clipboard 30 seconds after a copy, but only
+// if it still holds the copied secret (the person may have copied something
+// else since, and that is theirs). The browser refuses to read the clipboard
+// unless the window has focus, and at 30 seconds the person is usually in the
+// site's own tab, pasting. So when the window has no focus then, the clear
+// waits for the window to be focused or shown again and is tried then; it
+// gives up only when the page is gone. A browser that will not let the page
+// read the clipboard is left alone, since the page could not tell whose text
+// it is about to remove. It is not tied to a component, so it still runs when
+// the person has moved to another screen.
 export function clearClipboardLater(copied: string) {
-  window.setTimeout(() => {
-    void (async () => {
-      try {
-        if (!document.hasFocus()) return
-        if ((await navigator.clipboard.readText()) === copied) await navigator.clipboard.writeText('')
-      } catch {
-        // The clipboard could not be read or written: nothing to do.
-      }
-    })()
-  }, CLIPBOARD_CLEAR_MILLISECONDS)
+  let isWaitingForFocus = false
+
+  function waitForFocus() {
+    if (isWaitingForFocus) return
+    isWaitingForFocus = true
+    const tryAgain = () => {
+      if (!document.hasFocus() || document.visibilityState === 'hidden') return
+      window.removeEventListener('focus', tryAgain)
+      document.removeEventListener('visibilitychange', tryAgain)
+      isWaitingForFocus = false
+      void clearIfUnchanged()
+    }
+    window.addEventListener('focus', tryAgain)
+    document.addEventListener('visibilitychange', tryAgain)
+  }
+
+  async function clearIfUnchanged() {
+    if (!document.hasFocus()) {
+      waitForFocus()
+      return
+    }
+    try {
+      if ((await navigator.clipboard.readText()) === copied) await navigator.clipboard.writeText('')
+    } catch {
+      // Focus can go between the check and the read. If it did, the next
+      // focus tries again; otherwise the clipboard could not be read or
+      // written, and there is nothing to do.
+      if (!document.hasFocus()) waitForFocus()
+    }
+  }
+
+  window.setTimeout(() => void clearIfUnchanged(), CLIPBOARD_CLEAR_MILLISECONDS)
 }
 
 // SecretCopyButton copies a secret and clears it from the clipboard later.
