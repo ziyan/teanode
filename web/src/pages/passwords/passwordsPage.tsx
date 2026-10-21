@@ -111,9 +111,9 @@ function PasswordsContent({ userId }: { userId: string }) {
     passwordsSession.touch()
   }
 
-  function sayHowManyGotAccess(sharedCount: number) {
-    if (sharedCount > 0) {
-      toast.done(plural(sharedCount, { one: 'passwords.waitingSharedOne', other: 'passwords.waitingShared' }))
+  function sayHowManyKeysWereSent(storedKeyCount: number) {
+    if (storedKeyCount > 0) {
+      toast.done(plural(storedKeyCount, { one: 'passwords.waitingSharedOne', other: 'passwords.waitingShared' }))
     }
   }
 
@@ -132,8 +132,8 @@ function PasswordsContent({ userId }: { userId: string }) {
           for (const itemId of failedItemIds) rekeyReportedItemIds.current.add(itemId)
           sayRekeyFailed(unreportedItemId)
         }
-        const { sharedCount } = await passwordsSession.completeWaitingShares()
-        if (isCurrent) sayHowManyGotAccess(sharedCount)
+        const { storedKeyCount } = await passwordsSession.completeWaitingShares()
+        if (isCurrent) sayHowManyKeysWereSent(storedKeyCount)
       } catch {
         // Tried again at the next turn; a person is not told about a refresh
         // that did not go through.

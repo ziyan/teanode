@@ -42,7 +42,7 @@ export function PasswordsItems({
   parameters: URLSearchParams
   changeParameters: ChangeParameters
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
   const reportFailure = useFailureToast()
   const snapshot = usePasswordsSession()
@@ -53,6 +53,9 @@ export function PasswordsItems({
   // they confirm or leave.
   const [itemToPurge, setItemToPurge] = useState<PasswordItem | null>(null)
   const [isPurging, setIsPurging] = useState(false)
+  // finishProgress is how many of the waiting items are done while the person's
+  // one tap on Finish sharing is running, or null when it is not.
+  const [finishProgress, setFinishProgress] = useState<{ doneCount: number; totalCount: number } | null>(null)
 
   const filter: ItemFilter = {
     search,
@@ -118,6 +121,28 @@ export function PasswordsItems({
     }
   }
 
+  // finishAll finishes the sharing of every waiting item, with the person's
+  // one tap, and says how many it finished.
+  async function finishAll() {
+    if (finishProgress !== null) return
+    setFinishProgress({ doneCount: 0, totalCount: snapshot.itemIdsToFinish.length })
+    try {
+      const { finishedCount, failedCount } = await passwordsSession.finishAllSharing((doneCount, totalCount) =>
+        setFinishProgress({ doneCount, totalCount }),
+      )
+      if (finishedCount > 0) {
+        toast.done(plural(finishedCount, { one: 'passwords.finishAllDoneOne', other: 'passwords.finishAllDone' }))
+      }
+      if (failedCount > 0) {
+        toast.failed(plural(failedCount, { one: 'passwords.finishAllFailedOne', other: 'passwords.finishAllFailed' }))
+      }
+    } catch (failure) {
+      reportFailure(failure, t('passwords.finishSharingFailed'))
+    } finally {
+      setFinishProgress(null)
+    }
+  }
+
   async function restore(restored: PasswordItem) {
     try {
       await passwordsSession.restoreItem(restored.id)
@@ -141,6 +166,26 @@ export function PasswordsItems({
     <>
       {item === null && (
         <SettingsSection card>
+          {!filter.isDeleted && (snapshot.itemIdsToFinish.length > 0 || snapshot.hasMoreWaiting) && (
+            <div className="passwords-finish-all">
+              {snapshot.itemIdsToFinish.length > 0 && (
+                <div className="page-actions">
+                  <button type="button" disabled={finishProgress !== null} onClick={() => void finishAll()}>
+                    {finishProgress === null
+                      ? plural(snapshot.itemIdsToFinish.length, {
+                          one: 'passwords.finishAllOne',
+                          other: 'passwords.finishAll',
+                        })
+                      : t('passwords.finishAllProgress', {
+                          doneCount: finishProgress.doneCount,
+                          totalCount: finishProgress.totalCount,
+                        })}
+                  </button>
+                </div>
+              )}
+              {snapshot.hasMoreWaiting && <p className="muted">{t('passwords.moreWaiting')}</p>}
+            </div>
+          )}
           <div className="passwords-toolbar">
             <input
               type="search"

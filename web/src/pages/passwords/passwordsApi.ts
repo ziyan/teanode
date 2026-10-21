@@ -26,6 +26,10 @@ export type PasswordRecipient = {
   publicKey: string | null
   // True when a key for this item and their current public key exists.
   hasKey: boolean
+  // True when a key for this item would take the person past what the server
+  // lets be shared with them, so none is stored. Only for a person without a
+  // key, where an item is in question.
+  hasTooMuchShared: boolean
 }
 
 export type PasswordShare = {
@@ -72,6 +76,8 @@ export type PasswordItemList = {
 export type PasswordWaitingShare = {
   itemId: string
   recipient: PasswordRecipient
+  // True on every entry when more wait than the server lists.
+  hasMoreWaiting: boolean
 }
 
 export type SetUpPasswordsInput = {
@@ -174,7 +180,7 @@ export type PasswordItemRekeyInput = {
 
 const SETUP_FIELDS = 'isSetUp passphraseSalt passphraseIterationCount publicKey lockAfterMinutes itemCount'
 
-const RECIPIENT_FIELDS = 'userId name username publicKey hasKey'
+const RECIPIENT_FIELDS = 'userId name username publicKey hasKey hasTooMuchShared'
 
 const ITEM_FIELDS = `id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision
   isUsableByAgent needsNewKey lastUsedByAgentAt deletedAt createdAt updatedAt
@@ -238,7 +244,7 @@ export const SET_PASSWORD_ITEM_SHARES = `mutation ($input: PasswordItemSharesInp
 }`
 
 export const LIST_WAITING_PASSWORD_SHARES = `query {
-  ListWaitingPasswordShares { itemId recipient { ${RECIPIENT_FIELDS} } }
+  ListWaitingPasswordShares { itemId hasMoreWaiting recipient { ${RECIPIENT_FIELDS} } }
 }`
 
 export const ADD_PASSWORD_SHARE_KEYS = `mutation ($keys: [PasswordItemShareKeyInput!]!) {

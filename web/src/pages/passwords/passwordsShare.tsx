@@ -281,6 +281,13 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
                       <SafetyCode publicKey={recipient.publicKey} />
                     </span>
                   )}
+                  {recipient.hasTooMuchShared && (
+                    <p className="muted">
+                      {t('passwords.recipientTooMuchShared', {
+                        name: personName({ name: recipient.name, username: recipient.username }),
+                      })}
+                    </p>
+                  )}
                   {earlierKey !== null && <p className="muted">{t('passwords.keyChangedWarning')}</p>}
                   {recipient.publicKey !== null &&
                     (isCompared ? (
