@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { OWN_PAGES_REFUSAL, PANEL_ELEMENT_REFUSAL, PANEL_KEYS_REFUSAL, PANEL_REFUSAL } from './reach.js'
+import {
+  OWN_PAGES_REFUSAL,
+  PANEL_ELEMENT_REFUSAL,
+  PANEL_KEYS_REFUSAL,
+  PANEL_REFUSAL,
+  REQUEST_BODY_REFUSAL,
+} from './reach.js'
 
 // The extension's worker is loaded against a browser that is a few lists
 // and recorders, signed in to a server at mail.example.com, and spoken to
@@ -532,11 +538,77 @@ describe("what reaches into the panel's frame", () => {
     expect(JSON.stringify(shown)).not.toContain('mail.example.com')
     expect(JSON.stringify(shown)).toContain('cdn.example.net')
     expect(await ask('cdp', { method: 'Network.getResponseBody', params: { requestId: '1.1' } })).toEqual(
-      expect.objectContaining({ ok: false, error: OWN_PAGES_REFUSAL }),
+      expect.objectContaining({ ok: false, error: REQUEST_BODY_REFUSAL }),
+    )
+    expect(await ask('cdp', { method: 'Network.getRequestPostData', params: { requestId: '9.9' } })).toEqual(
+      expect.objectContaining({ ok: false, error: REQUEST_BODY_REFUSAL }),
     )
     expect(await ask('cdp', { method: 'Network.getResponseBody', params: { requestId: '2.2' } })).toMatchObject({
       ok: true,
     })
+  })
+
+  it('does not show a connection to the server whose first events the buffer pushed out', async () => {
+    const { ask, chrome } = await load(ordinary)
+    await ask('cdp', { method: 'Network.enable' })
+    const onEvent = chrome.debugger.onEvent.addListener.mock.calls[0][0]
+    const tab = { tabId: 7 }
+    onEvent(tab, 'Network.webSocketCreated', { requestId: '5.1', url: 'wss://mail.example.com/api/v1/socket' })
+    onEvent(tab, 'Network.webSocketCreated', { requestId: '5.2', url: 'wss://live.example.net/feed' })
+    // A page that makes more requests than the worker keeps.
+    for (let index = 0; index < 1100; index++) {
+      onEvent(tab, 'Network.requestWillBeSent', {
+        requestId: `9.${index}`,
+        request: { url: 'https://cdn.example.net/a.js' },
+      })
+    }
+    for (let round = 0; round < 20; round++) {
+      onEvent(tab, 'Network.webSocketFrameSent', {
+        requestId: '5.1',
+        response: { payloadData: 'Bearer example-token' },
+      })
+      onEvent(tab, 'Network.webSocketFrameSent', { requestId: '5.2', response: { payloadData: 'hello' } })
+      const shown = await ask('cdp_events', { limit: 1000 })
+      expect(shown.ok).toBe(true)
+      expect(JSON.stringify(shown)).not.toContain('example-token')
+      expect(JSON.stringify(shown)).not.toContain('"5.1"')
+      expect(JSON.stringify(shown)).toContain('hello')
+      expect(typeof shown.data.session).toBe('string')
+    }
+    expect(await ask('cdp', { method: 'Network.getResponseBody', params: { requestId: '5.1' } })).toEqual(
+      expect.objectContaining({ ok: false, error: REQUEST_BODY_REFUSAL }),
+    )
+  })
+
+  it('does not show an event of a request it never saw created', async () => {
+    const { ask, chrome } = await load(ordinary)
+    await ask('cdp', { method: 'Network.enable' })
+    const onEvent = chrome.debugger.onEvent.addListener.mock.calls[0][0]
+    onEvent({ tabId: 7 }, 'Network.webSocketFrameSent', {
+      requestId: '5.1',
+      response: { payloadData: 'Bearer example-token' },
+    })
+    onEvent({ tabId: 7 }, 'Network.policyUpdated', {})
+    onEvent({ tabId: 7 }, 'Log.entryAdded', { entry: { text: 'a message' } })
+    const shown = await ask('cdp_events', {})
+    expect(JSON.stringify(shown)).not.toContain('example-token')
+    expect(JSON.stringify(shown)).not.toContain('policyUpdated')
+    expect(JSON.stringify(shown)).toContain('a message')
+  })
+
+  it('starts a new record, and says so, when the agent lets the protocol go', async () => {
+    const { ask, chrome } = await load(ordinary)
+    await ask('cdp', { method: 'Network.enable' })
+    const onEvent = chrome.debugger.onEvent.addListener.mock.calls[0][0]
+    onEvent({ tabId: 7 }, 'Network.webSocketCreated', { requestId: '5.2', url: 'wss://live.example.net/feed' })
+    const before = await ask('cdp_events', {})
+    expect(JSON.stringify(before)).toContain('live.example.net')
+    await ask('cdp_stop')
+    await ask('cdp', { method: 'Network.enable' })
+    onEvent({ tabId: 7 }, 'Network.webSocketFrameSent', { requestId: '5.2', response: { payloadData: 'late' } })
+    const after = await ask('cdp_events', {})
+    expect(JSON.stringify(after)).not.toContain('late')
+    expect(after.data.session).not.toBe(before.data.session)
   })
 })
 

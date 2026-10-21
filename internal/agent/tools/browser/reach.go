@@ -294,6 +294,9 @@ func tabReachRefusal(configuration *config.Configuration, tab tools.Tab, argumen
 				return refusal
 			}
 		}
+		if refusal := requestBodyRefusal(tab, arguments.Method, arguments.Params, ownHosts); refusal != "" {
+			return refusal
+		}
 	case "fetch":
 		// The page's own session goes with a fetch, so where it goes matters
 		// as much as where a tab goes: a page on a sibling host of the
@@ -408,52 +411,202 @@ func answerReachRefusal(configuration *config.Configuration, tab tools.Tab, acti
 	return ""
 }
 
-// hideOwnRequests takes out of what the tab watched every request made to
-// this server's host, with the events that go with it: the panel is a frame
-// of this server's origin, and a frame of the same site is in the tab's
-// process, so its requests, with the Authorization header that signs the
-// person in, are among the page's. What a page asks other sites for is what
-// the agent watches the network for, and stays.
-func hideOwnRequests(answer json.RawMessage, ownHosts map[string]bool) json.RawMessage {
+// Marks for what a request's events name that is not a hostname: an
+// extension's page, which is the agent's to leave alone like the server's, and
+// an address this cannot read, which is not shown either.
+const (
+	placeExtension  = "extension:"
+	placeUnreadable = "?"
+)
+
+// placeOf is where an address goes, as the ledger keeps it: its hostname
+// (lowercase, no trailing dot, "" for an address with none such as data:),
+// or a mark. Compared without the port or the scheme, as ownHostnames are.
+func placeOf(address string) string {
+	address = strings.TrimSpace(address)
+	for _, prefix := range []string{"blob:", "filesystem:"} {
+		if len(address) >= len(prefix) && strings.EqualFold(address[:len(prefix)], prefix) {
+			address = address[len(prefix):]
+		}
+	}
+	lowered := strings.ToLower(address)
+	if strings.HasPrefix(lowered, "chrome-extension:") || strings.HasPrefix(lowered, "moz-extension:") {
+		return placeExtension
+	}
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return placeUnreadable
+	}
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		// Only an address that has no host to go to may have none.
+		if scheme := strings.ToLower(parsed.Scheme); scheme == "data" || scheme == "about" {
+			return ""
+		}
+		return placeUnreadable
+	}
+	if !isPlainHostname(hostname) {
+		return placeUnreadable
+	}
+	return normalizedHostname(hostname)
+}
+
+// isHiddenPlace says a place is one the agent is not shown requests to.
+func isHiddenPlace(place string, ownHosts map[string]bool) bool {
+	return place == placeExtension || place == placeUnreadable || ownHosts[place]
+}
+
+// requestPlaces are the places the addresses in a network event name: the
+// request's, the response's, the one a WebSocket was created for, and the
+// one a redirect came from.
+func requestPlaces(params map[string]any) []string {
+	var places []string
+	add := func(container map[string]any, key string) {
+		value, isGiven := container[key]
+		if !isGiven {
+			return
+		}
+		if address, isString := value.(string); isString && address != "" {
+			places = append(places, placeOf(address))
+		} else {
+			places = append(places, placeUnreadable)
+		}
+	}
+	for _, name := range []string{"request", "response", "redirectResponse"} {
+		if container, isObject := params[name].(map[string]any); isObject {
+			add(container, "url")
+		}
+	}
+	add(params, "url")
+	return places
+}
+
+// noteRequestEvent learns from one event of the tab's network: a request is
+// known from its creation, which is the first request event of an id (not a
+// redirect, which has the same id and a new address) or a WebSocket created,
+// and every later event of it adds the places it names.
+func noteRequestEvent(session *tools.RequestSession, method string, params map[string]any) {
+	requestID, _ := params["requestId"].(string)
+	if requestID == "" {
+		return
+	}
+	places := requestPlaces(params)
+	_, isRedirect := params["redirectResponse"]
+	isCreation := (method == "Network.requestWillBeSent" && !isRedirect) || method == "Network.webSocketCreated"
+	for _, place := range places {
+		if isCreation {
+			session.Create(requestID, place)
+		} else {
+			session.Add(requestID, place)
+		}
+	}
+}
+
+// isRequestShown says the agent may be shown a request: its creation was
+// seen, and none of its events named the server, an extension or an address
+// that cannot be read.
+func isRequestShown(places []string, isKnown bool, ownHosts map[string]bool) bool {
+	if !isKnown || len(ownHosts) == 0 {
+		return false
+	}
+	for _, place := range places {
+		if isHiddenPlace(place, ownHosts) {
+			return false
+		}
+	}
+	return true
+}
+
+// requestBodyRefusal says why the body of a request is not read for the
+// agent, or "" when it is: only a request that cdp_events has shown.
+func requestBodyRefusal(tab tools.Tab, method string, params map[string]any, ownHosts map[string]bool) string {
+	if method != "Network.getResponseBody" && method != "Network.getRequestPostData" {
+		return ""
+	}
+	requestID, _ := params["requestId"].(string)
+	places, isKnown := tab.WatchedRequests().PlacesOf(requestID)
+	if requestID == "" || !isRequestShown(places, isKnown, ownHosts) {
+		return fmt.Sprintf("%s is only answered for a request that cdp_events has shown; a request to TeaNode itself, or one cdp_events has not shown, is not read", method)
+	}
+	return ""
+}
+
+// showForeignRequests is what the agent is shown of the tab's events. The
+// panel is a frame of the server's origin, and a frame of the same site is
+// in the tab's process, so its requests, with the Authorization header that
+// signs the person in, are among the page's. What a page asks other sites
+// for is what the agent watches the network for, and is shown.
+//
+// A network event is shown only when the ledger saw its request created,
+// with an address that is not the server's: ids are learned from the
+// creation events in every answer before any event is judged, and an event
+// of a request never seen created, however it got that way, is dropped.
+// The extension keeps few events, and a page that makes many pushes a
+// connection's first events out of them while its later ones, which can
+// carry the header, go on arriving.
+//
+// The answer is the whole window the extension kept: which events and how
+// many are chosen here, after the judgment, so that a request is learned
+// when the extension first has it rather than when the agent happens to ask
+// for the part of the window it is in.
+func showForeignRequests(ledger *tools.RequestLedger, answer json.RawMessage, ownHosts map[string]bool, methodPrefix string, limit int) (json.RawMessage, error) {
 	var decoded map[string]json.RawMessage
-	if json.Unmarshal(answer, &decoded) != nil {
-		return answer
+	if err := json.Unmarshal(answer, &decoded); err != nil {
+		return nil, fmt.Errorf("the network events the browser sent could not be read, so none are shown: %w", err)
 	}
+	// An answer with no events shows none.
 	var events []map[string]any
-	if json.Unmarshal(decoded["events"], &events) != nil {
-		return answer
+	if encoded, isGiven := decoded["events"]; isGiven {
+		if err := json.Unmarshal(encoded, &events); err != nil {
+			return nil, fmt.Errorf("the network events the browser sent could not be read, so none are shown: %w", err)
+		}
 	}
-	isOwnAddress := func(value any) bool {
-		address, _ := value.(string)
-		return address != "" && isOwnPage(address, ownHosts)
+	var sessionKey string
+	_ = json.Unmarshal(decoded["session"], &sessionKey)
+	if limit <= 0 {
+		limit = 100
 	}
-	hidden := map[string]bool{}
-	for _, event := range events {
-		params, _ := event["params"].(map[string]any)
-		request, _ := params["request"].(map[string]any)
-		response, _ := params["response"].(map[string]any)
-		if isOwnAddress(request["url"]) || isOwnAddress(response["url"]) || isOwnAddress(params["url"]) {
-			if requestID, _ := params["requestId"].(string); requestID != "" {
-				hidden[requestID] = true
+	var kept []map[string]any
+	ledger.With(sessionKey, func(session *tools.RequestSession) {
+		for _, event := range events {
+			method, _ := event["method"].(string)
+			params, _ := event["params"].(map[string]any)
+			if strings.HasPrefix(method, "Network.") {
+				noteRequestEvent(session, method, params)
 			}
 		}
-	}
-	kept := make([]map[string]any, 0, len(events))
-	for _, event := range events {
-		params, _ := event["params"].(map[string]any)
-		if requestID, _ := params["requestId"].(string); hidden[requestID] {
-			continue
+		for _, event := range events {
+			method, isString := event["method"].(string)
+			if !isString {
+				continue
+			}
+			if strings.HasPrefix(method, "Network.") {
+				params, _ := event["params"].(map[string]any)
+				requestID, _ := params["requestId"].(string)
+				places, isKnown := session.Places(requestID)
+				if requestID == "" || !isRequestShown(places, isKnown, ownHosts) {
+					continue
+				}
+			}
+			if strings.HasPrefix(method, methodPrefix) {
+				kept = append(kept, event)
+			}
 		}
-		kept = append(kept, event)
+	})
+	if len(kept) > limit {
+		kept = kept[len(kept)-limit:]
 	}
-	keptEvents, err := json.Marshal(kept)
+	if kept == nil {
+		kept = []map[string]any{}
+	}
+	shown, err := json.Marshal(kept)
 	if err != nil {
-		return answer
+		return nil, fmt.Errorf("the network events the browser sent could not be read, so none are shown: %w", err)
 	}
-	decoded["events"] = keptEvents
+	decoded["events"] = shown
 	filtered, err := json.Marshal(decoded)
 	if err != nil {
-		return answer
+		return nil, fmt.Errorf("the network events the browser sent could not be read, so none are shown: %w", err)
 	}
-	return filtered
+	return filtered, nil
 }
