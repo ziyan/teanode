@@ -78,6 +78,19 @@ type AskSettings struct {
 	// Surface is where the answer goes: drawer, phone, cli, api or mail.
 	Surface string
 
+	// IsPersonsTap says the request that started the turn was the person's
+	// own tap on a screen: the dashboard's session or the phone app's token
+	// (access.Principal.IsPersonsTap). The surface a client names is only a
+	// claim, so a turn counts as typed by the person (IsStartedByPerson) only
+	// when this is set; a command line token, an app password, OAuth, the
+	// extension's token and a program that speaks MCP never set it.
+	IsPersonsTap bool
+
+	// IsOperatorActingAsPerson says an operator, not the person, made the
+	// request: signed in as the person, or speaking into the person's
+	// conversation with agent:act. Such a turn is never the person's own.
+	IsOperatorActingAsPerson bool
+
 	// IsPersonsSchedule says a turn of the schedule surface was woken by a
 	// schedule the person wrote, not one the agent wrote for itself and not a
 	// built-in one (the daily brief), which reads content the person did not
@@ -779,12 +792,16 @@ func (self *AskRun) Surface() string                      { return self.settings
 func (self *AskRun) Headless() bool                       { return self.settings.Headless }
 
 // IsStartedByPerson says the person started this run: they typed or spoke the
-// turn, or a schedule they wrote themselves woke it (tools.PersonStarting). A
-// subagent is its parent's. Anything else is not: a turn woken by an inbound
-// mail, a chat app, a goal, a dream, a command left running, a program that
-// speaks MCP, a built-in schedule or a schedule the agent wrote for itself is
-// steered by content the person did not write, and a surface this does not
-// know is taken not to be theirs.
+// turn with their own tap on a screen (the dashboard or the phone app, whatever
+// surface name the request carried), a schedule they wrote themselves woke it,
+// or it carries on a card from such a run (tools.PersonStarting). A subagent is
+// its parent's. Anything else is not: a turn woken by an inbound mail, a chat
+// app, a goal, a dream, a command left running, a program that speaks MCP, a
+// built-in schedule or a schedule the agent wrote for itself is steered by
+// content the person did not write; a request made with the command line's
+// token, an app password, OAuth, the extension's token or by an operator acting
+// as the person is not their tap whatever surface it names; and a surface this
+// does not know is taken not to be theirs.
 func (self *AskRun) IsStartedByPerson() bool {
 	if parent := self.settings.confirmVia; parent != nil {
 		return parent.IsStartedByPerson()
@@ -796,7 +813,13 @@ func (self *AskRun) IsStartedByPerson() bool {
 	case "schedule", "mail":
 		return self.settings.IsPersonsSchedule
 	case "drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api":
-		if self.settings.IsAnswerToCard && !self.settings.IsCardRaisedByPerson {
+		if self.settings.IsAnswerToCard {
+			// The answer to a card is the person's tap, but it starts nothing
+			// of its own: the turn is theirs only if the one that raised the
+			// card was (the card keeps that).
+			return self.settings.IsCardRaisedByPerson && !self.settings.Headless && !models.IsOwnTurn(self.settings.Message)
+		}
+		if !self.settings.IsPersonsTap || self.settings.IsOperatorActingAsPerson {
 			return false
 		}
 		return !self.settings.Headless && !models.IsOwnTurn(self.settings.Message)

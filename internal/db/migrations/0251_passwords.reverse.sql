@@ -4,6 +4,7 @@ DROP TABLE "password_agent_key";
 DROP TABLE "password_share_key";
 DROP TABLE "password_share";
 DROP TABLE "password_item_version";
+DROP FUNCTION "password_item_version_count_bytes"();
 DROP TABLE "password_item";
 DROP SEQUENCE "password_item_revision";
 DROP TABLE "password_setup";

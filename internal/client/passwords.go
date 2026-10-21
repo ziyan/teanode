@@ -36,7 +36,8 @@ type PasswordsUnlockView struct {
 // empty when they have not set Passwords up; HasKey says a key sealed for the
 // item and their current public key is already stored. HasTooMuchShared says
 // the person already has the most the server lets others share with them (64
-// MiB of sealed text in all, 8 MiB from one owner, 20,000 items), so no key is stored for them for this item.
+// MiB of sealed text and 20,000 items in all, 8 MiB and 5,000 items from one
+// owner), so no key is stored for them for this item.
 type PasswordRecipientView struct {
 	UserID           string `json:"userId"`
 	Name             string `json:"name"`
@@ -82,6 +83,21 @@ type PasswordItemView struct {
 	Shares            []*PasswordShareView `json:"shares"`
 }
 
+// PasswordItemVersionView is one earlier version of an item the caller owns, as
+// the server kept it. VersionID names it for RestorePasswordItemVersion. SavedAt
+// is when a later save replaced it. EncryptedFields and ItemKey are the sealed
+// text the item had then (the fields sealed by the item key, and the item key
+// sealed by the account key); IsSavedByPerson says the person's own tap saved
+// that content and not a program holding a token.
+type PasswordItemVersionView struct {
+	VersionID       string    `json:"versionId"`
+	SavedAt         time.Time `json:"savedAt"`
+	IsSavedByPerson bool      `json:"isSavedByPerson"`
+	EncryptedFields string    `json:"encryptedFields"`
+	ItemKey         string    `json:"itemKey"`
+	ItemKind        string    `json:"itemKind"`
+}
+
 // PasswordItemListView is the items that changed since a revision, and the id
 // of every item the person can reach now.
 type PasswordItemListView struct {
@@ -92,9 +108,10 @@ type PasswordItemListView struct {
 }
 
 // PasswordWaitingShareView is a recipient of one of the caller's items who has
-// set Passwords up but has no key for the item yet. The server lists at most
-// 2000, the newest items first, and sets HasMoreWaiting on every entry when
-// more wait.
+// set Passwords up but has no key for the item yet, and who can be given one: a
+// person who has too much shared with them is left out. The server lists at
+// most 2000, the newest items first, and sets HasMoreWaiting on every entry
+// when more wait.
 type PasswordWaitingShareView struct {
 	ItemID         string                 `json:"itemId"`
 	Recipient      *PasswordRecipientView `json:"recipient"`
@@ -269,6 +286,10 @@ const (
 
 	DocumentReadPasswordsAgentKey = `query { ReadPasswordsAgentKey }`
 
+	DocumentListPasswordItemVersions = `query ($itemId: String!) {
+  ListPasswordItemVersions(itemId: $itemId) { versionId savedAt isSavedByPerson encryptedFields itemKey itemKind }
+}`
+
 	DocumentSavePasswordItem = `mutation ($input: PasswordItemInput!) {
   SavePasswordItem(input: $input) { ` + passwordItemFields + ` }
 }`
@@ -279,6 +300,10 @@ const (
 
 	DocumentRestorePasswordItem = `mutation ($id: String!) {
   RestorePasswordItem(id: $id) { ` + passwordItemFields + ` }
+}`
+
+	DocumentRestorePasswordItemVersion = `mutation ($itemId: String!, $versionId: String!, $baseRevision: Int64!) {
+  RestorePasswordItemVersion(itemId: $itemId, versionId: $versionId, baseRevision: $baseRevision) { ` + passwordItemFields + ` }
 }`
 
 	DocumentPurgePasswordItem = `mutation ($id: String!) {
@@ -508,6 +533,37 @@ func RestorePasswordItem(ctx context.Context, connection *Client, itemID string)
 		return nil, err
 	}
 	return result.RestorePasswordItem, nil
+}
+
+// ListPasswordItemVersions are the earlier versions the server kept of an item
+// the caller owns, newest first. Only the person's own tap may ask (see
+// IsTapRequired), since it hands out sealed content.
+func ListPasswordItemVersions(ctx context.Context, connection *Client, itemID string) ([]*PasswordItemVersionView, error) {
+	var result struct {
+		ListPasswordItemVersions []*PasswordItemVersionView `json:"ListPasswordItemVersions"`
+	}
+	if err := connection.Execute(ctx, DocumentListPasswordItemVersions, map[string]any{"itemId": itemID}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListPasswordItemVersions, nil
+}
+
+// RestorePasswordItemVersion makes one earlier version of an item (versionID
+// from ListPasswordItemVersions) the item's own. The server keeps the content it
+// replaces as a version, drops the keys it gave other people and the agent,
+// marks the item as needing a new key and gives it the next revision, and the
+// device then gives it a new key. baseRevision is the revision the device read:
+// another is refused as changed on another device. Only the person's own tap
+// may do it (see IsTapRequired).
+func RestorePasswordItemVersion(ctx context.Context, connection *Client, itemID, versionID string, baseRevision int64) (*PasswordItemView, error) {
+	var result struct {
+		RestorePasswordItemVersion *PasswordItemView `json:"RestorePasswordItemVersion"`
+	}
+	variables := map[string]any{"itemId": itemID, "versionId": versionID, "baseRevision": baseRevision}
+	if err := connection.Execute(ctx, DocumentRestorePasswordItemVersion, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.RestorePasswordItemVersion, nil
 }
 
 // PurgePasswordItem removes a deleted item at once, with its old versions,

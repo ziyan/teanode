@@ -45,7 +45,8 @@ const PasswordItemDeletedDays = 30
 
 // Earlier versions of an item are kept so that a save that overwrote an item
 // with a mistake, or with garbage from a program that holds a token, can be
-// undone by an operator from the database. A save keeps the version it
+// undone by the person (ListPasswordItemVersions, RestorePasswordItemVersion).
+// A save keeps the version it
 // replaces only when the item has no kept version younger than
 // PasswordItemVersionSpacing, so that a burst of saves keeps the content from
 // before the burst and not the burst itself. Versions are kept
@@ -83,6 +84,14 @@ const PasswordItemsMost = 20000
 // refused for it, so the person always makes room.
 const PasswordRowsMost = 40000
 
+// PasswordRowsForProgramsMost is how many items, deleted ones included, one
+// person may have before a save that is not the person's own tap stops making
+// new ones. The last PasswordRowsMost minus this many places are the person's:
+// without it a token could save and delete its way to PasswordRowsMost and
+// leave the person's own tap unable to add an item until they deleted
+// something forever.
+const PasswordRowsForProgramsMost = 36000
+
 // PasswordSharePairsMost is how many pairs of an item and a person it reaches
 // one owner's items may have together. The owner's list names every person
 // each share reaches, about 300 bytes of JSON for each pair, so this bounds
@@ -108,6 +117,13 @@ const PasswordsSharedBytesMost = 64 << 20
 // shared by anybody else would not reach them. A key that would take a
 // recipient past it is not stored, as for PasswordsSharedBytesMost.
 const PasswordsSharedBytesFromOneOwnerMost = 8 << 20
+
+// PasswordsSharedItemsFromOneOwnerMost is how many items one owner may have
+// shared with one person. Without it one member could push the whole of
+// PasswordsSharedItemsMost tiny items at another person and every item shared
+// by anybody else would not reach them. A key past it is not stored, as for
+// PasswordsSharedBytesMost.
+const PasswordsSharedItemsFromOneOwnerMost = 5000
 
 // PasswordsSharedItemsMost is how many items other people may have shared
 // with one person together. The list names each of them in one answer, so
@@ -266,10 +282,29 @@ type PasswordRecipient struct {
 	HasKey bool `json:"hasKey"`
 
 	// HasTooMuchShared is whether storing a key for this item would take the
-	// recipient past PasswordsSharedBytesMost, or what one owner may share
-	// with them (PasswordsSharedBytesFromOneOwnerMost), or
-	// PasswordsSharedItemsMost, so that none is stored for them. Only for a recipient without a key, where an item is in question.
+	// recipient past PasswordsSharedBytesMost or PasswordsSharedItemsMost, or
+	// what one owner may share with them (PasswordsSharedBytesFromOneOwnerMost
+	// and PasswordsSharedItemsFromOneOwnerMost), so that none is stored for
+	// them. Only for a recipient without a key, where an item is in question.
 	HasTooMuchShared bool `json:"hasTooMuchShared"`
+}
+
+// PasswordItemVersion is an earlier version of an item: the sealed fields and
+// the item key (sealed by the account key) the item had before a later save
+// replaced them. Revision names it among the item's versions; it is the
+// revision the item had then.
+type PasswordItemVersion struct {
+	ItemID              string
+	Revision            int64
+	ItemKind            PasswordItemKind
+	EncryptedFields     string
+	ItemKeyByAccountKey string
+
+	// IsSavedByPerson says the person's own tap saved this content.
+	IsSavedByPerson bool
+
+	// ReplacedAt is when a later save replaced it.
+	ReplacedAt time.Time
 }
 
 // PasswordShareGrantee names who an item is shared with in a change of its

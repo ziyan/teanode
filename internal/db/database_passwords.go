@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -53,6 +54,11 @@ var (
 	// over models.PasswordSharePairsMost pairs of an item and a person it
 	// reaches.
 	ErrPasswordSharesFull = errors.New("db: the owner's items reach too many people")
+
+	// ErrPasswordsBusy is a change that waited longer than
+	// passwordsLockTimeout for the locks every change of Passwords takes, because
+	// others were holding them. Nothing was changed; trying again is fine.
+	ErrPasswordsBusy = errors.New("db: Passwords is busy")
 
 	// ErrPasswordTapRequired is a change that only the person's own tap may
 	// make (adding a grantee to an item, making a device stay unlocked for
@@ -117,7 +123,9 @@ type PasswordsOperation interface {
 	// when baseRevision is not the stored revision, ErrNotFound for somebody
 	// else's item or a deleted one, ErrInvalidArguments for a change of kind,
 	// ErrLimitReached beyond PasswordItemsMost items that are not deleted or
-	// PasswordRowsMost items counting deleted ones (for a new item),
+	// PasswordRowsMost items counting deleted ones (for a new item; a save that
+	// is not the person's tap stops at PasswordRowsForProgramsMost, so that the
+	// last places are the person's),
 	// ErrPasswordRecipientFull when the item is shared and a person it holds a
 	// key for would pass the shared allowance, ErrPasswordsFull when the
 	// items that are not deleted would pass models.PasswordsBytesMost, and, for
@@ -164,6 +172,26 @@ type PasswordsOperation interface {
 	// not deleted over models.PasswordsBytesMost, ErrLimitReached when the
 	// person already has models.PasswordItemsMost items that are not deleted.
 	RestorePasswordItem(ownerUserId, itemId string, isByPerson bool) (*models.PasswordItem, error)
+
+	// ListPasswordItemVersions are the earlier versions the server kept of the
+	// owner's item, newest first, deleted item too. ErrNotFound for somebody
+	// else's item. What it answers is sealed content, so the API lets only the
+	// person's tap ask.
+	ListPasswordItemVersions(ownerUserId, itemId string) ([]*models.PasswordItemVersion, error)
+
+	// RestorePasswordItemVersion makes the fields and the item key of one of
+	// the item's kept versions (named by the revision the item had then) the
+	// item's own. The content it replaces is kept as a version too, whatever
+	// the spacing rule of saves says (unless the kept allowance has no room for
+	// it, which a tap does not stop). Every key stored for a recipient and the
+	// agent's copy are deleted (they were sealed under the key now replaced, and
+	// the agent's use ends), the item is marked NeedsNewKey, and it gets the next
+	// revision. It is
+	// ErrPasswordTapRequired unless isByPerson says the call is the person's own
+	// tap, ErrPasswordRevisionStale when baseRevision is not the item's revision,
+	// ErrNotFound for somebody else's item, a deleted one, or a version that is
+	// not kept, and ErrPasswordsFull as for a save.
+	RestorePasswordItemVersion(ownerUserId, itemId string, versionRevision, baseRevision int64, isByPerson bool) (*models.PasswordItem, error)
 
 	// PurgePasswordItem removes the owner's deleted item at once, with its
 	// versions, shares and keys, which frees its kept bytes. ErrNotFound for
@@ -492,14 +520,46 @@ var passwordRevisionLockKey = func() int64 {
 	return int64(binary.BigEndian.Uint64(digest[:8]) & math.MaxInt64)
 }()
 
+// passwordsLockTimeout is how long a change of Passwords waits for the locks
+// all of them take (the circle membership lock and the revision lock) before it
+// gives up with ErrPasswordsBusy. Every change holds them until it commits, so
+// without a limit a document of slow changes would make every other waiter, the
+// person's own taps among them, pile up behind it for as long as it takes.
+const passwordsLockTimeout = 5 * time.Second
+
+// setPasswordsLockTimeout limits how long the rest of the transaction waits for
+// any lock, advisory or row, to passwordsLockTimeout.
+func setPasswordsLockTimeout(tx *gorm.DB) error {
+	return tx.Exec(`SELECT set_config('lock_timeout', ?, true)`, fmt.Sprintf("%dms", passwordsLockTimeout.Milliseconds())).Error
+}
+
+// passwordsBusyError turns the error of a lock wait that timed out (SQLSTATE
+// 55P03, lock_not_available) into ErrPasswordsBusy, and leaves any other error
+// as it is.
+func passwordsBusyError(err error) error {
+	var failure *pgconn.PgError
+	if errors.As(err, &failure) && failure.Code == "55P03" {
+		return ErrPasswordsBusy
+	}
+	return err
+}
+
 // lockPasswordRevisions takes the lock above for the rest of the transaction.
 // The order of locks is the circle membership lock, then this, then rows. A
 // change of Passwords takes both through lockPasswordsForWrite, so that a
 // request which makes several changes takes them in that one order every time;
 // code already holding the circle membership lock (a circle change) calls this
-// directly.
+// directly. It waits at most passwordsLockTimeout.
 func lockPasswordRevisions(tx *gorm.DB) error {
-	return tx.Exec(`SELECT pg_advisory_xact_lock(?)`, passwordRevisionLockKey).Error
+	if err := setPasswordsLockTimeout(tx); err != nil {
+		return err
+	}
+	return takePasswordRevisionLock(tx)
+}
+
+// takePasswordRevisionLock waits for the lock under the timeout already set.
+func takePasswordRevisionLock(tx *gorm.DB) error {
+	return passwordsBusyError(tx.Exec(`SELECT pg_advisory_xact_lock(?)`, passwordRevisionLockKey).Error)
 }
 
 // lockPasswordsForWrite takes the locks every change of Passwords needs, in
@@ -507,12 +567,17 @@ func lockPasswordRevisions(tx *gorm.DB) error {
 // is taken even by a change that reads no membership, because a request can
 // make a save and then a share: were the first to take only the revision
 // lock, a circle change holding the membership lock and waiting for the
-// revision lock would wait for a request that waits for it.
+// revision lock would wait for a request that waits for it. Neither lock nor
+// any row lock after them is waited for longer than passwordsLockTimeout: a
+// change that cannot get them is ErrPasswordsBusy and nothing is changed.
 func lockPasswordsForWrite(tx *gorm.DB) error {
-	if err := lockCircleMembership(tx); err != nil {
+	if err := setPasswordsLockTimeout(tx); err != nil {
 		return err
 	}
-	return lockPasswordRevisions(tx)
+	if err := passwordsBusyError(lockCircleMembership(tx)); err != nil {
+		return err
+	}
+	return takePasswordRevisionLock(tx)
 }
 
 func nextPasswordRevision(tx *gorm.DB) (int64, error) {
@@ -806,15 +871,16 @@ type passwordsUsage struct {
 	KeptBytes int64 `gorm:"column:kept_bytes"`
 }
 
+// passwordsUsage sums the person's items in one pass over the index on their
+// items (password_item_owner_usage): the sealed text of each item is in
+// item_bytes and that of its kept versions in versions_bytes, both kept by the
+// database, so no item or version is read. It is asked while the global locks
+// are held, which is why it must not grow with the number of versions.
 func (self *transaction) passwordsUsage(ownerUserId string) (*passwordsUsage, error) {
 	var usage passwordsUsage
 	if err := self.tx.Raw(`SELECT
-		COALESCE(SUM(CASE WHEN item.deleted_at IS NULL THEN octet_length(item.encrypted_fields) + octet_length(item.item_key_by_account_key) +
-			COALESCE(octet_length(item.item_key_by_agent_key), 0) ELSE 0 END), 0) AS live_bytes,
-		COALESCE(SUM(CASE WHEN item.deleted_at IS NOT NULL THEN octet_length(item.encrypted_fields) + octet_length(item.item_key_by_account_key) +
-			COALESCE(octet_length(item.item_key_by_agent_key), 0) ELSE 0 END), 0) +
-		COALESCE((SELECT SUM(octet_length(version.encrypted_fields) + octet_length(version.item_key_by_account_key))
-			FROM "password_item_version" version JOIN "password_item" owned ON owned.id = version.item_id WHERE owned.owner_user_id = @owner), 0) AS kept_bytes
+		COALESCE(SUM(CASE WHEN item.deleted_at IS NULL THEN item.item_bytes ELSE 0 END), 0) AS live_bytes,
+		COALESCE(SUM(CASE WHEN item.deleted_at IS NOT NULL THEN item.item_bytes ELSE 0 END), 0) + COALESCE(SUM(item.versions_bytes), 0) AS kept_bytes
 		FROM "password_item" item WHERE item.owner_user_id = @owner`, sql.Named("owner", ownerUserId)).Scan(&usage).Error; err != nil {
 		return nil, err
 	}
@@ -977,18 +1043,25 @@ func (self *transaction) SavePasswordItem(item *models.PasswordItem, baseRevisio
 		if baseRevision != nil {
 			return nil, ErrPasswordRevisionStale
 		}
-		var itemCount, rowCount int64
-		if err := self.tx.Model(&passwordItemModel{}).Where("\"owner_user_id\" = ? AND \"deleted_at\" IS NULL", item.OwnerUserID).Count(&itemCount).Error; err != nil {
+		var counts struct {
+			ItemCount int64 `gorm:"column:item_count"`
+			RowCount  int64 `gorm:"column:row_count"`
+		}
+		if err := self.tx.Raw(`SELECT count(*) FILTER (WHERE deleted_at IS NULL) AS item_count, count(*) AS row_count
+			FROM "password_item" WHERE owner_user_id = ?`, item.OwnerUserID).Scan(&counts).Error; err != nil {
 			return nil, err
 		}
+		itemCount, rowCount := counts.ItemCount, counts.RowCount
 		if itemCount >= models.PasswordItemsMost {
 			return nil, fmt.Errorf("%w: a person keeps at most %d items", ErrLimitReached, models.PasswordItemsMost)
 		}
-		if err := self.tx.Model(&passwordItemModel{}).Where("\"owner_user_id\" = ?", item.OwnerUserID).Count(&rowCount).Error; err != nil {
-			return nil, err
-		}
 		if rowCount >= models.PasswordRowsMost {
 			return nil, fmt.Errorf("%w: a person keeps at most %d items, deleted ones included: delete some forever to make room", ErrLimitReached, models.PasswordRowsMost)
+		}
+		// The last places are the person's own: a token that saves and deletes
+		// stops short of them, so that the person can always add an item.
+		if !item.IsSavedByPerson && rowCount >= models.PasswordRowsForProgramsMost {
+			return nil, fmt.Errorf("%w: a program may make items only while a person has fewer than %d, deleted ones included: delete some forever to make room", ErrLimitReached, models.PasswordRowsForProgramsMost)
 		}
 		row := &passwordItemModel{
 			ID: item.ID, OwnerUserID: item.OwnerUserID, ItemKind: string(item.ItemKind),
@@ -1207,6 +1280,97 @@ func (self *transaction) PurgePasswordItem(ownerUserId, itemId string) error {
 	})
 }
 
+func (self *transaction) ListPasswordItemVersions(ownerUserId, itemId string) ([]*models.PasswordItemVersion, error) {
+	row, err := self.loadOwnedPasswordItem(ownerUserId, itemId, false)
+	if err != nil {
+		return nil, err
+	}
+	var rows []passwordItemVersionModel
+	if err := self.tx.Where("\"item_id\" = ?", row.ID).Order("\"replaced_at\" DESC, \"revision\" DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	versions := make([]*models.PasswordItemVersion, 0, len(rows))
+	for index := range rows {
+		versions = append(versions, &models.PasswordItemVersion{
+			ItemID: row.ID, Revision: rows[index].Revision, ItemKind: models.PasswordItemKind(row.ItemKind),
+			EncryptedFields: rows[index].EncryptedFields, ItemKeyByAccountKey: rows[index].ItemKeyByAccountKey,
+			IsSavedByPerson: rows[index].IsSavedByPerson, ReplacedAt: rows[index].ReplacedAt.In(time.Local),
+		})
+	}
+	return versions, nil
+}
+
+func (self *transaction) RestorePasswordItemVersion(ownerUserId, itemId string, versionRevision, baseRevision int64, isByPerson bool) (*models.PasswordItem, error) {
+	// The restored key may be one that people since removed from the item still
+	// hold, and the old fields may name more people than the item is shared with
+	// now: only the person decides that.
+	if !isByPerson {
+		return nil, ErrPasswordTapRequired
+	}
+	if err := lockPasswordsForWrite(self.tx); err != nil {
+		return nil, err
+	}
+	row, err := self.loadOwnedPasswordItem(ownerUserId, itemId, true)
+	if err != nil {
+		return nil, err
+	}
+	if row.DeletedAt != nil {
+		return nil, ErrNotFound
+	}
+	if baseRevision != row.Revision {
+		return nil, ErrPasswordRevisionStale
+	}
+	var chosenRows []passwordItemVersionModel
+	if err := self.tx.Where("\"item_id\" = ? AND \"revision\" = ?", row.ID, versionRevision).Limit(1).Find(&chosenRows).Error; err != nil {
+		return nil, err
+	}
+	if len(chosenRows) == 0 {
+		return nil, ErrNotFound
+	}
+	chosen := chosenRows[0]
+	now := time.Now()
+	before := auditedPasswordItem("version_restored", row)
+	replaced := passwordItemVersionModel{
+		ItemID: row.ID, Revision: row.Revision, EncryptedFields: row.EncryptedFields,
+		ItemKeyByAccountKey: row.ItemKeyByAccountKey, IsSavedByPerson: row.IsSavedByPerson, ReplacedAt: now,
+	}
+	// What the restore replaces is always kept, whatever else was kept within the
+	// hour: it is the person's deliberate act, and they may want to go back to
+	// what they had before (the spacing rule is for saves that need no tap).
+	oldBytes := passwordItemBytes(row)
+	row.EncryptedFields, row.ItemKeyByAccountKey, row.UpdatedAt = chosen.EncryptedFields, chosen.ItemKeyByAccountKey, now
+	// The agent's copy was sealed from the key being replaced, so the agent's
+	// use ends; the person turns it on again once the item has its new key.
+	row.IsSavedByPerson, row.NeedsNewKey = true, true
+	row.IsUsableByAgent, row.ItemKeyByAgentKey = false, nil
+	isKept, err := self.requirePasswordsRoom(ownerUserId, passwordsRoomChange{
+		OldBytes: oldBytes, NewBytes: passwordItemBytes(row), VersionBytes: passwordItemVersionBytes(&replaced),
+		IsVersionWanted: true, IsByPerson: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	revision, err := nextPasswordRevision(self.tx)
+	if err != nil {
+		return nil, err
+	}
+	row.Revision = revision
+	if err := self.applyMutation(models.AuditResourcePasswordItem, row.ID, models.AuditActionUpdate, before, auditedPasswordItem("version_restored", row), func(tx *gorm.DB) error {
+		if err := keepPasswordItemVersion(tx, &replaced, isKept); err != nil {
+			return err
+		}
+		if err := tx.Save(row).Error; err != nil {
+			return err
+		}
+		// Every key stored for a recipient was sealed from the key that is no
+		// longer the item's; the recipients wait for the re-key that follows.
+		return tx.Where("\"item_id\" = ?", row.ID).Delete(&passwordShareKeyModel{}).Error
+	}); err != nil {
+		return nil, err
+	}
+	return self.GetPasswordItem(ownerUserId, row.ID)
+}
+
 // passwordReachSQL is the table of who the shares of items reach now: one row
 // for each share and each person it gives the chance of a key. A share to a
 // person reaches them only while they and the owner still share a circle, a
@@ -1303,19 +1467,26 @@ type passwordRecipientFacts struct {
 // sealed text of every item they hold a key for and the key itself, the number
 // of those items, and the part of the sealed text that each owner's items hold.
 type passwordSharedUsage struct {
-	Bytes          int64
-	ItemCount      int64
-	BytesByOwnerID map[string]int64
+	Bytes              int64
+	ItemCount          int64
+	BytesByOwnerID     map[string]int64
+	ItemCountByOwnerID map[string]int64
+}
+
+// newPasswordSharedUsage is the usage of a person with nothing shared with them.
+func newPasswordSharedUsage() *passwordSharedUsage {
+	return &passwordSharedUsage{BytesByOwnerID: map[string]int64{}, ItemCountByOwnerID: map[string]int64{}}
 }
 
 // hasRoomFor says whether one more item of this many bytes from this owner
-// stays within the three bounds: models.PasswordsSharedBytesMost,
-// models.PasswordsSharedBytesFromOneOwnerMost and
-// models.PasswordsSharedItemsMost.
+// stays within the five bounds: models.PasswordsSharedBytesMost,
+// models.PasswordsSharedBytesFromOneOwnerMost, models.PasswordsSharedItemsMost
+// and models.PasswordsSharedItemsFromOneOwnerMost.
 func (self *passwordSharedUsage) hasRoomFor(ownerUserId string, bytes int64) bool {
 	return self.Bytes+bytes <= models.PasswordsSharedBytesMost &&
 		self.BytesByOwnerID[ownerUserId]+bytes <= models.PasswordsSharedBytesFromOneOwnerMost &&
-		self.ItemCount+1 <= models.PasswordsSharedItemsMost
+		self.ItemCount+1 <= models.PasswordsSharedItemsMost &&
+		self.ItemCountByOwnerID[ownerUserId]+1 <= models.PasswordsSharedItemsFromOneOwnerMost
 }
 
 // add counts one more item of this many bytes from this owner.
@@ -1323,6 +1494,7 @@ func (self *passwordSharedUsage) add(ownerUserId string, bytes int64) {
 	self.Bytes += bytes
 	self.ItemCount++
 	self.BytesByOwnerID[ownerUserId] += bytes
+	self.ItemCountByOwnerID[ownerUserId]++
 }
 
 // passwordSharedUsages are, for each of these people, what the items shared
@@ -1333,7 +1505,7 @@ func (self *transaction) passwordSharedUsages(userIds []string) (map[string]*pas
 	usages := map[string]*passwordSharedUsage{}
 	userIds = uniqueStrings(userIds)
 	for _, userId := range userIds {
-		usages[userId] = &passwordSharedUsage{BytesByOwnerID: map[string]int64{}}
+		usages[userId] = newPasswordSharedUsage()
 	}
 	if len(userIds) == 0 {
 		return usages, nil
@@ -1356,6 +1528,7 @@ func (self *transaction) passwordSharedUsages(userIds []string) (map[string]*pas
 		usage.Bytes += row.Bytes
 		usage.ItemCount += row.ItemCount
 		usage.BytesByOwnerID[row.OwnerUserID] += row.Bytes
+		usage.ItemCountByOwnerID[row.OwnerUserID] += row.ItemCount
 	}
 	return usages, nil
 }
@@ -1528,8 +1701,11 @@ func (self *transaction) ListPasswordItems(viewerUserId string, sinceRevision in
 	if viewerUserId == "" {
 		return list, nil
 	}
-	if err := self.tx.Exec(`SELECT pg_advisory_xact_lock_shared(?)`, passwordRevisionLockKey).Error; err != nil {
+	if err := setPasswordsLockTimeout(self.tx); err != nil {
 		return nil, err
+	}
+	if err := self.tx.Exec(`SELECT pg_advisory_xact_lock_shared(?)`, passwordRevisionLockKey).Error; err != nil {
+		return nil, passwordsBusyError(err)
 	}
 	var ownedRows []passwordItemModel
 	if err := self.tx.Where("\"owner_user_id\" = ? AND \"revision\" > ?", viewerUserId, sinceRevision).
@@ -2036,9 +2212,14 @@ func (self *transaction) writePasswordShareKeys(itemId string, keys []*models.Pa
 			conflict = clause.OnConflict{
 				Columns:   []clause.Column{{Name: "item_id"}, {Name: "recipient_user_id"}},
 				DoUpdates: clause.AssignmentColumns([]string{"item_key_by_recipient_key", "recipient_public_key", "is_stored_by_person", "created_at"}),
+				// A replacement is never longer than the row it replaces. The
+				// bounds on what is shared with a person count the row as it
+				// was stored, and a longer key would take the person past them
+				// without being counted.
 				Where: clause.Where{Exprs: []clause.Expression{clause.Expr{
-					SQL:  `NOT "password_share_key"."is_stored_by_person" OR "password_share_key"."recipient_public_key" <> ?`,
-					Vars: []any{key.RecipientPublicKey},
+					SQL: `(NOT "password_share_key"."is_stored_by_person" OR "password_share_key"."recipient_public_key" <> ?)
+						AND octet_length(CAST(? AS text)) <= octet_length("password_share_key"."item_key_by_recipient_key")`,
+					Vars: []any{key.RecipientPublicKey, key.ItemKeyByRecipientKey},
 				}}},
 			}
 		}
@@ -2055,9 +2236,11 @@ func (self *transaction) writePasswordShareKeys(itemId string, keys []*models.Pa
 // which recipients still have room for it: the items shared with a person
 // from all owners stay within models.PasswordsSharedBytesMost bytes and
 // models.PasswordsSharedItemsMost items, and those from one owner within
-// models.PasswordsSharedBytesFromOneOwnerMost bytes.
+// models.PasswordsSharedBytesFromOneOwnerMost bytes and
+// models.PasswordsSharedItemsFromOneOwnerMost items.
 // A key for a recipient who already holds one for this item is always let
-// through (it replaces a row of the same size), and the keys of a call count
+// through (writePasswordShareKeys replaces the row only with a key no longer
+// than it, so it adds nothing to what is counted), and the keys of a call count
 // against the recipient in the order they are given. The function it answers
 // says whether a key is to be stored; one that is not is skipped, and the
 // recipient is reported as having too much shared with them
@@ -2222,57 +2405,92 @@ func (self *transaction) addPasswordShareKeys(ownerUserId string, keys []*models
 	return stored, nil
 }
 
+// passwordWaitingBatchesMost is how many batches of candidate pairs
+// ListWaitingPasswordShares reads while it looks for pairs that can be given a
+// key. Pairs of recipients who have too much shared with them are passed over,
+// and without a limit an owner whose items all reach such a person would make
+// the list read every pair they have.
+const passwordWaitingBatchesMost = 10
+
 func (self *transaction) ListWaitingPasswordShares(ownerUserId string) ([]*models.PasswordWaitingShare, error) {
 	// The pairs of an item and a recipient with no key for their current
-	// public key, the newest items first, one more than the most answered so
-	// that a longer list is known to be one.
-	var waitingRows []struct {
-		ItemID          string `gorm:"column:item_id"`
-		RecipientUserID string `gorm:"column:recipient_user_id"`
+	// public key, the newest items first, leaving out recipients who have too
+	// much shared with them (a key for them would not be stored, so listing
+	// them would only make a device try again on every pass). Read in batches
+	// of one more than the most answered, so that a longer list is known to be
+	// one.
+	type waitingPair struct {
+		itemId, userId string
+		recipient      *models.PasswordRecipient
 	}
-	if err := self.tx.Raw(`SELECT DISTINCT reach.item_id AS item_id, reach.recipient_user_id AS recipient_user_id,
-		waiting_item.created_at AS item_created_at
-		FROM `+passwordReachSQL(false)+`
-		JOIN "password_item" waiting_item ON waiting_item.id = reach.item_id
-		JOIN "password_setup" recipient_setup ON recipient_setup.user_id = reach.recipient_user_id
-		LEFT JOIN "password_share_key" share_key ON share_key.item_id = reach.item_id AND share_key.recipient_user_id = reach.recipient_user_id
-		  AND share_key.recipient_public_key = recipient_setup.public_key
-		WHERE reach.owner_user_id = @owner AND share_key.item_id IS NULL
-		ORDER BY waiting_item.created_at DESC, reach.item_id DESC, reach.recipient_user_id ASC
-		LIMIT @limit`, sql.Named("owner", ownerUserId), sql.Named("limit", models.PasswordWaitingSharesMost+1), passwordsPermissionArgument()).
-		Scan(&waitingRows).Error; err != nil {
-		return nil, err
-	}
-	hasMoreWaiting := len(waitingRows) > models.PasswordWaitingSharesMost
-	if hasMoreWaiting {
-		waitingRows = waitingRows[:models.PasswordWaitingSharesMost]
+	pairs := []*waitingPair{}
+	hasMoreWaiting := false
+	for batch := 0; batch < passwordWaitingBatchesMost && !hasMoreWaiting; batch++ {
+		var waitingRows []struct {
+			ItemID          string `gorm:"column:item_id"`
+			RecipientUserID string `gorm:"column:recipient_user_id"`
+		}
+		if err := self.tx.Raw(`SELECT DISTINCT reach.item_id AS item_id, reach.recipient_user_id AS recipient_user_id,
+			waiting_item.created_at AS item_created_at
+			FROM `+passwordReachSQL(false)+`
+			JOIN "password_item" waiting_item ON waiting_item.id = reach.item_id
+			JOIN "password_setup" recipient_setup ON recipient_setup.user_id = reach.recipient_user_id
+			LEFT JOIN "password_share_key" share_key ON share_key.item_id = reach.item_id AND share_key.recipient_user_id = reach.recipient_user_id
+			  AND share_key.recipient_public_key = recipient_setup.public_key
+			WHERE reach.owner_user_id = @owner AND share_key.item_id IS NULL
+			ORDER BY waiting_item.created_at DESC, reach.item_id DESC, reach.recipient_user_id ASC
+			LIMIT @limit OFFSET @offset`, sql.Named("owner", ownerUserId), sql.Named("limit", models.PasswordWaitingSharesMost+1),
+			sql.Named("offset", batch*(models.PasswordWaitingSharesMost+1)), passwordsPermissionArgument()).
+			Scan(&waitingRows).Error; err != nil {
+			return nil, err
+		}
+		if len(waitingRows) == 0 {
+			break
+		}
+		itemIds, userIds := []string{}, []string{}
+		for _, row := range waitingRows {
+			itemIds = append(itemIds, row.ItemID)
+			userIds = append(userIds, row.RecipientUserID)
+		}
+		facts, err := self.loadPasswordRecipientFacts(userIds, itemIds)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range waitingRows {
+			recipient := facts.recipient(row.RecipientUserID, row.ItemID)
+			if recipient == nil || recipient.PublicKey == "" || recipient.HasKey || recipient.HasTooMuchShared {
+				continue
+			}
+			// The keys listed in this batch count against the recipient in the
+			// order given, as they will when they are stored.
+			facts.sharedUsages[row.RecipientUserID].add(facts.itemOwnerIds[row.ItemID], facts.itemBytes[row.ItemID])
+			if len(pairs) == models.PasswordWaitingSharesMost {
+				hasMoreWaiting = true
+				break
+			}
+			pairs = append(pairs, &waitingPair{itemId: row.ItemID, userId: row.RecipientUserID, recipient: recipient})
+		}
+		if len(waitingRows) <= models.PasswordWaitingSharesMost {
+			break
+		}
+		// A full batch and no batch left to read: more may wait.
+		if batch == passwordWaitingBatchesMost-1 {
+			hasMoreWaiting = true
+		}
 	}
 	waiting := []*models.PasswordWaitingShare{}
-	if len(waitingRows) == 0 {
-		return waiting, nil
-	}
-	itemIds, userIds := []string{}, []string{}
+	// Entries of one item are together, those of the newest item first, with
+	// the recipients of an item in the order the listing of recipients has.
 	itemOrder := []string{}
-	recipientsByItem := map[string][]string{}
-	for _, row := range waitingRows {
-		if recipientsByItem[row.ItemID] == nil {
-			itemOrder = append(itemOrder, row.ItemID)
+	recipientsByItem := map[string][]*models.PasswordRecipient{}
+	for _, pair := range pairs {
+		if recipientsByItem[pair.itemId] == nil {
+			itemOrder = append(itemOrder, pair.itemId)
 		}
-		recipientsByItem[row.ItemID] = append(recipientsByItem[row.ItemID], row.RecipientUserID)
-		itemIds = append(itemIds, row.ItemID)
-		userIds = append(userIds, row.RecipientUserID)
-	}
-	facts, err := self.loadPasswordRecipientFacts(userIds, itemIds)
-	if err != nil {
-		return nil, err
+		recipientsByItem[pair.itemId] = append(recipientsByItem[pair.itemId], pair.recipient)
 	}
 	for _, itemId := range itemOrder {
-		recipients := []*models.PasswordRecipient{}
-		for _, userId := range recipientsByItem[itemId] {
-			if recipient := facts.recipient(userId, itemId); recipient != nil && recipient.PublicKey != "" && !recipient.HasKey {
-				recipients = append(recipients, recipient)
-			}
-		}
+		recipients := recipientsByItem[itemId]
 		sortedPasswordRecipients(recipients)
 		for _, recipient := range recipients {
 			waiting = append(waiting, &models.PasswordWaitingShare{ItemID: itemId, Recipient: recipient, HasMoreWaiting: hasMoreWaiting})
@@ -2528,13 +2746,24 @@ func (self *transaction) CreatePasswordAgentKey(key *models.PasswordAgentKey) (*
 }
 
 func (self *database) ScavengePasswordItems(before time.Time) (int64, error) {
-	result := self.db.Where("\"deleted_at\" IS NOT NULL AND \"deleted_at\" < ?", before).Delete(&passwordItemModel{})
-	if result.Error != nil {
-		return result.RowsAffected, result.Error
-	}
-	// The versions that saves replaced are kept as long as a deleted item is.
-	versions := self.db.Where("\"replaced_at\" < ?", before).Delete(&passwordItemVersionModel{})
-	return result.RowsAffected, versions.Error
+	var deletedCount int64
+	err := self.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("\"deleted_at\" IS NOT NULL AND \"deleted_at\" < ?", before).Delete(&passwordItemModel{})
+		if result.Error != nil {
+			return result.Error
+		}
+		deletedCount = result.RowsAffected
+		// The versions that saves replaced are kept as long as a deleted item is.
+		// Removing a version updates its item's versions_bytes (a trigger), so
+		// the items are locked first, in the order a save takes its locks (the
+		// item, then its versions); otherwise the sweep and a save of the same
+		// item could each wait for the other.
+		if err := tx.Exec(`SELECT 1 FROM "password_item" WHERE "id" IN (SELECT "item_id" FROM "password_item_version" WHERE "replaced_at" < ?) ORDER BY "id" FOR UPDATE`, before).Error; err != nil {
+			return err
+		}
+		return tx.Where("\"replaced_at\" < ?", before).Delete(&passwordItemVersionModel{}).Error
+	})
+	return deletedCount, err
 }
 
 // endPasswordSharesOutsideCircles deletes the shares of Passwords that only a

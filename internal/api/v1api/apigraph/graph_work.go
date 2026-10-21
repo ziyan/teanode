@@ -33,7 +33,7 @@ func checkGraphWork(schema *graphql.Schema, document *ast.Document, operation *a
 		}
 	}
 	workCount := 0
-	passwordListingCount := 0
+	var passwordCounts passwordsDocumentCounts
 	var walkSelections func(*ast.SelectionSet, graphql.Type, int) error
 	walkSelections = func(selections *ast.SelectionSet, parentType graphql.Type, multiplier int) error {
 		if selections == nil {
@@ -42,15 +42,10 @@ func checkGraphWork(schema *graphql.Schema, document *ast.Document, operation *a
 		for _, selection := range selections.Selections {
 			switch selected := selection.(type) {
 			case *ast.Field:
-				// A list of Passwords answers everything the person holds
-				// and is not paged, so the work count above does not see
-				// it. Naming it many times under aliases would multiply the
-				// memory of one list.
-				if parentType == graphql.Type(schema.QueryType()) && selected.Name.Value == "ListPasswordItems" {
-					passwordListingCount++
-					if passwordListingCount > 1 {
-						return fmt.Errorf("GraphQL operation may list Passwords items only once")
-					}
+				// Passwords operations are not paged work, so the work count
+				// below does not see them (see passwordsDocumentCounts).
+				if err := passwordCounts.count(schema, parentType, selected.Name.Value); err != nil {
+					return err
 				}
 				field := graphFieldDefinition(parentType, selected.Name.Value)
 				pageSize, err := graphPageSize(field, selected, variables, limits.MaximumListItemCount)

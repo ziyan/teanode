@@ -215,8 +215,16 @@ What stands between an item and a page:
   asked again when the item is opened (`ListAgentUsablePasswordItems` returns
   nothing for an owner who lost it or whose account is disabled). They work only
   in a run the person started (`tools.IsStartedByPerson`): a turn they typed or
-  spoke, or a schedule they wrote themselves, which is what a scheduled sign-in
-  uses. A run that content started is refused: an inbound mail (research), a chat
+  spoke **with their own tap** (a dashboard session or the iPhone app's token,
+  `Principal.IsPersonsTap`, never the surface name the client sends), or a
+  schedule they wrote themselves, which is what a scheduled sign-in uses. The
+  server carries into the run whether the request was a tap and whether an
+  operator made it as the person (`AskSettings.IsPersonsTap` and
+  `IsOperatorActingAsPerson`). A command line token, an app password, OAuth, the
+  extension's token, a program that speaks MCP and any operator acting as the
+  person start no such run, whatever surface they name: a token that says
+  `drawer` still cannot list or read anything, and the refusal says "Ask in the
+  TeaNode app or on the dashboard". A run that content started is refused too: an inbound mail (research), a chat
   app, a webhook, a goal, a dream, a command left running, a restart resumed, a
   program that speaks MCP (another program, not the person), a schedule the
   agent wrote for itself, one of the built-in schedules (the daily brief and the
@@ -567,7 +575,12 @@ the person's own action on the dashboard or in the iPhone app
 grant are not taps.
 
 - **Size.** An item's sealed fields are at most 512 KB, and a sealed share key or
-  agent copy is exactly the size of a sealed 32-byte item key. A person has at
+  agent copy is exactly the size of a sealed 32-byte item key, written the one way
+  every client writes it (no white space, the fields in the order `version`,
+  `ephemeralPublicKey`, `nonce`, `ciphertext`, 232 bytes, at most 400): a padded
+  or reordered key is refused, and a key replaces a stored row only if it is no
+  longer than the row, so a replacement cannot take a person past the bounds
+  below without being counted. A person has at
   most 20,000 items that are not deleted and two byte allowances, checked apart:
   - Items that are not deleted hold at most 64 MiB of sealed text (the fields and
     the keys). That is the only limit that stops a save, by whomever it comes
@@ -591,16 +604,23 @@ grant are not taps.
 - **What sharing can add.** An owner's items reach at most 50,000 item and
   recipient pairs; a share that would go past it is refused with "Your items are
   shared with too many people", and a change that does not add pairs is always
-  allowed. What others share with one person is at most 64 MiB of sealed text,
-  of which at most 8 MiB may come from any one owner, so one member of a circle
-  cannot use up another's room. A key that would push a recipient past either
-  bound is not stored for them: the recipient comes back with `hasTooMuchShared`
-  and the owner's devices show "<name> has too much shared with them" and skip
-  them when they complete waiting shares, instead of trying on every pass. An
+  allowed. What others share with one person is at most 64 MiB of sealed text
+  and 20,000 items, of which at most 8 MiB and 5,000 items may come from any one
+  owner, so one member of a circle cannot use up another's room, with a few large
+  items or with many tiny ones. A key that would push a recipient past any of
+  those bounds is not stored for them: the recipient comes back with
+  `hasTooMuchShared`, the owner's devices show "<name> has too much shared with
+  them", and the waiting list leaves them out (a device completing waiting shares
+  does not try for them on every pass). An
   item that grows (a save that makes its sealed text larger) is refused when a
   person it is shared with would go past those bounds; a change that does not
   make it larger is always allowed. A list answers the oldest keys first up to
   the bound. `share --waiting` prints the number of keys the server stored.
+- **The most rows.** A person has at most 40,000 items counting deleted ones, so
+  a program that saves and deletes cannot make a first read grow without bound.
+  A save that is not a tap stops making new items at 36,000, so the last 4,000
+  places are the person's: a token cannot take them all and leave the dashboard
+  unable to add an item.
 - **One list at a time.** A list answers every item at once, so the server lets
   one `ListPasswordItems` or `ListWaitingPasswordShares` run for a person at a
   time, with one place for the person's taps and another for every other
@@ -619,8 +639,22 @@ grant are not taps.
   replaces when that version was saved by a tap, up to 20 of them for an item, so
   the person's newest edit is not lost to a token within the hour. Versions are
   kept 30 days, at most 60 of the others for an item; when there are more, the one
-  just before the newest goes, so the oldest within 30 days stays. Nothing in the
-  API reads them: an operator puts one back from the database.
+  just before the newest goes, so the oldest within 30 days stays. The person
+  reads them and puts one back with their tap (`ListPasswordItemVersions` and
+  `RestorePasswordItemVersion`, neither open to a token or an operator): the
+  version's fields and item key become the item's, what they replace is kept as
+  a version whatever the hour rule says, the keys given to other people and the
+  agent's copy are dropped, the item is marked `needsNewKey` and the device gives
+  it a new key at once from the restored fields. The date a version shows is when
+  a later save replaced it.
+- **Locks and one document.** Every change of Passwords holds the circle
+  membership lock and the revision lock until its request commits. A document may
+  name at most 25 Passwords mutations (it is refused whole, before any runs), a
+  change waits at most 5 seconds for the locks and is then told "Passwords is
+  busy with other changes. Try again in a moment." with nothing changed, and
+  how much a person holds is summed from two numbers the database keeps for each
+  item (`item_bytes`, `versions_bytes`) so that the sum does not read their
+  versions while the locks are held.
 - **Writes.** A person may make 5,000 writes to Passwords in a row (save, re-key,
   delete, purge, restore, share, share keys, "Let the agent use this") and gets
   5,000 an hour back, so that importing a few thousand items fits and one person
@@ -646,6 +680,14 @@ grant are not taps.
   re-key. "Who may have an item" above says what the devices do about it.
 
 ### Limits, plainly
+
+- **The dashboard is code the server delivers.** A server operator who changes
+  the dashboard's code could capture a passphrase typed there, and with it
+  everything the person opens on that page. The iPhone app, the command line and
+  the Chrome extension do not load their code from the server, so they do not
+  have this weakness. A person who does not trust the operator of their server
+  with that should open Passwords only in the iPhone app, the command line or
+  the extension.
 
 - **Changing the passphrase or the recovery key does not change the account
   key.** Each only seals the same account key again. Anyone who holds an older

@@ -381,18 +381,20 @@ func TestWhatOthersShareWithAPersonIsBounded(test *testing.T) {
 	}
 
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
-		// Cora is told who has too much shared with them: the three newest
-		// items wait, with a flag, and the newest come first.
+		// Cora's three newest items show that ben has too much shared with
+		// him, and the waiting list leaves him out: no key would be stored for
+		// him, so her device is not sent to try again on every pass.
 		waiting, err := tx.ListWaitingPasswordShares(world.cora.ID)
-		if err != nil || len(waiting) != 3 {
+		if err != nil || len(waiting) != 0 {
 			test.Fatalf("cora's waiting list: %d entries, %v", len(waiting), err)
 		}
-		for index, entry := range waiting {
-			if !entry.Recipient.HasTooMuchShared || entry.Recipient.UserID != world.ben.ID || entry.HasMoreWaiting {
-				test.Fatalf("waiting entry %d: %+v %+v", index, entry, entry.Recipient)
+		for index := 0; index < 3; index++ {
+			item, err := tx.GetPasswordItem(world.cora.ID, coraItems[len(coraItems)-1-index].ID)
+			if err != nil {
+				test.Fatal(err)
 			}
-			if want := coraItems[len(coraItems)-1-index].ID; entry.ItemID != want {
-				test.Fatalf("waiting entry %d is for %s, the newest first would be %s", index, entry.ItemID, want)
+			if recipient := item.Shares[0].Recipients[0]; recipient.HasKey || !recipient.HasTooMuchShared {
+				test.Fatalf("cora's item %d: %+v", index, recipient)
 			}
 		}
 		// Ben's list holds the 67 and stays within the bound.

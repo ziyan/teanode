@@ -395,7 +395,8 @@ func TestADocumentThatSavesThenSharesDoesNotDeadlockWithLeavingACircle(test *tes
 	world.setUp(test, ada)
 	world.setUp(test, ben)
 	existing := world.save(test, ada, "login")["id"].(string)
-	const count = 150
+	// As many saves as a document may hold beside the share.
+	const count = passwordsMutationsPerDocumentMost - 1
 	var declarations, body strings.Builder
 	variables := map[string]any{}
 	for index := 0; index < count; index++ {
@@ -409,7 +410,7 @@ func TestADocumentThatSavesThenSharesDoesNotDeadlockWithLeavingACircle(test *tes
 
 	done := make(chan []string, 1)
 	go func() {
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 		_, failures := world.callWithCredential(test, world.ben, models.CredentialSession, fmt.Sprintf(`mutation { LeaveCircle(circleId: %q) }`, world.home), nil)
 		done <- failures
 	}()

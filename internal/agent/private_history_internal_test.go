@@ -83,7 +83,7 @@ func TestACompactionInsideAPrivateTurnStillHidesTheAnswer(t *testing.T) {
 	}
 
 	// The person's own run reads all of it, and the words after the turn stay.
-	person := &AskRun{settings: &AskSettings{Surface: "drawer", Message: "and now"}}
+	person := &AskRun{settings: &AskSettings{Surface: "drawer", Message: "and now", IsPersonsTap: true}}
 	if !person.IsStartedByPerson() {
 		t.Fatal("a drawer turn is the person's")
 	}

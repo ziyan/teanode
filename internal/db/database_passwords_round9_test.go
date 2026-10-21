@@ -129,7 +129,7 @@ func TestANewItemIsRefusedAtTheMostRowsAndDeletingForeverMakesRoom(test *testing
 	}
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		for number := 1; number <= 2; number++ {
-			if err := save(tx, number, number == 1); err != nil {
+			if err := save(tx, number, true); err != nil {
 				test.Fatalf("save %d below the limit: %s", number, err)
 			}
 		}

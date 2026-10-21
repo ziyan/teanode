@@ -492,7 +492,7 @@ func TestARunThatContentStartedUsesNothing(test *testing.T) {
 		run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: surface, isHeadless: true, isStartedByOthers: true}
 		for _, action := range []string{"list", "read_note"} {
 			content, _ := mustAct(test, run, action, fmt.Sprintf(`{"item_id":%q}`, found.grantedNote))
-			if !strings.Contains(content, "not in a run that a mail, a message, a webhook, a goal, a dream or any other content started") {
+			if !strings.Contains(content, "Ask in the TeaNode app or on the dashboard") {
 				test.Errorf("%q, %s: %s", surface, action, content)
 			}
 			if strings.Contains(content, "padlock") || strings.Contains(content, "Example shop") {

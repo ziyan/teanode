@@ -62,7 +62,7 @@ func TestOnlyARunThePersonStartedIsSentAPrivateTurn(t *testing.T) {
 		if isPersons {
 			message = "and what did the note say again?"
 		}
-		turn, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: message, Surface: surface})
+		turn, err := worker.Ask(&agent.AskSettings{Agent: found, Owner: owner, Operations: operations, Conversation: conversation, Message: message, Surface: surface, IsPersonsTap: isPersons})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -7,12 +7,12 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// Passwords is used only in a turn the person started: they typed or spoke it,
-// or a schedule they wrote themselves woke it. Anything else, and anything
-// this does not know, is not theirs.
+// Passwords is used only in a turn the person started: they typed or spoke it
+// with their own tap on a screen, or a schedule they wrote themselves woke it.
+// Anything else, and anything this does not know, is not theirs.
 func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 	person := func(surface string) *AskRun {
-		return &AskRun{settings: &AskSettings{Surface: surface, Message: "sign in to my shop"}}
+		return &AskRun{settings: &AskSettings{Surface: surface, Message: "sign in to my shop", IsPersonsTap: true}}
 	}
 	for _, surface := range []string{"drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api"} {
 		if !person(surface).IsStartedByPerson() {
@@ -28,14 +28,35 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 			t.Errorf("a turn on %q is not the person's", surface)
 		}
 	}
+	// A surface a person types into, named by a request that was not their
+	// tap: the command line's token, an app password, OAuth or the
+	// extension's token claims the surface and gets nothing, and neither does
+	// an operator signed in as the person or speaking into their conversation.
+	for _, surface := range []string{"drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api"} {
+		if (&AskRun{settings: &AskSettings{Surface: surface, Message: "sign in to my shop"}}).IsStartedByPerson() {
+			t.Errorf("a turn on %q that was not the person's tap", surface)
+		}
+		if (&AskRun{settings: &AskSettings{Surface: surface, Message: "sign in to my shop", IsPersonsTap: true, IsOperatorActingAsPerson: true}}).IsStartedByPerson() {
+			t.Errorf("a turn on %q that an operator made as the person", surface)
+		}
+	}
+	// The answer to a card is the person's tap, but the turn is theirs only
+	// if the one that raised the card was.
+	if !(&AskRun{settings: &AskSettings{Surface: "drawer", Message: "Work", IsAnswerToCard: true, IsCardRaisedByPerson: true}}).IsStartedByPerson() {
+		t.Error("the answer to a card a tap's turn raised")
+	}
+	if (&AskRun{settings: &AskSettings{Surface: "drawer", Message: "Work", IsAnswerToCard: true, IsPersonsTap: true}}).IsStartedByPerson() {
+		t.Error("the answer to a card a token's turn raised")
+	}
+
 	// A typed surface, but the turn is the agent's own, or nobody is there.
-	if (&AskRun{settings: &AskSettings{Surface: "drawer", Message: models.ScheduleMarker + " the schedule is due"}}).IsStartedByPerson() {
+	if (&AskRun{settings: &AskSettings{Surface: "drawer", IsPersonsTap: true, Message: models.ScheduleMarker + " the schedule is due"}}).IsStartedByPerson() {
 		t.Error("the agent's own turn in the drawer")
 	}
-	if (&AskRun{settings: &AskSettings{Surface: "drawer", Headless: true, Message: "x"}}).IsStartedByPerson() {
+	if (&AskRun{settings: &AskSettings{Surface: "drawer", IsPersonsTap: true, Headless: true, Message: "x"}}).IsStartedByPerson() {
 		t.Error("a headless turn on the drawer")
 	}
-	if (&AskRun{settings: &AskSettings{Surface: "drawer", isUnattended: true, Message: "x"}}).IsStartedByPerson() {
+	if (&AskRun{settings: &AskSettings{Surface: "drawer", IsPersonsTap: true, isUnattended: true, Message: "x"}}).IsStartedByPerson() {
 		t.Error("an unattended turn")
 	}
 
@@ -73,14 +94,14 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 // "cli": the turn it starts is not the person's, so it cannot use Passwords,
 // and the server keeps the surface as given (it is not normalized to "cli").
 func TestACommandTheAgentRanIsNotTheirs(t *testing.T) {
-	run := &AskRun{settings: &AskSettings{Surface: agentCommandSurface, Message: "sign in to my shop"}}
+	run := &AskRun{settings: &AskSettings{Surface: agentCommandSurface, IsPersonsTap: true, Message: "sign in to my shop"}}
 	if run.IsStartedByPerson() {
 		t.Error("a turn started by a command the agent ran counts as the person's")
 	}
 	if agentCommandSurface != "agent_command" {
 		t.Errorf("the surface the command line sends is %q", agentCommandSurface)
 	}
-	if !(&AskRun{settings: &AskSettings{Surface: "cli", Message: "sign in to my shop"}}).IsStartedByPerson() {
+	if !(&AskRun{settings: &AskSettings{Surface: "cli", IsPersonsTap: true, Message: "sign in to my shop"}}).IsStartedByPerson() {
 		t.Error("a turn the person typed at their terminal must stay theirs")
 	}
 	if surfaceOf(agentCommandSurface).situationLine == "" {

@@ -48,7 +48,7 @@ func TestAResumedTurnIsThePersonsOnlyIfTheOneItCarriesOnWas(t *testing.T) {
 				}
 			})
 			operations := &digestSplitOperations{}
-			turn, err := worker.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: "summarize https://hostile.example/page", Surface: test.surface})
+			turn, err := worker.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: "summarize https://hostile.example/page", Surface: test.surface, IsPersonsTap: test.isPersonsRun})
 			if err != nil {
 				t.Fatal(err)
 			}

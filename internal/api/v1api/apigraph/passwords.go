@@ -8,9 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
@@ -60,12 +63,19 @@ type PasswordsQuery interface {
 	// The people the caller's items reach who have set up Passwords and have
 	// no key for an item yet: the caller's device seals those keys and sends
 	// them with AddPasswordShareKeys. At most 2000 entries, the newest items
-	// first; when more wait, every entry has hasMoreWaiting set. A recipient
-	// with hasTooMuchShared set has too much shared with them already, and a
-	// key for them is not stored. Runs in the same place as ListPasswordItems
+	// first; when more wait, every entry has hasMoreWaiting set. A person who
+	// has too much shared with them already is left out (a key for them is not
+	// stored), as the item's own list of recipients shows with hasTooMuchShared. Runs in the same place as ListPasswordItems
 	// (one at a time for each person and kind of sign-in). Needs
 	// passwords:use.
 	ListWaitingPasswordShares(ctx context.Context) ([]*PasswordWaitingShareView, error)
+
+	// The earlier versions the server kept of one of the caller's items, newest
+	// first: the sealed fields and item key as they were, for the device to
+	// open and show, and whether the person's own tap saved them. Only a
+	// person's tap, since it hands out sealed content that a token has no
+	// business reading. Needs passwords:use.
+	ListPasswordItemVersions(ctx context.Context, arguments ListPasswordItemVersionsArguments) ([]*PasswordItemVersionView, error)
 
 	// The public key of the server's own key, in base64 (65 bytes), which a
 	// device seals an item key for when the person lets the agent use that
@@ -129,6 +139,16 @@ type PasswordsMutation interface {
 	// recipients wait for keys again, so only a person's tap does it. Needs
 	// passwords:use.
 	RestorePasswordItem(ctx context.Context, arguments PasswordItemIDArguments) (*PasswordItemView, error)
+
+	// Puts an earlier version of one of the caller's items back (see
+	// ListPasswordItemVersions): its fields and item key become the item's, the
+	// content it replaces is kept as a version, the keys given to other people
+	// and the agent's use are dropped (they were sealed from the key being
+	// replaced), the item is marked needsNewKey and gets the next revision. The
+	// device then gives it a new key at once with RekeyPasswordItem. baseRevision
+	// is the revision the device read; another is refused as changed on another
+	// device. Only a person's tap. Needs passwords:use.
+	RestorePasswordItemVersion(ctx context.Context, arguments RestorePasswordItemVersionArguments) (*PasswordItemView, error)
 
 	// Replaces who an item is shared with, and stores the keys the caller's
 	// device sealed for the recipients. A tap is needed when this adds a
@@ -276,10 +296,31 @@ type PasswordRecipientView struct {
 	HasKey bool `json:"hasKey"`
 
 	// HasTooMuchShared is true when storing a key for this item would take the
-	// person past 64 MiB of sealed text shared with them by everybody, so none
-	// is stored. Only for a person without a key, where an item is in
-	// question.
+	// person past what others may share with them (64 MiB of sealed text and
+	// 20,000 items in all, 8 MiB and 5,000 items from any one owner), so none is
+	// stored. Only for a person without a key, where an item is in question.
 	HasTooMuchShared bool `json:"hasTooMuchShared"`
+}
+
+// PasswordItemVersionView is one earlier version of an item the caller owns,
+// sealed. VersionID names it among the item's versions for
+// RestorePasswordItemVersion. SavedAt is when a later save replaced it, which
+// is the day it stopped being the item.
+type PasswordItemVersionView struct {
+	VersionID string    `json:"versionId"`
+	SavedAt   time.Time `json:"savedAt"`
+
+	// IsSavedByPerson is true when the person's own tap on a screen saved this
+	// content, false when a program holding a token did.
+	IsSavedByPerson bool `json:"isSavedByPerson"`
+
+	// EncryptedFields and ItemKey are the item's then: the fields sealed by the
+	// item key, and the item key sealed by the account key.
+	EncryptedFields string `json:"encryptedFields"`
+	ItemKey         string `json:"itemKey"`
+
+	// ItemKind is login, card or note, which a version never changes.
+	ItemKind string `json:"itemKind"`
 }
 
 // PasswordItemListView is the answer to a device's question of what changed.
@@ -394,6 +435,20 @@ type PasswordItemIDArguments struct {
 	ID string `json:"id"`
 }
 
+type ListPasswordItemVersionsArguments struct {
+	ItemID string `json:"itemId"`
+}
+
+type RestorePasswordItemVersionArguments struct {
+	ItemID string `json:"itemId"`
+
+	// VersionID is the versionId ListPasswordItemVersions gave.
+	VersionID string `json:"versionId"`
+
+	// BaseRevision is the revision the device read the item at.
+	BaseRevision int64 `json:"baseRevision"`
+}
+
 // PasswordShareGrantee is who an item is shared with: a person or a circle,
 // not both (PasswordShareGranteeInput in the schema).
 type PasswordShareGrantee struct {
@@ -503,6 +558,11 @@ const (
 	// key sealed for a key pair: the 32 bytes and the 16 byte tag.
 	passwordsSealedKeyCiphertextBytes = passwords.KeyLength + 16
 
+	// passwordsSealedKeyMostBytes bounds the text of an item key sealed for a
+	// key pair. Written in its one canonical form it is 232 bytes; this leaves
+	// room and no more.
+	passwordsSealedKeyMostBytes = 400
+
 	passwordShareGranteesMost = 100
 	passwordShareKeysMost     = 1000
 
@@ -524,7 +584,7 @@ var passwordWritesBurst int64 = 5000
 
 // passwordsOnATap is what a call is told when only a person's own tap may make
 // it. It begins with api.TapRequiredPhrase, which the command line recognizes.
-const passwordsOnATap = api.TapRequiredPhrase + ": setting up, erasing and changing the secrets of Passwords, sharing an item with someone new, letting the agent use an item, and making a device stay unlocked for longer are done on the Passwords page of the dashboard or in the iPhone app, not from a command line or an API token"
+const passwordsOnATap = api.TapRequiredPhrase + ": setting up, erasing and changing the secrets of Passwords, sharing an item with someone new, letting the agent use an item, reading or putting back an earlier version of an item, and making a device stay unlocked for longer are done on the Passwords page of the dashboard or in the iPhone app, not from a command line or an API token"
 
 // The sentences a person is told, which the clients show as they are.
 const (
@@ -537,6 +597,7 @@ const (
 	passwordsKeptFullSentence         = "Passwords is keeping too many deleted items and old versions: a person empties Recently deleted on the Passwords page."
 	passwordsTooManyWritesSentence    = "Too many changes to Passwords in a short time. Try again in a few minutes."
 	passwordsListRunningSentence      = "Passwords is already being read for you. Try again in a moment."
+	passwordsBusySentence             = "Passwords is busy with other changes. Try again in a moment."
 	passwordsSharesFullSentence       = "Your items are shared with too many people. Share fewer items, or with fewer people."
 	passwordsAlreadySetUpSentence     = "Passwords is already set up."
 	passwordsNotSetUpSentence         = "Passwords is not set up yet."
@@ -584,12 +645,24 @@ func passwordsFailure(err error) error {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err.Error())
 	case errors.Is(err, db.ErrPasswordSharesFull):
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsSharesFullSentence)
+	case errors.Is(err, db.ErrPasswordsBusy), isLockTimeout(err):
+		return fmt.Errorf("%w: %s", api.ErrTooManyRequests, passwordsBusySentence)
 	case errors.Is(err, db.ErrPasswordTapRequired):
 		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, passwordsOnATap)
 	case errors.Is(err, db.ErrAlreadyExists):
 		return fmt.Errorf("%w: %s", api.ErrAlreadyExists, passwordsAlreadySetUpSentence)
 	}
 	return locationFailure(err)
+}
+
+// isLockTimeout says the database gave up waiting for a lock (SQLSTATE 55P03,
+// lock_not_available), which every change of Passwords does after
+// passwordsLockTimeout in the db package. The locks it takes first are mapped to
+// db.ErrPasswordsBusy there; a row lock taken after them can time out the same
+// way, and is the same answer.
+func isLockTimeout(err error) bool {
+	var failure *pgconn.PgError
+	return errors.As(err, &failure) && failure.Code == "55P03"
 }
 
 // passwordsLimiters are the limits on one person's use of Passwords, kept in
@@ -705,16 +778,20 @@ func isSealedText(text string, mostBytes int) bool {
 // key pair (a recipient's, or the server's agent key) and nothing else: the
 // shape of any value sealed for a key pair (version 1, a 12 byte nonce, an
 // ephemeral public key of 65 bytes starting with 04) with a ciphertext of
-// exactly the sealed size of a 32 byte key, the 32 bytes and the 16 byte tag.
-// The server cannot open it, so this is what stops a program holding a token
-// from storing kilobytes of garbage as a "key" that every recipient's list
-// then carries.
+// exactly the sealed size of a 32 byte key, the 32 bytes and the 16 byte tag,
+// written the one way every client writes it: no white space, the fields in
+// the order version, ephemeralPublicKey, nonce, ciphertext, at most
+// passwordsSealedKeyMostBytes. The server cannot open it, so this is what
+// stops a program holding a token from storing kilobytes of garbage as a "key"
+// that every recipient's list then carries, and from padding a key with white
+// space so that it is longer than the row it replaces and the bounds on what
+// is shared with a person no longer hold.
 func isSealedKeyForKeyPairText(text string) bool {
-	if len(text) > passwordsKeyMostBytes {
+	if len(text) > passwordsSealedKeyMostBytes {
 		return false
 	}
 	sealed, err := passwords.ParseSealedForKeyPair(text)
-	return err == nil && len(sealed.Ciphertext) == passwordsSealedKeyCiphertextBytes
+	return err == nil && len(sealed.Ciphertext) == passwordsSealedKeyCiphertextBytes && sealed.String() == text
 }
 
 // isProofHashText reports whether a value is base64 of a SHA-256 hash.
@@ -1241,6 +1318,65 @@ func (self *graph) RestorePasswordItem(ctx context.Context, arguments PasswordIt
 	// Its old shares reach their recipients again: decided in the database as
 	// adding a grantee is, from the person's tap.
 	restored, err := self.transaction(ctx).RestorePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID), principal.IsPersonsTap())
+	if err != nil {
+		return nil, passwordsFailure(err)
+	}
+	return describePasswordItem(restored), nil
+}
+
+func (self *graph) ListPasswordItemVersions(ctx context.Context, arguments ListPasswordItemVersionsArguments) ([]*PasswordItemVersionView, error) {
+	principal, err := self.requirePasswordsPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Sealed content of every earlier save, which only the person's own tap
+	// has a use for.
+	if err := requirePasswordsTap(principal); err != nil {
+		return nil, err
+	}
+	versions, err := self.transaction(ctx).ListPasswordItemVersions(principal.User.ID, strings.TrimSpace(arguments.ItemID))
+	if err != nil {
+		return nil, passwordsFailure(err)
+	}
+	views := make([]*PasswordItemVersionView, 0, len(versions))
+	for _, version := range versions {
+		views = append(views, &PasswordItemVersionView{
+			VersionID: strconv.FormatInt(version.Revision, 10), SavedAt: version.ReplacedAt, IsSavedByPerson: version.IsSavedByPerson,
+			EncryptedFields: version.EncryptedFields, ItemKey: version.ItemKeyByAccountKey, ItemKind: string(version.ItemKind),
+		})
+	}
+	return views, nil
+}
+
+func (self *graph) RestorePasswordItemVersion(ctx context.Context, arguments RestorePasswordItemVersionArguments) (*PasswordItemView, error) {
+	principal, err := self.requirePasswordsPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// The restored key may be one that people since removed from the item still
+	// hold: the person's own tap, which the device then follows with a new key.
+	if err := requirePasswordsTap(principal); err != nil {
+		return nil, err
+	}
+	if err := self.takePasswordsWrite(principal, 1); err != nil {
+		return nil, err
+	}
+	itemId := strings.TrimSpace(arguments.ItemID)
+	if !passwordItemIdPattern.MatchString(itemId) {
+		return nil, passwordsInvalid("itemId is the lower case UUID of the item")
+	}
+	versionRevision, err := strconv.ParseInt(strings.TrimSpace(arguments.VersionID), 10, 64)
+	if err != nil || versionRevision < 1 {
+		return nil, passwordsInvalid("versionId is one that ListPasswordItemVersions gave")
+	}
+	if arguments.BaseRevision < 1 {
+		return nil, passwordsInvalid("baseRevision is the revision the device read")
+	}
+	tx := self.transaction(ctx)
+	if _, err := requirePasswordsSetUp(tx, principal.User.ID); err != nil {
+		return nil, err
+	}
+	restored, err := tx.RestorePasswordItemVersion(principal.User.ID, itemId, versionRevision, arguments.BaseRevision, principal.IsPersonsTap())
 	if err != nil {
 		return nil, passwordsFailure(err)
 	}

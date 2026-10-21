@@ -57,6 +57,13 @@ CREATE SEQUENCE "password_item_revision";
 -- person's own tap on a screen, not by a command line token or another
 -- program that holds one. It decides which replaced versions are kept (see
 -- password_item_version).
+--
+-- item_bytes is the sealed text the item holds (its fields and its keys), and
+-- versions_bytes the sealed text of its kept versions, kept up to date by the
+-- trigger on password_item_version. Every change of Passwords asks how much a
+-- person holds in all while it holds the global locks, and with these two the
+-- answer is one sum over the person's items instead of a read of every item
+-- and every version.
 CREATE TABLE "password_item" (
     "id"                       character varying(36)    NOT NULL PRIMARY KEY
         CHECK ("id" ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
@@ -73,6 +80,9 @@ CREATE TABLE "password_item" (
     "deleted_at"               timestamp with time zone,
     "created_at"               timestamp with time zone NOT NULL,
     "updated_at"               timestamp with time zone NOT NULL,
+    "item_bytes"               bigint GENERATED ALWAYS AS (octet_length("encrypted_fields") + octet_length("item_key_by_account_key")
+        + COALESCE(octet_length("item_key_by_agent_key"), 0)) STORED,
+    "versions_bytes"           bigint                   NOT NULL DEFAULT 0 CHECK ("versions_bytes" >= 0),
     CHECK ("item_key_by_agent_key" IS NULL OR "is_usable_by_agent"),
     CHECK ("is_usable_by_agent" = false OR "item_kind" <> 'card')
 );
@@ -84,12 +94,15 @@ CREATE INDEX "password_item_owner_revision" ON "password_item" ("owner_user_id",
 -- The sweep that removes items deleted 30 days ago reads only the deleted.
 CREATE INDEX "password_item_deleted" ON "password_item" ("deleted_at") WHERE "deleted_at" IS NOT NULL;
 
--- The versions a save replaced, newest 20 for each item, kept 30 days (the
--- hourly sweep removes older ones). A save overwrites the sealed fields, so
--- without this a device that saved a mistake, or a bug that saved the wrong
--- thing, would have destroyed the only copy. The revision is the one the item
--- had before the save. Nothing reads these rows through the API: they are for
--- an operator to put back from the database.
+-- How much sealed text a person holds is summed from this index alone.
+CREATE INDEX "password_item_owner_usage" ON "password_item" ("owner_user_id") INCLUDE ("deleted_at", "item_bytes", "versions_bytes");
+
+-- The versions a save replaced, kept 30 days (the hourly sweep removes older
+-- ones). A save overwrites the sealed fields, so without this a device that
+-- saved a mistake, or a bug that saved the wrong thing, would have destroyed
+-- the only copy. The revision is the one the item had before the save. The
+-- person lists them and puts one back with a tap (ListPasswordItemVersions and
+-- RestorePasswordItemVersion).
 --
 -- is_saved_by_person says the replaced content was saved by the person's own
 -- tap. A save that did not come from a tap always keeps such a version (at
@@ -107,6 +120,24 @@ CREATE TABLE "password_item_version" (
 
 -- The sweep removes the versions replaced more than 30 days ago.
 CREATE INDEX "password_item_version_replaced" ON "password_item_version" ("replaced_at");
+
+-- Keeps password_item.versions_bytes equal to the sealed text of the item's
+-- versions. When an item itself is deleted its versions go with it and there
+-- is no row left to update, which is as it should be.
+CREATE FUNCTION "password_item_version_count_bytes"() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE "password_item" SET "versions_bytes" = "versions_bytes" + octet_length(NEW."encrypted_fields") + octet_length(NEW."item_key_by_account_key")
+            WHERE "id" = NEW."item_id";
+    ELSE
+        UPDATE "password_item" SET "versions_bytes" = "versions_bytes" - octet_length(OLD."encrypted_fields") - octet_length(OLD."item_key_by_account_key")
+            WHERE "id" = OLD."item_id";
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER "password_item_version_bytes" AFTER INSERT OR DELETE ON "password_item_version"
+    FOR EACH ROW EXECUTE FUNCTION "password_item_version_count_bytes"();
 
 -- An item shared with one person, or with every member of one circle. It has
 -- the same shape and the same reach as health_share (sharing with a person

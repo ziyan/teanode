@@ -35,11 +35,13 @@ const noItemsWords = "The person has not let you use any item in Passwords. " + 
 const elsewhereWords = "Passwords is used only in the TeaNode app and on the dashboard, and in the person's own scheduled runs, never in a chat with other people."
 
 // notTheirsWords is the whole answer of an action that reads or uses an item
-// in a run the person did not start: one an inbound mail, a chat app, a
-// webhook, a goal, a dream, a command left running or a schedule the agent
-// wrote for itself began. What such a run does is steered by content the
-// person did not write, and a login is the last thing to hand to that.
-const notTheirsWords = "Passwords is used only in a conversation with the person or in a schedule the person wrote themselves, not in a run that a mail, a message, a webhook, a goal, a dream or any other content started."
+// in a run the person did not start with their own tap: one an inbound mail,
+// a chat app, a webhook, a goal, a dream, a command left running, the command
+// line, an app password, OAuth or an MCP program began, or a schedule the
+// agent wrote for itself. What such a run does is steered by content the
+// person did not write or by a program that holds a token, and a login is the
+// last thing to hand to that. It says where to ask instead.
+const notTheirsWords = "Passwords is used only in a conversation the person starts in the TeaNode app or on the dashboard, or in a schedule the person wrote themselves, not in a run that a mail, a message, a webhook, a goal, a dream, the command line or any other program or content started. Ask in the TeaNode app or on the dashboard."
 
 // agentsScheduleWords is the answer in place of notTheirsWords for a run that
 // a schedule the agent wrote woke. It says what the person can do about it, so

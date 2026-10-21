@@ -59,6 +59,7 @@ func TestListPasswordItemsSendsTheRevisionOnlyWhenGiven(test *testing.T) {
 		"ListPasswordItems": DocumentListPasswordItems, "SavePasswordItem": DocumentSavePasswordItem, "DeletePasswordItem": DocumentDeletePasswordItem,
 		"RestorePasswordItem": DocumentRestorePasswordItem, "SetPasswordItemShares": DocumentSetPasswordItemShares,
 		"SetPasswordItemUsableByAgent": DocumentSetPasswordItemUsableByAgent, "RekeyPasswordItem": DocumentRekeyPasswordItem,
+		"RestorePasswordItemVersion": DocumentRestorePasswordItemVersion,
 	} {
 		if !strings.Contains(document, "ownerPublicKey") {
 			test.Errorf("%s does not ask for ownerPublicKey", name)
@@ -264,5 +265,51 @@ func TestCheckPasswordsSetUpAllowedTellsTheTapFromTheInput(test *testing.T) {
 	answer = `{"data":{"SetUpPasswords":{"isSetUp":true,"lockAfterMinutes":15,"itemCount":0}}}`
 	if err := CheckPasswordsSetUpAllowed(test.Context(), connection); err == nil {
 		test.Error("a server that accepted an empty setup was not reported")
+	}
+}
+
+// The earlier versions of an item are listed by its id, and one is put back by
+// its id, its version and the revision the device read (a 64-bit number sent
+// as such); a refusal for want of a tap reads as one.
+func TestListingAndRestoringAnItemsEarlierVersions(test *testing.T) {
+	connection, variables := passwordsServer(test, `{"ListPasswordItemVersions":[
+		{"versionId":"12","savedAt":"2026-10-20T11:00:00Z","isSavedByPerson":true,"encryptedFields":"{fields}","itemKey":"{key}","itemKind":"login"},
+		{"versionId":"9","savedAt":"2026-10-19T11:00:00Z","isSavedByPerson":false,"encryptedFields":"{older}","itemKey":"{older key}","itemKind":"login"}]}`)
+	versions, err := ListPasswordItemVersions(test.Context(), connection, "item-1")
+	if err != nil || len(versions) != 2 || versions[0].VersionID != "12" || !versions[0].IsSavedByPerson || versions[1].IsSavedByPerson ||
+		versions[0].SavedAt.IsZero() || versions[0].EncryptedFields != "{fields}" || versions[0].ItemKey != "{key}" || versions[0].ItemKind != "login" {
+		test.Fatalf("versions=%+v, %v", versions, err)
+	}
+	if variables()["itemId"] != "item-1" {
+		test.Errorf("variables=%v", variables())
+	}
+
+	restoreConnection, restoreVariables := passwordsServer(test, `{"RestorePasswordItemVersion":{"id":"item-1","itemKind":"login","revision":5000000002,"needsNewKey":true,"shares":[]}}`)
+	restored, err := RestorePasswordItemVersion(test.Context(), restoreConnection, "item-1", "9", 5_000_000_001)
+	if err != nil || restored.Revision != 5_000_000_002 || !restored.NeedsNewKey {
+		test.Fatalf("restored=%+v, %v", restored, err)
+	}
+	sent := restoreVariables()
+	if sent["itemId"] != "item-1" || sent["versionId"] != "9" || sent["baseRevision"] != float64(5_000_000_001) {
+		test.Errorf("variables=%v", sent)
+	}
+	if !strings.Contains(DocumentRestorePasswordItemVersion, "$baseRevision: Int64!") || !strings.Contains(DocumentRestorePasswordItemVersion, "needsNewKey") {
+		test.Error("the restore does not declare baseRevision as Int64 or ask for needsNewKey")
+	}
+
+	tapServer := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"errors":[{"message":"api: permission denied: ` + api.TapRequiredPhrase + `: earlier versions are read on the dashboard"}]}`))
+	}))
+	defer tapServer.Close()
+	tapConnection, err := New(Options{URL: tapServer.URL, Token: "fixture-token"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	if _, err := ListPasswordItemVersions(test.Context(), tapConnection, "item-1"); !IsTapRequired(err) {
+		test.Errorf("a listing refused for want of a tap: %v", err)
+	}
+	if _, err := RestorePasswordItemVersion(test.Context(), tapConnection, "item-1", "9", 3); !IsTapRequired(err) {
+		test.Errorf("a restore refused for want of a tap: %v", err)
 	}
 }

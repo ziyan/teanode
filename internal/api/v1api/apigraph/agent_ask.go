@@ -1092,6 +1092,13 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 		Surface:      surface,
 		DrawerID:     drawerId,
 
+		// The surface is only what the client says. Whether the person
+		// tapped is judged from how the request signed in, and an operator
+		// who speaks into another person's conversation, or is signed in as
+		// them, is never the person (agent.AskRun.IsStartedByPerson).
+		IsPersonsTap:             principal.IsPersonsTap() && other == nil,
+		IsOperatorActingAsPerson: other != nil || principal.IsImpersonation(),
+
 		InterruptedAnswer: arguments.InterruptedAnswer,
 		ReadOnly:          arguments.ReadOnly,
 		Attachments:       attachments,
