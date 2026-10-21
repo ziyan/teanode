@@ -67,9 +67,34 @@ const (
 	PasswordsUnlockRefusedAuditSpacing = 5 * time.Minute
 )
 
-// PasswordItemsMost is how many items one person may keep, deleted ones
-// included.
+// PasswordItemsMost is how many items one person may keep that are not
+// deleted. Deleted items are bounded by PasswordsKeptBytesMost instead, so
+// that a program holding a token cannot use up the places by saving junk
+// that the person then cannot make room from.
 const PasswordItemsMost = 20000
+
+// PasswordSharePairsMost is how many pairs of an item and a person it reaches
+// one owner's items may have together. The owner's list names every person
+// each share reaches, about 300 bytes of JSON for each pair, so this bounds
+// that part of the answer to about 15 MB. A change of shares that would take
+// the owner past it is refused (ErrPasswordSharesFull in the db package); one
+// that does not increase the number is always allowed, so that an owner whose
+// circle grew can narrow.
+const PasswordSharePairsMost = 50000
+
+// PasswordsSharedBytesMost is how many bytes of sealed text, the fields of
+// each item and the key sealed for the person, the items other people shared
+// with one person may hold together, whoever shared them. The person cannot
+// decline a share, so without it a circle of 40 people could each push the
+// 64 MiB their own allowance permits at one member. A key that would take a
+// recipient past it is not stored (the recipient is reported as having too
+// much shared with them), and a listing answers the keys already stored, the
+// oldest first, only up to it.
+const PasswordsSharedBytesMost = 64 << 20
+
+// PasswordWaitingSharesMost is how many entries ListWaitingPasswordShares
+// answers. The newest items come first; when more wait, every entry says so.
+const PasswordWaitingSharesMost = 2000
 
 // PasswordsBytesMost is how many bytes of sealed text (the fields and the
 // sealed keys) one person's items that are not deleted may hold together. It
@@ -216,6 +241,11 @@ type PasswordRecipient struct {
 	// HasKey is whether a key sealed for this item and this public key is
 	// stored. False where no item is in question.
 	HasKey bool `json:"hasKey"`
+
+	// HasTooMuchShared is whether storing a key for this item would take the
+	// recipient past PasswordsSharedBytesMost, so that none is stored for
+	// them. Only for a recipient without a key, where an item is in question.
+	HasTooMuchShared bool `json:"hasTooMuchShared"`
 }
 
 // PasswordShareGrantee names who an item is shared with in a change of its
@@ -258,6 +288,10 @@ type PasswordItemList struct {
 type PasswordWaitingShare struct {
 	ItemID    string             `json:"itemId"`
 	Recipient *PasswordRecipient `json:"recipient"`
+
+	// HasMoreWaiting is set on every entry when more than
+	// PasswordWaitingSharesMost wait and only the newest items are listed.
+	HasMoreWaiting bool `json:"hasMoreWaiting"`
 }
 
 // PasswordAgentKey is the server's key pair for the items a person let the

@@ -77,12 +77,24 @@ func sealedOf(text string) string {
 		base64.StdEncoding.EncodeToString(append([]byte(text), make([]byte, 16)...)) + `"}`
 }
 
-// sealedForKeyPairOf is a value sealed for a key pair, in the shape the server
-// checks: the same, with an ephemeral public key of 65 bytes starting with 04.
+// sealedForKeyPairOf is a key sealed for a key pair, in the shape the server
+// checks: the shape of sealedOf with an ephemeral public key of 65 bytes
+// starting with 04, and a ciphertext of exactly the sealed size of a 32 byte
+// key (the 32 bytes and the 16 byte tag), which is all the server accepts for
+// an item key sealed for a recipient or the agent. The 32 bytes are the hash of
+// the text, so each text makes a different value.
 func sealedForKeyPairOf(text string) string {
+	return sealedForKeyPairOfSize(text, 32)
+}
+
+// sealedForKeyPairOfSize is sealedForKeyPairOf with a plaintext of a chosen
+// number of bytes, for the cases where the size is the point.
+func sealedForKeyPairOfSize(text string, plaintextBytes int) string {
+	digest := sha256.Sum256([]byte(text))
+	plaintext := bytes.Repeat(digest[:], plaintextBytes/len(digest)+1)[:plaintextBytes]
 	ephemeralPublicKey := append([]byte{4}, bytes.Repeat([]byte{9}, 64)...)
 	return `{"version":1,"ephemeralPublicKey":"` + base64.StdEncoding.EncodeToString(ephemeralPublicKey) + `","nonce":"` + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 12)) +
-		`","ciphertext":"` + base64.StdEncoding.EncodeToString(append([]byte(text), make([]byte, 16)...)) + `"}`
+		`","ciphertext":"` + base64.StdEncoding.EncodeToString(append(plaintext, make([]byte, 16)...)) + `"}`
 }
 
 const (

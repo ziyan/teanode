@@ -34,13 +34,16 @@ type PasswordsUnlockView struct {
 
 // PasswordRecipientView is a person an item can be sealed for. PublicKey is
 // empty when they have not set Passwords up; HasKey says a key sealed for the
-// item and their current public key is already stored.
+// item and their current public key is already stored. HasTooMuchShared says
+// the person already has the most the server lets others share with them (64
+// MiB of sealed text), so no key is stored for them for this item.
 type PasswordRecipientView struct {
-	UserID    string `json:"userId"`
-	Name      string `json:"name"`
-	Username  string `json:"username"`
-	PublicKey string `json:"publicKey"`
-	HasKey    bool   `json:"hasKey"`
+	UserID           string `json:"userId"`
+	Name             string `json:"name"`
+	Username         string `json:"username"`
+	PublicKey        string `json:"publicKey"`
+	HasKey           bool   `json:"hasKey"`
+	HasTooMuchShared bool   `json:"hasTooMuchShared"`
 }
 
 // PasswordShareView is one person or circle an item is shared with, and
@@ -89,10 +92,13 @@ type PasswordItemListView struct {
 }
 
 // PasswordWaitingShareView is a recipient of one of the caller's items who has
-// set Passwords up but has no key for the item yet.
+// set Passwords up but has no key for the item yet. The server lists at most
+// 2000, the newest items first, and sets HasMoreWaiting on every entry when
+// more wait.
 type PasswordWaitingShareView struct {
-	ItemID    string                 `json:"itemId"`
-	Recipient *PasswordRecipientView `json:"recipient"`
+	ItemID         string                 `json:"itemId"`
+	Recipient      *PasswordRecipientView `json:"recipient"`
+	HasMoreWaiting bool                   `json:"hasMoreWaiting"`
 }
 
 // SetUpPasswordsInput is everything a device makes when a person sets
@@ -216,7 +222,7 @@ type PasswordItemRekeyInput struct {
 const (
 	passwordsSetupFields = `isSetUp passphraseSalt passphraseIterationCount publicKey lockAfterMinutes itemCount`
 
-	passwordRecipientFields = `userId name username publicKey hasKey`
+	passwordRecipientFields = `userId name username publicKey hasKey hasTooMuchShared`
 
 	passwordItemFields = `id ownerUserId ownerName ownerPublicKey itemKind encryptedFields itemKey isSharedWithMe revision isUsableByAgent
     lastUsedByAgentAt needsNewKey deletedAt createdAt updatedAt
@@ -258,7 +264,7 @@ const (
 }`
 
 	DocumentListWaitingPasswordShares = `query {
-  ListWaitingPasswordShares { itemId recipient { ` + passwordRecipientFields + ` } }
+  ListWaitingPasswordShares { itemId hasMoreWaiting recipient { ` + passwordRecipientFields + ` } }
 }`
 
 	DocumentReadPasswordsAgentKey = `query { ReadPasswordsAgentKey }`
@@ -492,7 +498,8 @@ func DeletePasswordItem(ctx context.Context, connection *Client, itemID string) 
 	return result.DeletePasswordItem, nil
 }
 
-// RestorePasswordItem brings a deleted item back.
+// RestorePasswordItem brings a deleted item back. Its old shares reach their
+// recipients again, so the server accepts it only as a person's own tap.
 func RestorePasswordItem(ctx context.Context, connection *Client, itemID string) (*PasswordItemView, error) {
 	var result struct {
 		RestorePasswordItem *PasswordItemView `json:"RestorePasswordItem"`

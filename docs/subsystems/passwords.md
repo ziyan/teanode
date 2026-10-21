@@ -556,9 +556,9 @@ the person's own action on the dashboard or in the iPhone app
 (`Principal.IsPersonsTap`); a command line token, the extension and an OAuth
 grant are not taps.
 
-- **Size.** An item's sealed fields are at most 512 KB and any sealed key 8 KB.
-  A person has at most 20,000 items (deleted ones included, until they are swept
-  after 30 days) and two byte allowances, checked apart:
+- **Size.** An item's sealed fields are at most 512 KB, and a sealed share key or
+  agent copy is exactly the size of a sealed 32-byte item key. A person has at
+  most 20,000 items that are not deleted and two byte allowances, checked apart:
   - Items that are not deleted hold at most 64 MiB of sealed text (the fields and
     the keys). That is the only limit that stops a save, by whomever it comes
     from, so deleting an item frees its room at once. A save, a re-key or a
@@ -578,11 +578,21 @@ grant are not taps.
     says where to do it.
 
   So one person can hold up to 192 MiB of sealed text for up to 30 days.
+- **What sharing can add.** An owner's items reach at most 50,000 item and
+  recipient pairs; a share that would go past it is refused with "Your items are
+  shared with too many people", and a change that does not add pairs is always
+  allowed. What others share with one person is at most 64 MiB of sealed text:
+  a key that would push a recipient past it is not stored for them (the owner's
+  devices show "<name> has too much shared with them"), and a list answers the
+  oldest keys first up to that bound.
 - **One list at a time.** A list answers every item at once, so the server lets
-  one `ListPasswordItems` run for a person at a time and holds that place until the
-  answer has been written to the reader (with a minute to write it), not only until
-  the resolver returns. A second one is turned away with "Passwords is already
-  being read for you. Try again in a moment." Paging is a follow-up in the plan.
+  one `ListPasswordItems` or `ListWaitingPasswordShares` run for a person at a
+  time, with one place for the person's taps and another for every other
+  credential, and holds it until the answer has been written to the reader (with
+  a minute to write it), not only until the resolver returns. A second one is
+  turned away with "Passwords is already being read for you. Try again in a
+  moment." The waiting list answers at most 2,000 entries, newest items first,
+  and says when more wait. Paging is a follow-up in the plan.
 - **Earlier versions of an item.** A save or a re-key keeps the version it
   replaces in `password_item_version` only when the item has no kept version
   younger than one hour. A program with a token needs no tap to save an item, so

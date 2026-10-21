@@ -126,7 +126,12 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	if listed := mustRun("ada-token", "", "list", "--deleted"); !strings.Contains(listed, "example.com") {
 		test.Fatalf("list --deleted:\n%s", listed)
 	}
-	mustRun("ada-token", "", "restore", "example.com")
+	// Bringing an item back lets its old recipients wait for keys again: only a tap.
+	// (The command may word the refusal itself or pass the server's on.)
+	if _, err := run("ada-token", "", "restore", "example.com"); err == nil || (!isTapRefusal(err) && !strings.Contains(err.Error(), api.TapRequiredPhrase)) {
+		test.Fatalf("a token restoring an item: %v", err)
+	}
+	mustRun("ada-session", adaPassphrase+"\n", "restore", "example.com", "--passphrase-stdin")
 	mustRun("ada-token", "", "add", "Travel card", "--kind", "card", "--number", "4111111111111111")
 
 	// What the database holds is sealed.

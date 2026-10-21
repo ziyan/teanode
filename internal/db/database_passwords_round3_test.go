@@ -259,7 +259,7 @@ func TestAnItemIsMarkedWhenAccessToItNarrows(test *testing.T) {
 		if needsNewKey() {
 			test.Fatal("deleting an item nobody held a key for marked it")
 		}
-		if _, err := tx.RestorePasswordItem(world.ada.ID, item.ID); err != nil {
+		if _, err := tx.RestorePasswordItem(world.ada.ID, item.ID, true); err != nil {
 			test.Fatal(err)
 		}
 		// The item has been re-keyed since it was saved: the key is sealed from
@@ -273,7 +273,7 @@ func TestAnItemIsMarkedWhenAccessToItNarrows(test *testing.T) {
 		if !needsNewKey() {
 			test.Fatal("deleting an item with a recipient's key did not mark it")
 		}
-		if _, err := tx.RestorePasswordItem(world.ada.ID, item.ID); err != nil {
+		if _, err := tx.RestorePasswordItem(world.ada.ID, item.ID, true); err != nil {
 			test.Fatal(err)
 		}
 		if !needsNewKey() {

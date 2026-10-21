@@ -286,6 +286,14 @@ func (self *transaction) GetCircleCalendar(circleId string) (*models.Calendar, e
 }
 
 func (self *transaction) CreateCircleCalendar(circleId, name, timezone string) (*models.Calendar, error) {
+	// The circle membership lock comes before the circle's row, as in every
+	// change to circles (see circleMembershipLockKey). Taking the row first
+	// would let this wait for a request that holds the membership lock and
+	// waits for this row: a person leaving the circle against a Passwords
+	// change made after this one in the same request.
+	if err := lockCircleMembership(self.tx); err != nil {
+		return nil, err
+	}
 	var locked circleModel
 	if err := lockRow(self.tx, &locked, circleId); err != nil {
 		return nil, err

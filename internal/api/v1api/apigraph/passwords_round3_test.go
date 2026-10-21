@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -305,10 +306,11 @@ func TestPasswordsAreListedOnceAtATime(test *testing.T) {
 	if message := world.refusal(test, world.ada, "query { ListPasswordItems { itemIds } ...Again } fragment Again on RootQuery { again: ListPasswordItems { itemIds } }", nil); !strings.Contains(message, "only once") {
 		test.Fatalf("a listing in a fragment: %s", message)
 	}
-	// One listing, and the other reads beside it, are fine.
-	world.run(test, world.ada, "query { ListPasswordItems { itemIds } ListWaitingPasswordShares { itemId } }", nil)
+	// One listing and then the other, in turn, are fine.
+	world.run(test, world.ada, "query { ListPasswordItems { itemIds } }", nil)
+	world.run(test, world.ada, "query { ListWaitingPasswordShares { itemId } }", nil)
 
-	release, err := world.graph.takePasswordsListing(world.ada.ID)
+	release, err := world.graph.takePasswordsListing(&api.Principal{User: world.ada, CredentialKind: models.CredentialSession})
 	if err != nil {
 		test.Fatal(err)
 	}

@@ -46,7 +46,10 @@ type PasswordsQuery interface {
 	// and a device that finds an identifier there that it does not hold asks
 	// again from the start. Each answers all the person holds, so a document
 	// may run it once, and a second one while the person's first is still
-	// running is refused: try again. Needs passwords:use.
+	// running (this or ListWaitingPasswordShares, for the same kind of
+	// sign-in) is refused: try again. What is shared with the caller is
+	// answered up to 64 MiB of sealed text, the keys stored first first. Needs
+	// passwords:use.
 	ListPasswordItems(ctx context.Context, arguments ListPasswordItemsArguments) (*PasswordItemListView, error)
 
 	// The people a share reaches, to seal keys for: the person, if they are in
@@ -56,7 +59,12 @@ type PasswordsQuery interface {
 
 	// The people the caller's items reach who have set up Passwords and have
 	// no key for an item yet: the caller's device seals those keys and sends
-	// them with AddPasswordShareKeys. Needs passwords:use.
+	// them with AddPasswordShareKeys. At most 2000 entries, the newest items
+	// first; when more wait, every entry has hasMoreWaiting set. A recipient
+	// with hasTooMuchShared set has too much shared with them already, and a
+	// key for them is not stored. Runs in the same place as ListPasswordItems
+	// (one at a time for each person and kind of sign-in). Needs
+	// passwords:use.
 	ListWaitingPasswordShares(ctx context.Context) ([]*PasswordWaitingShareView, error)
 
 	// The public key of the server's own key, in base64 (65 bytes), which a
@@ -118,7 +126,8 @@ type PasswordsMutation interface {
 	PurgePasswordItem(ctx context.Context, arguments PasswordItemIDArguments) (bool, error)
 
 	// Brings back an item that was deleted less than 30 days ago. Its
-	// recipients wait for keys again. Needs passwords:use.
+	// recipients wait for keys again, so only a person's tap does it. Needs
+	// passwords:use.
 	RestorePasswordItem(ctx context.Context, arguments PasswordItemIDArguments) (*PasswordItemView, error)
 
 	// Replaces who an item is shared with, and stores the keys the caller's
@@ -131,7 +140,12 @@ type PasswordsMutation interface {
 	// changed on another device when that is no longer the item's. A key
 	// already stored is replaced only by a tap, and only if a token stored it.
 	// A person the caller shares no circle with, or a circle the caller is not
-	// in, is not found. Needs passwords:use.
+	// in, is not found. A change that would take the caller's items past 50000
+	// pairs of an item and a person they reach is refused (one that does not
+	// add to the number is not). A key for a recipient who already has 64 MiB of
+	// sealed text shared with them is not stored: the recipient shows
+	// hasTooMuchShared and the call goes ahead for the others. Needs
+	// passwords:use.
 	SetPasswordItemShares(ctx context.Context, arguments SetPasswordItemSharesArguments) (*PasswordItemView, error)
 
 	// Stores keys sealed for recipients the caller's items already reach, such
@@ -260,6 +274,12 @@ type PasswordRecipientView struct {
 	// HasKey is whether a key sealed for this item and their current public
 	// key is stored; always false where no item is in question.
 	HasKey bool `json:"hasKey"`
+
+	// HasTooMuchShared is true when storing a key for this item would take the
+	// person past 64 MiB of sealed text shared with them by everybody, so none
+	// is stored. Only for a person without a key, where an item is in
+	// question.
+	HasTooMuchShared bool `json:"hasTooMuchShared"`
 }
 
 // PasswordItemListView is the answer to a device's question of what changed.
@@ -275,6 +295,10 @@ type PasswordItemListView struct {
 type PasswordWaitingShareView struct {
 	ItemID    string                 `json:"itemId"`
 	Recipient *PasswordRecipientView `json:"recipient"`
+
+	// HasMoreWaiting is true on every entry when more wait than the 2000
+	// listed, which are those of the newest items.
+	HasMoreWaiting bool `json:"hasMoreWaiting"`
 }
 
 type ListPasswordItemsArguments struct {
@@ -475,6 +499,10 @@ const (
 	// passwordsKeyMostBytes bounds any other sealed value, which holds a key.
 	passwordsKeyMostBytes = 8 * 1024
 
+	// passwordsSealedKeyCiphertextBytes is the ciphertext of a 32 byte item
+	// key sealed for a key pair: the 32 bytes and the 16 byte tag.
+	passwordsSealedKeyCiphertextBytes = passwords.KeyLength + 16
+
 	passwordShareGranteesMost = 100
 	passwordShareKeysMost     = 1000
 
@@ -509,6 +537,7 @@ const (
 	passwordsKeptFullSentence         = "Passwords is keeping too many deleted items and old versions: a person empties Recently deleted on the Passwords page."
 	passwordsTooManyWritesSentence    = "Too many changes to Passwords in a short time. Try again in a few minutes."
 	passwordsListRunningSentence      = "Passwords is already being read for you. Try again in a moment."
+	passwordsSharesFullSentence       = "Your items are shared with too many people. Share fewer items, or with fewer people."
 	passwordsAlreadySetUpSentence     = "Passwords is already set up."
 	passwordsNotSetUpSentence         = "Passwords is not set up yet."
 )
@@ -550,6 +579,8 @@ func passwordsFailure(err error) error {
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsFullSentence)
 	case errors.Is(err, db.ErrPasswordsKeptFull):
 		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsKeptFullSentence)
+	case errors.Is(err, db.ErrPasswordSharesFull):
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, passwordsSharesFullSentence)
 	case errors.Is(err, db.ErrPasswordTapRequired):
 		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, passwordsOnATap)
 	case errors.Is(err, db.ErrAlreadyExists):
@@ -572,8 +603,8 @@ type passwordsLimiters struct {
 	// writes holds the writes made.
 	writes *ratelimit.Registry
 
-	// listing holds the people whose ListPasswordItems is running now, with
-	// when it began.
+	// listing holds the people (by passwordsLimitKey) whose listing is
+	// running now, with when it began.
 	listing      map[string]time.Time
 	listingMutex sync.Mutex
 }
@@ -593,29 +624,34 @@ func (self *graph) passwordsLimiters() *passwordsLimiters {
 // passwordsListWriteTimeout), so this only matters for one that never was.
 const passwordsListStaleAfter = 3 * time.Minute
 
-// takePasswordsListing lets one ListPasswordItems for a person run at a time:
-// each answers every item the person holds, up to the whole of their limit,
-// and several at once multiply the memory the server needs. A second one is
-// turned away to try again. The function it answers gives the place back; the
-// place is held until the answer has been written, not only until the resolver
-// returns, because the answer stays in memory while a slow reader takes it.
-func (self *graph) takePasswordsListing(userId string) (func(), error) {
+// takePasswordsListing lets one listing (ListPasswordItems or
+// ListWaitingPasswordShares) for a person run at a time: each answers up to
+// everything the person holds, and several at once multiply the memory the
+// server needs. A second one is turned away to try again. The place is the
+// write and unlock limiters' (passwordsLimitKey): one for the person's own
+// taps and one for every other way in, so that a program holding a token that
+// reads slowly cannot keep the person's own dashboard from listing. The
+// function it answers gives the place back; the place is held until the answer
+// has been written, not only until the resolver returns, because the answer
+// stays in memory while a slow reader takes it.
+func (self *graph) takePasswordsListing(principal *api.Principal) (func(), error) {
+	limitKey := passwordsLimitKey(principal)
 	limiters := self.passwordsLimiters()
 	limiters.listingMutex.Lock()
 	defer limiters.listingMutex.Unlock()
 	if limiters.listing == nil {
 		limiters.listing = map[string]time.Time{}
 	}
-	if beganAt, isRunning := limiters.listing[userId]; isRunning && time.Since(beganAt) < passwordsListStaleAfter {
+	if beganAt, isRunning := limiters.listing[limitKey]; isRunning && time.Since(beganAt) < passwordsListStaleAfter {
 		return nil, fmt.Errorf("%w: %s", api.ErrTooManyRequests, passwordsListRunningSentence)
 	}
 	began := time.Now()
-	limiters.listing[userId] = began
+	limiters.listing[limitKey] = began
 	return func() {
 		limiters.listingMutex.Lock()
 		defer limiters.listingMutex.Unlock()
-		if limiters.listing[userId].Equal(began) {
-			delete(limiters.listing, userId)
+		if limiters.listing[limitKey].Equal(began) {
+			delete(limiters.listing, limitKey)
 		}
 	}, nil
 }
@@ -662,15 +698,20 @@ func isSealedText(text string, mostBytes int) bool {
 	return err == nil
 }
 
-// isSealedForKeyPairText reports whether a value is a key sealed for a key
-// pair (a recipient's, or the server's agent key): the same shape, and an
-// ephemeral public key of 65 bytes starting with 04.
-func isSealedForKeyPairText(text string, mostBytes int) bool {
-	if len(text) > mostBytes {
+// isSealedKeyForKeyPairText reports whether a value is an item key sealed for a
+// key pair (a recipient's, or the server's agent key) and nothing else: the
+// shape of any value sealed for a key pair (version 1, a 12 byte nonce, an
+// ephemeral public key of 65 bytes starting with 04) with a ciphertext of
+// exactly the sealed size of a 32 byte key, the 32 bytes and the 16 byte tag.
+// The server cannot open it, so this is what stops a program holding a token
+// from storing kilobytes of garbage as a "key" that every recipient's list
+// then carries.
+func isSealedKeyForKeyPairText(text string) bool {
+	if len(text) > passwordsKeyMostBytes {
 		return false
 	}
-	_, err := passwords.ParseSealedForKeyPair(text)
-	return err == nil
+	sealed, err := passwords.ParseSealedForKeyPair(text)
+	return err == nil && len(sealed.Ciphertext) == passwordsSealedKeyCiphertextBytes
 }
 
 // isProofHashText reports whether a value is base64 of a SHA-256 hash.
@@ -696,7 +737,10 @@ func passwordsInvalid(format string, arguments ...any) error {
 }
 
 func describePasswordRecipient(recipient *models.PasswordRecipient) *PasswordRecipientView {
-	view := &PasswordRecipientView{UserID: recipient.UserID, Name: recipient.Name, Username: recipient.Username, HasKey: recipient.HasKey}
+	view := &PasswordRecipientView{
+		UserID: recipient.UserID, Name: recipient.Name, Username: recipient.Username, HasKey: recipient.HasKey,
+		HasTooMuchShared: recipient.HasTooMuchShared,
+	}
 	if recipient.PublicKey != "" {
 		view.PublicKey = &recipient.PublicKey
 	}
@@ -993,7 +1037,7 @@ func (self *graph) ListPasswordItems(ctx context.Context, arguments ListPassword
 	if err != nil {
 		return nil, err
 	}
-	release, err := self.takePasswordsListing(principal.User.ID)
+	release, err := self.takePasswordsListing(principal)
 	if err != nil {
 		return nil, err
 	}
@@ -1045,13 +1089,23 @@ func (self *graph) ListWaitingPasswordShares(ctx context.Context) ([]*PasswordWa
 	if err != nil {
 		return nil, err
 	}
+	release, err := self.takePasswordsListing(principal)
+	if err != nil {
+		return nil, err
+	}
+	if !holdUntilResponseIsWritten(ctx, release) {
+		defer release()
+	}
+	limitPasswordsListWrite(ctx)
 	waiting, err := self.transaction(ctx).ListWaitingPasswordShares(principal.User.ID)
 	if err != nil {
 		return nil, passwordsFailure(err)
 	}
 	views := make([]*PasswordWaitingShareView, 0, len(waiting))
 	for _, share := range waiting {
-		views = append(views, &PasswordWaitingShareView{ItemID: share.ItemID, Recipient: describePasswordRecipient(share.Recipient)})
+		views = append(views, &PasswordWaitingShareView{
+			ItemID: share.ItemID, Recipient: describePasswordRecipient(share.Recipient), HasMoreWaiting: share.HasMoreWaiting,
+		})
 	}
 	return views, nil
 }
@@ -1181,7 +1235,9 @@ func (self *graph) RestorePasswordItem(ctx context.Context, arguments PasswordIt
 	if err := self.takePasswordsWrite(principal, 1); err != nil {
 		return nil, err
 	}
-	restored, err := self.transaction(ctx).RestorePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID))
+	// Its old shares reach their recipients again: decided in the database as
+	// adding a grantee is, from the person's tap.
+	restored, err := self.transaction(ctx).RestorePasswordItem(principal.User.ID, strings.TrimSpace(arguments.ID), principal.IsPersonsTap())
 	if err != nil {
 		return nil, passwordsFailure(err)
 	}
@@ -1254,8 +1310,8 @@ func checkedPasswordShareKey(itemId, recipientUserId, itemKeyByRecipientKey, rec
 	if recipientUserId == "" {
 		return nil, passwordsInvalid("a key names the recipient")
 	}
-	if !isSealedForKeyPairText(itemKeyByRecipientKey, passwordsKeyMostBytes) {
-		return nil, passwordsInvalid("itemKeyByRecipientKey must be the JSON a device sealed for the recipient's key")
+	if !isSealedKeyForKeyPairText(itemKeyByRecipientKey) {
+		return nil, passwordsInvalid("itemKeyByRecipientKey must be the JSON a device sealed for the recipient's key, from a 32 byte item key")
 	}
 	if !isPasswordsPublicKey(recipientPublicKey) {
 		return nil, passwordsInvalid("recipientPublicKey is base64 of a P-256 point in its 65 byte form")
@@ -1323,8 +1379,8 @@ func (self *graph) SetPasswordItemUsableByAgent(ctx context.Context, arguments S
 		if err := requirePasswordsTap(principal); err != nil {
 			return nil, err
 		}
-		if input.ItemKeyByAgentKey == nil || !isSealedForKeyPairText(*input.ItemKeyByAgentKey, passwordsKeyMostBytes) {
-			return nil, passwordsInvalid("itemKeyByAgentKey must be the JSON a device sealed for the agent key")
+		if input.ItemKeyByAgentKey == nil || !isSealedKeyForKeyPairText(*input.ItemKeyByAgentKey) {
+			return nil, passwordsInvalid("itemKeyByAgentKey must be the JSON a device sealed for the agent key, from a 32 byte item key")
 		}
 		itemKeyByAgentKey = *input.ItemKeyByAgentKey
 	}
@@ -1371,8 +1427,8 @@ func (self *graph) RekeyPasswordItem(ctx context.Context, arguments RekeyPasswor
 		}
 		shareKeys = append(shareKeys, checked)
 	}
-	if input.ItemKeyByAgentKey != nil && !isSealedForKeyPairText(*input.ItemKeyByAgentKey, passwordsKeyMostBytes) {
-		return nil, passwordsInvalid("itemKeyByAgentKey must be the JSON a device sealed for the agent key, or null")
+	if input.ItemKeyByAgentKey != nil && !isSealedKeyForKeyPairText(*input.ItemKeyByAgentKey) {
+		return nil, passwordsInvalid("itemKeyByAgentKey must be the JSON a device sealed for the agent key, from a 32 byte item key, or null")
 	}
 	tx := self.transaction(ctx)
 	if _, err := requirePasswordsSetUp(tx, principal.User.ID); err != nil {

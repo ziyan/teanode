@@ -260,7 +260,7 @@ func TestSavingAPasswordItemChecksTheRevision(test *testing.T) {
 		if _, err := tx.DeletePasswordItem(world.ben.ID, first.ID, true); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("deleting somebody else's: %v", err)
 		}
-		restored, err := tx.RestorePasswordItem(world.ada.ID, first.ID)
+		restored, err := tx.RestorePasswordItem(world.ada.ID, first.ID, true)
 		if err != nil || restored.DeletedAt != nil || restored.Revision <= deleted.Revision {
 			test.Fatalf("a restore: %+v %v", restored, err)
 		}
@@ -1051,13 +1051,13 @@ func TestPasswordsHoldAtMostABoundedNumberOfBytes(test *testing.T) {
 		if err != nil {
 			test.Fatalf("a save after a delete: %v", err)
 		}
-		if _, err := tx.RestorePasswordItem(world.ada.ID, second.ID); !errors.Is(err, db.ErrPasswordsFull) {
+		if _, err := tx.RestorePasswordItem(world.ada.ID, second.ID, true); !errors.Is(err, db.ErrPasswordsFull) {
 			test.Fatalf("a restore with no room: %v", err)
 		}
 		if _, err := tx.DeletePasswordItem(world.ada.ID, replacement.ID, false); err != nil {
 			test.Fatal(err)
 		}
-		restored, err := tx.RestorePasswordItem(world.ada.ID, second.ID)
+		restored, err := tx.RestorePasswordItem(world.ada.ID, second.ID, true)
 		if err != nil || restored.DeletedAt != nil {
 			test.Fatalf("a restore: %+v %v", restored, err)
 		}
@@ -1181,7 +1181,7 @@ func TestDeletedItemsAndKeptVersionsHaveAnAllowanceOfTheirOwn(test *testing.T) {
 		test.Fatalf("a tap's delete with the allowance full: %v", err)
 	}
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
-		if _, err := tx.RestorePasswordItem(world.ada.ID, passwordItemIdOf(11)); err != nil {
+		if _, err := tx.RestorePasswordItem(world.ada.ID, passwordItemIdOf(11), true); err != nil {
 			test.Fatalf("a restore with the allowance full: %v", err)
 		}
 	})
