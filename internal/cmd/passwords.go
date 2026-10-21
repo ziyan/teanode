@@ -21,10 +21,19 @@ import (
 	"github.com/ziyan/teanode/internal/passwords"
 )
 
-// passwordsTapPlace is where a change that needs the person's tap is approved.
-// Each command puts what it does in front and any word on what does work from
-// here after.
-const passwordsTapPlace = " is approved on the Passwords page of the dashboard or in the iPhone app, not from a command line"
+// passwordsTapPlace is where a change that needs the person's tap is done. Each
+// command puts what it does in front and any word on what does work from here
+// after.
+const passwordsTapPlace = " is done on the Passwords page of the dashboard or in the iPhone app; a command line cannot do this"
+
+// The sentence each command ends with when the server refuses it for want of
+// the person's tap.
+const (
+	passwordsAgentTapSentence            = "Letting the agent use an item" + passwordsTapPlace + ", but turning it off works here."
+	passwordsChangePassphraseTapSentence = "Changing the passphrase" + passwordsTapPlace + "."
+	passwordsNewRecoveryKeyTapSentence   = "Replacing the recovery key" + passwordsTapPlace + "."
+	passwordsEraseTapSentence            = "Erasing Passwords" + passwordsTapPlace + "."
+)
 
 // clipboardClearSeconds is how long a copied secret stays on the clipboard
 // before the command clears it, the way pass does.
@@ -112,8 +121,8 @@ func NewPasswordsCommand() *cli.Command {
 				Usage:     "copy a password, code or other secret to the clipboard",
 				ArgsUsage: "<item>",
 				Description: "Copies a login's password, a card's number or a note's text, or with --code the\n" +
-					"login's one-time code, with --user-name its user name, with --security-code a\n" +
-					"card's security code. The clipboard is cleared after 45 seconds, which keeps the\n" +
+					"login's one-time code, with --user-name its user name, with --number a card's\n" +
+					"number, with --security-code a card's security code. The clipboard is cleared after 45 seconds, which keeps the\n" +
 					"command running, or at once on Ctrl-C; --clear-after 0 leaves it. It is cleared\n" +
 					"only if it still holds the secret (read back with wl-paste, xclip, xsel or\n" +
 					"pbpaste), so something you copied since is not lost. With no clipboard program\n" +
@@ -170,7 +179,8 @@ func NewPasswordsCommand() *cli.Command {
 					"person who has not set Passwords up yet waits, and 'teanode passwords share\n" +
 					"--waiting' seals for them once they have. People who already have the item keep\n" +
 					"the key they have. The people it reaches can use the item; only you change it.\n" +
-					"Adding somebody is approved by your tap on the dashboard or in the iPhone app.",
+					"Adding somebody new is done on the Passwords page of the dashboard or in the\n" +
+					"iPhone app; a command line cannot do this. Taking somebody away works here.",
 				Flags: []cli.Flag{
 					JSONFlag(), passphraseFlag(), ForceFlag(),
 					&cli.BoolFlag{Name: "waiting", Usage: "instead, seal your items for the people who have set Passwords up since you shared them"},
@@ -194,8 +204,10 @@ func NewPasswordsCommand() *cli.Command {
 					"with this login in its browser: TeaNode types the password, code or passkey in\n" +
 					"only on the item's own sites and never shows it to the model. A note the agent\n" +
 					"may use is read by the model. Off for every item until you turn it on. A card\n" +
-					"cannot be used by the agent, and only the owner can turn it on. Approved by your\n" +
-					"tap on the dashboard or in the iPhone app.",
+					"cannot be used by the agent, and only the owner can turn it on. Turning it on is\n" +
+					"done on the Passwords page of the dashboard or in the iPhone app; a command line\n" +
+					"cannot do this, and says so before it asks for anything. Turning it off works\n" +
+					"here.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag(), ForceFlag()},
 				Action: runPasswordsAgent,
 			},
@@ -226,8 +238,9 @@ func NewPasswordsCommand() *cli.Command {
 					"characters. The old passphrase no longer opens Passwords on this server. It does\n" +
 					"not make a new account key and your items are not re-encrypted: only the key that\n" +
 					"opens them is sealed again, so a copy of the database from before still opens\n" +
-					"with the old passphrase. Approved by your tap on the dashboard or in the iPhone\n" +
-					"app.",
+					"with the old passphrase. Done on the Passwords page of the dashboard or in the\n" +
+					"iPhone app; a command line cannot do this, and says so before it asks for\n" +
+					"anything.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag(), &cli.BoolFlag{Name: "recovery-key", Usage: "prove it with the recovery key instead of the current passphrase"}},
 				Action: runPasswordsChangePassphrase,
 			},
@@ -237,7 +250,8 @@ func NewPasswordsCommand() *cli.Command {
 				Description: "Asks for the passphrase, makes a new recovery key and prints it once. The old\n" +
 					"one no longer opens Passwords on this server. It does not make a new account key,\n" +
 					"so a copy of the database from before still opens with the old recovery key.\n" +
-					"Approved by your tap on the dashboard or in the iPhone app.",
+					"Done on the Passwords page of the dashboard or in the iPhone app; a command line\n" +
+					"cannot do this, and says so before it asks for anything.",
 				Flags:  []cli.Flag{JSONFlag(), passphraseFlag()},
 				Action: runPasswordsNewRecoveryKey,
 			},
@@ -298,8 +312,9 @@ func NewPasswordsCommand() *cli.Command {
 				Usage: "erase Passwords: every item, share and key",
 				Description: "Deletes your setup, every item, its shares and keys, for you and for the people\n" +
 					"you share with. This cannot be undone. If you have lost both your passphrase and\n" +
-					"your recovery key it is the only way to start again. Approved by your tap on the\n" +
-					"dashboard or in the iPhone app.",
+					"your recovery key it is the only way to start again. Done on the Passwords page\n" +
+					"of the dashboard or in the iPhone app; a command line cannot do this, and says\n" +
+					"so before it asks you to confirm.",
 				Flags:  []cli.Flag{JSONFlag(), ForceFlag()},
 				Action: runPasswordsErase,
 			},
@@ -482,6 +497,20 @@ func runPasswordsSetup(ctx context.Context, command *cli.Command) error {
 	fmt.Println("erase Passwords and start again.")
 	if unlockErr != nil {
 		fmt.Fprintf(os.Stderr, "note: could not keep Passwords unlocked here: %s\n", unlockErr)
+	}
+	return nil
+}
+
+// refuseWithoutPasswordsTap asks the server, before anything is asked of the
+// person, whether this connection is a person's own tap, which changing the
+// passphrase, replacing the recovery key, erasing and letting the agent use an
+// item need. It reuses the probe that setup sends (an empty setup, which
+// changes nothing): the server checks the tap the same way for all of them. The
+// refusal is the one sentence the command would end with anyway, so that nobody
+// types a passphrase or confirms an erase for nothing.
+func refuseWithoutPasswordsTap(ctx context.Context, command *cli.Command, connection *client.Client, sentence string) error {
+	if err := client.CheckPasswordsSetUpAllowed(ctx, connection); err != nil {
+		return describeTapRequired(describeError(command, err), sentence)
 	}
 	return nil
 }
@@ -1414,7 +1443,7 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 	}
 	view, err := client.SetPasswordItemShares(ctx, session.connection, &client.SetPasswordItemSharesInput{ItemID: item.View.ID, Grantees: grantees, Keys: keys})
 	if err != nil {
-		return describeTapRequired(describeError(command, err), "Sharing with someone new is approved on the Passwords page of the dashboard or in the iPhone app; taking someone away works here.")
+		return describeTapRequired(describeError(command, err), "Sharing with someone new is done on the Passwords page of the dashboard or in the iPhone app; a command line cannot do this, but taking someone away works here.")
 	}
 	item.View = view
 	if command.Bool("json") {
@@ -1549,6 +1578,15 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	default:
 		return usage("usage: teanode passwords agent on|off <item>")
 	}
+	if isOn {
+		connection, err := openClient(command)
+		if err != nil {
+			return err
+		}
+		if err := refuseWithoutPasswordsTap(ctx, command, connection, passwordsAgentTapSentence); err != nil {
+			return err
+		}
+	}
 	session, item, err := findOpenItem(ctx, command, command.Args().Get(1), false)
 	if err != nil {
 		return err
@@ -1588,7 +1626,7 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	}
 	view, err := client.SetPasswordItemUsableByAgent(ctx, session.connection, input)
 	if err != nil {
-		return describeTapRequired(describeError(command, err), "Letting the agent use an item"+passwordsTapPlace+"; turning it off works here.")
+		return describeTapRequired(describeError(command, err), passwordsAgentTapSentence)
 	}
 	item.View = view
 	if command.Bool("json") {
@@ -1671,6 +1709,9 @@ func runPasswordsChangePassphrase(ctx context.Context, command *cli.Command) err
 	if err != nil {
 		return err
 	}
+	if err := refuseWithoutPasswordsTap(ctx, command, connection, passwordsChangePassphraseTapSentence); err != nil {
+		return err
+	}
 	setup, err := readSetUpPasswords(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
@@ -1712,7 +1753,7 @@ func runPasswordsChangePassphrase(ctx context.Context, command *cli.Command) err
 		Proof: proof, IsRecoveryKey: secret.RecoveryKey != "", AccountKeyByPassphrase: accountKeyByPassphrase,
 		PassphraseSalt: base64.StdEncoding.EncodeToString(salt), PassphraseIterationCount: passwords.DefaultIterationCount, PassphraseProofHash: passphraseProofHash,
 	}); err != nil {
-		return describeTapRequired(describeError(command, err), "Changing the passphrase"+passwordsTapPlace+".")
+		return describeTapRequired(describeError(command, err), passwordsChangePassphraseTapSentence)
 	}
 	if command.Bool("json") {
 		return PrintJSON(map[string]any{"isPassphraseChanged": true})
@@ -1725,6 +1766,9 @@ func runPasswordsChangePassphrase(ctx context.Context, command *cli.Command) err
 func runPasswordsNewRecoveryKey(ctx context.Context, command *cli.Command) error {
 	connection, err := openClient(command)
 	if err != nil {
+		return err
+	}
+	if err := refuseWithoutPasswordsTap(ctx, command, connection, passwordsNewRecoveryKeyTapSentence); err != nil {
 		return err
 	}
 	setup, err := readSetUpPasswords(ctx, connection)
@@ -1759,7 +1803,7 @@ func runPasswordsNewRecoveryKey(ctx context.Context, command *cli.Command) error
 	if _, err := client.ReplacePasswordsRecoveryKey(ctx, connection, &client.ReplacePasswordsRecoveryKeyInput{
 		Proof: proof, AccountKeyByRecoveryKey: accountKeyByRecoveryKey, RecoveryKeyProofHash: recoveryKeyProofHash,
 	}); err != nil {
-		return describeTapRequired(describeError(command, err), "Replacing the recovery key"+passwordsTapPlace+".")
+		return describeTapRequired(describeError(command, err), passwordsNewRecoveryKeyTapSentence)
 	}
 	if command.Bool("json") {
 		return PrintJSON(map[string]any{"recoveryKey": recoveryKey})
@@ -1774,16 +1818,19 @@ func runPasswordsNewRecoveryKey(ctx context.Context, command *cli.Command) error
 }
 
 func runPasswordsErase(ctx context.Context, command *cli.Command) error {
-	if err := confirm(command, "This erases every item in Passwords, its shares and keys, and the passphrase and recovery key that open it, for you and for everyone you share with. "+
-		"Nobody can get them back, not even whoever runs this server. If you have lost both your passphrase and your recovery key, this is the only way to start again."); err != nil {
-		return err
-	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
+	if err := refuseWithoutPasswordsTap(ctx, command, connection, passwordsEraseTapSentence); err != nil {
+		return err
+	}
+	if err := confirm(command, "This erases every item in Passwords, its shares and keys, and the passphrase and recovery key that open it, for you and for everyone you share with. "+
+		"Nobody can get them back, not even whoever runs this server. If you have lost both your passphrase and your recovery key, this is the only way to start again."); err != nil {
+		return err
+	}
 	if _, err := client.ErasePasswords(ctx, connection); err != nil {
-		return describeTapRequired(describeError(command, err), "Erasing Passwords"+passwordsTapPlace+".")
+		return describeTapRequired(describeError(command, err), passwordsEraseTapSentence)
 	}
 	_, _ = removePasswordsUnlock(command)
 	if command.Bool("json") {

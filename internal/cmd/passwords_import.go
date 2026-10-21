@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -322,6 +323,18 @@ func writeExportCSV(writer io.Writer, items []*passwordsItem) (leftOutCount int,
 	return leftOutCount, rows.Error()
 }
 
+// passwordsExportFile is the JSON export. The dashboard writes exactly the same
+// shape, so a file from either is read the same: a version, when it was made as
+// an RFC 3339 time, and the items.
+type passwordsExportFile struct {
+	Version    int                   `json:"version"`
+	ExportedAt string                `json:"exportedAt"`
+	Items      []passwordsExportItem `json:"items"`
+}
+
+// passwordsExportVersion is the version of the JSON export's shape.
+const passwordsExportVersion = 1
+
 func writeExportJSON(writer io.Writer, items []*passwordsItem) error {
 	exported := make([]passwordsExportItem, 0, len(items))
 	for _, item := range items {
@@ -329,7 +342,11 @@ func writeExportJSON(writer io.Writer, items []*passwordsItem) error {
 	}
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(map[string]any{"items": exported})
+	return encoder.Encode(passwordsExportFile{
+		Version:    passwordsExportVersion,
+		ExportedAt: time.Now().UTC().Format(time.RFC3339),
+		Items:      exported,
+	})
 }
 
 // writeExportFile writes the export to a temporary file made private to its

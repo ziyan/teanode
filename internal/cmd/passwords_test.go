@@ -74,7 +74,13 @@ type listedItem struct {
 
 func (self *fakePasswordsServer) list(token, standardInput string, arguments ...string) []listedItem {
 	self.test.Helper()
-	output := self.mustRun(token, standardInput, append([]string{"list", "--json", "--passphrase-stdin"}, arguments...)...)
+	// --passphrase-stdin always reads a line, so it is given only when there is
+	// one: an unlocked list has none.
+	flags := []string{"list", "--json"}
+	if standardInput != "" {
+		flags = append(flags, "--passphrase-stdin")
+	}
+	output := self.mustRun(token, standardInput, append(flags, arguments...)...)
 	var items []listedItem
 	if err := json.Unmarshal([]byte(output), &items); err != nil {
 		self.test.Fatalf("list output: %s: %s", err, output)
@@ -721,6 +727,35 @@ func TestPasswordsSharedItemsOpenOnlyFromTheirOwner(test *testing.T) {
 	}
 }
 
+// With --passphrase-stdin the first line of standard input is the passphrase
+// even when an earlier `unlock` left the keys, so the line after it is the
+// password or the note's text and never the passphrase stored as one.
+func TestPasswordsPassphraseLineIsReadWhenUnlocked(test *testing.T) {
+	useConfigurationDirectory(test)
+	fake := newFakePasswordsServer(test)
+	fake.setUpAs(testToken, testPassphrase)
+	fake.mustRun(testToken, testPassphrase+"\n", "unlock", "--passphrase-stdin")
+
+	fake.mustRun(testToken, testPassphrase+"\nunlocked-secret-example\n", "add", "unlocked.example.com",
+		"--password-stdin", "--passphrase-stdin")
+	fake.mustRun(testToken, testPassphrase+"\nthe note text example\n", "add", "Unlocked note",
+		"--kind", "note", "--text-stdin", "--passphrase-stdin")
+	if output := strings.TrimSpace(fake.mustRun(testToken, "", "copy", "unlocked.example.com")); output != "unlocked-secret-example" {
+		test.Errorf("the password stored was %q", output)
+	}
+	if output := fake.mustRun(testToken, "", "show", "Unlocked note", "--reveal", "--json"); !strings.Contains(output, "the note text example") || strings.Contains(output, testPassphrase) {
+		test.Errorf("the note stored was:\n%s", output)
+	}
+	csv := "name,url,username,password,note\ncsv.example.com,https://csv.example.com,ada,csv-secret-example,\n"
+	counts, _ := fake.importCounts(testPassphrase+"\n"+csv, "csv", "-", "--passphrase-stdin")
+	if counts.FoundCount != 1 || counts.ImportedCount != 1 {
+		test.Errorf("an import after the passphrase line: %+v", counts)
+	}
+	if output := fake.mustRun(testToken, "", "show", "csv.example.com", "--reveal", "--json"); !strings.Contains(output, "csv-secret-example") {
+		test.Errorf("the imported password was not kept:\n%s", output)
+	}
+}
+
 func firstItemID(fake *fakePasswordsServer) string {
 	for id := range fake.items {
 		return id
@@ -782,8 +817,57 @@ func TestPasswordsAgent(test *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "iPhone app") {
 		test.Fatalf("a refused agent: %v", err)
 	}
-	if want := "Letting the agent use an item is approved on the Passwords page of the dashboard or in the iPhone app, not from a command line; turning it off works here."; err.Error() != want {
+	if want := "Letting the agent use an item is done on the Passwords page of the dashboard or in the iPhone app; a command line cannot do this, but turning it off works here."; err.Error() != want {
 		test.Errorf("a refused agent said %q, want %q", err.Error(), want)
+	}
+	// Locked, with nothing on standard input, it is still refused at once
+	// rather than asking for a passphrase first; turning it off is not refused.
+	fake.mustRun(testToken, "", "lock")
+	_, err = fake.run(testToken, "", "agent", "on", "example.com", "--force")
+	if err == nil || strings.Contains(err.Error(), "terminal") || !strings.Contains(err.Error(), "iPhone app") {
+		test.Errorf("a refused agent, locked: %v", err)
+	}
+	fake.mustRun(testToken, testPassphrase+"\n", "agent", "off", "example.com", "--passphrase-stdin")
+}
+
+// Changing the passphrase, replacing the recovery key and erasing are refused
+// for want of a tap before they ask for a passphrase or a yes, and change
+// nothing.
+func TestPasswordsTapOnlyCommandsRefuseAtOnce(test *testing.T) {
+	useConfigurationDirectory(test)
+	fake := newFakePasswordsServer(test)
+	fake.setUpAs(testToken, testPassphrase)
+	fake.isTapRefused = true
+	for _, testCase := range []struct {
+		arguments []string
+		start     string
+	}{
+		{[]string{"change-passphrase"}, "Changing the passphrase"},
+		{[]string{"change-passphrase", "--recovery-key"}, "Changing the passphrase"},
+		{[]string{"new-recovery-key"}, "Replacing the recovery key"},
+		{[]string{"erase"}, "Erasing Passwords"},
+	} {
+		// No terminal and no flag: asking for anything first would fail with
+		// a complaint about the terminal instead.
+		_, err := fake.run(testToken, "", testCase.arguments...)
+		if err == nil || !strings.HasPrefix(err.Error(), testCase.start) {
+			test.Errorf("%v said: %v", testCase.arguments, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), "a command line cannot do this") || strings.Count(err.Error(), "dashboard") != 1 || strings.Contains(err.Error(), api.TapRequiredPhrase) {
+			test.Errorf("%v did not say it in one sentence: %v", testCase.arguments, err)
+		}
+		if strings.Contains(err.Error(), "terminal") {
+			test.Errorf("%v asked before it asked the server: %v", testCase.arguments, err)
+		}
+	}
+	if fake.users[testToken].setup == nil {
+		test.Fatal("a refused erase erased Passwords")
+	}
+	// Where a tap is not needed they go on to ask.
+	fake.isTapRefused = false
+	if _, err := fake.run(testToken, "", "change-passphrase"); err == nil || !strings.Contains(err.Error(), "terminal") {
+		test.Errorf("change-passphrase without the refusal did not go on to ask: %v", err)
 	}
 }
 

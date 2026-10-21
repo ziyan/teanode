@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/passwords"
 )
@@ -246,13 +247,18 @@ func TestPasswordsExport(test *testing.T) {
 	}
 	content, _ := os.ReadFile(target)
 	var exported struct {
-		Items []struct {
+		Version    int    `json:"version"`
+		ExportedAt string `json:"exportedAt"`
+		Items      []struct {
 			ItemKind string         `json:"itemKind"`
 			Fields   map[string]any `json:"fields"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(content, &exported); err != nil || len(exported.Items) != 3 {
 		test.Fatalf("the JSON export: %v\n%s", err, content)
+	}
+	if exportedAt, err := time.Parse(time.RFC3339, exported.ExportedAt); err != nil || time.Since(exportedAt) > time.Minute || exported.Version != 1 {
+		test.Errorf("the JSON export says version %d, exportedAt %q (%v)", exported.Version, exported.ExportedAt, err)
 	}
 	if !bytes.Contains(content, []byte("csv-pw-three-example")) || !bytes.Contains(content, []byte("4111111111111111")) {
 		test.Error("the JSON export has not everything")

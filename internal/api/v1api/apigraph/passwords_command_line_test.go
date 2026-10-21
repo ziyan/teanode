@@ -85,7 +85,7 @@ func TestPasswordsCommandLineAgainstTheRealServer(test *testing.T) {
 	// The command line refuses what needs the person's tap in one sentence
 	// that says where it is approved, not with the server's own words.
 	isTapRefusal := func(err error) bool {
-		return err != nil && strings.Contains(err.Error(), "approved on the Passwords page") && !strings.Contains(err.Error(), api.TapRequiredPhrase)
+		return err != nil && strings.Contains(err.Error(), "done on the Passwords page") && !strings.Contains(err.Error(), api.TapRequiredPhrase)
 	}
 
 	const adaPassphrase, benPassphrase = "ada passphrase example", "ben passphrase example"
