@@ -909,8 +909,6 @@ struct PhotosScreen: View {
     /// Whether the search field is out: the Search button at the bottom brings it up.
     @State private var isSearchPresented = false
     @State private var isChoosingDates = false
-    /// How much of the library the switch at the bottom shows.
-    @State private var scale = PhotoScale.all
     /// The days the photos on screen were taken on, as "Oct 3 to 6, 2026": kept up
     /// as the grid scrolls. Empty until the grid has said what is on screen.
     @State private var dateRangeText = ""
@@ -918,6 +916,7 @@ struct PhotosScreen: View {
     /// month or year that was pressed in Months or Years.
     @State private var pendingJumpPhotoId: String?
     @Environment(AppModel.self) private var app
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// The person (group of faces) pushed on People, so Back lands there.
     @State private var openedPersonFaceGroupId: String?
     #if DEBUG
@@ -944,9 +943,6 @@ struct PhotosScreen: View {
                 _searchText = State(initialValue: "harbor")
                 _isSearchPresented = State(initialValue: true)
             }
-            // `photos-library-months` and `photos-library-years` are the library under Months and Years.
-            if DemoServer.isRequested, DemoServer.screen == "photos-library-months" { _scale = State(initialValue: .months) }
-            if DemoServer.isRequested, DemoServer.screen == "photos-library-years" { _scale = State(initialValue: .years) }
             if DemoServer.isRequested, DemoServer.screen == "photos-filter-dates" { _isChoosingDates = State(initialValue: true) }
         #endif
     }
@@ -970,6 +966,13 @@ struct PhotosScreen: View {
         (model.section == .library || model.section == .favorites) && searchWords == nil && !isSelecting
     }
 
+    /// How much of the library the switch at the bottom shows. The app holds
+    /// it, as the tab bar draws the switch on a phone.
+    private var scale: PhotoScale {
+        get { app.photoScale }
+        nonmutating set { app.photoScale = newValue }
+    }
+
     /// How much of the list is shown: every photo wherever the switch is not offered.
     private var activeScale: PhotoScale { isScaleOffered ? scale : .all }
 
@@ -977,6 +980,10 @@ struct PhotosScreen: View {
     /// the library the Search button. It gives way to the search field and to the
     /// bar of Select mode.
     private var isBottomBarShown: Bool { isScaleOffered && !isSearchPresented }
+
+    /// Whether the tab bar holds the switch rather than the screen: on a phone,
+    /// where the bar can collapse and take it in beside its tabs.
+    private var isScaleInTabBar: Bool { PhotoScaleAccessory.isUsed(horizontalSizeClass: horizontalSizeClass) }
 
     /// How many photos from the top are read for the date range before the grid
     /// has said which are on screen.
@@ -1051,8 +1058,8 @@ struct PhotosScreen: View {
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if isBottomBarShown {
-                        PhotoScaleBar(scale: $scale)
+                    if isBottomBarShown, !isScaleInTabBar {
+                        PhotoScaleBar(scale: Bindable(app).photoScale)
                         .padding(.horizontal)
                         .padding(.bottom, 8)
                     }
@@ -1096,6 +1103,11 @@ struct PhotosScreen: View {
                 }
                 .onChange(of: key) { _, _ in dateRangeText = "" }
                 .onChange(of: scale) { _, _ in dateRangeText = "" }
+                // The tab bar shows the switch while the library is on screen
+                // and offers it.
+                .onChange(of: isBottomBarShown, initial: true) { _, isShown in app.isPhotoScaleOffered = isShown }
+                .onAppear { app.isPhotoScaleOffered = isBottomBarShown }
+                .onDisappear { app.isPhotoScaleOffered = false }
                 .navigationDestination(isPresented: $isShowingBackup) { PhotoBackupView(connection: model.connection) }
                 .navigationDestination(item: $openedPersonFaceGroupId) { photoFaceGroupId in
                     PhotoPersonScreen(model: model, photoFaceGroupId: photoFaceGroupId)
@@ -1517,11 +1529,53 @@ struct PhotoGrid: View {
     /// say when each goes; nil or zero when it does not say.
     var trashRetentionDays: Int?
     let onOpen: (Photo) -> Void
+    /// Which of the square sizes is shown, kept for the next time. A pinch
+    /// steps it, as in the Photos app.
+    @AppStorage("photos.gridSizeIndex") private var sizeIndex = PhotoGrid.firstSizeIndex
+    /// The pinch's size when the squares last changed, so one long pinch can
+    /// step more than once.
+    @State private var steppedMagnification: CGFloat = 1
+    @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
+
+    /// The narrowest a square may be at each size: two across on a phone held
+    /// upright, three (the Photos app's own), five and seven, and more of each
+    /// on a wider screen.
+    static let squareMinimumWidths: [CGFloat] = [190, 120, 72, 52]
+    static let firstSizeIndex = 1
+    /// How far a pinch goes before the squares change size.
+    private static let stepMagnification: CGFloat = 1.3
+
+    private var squareMinimumWidth: CGFloat {
+        Self.squareMinimumWidths[min(max(sizeIndex, 0), Self.squareMinimumWidths.count - 1)]
+    }
+
+    /// Bigger squares for a step of minus one, smaller for plus one.
+    private func stepSize(by step: Int) {
+        let stepped = min(max(sizeIndex + step, 0), Self.squareMinimumWidths.count - 1)
+        guard stepped != sizeIndex else { return }
+        withAnimation(isReduceMotionEnabled ? nil : .snappy) { sizeIndex = stepped }
+    }
+
+    private var pinch: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let change = value.magnification / steppedMagnification
+                if change > Self.stepMagnification {
+                    stepSize(by: -1)
+                    steppedMagnification = value.magnification
+                } else if change < 1 / Self.stepMagnification {
+                    stepSize(by: 1)
+                    steppedMagnification = value.magnification
+                }
+            }
+            .onEnded { _ in steppedMagnification = 1 }
+    }
 
     var body: some View {
         // Squares with a hairline between them, edge to edge: three across on a phone held
-        // upright, as the Photos app shows them, and more on a wider screen.
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 1)], spacing: 1) {
+        // upright, as the Photos app shows them, and more on a wider screen. Pinched, fewer
+        // and bigger or more and smaller.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: squareMinimumWidth), spacing: 1)], spacing: 1) {
             if listKey.photoCollection == .trash {
                 // The Trash is listed by when photos were moved there, so its
                 // groups are the days they were moved on, each with when it goes.
@@ -1540,6 +1594,15 @@ struct PhotoGrid: View {
         }
         // The squares are what the screen asks which of them are on show.
         .scrollTargetLayout()
+        // Beside the scroll, not instead of it: two fingers pinch, one scrolls.
+        .simultaneousGesture(pinch)
+        .accessibilityZoomAction { action in
+            switch action.direction {
+            case .zoomIn: stepSize(by: -1)
+            case .zoomOut: stepSize(by: 1)
+            @unknown default: break
+            }
+        }
         if listing.isLoadingPage {
             ProgressView()
                 .padding()

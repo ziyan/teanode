@@ -347,54 +347,24 @@ struct LocationMapHeader: View {
         Map(position: $position) {
             if isShowingPhone {
                 UserAnnotation()
-            } else if let coordinate = model.latestCoordinate, let own = model.location {
-                Annotation("You", coordinate: coordinate) {
-                    // The way back from somebody chosen, as the own row is.
-                    Button {
-                        model.focusOnOwn()
-                    } label: {
-                        AvatarView(name: own.displayName, avatarUrl: own.avatarUrl, colorIndex: own.avatarColorIndex, size: 36)
-                            .overlay(Circle().stroke(model.selectedUserId == nil ? Color.accentColor : Color(.systemBackground), lineWidth: 3))
-                            // A touch target of 44 points around the picture.
-                            .frame(minWidth: 44, minHeight: 44)
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("You")
-                    .accessibilityHint("Shows you on the map")
-                    // A map draws an annotation's content in a host of its
-                    // own, which need not carry the screen's environment;
-                    // AvatarView reads the app from it.
-                    .environment(app)
-                }
             }
             ForEach(pinnedPlaces.prefix(40)) { place in
                 Marker(place.shownName, systemImage: place.symbolName, coordinate: place.coordinate)
             }
-            ForEach(isShowingPeople ? model.people : []) { person in
-                if let coordinate = person.coordinate {
-                    Annotation(person.displayName, coordinate: coordinate) {
-                        Button {
-                            // Chosen again, they stay chosen and their card comes up again: the own picture or row is the way back.
-                            if person.userId != model.selectedUserId { model.select(userId: person.userId) }
-                            app.openedPerson = .account(userId: person.userId)
-                        } label: {
-                            AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36)
-                                .overlay(
-                                    Circle().stroke(
-                                        person.userId == model.selectedUserId ? Color.accentColor : Color(.systemBackground), lineWidth: 3)
-                                )
-                                // A touch target of 44 points around the picture.
-                                .frame(minWidth: 44, minHeight: 44)
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(person.displayName)
+            ForEach(pinGroups) { group in
+                Annotation(group.title, coordinate: group.coordinate) {
+                    LocationMapPinGroupView(group: group, chosenId: chosenPinId, choose: choose)
+                        // A map draws an annotation's content in a host of its
+                        // own, which need not carry the screen's environment;
+                        // AvatarView reads the app from it.
                         .environment(app)
-                    }
                 }
             }
         }
+        // What the map shows and how wide it is say which pictures would
+        // cover each other.
+        .onMapCameraChange(frequency: .onEnd) { context in visibleRect = context.rect }
+        .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.width } action: { width in mapWidth = width }
         .mapControls {
             if isShowingPhone { MapUserLocationButton() }
             MapCompass()
@@ -415,6 +385,39 @@ struct LocationMapHeader: View {
     }
 
     @State private var hasFollowedPhone = false
+    @State private var visibleRect: MKMapRect?
+    @State private var mapWidth: CGFloat = 0
+
+    /// The pictures on the map: the person's own, unless the phone's own dot
+    /// stands for them, and everyone sharing while they are shown.
+    private var pins: [LocationMapPin] {
+        var pins: [LocationMapPin] = []
+        if !isShowingPhone, let coordinate = model.latestCoordinate, let own = model.location {
+            pins.append(LocationMapPin(person: own, coordinate: coordinate, isOwn: true))
+        }
+        if isShowingPeople {
+            pins += model.people.compactMap { person in
+                person.coordinate.map { coordinate in LocationMapPin(person: person, coordinate: coordinate, isOwn: false) }
+            }
+        }
+        return pins
+    }
+
+    private var chosenPinId: String { model.selectedUserId ?? "" }
+
+    private var pinGroups: [LocationMapPinGroup] {
+        LocationMapPinGroup.grouping(pins, chosenId: chosenPinId, visibleRect: visibleRect, mapWidth: mapWidth)
+    }
+
+    /// Chooses whose picture was tapped. The own picture is the way back from
+    /// somebody chosen, as the own row is; somebody chosen again stays chosen.
+    private func choose(_ pin: LocationMapPin) {
+        if pin.isOwn {
+            model.focusOnOwn()
+        } else if pin.person.userId != model.selectedUserId {
+            model.select(userId: pin.person.userId)
+        }
+    }
 
     private func focus() {
         if let coordinate = model.selectedPerson?.coordinate {
