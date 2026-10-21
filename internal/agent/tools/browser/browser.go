@@ -378,7 +378,16 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	if arguments.Action == "snapshot" {
 		arguments.MaxCharacters = part.readCharacters()
 	}
-	data, err := askTab(ctx, run, tab, arguments.Action, arguments)
+	asked := arguments
+	if arguments.Action == "cdp_events" {
+		// The whole window the extension kept is asked for, and the parts the
+		// agent wants are cut from it below, after what may be shown is judged.
+		everything := *arguments
+		everything.Method = ""
+		everything.Limit = cdpEventsEverything
+		asked = &everything
+	}
+	data, err := askTab(ctx, run, tab, arguments.Action, asked)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +396,14 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	}
 	switch arguments.Action {
 	case "cdp_events":
-		data = hideOwnRequests(data, ownHostnames(run.Configuration(), tab))
+		data, err = showForeignRequests(tab.WatchedRequests(), data, ownHostnames(run.Configuration(), tab), strings.TrimSpace(arguments.Method), arguments.Limit)
+		if err != nil {
+			return nil, err
+		}
+	case "cdp_stop":
+		// What the protocol watched is let go with it, and a request it
+		// watched is not shown if the tab is watched again.
+		tab.WatchedRequests().Reset()
 	case "snapshot":
 		data = part.cutTabAnswer(data)
 	case "tabs":
@@ -405,6 +421,10 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	text := tools.FitJSON(data, tools.ResultCharactersOf(run))
 	return &tools.Result{Content: text, Untrusted: true, Note: "in their browser: " + arguments.Action}, nil
 }
+
+// cdpEventsEverything is how many events cdp_events asks the extension for:
+// more than it keeps, which is all of them.
+const cdpEventsEverything = 100000
 
 // snapshotPart is the part of a page's text a snapshot hands over: from an
 // offset, so many characters. A long page was cut at the bound with no way

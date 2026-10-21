@@ -221,26 +221,114 @@ export function fetchRefusal(address, base, serverOrigin) {
   return addressRefusal(resolved.href, serverOrigin)
 }
 
-// requestsToTheServer takes out of what a tab watched every request made to
-// the server's host, with the events that go with it: the panel is a frame of
-// the server's origin, and a frame of the same site is in the tab's process,
-// so its requests, with the Authorization header that signs the person in, are
-// among the page's. What a page asks other sites for is what the agent
-// watches the network for, and stays.
-export function hiddenRequestIds(events, serverOrigin) {
-  const hidden = new Set()
-  for (const event of events) {
-    const params = event.params || {}
-    const urls = [params.request && params.request.url, params.response && params.response.url, params.url]
-    if (params.requestId && urls.some((address) => typeof address === 'string' && isOwnPage(address, serverOrigin)))
-      hidden.add(params.requestId)
-  }
-  return hidden
+// What the agent is shown of the requests the tab made.
+//
+// The panel is a frame of the server's origin, and a frame of the same site is
+// in the tab's process, so its requests, with the Authorization header that
+// signs the person in, are among the page's network events. What a page asks
+// other sites for is what the agent watches the network for, and is shown.
+//
+// The worker keeps few events, and a page that makes many pushes a
+// connection's first events out of them while its later ones, which can carry
+// the header, go on arriving. So what is allowed is kept apart from the events,
+// for as long as the tab is debugged: a record of every request seen created,
+// with the places (hostnames, or the marks below) that its events named. A
+// request is shown only when its creation was seen and no event of it named
+// the server, an extension or an address that cannot be read; an event of a
+// request never seen created is not shown, and nor is its body.
+export const REQUESTS_KEPT = 20000
+const PLACE_EXTENSION = 'extension:'
+const PLACE_UNREADABLE = '?'
+
+export const REQUEST_BODY_REFUSAL =
+  'only a request that cdp_events has shown has its body read; a request to TeaNode itself, or one cdp_events has not shown, is not'
+
+// newRequestRecord is an empty record, for a debugging session that begins.
+export function newRequestRecord() {
+  return new Map()
 }
 
-export function withoutServerRequests(events, serverOrigin) {
-  const hidden = hiddenRequestIds(events, serverOrigin)
-  return events.filter((event) => !(event.params && hidden.has(event.params.requestId)))
+// placeOf is where an address goes, as the record keeps it: its hostname
+// (lowercase, no trailing dot, '' for an address with none such as data:), or
+// a mark.
+function placeOf(address) {
+  const written = String(address || '')
+    .trim()
+    .replace(/^(blob|filesystem):(?=[a-z]+:)/i, '')
+  if (/^(chrome|moz)-extension:/i.test(written)) return PLACE_EXTENSION
+  let parsed
+  try {
+    parsed = new URL(written)
+  } catch {
+    return PLACE_UNREADABLE
+  }
+  const hostname = parsed.hostname
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+    .toLowerCase()
+  if (hostname === '') return parsed.protocol === 'data:' || parsed.protocol === 'about:' ? '' : PLACE_UNREADABLE
+  return hostname
+}
+
+// requestPlaces are the places the addresses in a network event name: the
+// request's, the response's, the one a WebSocket was created for, and the one
+// a redirect came from.
+function requestPlaces(params) {
+  const places = []
+  const add = (container, key) => {
+    if (!container || typeof container !== 'object' || !(key in container)) return
+    const address = container[key]
+    places.push(typeof address === 'string' && address !== '' ? placeOf(address) : PLACE_UNREADABLE)
+  }
+  add(params.request, 'url')
+  add(params.response, 'url')
+  add(params.redirectResponse, 'url')
+  add(params, 'url')
+  return places
+}
+
+// noteRequestEvent learns from one event of the tab's network, as it arrives:
+// a request is known from its creation, which is the first request event of an
+// id (not a redirect, which has the same id and a new address) or a WebSocket
+// created, and every later event of it adds the places it names. The oldest
+// requests are forgotten past REQUESTS_KEPT, and a forgotten request is not
+// shown.
+export function noteRequestEvent(record, method, params) {
+  if (typeof method !== 'string' || !method.startsWith('Network.') || !params || typeof params.requestId !== 'string')
+    return
+  const requestId = params.requestId
+  if (requestId === '') return
+  const isRedirect = params.redirectResponse !== undefined && params.redirectResponse !== null
+  const isCreation = (method === 'Network.requestWillBeSent' && !isRedirect) || method === 'Network.webSocketCreated'
+  const places = requestPlaces(params)
+  if (!record.has(requestId)) {
+    if (!isCreation || places.length === 0) return
+    record.set(requestId, new Set())
+    while (record.size > REQUESTS_KEPT) record.delete(record.keys().next().value)
+  }
+  for (const place of places) record.get(requestId).add(place)
+}
+
+// isRequestShown says the agent may be shown a request, or have its body read.
+export function isRequestShown(record, requestId, serverOrigin) {
+  const own = serverHostname(serverOrigin)
+  const places = typeof requestId === 'string' ? record.get(requestId) : undefined
+  // Without the server's own name nothing can be told from it.
+  if (!places || own === '') return false
+  for (const place of places) {
+    if (place === PLACE_EXTENSION || place === PLACE_UNREADABLE || place === own) return false
+  }
+  return true
+}
+
+// networkEventsShown are the events the agent may see: any that is not the
+// network's, and the network's only for requests that may be shown.
+export function networkEventsShown(record, events, serverOrigin) {
+  return events.filter((event) => {
+    if (typeof event.method !== 'string') return false
+    if (!event.method.startsWith('Network.')) return true
+    return isRequestShown(record, event.params && event.params.requestId, serverOrigin)
+  })
 }
 
 // ACTIONS_OUTSIDE_A_PAGE are the ones that do not read or act in the page the

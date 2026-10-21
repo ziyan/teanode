@@ -46,6 +46,10 @@ type attachedTab struct {
 	// attached, or one the agent opened. Read by the tool while the socket
 	// says otherwise.
 	hasTab atomic.Bool
+
+	// requests are the requests the tab's events have shown, which decide
+	// what the agent is shown of what the page asked the network for.
+	requests tools.RequestLedger
 }
 
 // AttachTab records a person's tab; a second attach replaces the first.
@@ -213,6 +217,11 @@ func (self *attachedTab) IsTakenOver() bool {
 func (self *attachedTab) ServerHost() string {
 	host, _ := self.serverHost.Load().(string)
 	return host
+}
+
+// WatchedRequests are the requests this connection has shown so far.
+func (self *attachedTab) WatchedRequests() *tools.RequestLedger {
+	return &self.requests
 }
 
 // ListedTabs are the tabs the extension last listed, with their addresses.

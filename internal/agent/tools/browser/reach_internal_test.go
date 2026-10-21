@@ -407,6 +407,24 @@ func TestAFetchIsHeldToTheSameAddressesAsATab(t *testing.T) {
 	}
 }
 
+// eventsAnswer is what the extension says to cdp_events: the events, as
+// JSON, and the session they belong to.
+func eventsAnswer(session string, events ...string) string {
+	return fmt.Sprintf(`{"kept":%d,"session":%q,"events":[%s]}`, len(events), session, strings.Join(events, ","))
+}
+
+func requestCreated(requestID, address string) string {
+	return fmt.Sprintf(`{"method":"Network.requestWillBeSent","params":{"requestId":%q,"request":{"url":%q}}}`, requestID, address)
+}
+
+func socketCreated(requestID, address string) string {
+	return fmt.Sprintf(`{"method":"Network.webSocketCreated","params":{"requestId":%q,"url":%q}}`, requestID, address)
+}
+
+func frameSent(requestID, text string) string {
+	return fmt.Sprintf(`{"method":"Network.webSocketFrameSent","params":{"requestId":%q,"response":{"opcode":1,"payloadData":%q}}}`, requestID, text)
+}
+
 // Requests to the server's host, with the Authorization header the panel's
 // frame signs in with, are among a same-site page's, and are not shown.
 func TestRequestsToTheServerAreNotShownInWhatTheTabWatched(t *testing.T) {
@@ -426,5 +444,180 @@ func TestRequestsToTheServerAreNotShownInWhatTheTabWatched(t *testing.T) {
 	}
 	if !strings.Contains(result.Content, "cdn.example.net") {
 		t.Errorf("another site's request is gone: %s", result.Content)
+	}
+}
+
+// A page that makes many requests pushes the first events of a connection
+// out of the few the extension keeps, while the frames that carry the
+// header go on arriving. A frame of a connection whose creation nobody saw
+// is not shown, and one that was seen made to another host is.
+func TestAConnectionWhoseCreationWasPushedOutIsNotShown(t *testing.T) {
+	run := newReachRun("https://app.example.com/page")
+	var flood []string
+	for index := 0; index < 600; index++ {
+		flood = append(flood, requestCreated(fmt.Sprintf("9.%d", index), "https://cdn.example.net/a.js"))
+	}
+	run.first.sequence = []string{
+		// The first window holds the creation of both connections.
+		eventsAnswer("tab-1", socketCreated("5.1", "wss://mail.example.com/api/v1/socket"), socketCreated("5.2", "wss://live.example.net/feed"), frameSent("5.1", "first"), frameSent("5.2", "first")),
+		// Then the flood, and a frame of each connection, the creations gone.
+		eventsAnswer("tab-1", append(flood, frameSent("5.1", "Bearer example-token"), frameSent("5.2", "later"))...),
+	}
+	first, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab","limit":10}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(first.Content, "mail.example.com") || strings.Contains(first.Content, "5.1") {
+		t.Errorf("the first window shows the server's connection: %s", first.Content)
+	}
+	if !strings.Contains(first.Content, "live.example.net") {
+		t.Errorf("the first window does not show the other host's connection: %s", first.Content)
+	}
+	flooded, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab","limit":10}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(flooded.Content, "example-token") || strings.Contains(flooded.Content, `"5.1"`) {
+		t.Errorf("a frame of the server's connection is shown once its creation is gone: %s", flooded.Content)
+	}
+	if !strings.Contains(flooded.Content, `"later"`) {
+		t.Errorf("a frame of the other host's connection is gone: %s", flooded.Content)
+	}
+}
+
+// What was not seen created in the answers this server has had is not shown,
+// whatever it looks like, and nothing is shown that the server cannot place.
+func TestEventsOfARequestNeverSeenCreatedAreNotShown(t *testing.T) {
+	run := newReachRun("https://app.example.com/page")
+	run.first.answer = eventsAnswer("tab-1",
+		frameSent("7.1", "Bearer example-token"),
+		`{"method":"Network.responseReceived","params":{"requestId":"7.2","response":{"url":"https://cdn.example.net/b.js"}}}`,
+		`{"method":"Network.dataReceived","params":{"requestId":"7.3"}}`,
+		`{"method":"Network.policyUpdated","params":{}}`,
+		`{"method":"Log.entryAdded","params":{"entry":{"text":"a message"}}}`)
+	result, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Content, "example-token") || strings.Contains(result.Content, "7.") || strings.Contains(result.Content, "policyUpdated") {
+		t.Errorf("an event nobody saw created is shown: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "a message") {
+		t.Errorf("an event that is not the network's is gone: %s", result.Content)
+	}
+}
+
+// A request that went to another host and was sent on to the server is not
+// shown from the redirect on, and one that started at the server and was
+// sent elsewhere never was.
+func TestARedirectToTheServerHidesTheRequestAndOneFromItNeverShows(t *testing.T) {
+	run := newReachRun("https://app.example.com/page")
+	run.first.answer = eventsAnswer("tab-1",
+		requestCreated("3.1", "https://cdn.example.net/a"),
+		`{"method":"Network.requestWillBeSent","params":{"requestId":"3.1","request":{"url":"https://mail.example.com/x"},"redirectResponse":{"url":"https://cdn.example.net/a","status":302}}}`,
+		frameSent("3.1", "after"),
+		requestCreated("3.2", "https://mail.example.com/y"),
+		`{"method":"Network.requestWillBeSent","params":{"requestId":"3.2","request":{"url":"https://cdn.example.net/z"},"redirectResponse":{"url":"https://mail.example.com/y","status":302}}}`)
+	result, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, shown := range []string{"3.1", "3.2", "mail.example.com", "after"} {
+		if strings.Contains(result.Content, shown) {
+			t.Errorf("%s is shown: %s", shown, result.Content)
+		}
+	}
+}
+
+// An answer that cannot be read shows nothing; the method and the limit
+// choose from what may be shown; the extension is asked for everything.
+func TestWhatTheTabWatchedIsChosenFromAfterItIsJudged(t *testing.T) {
+	run := newReachRun("https://app.example.com/page")
+	run.first.answer = eventsAnswer("tab-1",
+		requestCreated("4.1", "https://cdn.example.net/1"),
+		requestCreated("4.2", "https://cdn.example.net/2"),
+		requestCreated("4.3", "https://cdn.example.net/3"),
+		`{"method":"Log.entryAdded","params":{"entry":{"text":"a message"}}}`)
+	result, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab","method":"Network.","limit":2}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Content, "4.1") || !strings.Contains(result.Content, "4.2") || !strings.Contains(result.Content, "4.3") || strings.Contains(result.Content, "a message") {
+		t.Errorf("limit and method: %s", result.Content)
+	}
+	broken := newReachRun("https://app.example.com/page")
+	broken.first.answer = `{"events":"not a list"}`
+	if _, err := runOnTab(t, broken, `{"action":"cdp_events","target":"tab"}`); err == nil {
+		t.Error("an answer that cannot be read is passed on")
+	}
+}
+
+// A body is read only for a request cdp_events has shown, so the server's
+// requests and ones nobody saw created are not read.
+func TestABodyIsReadOnlyForARequestThatWasShown(t *testing.T) {
+	run := newReachRun("https://app.example.com/page")
+	run.first.sequence = []string{
+		eventsAnswer("tab-1", requestCreated("6.1", "https://mail.example.com/api"), requestCreated("6.2", "https://cdn.example.net/a")),
+		`{"result":{"body":"hello"}}`,
+	}
+	if _, err := runOnTab(t, run, `{"action":"cdp","target":"tab","method":"Network.getResponseBody","params":{"requestId":"6.2"}}`); err == nil {
+		t.Error("the body of a request nobody listed is read")
+	}
+	run.first.sequence = []string{eventsAnswer("tab-1", requestCreated("6.1", "https://mail.example.com/api"), requestCreated("6.2", "https://cdn.example.net/a"))}
+	if _, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab"}`); err != nil {
+		t.Fatal(err)
+	}
+	for _, requestID := range []string{"6.1", "6.9", ""} {
+		for _, method := range []string{"Network.getResponseBody", "Network.getRequestPostData"} {
+			if _, err := runOnTab(t, run, fmt.Sprintf(`{"action":"cdp","target":"tab","method":%q,"params":{"requestId":%q}}`, method, requestID)); err == nil {
+				t.Errorf("%s of %q is read", method, requestID)
+			}
+		}
+	}
+	run.first.sequence = []string{`{"result":{"body":"hello"}}`}
+	if result, err := runOnTab(t, run, `{"action":"cdp","target":"tab","method":"Network.getResponseBody","params":{"requestId":"6.2"}}`); err != nil || !strings.Contains(result.Content, "hello") {
+		t.Errorf("the body of a request that was shown: %v %v", result, err)
+	}
+}
+
+// Letting the protocol go forgets what was seen, so a connection's frames
+// are not shown from a window that no longer holds its creation.
+func TestLettingTheProtocolGoForgetsTheRequestsSeen(t *testing.T) {
+	run := newReachRun("https://app.example.com/page")
+	run.first.sequence = []string{
+		eventsAnswer("tab-1", socketCreated("8.1", "wss://live.example.net/feed")),
+		`{"stopped":true}`,
+		eventsAnswer("tab-1", frameSent("8.1", "late")),
+	}
+	for _, arguments := range []string{`{"action":"cdp_events","target":"tab"}`, `{"action":"cdp_stop","target":"tab"}`} {
+		if _, err := runOnTab(t, run, arguments); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab"}`)
+	if err != nil || strings.Contains(result.Content, "late") {
+		t.Errorf("a frame of a forgotten connection is shown: %v %v", result, err)
+	}
+}
+
+func TestPlacesAreTheHostnamesAndMarks(t *testing.T) {
+	for address, wanted := range map[string]string{
+		"https://Mail.Example.com:8443/x":      "mail.example.com",
+		"wss://mail.example.com./socket":       "mail.example.com",
+		"blob:https://mail.example.com/0f1e":   "mail.example.com",
+		"chrome-extension://abcdef/panel.html": placeExtension,
+		"blob:chrome-extension://abcdef/0f1e":  placeExtension,
+		"data:text/plain;base64,AAAA":          "",
+		"http:mail.example.com/":               placeUnreadable,
+		"https://\u0000bad/":                   placeUnreadable,
+		"https://0x7f.1/":                      placeUnreadable,
+		"https://exa%6Dple.com/":               placeUnreadable,
+		"%zz":                                  placeUnreadable,
+		"https:///path":                        placeUnreadable,
+		"https://cdn.example.net/a.js":         "cdn.example.net",
+	} {
+		if got := placeOf(address); got != wanted {
+			t.Errorf("placeOf(%q) = %q, wanted %q", address, got, wanted)
+		}
 	}
 }
