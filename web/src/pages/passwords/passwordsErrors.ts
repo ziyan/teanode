@@ -1,29 +1,14 @@
 import { APIError } from '../../api'
 import { Key, useTranslation } from '../../i18n/i18n'
 import { useToast } from '../../components/toast'
+import { PasswordsError, PasswordsErrorCode } from '../../passwords/passwordsError'
 
 // What the Passwords screens throw themselves is a code, and the words for it
 // are looked up here, so a toast in Chinese or Japanese is never English text
 // from a thrown Error.
 
-export type PasswordsErrorCode =
-  | 'locked'
-  | 'notSetUp'
-  | 'iterationCountOutOfRange'
-  | 'itemUnreadable'
-  | 'itemUnknown'
-  | 'ownerOnly'
-  | 'publicKeyMismatch'
-
-export class PasswordsError extends Error {
-  readonly code: PasswordsErrorCode
-
-  constructor(code: PasswordsErrorCode) {
-    super(code)
-    this.name = 'PasswordsError'
-    this.code = code
-  }
-}
+export { PasswordsError } from '../../passwords/passwordsError'
+export type { PasswordsErrorCode } from '../../passwords/passwordsError'
 
 const ERROR_WORDS: Record<PasswordsErrorCode, Key> = {
   locked: 'passwords.errorLocked',

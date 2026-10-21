@@ -50,7 +50,7 @@ import {
   ReplacePasswordsRecoveryKeyInput,
   SetUpPasswordsInput,
 } from './passwordsApi'
-import { PasswordsError } from './passwordsErrors'
+import { PasswordsError } from '../../passwords/passwordsError'
 
 // ---------------------------------------------------------------------------
 // The passphrase

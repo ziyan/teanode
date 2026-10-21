@@ -8,7 +8,7 @@ import globals from 'globals'
 export default [
   { ignores: ['node_modules/**', 'build/**', 'graphql/index.ts'] },
   {
-    files: ['src/**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}', 'extension/src/**/*.ts'],
     languageOptions: {
       parser,
       ecmaVersion: 'latest',

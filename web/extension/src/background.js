@@ -23,7 +23,14 @@
 // picture comes back here as input, while they hold it. Their screen does
 // not change for it.
 
-const PROTOCOL = 4
+// Passwords: the service worker's half (messages from the content scripts and
+// the extension's own pages, the keys held in the session storage, the lock
+// time), and the agent's fill_login and fill_one_time_code. Written in
+// TypeScript with the dashboard's own encryption; see passwords/.
+import './passwords/background'
+import { fillLoginForAgent, fillOneTimeCodeForAgent } from './passwords/agentFill'
+
+const PROTOCOL = 5
 
 let socket = null
 // attached is the tab the actions go to and the person's own tab, either of
@@ -914,6 +921,11 @@ async function act(action, args) {
       await letDebuggerGo(tab.id)
       return { ok: true, data: { stopped: true } }
     }
+    // The server builds these arguments after checking the item is one the
+    // person let the agent use and that the tab is on one of its sites; the
+    // extension checks the tab's address again and never echoes a value.
+    if (action === 'fill_login') return await fillLoginForAgent(tab.id, args)
+    if (action === 'fill_one_time_code') return await fillOneTimeCodeForAgent(tab.id, args)
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: inPage,
@@ -969,10 +981,16 @@ async function inPage(action, args) {
     const hint = ((node.autocomplete || '') + ' ' + (node.name || '') + ' ' + (node.id || '') + ' ' + (node.getAttribute('aria-label') || '')).toLowerCase()
     return type === 'password' || /cc-|card|cvc|cvv|iban|account-?number|routing|ssn|passport/.test(hint)
   }
+  // A field a password, or a code the page asked for as one, is typed into:
+  // its value is never read into a name or a snapshot, whoever put it there.
+  const isSecretField = (node) =>
+    node instanceof HTMLInputElement &&
+    ((node.type || '').toLowerCase() === 'password' || /(^|\s)(current-password|new-password|one-time-code)(\s|$)/i.test(node.getAttribute('autocomplete') || ''))
   const nameOf = (node) => {
     const label = node.getAttribute && (node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('placeholder') || node.getAttribute('name'))
     if (label) return label.trim()
-    return ((node.innerText || node.value || node.textContent || '').trim().replace(/\s+/g, ' ')).slice(0, 120)
+    const value = isSecretField(node) || sensitive(node) ? '' : node.value
+    return ((node.innerText || value || node.textContent || '').trim().replace(/\s+/g, ' ')).slice(0, 120)
   }
   const refFor = (node) => {
     for (const [ref, candidate] of refs) if (candidate === node) return ref
@@ -1012,7 +1030,8 @@ async function inPage(action, args) {
           let extra = ''
           if (tag === 'a' && node.getAttribute('href')) extra = ' href=' + node.getAttribute('href')
           if ((tag === 'input' || tag === 'textarea') && node.value && !sensitive(node)) extra = ' value=' + JSON.stringify(node.value.slice(0, 80))
-          if (sensitive(node)) extra = ' (holds a secret)'
+          if (isSecretField(node) && node.value) extra = ' (filled, value not shown)'
+          else if (sensitive(node)) extra = ' (holds a secret)'
           lines.push('  '.repeat(depth) + '[ref=' + ref + '] ' + description + ' "' + nameOf(node) + '"' + extra)
           total += 40
           if (tag === 'select') {

@@ -68,6 +68,9 @@ async function login() {
 }
 
 async function logout() {
+  // The opened Passwords keys go with the sign-in: they live only in the
+  // session storage, and are dropped here as well as by the service worker.
+  await chrome.storage.session.remove('passwordsKeys')
   const { token, tokenId } = await chrome.storage.local.get(['token', 'tokenId'])
   const origin = await serverOrigin()
   if (token && tokenId && origin) {
@@ -96,6 +99,9 @@ document.getElementById('save').addEventListener('click', async () => {
   await chrome.storage.sync.set({ server })
   saved.textContent = server ? 'Saved.' : 'Cleared.'
   await show()
+})
+document.getElementById('passwords').addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'passwords:open-popup-window' })
 })
 signIn.addEventListener('click', () => void login())
 signOut.addEventListener('click', () => void logout())
