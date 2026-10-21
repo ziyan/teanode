@@ -325,6 +325,23 @@ it("gives a person's arrival its day when it was not today", async () => {
   expect(today).not.toContain(new Intl.DateTimeFormat('en', { weekday: 'short' }).format(now))
 })
 
+it('says a visit begun more than a week ago by its date alone', async () => {
+  const weeksAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000)
+  answerWith({
+    sharedViews: [
+      {
+        ...PERSON_B_VIEW,
+        openVisit: { id: 'visit-old', arrivedAt: weeksAgo.toISOString(), place: place({ placeName: 'Fixture Park' }) },
+      },
+    ] as never,
+  })
+  renderAt('/location')
+  const shown = (await screen.findByText(/At Fixture Park since/)).textContent ?? ''
+  expect(shown).toBe(
+    `At Fixture Park since ${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' }).format(weeksAgo)}`,
+  )
+})
+
 it('reads a person again when the live feed says they moved', async () => {
   answerWith({
     sharedViews: [PERSON_B_VIEW],
@@ -1060,38 +1077,15 @@ it('keeps the address buttons off while the editor has unsaved changes', async (
   expect(calls('SavePlace')).toHaveLength(0)
 })
 
-it('offers Photos for a shared person the caller has a contact for, opening the library on them', async () => {
+it('leaves Photos of a shared person to their card', async () => {
   answerWith({
     sharedViews: [PERSON_B_VIEW],
     circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
   })
   renderAt('/location?person=person-b', { canUsePhotos: true })
-  const photos = await screen.findByRole('link', { name: /^Photos of / })
-  expect(photos.getAttribute('href')).toBe(`/photos?person=${encodeURIComponent(PERSON_B_VIEW.userId)}`)
-  fireEvent.click(photos)
-  expect(await screen.findByText('The photos page')).toBeTruthy()
-})
-
-it('offers no Photos for the person themselves, a person with no linked contact, or when Photos is not usable', async () => {
-  answerWith({ sharedViews: [PERSON_B_VIEW], circles: [{ members: [{ userId: 'person-b', linkedContactId: '' }] }] })
-  renderAt('/location?person=person-b', { canUsePhotos: true })
   await screen.findByText('Visits of Person B')
   expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
-  cleanup()
-
-  answerWith({
-    sharedViews: [PERSON_B_VIEW],
-    circles: [{ members: [{ userId: 'person-b', linkedContactId: 'contact-1' }] }],
-  })
-  renderAt('/location?person=person-b')
-  await screen.findByText('Visits of Person B')
-  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
-  cleanup()
-
-  answerWith({ circles: [{ members: [{ userId: 'person-a', linkedContactId: 'contact-1' }] }] })
-  renderAt('/location', { canUsePhotos: true })
-  await screen.findByRole('heading', { name: 'Visits' })
-  expect(screen.queryByRole('link', { name: /^Photos of / })).toBeNull()
+  expect(screen.getByRole('link', { name: 'Profile' })).toBeTruthy()
 })
 
 it("opens the card of the person whose location is shown, and none for the person's own", async () => {
@@ -1245,4 +1239,40 @@ it('ends the photo window of an open visit at one moment per answer, not at ever
   fireEvent.click(screen.getByText('Fixture Park').closest('button')!)
   await waitFor(() => expect(screen.getByTestId('address').textContent).toContain('place=place-one'))
   expect(screen.getByRole('link', { name: /^Photo taken during the visit/ }).getAttribute('href')).toBe(href)
+})
+
+it("offers neither checking in nor Sharing while somebody else's location is shown", async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location?person=person-b&tab=sharing')
+  await screen.findByText('Visits of Person B')
+  expect(screen.queryByRole('button', { name: 'Check in' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Sharing' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Places' })).toBeTruthy()
+})
+
+it('opens on the visits of somebody chosen from the Sharing tab, and comes back to Visits', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location?tab=sharing')
+  await screen.findByRole('combobox', { name: 'Share with' })
+  fireEvent.click(await screen.findByRole('button', { name: /Person B/ }))
+  expect(await screen.findByText('Visits of Person B')).toBeTruthy()
+  expect(screen.queryByRole('combobox', { name: 'Share with' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Sharing' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /You/ }))
+  expect(await screen.findByRole('heading', { name: 'Visits' })).toBeTruthy()
+  expect(screen.queryByRole('combobox', { name: 'Share with' })).toBeNull()
+})
+
+it('puts somebody who shares only the place they are at on the map, at that place', async () => {
+  answerWith({
+    sharedViews: [
+      {
+        ...PERSON_B_VIEW,
+        latestPoint: null,
+        openVisit: { id: 'visit-now', arrivedAt: new Date().toISOString(), place: place({ placeName: 'Fixture Park' }) },
+      },
+    ] as never,
+  })
+  renderAt('/location')
+  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toContain('Person B'))
 })

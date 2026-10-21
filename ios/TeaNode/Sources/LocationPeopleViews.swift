@@ -6,9 +6,9 @@ import TeaNodeKit
 // map, a row each under it, and, once one is chosen, their visits and places.
 
 /// LocationPeopleRows is a row for each person sharing, at the top of the
-/// drawer's visits, the person's own row first. A tap selects one (the map centers on them) and
-/// brings up their card over the map, and they stay chosen until another row
-/// is tapped: the own row is the way back to the person's own location. With more people than fit under the map, one
+/// drawer's visits, the person's own row first. A tap selects one: the map
+/// centers on them and the drawer shows their visits. They stay chosen until
+/// another row is tapped: the own row is the way back to the person's own location. With more people than fit under the map, one
 /// row says how many and opens a screen of their own.
 struct LocationPeopleRows: View {
     let model: LocationModel
@@ -17,7 +17,6 @@ struct LocationPeopleRows: View {
     /// chevron and the list's text size.
     let showPeople: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(AppModel.self) private var app
 
     /// The most people given a row of their own under the map. At the
     /// accessibility text sizes a row is as tall as a third of the map, so
@@ -76,11 +75,10 @@ struct LocationPeopleRows: View {
         }
     }
 
-    /// Shows them on the map and brings up their card over it. Chosen again,
-    /// they stay chosen and the card comes up again.
+    /// Shows them on the map and their visits in the drawer, whose header
+    /// opens their card.
     private func choose(_ person: PersonLocation) {
         model.select(userId: person.userId)
-        app.openedPerson = .account(userId: person.userId)
     }
 }
 
@@ -114,11 +112,11 @@ struct LocationPeopleDivider: View {
 }
 
 /// LocationPeopleScreen is everyone sharing their location with the person,
-/// a row each; choosing one shows them on the map, with their card over it.
+/// a row each; choosing one shows them on the map, with their visits in the
+/// drawer.
 struct LocationPeopleScreen: View {
     let model: LocationModel
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppModel.self) private var app
 
     var body: some View {
         List {
@@ -127,7 +125,6 @@ struct LocationPeopleScreen: View {
                 LocationPersonRow(person: person, own: model.location, isSelected: person.userId == model.selectedUserId) {
                     model.select(userId: person.userId)
                     dismiss()
-                    app.openedPerson = .account(userId: person.userId)
                 }
             }
         }

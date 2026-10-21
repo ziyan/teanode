@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 import { authorization } from '../api'
 import { useTranslation } from '../i18n/i18n'
+import { groupPins } from '../lib/mapPinGroups'
 import { Avatar } from './avatar'
 import { PlaceLabelIcon } from './placeLabelIcon'
 import { useToast } from './toast'
@@ -135,7 +136,7 @@ function circleFeatures(people: MapPerson[], places: MapPlace[]): CircleFeatureC
   return { type: 'FeatureCollection', features }
 }
 
-type Slot = { key: string; element: HTMLButtonElement }
+type Slot = { key: string; element: HTMLElement }
 
 // LocationMap draws the people, places and path it is given and fits the view
 // to them whenever what is shown moves. Choosing a marker calls back; the page
@@ -175,7 +176,12 @@ export function LocationMap({
   const toast = useToast()
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const markersRef = useRef(new Map<string, { marker: maplibregl.Marker; element: HTMLButtonElement }>())
+  const markersRef = useRef(new Map<string, { marker: maplibregl.Marker; element: HTMLElement }>())
+  // The zoom the people's groups were made at: pictures that cover each other
+  // at one zoom stand apart at a closer one.
+  const [groupedZoom, setGroupedZoom] = useState(0)
+  // The group whose list of names is open, by its marker's key.
+  const [openGroupKey, setOpenGroupKey] = useState<string | null>(null)
   const [isStyleReady, setStyleReady] = useState(false)
   const [slots, setSlots] = useState<Slot[]>([])
 
@@ -293,10 +299,16 @@ export function LocationMap({
     // on a marker is the marker's own, so it is not taken for one.
     map.on('click', (event) => {
       const target = event.originalEvent.target
-      if (target instanceof Element && target.closest('.location-marker')) {
+      if (target instanceof Element && target.closest('.location-marker, .location-marker-group')) {
         return
       }
+      setOpenGroupKey(null)
       callbacks.current.onPlaceMoved?.(event.lngLat.lat, event.lngLat.lng)
+    })
+    map.on('zoomend', () => setGroupedZoom(map.getZoom()))
+    map.on('movestart', (event) => {
+      // Moved by the person, not by the page centering on a choice.
+      if ((event as typeof event & { originalEvent?: Event }).originalEvent) setOpenGroupKey(null)
     })
     mapRef.current = map
     const markers = markersRef.current
@@ -340,7 +352,8 @@ export function LocationMap({
   }, [circles, path, isStyleReady])
 
   // One marker per person and per place, made when it first appears, moved
-  // when it moves and taken away when it is no longer shown.
+  // when it moves and taken away when it is no longer shown. People whose
+  // pictures would cover each other at this zoom are one marker, a group.
   useEffect(() => {
     const map = mapRef.current
     if (!map) {
@@ -348,8 +361,19 @@ export function LocationMap({
     }
     const markers = markersRef.current
     const wanted = new Map<string, { latitudeDegrees: number; longitudeDegrees: number; label: string }>()
-    for (const person of people) {
-      wanted.set(`person:${person.userId}`, { ...person, label: person.name })
+    const groups = groupPins(
+      people.map((person) => {
+        const point = map.project([person.longitudeDegrees, person.latitudeDegrees])
+        return { pin: person, x: point.x, y: point.y, isChosen: person.isSelected }
+      }),
+    )
+    for (const group of groups) {
+      const [first] = group
+      if (group.length === 1) {
+        wanted.set(`person:${first.userId}`, { ...first, label: first.name })
+      } else {
+        wanted.set(groupKeyOf(group), { ...first, label: namesOf(group) })
+      }
     }
     for (const place of places) {
       wanted.set(`place:${place.id}`, { ...place, label: place.placeName })
@@ -366,6 +390,14 @@ export function LocationMap({
       if (known) {
         known.marker.setLngLat(position)
         known.element.setAttribute('aria-label', shown.label)
+        continue
+      }
+      if (key.startsWith(GROUP_KEY_PREFIX)) {
+        // A group's element holds its own buttons, which React draws.
+        const element = document.createElement('div')
+        element.classList.add('location-marker-group')
+        const marker = new maplibregl.Marker({ element, anchor: 'center' }).setLngLat(position).addTo(map)
+        markers.set(key, { marker, element })
         continue
       }
       const element = document.createElement('button')
@@ -396,7 +428,8 @@ export function LocationMap({
       markers.set(key, { marker, element })
     }
     setSlots([...markers.entries()].map(([key, { element }]) => ({ key, element })))
-  }, [people, places])
+    // groupedZoom is read through the map, which projects at its zoom.
+  }, [people, places, groupedZoom])
 
   // Which marker is chosen, as a class on its element: the page is the one that
   // knows, and a marker's element is not React's to render. A class is added
@@ -406,10 +439,19 @@ export function LocationMap({
     for (const person of people) {
       markersRef.current.get(`person:${person.userId}`)?.element.classList.toggle('is-selected', person.isSelected)
     }
+    for (const [key, { element }] of markersRef.current) {
+      if (!key.startsWith(GROUP_KEY_PREFIX)) continue
+      const userIds = key.slice(GROUP_KEY_PREFIX.length).split(',')
+      element.classList.toggle(
+        'is-selected',
+        people.some((person) => person.isSelected && userIds.includes(person.userId)),
+      )
+      element.classList.toggle('is-open', key === openGroupKey)
+    }
     for (const place of places) {
       markersRef.current.get(`place:${place.id}`)?.element.classList.toggle('is-selected', Boolean(place.isSelected))
     }
-  }, [people, places, slots])
+  }, [people, places, slots, openGroupKey])
 
   // Fit the view to what is shown when the people shown change, when places
   // first arrive, or for a different day's path. Not when a person moves, a
@@ -484,6 +526,24 @@ export function LocationMap({
     >
       <div className="location-map-canvas" ref={container} />
       {slots.map((slot) => {
+        if (slot.key.startsWith(GROUP_KEY_PREFIX)) {
+          const userIds = slot.key.slice(GROUP_KEY_PREFIX.length).split(',')
+          const group = userIds.flatMap((userId) => people.filter((each) => each.userId === userId))
+          if (group.length === 0) return null
+          return createPortal(
+            <PeopleGroupMarker
+              people={group}
+              isOpen={openGroupKey === slot.key}
+              onToggle={() => setOpenGroupKey(openGroupKey === slot.key ? null : slot.key)}
+              onChoose={(userId) => {
+                setOpenGroupKey(null)
+                callbacks.current.onSelectPerson?.(userId)
+              }}
+            />,
+            slot.element,
+            slot.key,
+          )
+        }
         const person = slot.key.startsWith('person:')
           ? people.find((each) => `person:${each.userId}` === slot.key)
           : undefined
@@ -499,5 +559,106 @@ export function LocationMap({
         )
       })}
     </div>
+  )
+}
+
+const GROUP_KEY_PREFIX = 'people:'
+
+// A group's key names its people in the order drawn, the chosen one first.
+function groupKeyOf(group: MapPerson[]): string {
+  return GROUP_KEY_PREFIX + group.map((person) => person.userId).join(',')
+}
+
+function namesOf(group: MapPerson[]): string {
+  return new Intl.ListFormat(undefined, { type: 'conjunction' }).format(group.map((person) => person.name))
+}
+
+// The most pictures a group draws; the rest are a count beside them.
+const MOST_GROUP_PICTURES = 3
+
+// PeopleGroupMarker is people close enough to cover each other: their
+// pictures overlapping, the first in front, and a press lists their names to
+// choose one.
+function PeopleGroupMarker({
+  people,
+  isOpen,
+  onToggle,
+  onChoose,
+}: {
+  people: MapPerson[]
+  isOpen: boolean
+  onToggle: () => void
+  onChoose: (userId: string) => void
+}) {
+  const shown = people.slice(0, MOST_GROUP_PICTURES)
+  const moreCount = people.length - shown.length
+  const menuRef = useRef<HTMLUListElement>(null)
+
+  // Escape or a press anywhere else puts the list away.
+  useEffect(() => {
+    if (!isOpen) return
+    menuRef.current?.querySelector('button')?.focus()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onToggle()
+    }
+    const onPointer = (event: PointerEvent) => {
+      const marker = menuRef.current?.closest('.location-marker-group')
+      if (marker && event.target instanceof Node && !marker.contains(event.target)) onToggle()
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onPointer)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onPointer)
+    }
+  }, [isOpen, onToggle])
+
+  return (
+    <>
+      <button
+        type="button"
+        className="location-marker-stack"
+        aria-label={namesOf(people)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        onClick={onToggle}
+      >
+        {shown.map((person, index) => (
+          <span
+            key={person.userId}
+            className={
+              person.isSelected ? 'location-marker-stack-picture is-selected' : 'location-marker-stack-picture'
+            }
+            style={{ zIndex: shown.length - index }}
+          >
+            <Avatar name={person.name} avatarUrl={person.avatarUrl} colorIndex={person.avatarColorIndex} size={36} />
+          </span>
+        ))}
+        {moreCount > 0 && <span className="location-marker-stack-more">+{moreCount.toLocaleString()}</span>}
+      </button>
+      {isOpen && (
+        <ul className="location-marker-menu" role="menu" ref={menuRef}>
+          {people.map((person) => (
+            <li key={person.userId} role="none">
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={person.isSelected}
+                className={person.isSelected ? 'is-selected' : undefined}
+                onClick={() => onChoose(person.userId)}
+              >
+                <Avatar
+                  name={person.name}
+                  avatarUrl={person.avatarUrl}
+                  colorIndex={person.avatarColorIndex}
+                  size={24}
+                />
+                <span>{person.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   )
 }

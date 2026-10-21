@@ -40,7 +40,7 @@ import { Tabs, TabItem } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Key, useTranslation } from '../i18n/i18n'
-import { personPath, personPhotosAddress } from '../lib/circlePeople'
+import { personPath } from '../lib/circlePeople'
 import { hasPermission, useSession } from '../session'
 
 // Where the person is and has been, and who shares it with them: a map, the
@@ -56,6 +56,8 @@ const TABS: TabItem[] = [
   { id: 'places', label: 'location.tabPlaces' },
   { id: 'sharing', label: 'location.tabSharing' },
 ]
+// While somebody else is looked at: Sharing is only ever the person's own.
+const OTHERS_TABS = TABS.filter((each) => each.id !== 'sharing')
 
 // How often the people on the map are read again when the live feed says
 // nothing: a feed that dropped, or a person who moved while it was down.
@@ -76,9 +78,6 @@ const MINIMUM_RADIUS_METERS = 25
 const MAXIMUM_RADIUS_METERS = 2000
 
 const GET_LOCATION = `query ($userId: String) { GetLocation(userId: $userId) { ${PERSON_FIELDS} } }`
-// Which circle members the caller has a contact for, to offer their Photos.
-const LIST_LINKED_MEMBERS = `query { ListCircles { members { userId linkedContactId } } }`
-type LinkedCircle = { members: { userId: string; linkedContactId?: string | null }[] }
 const LOCATION_EVENTS = `subscription { LocationEvents { userId } }`
 const LIST_SHARED_LOCATIONS = `query { ListSharedLocations { ${PERSON_FIELDS} } }`
 const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String,
@@ -177,10 +176,13 @@ async function readLinkedPlace(userId: string | null, placeId: string): Promise<
 function LocationContent({ userId }: { userId: string }) {
   const { t, plural, language } = useTranslation()
   const toast = useToast()
-  const session = useSession()
   const [parameters, setParameters] = useSearchParams()
   const requestedTab = parameters.get('tab')
-  const tab: TabID = TAB_IDS.find((each) => each === requestedTab) ?? 'visits'
+  // Somebody else named in the address: their visits and places are shown,
+  // and what is the person's own (sharing, checking in) is not offered.
+  const isViewingOther = Boolean(parameters.get('person'))
+  const shownTab = TAB_IDS.find((each) => each === requestedTab) ?? 'visits'
+  const tab: TabID = isViewingOther && shownTab === 'sharing' ? 'visits' : shownTab
   const dayStart = parseDayKey(parameters.get('day'))
   const dayKey = dayStart ? dayKeyOf(dayStart) : null
   const visitsPaging = usePageInAddress()
@@ -440,22 +442,30 @@ function LocationContent({ userId }: { userId: string }) {
   const mapPeople: MapPerson[] = useMemo(
     () => [
       ...(hasNoOwnPosition && browserPosition ? [browserPosition] : []),
-      ...views.flatMap((view) =>
-        view.latestPoint
-          ? [
-              {
-                userId: view.userId,
-                name: personName(view),
-                avatarUrl: view.avatarUrl,
-                avatarColorIndex: view.avatarColorIndex,
-                latitudeDegrees: view.latestPoint.latitudeDegrees,
-                longitudeDegrees: view.latestPoint.longitudeDegrees,
-                accuracyMeters: view.latestPoint.accuracyMeters,
-                isSelected: view.userId === (viewedUserId ?? selectedUserId),
-              },
-            ]
-          : [],
-      ),
+      ...views.flatMap((view) => {
+        // Where they are: their latest position, or, for somebody who shares
+        // the place they are at and not their position, the middle of that
+        // place, as the iPhone's map draws them.
+        const place = view.openVisit?.place
+        const position = view.latestPoint
+          ? view.latestPoint
+          : place
+            ? { latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, accuracyMeters: 0 }
+            : null
+        if (!position) return []
+        return [
+          {
+            userId: view.userId,
+            name: personName(view),
+            avatarUrl: view.avatarUrl,
+            avatarColorIndex: view.avatarColorIndex,
+            latitudeDegrees: position.latitudeDegrees,
+            longitudeDegrees: position.longitudeDegrees,
+            accuracyMeters: position.accuracyMeters,
+            isSelected: view.userId === (viewedUserId ?? selectedUserId),
+          },
+        ]
+      }),
     ],
     [views, selectedUserId, viewedUserId, hasNoOwnPosition, browserPosition],
   )
@@ -493,22 +503,24 @@ function LocationContent({ userId }: { userId: string }) {
     () => new Intl.DateTimeFormat(language, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
     [language],
   )
-  const dayTimeFormat = useMemo(
-    () =>
-      new Intl.DateTimeFormat(language, {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }),
+  const weekdayTimeFormat = useMemo(
+    () => new Intl.DateTimeFormat(language, { weekday: 'short', hour: 'numeric', minute: '2-digit' }),
+    [language],
+  )
+  const shortDayFormat = useMemo(
+    () => new Intl.DateTimeFormat(language, { month: 'short', day: 'numeric' }),
     [language],
   )
   const timeOf = (moment: string) => timeFormat.format(new Date(moment))
   // A person's arrival with its day when it was not today, so a visit begun
-  // days ago does not read as this evening's.
-  const arrivalOf = (moment: string) =>
-    dayKeyOf(moment) === dayKeyOf(new Date()) ? timeOf(moment) : dayTimeFormat.format(new Date(moment))
+  // days ago does not read as this evening's: the weekday within the week,
+  // the date alone before it, short enough to stay on one line on a phone.
+  const arrivalOf = (moment: string) => {
+    if (dayKeyOf(moment) === dayKeyOf(new Date())) return timeOf(moment)
+    const arrivedAt = new Date(moment)
+    const isThisWeek = Date.now() - arrivedAt.getTime() < 6 * 24 * 60 * 60 * 1000
+    return isThisWeek ? weekdayTimeFormat.format(arrivedAt) : shortDayFormat.format(arrivedAt)
+  }
 
   // Choosing a person centers the map on them. Somebody else is put in the
   // address, with their visits and places; the person themselves is not.
@@ -520,7 +532,15 @@ function LocationContent({ userId }: { userId: string }) {
       changeParameters({ person: null, place: null, page: null, placesPage: null })
     } else {
       setSelectedUserId(null)
-      changeParameters({ person: view.userId, place: null, page: null, placesPage: null })
+      // Sharing is the person's own, so somebody chosen from it opens on
+      // their visits, and the address says so.
+      changeParameters({
+        person: view.userId,
+        place: null,
+        page: null,
+        placesPage: null,
+        ...(shownTab === 'sharing' ? { tab: null } : {}),
+      })
     }
   }
 
@@ -731,21 +751,6 @@ function LocationContent({ userId }: { userId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasNoOwnPosition])
   const viewedName = viewedPerson ? personName(viewedPerson) : ''
-  const viewedUsername = viewedPerson?.username ?? ''
-  // "Photos" for the person being looked at, when the caller has a contact
-  // that is that person and may use Photos. Their circles say so, caller-private.
-  const canUsePhotos = session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use')
-  const linkedPeople = useQuery(
-    async () =>
-      canUsePhotos && viewedUsername
-        ? (await graphql<{ ListCircles: LinkedCircle[] | null }>(LIST_LINKED_MEMBERS)).ListCircles
-        : null,
-    [canUsePhotos, viewedUsername],
-    { refresh: false },
-  )
-  const isViewedPersonLinked = (linkedPeople.data ?? []).some((circle) =>
-    circle.members.some((member) => member.userId === viewedUserId && Boolean(member.linkedContactId)),
-  )
   const notSharedHistoryText = viewedPerson ? t('location.personSharesNowOnly', { name: viewedName }) : ''
 
   return (
@@ -756,14 +761,11 @@ function LocationContent({ userId }: { userId: string }) {
             {t('person.profile')}
           </Link>
         )}
-        {viewedPerson && isViewedPersonLinked && (
-          <Link className="button" to={personPhotosAddress(viewedPerson.userId)}>
-            {t('photos.accountPhotosOf', { name: viewedName })}
-          </Link>
+        {!isViewingOther && (
+          <button type="button" className="primary" onClick={() => setIsCheckingIn(true)}>
+            {t('location.checkIn')}
+          </button>
         )}
-        <button type="button" className="primary" onClick={() => setIsCheckingIn(true)}>
-          {t('location.checkIn')}
-        </button>
       </PageHeadingActions>
 
       <ErrorMessage error={me.error} />
@@ -847,7 +849,7 @@ function LocationContent({ userId }: { userId: string }) {
         />
       )}
 
-      <Tabs items={TABS} active={tab} onSelect={selectTab} />
+      <Tabs items={isViewingOther ? OTHERS_TABS : TABS} active={tab} onSelect={selectTab} />
 
       {tab === 'visits' && (
         <SettingsSection
