@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.191.0] - 2026-10-21
+
+### Added
+
+- A link in a chat is shown short and opens without its tracking parameters, and a message with a link shows a card under it with the page's picture, site, title and description, on the dashboard and in the iPhone app. The server reads the page and its picture itself, so the linked site learns nothing about who is reading. `teanode link preview` prints the same. (#611)
+- In the iPhone app, web links open in an in-app browser that slides up from the bottom. (#611)
+
 ## [0.190.0] - 2026-10-21
 
 ### Added
