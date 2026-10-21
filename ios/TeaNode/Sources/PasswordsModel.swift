@@ -25,6 +25,17 @@ struct PasswordsSharingProgress: Equatable {
     let totalCount: Int
 }
 
+/// PasswordsFinishAsk is the question asked before sharing is finished: for which items, and what it
+/// would do (`PasswordsWords.finishConfirmationLines`).
+struct PasswordsFinishAsk: Identifiable {
+    let id = UUID()
+    let itemIds: [String]
+    let plan: PasswordsFinishPlan
+    let title: String
+
+    var isOneItem: Bool { itemIds.count == 1 }
+}
+
 /// PasswordsModel is Passwords on this iPhone: whether it is set up, locked or
 /// open, and the person's items while it is open. It owns the session
 /// (TeaNodeKit's PasswordsSession), which holds the account key in memory only
@@ -68,6 +79,9 @@ final class PasswordsModel {
     /// The items among those that this iPhone did not give a new key by itself: one was given a
     /// moment ago, or it has given the most it gives in a session. The item's screen says so.
     private(set) var itemIdsNeedingAttention: Set<String> = []
+    /// The earlier versions of the items whose list the person opened, by item id. Their fields are
+    /// in the clear, so they stay in memory only, and are dropped when Passwords locks.
+    private(set) var versionsByItemId: [String: PasswordsOpenedVersions] = [:]
     /// How far "Finish sharing" for every waiting item has got, while it runs; nil otherwise.
     private(set) var sharingProgress: PasswordsSharingProgress?
     /// The names of people left out of the last check of waiting shares because they already have
@@ -460,6 +474,7 @@ final class PasswordsModel {
         itemIdsNeedingYou = []
         itemIdsNeedingNewKey = []
         itemIdsNeedingAttention = []
+        versionsByItemId = [:]
         sharingProgress = nil
         namesWithTooMuchShared = []
         hasMoreSharesWaiting = false
@@ -577,6 +592,45 @@ final class PasswordsModel {
         await reload()
         // Turning the agent off gives the item a new key; the people who had no key before get theirs now.
         if !isUsable { await giveWaitingRecipientsTheirKeys() }
+    }
+
+    /// What finishing the sharing of these items would do, for the question asked first.
+    func finishPlan(itemIds: [String]) async -> PasswordsFinishPlan {
+        guard let session else { return PasswordsFinishPlan(itemCount: 0, people: [], newKeyItemCount: 0, agentItemCount: 0) }
+        return await session.finishPlan(itemIds: itemIds)
+    }
+
+    /// Reads the earlier versions of an item the person owns from the server and opens them.
+    /// False when they could not be read (`problemText` says why).
+    @discardableResult
+    func loadVersions(of item: PasswordItem) async -> Bool {
+        guard let session else { return false }
+        do {
+            versionsByItemId[item.id] = try await session.versions(of: item.id)
+            noteUse()
+            return true
+        } catch {
+            report(error, orSay: String(localized: "The earlier versions could not be read."))
+            return false
+        }
+    }
+
+    /// Puts an earlier version back as the item's own. The item is given a new key at once.
+    func restoreVersion(_ version: PasswordItemVersion, of item: PasswordItem) async throws {
+        let session = try requireSession()
+        do {
+            _ = try await session.restoreVersion(itemId: item.id, versionId: version.id)
+        } catch {
+            if let passwordsError = error as? PasswordsError, passwordsError == .itemChangedOnAnotherDevice { await sync() }
+            throw error
+        }
+        await reload()
+        await giveWaitingRecipientsTheirKeys()
+    }
+
+    /// Drops the earlier versions read for an item, so the next time the list opens it reads them again.
+    func forgetVersions(ofItemId itemId: String) {
+        versionsByItemId[itemId] = nil
     }
 
     /// Finishes the sharing of an item the person opened: gives it a new key when it needs one, and a

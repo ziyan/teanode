@@ -86,6 +86,7 @@ enum PasswordsWords {
         case .sharingCouldNotBeChecked: String(localized: "Sharing for this item could not be checked. Set sharing again first.")
         case .itemNeedsAttention: String(localized: "This item needs a new key, but one was given a moment ago. Try again in a few minutes.")
         case .itemNeedsYou: String(localized: "Open this item to finish sharing it.")
+        case .answeredAboutAnotherItem: String(localized: "The server answered about another item.")
         }
     }
 
@@ -147,6 +148,57 @@ enum PasswordsWords {
         guard !names.isEmpty else { return nil }
         let listed = ListFormatter.localizedString(byJoining: names)
         return String(localized: "The server also lists \(listed), but you did not share this item with them.")
+    }
+
+    // MARK: Finish sharing
+
+    /// The title of the question asked before sharing is finished for one item or for several.
+    static func finishConfirmationTitle(itemCount: Int, itemName: String) -> String {
+        if itemCount == 1 { return String(localized: "Finish sharing \(itemName)?") }
+        return String(localized: "Finish sharing \(itemCount) items?")
+    }
+
+    /// What finishing the sharing would do, one sentence for each thing: who gets a key (for one
+    /// item their names, for several each name with the number of items), the new keys and the
+    /// agent's copy. The person reads it before anything is sealed.
+    static func finishConfirmationLines(_ plan: PasswordsFinishPlan, isOneItem: Bool) -> [String] {
+        var lines: [String] = []
+        if isOneItem {
+            if !plan.people.isEmpty {
+                let names = ListFormatter.localizedString(byJoining: plan.people.map(\.name))
+                lines.append(String(localized: "Gives a key for this item to \(names)."))
+            }
+            if plan.newKeyItemCount > 0 { lines.append(String(localized: "This item gets a new key.")) }
+            if plan.agentItemCount > 0 { lines.append(String(localized: "The agent can use this item again.")) }
+        } else {
+            if !plan.people.isEmpty {
+                lines.append(String(localized: "People who get keys, and for how many items:"))
+                lines += plan.people.map { "\($0.name): \($0.itemCount.formatted())" }
+            }
+            if plan.newKeyItemCount > 0 {
+                let newKeyCount = plan.newKeyItemCount
+                lines.append(String(localized: "\(newKeyCount) items get a new key."))
+            }
+            if plan.agentItemCount > 0 {
+                let agentCount = plan.agentItemCount
+                lines.append(String(localized: "The agent can use \(agentCount) items again."))
+            }
+        }
+        if lines.isEmpty { lines.append(String(localized: "People it is shared with who are waiting get a key. Nothing else changes.")) }
+        return lines
+    }
+
+    // MARK: Earlier versions
+
+    /// When an earlier version was saved: "Oct 3, 2026 at 4:12 PM".
+    static func versionDateText(_ version: PasswordItemVersion) -> String {
+        guard let savedAt = version.savedAt else { return String(localized: "Earlier version") }
+        return savedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    /// Who saved an earlier version: the person's own tap, or another device or a program.
+    static func versionSavedByText(_ version: PasswordItemVersion) -> String {
+        version.isSavedByPerson ? String(localized: "Saved by you") : String(localized: "Saved by another device or program")
     }
 
     /// "Copied" sentence for a field: "Password copied."

@@ -68,6 +68,15 @@
             var privateKeyByAccountKey: String
         }
 
+        /// What a save or a re-key replaced, kept as the real server keeps it.
+        private struct StoredVersion {
+            var versionId: String
+            var encryptedFields: String
+            var itemKeyByAccountKey: String
+            var isSavedByPerson: Bool
+            var savedAt: String
+        }
+
         private struct StoredItem {
             var id: String
             var ownerUserId: String
@@ -82,6 +91,8 @@
             var grantees: [PasswordShareGranteeInput] = []
             /// Recipient user id to the key sealed for them and the public key it was sealed for.
             var keys: [String: (itemKeyByRecipientKey: String, recipientPublicKey: String)] = [:]
+            /// The earlier versions, oldest first.
+            var versions: [StoredVersion] = []
         }
 
         private let storeLock = NSLock()
@@ -175,6 +186,20 @@
                             label: "Example%20Mail:robin@example.com", secretParts: ["JBSWY3DP", "EHPK3PXP"], query: "&issuer=Example%20Mail"),
                         notes: "The backup address is robin.backup@example.com.", folder: "Personal")),
                 accountKey: accountKey, createdDaysAgo: 120)
+            addVersion(
+                to: Self.loginItemId,
+                .login(
+                    PasswordsLoginFields(
+                        name: "Example Mail", userName: "robin@example.com", password: Self.demoPassword("pebble", "harbor", "07", "Ash"),
+                        sites: ["https://mail.example.com"], folder: "Personal")),
+                accountKey: accountKey, daysAgo: 12, isSavedByPerson: true)
+            addVersion(
+                to: Self.loginItemId,
+                .login(
+                    PasswordsLoginFields(
+                        name: "Example Mail", userName: "robin@example.com", password: Self.demoPassword("meadow", "kite", "93", "Rust"),
+                        sites: ["https://mail.example.com"], folder: "Personal")),
+                accountKey: accountKey, daysAgo: 40, isSavedByPerson: false)
             addOwned(
                 Self.agentLoginItemId, .login(
                     PasswordsLoginFields(
@@ -269,6 +294,31 @@
                 item.keys[userId] = (sealed.jsonText, publicKey.base64EncodedString())
             }
             items[itemId] = item
+        }
+
+        /// Adds an earlier version to an item, sealed with a key of its own as an older save would have.
+        private func addVersion(to itemId: String, _ fields: PasswordsItemFields, accountKey: Data, daysAgo: Int, isSavedByPerson: Bool) {
+            let itemKey = PasswordsCrypto.makeKey()
+            guard var item = items[itemId],
+                let signedFields = try? PasswordsCrypto.withSignedAccess(
+                    accountKey: accountKey, itemId: itemId, itemKind: fields.itemKind, fields: fields, access: nil, highestVersionSeen: 0),
+                let sealedFields = try? PasswordsCrypto.sealItemFields(signedFields, itemKey: itemKey, itemId: itemId),
+                let sealedKey = try? PasswordsCrypto.seal(
+                    itemKey, key: accountKey, associatedData: PasswordsCrypto.itemKeyAssociatedData(itemId: itemId))
+            else { return }
+            item.versions.append(
+                StoredVersion(
+                    versionId: "demo-version-\(item.versions.count + 1)", encryptedFields: sealedFields.jsonText,
+                    itemKeyByAccountKey: sealedKey.jsonText, isSavedByPerson: isSavedByPerson, savedAt: day(daysAgo: daysAgo)))
+            items[itemId] = item
+        }
+
+        /// Keeps what an item holds now as an earlier version, before a save or a re-key replaces it.
+        private func keepVersion(of item: inout StoredItem) {
+            item.versions.append(
+                StoredVersion(
+                    versionId: "demo-version-\(item.versions.count + 1)-\(item.revision)", encryptedFields: item.encryptedFields,
+                    itemKeyByAccountKey: item.itemKeyByAccountKey, isSavedByPerson: true, savedAt: day(daysAgo: 0)))
         }
 
         private func addSharedWithRobin(_ itemId: String, _ fields: PasswordsItemFields, ownerUserId: String, robinPublicKey: Data) {
@@ -370,6 +420,11 @@
                 }
                 if query.contains("SavePasswordItem") { return try respond("SavePasswordItem", save(variables)) }
                 if query.contains("DeletePasswordItem") { return try respond("DeletePasswordItem", delete(variables)) }
+                // The operations of earlier versions go first: "RestorePasswordItem" is inside "RestorePasswordItemVersion".
+                if query.contains("ListPasswordItemVersions") { return try respond("ListPasswordItemVersions", versions(variables)) }
+                if query.contains("RestorePasswordItemVersion") {
+                    return try respond("RestorePasswordItemVersion", restoreVersion(variables))
+                }
                 if query.contains("RestorePasswordItem") { return try respond("RestorePasswordItem", restore(variables)) }
                 if query.contains("PurgePasswordItem") { return try respond("PurgePasswordItem", purge(variables)) }
                 if query.contains("SetPasswordItemShares") { return try respond("SetPasswordItemShares", setShares(variables)) }
@@ -573,6 +628,7 @@
                 }
                 // A deleted item is restored before it is changed.
                 guard existing.deletedAt == nil else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound) }
+                keepVersion(of: &existing)
                 existing.encryptedFields = try string(variables, "encryptedFields")
                 existing.itemKeyByAccountKey = try string(variables, "itemKey")
                 item = existing
@@ -601,6 +657,36 @@
         private func restore(_ variables: [String: Any]) throws -> PasswordItemView {
             var item = try ownedItem(try string(variables, "id"))
             item.deletedAt = nil
+            item.revision = nextRevision()
+            items[item.id] = item
+            return try presented(item)
+        }
+
+        /// The earlier versions of an item, newest first.
+        private func versions(_ variables: [String: Any]) throws -> [PasswordItemVersionView] {
+            try requireTap()
+            let item = try ownedItem(try string(variables, "itemId"))
+            return item.versions.reversed().map {
+                PasswordItemVersionView(
+                    versionId: $0.versionId, savedAt: $0.savedAt, isSavedByPerson: $0.isSavedByPerson, encryptedFields: $0.encryptedFields,
+                    itemKey: $0.itemKeyByAccountKey, itemKind: item.itemKind)
+            }
+        }
+
+        /// Makes an earlier version current and drops the keys sealed for others and the agent's use; the app gives the item a new key.
+        private func restoreVersion(_ variables: [String: Any]) throws -> PasswordItemView {
+            try requireTap()
+            var item = try ownedItem(try string(variables, "itemId"))
+            guard item.deletedAt == nil, let version = item.versions.first(where: { $0.versionId == variables["versionId"] as? String }) else {
+                throw PasswordsDemoFailure(reason: PasswordsDemoSentence.notFound)
+            }
+            guard integer(variables, "baseRevision") == item.revision else { throw PasswordsDemoFailure(reason: PasswordsDemoSentence.itemChanged) }
+            keepVersion(of: &item)
+            item.encryptedFields = version.encryptedFields
+            item.itemKeyByAccountKey = version.itemKeyByAccountKey
+            item.keys = [:]
+            item.isUsableByAgent = false
+            item.lastUsedByAgentAt = nil
             item.revision = nextRevision()
             items[item.id] = item
             return try presented(item)
@@ -686,6 +772,7 @@
         /// Gives an item a new item key: the fields and the keys come sealed by the device; the old share keys go.
         private func rekey(_ variables: [String: Any]) throws -> PasswordItemView {
             var item = try ownedItem(try string(variables, "id"))
+            keepVersion(of: &item)
             item.encryptedFields = try string(variables, "encryptedFields")
             item.itemKeyByAccountKey = try string(variables, "itemKey")
             let reached = Set(reachedUserIds(item))

@@ -114,6 +114,13 @@ struct HookedAPI: PasswordsAPI {
             try await inner.setPasswordItemUsableByAgent(
                 itemId: itemId, isUsableByAgent: isUsableByAgent, itemKeyByAgentKey: itemKeyByAgentKey))
     }
+    func listPasswordItemVersions(itemId: String) async throws -> [PasswordItemVersionView] {
+        try await inner.listPasswordItemVersions(itemId: itemId)
+    }
+    func restorePasswordItemVersion(itemId: String, versionId: String, baseRevision: Int64) async throws -> PasswordItemView {
+        flags.calls.append("restorePasswordItemVersion")
+        return bent(try await inner.restorePasswordItemVersion(itemId: itemId, versionId: versionId, baseRevision: baseRevision))
+    }
 }
 
 /// PasswordsAccessFlowTests check the rules of the access record: what is sealed inside the

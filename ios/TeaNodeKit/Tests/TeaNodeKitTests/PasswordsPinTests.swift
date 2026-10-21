@@ -57,6 +57,12 @@ struct HostileServerAPI: PasswordsAPI {
     func setPasswordItemUsableByAgent(itemId: String, isUsableByAgent: Bool, itemKeyByAgentKey: String?) async throws -> PasswordItemView {
         try await inner.setPasswordItemUsableByAgent(itemId: itemId, isUsableByAgent: isUsableByAgent, itemKeyByAgentKey: itemKeyByAgentKey)
     }
+    func listPasswordItemVersions(itemId: String) async throws -> [PasswordItemVersionView] {
+        try await inner.listPasswordItemVersions(itemId: itemId)
+    }
+    func restorePasswordItemVersion(itemId: String, versionId: String, baseRevision: Int64) async throws -> PasswordItemView {
+        try await inner.restorePasswordItemVersion(itemId: itemId, versionId: versionId, baseRevision: baseRevision)
+    }
 }
 
 /// PasswordsPinTests are the checks that a server choosing keys cannot get an item key out of the phone

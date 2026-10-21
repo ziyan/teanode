@@ -32,7 +32,22 @@ actor FakePasswordsServer {
         var keys: [String: (itemKeyByRecipientKey: String, recipientPublicKey: String)] = [:]
     }
 
+    /// An earlier version of an item, kept when a save or a re-key replaced it.
+    struct StoredVersion {
+        var versionId: String
+        var itemKind: String
+        var encryptedFields: String
+        var itemKeyByAccountKey: String
+        var isSavedByPerson: Bool
+        var savedAt: String
+    }
+
     private(set) var people: [String: Person] = [:]
+    /// The earlier versions of each item, oldest first.
+    private(set) var versions: [String: [StoredVersion]] = [:]
+    private var versionCounter = 0
+    /// Whether the next saves count as the person's own tap (a token's do not).
+    private var areSavesByPerson = true
     private(set) var items: [String: StoredItem] = [:]
     private var circles: [String: [String]] = [:]
     private var revisionCounter: Int64 = 0
@@ -71,6 +86,20 @@ actor FakePasswordsServer {
 
     func setHasTooMuchShared(_ userId: String, _ isTooMuch: Bool) {
         if isTooMuch { tooMuchSharedUserIds.insert(userId) } else { tooMuchSharedUserIds.remove(userId) }
+    }
+
+    func setSavesAreByPerson(_ isByPerson: Bool) {
+        areSavesByPerson = isByPerson
+    }
+
+    /// Keeps what an item holds now as an earlier version, as the real server does before it is replaced.
+    private func keepVersion(of item: StoredItem) {
+        versionCounter += 1
+        let version = StoredVersion(
+            versionId: "version-\(versionCounter)", itemKind: item.itemKind, encryptedFields: item.encryptedFields,
+            itemKeyByAccountKey: item.itemKeyByAccountKey, isSavedByPerson: areSavesByPerson,
+            savedAt: String(format: "2026-10-20T10:%02d:00Z", versionCounter % 60))
+        versions[item.id, default: []].append(version)
     }
 
     func setHasMoreWaiting(_ hasMore: Bool) {
@@ -333,6 +362,7 @@ actor FakePasswordsServer {
                 throw TeaNodeError.refused("This item changed on another device. Open it again.")
             }
             guard existing.itemKind == input.itemKind else { throw TeaNodeError.refused("An item's kind cannot change.") }
+            keepVersion(of: existing)
             existing.encryptedFields = input.encryptedFields
             existing.itemKeyByAccountKey = input.itemKey
             item = existing
@@ -476,6 +506,7 @@ actor FakePasswordsServer {
             }
             newKeys[key.recipientUserId] = (key.itemKeyByRecipientKey, key.recipientPublicKey)
         }
+        keepVersion(of: item)
         if let agentCopy = input.itemKeyByAgentKey {
             guard item.isUsableByAgent else { throw TeaNodeError.refused("api: invalid arguments: The agent cannot use this item.") }
             item.itemKeyByAgentKey = agentCopy
@@ -489,6 +520,34 @@ actor FakePasswordsServer {
         item.needsNewKey = false
         item.revision = nextRevision()
         items[item.id] = item
+        return view(item, for: userId)!
+    }
+
+    func listVersions(userId: String, itemId: String) throws -> [PasswordItemVersionView] {
+        try requireOnline()
+        let item = try ownedItem(itemId, userId: userId)
+        return (versions[itemId] ?? []).reversed().map {
+            PasswordItemVersionView(
+                versionId: $0.versionId, savedAt: $0.savedAt, isSavedByPerson: $0.isSavedByPerson, encryptedFields: $0.encryptedFields,
+                itemKey: $0.itemKeyByAccountKey, itemKind: item.itemKind)
+        }
+    }
+
+    /// Makes an earlier version current, drops the keys sealed for recipients and the agent's copy, and marks the item.
+    func restoreVersion(userId: String, itemId: String, versionId: String, baseRevision: Int64) throws -> PasswordItemView {
+        try requireOnline()
+        var item = try ownedItem(itemId, userId: userId)
+        guard baseRevision == item.revision else { throw TeaNodeError.refused("This item changed on another device. Open it again.") }
+        guard let version = versions[itemId]?.first(where: { $0.versionId == versionId }) else { throw TeaNodeError.refused("api: not found") }
+        keepVersion(of: item)
+        item.encryptedFields = version.encryptedFields
+        item.itemKeyByAccountKey = version.itemKeyByAccountKey
+        item.keys = [:]
+        item.isUsableByAgent = false
+        item.itemKeyByAgentKey = nil
+        item.needsNewKey = true
+        item.revision = nextRevision()
+        items[itemId] = item
         return view(item, for: userId)!
     }
 
@@ -548,5 +607,11 @@ struct FakePasswordsAPI: PasswordsAPI {
     func setPasswordItemUsableByAgent(itemId: String, isUsableByAgent: Bool, itemKeyByAgentKey: String?) async throws -> PasswordItemView {
         try await server.setUsableByAgent(
             userId: userId, itemId: itemId, isUsableByAgent: isUsableByAgent, itemKeyByAgentKey: itemKeyByAgentKey)
+    }
+    func listPasswordItemVersions(itemId: String) async throws -> [PasswordItemVersionView] {
+        try await server.listVersions(userId: userId, itemId: itemId)
+    }
+    func restorePasswordItemVersion(itemId: String, versionId: String, baseRevision: Int64) async throws -> PasswordItemView {
+        try await server.restoreVersion(userId: userId, itemId: itemId, versionId: versionId, baseRevision: baseRevision)
     }
 }

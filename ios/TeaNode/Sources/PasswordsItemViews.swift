@@ -10,11 +10,10 @@ struct PasswordsItemScreen: View {
     @Bindable var model: PasswordsModel
     let itemId: String
     @Binding var editing: PasswordsEditing?
-    @State private var revealedFieldNames: Set<String> = []
     @State private var isConfirmingDelete = false
     @State private var isConfirmingDeleteForever = false
     @State private var isWorking = false
-    @Environment(\.scenePhase) private var scenePhase
+    @State private var finishAsk: PasswordsFinishAsk?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -29,15 +28,11 @@ struct PasswordsItemScreen: View {
                 }
             }
         }
-        // A secret shown stays shown only while the app is in front.
-        .onChange(of: scenePhase) { _, current in
-            if current != .active { revealedFieldNames = [] }
-        }
     }
 
     private func details(_ item: PasswordItem) -> some View {
         Form {
-            fieldSections(item)
+            PasswordsFieldSections(model: model, fields: item.fields)
             ownerSections(item)
         }
         .navigationTitle(item.name)
@@ -52,14 +47,291 @@ struct PasswordsItemScreen: View {
         .task { model.noteUse() }
     }
 
-    // MARK: Fields
+    // MARK: The owner's part
 
     @ViewBuilder
-    private func fieldSections(_ item: PasswordItem) -> some View {
-        switch item.fields {
-        case .login(let login): loginSections(login)
-        case .card(let card): cardSections(card)
-        case .note(let note): noteSections(note)
+    private func ownerSections(_ item: PasswordItem) -> some View {
+        if item.isDeleted {
+            Section {
+                Button("Restore", systemImage: "arrow.uturn.backward") { Task { await restore(item) } }
+                    .actionColor()
+                    .disabled(isWorking)
+            } footer: {
+                Text("Items you delete stay here for 30 days. Then they are gone for good.")
+            }
+            deleteForeverSection(item)
+        } else if item.isSharedWithMe {
+            Section {
+                Label("Shared by \(item.ownerName)", systemImage: "person.2")
+                    .foregroundStyle(.primary)
+            } footer: {
+                Text("\(item.ownerName) shared this with you. Only \(item.ownerName) can change it.")
+            }
+        } else {
+            if item.itemKind != .card { agentSection(item) }
+            if model.itemIdsNeedingYou.contains(item.id) {
+                finishSharingSection(item)
+            } else if model.itemIdsNeedingNewKey.contains(item.id) {
+                newKeySection(item)
+            }
+            sharingNoticeSection(item)
+            shareSection(item)
+            versionsSection(item)
+            deleteSection(item)
+        }
+    }
+
+    private func agentSection(_ item: PasswordItem) -> some View {
+        Section {
+            Toggle(
+                "Let the agent use this",
+                isOn: Binding(
+                    get: { item.isUsableByAgent },
+                    set: { isOn in Task { await setAgent(item, isOn: isOn) } })
+            )
+            // The agent's consent is the person's own record, which has to be checked first.
+            .disabled(isWorking || item.sharingCheck != .verified)
+            if item.isUsableByAgent, let usedAt = item.lastUsedByAgentAt {
+                LabeledContent("Last used by the agent") {
+                    Text(verbatim: usedAt.formatted(.relative(presentation: .named)))
+                }
+            }
+        } header: {
+            Text("The agent")
+        } footer: {
+            if item.itemKind == .note {
+                Text("The agent can read this note, and so can the model behind it.")
+            } else {
+                Text("The agent signs in with this login on its sites and never sees the password.")
+            }
+        }
+    }
+
+    /// Shown when this iPhone left the item for the person: it has no memory of the item from before,
+    /// or somebody waiting is a person it never sealed the item for. One button does what it would
+    /// have done by itself, for everybody the item's own record reaches.
+    private func finishSharingSection(_ item: PasswordItem) -> some View {
+        Section {
+            Text("Some people are waiting for this item, or it needs a new key. This iPhone has not shared it before, so it waits for you.")
+                .foregroundStyle(.primary)
+            Button("Finish sharing", systemImage: "person.badge.plus") { Task { await askToFinishSharing(item) } }
+                .actionColor()
+                .disabled(isWorking)
+                .passwordsFinishSharingDialog($finishAsk) { Task { await finishSharing(item) } }
+        }
+    }
+
+    /// Works out what finishing would do and asks first: who gets a key, and whether the agent
+    /// gets its copy back. Nothing is sealed until the person says yes.
+    private func askToFinishSharing(_ item: PasswordItem) async {
+        let plan = await model.finishPlan(itemIds: [item.id])
+        finishAsk = PasswordsFinishAsk(
+            itemIds: [item.id], plan: plan, title: PasswordsWords.finishConfirmationTitle(itemCount: 1, itemName: item.name))
+    }
+
+    /// Shown when somebody was removed from the item but it could not be given a new key yet.
+    private func newKeySection(_ item: PasswordItem) -> some View {
+        Section {
+            if model.itemIdsNeedingAttention.contains(item.id) {
+                Text("This item needs a new key. This iPhone gave it one a moment ago, so it waits before giving another.")
+                    .foregroundStyle(.primary)
+            } else {
+                Text("Removed. The item could not be given a new key.")
+                    .foregroundStyle(.primary)
+            }
+            Button("Try again", systemImage: "arrow.clockwise") { Task { await giveNewKey(item) } }
+                .actionColor()
+                .disabled(isWorking)
+        }
+    }
+
+    /// Says when the item's sharing cannot be trusted, or when the server lists somebody the person
+    /// never shared the item with. Setting sharing again writes a record that is checked again.
+    @ViewBuilder
+    private func sharingNoticeSection(_ item: PasswordItem) -> some View {
+        let isUnchecked = item.sharingCheck == .unverified || item.sharingCheck == .replayed
+        let unrecordedText = PasswordsWords.unrecordedSharesNotice(of: item)
+        if isUnchecked || unrecordedText != nil {
+            Section {
+                if item.sharingCheck == .unverified {
+                    Text("Sharing could not be checked")
+                        .font(.body.weight(.semibold))
+                    Text("Nobody gets this item and the agent cannot use it until you set sharing again.")
+                        .foregroundStyle(.secondary)
+                } else if item.sharingCheck == .replayed {
+                    Text("This item's sharing was changed back by the server")
+                        .font(.body.weight(.semibold))
+                    Text("Nothing is done with the older sharing. Set sharing again to choose who has this item.")
+                        .foregroundStyle(.secondary)
+                }
+                if let unrecordedText {
+                    Text(unrecordedText)
+                }
+                if isUnchecked {
+                    NavigationLink(value: PasswordsDestination.share(item.id)) {
+                        Label("Set sharing again", systemImage: "person.badge.plus")
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func shareSection(_ item: PasswordItem) -> some View {
+        Section {
+            NavigationLink(value: PasswordsDestination.share(item.id)) {
+                HStack {
+                    Label("Share", systemImage: "person.badge.plus")
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    PasswordsValueText(PasswordsWords.shareSummary(of: item), isProse: true)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        } footer: {
+            Text("Choose a circle or a person. Only you can change an item you share.")
+        }
+    }
+
+    private func versionsSection(_ item: PasswordItem) -> some View {
+        Section {
+            NavigationLink(value: PasswordsDestination.versions(item.id)) {
+                Label("Earlier versions", systemImage: "clock.arrow.circlepath")
+                    .foregroundStyle(.primary)
+            }
+        } footer: {
+            Text("The versions this item had before you changed it are kept for 30 days.")
+        }
+    }
+
+    /// Deleting an item that is already in Recently deleted removes it and its old versions for good.
+    private func deleteForeverSection(_ item: PasswordItem) -> some View {
+        Section {
+            Button(role: .destructive) {
+                isConfirmingDeleteForever = true
+            } label: {
+                Label("Delete forever", systemImage: "trash").foregroundStyle(.red)
+            }
+            .tint(.red)
+            .actionColor(isDestructive: true)
+            .disabled(isWorking)
+            .confirmationDialog("Delete \(item.name) forever?", isPresented: $isConfirmingDeleteForever, titleVisibility: .visible) {
+                Button("Delete forever", role: .destructive) { Task { await deleteForever(item) } }
+            } message: {
+                Text("It is removed from Passwords and from this iPhone, and cannot be brought back.")
+            }
+        }
+    }
+
+    private func deleteSection(_ item: PasswordItem) -> some View {
+        Section {
+            Button(role: .destructive) {
+                isConfirmingDelete = true
+            } label: {
+                Label("Delete", systemImage: "trash").foregroundStyle(.red)
+            }
+            .tint(.red)
+            .actionColor(isDestructive: true)
+            .disabled(isWorking)
+            .confirmationDialog("Delete \(item.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) { Task { await delete(item) } }
+            } message: {
+                Text("It moves to Recently deleted for 30 days. People it is shared with lose it now, and the agent can no longer use it.")
+            }
+        }
+    }
+
+    // MARK: Actions
+
+    private func setAgent(_ item: PasswordItem, isOn: Bool) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await model.setUsableByAgent(item, isUsable: isOn)
+            // The toast may already say who got access after the new key.
+            if model.doneText == nil {
+                model.doneText =
+                    isOn
+                    ? String(localized: "The agent can use this item now.")
+                    : String(localized: "The agent can no longer use this item.")
+            }
+        } catch {
+            model.report(error, orSay: String(localized: "The agent setting could not be changed."))
+        }
+    }
+
+    private func finishSharing(_ item: PasswordItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        await model.finishSharing(item)
+    }
+
+    private func giveNewKey(_ item: PasswordItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        await model.giveNewKey(item)
+    }
+
+    private func delete(_ item: PasswordItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await model.delete(item)
+            model.doneText = String(localized: "\(item.name) was deleted. It stays in Recently deleted for 30 days.")
+            dismiss()
+        } catch {
+            model.report(error, orSay: String(localized: "The item could not be deleted."))
+        }
+    }
+
+    private func deleteForever(_ item: PasswordItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await model.purge(item)
+            model.doneText = String(localized: "\(item.name) was deleted forever.")
+            dismiss()
+        } catch {
+            model.report(error, orSay: String(localized: "The item could not be deleted forever."))
+        }
+    }
+
+    private func restore(_ item: PasswordItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await model.restore(item)
+            model.doneText = String(localized: "\(item.name) was restored.")
+            dismiss()
+        } catch {
+            model.report(error, orSay: String(localized: "The item could not be restored."))
+        }
+    }
+}
+
+// MARK: Fields
+
+/// PasswordsFieldSections are the sections that show an item's fields (a login, a card or a note):
+/// secrets hidden until shown, a tap copies, sites open in Safari. The item's screen and an earlier
+/// version's screen both show them.
+struct PasswordsFieldSections: View {
+    let model: PasswordsModel
+    let fields: PasswordsItemFields
+    @State private var revealedFieldNames: Set<String> = []
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Group {
+            switch fields {
+            case .login(let login): loginSections(login)
+            case .card(let card): cardSections(card)
+            case .note(let note): noteSections(note)
+            }
+        }
+        // A secret shown stays shown only while the app is in front.
+        .onChange(of: scenePhase) { _, current in
+            if current != .active { revealedFieldNames = [] }
         }
     }
 
@@ -179,247 +451,6 @@ struct PasswordsItemScreen: View {
             Section {
                 LabeledContent("Folder") { PasswordsValueText(folder, isProse: true) }
             }
-        }
-    }
-
-    // MARK: The owner's part
-
-    @ViewBuilder
-    private func ownerSections(_ item: PasswordItem) -> some View {
-        if item.isDeleted {
-            Section {
-                Button("Restore", systemImage: "arrow.uturn.backward") { Task { await restore(item) } }
-                    .actionColor()
-                    .disabled(isWorking)
-            } footer: {
-                Text("Items you delete stay here for 30 days. Then they are gone for good.")
-            }
-            deleteForeverSection(item)
-        } else if item.isSharedWithMe {
-            Section {
-                Label("Shared by \(item.ownerName)", systemImage: "person.2")
-                    .foregroundStyle(.primary)
-            } footer: {
-                Text("\(item.ownerName) shared this with you. Only \(item.ownerName) can change it.")
-            }
-        } else {
-            if item.itemKind != .card { agentSection(item) }
-            if model.itemIdsNeedingYou.contains(item.id) {
-                finishSharingSection(item)
-            } else if model.itemIdsNeedingNewKey.contains(item.id) {
-                newKeySection(item)
-            }
-            sharingNoticeSection(item)
-            shareSection(item)
-            deleteSection(item)
-        }
-    }
-
-    private func agentSection(_ item: PasswordItem) -> some View {
-        Section {
-            Toggle(
-                "Let the agent use this",
-                isOn: Binding(
-                    get: { item.isUsableByAgent },
-                    set: { isOn in Task { await setAgent(item, isOn: isOn) } })
-            )
-            // The agent's consent is the person's own record, which has to be checked first.
-            .disabled(isWorking || item.sharingCheck != .verified)
-            if item.isUsableByAgent, let usedAt = item.lastUsedByAgentAt {
-                LabeledContent("Last used by the agent") {
-                    Text(verbatim: usedAt.formatted(.relative(presentation: .named)))
-                }
-            }
-        } header: {
-            Text("The agent")
-        } footer: {
-            if item.itemKind == .note {
-                Text("The agent can read this note, and so can the model behind it.")
-            } else {
-                Text("The agent signs in with this login on its sites and never sees the password.")
-            }
-        }
-    }
-
-    /// Shown when this iPhone left the item for the person: it has no memory of the item from before,
-    /// or somebody waiting is a person it never sealed the item for. One button does what it would
-    /// have done by itself, for everybody the item's own record reaches.
-    private func finishSharingSection(_ item: PasswordItem) -> some View {
-        Section {
-            Text("Some people are waiting for this item, or it needs a new key. This iPhone has not shared it before, so it waits for you.")
-                .foregroundStyle(.primary)
-            Button("Finish sharing", systemImage: "person.badge.plus") { Task { await finishSharing(item) } }
-                .actionColor()
-                .disabled(isWorking)
-        }
-    }
-
-    /// Shown when somebody was removed from the item but it could not be given a new key yet.
-    private func newKeySection(_ item: PasswordItem) -> some View {
-        Section {
-            if model.itemIdsNeedingAttention.contains(item.id) {
-                Text("This item needs a new key. This iPhone gave it one a moment ago, so it waits before giving another.")
-                    .foregroundStyle(.primary)
-            } else {
-                Text("Removed. The item could not be given a new key.")
-                    .foregroundStyle(.primary)
-            }
-            Button("Try again", systemImage: "arrow.clockwise") { Task { await giveNewKey(item) } }
-                .actionColor()
-                .disabled(isWorking)
-        }
-    }
-
-    /// Says when the item's sharing cannot be trusted, or when the server lists somebody the person
-    /// never shared the item with. Setting sharing again writes a record that is checked again.
-    @ViewBuilder
-    private func sharingNoticeSection(_ item: PasswordItem) -> some View {
-        let isUnchecked = item.sharingCheck == .unverified || item.sharingCheck == .replayed
-        let unrecordedText = PasswordsWords.unrecordedSharesNotice(of: item)
-        if isUnchecked || unrecordedText != nil {
-            Section {
-                if item.sharingCheck == .unverified {
-                    Text("Sharing could not be checked")
-                        .font(.body.weight(.semibold))
-                    Text("Nobody gets this item and the agent cannot use it until you set sharing again.")
-                        .foregroundStyle(.secondary)
-                } else if item.sharingCheck == .replayed {
-                    Text("This item's sharing was changed back by the server")
-                        .font(.body.weight(.semibold))
-                    Text("Nothing is done with the older sharing. Set sharing again to choose who has this item.")
-                        .foregroundStyle(.secondary)
-                }
-                if let unrecordedText {
-                    Text(unrecordedText)
-                }
-                if isUnchecked {
-                    NavigationLink(value: PasswordsDestination.share(item.id)) {
-                        Label("Set sharing again", systemImage: "person.badge.plus")
-                            .foregroundStyle(.primary)
-                    }
-                }
-            }
-        }
-    }
-
-    private func shareSection(_ item: PasswordItem) -> some View {
-        Section {
-            NavigationLink(value: PasswordsDestination.share(item.id)) {
-                HStack {
-                    Label("Share", systemImage: "person.badge.plus")
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    PasswordsValueText(PasswordsWords.shareSummary(of: item), isProse: true)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.trailing)
-                }
-            }
-        } footer: {
-            Text("Choose a circle or a person. Only you can change an item you share.")
-        }
-    }
-
-    /// Deleting an item that is already in Recently deleted removes it and its old versions for good.
-    private func deleteForeverSection(_ item: PasswordItem) -> some View {
-        Section {
-            Button(role: .destructive) {
-                isConfirmingDeleteForever = true
-            } label: {
-                Label("Delete forever", systemImage: "trash").foregroundStyle(.red)
-            }
-            .tint(.red)
-            .actionColor(isDestructive: true)
-            .disabled(isWorking)
-            .confirmationDialog("Delete \(item.name) forever?", isPresented: $isConfirmingDeleteForever, titleVisibility: .visible) {
-                Button("Delete forever", role: .destructive) { Task { await deleteForever(item) } }
-            } message: {
-                Text("It is removed from Passwords and from this iPhone, and cannot be brought back.")
-            }
-        }
-    }
-
-    private func deleteSection(_ item: PasswordItem) -> some View {
-        Section {
-            Button(role: .destructive) {
-                isConfirmingDelete = true
-            } label: {
-                Label("Delete", systemImage: "trash").foregroundStyle(.red)
-            }
-            .tint(.red)
-            .actionColor(isDestructive: true)
-            .disabled(isWorking)
-            .confirmationDialog("Delete \(item.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { Task { await delete(item) } }
-            } message: {
-                Text("It moves to Recently deleted for 30 days. People it is shared with lose it now, and the agent can no longer use it.")
-            }
-        }
-    }
-
-    // MARK: Actions
-
-    private func setAgent(_ item: PasswordItem, isOn: Bool) async {
-        isWorking = true
-        defer { isWorking = false }
-        do {
-            try await model.setUsableByAgent(item, isUsable: isOn)
-            // The toast may already say who got access after the new key.
-            if model.doneText == nil {
-                model.doneText =
-                    isOn
-                    ? String(localized: "The agent can use this item now.")
-                    : String(localized: "The agent can no longer use this item.")
-            }
-        } catch {
-            model.report(error, orSay: String(localized: "The agent setting could not be changed."))
-        }
-    }
-
-    private func finishSharing(_ item: PasswordItem) async {
-        isWorking = true
-        defer { isWorking = false }
-        await model.finishSharing(item)
-    }
-
-    private func giveNewKey(_ item: PasswordItem) async {
-        isWorking = true
-        defer { isWorking = false }
-        await model.giveNewKey(item)
-    }
-
-    private func delete(_ item: PasswordItem) async {
-        isWorking = true
-        defer { isWorking = false }
-        do {
-            try await model.delete(item)
-            model.doneText = String(localized: "\(item.name) was deleted. It stays in Recently deleted for 30 days.")
-            dismiss()
-        } catch {
-            model.report(error, orSay: String(localized: "The item could not be deleted."))
-        }
-    }
-
-    private func deleteForever(_ item: PasswordItem) async {
-        isWorking = true
-        defer { isWorking = false }
-        do {
-            try await model.purge(item)
-            model.doneText = String(localized: "\(item.name) was deleted forever.")
-            dismiss()
-        } catch {
-            model.report(error, orSay: String(localized: "The item could not be deleted forever."))
-        }
-    }
-
-    private func restore(_ item: PasswordItem) async {
-        isWorking = true
-        defer { isWorking = false }
-        do {
-            try await model.restore(item)
-            model.doneText = String(localized: "\(item.name) was restored.")
-            dismiss()
-        } catch {
-            model.report(error, orSay: String(localized: "The item could not be restored."))
         }
     }
 }

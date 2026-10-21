@@ -12,8 +12,20 @@ enum PasswordsDestination: Hashable {
     case setUp
     case item(String)
     case share(String)
+    /// The earlier versions of an item the person owns.
+    case versions(String)
+    /// One earlier version of an item, read-only, with the button that puts it back.
+    case version(itemId: String, versionId: String)
     case deleted
     case settings
+
+    /// Whether this is a screen of earlier versions, which are left together when one is restored.
+    var isVersionScreen: Bool {
+        switch self {
+        case .versions, .version: true
+        default: false
+        }
+    }
 }
 
 /// PasswordsEditing is an editor on screen: a new item of a kind, or a change
@@ -171,6 +183,11 @@ struct PasswordsScreen: View {
         case .setUp: PasswordsSetUpScreen(model: model)
         case .item(let itemId): PasswordsItemScreen(model: model, itemId: itemId, editing: $editing)
         case .share(let itemId): PasswordsShareScreen(model: model, itemId: itemId)
+        case .versions(let itemId): PasswordsVersionsScreen(model: model, itemId: itemId)
+        case .version(let itemId, let versionId):
+            PasswordsVersionScreen(model: model, itemId: itemId, versionId: versionId) {
+                path.removeAll { $0.isVersionScreen }
+            }
         case .deleted: PasswordsDeletedScreen(model: model)
         case .settings: PasswordsSettingsScreen(model: model)
         }
@@ -248,6 +265,7 @@ struct PasswordsListView: View {
     @Binding var filter: PasswordsFilter
     @Binding var searchText: String
     let onNew: (PasswordsItemKind) -> Void
+    @State private var finishAsk: PasswordsFinishAsk?
 
     private var shownItems: [PasswordItem] {
         model.items.filter { filter.includes($0) && $0.matches(words: searchText) }
@@ -363,11 +381,24 @@ struct PasswordsListView: View {
             }
             .accessibilityElement(children: .combine)
         } else {
-            Button { Task { await model.finishSharingEveryItem() } } label: {
+            Button { Task { await askToFinishEveryItem() } } label: {
                 Label("Finish sharing \(count) items", systemImage: "person.badge.plus")
                     .actionColor()
             }
+            .passwordsFinishSharingDialog($finishAsk) { Task { await model.finishSharingEveryItem() } }
         }
+    }
+
+    /// Works out what finishing all of them would do and asks first, since a key is sealed for each
+    /// person who is waiting: who gets keys for how many items, and whether the agent gets its copy back.
+    private func askToFinishEveryItem() async {
+        let waitingItems = model.items.filter { model.itemIdsNeedingYou.contains($0.id) }
+        guard !waitingItems.isEmpty else { return }
+        let itemIds = waitingItems.map(\.id)
+        let plan = await model.finishPlan(itemIds: itemIds)
+        finishAsk = PasswordsFinishAsk(
+            itemIds: itemIds, plan: plan,
+            title: PasswordsWords.finishConfirmationTitle(itemCount: itemIds.count, itemName: waitingItems.first?.name ?? ""))
     }
 
     @ViewBuilder

@@ -189,6 +189,31 @@ public struct PasswordItemView: Codable, Hashable, Identifiable, Sendable {
     public var updatedDate: Date? { ServerTime.date(updatedAt) }
 }
 
+/// PasswordItemVersionView is one earlier version of an item the person owns, as the server keeps
+/// it: the sealed fields and the item key (sealed with the account key) the item had then.
+/// `isSavedByPerson` says whether the person's own tap saved it, rather than another device or
+/// program (a token).
+public struct PasswordItemVersionView: Codable, Hashable, Identifiable, Sendable {
+    public let versionId: String
+    public let savedAt: String
+    public let isSavedByPerson: Bool
+    public let encryptedFields: String
+    public let itemKey: String
+    public let itemKind: String
+
+    public var id: String { versionId }
+    public var savedDate: Date? { ServerTime.date(savedAt) }
+
+    public init(versionId: String, savedAt: String, isSavedByPerson: Bool, encryptedFields: String, itemKey: String, itemKind: String) {
+        self.versionId = versionId
+        self.savedAt = savedAt
+        self.isSavedByPerson = isSavedByPerson
+        self.encryptedFields = encryptedFields
+        self.itemKey = itemKey
+        self.itemKind = itemKind
+    }
+}
+
 /// PasswordItemListView is a page of changes: the items whose revision is above
 /// the one asked for, and the id of every item the person can reach now, so a
 /// device drops what is gone.
@@ -395,6 +420,13 @@ public protocol PasswordsAPI: Sendable {
     func setPasswordItemUsableByAgent(itemId: String, isUsableByAgent: Bool, itemKeyByAgentKey: String?) async throws -> PasswordItemView
     /// Gives the item a new item key (`RekeyPasswordItem`).
     func rekeyPasswordItem(_ input: PasswordItemRekeyInput) async throws -> PasswordItemView
+    /// The earlier versions of an item the person owns, newest first (`ListPasswordItemVersions`).
+    /// The server needs the person's own tap (the app's sign-in), not a token.
+    func listPasswordItemVersions(itemId: String) async throws -> [PasswordItemVersionView]
+    /// Makes an earlier version's fields and item key the item's own (`RestorePasswordItemVersion`).
+    /// The server drops the item's share keys and agent copy and marks it as needing a new key;
+    /// the device gives it one at once. Needs the person's own tap.
+    func restorePasswordItemVersion(itemId: String, versionId: String, baseRevision: Int64) async throws -> PasswordItemView
 }
 
 // MARK: Documents
@@ -500,6 +532,17 @@ extension Documents {
         }
         """
 
+    public static let passwordItemVersions = """
+        query ($itemId: String!) {
+          ListPasswordItemVersions(itemId: $itemId) { versionId savedAt isSavedByPerson encryptedFields itemKey itemKind }
+        }
+        """
+    public static let restorePasswordItemVersion = """
+        mutation ($itemId: String!, $versionId: String!, $baseRevision: Int64!) {
+          RestorePasswordItemVersion(itemId: $itemId, versionId: $versionId, baseRevision: $baseRevision) { \(passwordItemFields) }
+        }
+        """
+
     /// The Passwords documents, for the server's schema check.
     public static let passwordsDocuments: [String: String] = [
         "passwordsSetup": passwordsSetup, "setUpPasswords": setUpPasswords, "unlockPasswords": unlockPasswords,
@@ -510,6 +553,7 @@ extension Documents {
         "purgePasswordItem": purgePasswordItem,
         "setPasswordItemShares": setPasswordItemShares, "addPasswordShareKeys": addPasswordShareKeys,
         "setPasswordItemUsableByAgent": setPasswordItemUsableByAgent, "rekeyPasswordItem": rekeyPasswordItem,
+        "passwordItemVersions": passwordItemVersions, "restorePasswordItemVersion": restorePasswordItemVersion,
     ]
 }
 
@@ -648,5 +692,19 @@ extension Connection: PasswordsAPI {
     public func rekeyPasswordItem(_ input: PasswordItemRekeyInput) async throws -> PasswordItemView {
         struct Answer: Decodable, Sendable { let RekeyPasswordItem: PasswordItemView }
         return try await execute(Documents.rekeyPasswordItem, variables: PasswordsJSON.variables(input), as: Answer.self).RekeyPasswordItem
+    }
+
+    public func listPasswordItemVersions(itemId: String) async throws -> [PasswordItemVersionView] {
+        struct Answer: Decodable, Sendable { let ListPasswordItemVersions: [PasswordItemVersionView] }
+        return try await execute(Documents.passwordItemVersions, variables: ["itemId": .string(itemId)], as: Answer.self)
+            .ListPasswordItemVersions
+    }
+
+    public func restorePasswordItemVersion(itemId: String, versionId: String, baseRevision: Int64) async throws -> PasswordItemView {
+        struct Answer: Decodable, Sendable { let RestorePasswordItemVersion: PasswordItemView }
+        let variables: [String: JSONValue] = [
+            "itemId": .string(itemId), "versionId": .string(versionId), "baseRevision": .number(Double(baseRevision)),
+        ]
+        return try await execute(Documents.restorePasswordItemVersion, variables: variables, as: Answer.self).RestorePasswordItemVersion
     }
 }
