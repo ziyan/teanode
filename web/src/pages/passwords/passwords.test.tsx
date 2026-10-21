@@ -1396,6 +1396,62 @@ it('seals for a changed key once the owner trusts it, and keeps it as the known 
   })
 })
 
+it('says whom an item is shared with and names a person once in the share dialog', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  const circleMember = (userId: string, publicKey: string | null): PasswordRecipient => ({
+    userId,
+    name: `Member ${userId}`,
+    username: userId,
+    publicKey,
+    hasKey: publicKey !== null,
+  })
+  serve({
+    records: [
+      await recordFor(
+        'login-one',
+        'login',
+        { ...emptyLoginFields(), name: 'Example login' },
+        {
+          shares: [
+            {
+              id: 'share-person',
+              granteeUserId: 'person-b',
+              granteeCircleId: null,
+              granteeName: 'Person B (person-b-login)',
+              recipients: [personBRecipient(personBPublicKey, true)],
+            },
+            {
+              id: 'share-circle',
+              granteeUserId: null,
+              granteeCircleId: 'circle-one',
+              granteeName: 'Fixture Family',
+              recipients: [
+                circleMember('member-one', personBPublicKey),
+                circleMember('member-two', personBPublicKey),
+                circleMember('member-three', null),
+              ],
+            },
+          ],
+        },
+      ),
+    ],
+  })
+  await openSession()
+  renderAt('/passwords?item=login-one')
+
+  expect(
+    await screen.findByText('Shared with Person B (person-b-login) · Fixture Family: 3 people, 1 waiting'),
+  ).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share Example login' })
+  // The person is the title of their card and is not repeated in a row; the
+  // circle names each of its people.
+  expect(within(dialog).getAllByText('Person B (person-b-login)')).toHaveLength(1)
+  expect(within(dialog).getByText('Everyone in Fixture Family')).toBeTruthy()
+  expect(within(dialog).getByText('Member member-one (member-one)')).toBeTruthy()
+  expect(within(dialog).getAllByText(await safetyCode(personB.publicKey)).length).toBeGreaterThan(1)
+})
+
 it('does not seal again for a person who already has a key for the item', async () => {
   const personBPublicKey = encodeBase64(personB.publicKey)
   serve({

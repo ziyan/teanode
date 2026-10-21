@@ -21,9 +21,10 @@ import (
 	"github.com/ziyan/teanode/internal/passwords"
 )
 
-// passwordsTapAdvice is what to do when the server refuses a change because
-// only the person's tap on the dashboard or in the iPhone app may make it.
-const passwordsTapAdvice = "this is approved on the Passwords page of the dashboard or in the iPhone app, not from a command line"
+// passwordsTapPlace is where a change that needs the person's tap is approved.
+// Each command puts what it does in front and any word on what does work from
+// here after.
+const passwordsTapPlace = " is approved on the Passwords page of the dashboard or in the iPhone app, not from a command line"
 
 // clipboardClearSeconds is how long a copied secret stays on the clipboard
 // before the command clears it, the way pass does.
@@ -374,11 +375,28 @@ func checkFlagsForKind(command *cli.Command, kind passwords.ItemKind) error {
 	return nil
 }
 
-// describeTapRequired adds where to go to an error that says only the
-// person's tap may do this.
-func describeTapRequired(err error, advice string) error {
+// tapRequiredError is the one sentence a command prints when the server
+// refuses it for want of the person's tap. The server's own refusal stays
+// wrapped, so client.IsTapRequired still recognizes it, but it is not printed:
+// it says the same thing as the sentence.
+type tapRequiredError struct {
+	sentence string
+	err      error
+}
+
+func (self *tapRequiredError) Error() string {
+	return self.sentence
+}
+
+func (self *tapRequiredError) Unwrap() error {
+	return self.err
+}
+
+// describeTapRequired replaces an error that says only the person's tap may do
+// this with the sentence for the command that was refused.
+func describeTapRequired(err error, sentence string) error {
 	if client.IsTapRequired(err) {
-		return &describedError{fmt.Errorf("%w; %s", err, advice)}
+		return &describedError{&tapRequiredError{sentence: sentence, err: err}}
 	}
 	return err
 }
@@ -471,10 +489,7 @@ func runPasswordsSetup(ctx context.Context, command *cli.Command) error {
 // passwordsSetupRefusal is the server's refusal of a setup, with where to go
 // when it is for want of a tap.
 func passwordsSetupRefusal(command *cli.Command, err error) error {
-	if client.IsTapRequired(err) {
-		return &describedError{fmt.Errorf("%w; setting up Passwords needs your tap, which a command line cannot give: set it up on the Passwords page of the dashboard or in the iPhone app, then run 'teanode passwords unlock' here", err)}
-	}
-	return describeError(command, err)
+	return describeTapRequired(describeError(command, err), "Setting up Passwords"+passwordsTapPlace+"; once it is set up there, run 'teanode passwords unlock' here.")
 }
 
 // passwordsMade is what setup makes on this computer: what is sent, the keys
@@ -1398,7 +1413,7 @@ func setItemShares(ctx context.Context, command *cli.Command, session *passwords
 	}
 	view, err := client.SetPasswordItemShares(ctx, session.connection, &client.SetPasswordItemSharesInput{ItemID: item.View.ID, Grantees: grantees, Keys: keys})
 	if err != nil {
-		return describeTapRequired(describeError(command, err), "adding somebody to an item is approved on the Passwords page of the dashboard or in the iPhone app; taking somebody away works here")
+		return describeTapRequired(describeError(command, err), "Sharing with someone new is approved on the Passwords page of the dashboard or in the iPhone app; taking someone away works here.")
 	}
 	item.View = view
 	if command.Bool("json") {
@@ -1572,7 +1587,7 @@ func runPasswordsAgent(ctx context.Context, command *cli.Command) error {
 	}
 	view, err := client.SetPasswordItemUsableByAgent(ctx, session.connection, input)
 	if err != nil {
-		return describeTapRequired(describeError(command, err), "letting the agent use an item is "+passwordsTapAdvice)
+		return describeTapRequired(describeError(command, err), "Letting the agent use an item"+passwordsTapPlace+"; turning it off works here.")
 	}
 	item.View = view
 	if command.Bool("json") {
@@ -1696,7 +1711,7 @@ func runPasswordsChangePassphrase(ctx context.Context, command *cli.Command) err
 		Proof: proof, IsRecoveryKey: secret.RecoveryKey != "", AccountKeyByPassphrase: accountKeyByPassphrase,
 		PassphraseSalt: base64.StdEncoding.EncodeToString(salt), PassphraseIterationCount: passwords.DefaultIterationCount, PassphraseProofHash: passphraseProofHash,
 	}); err != nil {
-		return describeTapRequired(describeError(command, err), "changing the passphrase is "+passwordsTapAdvice)
+		return describeTapRequired(describeError(command, err), "Changing the passphrase"+passwordsTapPlace+".")
 	}
 	if command.Bool("json") {
 		return PrintJSON(map[string]any{"isPassphraseChanged": true})
@@ -1743,7 +1758,7 @@ func runPasswordsNewRecoveryKey(ctx context.Context, command *cli.Command) error
 	if _, err := client.ReplacePasswordsRecoveryKey(ctx, connection, &client.ReplacePasswordsRecoveryKeyInput{
 		Proof: proof, AccountKeyByRecoveryKey: accountKeyByRecoveryKey, RecoveryKeyProofHash: recoveryKeyProofHash,
 	}); err != nil {
-		return describeTapRequired(describeError(command, err), "replacing the recovery key is "+passwordsTapAdvice)
+		return describeTapRequired(describeError(command, err), "Replacing the recovery key"+passwordsTapPlace+".")
 	}
 	if command.Bool("json") {
 		return PrintJSON(map[string]any{"recoveryKey": recoveryKey})
@@ -1767,7 +1782,7 @@ func runPasswordsErase(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if _, err := client.ErasePasswords(ctx, connection); err != nil {
-		return describeTapRequired(describeError(command, err), "erasing Passwords is "+passwordsTapAdvice)
+		return describeTapRequired(describeError(command, err), "Erasing Passwords"+passwordsTapPlace+".")
 	}
 	_, _ = removePasswordsUnlock(command)
 	if command.Bool("json") {

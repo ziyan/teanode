@@ -6950,6 +6950,12 @@ export const ja: Catalog = {
   'passwords.agentFailed': 'エージェントの設定を変更できませんでした。',
   'passwords.agentLastUsed': 'エージェントが最後に使用',
   'passwords.share': '共有',
+  'passwords.sharedWith': '{names} と共有中',
+  'passwords.sharedWithPersonWaiting': '{name}（パスワードの設定待ち）',
+  'passwords.sharedWithCircleOne': '{name}：{count} 人',
+  'passwords.sharedWithCircle': '{name}：{count} 人',
+  'passwords.sharedWithCircleWaitingOne': '{name}：{count} 人、{waitingCount} 人が待機中',
+  'passwords.sharedWithCircleWaiting': '{name}：{count} 人、{waitingCount} 人が待機中',
   'passwords.shareTitle': '{name} を共有',
   'passwords.shareIntro':
     'サークルまたは人を選びます。パスワードを設定済みの人には、この項目のキーが、相手のキーだけで開くようにこのデバイスで暗号化して渡されます。項目を変更できるのはあなただけです。',

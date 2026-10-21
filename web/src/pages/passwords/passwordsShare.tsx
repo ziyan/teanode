@@ -203,7 +203,9 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
               <CloseIcon size={16} />
             </button>
           </Tooltip>
-          {row.recipients.length === 0 && <p className="muted">{t('passwords.shareNoRecipients')}</p>}
+          {row.kind === 'circle' && row.recipients.length === 0 && (
+            <p className="muted">{t('passwords.shareNoRecipients')}</p>
+          )}
           <ul className="passwords-recipients">
             {row.recipients.map((recipient) => {
               const pinnedKey = passwordsSession.pinnedKeyOf(recipient.userId)
@@ -215,7 +217,11 @@ export function PasswordsShareDialog({ item, onClose }: { item: PasswordItem; on
               const isTrusted = isKeyChanged && trustedKeys.get(recipient.userId) === recipient.publicKey
               return (
                 <li key={recipient.userId}>
-                  <span>{personLabel({ name: recipient.name, username: recipient.username })}</span>
+                  {/* A person is named once, as the title of their card; only a
+                      circle needs a row to say which of its people a code is. */}
+                  {row.kind === 'circle' && (
+                    <span>{personLabel({ name: recipient.name, username: recipient.username })}</span>
+                  )}
                   {recipient.publicKey === null ? (
                     <span className="muted">{t('passwords.recipientWaiting')}</span>
                   ) : (

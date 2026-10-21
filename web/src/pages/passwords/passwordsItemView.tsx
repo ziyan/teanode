@@ -7,11 +7,12 @@ import { RelativeTime } from '../../components/relativeTime'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
-import { useTranslation } from '../../i18n/i18n'
+import { Translation, useTranslation } from '../../i18n/i18n'
 import { useFailureToast } from './passwordsErrors'
 import { siteFromText } from './passwordsEditor'
 import { KIND_WORDS, siteHost } from './passwordsList'
 import { OneTimeCodeValue, PlainValue, SafetyCode, SecretValue } from './passwordsParts'
+import { PasswordShare } from './passwordsApi'
 import { PasswordItem } from './passwordsProtocol'
 import { passwordsSession } from './passwordsSession'
 import { PasswordsShareDialog } from './passwordsShare'
@@ -48,6 +49,32 @@ function sitesToShow(sites: string[]): string[] {
   return shown
 }
 
+// whoItIsSharedWith says what each share of an item is: a person by name, with
+// "waiting" when they have not set up Passwords yet, or a circle by name with
+// how many people are in it and how many of them are waiting.
+function whoItIsSharedWith(shares: PasswordShare[], { t, plural }: Pick<Translation, 't' | 'plural'>): string {
+  const parts = shares.map((share) => {
+    const name = share.granteeName
+    const waitingCount = share.recipients.filter((recipient) => recipient.publicKey === null).length
+    if (share.granteeCircleId === null) {
+      return waitingCount > 0 ? t('passwords.sharedWithPersonWaiting', { name }) : name
+    }
+    const values = { name, waitingCount }
+    return waitingCount > 0
+      ? plural(
+          share.recipients.length,
+          { one: 'passwords.sharedWithCircleWaitingOne', other: 'passwords.sharedWithCircleWaiting' },
+          values,
+        )
+      : plural(
+          share.recipients.length,
+          { one: 'passwords.sharedWithCircleOne', other: 'passwords.sharedWithCircle' },
+          values,
+        )
+  })
+  return t('passwords.sharedWith', { names: parts.join(' · ') })
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="passwords-field">
@@ -66,7 +93,8 @@ export function PasswordsItemView({
   onBack: () => void
   onEdit: () => void
 }) {
-  const { t, language } = useTranslation()
+  const translation = useTranslation()
+  const { t, language } = translation
   const toast = useToast()
   const reportFailure = useFailureToast()
   const [isSharing, setIsSharing] = useState(false)
@@ -190,11 +218,20 @@ export function PasswordsItemView({
         <p className="passwords-tags">
           <Tag value={t(KIND_WORDS[item.itemKind])} />
           {item.isSharedWithMe && <Tag value={t('passwords.tagSharedBy', { name: item.ownerName })} />}
-          {item.isOwnedByMe && item.shares.length > 0 && <Tag value={t('passwords.tagShared')} />}
           {item.isUsableByAgent && <Tag value={t('passwords.tagAgent')} tone="good" />}
           {isDeleted && <Tag value={t('passwords.tagDeleted')} tone="warn" />}
         </p>
         {item.isSharedWithMe && <p className="muted">{t('passwords.sharedReadOnly', { name: item.ownerName })}</p>}
+        {item.isOwnedByMe && item.shares.length > 0 && (
+          <div className="passwords-shared-with">
+            <p>{whoItIsSharedWith(item.shares, translation)}</p>
+            {!isDeleted && !item.isUnreadable && (
+              <button type="button" onClick={() => setIsSharing(true)}>
+                {t('passwords.share')}
+              </button>
+            )}
+          </div>
+        )}
         {item.ownerKeyChange !== null ? (
           <div className="passwords-key-changed">
             <h3>{t('passwords.ownerKeyChangedTitle')}</h3>

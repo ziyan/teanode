@@ -7042,6 +7042,12 @@ export const en = {
   'passwords.agentFailed': 'The agent setting could not be changed.',
   'passwords.agentLastUsed': 'Last used by the agent',
   'passwords.share': 'Share',
+  'passwords.sharedWith': 'Shared with {names}',
+  'passwords.sharedWithPersonWaiting': '{name} (waiting for them to set up Passwords)',
+  'passwords.sharedWithCircleOne': '{name}: {count} person',
+  'passwords.sharedWithCircle': '{name}: {count} people',
+  'passwords.sharedWithCircleWaitingOne': '{name}: {count} person, {waitingCount} waiting',
+  'passwords.sharedWithCircleWaiting': '{name}: {count} people, {waitingCount} waiting',
   'passwords.shareTitle': 'Share {name}',
   'passwords.shareIntro':
     "Pick a circle or a person. Each person who has set up Passwords gets the item's key, sealed on this device for their key only. Only you can change the item.",

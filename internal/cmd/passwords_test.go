@@ -14,6 +14,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/passwords"
 )
@@ -155,6 +156,10 @@ func TestPasswordsSetupNeedsATap(test *testing.T) {
 		_, err := fake.run(testToken, testPassphrase+"\n", arguments...)
 		if err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "iPhone app") || !strings.Contains(err.Error(), "unlock") {
 			test.Fatalf("a refused setup (%v) said: %v", arguments, err)
+		}
+		// One sentence: the server's own refusal is not printed beside it.
+		if strings.Count(err.Error(), "dashboard") != 1 || strings.Contains(err.Error(), api.TapRequiredPhrase) {
+			test.Errorf("a refused setup (%v) said more than one sentence: %v", arguments, err)
 		}
 		if strings.Contains(err.Error(), "terminal") {
 			test.Errorf("setup asked for a passphrase before it asked the server: %v", err)
@@ -773,8 +778,12 @@ func TestPasswordsAgent(test *testing.T) {
 
 	// Without a tap the server refuses, and the words say where to go.
 	fake.isTapRefused = true
-	if _, err := fake.run(testToken, "", "agent", "on", "example.com", "--force"); err == nil || !strings.Contains(err.Error(), "iPhone app") {
-		test.Errorf("a refused agent: %v", err)
+	_, err = fake.run(testToken, "", "agent", "on", "example.com", "--force")
+	if err == nil || !strings.Contains(err.Error(), "iPhone app") {
+		test.Fatalf("a refused agent: %v", err)
+	}
+	if want := "Letting the agent use an item is approved on the Passwords page of the dashboard or in the iPhone app, not from a command line; turning it off works here."; err.Error() != want {
+		test.Errorf("a refused agent said %q, want %q", err.Error(), want)
 	}
 }
 
