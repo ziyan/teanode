@@ -18,8 +18,11 @@ let changed: ((changes: Record<string, unknown>, area: string) => void) | null
 
 beforeEach(() => {
   vi.resetModules()
-  const body = /<body>([\s\S]*)<\/body>/.exec(pageHtml)?.[1] ?? ''
-  document.body.innerHTML = body.replace(/<script[^>]*><\/script>/g, '')
+  // The page's own markup, without its scripts (parsed, not matched by a
+  // pattern, so no form of a script tag is left behind).
+  const parsed = new DOMParser().parseFromString(pageHtml, 'text/html')
+  for (const script of parsed.querySelectorAll('script')) script.remove()
+  document.body.innerHTML = parsed.body.innerHTML
   local = memoryArea()
   sync = memoryArea()
   session = memoryArea()

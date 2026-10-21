@@ -144,7 +144,9 @@ func readRecordVersion(raw json.RawMessage) (int, error) {
 		}
 		version = int64(number)
 	}
-	if version < 1 || version > MaximumRecordVersion {
+	// Bounded by MaximumRecordVersion and by what an int holds, which on a
+	// 32-bit build is less.
+	if version < 1 || version > MaximumRecordVersion || version > math.MaxInt {
 		return 0, errors.New("passwords: the access record's recordVersion is not a positive integer")
 	}
 	return int(version), nil
