@@ -27,12 +27,18 @@ import {
   OWN_PAGES_REFUSAL,
   PANEL_ELEMENT_REFUSAL,
   addressRefusal,
+  cdpParametersRefusal,
   cdpRefusal,
+  fetchRefusal,
+  handOverToken,
+  hiddenRequestIds,
   isOwnPage,
+  isPanelFrame,
   pageRefusal,
   panelProbe,
   panelRefusal,
   serverHostname,
+  withoutServerRequests,
 } from './reach.js'
 
 const PROTOCOL = 4
@@ -917,8 +923,15 @@ async function act(action, args) {
       return { ok: true, data: image }
     }
     if (action === 'cdp') {
-      const refusal = cdpRefusal(args.method)
+      const refusal = cdpRefusal(args.method) || cdpParametersRefusal(args.method, args.params)
       if (refusal) return { ok: false, error: refusal }
+      // A request to the server is not shown, so nor is its body.
+      if (args.method === 'Network.getResponseBody' || args.method === 'Network.getRequestPostData') {
+        const watched = debugging.get(tab.id)
+        if (watched && hiddenRequestIds(watched.events, origin).has(args.params && args.params.requestId)) {
+          return { ok: false, error: OWN_PAGES_REFUSAL }
+        }
+      }
       // Page.navigate is the navigate action by another name.
       if (args.method === 'Page.navigate') {
         const unwelcome = addressRefusal(args.params && args.params.url, origin)
@@ -943,7 +956,9 @@ async function act(action, args) {
       if (!state) return { ok: false, error: 'nothing is being watched on this tab; send a cdp command such as Network.enable first' }
       state.until = Date.now() + DEBUGGER_IDLE
       const wanted = String(args.method || '').trim()
-      const kept = wanted ? state.events.filter((event) => event.method.startsWith(wanted)) : state.events
+      // Requests to the server are not shown: see withoutServerRequests.
+      const visible = withoutServerRequests(state.events, origin)
+      const kept = wanted ? visible.filter((event) => event.method.startsWith(wanted)) : visible
       const most = Number(args.limit) > 0 ? Number(args.limit) : 100
       const shown = kept.slice(-most)
       if (args.forget) state.events = []
@@ -963,6 +978,12 @@ async function act(action, args) {
       }
       await letDebuggerGo(tab.id)
       return { ok: true, data: { stopped: true } }
+    }
+    // The page's session goes with a fetch: where it goes is held to the same
+    // lines as where a tab goes.
+    if (action === 'fetch') {
+      const unwelcome = fetchRefusal(args.url, tab.url, origin)
+      if (unwelcome) return { ok: false, error: unwelcome }
     }
     // An element the panel covers is not clicked, hovered, typed into or
     // chosen in: the person would see it happen under the panel.
@@ -1181,6 +1202,7 @@ async function inPage(action, args, ownHostname, ownPagesRefusal, panel, panelWo
       try {
         const target = new URL(args.url || '', location.href)
         if (target.origin !== location.origin) return { ok: false, error: 'fetch is limited to the attached page’s own site' }
+        if (ownHostname && target.hostname.replace(/\.$/, '').toLowerCase() === ownHostname) return { ok: false, error: ownPagesRefusal }
         // Following a redirect would take the person's cookies off this
       // site: any open redirect on it would otherwise read any site they
       // are signed into.
@@ -1226,14 +1248,60 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 })
 
+// handedNonces are the panels whose frame has been handed the token: once
+// each.
+const handedNonces = new Set()
+
+// handToken hands the person's token to the panel's frame, in the frame's own
+// world, and says whether it took it. See reach.js for why the frame is found
+// by a nonce and the token is in no address. The frame may still be starting,
+// so it is looked for and asked for a few seconds.
+async function handToken(tabId, nonce) {
+  if (typeof nonce !== 'string' || nonce.length < 16 || handedNonces.has(nonce)) return false
+  const [origin, secret] = await Promise.all([serverOrigin(), token()])
+  let own
+  try {
+    own = new URL(origin).origin
+  } catch {
+    return false
+  }
+  if (!secret) return false
+  handedNonces.add(nonce)
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      const found = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: isPanelFrame, args: [own, nonce] })
+      const match = found.find((one) => one.result === true)
+      if (match) {
+        const [handed] = await chrome.scripting.executeScript({
+          target: { tabId, frameIds: [match.frameId] },
+          world: 'MAIN',
+          func: handOverToken,
+          args: [secret],
+        })
+        if (handed && handed.result === true) return true
+      }
+    } catch {
+      // A frame that is not there yet, or a page that cannot be scripted.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  handedNonces.delete(nonce)
+  return false
+}
+
 // What the panel asks of this worker.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tab = sender.tab
   switch (message && message.type) {
     case 'panel:token':
       Promise.all([serverOrigin(), token(), chrome.storage.local.get('username')]).then(([server, secret, { username }]) => {
-        sendResponse({ server, token: secret, username: username || '', attached: !!tab && attached.ownTabId === tab.id })
+        // The token itself stays here: the panel gets only whether there is one.
+        sendResponse({ server, isSignedIn: !!secret, username: username || '', attached: !!tab && attached.ownTabId === tab.id })
       })
+      return true
+    case 'panel:handoff':
+      if (tab) handToken(tab.id, message.nonce).then(sendResponse)
+      else sendResponse(false)
       return true
     case 'panel:options':
       chrome.runtime.openOptionsPage()

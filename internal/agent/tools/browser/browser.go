@@ -47,7 +47,7 @@ func init() {
 					"for":            tools.EnumProperty("for wait: what to wait for", "selector", "navigation", "network_idle", "timeout"),
 					"timeout_ms":     tools.IntegerProperty("for wait: how long, 30000 by default"),
 					"expression":     tools.StringProperty("for evaluate: a JavaScript expression; its JSON value comes back"),
-					"method":         tools.StringProperty("for cdp: the DevTools method, for example Input.dispatchMouseEvent, Input.dispatchKeyEvent, Network.enable or Page.captureSnapshot"),
+					"method":         tools.StringProperty("for cdp: the DevTools method, for example Input.dispatchMouseEvent, Input.dispatchKeyEvent, Network.enable or Page.getLayoutMetrics"),
 					"params":         map[string]any{"type": "object", "description": "for cdp: the method's own parameters"},
 					"limit":          tools.IntegerProperty("for cdp_events: how many of the newest to show, 100 by default"),
 					"forget":         tools.BooleanProperty("for cdp_events: clear what has been kept after reading it"),
@@ -386,6 +386,8 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 		return nil, errors.New(refusal)
 	}
 	switch arguments.Action {
+	case "cdp_events":
+		data = hideOwnRequests(data, ownHostnames(run.Configuration(), tab))
 	case "snapshot":
 		data = part.cutTabAnswer(data)
 	case "tabs":

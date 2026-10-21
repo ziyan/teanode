@@ -121,7 +121,13 @@ async function load(tabs, { current = tabs[0].id, opened = [], panel = { isOpen:
     )
     return socket.sent.find((message) => message.type === 'result' && message.id === id)
   }
-  return { ask, calls, chrome: globalThis.chrome }
+  // What the panel's content script says to the worker, answered on the callback.
+  const fromPanel = (message, tab = { id: tabs[0].id }) =>
+    new Promise((resolve) => {
+      const keepsOpen = globalThis.chrome.runtime.onMessage.addListener.mock.calls[0][0](message, { tab }, resolve)
+      if (!keepsOpen) resolve(undefined)
+    })
+  return { ask, calls, chrome: globalThis.chrome, socket, fromPanel }
 }
 
 const ownTab = (url) => ({ id: 7, url })
@@ -481,5 +487,137 @@ describe("the person's TeaNode panel on the page", () => {
       expect((await ask('type', { ref: 3, text: 'x' }, clear)).answer).toMatchObject({ ok: true })
       expect(document.getElementById('i').value).toBe('x')
     })
+  })
+})
+
+describe("what reaches into the panel's frame", () => {
+  const ordinary = [ownTab('https://shop.example.org/cart')]
+
+  it('is not sent: pierce, another context, another frame', async () => {
+    const { ask, calls } = await load(ordinary)
+    for (const [method, params] of [
+      ['DOM.getDocument', { depth: -1, pierce: true }],
+      ['DOM.describeNode', { nodeId: 1, depth: -1, pierce: true }],
+      ['Runtime.evaluate', { expression: '1', contextId: 3 }],
+      ['Accessibility.getFullAXTree', { frameId: 'A1' }],
+      ['Page.navigate', { url: 'https://shop.example.org/', frameId: 'A1' }],
+      ['DOMSnapshot.captureSnapshot', { computedStyles: [] }],
+      ['Page.captureSnapshot', {}],
+      ['Page.getFrameTree', {}],
+    ]) {
+      expect((await ask('cdp', { method, params })).ok, `${method} ${JSON.stringify(params)}`).toBe(false)
+    }
+    expect(calls.debuggerSent).toEqual([])
+    expect(await ask('cdp', { method: 'DOM.getDocument', params: { depth: -1 } })).toMatchObject({ ok: true })
+  })
+
+  it('does not show the requests the server was sent, or their bodies', async () => {
+    const { ask, chrome } = await load(ordinary)
+    await ask('cdp', { method: 'Network.enable' })
+    const onEvent = chrome.debugger.onEvent.addListener.mock.calls[0][0]
+    onEvent({ tabId: 7 }, 'Network.requestWillBeSentExtraInfo', {
+      requestId: '1.1',
+      headers: { authorization: 'Bearer example-token' },
+    })
+    onEvent({ tabId: 7 }, 'Network.requestWillBeSent', {
+      requestId: '1.1',
+      request: { url: 'https://mail.example.com/api/v1/graphql' },
+    })
+    onEvent({ tabId: 7 }, 'Network.requestWillBeSent', {
+      requestId: '2.2',
+      request: { url: 'https://cdn.example.net/a.js' },
+    })
+    const shown = await ask('cdp_events', {})
+    expect(JSON.stringify(shown)).not.toContain('example-token')
+    expect(JSON.stringify(shown)).not.toContain('mail.example.com')
+    expect(JSON.stringify(shown)).toContain('cdn.example.net')
+    expect(await ask('cdp', { method: 'Network.getResponseBody', params: { requestId: '1.1' } })).toEqual(
+      expect.objectContaining({ ok: false, error: OWN_PAGES_REFUSAL }),
+    )
+    expect(await ask('cdp', { method: 'Network.getResponseBody', params: { requestId: '2.2' } })).toMatchObject({
+      ok: true,
+    })
+  })
+})
+
+describe("a fetch with the page's session", () => {
+  it("is not sent to the server, however it is written, and is sent to the page's own site", async () => {
+    const { ask, calls } = await load([ownTab('https://app.example.com/page')])
+    for (const url of [
+      'https://mail.example.com/api/v1/graphql',
+      '//mail.example.com/x',
+      'http://MAIL.example.com:8443/x',
+      'file:///etc/hosts',
+    ]) {
+      expect(await ask('fetch', { url }), url).toEqual(expect.objectContaining({ ok: false }))
+    }
+    expect((await ask('fetch', { url: 'https://mail.example.com/x' })).error).toBe(OWN_PAGES_REFUSAL)
+    expect(calls.scripts).toEqual([])
+    expect(await ask('fetch', { url: '/statements.pdf' })).toMatchObject({ ok: true })
+    expect(calls.scripts).toHaveLength(1)
+  })
+})
+
+describe("the person's token and the panel", () => {
+  const ordinary = [ownTab('https://shop.example.org/cart')]
+  const nonce = '0b9c5f0e-6a53-4d3e-8d0a-0a1b2c3d4e5f'
+
+  it("is not given to the panel's content script, which is in the page", async () => {
+    const { fromPanel } = await load(ordinary)
+    const answer = await fromPanel({ type: 'panel:token' })
+    expect(answer).toMatchObject({ server: serverOrigin, isSignedIn: true, username: '' })
+    expect(JSON.stringify(answer)).not.toContain('a-token')
+  })
+
+  it("is handed once to the frame that has the panel's nonce, in its own world, and is in no address", async () => {
+    const { fromPanel, chrome } = await load(ordinary)
+    chrome.scripting.executeScript.mockImplementation(async (injection) => {
+      if (injection.target.allFrames)
+        return [
+          { frameId: 0, result: false },
+          { frameId: 5, result: false },
+          { frameId: 9, result: true },
+        ]
+      return [{ result: true }]
+    })
+    expect(await fromPanel({ type: 'panel:handoff', nonce })).toBe(true)
+    const [finding, handing] = chrome.scripting.executeScript.mock.calls.map(([injection]) => injection)
+    // Finding the frame carries no secret, and goes to every frame to ask.
+    expect(finding.args).toEqual([serverOrigin, nonce])
+    expect(JSON.stringify(finding)).not.toContain('a-token')
+    // The token goes to the one frame, in its own world.
+    expect(handing.target).toEqual({ tabId: 7, frameIds: [9] })
+    expect(handing.world).toBe('MAIN')
+    expect(handing.args).toEqual(['a-token'])
+    // Once: the same nonce again hands nothing.
+    chrome.scripting.executeScript.mockClear()
+    expect(await fromPanel({ type: 'panel:handoff', nonce })).toBe(false)
+    expect(chrome.scripting.executeScript).not.toHaveBeenCalled()
+  })
+
+  it('is handed to nobody for a nonce that is not one, or from nowhere but a tab', async () => {
+    const { fromPanel, chrome } = await load(ordinary)
+    expect(await fromPanel({ type: 'panel:handoff', nonce: 'short' })).toBe(false)
+    expect(await fromPanel({ type: 'panel:handoff', nonce: undefined })).toBe(false)
+    expect(await fromPanel({ type: 'panel:handoff', nonce }, null)).toBe(false)
+    expect(chrome.scripting.executeScript).not.toHaveBeenCalled()
+  })
+
+  it('is handed again when the drawer was not ready the first time', async () => {
+    vi.useFakeTimers()
+    try {
+      const { fromPanel, chrome } = await load(ordinary)
+      let asked = 0
+      chrome.scripting.executeScript.mockImplementation(async (injection) => {
+        if (injection.target.allFrames) return [{ frameId: 4, result: true }]
+        return [{ result: ++asked >= 3 }]
+      })
+      const handing = fromPanel({ type: 'panel:handoff', nonce })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(await handing).toBe(true)
+      expect(asked).toBe(3)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

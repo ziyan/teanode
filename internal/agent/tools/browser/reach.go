@@ -61,9 +61,7 @@ var cdpAllowedMethods = map[string]bool{
 	"Page.disable":              true,
 	"Page.navigate":             true,
 	"Page.reload":               true,
-	"Page.captureSnapshot":      true,
 	"Page.getLayoutMetrics":     true,
-	"Page.getFrameTree":         true,
 	"Page.getNavigationHistory": true,
 	// Reading and running in the page's own world, which evaluate already is.
 	"Runtime.enable":             true,
@@ -86,15 +84,8 @@ var cdpAllowedMethods = map[string]bool{
 	"DOM.requestNode":                true,
 	"DOM.getBoxModel":                true,
 	"DOM.getContentQuads":            true,
-	"DOM.getNodeForLocation":         true,
 	"DOM.scrollIntoViewIfNeeded":     true,
 	"DOM.focus":                      true,
-	"DOM.performSearch":              true,
-	"DOM.getSearchResults":           true,
-	"DOM.discardSearchResults":       true,
-	"DOMSnapshot.enable":             true,
-	"DOMSnapshot.disable":            true,
-	"DOMSnapshot.captureSnapshot":    true,
 	"Accessibility.enable":           true,
 	"Accessibility.disable":          true,
 	"Accessibility.getFullAXTree":    true,
@@ -124,7 +115,34 @@ func cdpRefusal(method string) string {
 		return fmt.Sprintf("%s is not sent: the agent does not choose files for a page or drop files onto one in the person's browser, since the page could then read them back", method)
 	}
 	if !cdpAllowedMethods[method] {
-		return fmt.Sprintf("%s is not one of the methods an attached tab answers: driving it (Input.dispatchMouseEvent, Input.dispatchKeyEvent, Input.insertText), reading it (DOM, Runtime, Accessibility and DOMSnapshot methods that read), watching what it fetches (Network.enable, Network.getResponseBody) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser or the person's machine, which attaching one tab does not allow", method)
+		return fmt.Sprintf("%s is not one of the methods an attached tab answers: driving it (Input.dispatchMouseEvent, Input.dispatchKeyEvent, Input.insertText), reading it (DOM, Runtime and Accessibility methods that read the page itself), watching what it fetches (Network.enable, Network.getResponseBody) and moving it (Page.navigate). Anything else reaches past this tab into the whole browser or the person's machine, which attaching one tab does not allow", method)
+	}
+	return ""
+}
+
+// cdpContextParameters name an execution context, which would run a call in
+// a frame of another origin that shares the tab's process.
+var cdpContextParameters = []string{"contextId", "uniqueContextId", "executionContextId"}
+
+// cdpParametersRefusal says why the parameters of an allowed method are not
+// sent, or "" when they are. Two things reach past the page the tab shows,
+// into the frames in it. The panel the extension puts on a page is the
+// dashboard's drawer, a frame of this server's origin, and a frame of the
+// same site shares the tab's process, so the protocol can see into it:
+// pierce reads the documents of frames and the shadow roots the panel sits
+// in, and an execution context runs script in a frame's own world. Neither
+// is the page the person attached.
+func cdpParametersRefusal(method string, params map[string]any) string {
+	if pierce, _ := params["pierce"].(bool); pierce {
+		return fmt.Sprintf("%s is not sent with pierce: reading through frames and shadow roots reaches past the page this tab shows", method)
+	}
+	for _, name := range cdpContextParameters {
+		if _, isGiven := params[name]; isGiven {
+			return fmt.Sprintf("%s is not sent with %s: the agent runs script in the page's own world, not in another context or frame", method, name)
+		}
+	}
+	if _, isGiven := params["frameId"]; isGiven && (method == "Page.navigate" || strings.HasPrefix(method, "Accessibility.")) {
+		return fmt.Sprintf("%s is not sent with frameId: the agent works on the page's own document, not on a frame inside it", method)
 	}
 	return ""
 }
@@ -267,11 +285,21 @@ func tabReachRefusal(configuration *config.Configuration, tab tools.Tab, argumen
 		if refusal := cdpRefusal(arguments.Method); refusal != "" {
 			return refusal
 		}
+		if refusal := cdpParametersRefusal(arguments.Method, arguments.Params); refusal != "" {
+			return refusal
+		}
 		if arguments.Method == "Page.navigate" {
 			address, _ := arguments.Params["url"].(string)
 			if refusal := addressRefusal(address, ownHosts); refusal != "" {
 				return refusal
 			}
+		}
+	case "fetch":
+		// The page's own session goes with a fetch, so where it goes matters
+		// as much as where a tab goes: a page on a sibling host of the
+		// server's site would send the server its cookie.
+		if refusal := fetchRefusal(arguments.URL, tab.URL(), ownHosts); refusal != "" {
+			return refusal
 		}
 	case "switch":
 		for _, candidate := range switchCandidates(tab, arguments) {
@@ -294,6 +322,28 @@ func tabReachRefusal(configuration *config.Configuration, tab tools.Tab, argumen
 		}
 	}
 	return ""
+}
+
+// fetchRefusal says why an address is not fetched with the tab's session, or
+// "" when it is: the address as the page would resolve it, against where the
+// tab is, has to be an ordinary site's.
+func fetchRefusal(address, base string, ownHosts map[string]bool) string {
+	if address == "" || strings.Contains(address, "\\") {
+		return addressRefusal(address, ownHosts)
+	}
+	reference, err := url.Parse(address)
+	if err != nil {
+		return addressRefusal(address, ownHosts)
+	}
+	if !reference.IsAbs() {
+		parsedBase, err := url.Parse(base)
+		if err != nil || parsedBase.Host == "" || (parsedBase.Scheme != "http" && parsedBase.Scheme != "https") {
+			// No page to resolve it against: the extension reads it in the page.
+			return ""
+		}
+		reference = parsedBase.ResolveReference(reference)
+	}
+	return addressRefusal(reference.String(), ownHosts)
 }
 
 // switchCandidates are the listed tabs a switch could mean, the way the
@@ -356,4 +406,54 @@ func answerReachRefusal(configuration *config.Configuration, tab tools.Tab, acti
 		return ownPagesRefusal + " The tab is on one now: open another page, or say what the person needs to do."
 	}
 	return ""
+}
+
+// hideOwnRequests takes out of what the tab watched every request made to
+// this server's host, with the events that go with it: the panel is a frame
+// of this server's origin, and a frame of the same site is in the tab's
+// process, so its requests, with the Authorization header that signs the
+// person in, are among the page's. What a page asks other sites for is what
+// the agent watches the network for, and stays.
+func hideOwnRequests(answer json.RawMessage, ownHosts map[string]bool) json.RawMessage {
+	var decoded map[string]json.RawMessage
+	if json.Unmarshal(answer, &decoded) != nil {
+		return answer
+	}
+	var events []map[string]any
+	if json.Unmarshal(decoded["events"], &events) != nil {
+		return answer
+	}
+	isOwnAddress := func(value any) bool {
+		address, _ := value.(string)
+		return address != "" && isOwnPage(address, ownHosts)
+	}
+	hidden := map[string]bool{}
+	for _, event := range events {
+		params, _ := event["params"].(map[string]any)
+		request, _ := params["request"].(map[string]any)
+		response, _ := params["response"].(map[string]any)
+		if isOwnAddress(request["url"]) || isOwnAddress(response["url"]) || isOwnAddress(params["url"]) {
+			if requestID, _ := params["requestId"].(string); requestID != "" {
+				hidden[requestID] = true
+			}
+		}
+	}
+	kept := make([]map[string]any, 0, len(events))
+	for _, event := range events {
+		params, _ := event["params"].(map[string]any)
+		if requestID, _ := params["requestId"].(string); hidden[requestID] {
+			continue
+		}
+		kept = append(kept, event)
+	}
+	keptEvents, err := json.Marshal(kept)
+	if err != nil {
+		return answer
+	}
+	decoded["events"] = keptEvents
+	filtered, err := json.Marshal(decoded)
+	if err != nil {
+		return answer
+	}
+	return filtered
 }

@@ -20,7 +20,7 @@ func newReachRun(address string) *fakeBrowsingRun {
 
 // A method that is on the list goes through to the person's browser.
 func TestAMethodOnTheListIsSent(t *testing.T) {
-	for _, method := range []string{"Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.insertText", "Network.enable", "Page.captureSnapshot", "Runtime.evaluate", "DOM.getDocument"} {
+	for _, method := range []string{"Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.insertText", "Network.enable", "Page.getLayoutMetrics", "Runtime.evaluate", "DOM.getDocument", "DOM.querySelector"} {
 		run := newReachRun("")
 		if _, err := runOnTab(t, run, fmt.Sprintf(`{"action":"cdp","target":"tab","method":%q}`, method)); err != nil {
 			t.Errorf("%s was refused: %s", method, err)
@@ -50,6 +50,9 @@ func TestAFileOrDragMethodIsRefusedAndNothingOffTheListIsSent(t *testing.T) {
 		"DOM.setAttributeValue", "DOM.", "Input.", "Input.dispatchDragEventX", "input.dispatchMouseEvent", " Input.dispatchMouseEvent",
 		"Input.dispatchMouseEvent ", "Browser.setDownloadBehavior", "Page.setDownloadBehavior", "Network.clearBrowserCookies",
 		"Storage.clearDataForOrigin", "Target.attachToTarget", "Fetch.enable", "Runtime.addBinding", "Emulation.setDeviceMetricsOverride",
+		// What reads through frames and shadow roots, or the tab whole.
+		"DOMSnapshot.captureSnapshot", "DOMSnapshot.enable", "Page.captureSnapshot", "Page.getFrameTree", "DOM.getNodeForLocation", "DOM.performSearch",
+		"DOM.getSearchResults", "CSS.getComputedStyleForNode",
 	} {
 		run := newReachRun("")
 		_, err := runOnTab(t, run, fmt.Sprintf(`{"action":"cdp","target":"tab","method":%q}`, method))
@@ -333,5 +336,95 @@ func TestTheExtensionAndTheServerAllowTheSameMethods(t *testing.T) {
 	same("CDP_FILE_METHODS", cdpFileMethods)
 	if !strings.Contains(text, "OWN_PAGES_REFUSAL = \""+ownPagesRefusal+"\"") && !strings.Contains(text, "OWN_PAGES_REFUSAL =\n  \""+ownPagesRefusal+"\"") {
 		t.Errorf("the extension says something else than %q", ownPagesRefusal)
+	}
+}
+
+// The panel on a page is a frame of the server's origin, and a frame of the
+// same site is in the tab's process: what reads through frames, shadow
+// roots and other execution contexts is refused by its parameters.
+func TestWhatReadsThroughFramesAndContextsIsRefusedByItsParameters(t *testing.T) {
+	refused := []string{
+		`{"method":"DOM.getDocument","params":{"depth":-1,"pierce":true}}`,
+		`{"method":"DOM.describeNode","params":{"nodeId":1,"depth":-1,"pierce":true}}`,
+		`{"method":"DOM.querySelectorAll","params":{"nodeId":1,"selector":"iframe","pierce":true}}`,
+		`{"method":"Runtime.evaluate","params":{"expression":"1","contextId":3}}`,
+		`{"method":"Runtime.evaluate","params":{"expression":"1","uniqueContextId":"abc"}}`,
+		`{"method":"Runtime.callFunctionOn","params":{"functionDeclaration":"1","executionContextId":3}}`,
+		`{"method":"DOM.resolveNode","params":{"nodeId":1,"executionContextId":3}}`,
+		`{"method":"Accessibility.getFullAXTree","params":{"frameId":"A1B2"}}`,
+		`{"method":"Page.navigate","params":{"url":"https://shop.example.org/","frameId":"A1B2"}}`,
+	}
+	for _, body := range refused {
+		run := newReachRun("")
+		_, err := runOnTab(t, run, `{"action":"cdp","target":"tab",`+body[1:])
+		if err == nil {
+			t.Errorf("%s was sent", body)
+		}
+		if asked := run.first.actionsAsked(); len(asked) != 0 {
+			t.Errorf("%s: the browser was asked %v", body, asked)
+		}
+	}
+	for _, body := range []string{
+		`{"method":"DOM.getDocument","params":{"depth":-1}}`,
+		`{"method":"DOM.getDocument","params":{"depth":-1,"pierce":false}}`,
+		`{"method":"Runtime.evaluate","params":{"expression":"1"}}`,
+		`{"method":"Accessibility.getFullAXTree"}`,
+	} {
+		run := newReachRun("")
+		if _, err := runOnTab(t, run, `{"action":"cdp","target":"tab",`+body[1:]); err != nil {
+			t.Errorf("%s was refused: %s", body, err)
+		}
+	}
+}
+
+// A fetch goes out with the page's session, so where it goes is held to the
+// same lines as where a tab goes, resolved as the page would.
+func TestAFetchIsHeldToTheSameAddressesAsATab(t *testing.T) {
+	for _, address := range []string{
+		"https://mail.example.com/api/v1/graphql", "http://MAIL.example.com:8443/x", "//mail.example.com/x", "file:///etc/hosts",
+		"https://mail.example.com\\@example.org/", "javascript:1", "chrome-extension://abcdefgh/options.html", "",
+	} {
+		run := newReachRun("https://app.example.com/page")
+		_, err := runOnTab(t, run, fmt.Sprintf(`{"action":"fetch","target":"tab","url":%q}`, address))
+		if err == nil {
+			t.Errorf("fetch %q was sent", address)
+		}
+		if asked := run.first.actionsAsked(); len(asked) != 0 {
+			t.Errorf("fetch %q: the browser was asked %v", address, asked)
+		}
+	}
+	for _, address := range []string{"/statements/2025.pdf", "statements?id=3", "https://app.example.com/x", "https://cdn.example.net/a.json"} {
+		run := newReachRun("https://app.example.com/page")
+		if _, err := runOnTab(t, run, fmt.Sprintf(`{"action":"fetch","target":"tab","url":%q}`, address)); err != nil {
+			t.Errorf("fetch %q was refused: %s", address, err)
+		}
+	}
+	// The same inside steps.
+	run := newReachRun("https://app.example.com/page")
+	result, err := runOnTab(t, run, `{"action":"steps","target":"tab","steps":[{"action":"fetch","url":"https://mail.example.com/x"}]}`)
+	if err != nil || !strings.Contains(result.Content, ownPagesRefusal) {
+		t.Errorf("steps: %v %v", result, err)
+	}
+}
+
+// Requests to the server's host, with the Authorization header the panel's
+// frame signs in with, are among a same-site page's, and are not shown.
+func TestRequestsToTheServerAreNotShownInWhatTheTabWatched(t *testing.T) {
+	run := newReachRun("https://app.example.com/page")
+	run.first.answer = `{"kept":5,"events":[
+		{"method":"Network.requestWillBeSentExtraInfo","params":{"requestId":"1.1","headers":{"authorization":"Bearer example-token"}}},
+		{"method":"Network.requestWillBeSent","params":{"requestId":"1.1","request":{"url":"https://mail.example.com/api/v1/graphql","headers":{"Authorization":"Bearer example-token"}}}},
+		{"method":"Network.responseReceived","params":{"requestId":"1.1","response":{"url":"https://mail.example.com/api/v1/graphql","status":200}}},
+		{"method":"Network.loadingFinished","params":{"requestId":"1.1"}},
+		{"method":"Network.requestWillBeSent","params":{"requestId":"2.2","request":{"url":"https://cdn.example.net/a.js"}}}]}`
+	result, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Content, "example-token") || strings.Contains(result.Content, "mail.example.com") || strings.Contains(result.Content, "1.1") {
+		t.Errorf("the server's requests are shown: %s", result.Content)
+	}
+	if !strings.Contains(result.Content, "cdn.example.net") {
+		t.Errorf("another site's request is gone: %s", result.Content)
 	}
 }

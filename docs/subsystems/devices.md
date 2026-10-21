@@ -337,6 +337,18 @@ script actions `click`, `hover`, `type` and `select` refuse an element the
 panel covers. The person moves or closes the panel to let the agent at what is
 under it.
 
+The panel is also a frame of the server's origin, signed in with the person's
+token, and a frame of the same site is in the tab's process, so what the
+protocol can read of the page it can read of the frame. The token is therefore
+in no address: the panel frames `/drawer?handoff=<nonce>`, a nonce made in the
+extension's own world, and the worker finds that frame by the nonce and calls
+the function the drawer page leaves on its window (`handedToken.ts`) in the
+frame's own world, once. The protocol is also kept from what reads through
+frames: no `pierce`, no execution context or frame named in a call, no
+`DOMSnapshot`, `Page.captureSnapshot` or `Page.getFrameTree`, and what the tab
+watched leaves out every request to the server's host, whose Authorization
+header would otherwise show. A `fetch` is held to the same addresses as a tab.
+
 It is the person's own session, so the agent acts as them: it can fill in a
 password or a card number, because an assistant that cannot is not much of
 one. What stands between it and an act they cannot undo is the confirmation

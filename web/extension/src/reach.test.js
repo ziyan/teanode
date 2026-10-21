@@ -7,6 +7,12 @@ import {
   PANEL_KEYS_REFUSAL,
   PANEL_REFUSAL,
   addressRefusal,
+  cdpParametersRefusal,
+  fetchRefusal,
+  handOverToken,
+  hiddenRequestIds,
+  isPanelFrame,
+  withoutServerRequests,
   cdpRefusal,
   isOwnPage,
   overlapsPanel,
@@ -26,7 +32,7 @@ describe('the DevTools methods the agent may send', () => {
       'Input.insertText',
       'Network.enable',
       'Network.getResponseBody',
-      'Page.captureSnapshot',
+      'Page.getLayoutMetrics',
       'Runtime.evaluate',
       'DOM.getDocument',
       'Accessibility.getFullAXTree',
@@ -59,6 +65,13 @@ describe('the DevTools methods the agent may send', () => {
       'Fetch.enable',
       'DOM.setAttributeValue',
       'Input.dispatchDragEventX',
+      'DOMSnapshot.captureSnapshot',
+      'DOMSnapshot.enable',
+      'Page.captureSnapshot',
+      'Page.getFrameTree',
+      'DOM.getNodeForLocation',
+      'DOM.performSearch',
+      'CSS.getComputedStyleForNode',
       'Input.',
       'DOM.',
       'input.dispatchMouseEvent',
@@ -297,5 +310,114 @@ describe("the person's TeaNode panel", () => {
       window.__teanodePanel = host
       expect(panelProbe()).toEqual({ isOpen: false })
     })
+  })
+})
+
+describe('what reads through frames and contexts', () => {
+  it('is refused by the parameters of an allowed method', () => {
+    for (const [method, params] of [
+      ['DOM.getDocument', { depth: -1, pierce: true }],
+      ['DOM.describeNode', { nodeId: 1, pierce: true }],
+      ['DOM.querySelectorAll', { nodeId: 1, selector: 'iframe', pierce: true }],
+      ['Runtime.evaluate', { expression: '1', contextId: 3 }],
+      ['Runtime.evaluate', { expression: '1', uniqueContextId: 'a' }],
+      ['Runtime.callFunctionOn', { functionDeclaration: 'f', executionContextId: 3 }],
+      ['DOM.resolveNode', { nodeId: 1, executionContextId: 3 }],
+      ['Accessibility.getFullAXTree', { frameId: 'A1' }],
+      ['Page.navigate', { url: 'https://shop.example.org/', frameId: 'A1' }],
+    ]) {
+      expect(cdpParametersRefusal(method, params), `${method} ${JSON.stringify(params)}`).not.toBe('')
+    }
+  })
+
+  it('leaves the ordinary calls alone', () => {
+    for (const [method, params] of [
+      ['DOM.getDocument', { depth: -1 }],
+      ['DOM.getDocument', { depth: -1, pierce: false }],
+      ['Runtime.evaluate', { expression: '1' }],
+      ['Accessibility.getFullAXTree', undefined],
+      ['Page.navigate', { url: 'https://shop.example.org/' }],
+    ]) {
+      expect(cdpParametersRefusal(method, params), method).toBe('')
+    }
+  })
+})
+
+describe("a fetch with the page's session", () => {
+  it('goes only where a tab may go, resolved as the page resolves it', () => {
+    const base = 'https://app.example.com/page'
+    for (const address of [
+      'https://mail.example.com/api',
+      '//mail.example.com/x',
+      'http://MAIL.example.com:8443/x',
+      'file:///etc/hosts',
+      'javascript:1',
+      '',
+    ]) {
+      expect(fetchRefusal(address, base, server), address).not.toBe('')
+    }
+    for (const address of [
+      '/statements.pdf',
+      'next?id=3',
+      'https://app.example.com/x',
+      'https://cdn.example.net/a.json',
+    ]) {
+      expect(fetchRefusal(address, base, server), address).toBe('')
+    }
+  })
+})
+
+describe('what the tab watched', () => {
+  const events = [
+    {
+      method: 'Network.requestWillBeSentExtraInfo',
+      params: { requestId: '1.1', headers: { authorization: 'Bearer example-token' } },
+    },
+    {
+      method: 'Network.requestWillBeSent',
+      params: { requestId: '1.1', request: { url: 'https://mail.example.com/api/v1/graphql' } },
+    },
+    {
+      method: 'Network.responseReceived',
+      params: { requestId: '1.1', response: { url: 'https://mail.example.com/api/v1/graphql' } },
+    },
+    {
+      method: 'Network.requestWillBeSent',
+      params: { requestId: '2.2', request: { url: 'https://cdn.example.net/a.js' } },
+    },
+    { method: 'Log.entryAdded', params: { entry: { text: 'a message' } } },
+  ]
+
+  it('leaves out every request to the server, whichever event of it came first', () => {
+    expect([...hiddenRequestIds(events, server)]).toEqual(['1.1'])
+    expect(withoutServerRequests(events, server).map((event) => event.method)).toEqual([
+      'Network.requestWillBeSent',
+      'Log.entryAdded',
+    ])
+    expect(JSON.stringify(withoutServerRequests(events, server))).not.toContain('example-token')
+  })
+})
+
+describe('handing the token to the panel frame', () => {
+  afterEach(() => {
+    delete window.__teanodeHandToken
+  })
+
+  it('finds the frame by its nonce, on the server, under the page the panel is on', () => {
+    // A test page is the top window, so it is the page and not the panel.
+    expect(isPanelFrame('http://localhost:3000', 'n')).toBe(false)
+  })
+
+  it('calls the function the drawer left, and says whether it took the token', () => {
+    expect(handOverToken('example-token')).toBe(false)
+    const taken = []
+    window.__teanodeHandToken = (token) => {
+      taken.push(token)
+      return true
+    }
+    expect(handOverToken('example-token')).toBe(true)
+    expect(taken).toEqual(['example-token'])
+    window.__teanodeHandToken = () => 'yes'
+    expect(handOverToken('example-token')).toBe(false)
   })
 })
