@@ -655,9 +655,13 @@ cannot set up, erase, share, restore or let the agent use an item.
   `RestorePasswordItemVersion`, neither open to a token or an operator): the
   version's fields and item key become the item's, what they replace is kept as
   a version whatever the hour rule says, the keys given to other people and the
-  agent's copy are dropped, the item is marked `needsNewKey` and the device gives
-  it a new key at once from the restored fields. The date a version shows is when
-  a later save replaced it.
+  agent's copy are dropped, and the item is marked `needsNewKey`. Restoring brings
+  back the content only: the device checks that what came back is the version
+  the person opened, writes the sharing record it held before the restore into
+  the restored fields (so who has the item, and whether the agent may use it,
+  stay as they were), and gives the item a new key at once for those people.
+  The agent's copy comes back through Finish sharing. The date a version shows is
+  when a later save replaced it.
 - **Locks and one document.** Every change of Passwords holds the circle
   membership lock and the revision lock until its request commits. A document may
   name at most 25 Passwords mutations (it is refused whole, before any runs), a
