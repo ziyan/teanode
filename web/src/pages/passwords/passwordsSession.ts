@@ -1028,7 +1028,12 @@ export class PasswordsSession {
         recipientNames.get(sealed.recipientUserId) ?? '',
       )
     }
-    addSealedFor(this.userId, current.id, [...sealedFor.keys()])
+    // A person the owner named here is remembered as chosen here even when no
+    // key could be sealed yet (they have not set up Passwords), so their share
+    // completes by itself when they do. Members of a circle are not: who is in
+    // a circle is the server's word, and they wait for the person.
+    const chosenUserIds = finalGrantees.flatMap((grantee) => grantee.userId ?? []).filter((id) => id !== this.userId)
+    addSealedFor(this.userId, current.id, [...sealedFor.keys(), ...chosenUserIds])
     const kept = await this.keepOwnAnswer(answer.SetPasswordItemShares)
     this.noteCircleShares(kept, [...sealedFor.keys()], sealedBefore, recipientNames)
     const mustRekey = isNarrowed || (isStartingAgain && hadServerAccess && !hasGivenNewKey)
@@ -1253,10 +1258,15 @@ export class PasswordsSession {
     const kept = await this.keepOwnAnswer(answer.RekeyPasswordItem, options.shouldPublish ?? true)
     // The old keys are gone: the people given one now, and the agent if it was
     // given a copy, are the only ones this device sealed the new key for.
+    // People the owner named on this browser stay remembered through the new
+    // key even if they have no key yet.
+    const stillChosenUserIds = (access.grantees ?? []).flatMap((grantee) =>
+      grantee.userId !== undefined && memory.sealedForUserIds.includes(grantee.userId) ? [grantee.userId] : [],
+    )
     rememberSealedFor(
       this.userId,
       kept.id,
-      shareKeys.map((key) => key.recipientUserId),
+      [...shareKeys.map((key) => key.recipientUserId), ...stillChosenUserIds],
       itemKeyByAgentKey !== null,
     )
     this.noteCircleShares(

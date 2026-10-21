@@ -4120,3 +4120,48 @@ it('does not read who held a key or whether the agent had a copy from what the s
   await openSession()
   expect(deviceMemoryOf('login-one')).toMatchObject({ sealedForUserIds: [], hasMadeAgentCopy: false })
 })
+
+it('remembers a person the owner named here, so their waiting share completes by itself, and not a circle member', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  // Person B has not set up Passwords yet: no key can be sealed now.
+  const server = serve({ records: await onlyExampleLogin(), recipients: [personBRecipient(null)] })
+  await openSession()
+  await passwordsSession.shareItem(passwordsSession.getSnapshot().items[0], [
+    { grantee: { granteeUserId: 'person-b', granteeCircleId: null }, recipients: [personBRecipient(null)] },
+  ])
+  expect(calls('AddPasswordShareKeys')).toHaveLength(0)
+  expect(deviceMemoryOf('login-one')?.sealedForUserIds).toEqual(['person-b'])
+  passwordsSession.lock()
+
+  // Later Person B sets up Passwords: the share completes with no one pressing anything.
+  server.recipients = [personBRecipient(personBPublicKey)]
+  server.records = server.records.map((record) => ({
+    ...record,
+    shares: record.shares.map((share) => ({ ...share, recipients: [personBRecipient(personBPublicKey)] })),
+  }))
+  server.waiting = [waitingFor('login-one', personBPublicKey)]
+  await openSession()
+  expect(passwordsSession.getSnapshot().itemIdsToFinish).toEqual([])
+  expect((await passwordsSession.completeWaitingShares()).sharedCount).toBe(1)
+  expect(calls('AddPasswordShareKeys')).toHaveLength(1)
+})
+
+it('keeps a person the owner named here remembered through a new key, and leaves circle members to the person', async () => {
+  const personBPublicKey = encodeBase64(personB.publicKey)
+  serve({ records: await onlyExampleLogin(), recipients: [personBRecipient(null)] })
+  await openSession()
+  const target = { grantee: { granteeUserId: 'person-b', granteeCircleId: null }, recipients: [personBRecipient(null)] }
+  await passwordsSession.shareItem(passwordsSession.getSnapshot().items[0], [target])
+  await passwordsSession.giveNewKey('login-one')
+  expect(deviceMemoryOf('login-one')?.sealedForUserIds).toEqual(['person-b'])
+
+  // A circle: nobody is remembered, even one who has a key sealed now.
+  passwordsSession.lock()
+  window.localStorage.clear()
+  serve({ records: await onlyExampleLogin(), recipients: [personBRecipient(personBPublicKey)] })
+  await openSession()
+  await passwordsSession.shareItem(passwordsSession.getSnapshot().items[0], [
+    { grantee: { granteeUserId: null, granteeCircleId: 'circle-one' }, recipients: [personBRecipient(null)] },
+  ])
+  expect(deviceMemoryOf('login-one')?.sealedForUserIds).toEqual([])
+})
