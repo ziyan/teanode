@@ -2,6 +2,7 @@ package agent
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -21,5 +22,21 @@ func TestDeferredSkillToolsShareALine(t *testing.T) {
 	}
 	if !reflect.DeepEqual(lines, wanted) {
 		t.Errorf("the catalog was %q", lines)
+	}
+}
+
+// A tool not loaded is one short line, however long its first sentence is:
+// the definition arrives with tool_search, and the line is only there so
+// the model knows the tool exists.
+func TestDeferredLineIsShort(t *testing.T) {
+	lines := deferredCatalog([]*Tool{
+		{Name: "finance", Description: "The person's money: " + strings.Repeat("their accounts, cards, loans and brokerages, ", 12) + "and more. Another sentence."},
+		{Name: "calendar", Description: "The person's calendar."},
+	})
+	if len([]rune(lines[0])) > deferredLineCharacters || !strings.HasPrefix(lines[0], "finance — The person's money: their accounts") || !strings.HasSuffix(lines[0], "…") {
+		t.Errorf("a long first sentence was not shortened at a word: %q", lines[0])
+	}
+	if lines[1] != "calendar — The person's calendar." {
+		t.Errorf("a short one was changed: %q", lines[1])
 	}
 }
