@@ -13,16 +13,16 @@ const signIn = document.getElementById('signin')
 const signOut = document.getElementById('signout')
 
 async function serverOrigin() {
-  const { server } = await chrome.storage.sync.get('server')
+  const { server } = await chrome.storage.local.get('server')
   return (server || '').replace(/\/+$/, '')
 }
 
 async function show() {
   const { username, token } = await chrome.storage.local.get(['username', 'token'])
   const origin = await serverOrigin()
-  // An address saved before the rule against plain http (or one that arrived
-  // by sync from another browser) is not used by the extension: say so here
-  // instead of leaving the person to wonder why nothing connects.
+  // An address saved before the rule against plain http is not used by the
+  // extension: say so here instead of leaving the person to wonder why
+  // nothing connects.
   const addressProblem = origin ? serverAddressProblem(origin) : ''
   if (addressProblem) {
     saved.textContent = `The saved server address is not used. ${addressProblem}`
@@ -173,7 +173,7 @@ document.getElementById('save').addEventListener('click', async () => {
     saved.className = 'status bad'
     return
   }
-  await chrome.storage.sync.set({ server })
+  await chrome.storage.local.set({ server })
   saved.textContent = server ? 'Saved.' : 'Cleared.'
   saved.className = 'status'
   await show()

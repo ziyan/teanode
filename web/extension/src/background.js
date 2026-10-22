@@ -142,8 +142,11 @@ let attempt = 0
 let retry = null
 setBadge('')
 
+// The server address is kept in the local storage beside the token, never in
+// the synced one: an address that another browser (or whoever can write to
+// the person's sync) could change would take the token to a server of theirs.
 async function serverOrigin() {
-  const { server } = await chrome.storage.sync.get('server')
+  const { server } = await chrome.storage.local.get('server')
   return (server || '').replace(/\/+$/, '')
 }
 
@@ -416,7 +419,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[SCRIPTED_ORIGINS_KEY]) scriptedOrigins.replace(changes[SCRIPTED_ORIGINS_KEY].newValue)
 })
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (!(area === 'local' && changes.token) && !(area === 'sync' && changes.server)) return
+  if (!(area === 'local' && (changes.token || changes.server))) return
   disconnect()
   void connectIfSignedIn()
 })

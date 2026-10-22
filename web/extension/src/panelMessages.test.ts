@@ -29,11 +29,9 @@ beforeAll(async () => {
   local = memoryArea()
   executeScript = vi.fn(async () => [])
   openOptionsPage = vi.fn()
-  const sync = memoryArea()
-  await sync.set({ server: 'https://tea.example.test/' })
-  await local.set({ token: 'secret-token', username: 'ada' })
+  await local.set({ token: 'secret-token', username: 'ada', server: 'https://tea.example.test/' })
   vi.stubGlobal('chrome', {
-    storage: { session, sync, local, onChanged: event('storage.onChanged') },
+    storage: { session, local, onChanged: event('storage.onChanged') },
     runtime: {
       id: 'ext',
       onStartup: event('onStartup'),

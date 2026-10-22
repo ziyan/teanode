@@ -10,7 +10,6 @@ const pageHtml = readFileSync(resolve(__dirname, 'options.html'), 'utf8')
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
 
 let local: ReturnType<typeof memoryArea>
-let sync: ReturnType<typeof memoryArea>
 let session: ReturnType<typeof memoryArea>
 let sendMessage: ReturnType<typeof vi.fn>
 let fetchServer: ReturnType<typeof vi.fn>
@@ -24,7 +23,6 @@ beforeEach(() => {
   for (const script of parsed.querySelectorAll('script')) script.remove()
   document.body.innerHTML = parsed.body.innerHTML
   local = memoryArea()
-  sync = memoryArea()
   session = memoryArea()
   changed = null
   sendMessage = vi.fn(async () => ({}))
@@ -33,7 +31,6 @@ beforeEach(() => {
   vi.stubGlobal('chrome', {
     storage: {
       local,
-      sync,
       session,
       onChanged: { addListener: (listener: typeof changed) => (changed = listener) },
     },
@@ -54,7 +51,7 @@ const text = (id: string) => document.getElementById(id)?.textContent ?? ''
 
 describe('a saved server address the extension will not use', () => {
   it('is named on the page, with the reason', async () => {
-    await sync.set({ server: 'http://192.0.2.7:8080' })
+    await local.set({ server: 'http://192.0.2.7:8080' })
     await load()
     expect(text('saved')).toContain('The saved server address is not used.')
     expect(text('saved')).toContain('must start with https://')
@@ -62,20 +59,40 @@ describe('a saved server address the extension will not use', () => {
   })
 
   it('says nothing about an https address or a local one', async () => {
-    await sync.set({ server: 'https://tea.example.test' })
+    await local.set({ server: 'https://tea.example.test' })
     await load()
     expect(text('saved')).toBe('')
     vi.resetModules()
-    await sync.set({ server: 'http://localhost:8080' })
+    await local.set({ server: 'http://localhost:8080' })
     await load()
     expect(text('saved')).toBe('')
   })
 })
 
+describe('where the server address is kept', () => {
+  it('is the local storage beside the token, and the synced one is neither read nor written', async () => {
+    // An address another browser put in the synced storage must not be the one
+    // the token is sent to. The synced storage here fails on any use.
+    const refused = async () => {
+      throw new Error('the synced storage was used')
+    }
+    const sync = { get: vi.fn(refused), set: vi.fn(refused) }
+    vi.stubGlobal('chrome', { ...(globalThis as any).chrome, storage: { ...(globalThis as any).chrome.storage, sync } })
+    await load()
+    expect((document.getElementById('server') as HTMLInputElement).value).toBe('')
+
+    ;(document.getElementById('server') as HTMLInputElement).value = 'https://tea.example.test/'
+    ;(document.getElementById('save') as HTMLButtonElement).click()
+    await settle()
+    expect(local.contents.server).toBe('https://tea.example.test')
+    expect(sync.get).not.toHaveBeenCalled()
+    expect(sync.set).not.toHaveBeenCalled()
+  })
+})
+
 describe('signing out', () => {
   async function signedIn(server: string) {
-    await sync.set({ server })
-    await local.set({ token: 'secret-token', tokenId: 'token-1', username: 'ada' })
+    await local.set({ server, token: 'secret-token', tokenId: 'token-1', username: 'ada' })
     await session.set({ passwordsKeys: { held: true } })
     await load()
   }
