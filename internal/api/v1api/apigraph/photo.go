@@ -778,7 +778,7 @@ func (self *graph) FindPhotos(ctx context.Context, arguments FindPhotosArguments
 }
 
 func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlaybackAddressArguments) (string, error) {
-	_, access, err := self.requirePhotoReader(ctx, arguments.PhotoID)
+	principal, access, err := self.requirePhotoReader(ctx, arguments.PhotoID)
 	if err != nil {
 		return "", err
 	}
@@ -794,8 +794,9 @@ func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlay
 	}
 	transaction := self.transaction(ctx)
 	// A photo is read through its owner's rows, so the address is signed with
-	// the owner: it opens that one preview or file of that one photo for
-	// whoever holds it, and the caller's reach was checked here, once.
+	// the owner and the caller: it opens that one preview or file of that one
+	// photo for whoever holds it, for as long as the caller still reaches the
+	// photo, which the route checks again each time it is fetched.
 	ownerUserId := access.OwnerUserID
 	var path, playbackKind, name string
 	until := time.Now().Add(photo.PlaybackFor)
@@ -826,8 +827,8 @@ func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlay
 			path, playbackKind, name = api.PhotoPlaybackPreviewPath(access.PhotoID, string(photoPreviewSize)), photo.PlaybackKindPreview, string(photoPreviewSize)
 		}
 	}
-	signature := photo.SignPlayback(secret, ownerUserId, access.PhotoID, playbackKind, name, until)
-	return path + "?owner=" + url.QueryEscape(ownerUserId) + "&signature=" + url.QueryEscape(signature), nil
+	signature := photo.SignPlayback(secret, ownerUserId, principal.User.ID, access.PhotoID, playbackKind, name, until)
+	return path + "?owner=" + url.QueryEscape(ownerUserId) + "&reader=" + url.QueryEscape(principal.User.ID) + "&signature=" + url.QueryEscape(signature), nil
 }
 
 // sharedCopyPreviewSize is the preview a reader who may not have a photo's

@@ -783,26 +783,32 @@ func TestASignedPlaybackAddressServesRangesWithoutASession(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	owner, signature := query.Get("owner"), query.Get("signature")
+	owner, reader, signature := query.Get("owner"), query.Get("reader"), query.Get("signature")
+	if reader != ownerId {
+		test.Fatalf("an address for the owner's own photo is for the owner: %q", reader)
+	}
+	ownerAndReader := "?owner=" + owner + "&reader=" + reader
 	changedDigit := "0"
 	if strings.HasSuffix(previewAddress, "0") {
 		changedDigit = "1"
 	}
 	secret := []byte("photo-test-signing-secret")
-	expired := photo.SignPlayback(secret, ownerId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(-time.Minute))
-	otherOwner := photo.SignPlayback(secret, otherId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(time.Hour))
-	wrongSecret := photo.SignPlayback([]byte("another secret"), ownerId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(time.Hour))
+	expired := photo.SignPlayback(secret, ownerId, ownerId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(-time.Minute))
+	otherOwner := photo.SignPlayback(secret, otherId, otherId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(time.Hour))
+	wrongSecret := photo.SignPlayback([]byte("another secret"), ownerId, ownerId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(time.Hour))
 	for name, path := range map[string]string{
-		"the preview's signature on the small preview":   api.PhotoPlaybackPreviewPath(stored.ID, "small") + "?owner=" + owner + "&signature=" + signature,
-		"the preview's signature on a file of that kind": api.PhotoPlaybackFilePath(stored.ID, "original") + "?owner=" + owner + "&signature=" + signature,
-		"another photo":                   api.PhotoPlaybackPreviewPath(foreign.ID, "video") + "?owner=" + owner + "&signature=" + signature,
+		"the preview's signature on the small preview":   api.PhotoPlaybackPreviewPath(stored.ID, "small") + ownerAndReader + "&signature=" + signature,
+		"the preview's signature on a file of that kind": api.PhotoPlaybackFilePath(stored.ID, "original") + ownerAndReader + "&signature=" + signature,
+		"another photo":                   api.PhotoPlaybackPreviewPath(foreign.ID, "video") + ownerAndReader + "&signature=" + signature,
 		"a changed signature":             previewAddress[:len(previewAddress)-1] + changedDigit,
-		"no signature":                    api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner,
-		"no owner":                        api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?signature=" + signature,
-		"an expired signature":            api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner + "&signature=" + expired,
-		"another owner's":                 api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + otherId + "&signature=" + otherOwner,
-		"the signature of another server": api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner + "&signature=" + wrongSecret,
-		"a malformed signature":           api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner + "&signature=not-a-signature",
+		"no signature":                    api.PhotoPlaybackPreviewPath(stored.ID, "video") + ownerAndReader,
+		"no owner":                        api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?reader=" + reader + "&signature=" + signature,
+		"no reader":                       api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner + "&signature=" + signature,
+		"another reader's":                api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner + "&reader=" + otherId + "&signature=" + signature,
+		"an expired signature":            api.PhotoPlaybackPreviewPath(stored.ID, "video") + ownerAndReader + "&signature=" + expired,
+		"another owner's":                 api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + otherId + "&reader=" + otherId + "&signature=" + otherOwner,
+		"the signature of another server": api.PhotoPlaybackPreviewPath(stored.ID, "video") + ownerAndReader + "&signature=" + wrongSecret,
+		"a malformed signature":           api.PhotoPlaybackPreviewPath(stored.ID, "video") + ownerAndReader + "&signature=not-a-signature",
 	} {
 		if status := world.status(http.MethodGet, path, nil, nil); status != http.StatusNotFound {
 			test.Errorf("%s was served with %d", name, status)
