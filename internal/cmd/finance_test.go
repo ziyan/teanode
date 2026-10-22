@@ -50,6 +50,11 @@ var financeSubcommandsSpanningOperations = map[string][]string{
 	"import-transactions": {"ImportTransactions", "PreviewImportTransactions"},
 	// So is recording a receipt's.
 	"record-receipt": {"RecordReceipt", "PreviewRecordReceipt"},
+	// Sharing a finance account is named for what the person does. The agent's
+	// finance tool has no part in any of it.
+	"share":          {"ShareFinanceAccount"},
+	"shares":         {"ListFinanceAccountShares", "ListSharedFinanceAccounts"},
+	"unshare":        {"UnshareFinanceAccount"},
 	"sync":           {},
 	"disable-source": {},
 	"enable-source":  {},

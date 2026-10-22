@@ -169,11 +169,11 @@ func NewFinanceCommand() *cli.Command {
 			{Name: "disable-source", Usage: "stop a finance source syncing, keeping what it holds", ArgsUsage: "<source-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceDisableSource},
 			{Name: "enable-source", Usage: "let a finance source sync again", ArgsUsage: "<source-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceEnableSource},
 			{Name: "delete-source", Usage: "delete a finance source and its transactions, ending it at its provider", ArgsUsage: "<source-id>", Flags: forceFlags(), Action: runFinanceDeleteSource},
-			{Name: "accounts", Usage: "your finance accounts and their balances", Flags: []cli.Flag{JSONFlag(), currencyFlag()}, Action: runFinanceAccounts},
+			{Name: "accounts", Usage: "your finance accounts and their balances", Flags: []cli.Flag{JSONFlag(), currencyFlag(), financePersonFlag()}, Action: runFinanceAccounts},
 			{Name: "credit-usage", Usage: "what your credit cards owe against their credit limits, overall and per card", Flags: []cli.Flag{JSONFlag(), currencyFlag()}, Action: runFinanceCreditUsage},
 			{
 				Name: "transactions", Usage: "your finance transactions, newest first",
-				Flags: append(rangeFlags(), JSONFlag(),
+				Flags: append(rangeFlags(), JSONFlag(), financePersonFlag(),
 					&cli.StringFlag{Name: "finance-account", Usage: "only this finance account's, by id"},
 					&cli.StringFlag{Name: "text", Usage: "only those whose description or merchant contains this"},
 					&cli.StringFlag{Name: "minimum-amount", Usage: "only amounts at least this; money out is negative"},
@@ -202,7 +202,7 @@ func NewFinanceCommand() *cli.Command {
 			},
 			{
 				Name: "spending-summary", Usage: "money out and money in by spending category, merchant, month or account",
-				Flags: append(rangeFlags(), JSONFlag(), currencyFlag(),
+				Flags: append(rangeFlags(), JSONFlag(), currencyFlag(), financePersonFlag(),
 					&cli.StringFlag{Name: "group-by", Usage: "spendingCategory (the default), providerCategory, merchant, month or financeAccount"},
 					&cli.StringFlag{Name: "finance-account", Usage: "only this finance account, by id"},
 				),
@@ -338,6 +338,7 @@ func NewFinanceCommand() *cli.Command {
 	}
 	finance.Commands = append(finance.Commands, financeReceiptCommands()...)
 	finance.Commands = append(finance.Commands, financeTaxCommands()...)
+	finance.Commands = append(finance.Commands, financeShareCommands()...)
 	for _, subcommand := range finance.Commands {
 		if operation := financeSubcommandOperations[subcommand.Name]; operation != "" {
 			subcommand.Metadata = map[string]any{financeOperationKey: operation}
@@ -1312,6 +1313,9 @@ func runFinanceDeleteSource(ctx context.Context, command *cli.Command) error {
 // --- accounts, transactions and totals -----------------------------------
 
 func runFinanceAccounts(ctx context.Context, command *cli.Command) error {
+	if strings.TrimSpace(command.String("person")) != "" {
+		return runFinanceSharedAccounts(ctx, command)
+	}
 	variables := map[string]any{}
 	setString(command, variables, "currency", "currencyCode")
 	var accounts []*client.FinanceAccount
@@ -1392,6 +1396,9 @@ func usageShareWords(usageShare *float64) string {
 }
 
 func runFinanceTransactions(ctx context.Context, command *cli.Command) error {
+	if strings.TrimSpace(command.String("person")) != "" {
+		return runFinanceSharedTransactions(ctx, command)
+	}
 	from, to, err := rangeOf(command)
 	if err != nil {
 		return err
@@ -1553,6 +1560,9 @@ func runFinanceTrades(ctx context.Context, command *cli.Command) error {
 }
 
 func runFinanceSpendingSummary(ctx context.Context, command *cli.Command) error {
+	if strings.TrimSpace(command.String("person")) != "" {
+		return runFinanceSharedSpending(ctx, command)
+	}
 	from, to, err := rangeOf(command)
 	if err != nil {
 		return err
