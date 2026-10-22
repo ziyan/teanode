@@ -116,8 +116,11 @@ const empty: Draft = {
 // base64 -- a card with a photograph on it is several hundred kilobytes -- so
 // the listing says only whether there is one and the browser asks for it
 // separately, where it is cached against the card's own version.
-export function contactPhotoAddress(id: string): string {
-  return `/api/v1/contacts/${encodeURIComponent(id)}/photo`
+export function contactPhotoAddress(id: string, addressBookId?: string): string {
+  const address = `/api/v1/contacts/${encodeURIComponent(id)}/photo`
+  // A contact is named within its book, so a circle's book is named too: the
+  // server otherwise looks in the person's own books first.
+  return addressBookId ? `${address}?addressBookId=${encodeURIComponent(addressBookId)}` : address
 }
 
 function lines(value: string): string[] {
@@ -138,10 +141,14 @@ const NO_TAKEN_ACCOUNTS: ReadonlySet<string> = new Set()
 // is the one the address book page lists.
 export function useContactEditor({
   addressBookId,
+  isCircleBook = false,
   takenAccountIds = NO_TAKEN_ACCOUNTS,
   onChanged,
 }: {
   addressBookId?: string
+  // A circle's book belongs to nobody: its cards are not linked to a person in
+  // the circles and are not tied to the agent's memory, which are the owner's.
+  isCircleBook?: boolean
   // The accounts that another contact of the book already is, left out of the
   // picker. The server is the guard: it refuses a second contact for the same
   // account in a book, and that refusal is shown as a toast.
@@ -390,7 +397,7 @@ export function useContactEditor({
             <div className="form-row">
               <SenderLogo
                 name={draft.name || lines(draft.emails)[0] || ''}
-                src={contactPhotoAddress(draft.id)}
+                src={contactPhotoAddress(draft.id, isCircleBook ? bookId : undefined)}
                 size={40}
               />
               <button
@@ -406,7 +413,7 @@ export function useContactEditor({
               </button>
             </div>
           ) : null}
-          {editing && (
+          {editing && !isCircleBook && (
             <div className="account-link">
               {draft.account ? (
                 <>
@@ -435,7 +442,7 @@ export function useContactEditor({
               )}
             </div>
           )}
-          {editing ? <InMemory recordKind="contact" recordId={draft.id} /> : null}
+          {editing && !isCircleBook ? <InMemory recordKind="contact" recordId={draft.id} /> : null}
         </FormDialog>
       )}
 

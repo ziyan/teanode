@@ -173,6 +173,14 @@ const SHARE_CALENDAR = `
     ShareCalendar(calendarId: $calendarId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
   }`
 
+// The address books the person reaches, to know whether a circle has one of
+// its own. Any member of the circle may make it.
+const LIST_ADDRESS_BOOKS = `query { ListReachableAddressBooks { id circleId isCircleBook } }`
+const CREATE_CIRCLE_ADDRESS_BOOK = `
+  mutation ($circleId: String!) { CreateCircleAddressBook(circleId: $circleId) { id } }`
+
+type AddressBookOfCircle = { id: string; circleId?: string | null; isCircleBook?: boolean }
+
 type CalendarOfCircle = {
   id: string
   calendarKind: string
@@ -717,6 +725,20 @@ function CircleDetail() {
     { refresh: false },
   )
 
+  // The circle's own address book, if it has one. Asked only of somebody who
+  // can keep contacts at all.
+  const canUseContacts =
+    hasPermission(session.permissions, 'contacts:use') && session.services?.isContactsEnabled !== false
+  const addressBooks = useQuery(
+    async () =>
+      canUseContacts
+        ? (await graphql<{ ListReachableAddressBooks: AddressBookOfCircle[] }>(LIST_ADDRESS_BOOKS))
+            .ListReachableAddressBooks
+        : [],
+    [canUseContacts, circleId],
+    { refresh: false },
+  )
+
   // How the person is described, which the relationship dialog asks about only
   // when it is not said yet. Null when it could not be read, which asks nothing.
   const ownPerson = useQuery(
@@ -943,6 +965,42 @@ function CircleDetail() {
             </button>
           ) : (
             <SettingsEmpty>{t('circles.calendar.none')}</SettingsEmpty>
+          )}
+        </SettingsSection>
+      )}
+
+      {canUseContacts && addressBooks.data && (
+        <SettingsSection card title={t('circles.addressBook.title')} description={t('circles.addressBook.intro')}>
+          {addressBooks.data.some((found) => found.isCircleBook && found.circleId === circle.id) ? (
+            <>
+              <p>{t('circles.addressBook.exists')}</p>
+              <p>
+                <Link
+                  className="button"
+                  to={`/contacts?book=${encodeURIComponent(
+                    addressBooks.data.find((found) => found.isCircleBook && found.circleId === circle.id)?.id ?? '',
+                  )}`}
+                >
+                  {t('circles.addressBook.open')}
+                </Link>
+              </p>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="primary"
+              disabled={isBusy}
+              onClick={() =>
+                void act(
+                  () => graphql(CREATE_CIRCLE_ADDRESS_BOOK, { circleId: circle.id }),
+                  t('circles.addressBook.made'),
+                ).then((isMade) => {
+                  if (isMade) void addressBooks.reload()
+                })
+              }
+            >
+              {t(circle.circleKind === 'family' ? 'circles.addressBook.makeFamily' : 'circles.addressBook.makeShared')}
+            </button>
           )}
         </SettingsSection>
       )}
