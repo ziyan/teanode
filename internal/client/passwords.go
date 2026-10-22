@@ -458,13 +458,13 @@ func ListPasswordItems(ctx context.Context, connection *Client, sinceRevision *i
 
 // ListPasswordRecipients are the people a person or a circle reaches, with the
 // public keys an item key can be sealed for.
-func ListPasswordRecipients(ctx context.Context, connection *Client, granteeUserID, granteeCircleID string) ([]*PasswordRecipientView, error) {
+func ListPasswordRecipients(ctx context.Context, connection *Client, granteeUserId, granteeCircleId string) ([]*PasswordRecipientView, error) {
 	variables := map[string]any{}
-	if granteeUserID != "" {
-		variables["granteeUserId"] = granteeUserID
+	if granteeUserId != "" {
+		variables["granteeUserId"] = granteeUserId
 	}
-	if granteeCircleID != "" {
-		variables["granteeCircleId"] = granteeCircleID
+	if granteeCircleId != "" {
+		variables["granteeCircleId"] = granteeCircleId
 	}
 	var result struct {
 		ListPasswordRecipients []*PasswordRecipientView `json:"ListPasswordRecipients"`

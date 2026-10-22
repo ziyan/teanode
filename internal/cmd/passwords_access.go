@@ -46,11 +46,11 @@ func (self *passwordsItem) isReachedBySealedAccess(recipient *client.PasswordRec
 }
 
 // accessGranteeOf is a grantee as the sealed record writes it.
-func accessGranteeOf(granteeUserID, granteeCircleID string) passwords.PasswordGrantee {
-	if granteeCircleID != "" {
-		return passwords.PasswordGrantee{CircleID: granteeCircleID}
+func accessGranteeOf(granteeUserId, granteeCircleId string) passwords.PasswordGrantee {
+	if granteeCircleId != "" {
+		return passwords.PasswordGrantee{CircleID: granteeCircleId}
 	}
-	return passwords.PasswordGrantee{UserID: granteeUserID}
+	return passwords.PasswordGrantee{UserID: granteeUserId}
 }
 
 // sealedGrantees are the grantees in the item's signed access record, none if
@@ -64,20 +64,20 @@ func (self *passwordsItem) sealedGrantees() []passwords.PasswordGrantee {
 
 // isSameGrantee is whether a grantee of the sealed record is this person or
 // circle.
-func isSameGrantee(grantee passwords.PasswordGrantee, granteeUserID, granteeCircleID string) bool {
-	if granteeCircleID != "" {
-		return grantee.CircleID == granteeCircleID
+func isSameGrantee(grantee passwords.PasswordGrantee, granteeUserId, granteeCircleId string) bool {
+	if granteeCircleId != "" {
+		return grantee.CircleID == granteeCircleId
 	}
-	return granteeUserID != "" && grantee.UserID == granteeUserID
+	return granteeUserId != "" && grantee.UserID == granteeUserId
 }
 
 // withoutGrantee is a record of access that no longer reaches this person or
 // circle. The agent's permission is kept as it was.
-func withoutGrantee(access *passwords.PasswordAccess, granteeUserID, granteeCircleID string) *passwords.PasswordAccess {
+func withoutGrantee(access *passwords.PasswordAccess, granteeUserId, granteeCircleId string) *passwords.PasswordAccess {
 	remaining := []passwords.PasswordGrantee{}
 	if access != nil {
 		for _, grantee := range access.Grantees {
-			if !isSameGrantee(grantee, granteeUserID, granteeCircleID) {
+			if !isSameGrantee(grantee, granteeUserId, granteeCircleId) {
 				remaining = append(remaining, grantee)
 			}
 		}
@@ -86,17 +86,17 @@ func withoutGrantee(access *passwords.PasswordAccess, granteeUserID, granteeCirc
 }
 
 // withGrantee is a record of access that also reaches this person or circle.
-func withGrantee(access *passwords.PasswordAccess, granteeUserID, granteeCircleID string) *passwords.PasswordAccess {
+func withGrantee(access *passwords.PasswordAccess, granteeUserId, granteeCircleId string) *passwords.PasswordAccess {
 	var grantees []passwords.PasswordGrantee
 	if access != nil {
 		grantees = append(grantees, access.Grantees...)
 	}
 	for _, grantee := range grantees {
-		if isSameGrantee(grantee, granteeUserID, granteeCircleID) {
+		if isSameGrantee(grantee, granteeUserId, granteeCircleId) {
 			return passwords.AccessWithGrantees(access, grantees)
 		}
 	}
-	return passwords.AccessWithGrantees(access, append(grantees, accessGranteeOf(granteeUserID, granteeCircleID)))
+	return passwords.AccessWithGrantees(access, append(grantees, accessGranteeOf(granteeUserId, granteeCircleId)))
 }
 
 // textFromServer makes a name or other text the server supplied fit on one
