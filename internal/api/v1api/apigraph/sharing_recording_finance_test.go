@@ -129,6 +129,37 @@ func TestSharedRecordingAndFinanceRowsCarryTheOwner(test *testing.T) {
 	})
 }
 
+// Two recordings, or two accounts, shared at the same level in a short time are
+// two shares: each is told, though the note names neither.
+func TestTwoSharesOfOneKindAndLevelAreEachToldToWhoTheyReach(test *testing.T) {
+	world := newSharingWorld(test)
+	recordingIds := []string{}
+	dbtest.RunTransactionOn(test, world.database, func(tx db.Transaction) {
+		for _, title := range []string{"Standup", "Retro"} {
+			recording, err := tx.CreateRecording(&models.Recording{
+				UserID: world.ada.ID, ClientRecordingID: "sharing-" + title, RecordingTitle: title, RecordingOrigin: models.RecordingOriginAudioImport,
+			})
+			if err != nil {
+				test.Fatalf("CreateRecording: %s", err)
+			}
+			recordingIds = append(recordingIds, recording.ID)
+		}
+	})
+	checkingId, cardId := seedFinance(test, world.database, world.ada)
+	benNotes := func() []string { return world.notesOf(test, world.ben, models.NoteShareReceived) }
+
+	world.shareRecording(test, recordingIds[0], userGrantee(world.ben), "summary")
+	world.shareRecording(test, recordingIds[1], userGrantee(world.ben), "summary")
+	if got := benNotes(); len(got) != 2 {
+		test.Errorf("two recordings shared at one level told ben %q", got)
+	}
+	world.shareFinance(test, checkingId, world.ben.ID, nil, "balance")
+	world.shareFinance(test, cardId, world.ben.ID, nil, "balance")
+	if got := benNotes(); len(got) != 4 {
+		test.Errorf("two accounts shared at one level told ben %q", got)
+	}
+}
+
 // What others share of finance is not the agent's to read, so the person's
 // agent is shown neither side of it, and cannot decline it; recordings it can.
 func TestListSharingLeavesFinanceOutForTheAgent(test *testing.T) {
@@ -210,7 +241,8 @@ func TestOnlyTheGranteeCanDeclineARecordingOrFinanceShareMadeByName(test *testin
 }
 
 // A recording or a finance account shared, or shared at a higher level, is
-// told to the person it reaches, without the account's name; narrowing it and
+// told to the person it reaches, without the recording's title or the
+// account's name; narrowing it and
 // sharing it again tell nobody, and neither does the sharer's own share.
 func TestARecordingOrFinanceShareIsToldToWhoItReaches(test *testing.T) {
 	world := newSharingWorld(test)
@@ -218,15 +250,18 @@ func TestARecordingOrFinanceShareIsToldToWhoItReaches(test *testing.T) {
 	benNotes := func() []string { return world.notesOf(test, world.ben, models.NoteShareReceived) }
 
 	world.shareRecording(test, recordingId, userGrantee(world.ben), "summary")
-	if got := benNotes(); fmt.Sprint(got) != "[Share-ada shared the recording Standup with you (title and summary)]" {
+	if got := benNotes(); fmt.Sprint(got) != "[Share-ada shared a recording with you (title and summary)]" {
 		test.Fatalf("a recording share told ben %q", got)
+	}
+	if got := benNotes(); strings.Contains(got[0], "Standup") {
+		test.Errorf("the note names the recording: %q", got[0])
 	}
 	world.shareRecording(test, recordingId, userGrantee(world.ben), "summary")
 	if got := benNotes(); len(got) != 1 {
 		test.Fatalf("the same recording share told ben again: %q", got)
 	}
 	world.shareRecording(test, recordingId, userGrantee(world.ben), "transcript")
-	if got := benNotes(); len(got) != 2 || got[1] != "Share-ada shared the recording Standup with you (summary and transcript)" {
+	if got := benNotes(); len(got) != 2 || got[1] != "Share-ada shared a recording with you (summary and transcript)" {
 		test.Fatalf("widening a recording share told ben %q", got)
 	}
 	world.shareRecording(test, recordingId, userGrantee(world.ben), "summary")

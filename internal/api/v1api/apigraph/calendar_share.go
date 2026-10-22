@@ -139,6 +139,7 @@ func (self *graph) ShareCalendar(ctx context.Context, arguments ShareCalendarArg
 	if isCalendarShareWider(earlier, saved) {
 		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
 			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindCalendar, ShareLevel: string(saved.ShareLevel),
+			ShareSubjectID: reach.Calendar.ID,
 		}, granteeUserId, granteeCircleId); err != nil {
 			return nil, err
 		}

@@ -126,7 +126,7 @@ func (self *graph) tellAboutShare(ctx context.Context, sharer *models.User, note
 		toldUserIds = circleMemberIds(circle)
 	}
 	detail := models.ShareReceivedDetail(note)
-	shareKey := strings.Join(append([]string{sharer.ID, string(note.ShareKind), note.ShareSubject, note.ShareLevel}, note.ShareScopes...), "\x00")
+	shareKey := strings.Join(append([]string{sharer.ID, string(note.ShareKind), note.ShareSubjectID, note.ShareSubject, note.ShareLevel}, note.ShareScopes...), "\x00")
 	notifier := self.phoneNotifier()
 	now := time.Now()
 	for _, toldUserId := range toldUserIds {

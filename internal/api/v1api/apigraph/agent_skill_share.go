@@ -485,7 +485,7 @@ func (self *graph) ShareSkill(ctx context.Context, arguments ShareSkillArguments
 	}
 	if replaced == nil || !terms.OpensNothingBeyond(replaced) {
 		if err := self.tellAboutShare(ctx, principal.User, models.ShareReceivedNote{
-			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindSkill, ShareSubject: skill.Name,
+			SharerName: principal.User.DisplayName(), ShareKind: models.ShareKindSkill, ShareSubject: skill.Name, ShareSubjectID: skill.Name,
 		}, saved.GranteeUserID, ""); err != nil {
 			return nil, err
 		}

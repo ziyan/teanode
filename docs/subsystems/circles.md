@@ -384,11 +384,12 @@ kind of notification was needed. A share to a circle tells every member of it
 except the sharer; a person who may not use that kind is not told (a memory
 page and a skill reach only people with `agent:use`), and nor is an account that
 is disabled. A recording's
-note names its title ("Alex shared the recording Standup with you (summary and
-transcript)"); a finance account's does not name the account ("Alex shared a
+note does not name its title ("Alex shared a recording with you (summary and
+transcript)"), which is the sharer's text and may summarize what other people
+said, and a finance account's does not name the account ("Alex shared a
 finance account with you (balance only)"), because the note goes into the
-conversation of the person's agent, which has no part in finance sharing. The same
-share at the same level, by the same sharer, is not told to the same person
+conversation of the person's agent, which has no part in either. The same
+share of the same thing at the same level, by the same sharer, is not told to the same person
 twice within ten minutes, so changing a level back and forth is one notice, not
 one for each tap. That memory is the server's (`shareNoticeCache`), so a restart
 forgets it. A notice is recorded as sent after the transaction commits, so one

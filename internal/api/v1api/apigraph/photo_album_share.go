@@ -246,7 +246,7 @@ func (self *graph) tellAboutPhotoAlbumShare(ctx context.Context, sharer *models.
 	}
 	return self.tellAboutShare(ctx, sharer, models.ShareReceivedNote{
 		SharerName: sharer.DisplayName(), ShareKind: models.ShareKindPhotoAlbum, ShareLevel: string(share.ShareLevel),
-		ShareSubject: album.AlbumTitle, ShareScopes: models.AlbumShareScopes(share.IsLocationIncluded, share.IsFaceNamesIncluded),
+		ShareSubject: album.AlbumTitle, ShareSubjectID: share.PhotoAlbumID, ShareScopes: models.AlbumShareScopes(share.IsLocationIncluded, share.IsFaceNamesIncluded),
 	}, share.GranteeUserID, share.GranteeCircleID)
 }
 
