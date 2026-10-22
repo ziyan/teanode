@@ -194,9 +194,15 @@ func TestThePauseBoundsAndTheAgentPausing(t *testing.T) {
 	if len(failures) > 0 || data["PauseLocation"] == nil {
 		t.Errorf("the agent pauses as the person does: %v %v", data, failures)
 	}
-	data, failures = world.askWithHeaders(t, world.ben, models.CredentialSession, map[string]string{api.AgentCommandHeader: "1"}, `mutation { ResumeLocation }`)
+	// Resuming records more, so a command the agent ran is refused it; the
+	// person's own command resumes.
+	_, failures = world.askWithHeaders(t, world.ben, models.CredentialSession, map[string]string{api.AgentCommandHeader: "1"}, `mutation { ResumeLocation }`)
+	if !strings.Contains(strings.Join(failures, "; "), "the person's own") {
+		t.Errorf("the agent's command does not resume: %v", failures)
+	}
+	data, failures = world.askWithHeaders(t, world.ben, models.CredentialToken, nil, `mutation { ResumeLocation }`)
 	if len(failures) > 0 || data["ResumeLocation"] != true {
-		t.Errorf("and resumes: %v %v", data, failures)
+		t.Errorf("the person's command resumes: %v %v", data, failures)
 	}
 }
 

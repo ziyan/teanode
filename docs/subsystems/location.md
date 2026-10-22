@@ -279,7 +279,11 @@ event at its end: clients read again at that moment. There is at most one in
 effect, and pausing while paused changes the end of that one. Resuming ends it
 now, and a pause that lasted no time is deleted. Both need `location:use`, and
 the agent may pause. In a conversation the agent's `resume` waits for the
-person, as `forget_place` does, since it widens what is recorded and shown.
+person, as `forget_place` does, since it widens what is recorded and shown, and
+`ResumeLocation` refuses a command the agent ran on the person's computer (one
+carrying the agent's command mark), so the shell is not a way around the card.
+That is a guard against mistakes and steered runs, not a boundary against a
+program the person runs themselves.
 
 **What is not stored.** While a pause is in effect, and for the time of a pause
 that has ended, `ReportLocation` stores no position and no visit measured

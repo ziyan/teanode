@@ -113,10 +113,19 @@ func endOpenVisitForPause(tx db.Transaction, userId string, startedAt time.Time)
 	return err
 }
 
+// resumeIsThePersons is the refusal for a command the agent ran on the
+// person's computer. Resuming records more than pausing did, so the agent
+// resumes only through its own tool, whose card the person taps; the same
+// command the person types is theirs and resumes.
+const resumeIsThePersons = "resuming location recording is the person's own: they resume on the phone, the dashboard or the command line, or say yes to the agent's card"
+
 func (self *graph) ResumeLocation(ctx context.Context) (bool, error) {
 	principal, err := self.requireLocationPerson(ctx)
 	if err != nil {
 		return false, err
+	}
+	if request := api.ContextRequest(ctx); request != nil && request.Header.Get(api.AgentCommandHeader) != "" {
+		return false, fmt.Errorf("%w: %s", api.ErrPermissionDenied, resumeIsThePersons)
 	}
 	tx := self.transaction(ctx)
 	if err := tx.LockLocation(principal.User.ID); err != nil {
