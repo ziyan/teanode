@@ -939,7 +939,19 @@ equal; `docs/subsystems/devices.md` has the whole account).
 
 ## On the devices
 
-- **The dashboard** keeps its opened keys in memory, shows the person's own safety
+- **The dashboard** keeps its opened keys in memory, and so that a reload or
+  another tab does not ask for the passphrase again, also keeps the account key
+  and the private key in the site's IndexedDB (`teanode-passwords`), sealed with
+  an AES-GCM key the browser made non-extractable, with the time of last use. A
+  reload opens Passwords from that copy while it is within the lock time, at
+  most 8 hours after the unlock that made it, and only for the same person and
+  the public key the server still lists; anything else deletes it. Locking by
+  hand, the lock time and signing out delete it; an idle tab deletes it only
+  when no other tab has used it within the lock time. The decrypted items are
+  never kept: a reload reads them again. As with the command line's unlock
+  file, whoever can read the browser profile on disk while the copy exists can
+  open Passwords; closing the browser does not delete it, the next visit does
+  once it is past the lock time. It shows the person's own safety
   code in Passwords settings, seals by the access record and the known keys,
   shows a notice when a person's key changed, completes waiting shares by itself
   only for people it sealed for before or the person chose directly (the rest wait
@@ -981,3 +993,11 @@ equal; `docs/subsystems/devices.md` has the whole account).
   `http` address as a problem. It does not re-key or share: it refuses to save over
   an item the server marks `needsNewKey` and says to open Passwords on the
   dashboard or the iPhone first, and it keeps the access record through edits.
+  Its opened keys live in `chrome.storage.session`; a copy sealed the
+  dashboard's way (non-extractable AES-GCM key, the extension's IndexedDB) lets
+  them open again after the browser restarts, within the lock time (the
+  extension honors at most a day) and a day from the unlock, for the signed-in
+  person and the public key the server lists. A copy opened that way does not
+  count as the person verified, so a passkey that asks for it asks for the
+  passphrase. Locking, the lock time, signing out or in as somebody else delete
+  it.

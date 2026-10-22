@@ -501,6 +501,27 @@ function generatorSection(): HTMLElement {
 
 const dashboardLink = element('button', { type: 'button' }, 'Open Passwords on the dashboard')
 dashboardLink.addEventListener('click', () => void ask({ type: 'passwords:open-dashboard' }))
-document.body.append(element('div', { className: 'page' }, dashboardLink))
+const foot = element('div', { className: 'page' }, dashboardLink)
+document.body.append(foot)
+
+// Chrome gives the fill shortcut only when the extension is installed, and
+// only if no other extension holds it then. Without one the window says so
+// and opens the page where it is set.
+async function sayIfShortcutMissing() {
+  const commands = (await chrome.commands.getAll()) as { name?: string; shortcut?: string }[]
+  const fillCommand = commands.find((command) => command.name === 'fill-login')
+  if (fillCommand === undefined || fillCommand.shortcut) return
+  const setShortcut = element('button', { type: 'button' }, 'Set a shortcut')
+  setShortcut.addEventListener('click', () => void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }))
+  foot.append(
+    element(
+      'p',
+      { className: 'muted' },
+      'Fill from TeaNode Passwords has no keyboard shortcut: another extension had it when this one was installed.',
+    ),
+    setShortcut,
+  )
+}
+void sayIfShortcutMissing().catch(() => {})
 
 void refresh()

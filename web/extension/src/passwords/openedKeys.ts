@@ -1,9 +1,13 @@
 // Passwords inside the extension's service worker. The opened account key and
-// key pair live in chrome.storage.session and nowhere else (that area is held
-// in memory by the browser, is gone when the browser closes, and is closed to
-// content scripts), and are dropped after the lock time of no use. Nothing
-// decrypted is ever stored: the sealed items are read from the server, opened
-// for the one thing being done, and let go.
+// key pair live in chrome.storage.session (that area is held in memory by the
+// browser, is gone when the browser closes, and is closed to content scripts),
+// and are dropped after the lock time of no use. So that closing the browser
+// does not ask for the passphrase again within the lock time, they are also
+// kept sealed in the extension's IndexedDB with a key the browser will not
+// hand out (environment.kept, the dashboard's passwordsKeptUnlock.ts), and
+// opened from there when the session area has none. Nothing decrypted is ever
+// stored: the sealed items are read from the server, opened for the one thing
+// being done, and let go.
 //
 // The steps that work on keys are the dashboard's own (passwordsProtocol.ts);
 // this file only puts them in an order that fits a worker that can stop at
@@ -23,6 +27,7 @@ import {
   withSignedAccess,
 } from '../../../src/passwords/crypto'
 import { emptyLoginFields, LoginFields, PasskeyFields } from '../../../src/passwords/fields'
+import { KeptUnlock } from '../../../src/pages/passwords/passwordsKeptUnlock'
 import { oneTimeCode, oneTimeCodeSecondsLeft, parseOneTimeCodeUri } from '../../../src/passwords/oneTimeCode'
 import { PasswordsError } from '../../../src/passwords/passwordsError'
 import {
@@ -64,6 +69,12 @@ export interface PasswordsEnvironment {
   // (the person locked, the lock time ran out, the sign-in changed), so what
   // the worker keeps beside the keys goes with them.
   onLock?: () => void | Promise<void>
+  // kept is where the keys wait while the browser is closed; without it they
+  // end with the browser.
+  kept?: KeptUnlock
+  // onRestore runs when the keys were opened from the kept copy, so the worker
+  // starts what it starts after an unlock (the alarm that locks).
+  onRestore?: () => void | Promise<void>
 }
 
 const KEYS_STORAGE_KEY = 'passwordsKeys'
@@ -114,12 +125,82 @@ function isStoredKeys(value: unknown): value is StoredKeys {
 }
 
 async function readStoredKeys(environment: PasswordsEnvironment): Promise<StoredKeys | null> {
-  const stored = (await environment.session.get(KEYS_STORAGE_KEY))[KEYS_STORAGE_KEY]
+  let stored = (await environment.session.get(KEYS_STORAGE_KEY))[KEYS_STORAGE_KEY]
+  if (stored === undefined) stored = await restoreKeptKeys(environment)
   if (!isStoredKeys(stored)) return null
   return {
     ...stored,
     lockAfterMinutes: Math.min(stored.lockAfterMinutes, MAXIMUM_LOCK_AFTER_MINUTES),
     verifiedAtMilliseconds: stored.verifiedAtMilliseconds ?? 0,
+  }
+}
+
+// restoreUnderWay is the one restore running, so steps that start together
+// open the kept copy once.
+let restoreUnderWay: Promise<StoredKeys | null> | null = null
+
+// restoreKeptKeys opens the copy kept while the browser was closed, when it is
+// this person's, within the lock time, and of the public key the server still
+// lists, and puts it in the session area. It counts as an unlock without the
+// passphrase: the passphrase was not typed just now (verifiedAtMilliseconds
+// zero), so a passkey that asks for the person to be verified asks again.
+function restoreKeptKeys(environment: PasswordsEnvironment): Promise<StoredKeys | null> {
+  if (restoreUnderWay === null) {
+    restoreUnderWay = openKeptKeys(environment).finally(() => {
+      restoreUnderWay = null
+    })
+  }
+  return restoreUnderWay
+}
+
+async function openKeptKeys(environment: PasswordsEnvironment): Promise<StoredKeys | null> {
+  const kept = environment.kept
+  if (kept === undefined || !(await kept.hasKept())) return null
+  const lockCountBefore = lockCount
+  let userId: string
+  let setup: PasswordsSetup
+  try {
+    const session = (await environment.call(SESSION_QUERY)).GetSession as { userId?: string } | null
+    if (!session?.userId) return null
+    userId = session.userId
+    setup = await readPasswordsSetup(environment)
+  } catch {
+    // The server could not be asked: the copy stays for the next try.
+    return null
+  }
+  if (!setup.isSetUp || setup.publicKey === null) {
+    await kept.forget()
+    return null
+  }
+  const lockAfterMinutes =
+    setup.lockAfterMinutes >= 1 ? Math.min(setup.lockAfterMinutes, MAXIMUM_LOCK_AFTER_MINUTES) : 15
+  const keys = await kept.take(userId, lockAfterMinutes, environment.now())
+  if (keys === null) return null
+  const keyPair = { privateKey: keys.privateKey, publicKey: keys.publicKey }
+  try {
+    if (encodeBase64(keys.publicKey) !== setup.publicKey || !(await isKeyPairConsistent(keyPair))) {
+      await kept.forget()
+      return null
+    }
+    // Locked, or unlocked by hand, while the copy was being opened.
+    if (lockCount !== lockCountBefore) return null
+    const current = (await environment.session.get(KEYS_STORAGE_KEY))[KEYS_STORAGE_KEY]
+    if (current !== undefined) return isStoredKeys(current) ? current : null
+    const stored: StoredKeys = {
+      userId,
+      accountKey: encodeBase64(keys.accountKey),
+      privateKey: encodeBase64(keys.privateKey),
+      publicKey: setup.publicKey,
+      lockAfterMinutes,
+      lastUsedAtMilliseconds: environment.now(),
+      verifiedAtMilliseconds: 0,
+    }
+    await environment.session.set({ [KEYS_STORAGE_KEY]: stored })
+    await environment.onRestore?.()
+    return stored
+  } finally {
+    keys.accountKey.fill(0)
+    keys.privateKey.fill(0)
   }
 }
 
@@ -131,10 +212,17 @@ let lockCount = 0
 // lockPasswords drops the opened keys. It is the only place that does, so the
 // worker's own cleanup (environment.onLock) runs whichever way the keys went:
 // first and at once, because what it clears holds a password.
-export async function lockPasswords(environment: PasswordsEnvironment): Promise<void> {
+// At browser start (shouldKeepKeptCopy) the copy kept while the browser was
+// closed stays, for the next step to open; every other lock deletes it.
+export async function lockPasswords(
+  environment: PasswordsEnvironment,
+  options: { shouldKeepKeptCopy: boolean } = { shouldKeepKeptCopy: false },
+): Promise<void> {
   lockCount += 1
   const cleanup = Promise.resolve(environment.onLock?.())
+  const forgetting = options.shouldKeepKeptCopy ? Promise.resolve() : (environment.kept?.forget() ?? Promise.resolve())
   await environment.session.remove(KEYS_STORAGE_KEY)
+  await forgetting
   await cleanup
 }
 
@@ -225,6 +313,16 @@ export async function unlockPasswords(environment: PasswordsEnvironment, input: 
     lastUsedAtMilliseconds: environment.now(),
     verifiedAtMilliseconds: environment.now(),
   }
+  void environment.kept?.keep(
+    {
+      userId: session.userId,
+      accountKey,
+      privateKey,
+      publicKey: keyPair.publicKey,
+      keptAtMilliseconds: environment.now(),
+    },
+    environment.now(),
+  )
   accountKey.fill(0)
   privateKey.fill(0)
   await environment.session.set({ [KEYS_STORAGE_KEY]: stored })
@@ -260,6 +358,7 @@ export async function withOpenedKeys<Result>(
       throw new PasswordsError('locked')
     }
     await environment.session.set({ [KEYS_STORAGE_KEY]: { ...latest, lastUsedAtMilliseconds: environment.now() } })
+    environment.kept?.touch(environment.now())
   }
   const keys: OpenedKeys = {
     userId: stored.userId,

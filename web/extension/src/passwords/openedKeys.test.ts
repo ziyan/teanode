@@ -48,6 +48,7 @@ import {
   USER_ID,
 } from './testServer'
 import { credentialIdOf } from './webauthn'
+import { KeptUnlock, MemoryKeptUnlockStore } from '../../../src/pages/passwords/passwordsKeptUnlock'
 
 let fixture: PendingSetUp
 let ownerKeyPair: PersonKeyPair
@@ -160,6 +161,65 @@ describe('unlocking and locking', () => {
       expect(held.some((byte) => byte !== 0)).toBe(true)
     })
     expect(held!.every((byte) => byte === 0)).toBe(true)
+  })
+})
+
+describe('the copy kept while the browser is closed', () => {
+  async function unlockedWithKeptCopy() {
+    const made = setup()
+    const keptStore = new MemoryKeptUnlockStore()
+    made.environment.kept = new KeptUnlock(keptStore, 24 * 60 * 60_000)
+    await unlockPasswords(made.environment, { secretText: PASSPHRASE, isRecoveryKey: false })
+    expect(await made.environment.kept.hasKept()).toBe(true)
+    // What a browser start does: the session area is empty, and the start locks.
+    const restartBrowser = async () => {
+      for (const key of Object.keys(made.session.contents)) delete made.session.contents[key]
+      await lockPasswords(made.environment, { shouldKeepKeptCopy: true })
+    }
+    return { ...made, keptStore, restartBrowser }
+  }
+
+  it('opens again after the browser restarts within the lock time, without counting as verified', async () => {
+    const { environment, keptStore, restartBrowser, advance } = await unlockedWithKeptCopy()
+    expect(keptStore.record!.sealingKey.extractable).toBe(false)
+    expect(JSON.stringify(keptStore.record)).not.toContain(PASSPHRASE)
+    const onRestore = vi.fn()
+    environment.onRestore = onRestore
+    await restartBrowser()
+    advance(4)
+    expect(await readPasswordsState(environment)).toEqual({
+      isUnlocked: true,
+      lockAfterMinutes: 5,
+      wasUserVerifiedRecently: false,
+    })
+    expect(await withOpenedKeys(environment, async (keys) => keys.userId)).toBe(USER_ID)
+    // The worker starts the alarm that locks, as after an unlock.
+    expect(onRestore).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for the passphrase when the lock time passed while the browser was closed', async () => {
+    const { environment, keptStore, restartBrowser, advance } = await unlockedWithKeptCopy()
+    await restartBrowser()
+    advance(5)
+    expect((await readPasswordsState(environment)).isUnlocked).toBe(false)
+    expect(keptStore.record).toBeNull()
+  })
+
+  it('locking by hand deletes the copy', async () => {
+    const { environment, keptStore, restartBrowser } = await unlockedWithKeptCopy()
+    await lockPasswords(environment)
+    expect(keptStore.record).toBeNull()
+    await restartBrowser()
+    expect((await readPasswordsState(environment)).isUnlocked).toBe(false)
+  })
+
+  it('deletes a copy of a key the server no longer lists', async () => {
+    const { environment, server, keptStore, restartBrowser } = await unlockedWithKeptCopy()
+    await restartBrowser()
+    const otherKeyPair = await generatePersonKeyPair()
+    server.listedPublicKey = encodeBase64(otherKeyPair.publicKey)
+    expect((await readPasswordsState(environment)).isUnlocked).toBe(false)
+    expect(keptStore.record).toBeNull()
   })
 })
 

@@ -7100,7 +7100,7 @@ export const en = {
   'passwords.settingsLocked': 'Unlock Passwords to change the passphrase, import or export.',
   'passwords.settingsFailed': 'The setting could not be saved.',
   'passwords.lockAfterTitle': 'Lock',
-  'passwords.lockAfterBody': 'Passwords locks itself after this long without use, and when the page is reloaded.',
+  'passwords.lockAfterBody': 'Passwords locks itself after this long without use, on this browser and on your other devices. Until then, reloading the page or opening another tab keeps it open.',
   'passwords.lockAfterLabel': 'Lock after',
   'passwords.lockAfter1': '1 minute',
   'passwords.lockAfter5': '5 minutes',

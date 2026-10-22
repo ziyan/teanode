@@ -239,7 +239,6 @@ function ChangePassphraseDialog({
       otherAction={
         <button
           type="button"
-          className="button-quiet"
           onClick={() => {
             setIsRecoveryKey(!isRecoveryKey)
             setCurrent('')

@@ -76,6 +76,9 @@ export interface FakeServer {
   records: PasswordItemRecord[]
   calls: string[]
   saved: { input: Record<string, any> }[]
+  // listedPublicKey, when set, is the public key ReadPasswordsSetup lists
+  // instead of the fixture's (Passwords set up again elsewhere).
+  listedPublicKey?: string
   call: GraphqlCall
 }
 
@@ -94,7 +97,7 @@ export function createFakeServer(fixture: PendingSetUp, records: PasswordItemRec
             isSetUp: true,
             passphraseSalt: fixture.input.passphraseSalt,
             passphraseIterationCount: fixture.input.passphraseIterationCount,
-            publicKey: fixture.input.publicKey,
+            publicKey: server.listedPublicKey ?? fixture.input.publicKey,
             lockAfterMinutes: 5,
             itemCount: server.records.length,
           },

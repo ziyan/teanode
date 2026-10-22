@@ -100,7 +100,6 @@ export function PasswordsUnlock({ userId }: { userId: string }) {
           </button>
           <button
             type="button"
-            className="button-quiet"
             onClick={() => {
               setIsRecoveryKey(!isRecoveryKey)
               setTypedText('')
