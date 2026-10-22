@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,9 +48,23 @@ func NewHTTPTransport(settings *HTTPSettings) *HTTPTransport {
 		if timeout <= 0 {
 			timeout = 60 * time.Second
 		}
-		client = &http.Client{Timeout: timeout}
+		client = &http.Client{Timeout: timeout, CheckRedirect: stayOnHost}
 	}
 	return &HTTPTransport{url: settings.URL, client: client, headers: settings.Headers}
+}
+
+// stayOnHost stops a redirect that leaves the server the transport was
+// pointed at. The URL was typed by whoever connected the server, and what it
+// answers with is not theirs to aim this server at another host, an internal
+// one included. A redirect within the same host still works.
+func stayOnHost(request *http.Request, via []*http.Request) error {
+	if request.URL.Host != via[0].URL.Host {
+		return http.ErrUseLastResponse
+	}
+	if len(via) >= 10 {
+		return errors.New("mcp: too many redirects")
+	}
+	return nil
 }
 
 func (self *HTTPTransport) send(ctx context.Context, message any) (*http.Response, error) {
@@ -91,6 +106,12 @@ func (self *HTTPTransport) send(ctx context.Context, message any) (*http.Respons
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
 		_ = response.Body.Close()
 		return nil, ErrUnauthorized
+	}
+	// Only a redirect to another host gets here, because stayOnHost stopped
+	// it. Its body is not the server's answer and is not read.
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("mcp: the server redirected to %s, which is not followed", response.Header.Get("Location"))
 	}
 	if response.StatusCode >= 400 {
 		defer func() { _ = response.Body.Close() }()
