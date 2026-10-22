@@ -6217,6 +6217,7 @@ export const ja: Catalog = {
   'sharing.level.history': '相手の今いる場所と行った場所',
   'sharing.pageDeleted': 'ページは削除されました',
   'sharing.stop': '共有をやめる',
+  'sharing.thisPage': 'このページ',
   'sharing.stopFor': '{name}との共有をやめる',
   'sharing.stopTitle': '{name}との共有をやめますか？',
   'sharing.stopBody': '{name}は{what}を見られなくなります。',

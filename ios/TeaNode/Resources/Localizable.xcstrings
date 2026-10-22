@@ -83674,6 +83674,28 @@
         }
       }
     },
+    "sharing.thisPage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "this page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个页面"
+          }
+        }
+      }
+    },
     "sharing.noteLevelBusy": {
       "localizations": {
         "en": {

@@ -457,7 +457,10 @@ function SharedByYou({ shares, reload }: { shares: SharingMade[]; reload: () => 
       {stopping && (
         <ConfirmDialog
           title={t('sharing.stopTitle', { name: granteeName(stopping) })}
-          body={t('sharing.stopBody', { name: granteeName(stopping), what: words.what(stopping) })}
+          body={t('sharing.stopBody', {
+            name: granteeName(stopping),
+            what: stopping.isSubjectDeleted ? t('sharing.thisPage') : words.what(stopping),
+          })}
           confirmLabel={t('sharing.stop')}
           busy={stop.isBusy}
           error={stop.problem}

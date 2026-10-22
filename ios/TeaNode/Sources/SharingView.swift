@@ -353,7 +353,7 @@ enum SharingWords {
     }
 
     static func stopMessage(_ share: SharingMade) -> String {
-        let thing = madeWhat(share)
+        let thing = share.isPageGone ? String(localized: "sharing.thisPage", defaultValue: "this page") : madeWhat(share)
         return String(localized: "\(share.shownGrantee) will no longer see \(thing).")
     }
 

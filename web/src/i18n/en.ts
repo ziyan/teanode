@@ -6278,6 +6278,7 @@ export const en = {
   'sharing.level.history': 'Where they are and where they have been',
   'sharing.pageDeleted': 'Page deleted',
   'sharing.stop': 'Stop sharing',
+  'sharing.thisPage': 'this page',
   'sharing.stopFor': 'Stop sharing with {name}',
   'sharing.stopTitle': 'Stop sharing with {name}?',
   'sharing.stopBody': '{name} can no longer see {what}.',

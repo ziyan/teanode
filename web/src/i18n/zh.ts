@@ -5968,6 +5968,7 @@ export const zh: Catalog = {
   'sharing.stop': '停止共享',
   'sharing.stopFor': '停止与{name}共享',
   'sharing.stopTitle': '停止与{name}共享？',
+  'sharing.thisPage': '这个页面',
   'sharing.stopBody': '{name}将无法再查看{what}。',
   'sharing.stopped': '已停止与{name}共享。',
   'sharing.remove': '移除',
