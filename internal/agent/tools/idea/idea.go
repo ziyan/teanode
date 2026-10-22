@@ -62,7 +62,7 @@ func init() {
 					"suggestion_reason": tools.StringProperty("for propose: one line saying why them"),
 					"expires_on":        tools.StringProperty("for propose: the day it stops mattering, as 2006-01-02, when there is one"),
 				}, "action"),
-				Guidance: "idea: when the person asks what you could do for them, list their ideas before inventing any. Propose one only when you noticed something in their own data that you could take off their hands with the tools you have, and only after looking up the evidence. When they take one up in this conversation, start it before you begin; done, dismiss or reopen when they say so.",
+				Guidance: "idea: when the person asks what you could do for them, list their ideas before inventing any. Propose one only when you noticed something in their own data that you could take off their hands with the tools you have, and only after looking up the evidence. When they take one up in this conversation, start it before you begin.",
 				Preview: tools.PreviewOf(func(call arguments) string {
 					switch strings.TrimSpace(call.Action) {
 					case "propose":

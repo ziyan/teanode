@@ -42,7 +42,7 @@ func init() {
 					"link":          tools.BooleanProperty("true: also make an address that opens the file on another device with no sign-in, for six hours, for a person who asks for a link"),
 					"caption":       tools.StringProperty("a line to send with it, optional"),
 				}, "source"),
-				Guidance: "share_file: hands the person the file itself; use it when they ask to see or have something, with look when you need to see a picture to answer, and with link when they want to open it on another device: give them the share_link it answers, never an address of your own making.",
+				Guidance: "share_file: with link, give them the share_link it answers, never an address of your own making.",
 				Run:      runShare,
 			},
 		}

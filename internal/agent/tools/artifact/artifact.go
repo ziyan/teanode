@@ -37,7 +37,7 @@ func init() {
 					}
 					return "Make " + what + " called " + tools.Named(call.Title, "this") + " to open beside the conversation"
 				}),
-				Guidance: "artifact: a chart is a page with <div class=\"chart\"></div> and a <script> that calls teanode.chart(element, option); link nothing (the library and the look come with the page) and let the theme choose colours and type; name every unit. A line of a level (a balance, a price, a weight) is drawn around its values, while counts, money spent and bars keep zero; a tooltip follows the axis unless the option says otherwise. Nothing loads from another server; keep a page under 200 kB.",
+				Guidance: "artifact: a chart is a page with <div class=\"chart\"></div> and a <script> that calls teanode.chart(element, option); let the theme choose colours and type, and name every unit. A line of a level (a balance, a price, a weight) is drawn around its values, while counts, money spent and bars keep zero; a tooltip follows the axis unless the option says otherwise.",
 				Run:      runArtifact,
 			},
 		}
