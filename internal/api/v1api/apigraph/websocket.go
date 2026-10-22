@@ -216,6 +216,15 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 				log.Warningf("a websocket at %q opened from %q, which is not this server", self.conn.RemoteAddr(), self.request.Header.Get("Origin"))
 				return fmt.Errorf("apigraph: the page that opened this socket is not from this server")
 			}
+			// Nobody signed in: every subscription needs a signed-in person,
+			// so there is nothing for this socket to do. Acknowledging it
+			// would lift the deadline above and let a stranger hold it open.
+			// A server with no accounts yet is open to everyone, by design,
+			// until it is claimed.
+			if api.UsernameFromRequest(self.request) == "" && self.graph.authenticator.Required() {
+				log.Warningf("a websocket at %q said connection_init without being signed in", self.conn.RemoteAddr())
+				return fmt.Errorf("apigraph: not signed in")
+			}
 			if err := self.sendMessage("", "connection_ack", nil); err != nil {
 				return err
 			}
