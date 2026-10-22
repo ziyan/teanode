@@ -1168,6 +1168,7 @@ export const zh: Catalog = {
   'agentDrawer.note.goalCleared': '目标已清除：{detail}',
   'agentDrawer.note.goalMet': '目标已达成：{detail}',
   'agentDrawer.note.circleInvited': '{invitedByName} 邀请你加入「{circleName}」。请在账户菜单的圈子中回复。',
+  'agentDrawer.note.circleMemberAdded': '此服务器的运维者把 {addedName} 加入了你管理的「{circleName}」。',
   'agentDrawer.note.goalStalled':
     '目标停滞：自你上次发言后已过 {detail} 轮，目标仍未达成。发消息以继续，或清除、更改目标。',
   'agentDrawer.todoTitle': '助手的步骤',

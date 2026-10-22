@@ -82,3 +82,45 @@ func TestAPhoneIsToldOfAnInvitation(t *testing.T) {
 		t.Error("a phone that chose only approvals was told of an invitation")
 	}
 }
+
+// An administrator is told an operator put an account in their circle as a
+// note when their agent is on, and as a notification on their phone of the
+// circle kind, which a phone can choose not to take.
+func TestAnAdministratorIsToldWhenAnOperatorPutsAnAccountInTheirCircle(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		agentId, err := NoteCircleMemberAdded(tx, fixture.owner.ID, "Maria", "Home")
+		if err != nil || agentId != fixture.agent.ID {
+			t.Fatalf("NoteCircleMemberAdded: %q %v", agentId, err)
+		}
+		main, err := tx.MainAgentConversation(fixture.agent.ID, "drawer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		messages, err := tx.ListAgentMessages(main.ID, nil)
+		if err != nil || len(messages) != 1 || messages[0].Name != string(models.NoteCircleMemberAdded) {
+			t.Fatalf("the main conversation holds %+v, %v", messages, err)
+		}
+		if said := models.NoteText(models.NoteCircleMemberAdded, messages[0].Content); said != "An operator of this server put Maria in Home, which you administer." {
+			t.Errorf("the note says %q", said)
+		}
+		stranger, err := tx.CreateUser(&models.User{Username: "no-agent"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if agentId, err := NoteCircleMemberAdded(tx, stranger.ID, "Maria", "Home"); err != nil || agentId != "" {
+			t.Errorf("an administrator with no agent: %q %v", agentId, err)
+		}
+	})
+
+	fixture.worker.Phones().NotifyCircleMemberAdded(fixture.agent.ID, "Maria", "Home")
+	fixture.worker.waitGroup.Wait()
+	sent := fixture.relay.to("sealed:a-registration")
+	if len(sent) != 1 {
+		t.Fatalf("the phone was sent %d notifications, not one", len(sent))
+	}
+	content := fixture.read(t, sent[0])
+	if content.NotificationKind != models.NotificationCircle || content.Body != "An operator of this server put Maria in Home, which you administer." {
+		t.Errorf("the phone was told %+v", content)
+	}
+}

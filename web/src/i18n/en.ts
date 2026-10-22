@@ -1217,6 +1217,8 @@ export const en = {
   'agentDrawer.note.goalMet': 'Goal met: {detail}',
   'agentDrawer.note.circleInvited':
     '{invitedByName} invited you to {circleName}. Answer it under Circles in your account menu.',
+  'agentDrawer.note.circleMemberAdded':
+    'An operator of this server put {addedName} in {circleName}, which you administer.',
   'agentDrawer.note.goalStalled':
     'Goal stalled: {detail} turns since you last wrote and it is not met. Write to keep going, or clear or change it.',
   'agentDrawer.todoTitle': "The agent's steps",

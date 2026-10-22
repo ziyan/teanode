@@ -1214,6 +1214,8 @@ export const ja: Catalog = {
   'agentDrawer.note.goalMet': '目標を達成しました：{detail}',
   'agentDrawer.note.circleInvited':
     '{invitedByName} さんから「{circleName}」に招待されました。アカウントメニューのサークルから返事をしてください。',
+  'agentDrawer.note.circleMemberAdded':
+    'このサーバーの運用者が {addedName} さんを、あなたが管理する「{circleName}」に追加しました。',
   'agentDrawer.note.goalStalled':
     '目標が停滞しています：最後の発言から {detail} ターンが経過しましたが、まだ達成されていません。続けるにはメッセージを送るか、目標を解除・変更してください。',
   'agentDrawer.todoTitle': 'エージェントの手順',

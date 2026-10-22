@@ -1968,6 +1968,13 @@ struct NoteLine: View {
                 let invitation = try? JSONDecoder().decode(CircleInvitationNote.self, from: data), !invitation.circleName.isEmpty
             else { return detail }
             return String(localized: "\(invitation.invitedByName) invited you to \(invitation.circleName). Answer it under Circles in Settings.")
+        // The name of the account an operator put in and the circle's travel
+        // as JSON for the same reason.
+        case "circle_member_added":
+            guard let data = detail.data(using: .utf8),
+                let note = try? JSONDecoder().decode(CircleMemberAddedNote.self, from: data), !note.circleName.isEmpty
+            else { return detail }
+            return String(localized: "An operator of this server put \(note.addedName) in \(note.circleName), which you administer.")
         // Who said it and what they are to the person travel as JSON, so the
         // word is made here in the app's language; a detail that is not JSON
         // is shown as the server wrote it.
@@ -1991,6 +1998,13 @@ struct NoteLine: View {
 /// the person, and to which circle.
 private struct CircleInvitationNote: Decodable {
     var invitedByName: String = ""
+    var circleName: String = ""
+}
+
+/// CircleMemberAddedNote is the detail of a circle_member_added note: the
+/// account an operator put in, and the circle.
+private struct CircleMemberAddedNote: Decodable {
+    var addedName: String = ""
     var circleName: String = ""
 }
 

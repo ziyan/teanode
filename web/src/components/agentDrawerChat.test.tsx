@@ -983,6 +983,24 @@ it('words the note that somebody removed how the person is related', async () =>
   expect(await screen.findByText('Sam Lee removed how you are related.')).toBeTruthy()
 })
 
+it('words the note that an operator put an account in a circle the person administers', async () => {
+  answerWith({ hasAgents: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+  tell('chat-conversation', {
+    kind: 'note',
+    runId: '',
+    note: 'An operator of this server put Kim in Home, which you administer.',
+    noteKind: 'circle_member_added',
+    noteDetail: JSON.stringify({ addedName: 'Kim', circleName: 'Home' }),
+  })
+  expect(
+    await screen.findByText('An operator of this server put Kim in Home, which you administer.'),
+  ).toBeTruthy()
+})
+
 it('has the two switches for the person’s own agent in the members, and turns each on with its own call', async () => {
   answerWith({ hasAgents: true })
   openOnChat()

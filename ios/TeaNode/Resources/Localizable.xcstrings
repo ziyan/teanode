@@ -60178,6 +60178,22 @@
         }
       }
     },
+    "An operator of this server put %@ in %@, which you administer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーの運用者が %1$@ さんを、あなたが管理する「%2$@」に追加しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器的运维者把 %1$@ 加入了你管理的「%2$@」。"
+          }
+        }
+      }
+    },
     "(deleted account)": {
       "localizations": {
         "ja": {

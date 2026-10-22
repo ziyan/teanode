@@ -772,15 +772,49 @@ func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMembe
 	if user == nil {
 		return nil, api.ErrNotFound
 	}
+	before, err := tx.GetCircle(arguments.CircleID)
+	if err != nil {
+		return nil, err
+	}
+	isAlreadyMember := before != nil && before.Member(user.ID) != nil
 	added, err := tx.AddCircleMember(arguments.CircleID, user.ID, memberRole, principal.UserID())
 	if err != nil {
 		return nil, translateError(err)
+	}
+	if !isAlreadyMember {
+		if err := self.tellCircleAdministratorsOfMember(ctx, added, user); err != nil {
+			return nil, err
+		}
 	}
 	if err := self.publishCircleChatMembersChanged(ctx, added.ID); err != nil {
 		return nil, err
 	}
 	log.Noticef("%s put the account %q in the circle %q", operatorName(ctx), user.Username, added.Name)
 	return self.circleFor(ctx, added, principal.UserID())
+}
+
+// tellCircleAdministratorsOfMember tells the administrators of a circle that an
+// operator put an account in it, which no invitation announced: a note in
+// their agent's main conversation, written in this transaction, and a
+// notification on their phones once it commits. The account put in is not told
+// about itself.
+func (self *graph) tellCircleAdministratorsOfMember(ctx context.Context, circle *models.Circle, added *models.User) error {
+	tx := self.transaction(ctx)
+	addedName := added.DisplayName()
+	for _, member := range circle.Members {
+		if member.MemberRole != models.MemberRoleAdmin || member.UserID == added.ID {
+			continue
+		}
+		agentId, err := agent.NoteCircleMemberAdded(tx, member.UserID, addedName, circle.Name)
+		if err != nil {
+			return err
+		}
+		if notifier := self.phoneNotifier(); notifier != nil && agentId != "" {
+			circleName := circle.Name
+			tx.AfterCommit(func() { notifier.NotifyCircleMemberAdded(agentId, addedName, circleName) })
+		}
+	}
+	return nil
 }
 
 // circleMemberIds are the accounts in a circle.
