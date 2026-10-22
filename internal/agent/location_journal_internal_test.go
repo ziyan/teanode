@@ -446,3 +446,105 @@ func TestLocationJournalDayTextEndsAnOpenVisitWhereTheLatestReportSays(t *testin
 		t.Errorf("no day after 72 hours of silence: %q", got)
 	}
 }
+
+// A pause in the day is a line of its own among the visits, saying that where
+// the person was is not known, in the person's clock; it is never a stay, so
+// it is not counted as a place or as time away from home.
+func TestLocationJournalDayTextSaysWhereAPauseLeavesWhereTheyWereUnknown(t *testing.T) {
+	home := &models.Place{ID: "place-home", PlaceName: "Elm Street 4", PlaceLabel: models.PlaceLabelHome}
+	park := &models.Place{ID: "place-park", PlaceName: "Riverside Park"}
+	visits := []*models.PlaceVisit{
+		{ID: "visit-park", PlaceID: park.ID, Place: park, ArrivedAt: journalTime(4, 15, 0), DepartedAt: journalTime(4, 16, 0)},
+		{ID: "visit-home", PlaceID: home.ID, Place: home, ArrivedAt: journalTime(4, 9, 0), DepartedAt: journalTime(4, 13, 0)},
+	}
+	day := time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC)
+	pause := func(startedAt, endedAt *time.Time) *models.LocationPause {
+		return &models.LocationPause{ID: "pause", StartedAt: *startedAt, EndedAt: endedAt}
+	}
+
+	got := locationDayText(visits, day, locationPresence{pauses: []*models.LocationPause{pause(journalTime(4, 13, 0), journalTime(4, 14, 30))}}, true)
+	want := "Places: 2, time away from home: 1 h\n" + fenced(strings.Join([]string{
+		"09:00 to 13:00 (4 h): Elm Street 4, labeled home",
+		"paused from 13:00 to 14:30; where they were is not known",
+		"15:00 to 16:00 (1 h): Riverside Park",
+	}, "\n"))
+	if got != want {
+		t.Errorf("a pause between two visits:\n%s\nwant\n%s", got, want)
+	}
+
+	for name, test := range map[string]struct {
+		pause *models.LocationPause
+		want  string
+	}{
+		"from the day before":            {pause(journalTime(3, 22, 0), journalTime(4, 7, 15)), "paused from the day before to 07:15; where they were is not known"},
+		"past midnight":                  {pause(journalTime(4, 22, 0), journalTime(5, 6, 0)), "paused from 22:00 until after midnight; where they were is not known"},
+		"until resumed":                  {pause(journalTime(4, 22, 0), nil), "paused from 22:00 until after midnight; where they were is not known"},
+		"the whole day":                  {pause(journalTime(3, 20, 0), journalTime(5, 20, 0)), "paused the whole day; where they were is not known"},
+		"to the end of the day":          {pause(journalTime(4, 20, 0), journalTime(5, 0, 0)), "paused from 20:00 to 24:00; where they were is not known"},
+		"in a zone the server is not in": {pause(journalTimeIn(time.FixedZone("ahead", 9*3600), 4, 18, 0), journalTimeIn(time.FixedZone("ahead", 9*3600), 4, 19, 0)), "paused from 09:00 to 10:00; where they were is not known"},
+	} {
+		text := locationDayText(visits, day, locationPresence{pauses: []*models.LocationPause{test.pause}}, true)
+		if !strings.Contains(text, "\n"+test.want) && !strings.Contains(text, test.want+"\n") {
+			t.Errorf("%s: the day reads\n%s\nwant the line %q", name, text, test.want)
+		}
+		if !strings.HasPrefix(text, "Places: 2, time away from home: 1 h\n") {
+			t.Errorf("%s: a pause is not a stay:\n%s", name, text)
+		}
+	}
+
+	// Pauses on other days are not on this one, and a day with a pause and no
+	// visits has no document, as a day with nothing in it has none.
+	other := locationPresence{pauses: []*models.LocationPause{pause(journalTime(5, 9, 0), journalTime(5, 10, 0)), pause(journalTime(2, 9, 0), journalTime(2, 10, 0))}}
+	if text := locationDayText(visits, day, other, true); strings.Contains(text, "paused") {
+		t.Errorf("another day's pause is on this day:\n%s", text)
+	}
+	if text := locationDayText(nil, day, locationPresence{pauses: []*models.LocationPause{pause(journalTime(4, 9, 0), journalTime(4, 10, 0))}}, true); text != "" {
+		t.Errorf("a day of only a pause has no document: %q", text)
+	}
+}
+
+// A pause the person made is in the document of its day when the journal is
+// written, and a change to the pauses rewrites the day.
+func TestLocationJournalWritesAPauseIntoItsDay(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	provider, _ := tinyProvider()
+	defer provider.Close()
+	worker, run := digestSplitWorldWith(t, database, provider.URL, nil)
+
+	zone := Location(run.Owner)
+	now := time.Date(2026, 3, 6, 15, 0, 0, 0, zone)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		park, err := tx.CreatePlace(run.Owner.ID, &models.Place{PlaceName: "Riverside Park", LatitudeDegrees: 10.6, LongitudeDegrees: 20.6})
+		if err != nil {
+			t.Fatalf("CreatePlace: %s", err)
+		}
+		for key, visit := range map[string]*models.PlaceVisit{
+			"park-morning": {PlaceID: park.ID, ArrivedAt: journalTimeIn(zone, 5, 9, 0), DepartedAt: journalTimeIn(zone, 5, 10, 0)},
+			"park-evening": {PlaceID: park.ID, ArrivedAt: journalTimeIn(zone, 5, 17, 0), DepartedAt: journalTimeIn(zone, 5, 18, 0)},
+		} {
+			visit.ClientVisitKey, visit.VisitSource = key, models.VisitSourceVisit
+			visit.LatitudeDegrees, visit.LongitudeDegrees = 10.6, 20.6
+			if _, err := tx.PutPlaceVisit(run.Owner.ID, visit); err != nil {
+				t.Fatalf("PutPlaceVisit(%s): %s", key, err)
+			}
+		}
+	})
+	if writtenCount, err := worker.writeLocationJournal(t.Context(), run.Agent, run.Owner, now); err != nil || writtenCount != 1 {
+		t.Fatalf("the 5th is written: %d, %v", writtenCount, err)
+	}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		startedAt, endedAt := *journalTimeIn(zone, 5, 12, 0), *journalTimeIn(zone, 5, 13, 30)
+		if _, _, err := tx.PauseLocation(run.Owner.ID, &endedAt, startedAt); err != nil {
+			t.Fatalf("PauseLocation: %s", err)
+		}
+	})
+	if writtenCount, err := worker.writeLocationJournal(t.Context(), run.Agent, run.Owner, now); err != nil || writtenCount != 1 {
+		t.Fatalf("a pause rewrites its day: %d, %v", writtenCount, err)
+	}
+	text := locationJournalText(t, database, run, locationJournalDocuments(t, database, run)["location:2026-03-05"])
+	if !strings.HasPrefix(text, "Places: 1\n") || !strings.Contains(text, "09:00 to 10:00 (1 h): Riverside Park\npaused from 12:00 to 13:30; where they were is not known\n17:00 to 18:00 (1 h): Riverside Park") {
+		t.Errorf("the day reads %s", text)
+	}
+}

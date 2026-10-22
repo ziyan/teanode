@@ -1210,11 +1210,17 @@ func (self *graph) keepBrowserLocation(ctx context.Context, principal *api.Princ
 		measuredAt = now
 	}
 	newPointCount := 0
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		newPointCount, err = tx.InsertLocationPoints(principal.User.ID, []*models.LocationPoint{{
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// Not kept while the person has paused, like a phone's position.
+		pauses, err := readLocationPauseSet(tx, principal.User.ID, measuredAt, measuredAt, time.Now())
+		if err != nil {
+			return err
+		}
+		kept, _ := pauses.keptPoints([]*models.LocationPoint{{
 			LatitudeDegrees: answer.LatitudeDegrees, LongitudeDegrees: answer.LongitudeDegrees, AccuracyMeters: answer.AccuracyMeters,
 			MeasuredAt: measuredAt, LocationSource: models.LocationSourceBrowser,
 		}})
+		newPointCount, err = tx.InsertLocationPoints(principal.User.ID, kept)
 		return err
 	}); err != nil {
 		log.Warningf("cannot keep the location the browser gave: %s", err)

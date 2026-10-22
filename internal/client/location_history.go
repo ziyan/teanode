@@ -70,7 +70,16 @@ type VisitPhoto struct {
 	TakenAt         *time.Time `json:"takenAt"`
 }
 
-// Location is where a person is.
+// LocationPause is a time during which a person's location is not recorded.
+// EndedAt is null for a pause that lasts until the person resumes.
+type LocationPause struct {
+	ID        string     `json:"id"`
+	StartedAt time.Time  `json:"startedAt"`
+	EndedAt   *time.Time `json:"endedAt"`
+}
+
+// Location is where a person is. While Pause is set, anybody but the person
+// themselves is shown no latest point and no open visit.
 type Location struct {
 	UserID      string         `json:"userId"`
 	Username    string         `json:"username"`
@@ -78,12 +87,16 @@ type Location struct {
 	ShareLevel  string         `json:"shareLevel"`
 	LatestPoint *LocationPoint `json:"latestPoint"`
 	OpenVisit   *PlaceVisit    `json:"openVisit"`
+	Pause       *LocationPause `json:"pause"`
 }
 
-// PlaceVisitPage is a page of visits; NextOffset is null on the last.
+// PlaceVisitPage is a page of visits; NextOffset is null on the last. Pauses
+// is not part of the answer to the visits: the caller fills it in from
+// ListLocationPauses, for a listing that shows the gaps among the visits.
 type PlaceVisitPage struct {
-	PlaceVisits []*PlaceVisit `json:"placeVisits"`
-	NextOffset  *int          `json:"nextOffset"`
+	PlaceVisits []*PlaceVisit    `json:"placeVisits"`
+	NextOffset  *int             `json:"nextOffset"`
+	Pauses      []*LocationPause `json:"pauses,omitempty"`
 }
 
 // PlacePage is a page of places; NextOffset is null on the last.
@@ -138,11 +151,14 @@ const (
 
 	foundPlaceFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
+	locationPauseFields = `id startedAt endedAt`
+
 	DocumentGetLocation = `query ($userId: String) {
   GetLocation(userId: $userId) {
     userId username name shareLevel
     latestPoint { ` + locationPointFields + ` }
     openVisit { ` + placeVisitFields + ` }
+    pause { ` + locationPauseFields + ` }
   }
 }`
 
@@ -182,6 +198,16 @@ const (
     ` + foundPlaceFields + `
   }
 }`
+
+	DocumentListLocationPauses = `query ($userId: String, $from: DateTime!, $to: DateTime!) {
+  ListLocationPauses(userId: $userId, from: $from, to: $to) { ` + locationPauseFields + ` }
+}`
+
+	DocumentPauseLocation = `mutation ($endedAt: DateTime) {
+  PauseLocation(endedAt: $endedAt) { ` + locationPauseFields + ` }
+}`
+
+	DocumentResumeLocation = `mutation { ResumeLocation }`
 
 	DocumentListLocationPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + locationPointFields + ` }
@@ -269,6 +295,50 @@ func ListLocationVisits(ctx context.Context, connection *Client, query LocationV
 		return nil, err
 	}
 	return result.ListLocationVisits, nil
+}
+
+// ListLocationPauses is the pauses that overlap the range, newest first, of the
+// caller or, with a userId, of somebody who shares their history with them.
+func ListLocationPauses(ctx context.Context, connection *Client, userId string, from, to time.Time) ([]*LocationPause, error) {
+	variables := map[string]any{"from": from.UTC().Format(time.RFC3339), "to": to.UTC().Format(time.RFC3339)}
+	if userId != "" {
+		variables["userId"] = userId
+	}
+	var result struct {
+		ListLocationPauses []*LocationPause `json:"ListLocationPauses"`
+	}
+	if err := connection.Execute(ctx, DocumentListLocationPauses, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ListLocationPauses, nil
+}
+
+// PauseLocation stops the caller's location being recorded from now, until
+// endedAt, or until they resume when it is nil. Pausing while paused changes
+// the end of the pause in effect.
+func PauseLocation(ctx context.Context, connection *Client, endedAt *time.Time) (*LocationPause, error) {
+	variables := map[string]any{}
+	if endedAt != nil {
+		variables["endedAt"] = endedAt.UTC().Format(time.RFC3339)
+	}
+	var result struct {
+		PauseLocation *LocationPause `json:"PauseLocation"`
+	}
+	if err := connection.Execute(ctx, DocumentPauseLocation, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.PauseLocation, nil
+}
+
+// ResumeLocation ends the pause in effect now, and says whether there was one.
+func ResumeLocation(ctx context.Context, connection *Client) (bool, error) {
+	var result struct {
+		ResumeLocation bool `json:"ResumeLocation"`
+	}
+	if err := connection.Execute(ctx, DocumentResumeLocation, nil, &result); err != nil {
+		return false, err
+	}
+	return result.ResumeLocation, nil
 }
 
 // PlacesQuery narrows and pages a listing of places. A zero field is left out.
@@ -589,6 +659,7 @@ const (
     userId username name shareLevel
     latestPoint { ` + locationPointFields + ` }
     openVisit { ` + placeVisitFields + ` }
+    pause { ` + locationPauseFields + ` }
   }
 }`
 

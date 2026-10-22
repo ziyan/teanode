@@ -689,7 +689,7 @@ func TestANewClosedVisitIsToldAsALeaving(t *testing.T) {
 			stored, err := world.graph.putReportedVisit(tx, world.ada.ID, ReportedVisit{
 				ClientVisitKey: fmt.Sprintf("notice-%d", time.Now().UnixNano()), LatitudeDegrees: 40, LongitudeDegrees: -75, AccuracyMeters: 10,
 				VisitSource: string(models.VisitSourceVisit), ArrivedAt: arrivedAt, DepartedAt: departedAt,
-			})
+			}, nil)
 			if err != nil {
 				t.Fatalf("putReportedVisit: %s", err)
 			}

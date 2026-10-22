@@ -71,9 +71,15 @@ type LocationQuery interface {
 	// taken. Needs location:use.
 	ListLocationPoints(ctx context.Context, arguments ListLocationPointsArguments) ([]*LocationPointView, error)
 
+	// The pauses that overlap a range, newest first: the times the caller's
+	// location was not recorded, or another person's who shares their history
+	// with the caller. Needs location:use.
+	ListLocationPauses(ctx context.Context, arguments ListLocationPausesArguments) ([]*LocationPauseView, error)
+
 	// Every person whose location is shared with the caller, directly or
 	// through a circle, at the highest level any share gives: their latest
-	// position and the visit in progress. Needs location:use.
+	// position and the visit in progress, or that they have paused. Needs
+	// location:use.
 	ListSharedLocations(ctx context.Context) ([]*LocationView, error)
 
 	// The shares the caller has made of their own location, and with whom.
@@ -85,8 +91,11 @@ type LocationQuery interface {
 type LocationMutation interface {
 	// A phone's batch of up to 500 positions and 50 visits. Sending the same
 	// batch again adds nothing, which is how a phone can send until it knows
-	// the server has them. Answers without asking OpenStreetMap anything: a
-	// place made here is named afterwards. Needs location:use.
+	// the server has them. What was measured while the caller had paused is
+	// not stored, and is counted; the answer says the pause in effect, so that
+	// a phone learns of a pause set elsewhere. Answers without asking
+	// OpenStreetMap anything: a place made here is named afterwards. Needs
+	// location:use.
 	ReportLocation(ctx context.Context, arguments ReportLocationArguments) (*ReportLocationView, error)
 
 	// Name, rename, label, move or resize a place, or make one at coordinates
@@ -103,9 +112,22 @@ type LocationMutation interface {
 	// and starts a visit that was recorded by hand. Needs location:use.
 	CheckIn(ctx context.Context, arguments CheckInArguments) (*PlaceVisitView, error)
 
-	// Erases your positions and visits (in the range), and the places left
-	// with no visit that you did not name or label. Places you named or
-	// labeled stay. Anything your agent already learned from those days stays
+	// Stop recording where the caller is, now, until endedAt or, with none,
+	// until they resume. The visit in progress ends. While paused the server
+	// stores no position and no visit measured, and the people the location
+	// is shared with see that it is paused and no position. Pausing while
+	// paused changes the end of the pause. endedAt must be after now and at
+	// most 30 days ahead. Needs location:use.
+	PauseLocation(ctx context.Context, arguments PauseLocationArguments) (*LocationPauseView, error)
+
+	// End the pause in effect now. True when there was one. Needs
+	// location:use.
+	ResumeLocation(ctx context.Context) (bool, error)
+
+	// Erases your positions and visits (in the range), the pauses that began
+	// in it and are over, and the places left with no visit that you did not
+	// name or label. Places you named or labeled stay, and so does the pause
+	// in effect. Anything your agent already learned from those days stays
 	// in its memory until you remove it. Without a range, all of them. This
 	// cannot be undone. Needs location:use.
 	EraseLocationHistory(ctx context.Context, arguments EraseLocationHistoryArguments) (*EraseLocationHistoryView, error)
@@ -149,6 +171,11 @@ type LocationView struct {
 
 	// OpenVisit is the visit in progress, null when there is none.
 	OpenVisit *PlaceVisitView `json:"openVisit"`
+
+	// Pause is the pause in effect, null when the person is not paused. For
+	// anybody but the person themselves a pause hides LatestPoint and
+	// OpenVisit: they are null while it lasts.
+	Pause *LocationPauseView `json:"pause"`
 }
 
 // LocationPointView is one position a phone or browser reported.
@@ -298,6 +325,15 @@ type ReportLocationView struct {
 	// new place and the person has as many places as they may have. Their
 	// positions, and the visits at places they have, are stored all the same.
 	RefusedVisitCount int `json:"refusedVisitCount"`
+
+	// PausedPointCount and PausedVisitCount are how many positions and visits
+	// were left out because they were measured while the person had paused.
+	PausedPointCount int `json:"pausedPointCount"`
+	PausedVisitCount int `json:"pausedVisitCount"`
+
+	// Pause is the pause in effect after the report, null when the person is
+	// not paused, so that a phone learns of a pause set somewhere else.
+	Pause *LocationPauseView `json:"pause"`
 }
 
 // EraseLocationHistoryView says what was erased.
@@ -841,15 +877,24 @@ func describeLocation(tx db.Transaction, reach *locationReach) (*LocationView, e
 	if err != nil {
 		return nil, err
 	}
-	return locationViewOf(reach, latest, visit), nil
+	pause, err := tx.GetLocationPauseInEffect(reach.User.ID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return locationViewOf(reach, latest, visit, pause), nil
 }
 
-// locationViewOf is where a person is, from what was read about them.
-func locationViewOf(reach *locationReach, latest *models.LocationPoint, visit *models.PlaceVisit) *LocationView {
+// locationViewOf is where a person is, from what was read about them. While
+// the person has paused nobody else is shown the latest position or the visit
+// in progress, whatever level they reach: the pause is what they are shown.
+func locationViewOf(reach *locationReach, latest *models.LocationPoint, visit *models.PlaceVisit, pause *models.LocationPause) *LocationView {
 	view := &LocationView{
 		UserID: reach.User.ID, Username: reach.User.Username, Name: reach.User.Name,
 		AvatarURL: avatarUrl(reach.User), AvatarColorIndex: avatar.InitialColorIndex(reach.User.ID),
-		ShareLevel: string(reach.ShareLevel),
+		ShareLevel: string(reach.ShareLevel), Pause: describeLocationPause(pause),
+	}
+	if pause != nil && reach.ShareLevel != models.LocationShareLevelOwner {
+		return view
 	}
 	if latest != nil {
 		view.LatestPoint = describeLocationPoint(latest)
@@ -1485,6 +1530,20 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 			MeasuredAt: point.MeasuredAt, ReceivedAt: now, LocationSource: models.LocationSourcePhone, AgentPhoneID: phoneId,
 		})
 	}
+	// What was measured while the person had paused is not stored, whatever
+	// the phone has been told: a phone that was offline sends its day when it
+	// is back, and must not fill the gap. The pauses of the whole report are
+	// read at once.
+	var pauses locationPauseSet
+	if from, until, hasTimes := reportRange(arguments); hasTimes {
+		if from, err = self.pauseRangeStart(tx, user.ID, from, arguments.Visits); err != nil {
+			return nil, err
+		}
+		if pauses, err = readLocationPauseSet(tx, user.ID, from, until, now); err != nil {
+			return nil, err
+		}
+	}
+	points, pausedPointCount := pauses.keptPoints(points)
 	newPointCount, err := tx.InsertLocationPoints(user.ID, points)
 	if err != nil {
 		return nil, locationFailure(err)
@@ -1500,14 +1559,18 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 		}
 	}
 
-	view := &ReportLocationView{NewPointCount: newPointCount}
+	view := &ReportLocationView{NewPointCount: newPointCount, PausedPointCount: pausedPointCount}
 	var notices []visitNotice
 	var madePlaces []*models.Place
 	isChanged := newPointCount > 0
 	for _, reported := range arguments.Visits {
-		stored, err := self.putReportedVisit(tx, user.ID, reported)
+		stored, err := self.putReportedVisit(tx, user.ID, reported, pauses)
 		if err != nil {
 			return nil, err
+		}
+		if stored.IsPaused {
+			view.PausedVisitCount++
+			continue
 		}
 		if stored.IsRefused {
 			view.RefusedVisitCount++
@@ -1562,6 +1625,11 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	if isChanged {
 		self.afterLocationChange(ctx, tx, user.ID, notices, madePlaces)
 	}
+	pause, err := tx.GetLocationPauseInEffect(user.ID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	view.Pause = describeLocationPause(pause)
 	return view, nil
 }
 
@@ -1692,6 +1760,10 @@ type storedVisit struct {
 	// place and the person has the most places they may have.
 	IsRefused bool
 
+	// IsPaused is true for a visit that was not stored because all of it was
+	// measured while the person had paused.
+	IsPaused bool
+
 	// MadePlace is the place the visit made because the person had none there,
 	// nil when it was at a place they had.
 	MadePlace *models.Place
@@ -1703,7 +1775,7 @@ type storedVisit struct {
 // leaves the place the arrival was at), the place a region event watched, the
 // person's place that holds the position, or a new one named after its city and
 // named from the provider once the report is stored.
-func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported ReportedVisit) (*storedVisit, error) {
+func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported ReportedVisit, pauses locationPauseSet) (*storedVisit, error) {
 	key := strings.TrimSpace(reported.ClientVisitKey)
 	visit := &models.PlaceVisit{
 		ArrivedAt: reported.ArrivedAt, DepartedAt: reported.DepartedAt,
@@ -1725,6 +1797,14 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 			visit.ClientVisitKey = known.ClientVisitKey
 		}
 	}
+	// What a pause hides is taken from the visit before anything is made for
+	// it, so that a visit measured during a pause makes no place either.
+	clipped := pauses.clipVisit(reported.ArrivedAt, reported.DepartedAt, known)
+	if clipped.IsDropped {
+		return &storedVisit{IsPaused: true}, nil
+	}
+	visit.ArrivedAt, visit.DepartedAt = clipped.ArrivedAt, clipped.DepartedAt
+	reported.ArrivedAt, reported.DepartedAt = clipped.ArrivedAt, clipped.DepartedAt
 	switch {
 	case known != nil:
 		visit.PlaceID = known.PlaceID
@@ -1756,7 +1836,10 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 	// is added to a visit that had none.
 	// A new visit that comes with its departure (the arrival report was lost)
 	// is told by its latest event: the person has left.
+	// A departure moved to the start of a pause is not told: the person did not
+	// leave then as far as anybody knows.
 	switch {
+	case clipped.IsDepartureCut:
 	case isNew && reported.DepartedAt != nil && reported.ArrivedAt != nil:
 		stored.Notice = &visitNotice{Visit: visit, IsArrival: false, HappenedAt: *reported.DepartedAt}
 	case isNew && reported.ArrivedAt != nil:
@@ -1957,6 +2040,10 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 
 	// One change of a person's location at a time, as in ReportLocation.
 	if err := tx.LockLocation(userId); err != nil {
+		return nil, err
+	}
+	// A check-in is a visit measured now, which a pause does not store.
+	if err := requireNotPaused(tx, userId, now); err != nil {
 		return nil, err
 	}
 

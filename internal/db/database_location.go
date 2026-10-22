@@ -162,7 +162,9 @@ type LocationOperation interface {
 
 	// EraseLocationHistory deletes positions and visits that started in the
 	// range (all of them when both ends are nil), and then the places left
-	// with no visit that the person neither named nor labeled. It deletes in
+	// with no visit that the person neither named nor labeled. Pauses that
+	// began in the range and are over go too; the pause in effect stays, so
+	// erasing does not resume recording. It deletes in
 	// the same transaction the location journal documents of the days the
 	// range touches, with their chunks, since those say where the person was
 	// as plainly as the visits did. Anything the agent already learned from
@@ -1225,6 +1227,25 @@ func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitMod
 		}
 		return false
 	}
+	// A pause that began between two of them is time nobody knows where the
+	// person was, which a visit that ended where the pause began and one that
+	// began soon after it must not close over, however short the pause.
+	var pauseStarts []time.Time
+	if len(group) > 1 {
+		if err := self.tx.Model(&locationPauseModel{}).
+			Where("\"user_id\" = ? AND \"started_at\" >= ? AND \"started_at\" < ?", visit.UserID, visitStart(&group[0]), visitStart(&group[len(group)-1])).
+			Pluck("\"started_at\"", &pauseStarts).Error; err != nil {
+			return nil, err
+		}
+	}
+	isPausedBetween := func(earlierEnd, later time.Time) bool {
+		for _, pauseStart := range pauseStarts {
+			if !pauseStart.Before(earlierEnd) && pauseStart.Before(later) {
+				return true
+			}
+		}
+		return false
+	}
 	// Walk the visits in the order they began, growing a run: each visit joins
 	// the run if it begins before the run's end plus the gap, and starts a new
 	// run if not. The run that holds this visit is the one to merge.
@@ -1233,7 +1254,8 @@ func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitMod
 	runEnd := visitEnd(&group[0])
 	for index := 1; index <= len(group); index++ {
 		if index < len(group) && visitStart(&group[index]).Before(runEnd.Add(placeVisitJoinGap)) &&
-			!isSomewhereElseBetween(visitStart(&group[index-1]), visitStart(&group[index])) {
+			!isSomewhereElseBetween(visitStart(&group[index-1]), visitStart(&group[index])) &&
+			!isPausedBetween(visitEnd(&group[index-1]), visitStart(&group[index])) {
 			if end := visitEnd(&group[index]); end.After(runEnd) {
 				runEnd = end
 			}
@@ -1460,6 +1482,11 @@ func (self *transaction) EraseLocationHistory(userId string, from, until *time.T
 	}
 	// The journal says where the person was as plainly as the visits do.
 	if err := self.deleteLocationDayDocuments(userId, from, until); err != nil {
+		return 0, 0, 0, err
+	}
+	// The gaps in recording are as much a part of where the person was as the
+	// visits, so the ones that are over go with them.
+	if err := self.deleteEndedLocationPauses(userId, from, until, time.Now()); err != nil {
 		return 0, 0, 0, err
 	}
 	pointResult := points.Delete(&locationPointModel{})

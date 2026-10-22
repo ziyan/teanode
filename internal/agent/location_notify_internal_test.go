@@ -288,3 +288,41 @@ func TestAnArrivalJoinedIntoAnEarlierVisitIsToldByTheTimeReported(t *testing.T) 
 		t.Errorf("the arrival just reported was sent %d notifications, not one", fixture.told())
 	}
 }
+
+// Nobody is told of an arrival or a departure inside a pause, nor while the
+// person is paused: a notice a few minutes late says where they are. Once
+// they resume, the same arrival is told again.
+func TestNoArrivalIsToldInsideAPauseOrWhileThePersonIsPaused(t *testing.T) {
+	fixture := newLocationNotifyFixture(t, models.LocationShareLevelCurrent)
+	visit := fixture.visitTo(t, &models.Place{PlaceName: "Corner Cafe", IsNamedByPerson: true})
+
+	now := time.Now()
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if _, _, err := tx.PauseLocation(fixture.sharer.ID, nil, now.Add(-time.Minute)); err != nil {
+			t.Fatalf("PauseLocation: %s", err)
+		}
+	})
+	// The arrival was before the pause began, and told while it is in effect.
+	earlier := now.Add(-5 * time.Minute)
+	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, true, earlier)
+	// The arrival was inside it.
+	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, true, now)
+	if fixture.told() != 0 {
+		t.Fatalf("the phone was sent %d notifications while the person is paused", fixture.told())
+	}
+
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		if _, err := tx.ResumeLocation(fixture.sharer.ID, time.Now()); err != nil {
+			t.Fatalf("ResumeLocation: %s", err)
+		}
+	})
+	// An arrival inside the pause that has since ended is still not told.
+	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, true, now.Add(-30*time.Second))
+	if fixture.told() != 0 {
+		t.Fatalf("an arrival inside the pause was told after it: %d", fixture.told())
+	}
+	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, true, time.Now())
+	if fixture.told() != 1 {
+		t.Errorf("an arrival after the pause is told: %d notifications", fixture.told())
+	}
+}

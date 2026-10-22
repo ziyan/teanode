@@ -19,18 +19,22 @@ const (
 	placeFields       = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText isAddressTyped visitCount lastVisitAt`
 	visitFields       = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
 	listedVisitFields = visitFields + ` photoCount photosTakenBefore`
+	pauseFields       = `startedAt endedAt`
 	foundFields       = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
 	documentGetLocation = `query ($userId: String) {
-  GetLocation(userId: $userId) { username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } }
+  GetLocation(userId: $userId) { username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } }
 }`
 	documentListSharedLocations = `query {
-  ListSharedLocations { userId username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } }
+  ListSharedLocations { userId username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } pause { ` + pauseFields + ` } }
 }`
 	documentListVisits = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String, $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel, offset: $offset, limitCount: $limitCount) {
     nextOffset placeVisits { ` + listedVisitFields + ` }
   }
+}`
+	documentListPauses = `query ($userId: String, $from: DateTime!, $to: DateTime!) {
+  ListLocationPauses(userId: $userId, from: $from, to: $to) { ` + pauseFields + ` }
 }`
 	documentListPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + pointFields + ` }
@@ -63,7 +67,9 @@ const (
 	documentCheckIn     = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String, $accuracyMeters: Float) {
   CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText, accuracyMeters: $accuracyMeters) { ` + visitFields + ` }
 }`
-	documentErase = `mutation ($from: DateTime, $until: DateTime) {
+	documentPause  = `mutation ($endedAt: DateTime) { PauseLocation(endedAt: $endedAt) { ` + pauseFields + ` } }`
+	documentResume = `mutation { ResumeLocation }`
+	documentErase  = `mutation ($from: DateTime, $until: DateTime) {
   EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
 }`
 	documentListShares = `query { ListLocationShares { id granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName shareLevel } }`
@@ -107,6 +113,11 @@ type visitData struct {
 	PhotosTakenBefore *time.Time `json:"photosTakenBefore"`
 }
 
+type pauseData struct {
+	StartedAt time.Time  `json:"startedAt"`
+	EndedAt   *time.Time `json:"endedAt"`
+}
+
 type locationData struct {
 	UserID      string     `json:"userId"`
 	Username    string     `json:"username"`
@@ -114,6 +125,7 @@ type locationData struct {
 	ShareLevel  string     `json:"shareLevel"`
 	LatestPoint *pointData `json:"latestPoint"`
 	OpenVisit   *visitData `json:"openVisit"`
+	Pause       *pauseData `json:"pause"`
 }
 
 type foundData struct {
@@ -346,6 +358,29 @@ func (self *scope) openVisitRow(visit *visitData) map[string]any {
 	return row
 }
 
+// pauseEndWords is when a pause ends, as the person says it: "until 15:00",
+// with the date when it is not today, or "until they resume".
+func (self *scope) pauseEndWords(pause *pauseData) string {
+	if pause.EndedAt == nil {
+		return "until they resume"
+	}
+	local := pause.EndedAt.In(self.where)
+	if now := self.now.In(self.where); local.Year() == now.Year() && local.YearDay() == now.YearDay() {
+		return "until " + local.Format("15:04")
+	}
+	return "until " + local.Format("2006-01-02 15:04")
+}
+
+// pausedRow is what is said instead of where somebody is while they have
+// paused: they share no position until they resume.
+func (self *scope) pausedRow(name string, pause *pauseData) map[string]any {
+	return map[string]any{
+		"is_paused":    true,
+		"paused_since": self.timeText(&pause.StartedAt),
+		"paused_text":  name + " has paused sharing where they are (" + self.pauseEndWords(pause) + ")",
+	}
+}
+
 // withPaging passes on the page asked for. What is left out is the API's
 // default (50 visits or places, 20 results of a search), and a number it
 // refuses is refused in its words.
@@ -409,6 +444,7 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				})
 				if here.operations.Execute(ctx, documentGetLocation, variables, &current) == nil && current.GetLocation != nil {
 					answer["at"] = here.openVisitRow(current.GetLocation.OpenVisit)
+					here.addRecordingPaused(answer, current.GetLocation.Pause)
 				}
 				result, err := tools.JSONResult(answer)
 				if err != nil {
@@ -431,6 +467,13 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	found := stored.GetLocation
+	// Somebody who paused shares no position, which is not the same as not
+	// having one: they are said to have paused.
+	if found != nil && found.Pause != nil && userId != nil {
+		answer := here.pausedRow(found.Name, found.Pause)
+		answer["person"], answer["share_level"] = found.Username, found.ShareLevel
+		return tools.JSONResult(answer)
+	}
 	if found == nil || (found.LatestPoint == nil && found.OpenVisit == nil) {
 		if liveNote != "" {
 			return nil, fmt.Errorf("%s", liveNote)
@@ -450,10 +493,20 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		answer["position"] = here.position(found.LatestPoint)
 	}
 	answer["at"] = here.openVisitRow(found.OpenVisit)
+	here.addRecordingPaused(answer, found.Pause)
 	if liveNote != "" {
 		answer["note"] = "a fresh position could not be had (" + liveNote + "); this is the last one kept"
 	}
 	return untrusted(tools.JSONResult(answer))
+}
+
+// addRecordingPaused says in the answer about the person's own location that
+// they have paused recording, so that a position that is old is not read as a
+// phone that stopped working.
+func (self *scope) addRecordingPaused(answer map[string]any, pause *pauseData) {
+	if pause != nil {
+		answer["recording_paused"] = "recording is paused (" + self.pauseEndWords(pause) + "); nothing new is kept until it ends or the person resumes"
+	}
 }
 
 func nonZero(value, fallback time.Time) time.Time {
@@ -550,7 +603,74 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	answer := map[string]any{"timezone": here.where.String(), "visits": rows}
 	withNext(answer, result.ListLocationVisits.NextOffset)
+	if arguments.PlaceID == "" && arguments.PlaceLabel == "" {
+		pauses, err := here.pausesAmongVisits(ctx, userId, variables, result.ListLocationVisits.PlaceVisits, arguments.Offset)
+		if err != nil {
+			return nil, err
+		}
+		if len(pauses) > 0 {
+			answer["pauses"] = pauses
+		}
+	}
 	return untrusted(tools.JSONResult(answer))
+}
+
+// pausesAmongVisits are the times the location was paused that belong beside a
+// page of visits, newest first: those in the range asked for, or else those
+// from when the oldest visit of the page began to now (to when the newest
+// began, on a later page). A pause belongs to no place, so a listing of one
+// place's visits has none. A pause between two pages is on neither; asking
+// with from and until gives a range of one's own.
+func (self *scope) pausesAmongVisits(ctx context.Context, userId *string, variables map[string]any, visits []visitData, offset *int) ([]map[string]any, error) {
+	startOf := func(visit *visitData) time.Time {
+		switch {
+		case visit.ArrivedAt != nil:
+			return *visit.ArrivedAt
+		case visit.DepartedAt != nil:
+			return *visit.DepartedAt
+		}
+		return time.Time{}
+	}
+	rangeEnd := self.now
+	if text, isGiven := variables["until"].(string); isGiven {
+		rangeEnd, _ = time.Parse(time.RFC3339, text)
+	} else if offset != nil && *offset > 0 && len(visits) > 0 {
+		rangeEnd = startOf(&visits[0])
+	}
+	var rangeStart time.Time
+	switch {
+	case variables["from"] != nil:
+		rangeStart, _ = time.Parse(time.RFC3339, variables["from"].(string))
+	case len(visits) > 0:
+		rangeStart = startOf(&visits[len(visits)-1])
+	default:
+		rangeStart = rangeEnd.AddDate(0, 0, -30)
+	}
+	if rangeStart.IsZero() || rangeEnd.IsZero() || !rangeStart.Before(rangeEnd) {
+		return nil, nil
+	}
+	pauseVariables := map[string]any{"from": rangeStart.UTC().Format(time.RFC3339), "to": rangeEnd.UTC().Format(time.RFC3339)}
+	if userId != nil {
+		pauseVariables["userId"] = *userId
+	}
+	var result struct {
+		ListLocationPauses []pauseData `json:"ListLocationPauses"`
+	}
+	if err := self.operations.Execute(ctx, documentListPauses, pauseVariables, &result); err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0, len(result.ListLocationPauses))
+	for index := range result.ListLocationPauses {
+		pause := &result.ListLocationPauses[index]
+		row := map[string]any{"paused_from": self.timeText(&pause.StartedAt)}
+		if pause.EndedAt == nil {
+			row["paused_until"] = "they resume"
+		} else {
+			row["paused_until"] = self.timeText(pause.EndedAt)
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }
 
 // pathPointsMost is how many positions of a day's path the answer lists; a
@@ -1028,6 +1148,63 @@ func runForgetPlace(ctx context.Context, call *tools.Call) (*tools.Result, error
 	return tools.JSONResult(map[string]any{"is_forgotten": true, "place_id": place})
 }
 
+type pauseArguments struct {
+	EndedAt string `json:"ended_at"`
+}
+
+// runPause stops recording where the person is, until the time given or until
+// they resume. The API refuses an end that is not ahead or is too far ahead.
+func runPause(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[pauseArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	variables := map[string]any{}
+	endedAt, err := here.moment(arguments.EndedAt)
+	if err != nil {
+		return nil, err
+	}
+	if endedAt != nil {
+		variables["endedAt"] = *endedAt
+	}
+	var result struct {
+		PauseLocation pauseData `json:"PauseLocation"`
+	}
+	if err := here.operations.Execute(ctx, documentPause, variables, &result); err != nil {
+		return nil, err
+	}
+	answer := map[string]any{"is_paused": true, "timezone": here.where.String(), "paused_since": here.timeText(&result.PauseLocation.StartedAt)}
+	if result.PauseLocation.EndedAt == nil {
+		answer["paused_until"] = "the person resumes"
+	} else {
+		answer["paused_until"] = here.timeText(result.PauseLocation.EndedAt)
+	}
+	return tools.JSONResult(answer)
+}
+
+// runResume ends the pause now. It widens what is recorded and shown to the
+// people the location is shared with, so it waits for the person.
+func runResume(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	if !call.Confirmed {
+		return nil, fmt.Errorf("resume needs the person's confirmation")
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		ResumeLocation bool `json:"ResumeLocation"`
+	}
+	if err := here.operations.Execute(ctx, documentResume, nil, &result); err != nil {
+		return nil, err
+	}
+	return tools.JSONResult(map[string]any{"is_recording": true, "was_paused": result.ResumeLocation})
+}
+
 func runCheckIn(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	arguments, err := tools.DecodeArguments[checkInArguments](call)
 	if err != nil {
@@ -1132,6 +1309,13 @@ func runPeople(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	for index := range result.ListSharedLocations {
 		each := &result.ListSharedLocations[index]
 		row := map[string]any{"person": each.Username, "name": each.Name, "share_level": each.ShareLevel}
+		if each.Pause != nil {
+			for key, value := range here.pausedRow(each.Name, each.Pause) {
+				row[key] = value
+			}
+			rows = append(rows, row)
+			continue
+		}
 		if each.LatestPoint != nil {
 			row["position"] = here.position(each.LatestPoint)
 		}

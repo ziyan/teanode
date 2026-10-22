@@ -49,7 +49,7 @@ const personCardFields = `
   contact { id name emails accountUserId }
   sharedCircles { circleName }
   canMessage
-  location { sectionState hasMoreTodayVisits location { shareLevel latestPoint { latitudeDegrees } } todayVisits { id } }
+  location { sectionState hasMoreTodayVisits location { shareLevel latestPoint { latitudeDegrees } openVisit { id } pause { id endedAt } } todayVisits { id } }
   health { sectionState hasMore healthTypes { healthType latestDaySummary { summaryDay sumValue } } }
   photos { photosState hasMorePhotos albumsState hasMoreAlbums photos { id } albums { id albumTitle ownerUsername } }
   mail { sectionState hasMore mails { mailboxItemId mailboxId folderPath subject fromAddress isFromPerson isUnread snippet } }
@@ -265,6 +265,18 @@ func TestReadPersonCardAShareThatIsOffIsNotShared(test *testing.T) {
 	location = sectionOf(world.cardOf(test, world.ben, world.ada), "location")
 	if visits := location["todayVisits"].([]any); location["location"].(map[string]any)["shareLevel"] != "history" || len(visits) != 1 {
 		test.Errorf("the history level adds today's visits: %v", location)
+	}
+	// Her pause is what the card shows, with no position, at either level;
+	// the visits she made before it are still her history to read.
+	world.run(test, world.ada, `mutation { PauseLocation { id } }`, nil)
+	location = sectionOf(world.cardOf(test, world.ben, world.ada), "location")
+	shown := location["location"].(map[string]any)
+	if shown["shareLevel"] != "history" || shown["pause"] == nil || shown["latestPoint"] != nil || shown["openVisit"] != nil || len(location["todayVisits"].([]any)) != 1 {
+		test.Errorf("a pause is shown instead of where she is: %v", location)
+	}
+	world.run(test, world.ada, `mutation { ResumeLocation }`, nil)
+	if shown = sectionOf(world.cardOf(test, world.ben, world.ada), "location")["location"].(map[string]any); shown["pause"] != nil || shown["latestPoint"] == nil {
+		test.Errorf("resuming shows where she is again: %v", shown)
 	}
 	// Taking the share back is seen at once.
 	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {

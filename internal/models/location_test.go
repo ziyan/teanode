@@ -1,6 +1,9 @@
 package models
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestAPlaceLabelIsOneOfFiveInPickerOrder(t *testing.T) {
 	t.Parallel()
@@ -50,5 +53,31 @@ func TestTheSourcesOfPositionsAndVisitsAreClosedLists(t *testing.T) {
 	}
 	if LocationSource("").IsValid() || LocationSource("watch").IsValid() || VisitSource("").IsValid() || VisitSource("guess").IsValid() {
 		t.Error("a source nobody knows is valid")
+	}
+}
+
+func TestALocationPauseIsInEffectFromItsStartUntilItsEnd(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Date(2026, 3, 4, 14, 0, 0, 0, time.UTC)
+	endedAt := startedAt.Add(time.Hour)
+	timed := &LocationPause{StartedAt: startedAt, EndedAt: &endedAt}
+	open := &LocationPause{StartedAt: startedAt}
+	for name, test := range map[string]struct {
+		pause   *LocationPause
+		instant time.Time
+		want    bool
+	}{
+		"before the start":          {timed, startedAt.Add(-time.Second), false},
+		"at the start":              {timed, startedAt, true},
+		"inside":                    {timed, startedAt.Add(30 * time.Minute), true},
+		"at the end":                {timed, endedAt, false},
+		"after the end":             {timed, endedAt.Add(time.Second), false},
+		"open one before the start": {open, startedAt.Add(-time.Second), false},
+		"open one a year later":     {open, startedAt.AddDate(1, 0, 0), true},
+	} {
+		if got := test.pause.IsInEffectAt(test.instant); got != test.want {
+			t.Errorf("%s: in effect is %v, want %v", name, got, test.want)
+		}
 	}
 }

@@ -125,7 +125,11 @@ type locationPresence struct {
 	// latestReportAt is the latest of a position's measured time and a
 	// visit's arrival or departure, or the zero time when there is none.
 	latestReportAt time.Time
-	now            time.Time
+	// pauses are the times the person stopped their location being recorded
+	// that touch the days being written, in any order. Nothing was reported
+	// in them on purpose, so a day says that where they were is not known.
+	pauses []*models.LocationPause
+	now    time.Time
 }
 
 // openVisitSilenceMost is how long after the person's last report of any
@@ -269,13 +273,28 @@ func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, presence l
 		}
 	}
 	// The totals above are over every visit of the day; only the list is cut.
-	var lines []string
+	// A pause is a line of its own among the visits, and never a stay.
+	entries := make([]locationEntry, 0, len(spans))
+	moreText := ""
 	for index, span := range spans {
 		if index == locationJournalVisitsMost {
-			lines = append(lines, fmt.Sprintf("and %d more", len(spans)-index))
+			moreText = fmt.Sprintf("and %d more", len(spans)-index)
 			break
 		}
-		lines = append(lines, locationVisitLine(span, dayEnd))
+		entries = append(entries, locationEntry{start: span.start, text: locationVisitLine(span, dayEnd)})
+	}
+	for _, pause := range presence.pauses {
+		if entry, isInDay := locationPauseEntry(pause, dayStart, dayEnd); isInDay {
+			entries = append(entries, entry)
+		}
+	}
+	sort.SliceStable(entries, func(left, right int) bool { return entries[left].start.Before(entries[right].start) })
+	lines := make([]string, 0, len(entries)+1)
+	for _, entry := range entries {
+		lines = append(lines, entry.text)
+	}
+	if moreText != "" {
+		lines = append(lines, moreText)
 	}
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "Places: %d", len(placeIds))
@@ -286,6 +305,47 @@ func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, presence l
 	// record text is.
 	builder.WriteString("\n" + fenced(strings.Join(lines, "\n")))
 	return builder.String()
+}
+
+// locationEntry is one line of a day and when it began, for putting visits
+// and pauses in order.
+type locationEntry struct {
+	start time.Time
+	text  string
+}
+
+// locationPauseEntry is the line a pause makes in the day [dayStart, dayEnd),
+// "paused from 14:00 to 15:00; where they were is not known", and whether the
+// pause touches the day at all. It says plainly that the time is not known,
+// so that it is not read as a stay anywhere, or as nowhere.
+func locationPauseEntry(pause *models.LocationPause, dayStart, dayEnd time.Time) (locationEntry, bool) {
+	if !pause.StartedAt.Before(dayEnd) || (pause.EndedAt != nil && !pause.EndedAt.After(dayStart)) {
+		return locationEntry{}, false
+	}
+	doesBeginEarlier := pause.StartedAt.Before(dayStart)
+	doesContinueNextDay := pause.EndedAt == nil || pause.EndedAt.After(dayEnd)
+	// The clock times are the person's, whatever zone the pause was read in.
+	zone := dayStart.Location()
+	start := pause.StartedAt.In(zone)
+	if doesBeginEarlier {
+		start = dayStart
+	}
+	var endedAt time.Time
+	if pause.EndedAt != nil {
+		endedAt = pause.EndedAt.In(zone)
+	}
+	var words string
+	switch {
+	case doesBeginEarlier && doesContinueNextDay:
+		words = "paused the whole day"
+	case doesBeginEarlier:
+		words = "paused from the day before to " + locationClock(endedAt, dayEnd)
+	case doesContinueNextDay:
+		words = "paused from " + start.Format("15:04") + " until after midnight"
+	default:
+		words = "paused from " + start.Format("15:04") + " to " + locationClock(endedAt, dayEnd)
+	}
+	return locationEntry{start: start, text: words + "; where they were is not known"}, true
 }
 
 // locationVisitLine is one visit: "09:40 to 11:30 (1 h 50 min): Riverside Park
@@ -383,6 +443,9 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 		}
 		presence, err := readLocationPresence(tx, owner.ID, now)
 		if err != nil {
+			return err
+		}
+		if presence.pauses, err = tx.ListLocationPauses(owner.ID, from, today, 0); err != nil {
 			return err
 		}
 		for dayStart := from; dayStart.Before(today); dayStart = dayStart.AddDate(0, 0, 1) {

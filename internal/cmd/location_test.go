@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -37,6 +39,9 @@ func TestLocationParity(test *testing.T) {
 	}{
 		"GetLocation":          {"now", "now"},
 		"ListLocationVisits":   {"visits", "visits"},
+		"ListLocationPauses":   {"visits", "visits"},
+		"PauseLocation":        {"pause", "pause"},
+		"ResumeLocation":       {"resume", "resume"},
 		"ListPlaces":           {"places", "places"},
 		"ReadPlace":            {"place", "places"},
 		"ListNearbyPlaces":     {"nearby", "nearby"},
@@ -106,11 +111,11 @@ func TestLocationParity(test *testing.T) {
 	// property of its tool action, under the name that surface gives it, or
 	// is exempt with the reason.
 	flagNames := map[string]string{
-		"userId": "person", "from": "from", "until": "until", "placeId": "place", "placeLabel": "label", "query": "query",
+		"userId": "person", "from": "from", "until": "until", "to": "until", "placeId": "place", "placeLabel": "label", "query": "query",
 		"offset": "offset", "limitCount": "first", "latitudeDegrees": "latitude", "longitudeDegrees": "longitude", "radiusMeters": "radius",
 	}
 	propertyNames := map[string]string{
-		"userId": "person", "from": "from", "until": "until", "placeId": "place_id", "placeLabel": "place_label", "query": "query",
+		"userId": "person", "from": "from", "until": "until", "to": "until", "placeId": "place_id", "placeLabel": "place_label", "query": "query",
 		"offset": "offset", "limitCount": "limit", "latitudeDegrees": "latitude_degrees", "longitudeDegrees": "longitude_degrees", "radiusMeters": "radius_meters",
 	}
 	// "<Operation>.<argument>.<surface>" is exempt for the reason given.
@@ -187,6 +192,9 @@ func locationServerAnswering(test *testing.T, replacements map[string]string) (*
 		"CheckIn":              `{"id":"v3","arrivedAt":"2026-10-17T12:00:00Z","place":` + place + `}`,
 		"EraseLocationHistory": `{"pointCount":10,"visitCount":2,"placeCount":1}`,
 		"ListSharedLocations":  `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history"},{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current"}]`,
+		"PauseLocation":        `{"id":"pause1","startedAt":"2026-10-17T12:00:00Z","endedAt":"2026-10-17T13:30:00Z"}`,
+		"ResumeLocation":       `true`,
+		"ListLocationPauses":   `[{"id":"pause1","startedAt":"2026-10-17T10:00:00Z","endedAt":"2026-10-17T10:30:00Z"},{"id":"pause2","startedAt":"2026-10-17T09:55:00Z"}]`,
 		"ListLocationPoints":   `[{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"}]`,
 	}
 	for operation, answer := range replacements {
@@ -576,5 +584,142 @@ func TestLocationShowsATypedAddress(test *testing.T) {
 	}
 	if strings.Contains(output, "(typed)") {
 		test.Errorf("a place without a typed address: %q", output)
+	}
+}
+
+// pause sends the end that --for or --until names, none for a pause until the
+// person resumes, and refuses the two together and an end in the past.
+func TestLocationPauseSendsTheEndItWasGiven(test *testing.T) {
+	server, called := locationServer(test)
+	before := time.Now()
+	output, err := runLocationCommand(test, server, "pause", "--for", "1h30m")
+	if err != nil {
+		test.Fatal(err)
+	}
+	endedAt, parseErr := time.Parse(time.RFC3339, fmt.Sprint(called("PauseLocation")["endedAt"]))
+	if parseErr != nil || endedAt.Before(before.Add(89*time.Minute)) || endedAt.After(time.Now().Add(91*time.Minute)) {
+		test.Errorf("an hour and a half from now was sent: %v", called("PauseLocation"))
+	}
+	if !strings.Contains(output, "paused until") {
+		test.Errorf("it says when the pause ends: %q", output)
+	}
+
+	if _, err := runLocationCommand(test, server, "pause", "--for", "2d"); err != nil {
+		test.Errorf("days are a length: %v", err)
+	}
+	next := time.Now().Add(26 * time.Hour).Truncate(time.Minute)
+	if _, err := runLocationCommand(test, server, "pause", "--until", next.Format("2006-01-02T15:04")); err != nil {
+		test.Fatal(err)
+	}
+	if sent := fmt.Sprint(called("PauseLocation")["endedAt"]); !strings.HasPrefix(sent, next.UTC().Format("2006-01-02T15:04")) {
+		test.Errorf("the moment typed was sent: %q, want %s", sent, next.UTC().Format(time.RFC3339))
+	}
+
+	output, err = runLocationCommand(test, server, "pause")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if called("PauseLocation")["endedAt"] != nil {
+		test.Errorf("no end was given, none is sent: %v", called("PauseLocation"))
+	}
+	if !strings.Contains(output, "paused") {
+		test.Errorf("it says it paused: %q", output)
+	}
+
+	for name, arguments := range map[string][]string{
+		"both":             {"pause", "--for", "1h", "--until", "2099-01-01"},
+		"a length of zero": {"pause", "--for", "0m"},
+		"not a length":     {"pause", "--for", "soon"},
+		"the past":         {"pause", "--until", "2020-01-01"},
+		"not a moment":     {"pause", "--until", "tomorrow"},
+	} {
+		if _, err := runLocationCommand(test, server, arguments...); err == nil {
+			test.Errorf("%s should be refused", name)
+		}
+	}
+}
+
+// resume says whether there was a pause to end.
+func TestLocationResumeSaysWhetherThereWasAPause(test *testing.T) {
+	server, _ := locationServer(test)
+	output, err := runLocationCommand(test, server, "resume")
+	if err != nil || !strings.Contains(output, "recording again") {
+		test.Errorf("resuming: %q %v", output, err)
+	}
+	notPaused, _ := locationServerAnswering(test, map[string]string{"ResumeLocation": `false`})
+	if output, err := runLocationCommand(test, notPaused, "resume"); err != nil || !strings.Contains(output, "was not paused") {
+		test.Errorf("resuming when not paused: %q %v", output, err)
+	}
+}
+
+// The person's own location says that recording is paused and until when, and
+// another person who paused reads "Location paused" with no position.
+func TestLocationShowsAPauseOnTheirOwnAndOnAnotherPersons(test *testing.T) {
+	endedAt := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	own, _ := locationServerAnswering(test, map[string]string{"GetLocation": `{"userId":"u-ada","username":"ada","name":"Ada","shareLevel":"owner",
+		"latestPoint":{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"},
+		"pause":{"id":"pause1","startedAt":"2026-10-17T12:00:00Z","endedAt":"` + endedAt + `"}}`})
+	output, err := runLocationCommand(test, own, "now")
+	if err != nil || !strings.Contains(output, "Paused until") || !strings.Contains(output, "40.00050, -75.00030") {
+		test.Errorf("their own: %q %v", output, err)
+	}
+	until, err := time.Parse(time.RFC3339, endedAt)
+	if err != nil || !strings.Contains(output, until.In(time.Local).Format("15:04")) {
+		test.Errorf("until when: %q", output)
+	}
+
+	until = time.Now().Add(time.Hour)
+	open, _ := locationServerAnswering(test, map[string]string{"GetLocation": `{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","pause":{"id":"pause2","startedAt":"2026-10-17T12:00:00Z"}}`,
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"current","pause":{"id":"pause2","startedAt":"2026-10-17T12:00:00Z"}},
+			{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current","pause":{"id":"pause3","startedAt":"2026-10-17T12:00:00Z","endedAt":"` + until.UTC().Format(time.RFC3339) + `"}}]`})
+	if output, err = runLocationCommand(test, open, "now", "--person", "ben"); err != nil || strings.TrimSpace(output) != "Location paused until you resume" {
+		test.Errorf("another person's: %q %v", output, err)
+	}
+	if output, err = runLocationCommand(test, open, "people"); err != nil || !strings.Contains(output, "Location paused until you resume") ||
+		!strings.Contains(output, "Location paused until "+until.In(time.Local).Format("15:04")) {
+		test.Errorf("the people who share: %q %v", output, err)
+	}
+}
+
+// visits lists the pauses of the range among the visits, newest first, and
+// leaves them out of a listing of the visits to one place.
+func TestLocationVisitsListsThePausesAmongThem(test *testing.T) {
+	server, called := locationServer(test)
+	output, err := runLocationCommand(test, server, "visits", "--from", "2026-10-17")
+	if err != nil {
+		test.Fatal(err)
+	}
+	variables := called("ListLocationPauses")
+	if variables["from"] == nil || variables["to"] == nil || variables["userId"] != nil {
+		test.Errorf("the range was sent: %v", variables)
+	}
+	first := time.Date(2026, 10, 17, 10, 0, 0, 0, time.UTC).In(time.Local)
+	second := first.Add(30 * time.Minute)
+	want := fmt.Sprintf("paused %s to %s", first.Format("15:04"), second.Format("15:04"))
+	if !strings.Contains(output, want) || !strings.Contains(output, "paused from ") || !strings.Contains(output, "still paused") || !strings.Contains(output, "30 minutes") {
+		test.Errorf("the pauses are among the visits (%s): %q", want, output)
+	}
+	lines := strings.Split(output, "\n")
+	positionOf := func(words string) int {
+		for index, line := range lines {
+			if strings.Contains(line, words) {
+				return index
+			}
+		}
+		return -1
+	}
+	if positionOf("still there") > positionOf(want) || positionOf(want) > positionOf("20 minutes") {
+		test.Errorf("newest first: the open visit, then the pause, then the earlier visit:\n%s", output)
+	}
+	if output, err = runLocationCommand(test, server, "visits", "--json", "--from", "2026-10-17"); err != nil || !strings.Contains(output, `"pauses"`) || !strings.Contains(output, "pause1") {
+		test.Errorf("the pauses are in the JSON: %q %v", output, err)
+	}
+
+	forOnePlace, calledAgain := locationServer(test)
+	if _, err := runLocationCommand(test, forOnePlace, "visits", "--place", "p1"); err != nil || calledAgain("ListLocationPauses") != nil {
+		test.Errorf("a pause belongs to no place: %v %v", err, calledAgain("ListLocationPauses"))
+	}
+	if _, err := runLocationCommand(test, server, "visits", "--person", "ben", "--from", "2026-10-17"); err != nil || called("ListLocationPauses")["userId"] != "u-ben" {
+		test.Errorf("another person's pauses are asked for by their account: %v %v", err, called("ListLocationPauses"))
 	}
 }

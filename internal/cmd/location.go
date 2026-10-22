@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,14 +40,31 @@ func NewLocationCommand() *cli.Command {
 			"place to the place provider to look up its name. You can rename a place and give\n" +
 			"it a label (" + placeLabelWords() + "):\n\n" +
 			"  teanode location now\n" +
+			"  teanode location pause --for 1h30m\n" +
 			"  teanode location visits --from 2026-10-10 --until 2026-10-12\n" +
 			"  teanode location save <place-id> --name \"Grandma's\" --label family\n" +
 			"  teanode location search playground --radius 5000",
 		Commands: []*cli.Command{
 			{Name: "now", Usage: "where you are: the latest position, and the visit in progress", Flags: []cli.Flag{JSONFlag(), personFlag}, Action: runLocationNow},
 			{
+				Name:  "pause",
+				Usage: "stop recording where you are, for a while or until you resume",
+				Description: "While paused nothing new is recorded, whatever sends it, and the people your location\n" +
+					"is shared with see that it is paused instead of where you are. The visit in progress\n" +
+					"ends. Give --for or --until for a pause that ends by itself, at most 30 days ahead;\n" +
+					"with neither it lasts until 'teanode location resume'. Pausing while paused changes\n" +
+					"when the pause ends.",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "for", Usage: "pause for this long, such as 1h30m or 2d"},
+					&cli.StringFlag{Name: "until", Usage: "pause until this moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM"},
+				},
+				Action: runLocationPause,
+			},
+			{Name: "resume", Usage: "start recording where you are again, now", Flags: []cli.Flag{JSONFlag()}, Action: runLocationResume},
+			{
 				Name:  "visits",
-				Usage: "where you have been, newest first",
+				Usage: "where you have been, newest first, with the times you paused",
 				Flags: append([]cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "from", Usage: "the first moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM"},
@@ -314,6 +332,33 @@ func timeCell(value *time.Time) string {
 	return value.In(time.Local).Format("2006-01-02 15:04")
 }
 
+// pauseEndWords is when a pause ends, as a person says it: "until 15:00", with
+// the day when it is not today, or "until you resume".
+func pauseEndWords(endedAt *time.Time, now time.Time) string {
+	if endedAt == nil {
+		return "until you resume"
+	}
+	local := endedAt.In(time.Local)
+	if local.YearDay() == now.In(time.Local).YearDay() && local.Year() == now.In(time.Local).Year() {
+		return "until " + local.Format("15:04")
+	}
+	return "until " + local.Format("2006-01-02 15:04")
+}
+
+// pauseSpanWords is a pause in the list of visits: "paused 14:00 to 15:00", or
+// "paused from 2026-10-22 14:00" for one that has not ended.
+func pauseSpanWords(pause *client.LocationPause) string {
+	startedAt := pause.StartedAt.In(time.Local)
+	if pause.EndedAt == nil {
+		return "paused from " + startedAt.Format("2006-01-02 15:04")
+	}
+	endedAt := pause.EndedAt.In(time.Local)
+	if startedAt.Format("2006-01-02") == endedAt.Format("2006-01-02") {
+		return fmt.Sprintf("paused %s to %s", startedAt.Format("15:04"), endedAt.Format("15:04"))
+	}
+	return fmt.Sprintf("paused %s to %s", startedAt.Format("2006-01-02 15:04"), endedAt.Format("2006-01-02 15:04"))
+}
+
 // noteNextPage says on standard error that a list went on, and how to read on.
 func noteNextPage(nextOffset *int, first int) {
 	if nextOffset != nil {
@@ -361,11 +406,19 @@ func runLocationNow(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(found)
 	}
+	if found.Pause != nil && found.LatestPoint == nil && found.OpenVisit == nil {
+		// Another person's, who paused: there is no position to show.
+		fmt.Println("Location paused " + pauseEndWords(found.Pause.EndedAt, time.Now()))
+		return nil
+	}
 	if found.LatestPoint == nil && found.OpenVisit == nil {
 		fmt.Println("no position has been reported yet; the TeaNode app on your iPhone reports where you go")
 		return nil
 	}
 	fields := [][2]string{}
+	if found.Pause != nil {
+		fields = append(fields, [2]string{"recording", "Paused " + pauseEndWords(found.Pause.EndedAt, time.Now())})
+	}
 	if point := found.LatestPoint; point != nil {
 		fields = append(fields, [2]string{"position", fmt.Sprintf("%.5f, %.5f (within %.0f m), %s ago, from the %s",
 			point.LatitudeDegrees, point.LongitudeDegrees, point.AccuracyMeters, timeWords(time.Since(point.MeasuredAt)), point.LocationSource)})
@@ -414,14 +467,26 @@ func runLocationVisits(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeNotFound(command, err, "that place")
 	}
+	// Pauses belong to no place, so they are not listed among the visits to
+	// one place or to the places with a label.
+	if command.String("place") == "" && label == "" {
+		if page.Pauses, err = listPausesAmongVisits(ctx, connection, userId, from, until, page, int(command.Int("offset"))); err != nil {
+			return describeError(command, err)
+		}
+	}
 	if command.Bool("json") {
 		return PrintJSON(page)
 	}
-	if len(page.PlaceVisits) == 0 {
+	if len(page.PlaceVisits) == 0 && len(page.Pauses) == 0 {
 		fmt.Println("no visits in that range")
 		return nil
 	}
-	rows := make([][]string, 0, len(page.PlaceVisits))
+	// A pause is a row among the visits, in the order of when it began.
+	type visitRow struct {
+		startedAt time.Time
+		cells     []string
+	}
+	listed := make([]visitRow, 0, len(page.PlaceVisits)+len(page.Pauses))
 	for _, visit := range page.PlaceVisits {
 		left, duration := timeCell(visit.DepartedAt), ""
 		if visit.DepartedAt == nil {
@@ -434,12 +499,148 @@ func runLocationVisits(ctx context.Context, command *cli.Command) error {
 		if visit.PhotoCount != nil && *visit.PhotoCount > 0 {
 			photoCountText = fmt.Sprintf("%d", *visit.PhotoCount)
 		}
-		rows = append(rows, []string{timeCell(visit.ArrivedAt), left, duration, photoCountText, placeLine(visit.Place), visit.Place.ID})
+		listed = append(listed, visitRow{visitStartedAt(visit), []string{timeCell(visit.ArrivedAt), left, duration, photoCountText, placeLine(visit.Place), visit.Place.ID}})
+	}
+	for _, pause := range page.Pauses {
+		left, duration := "still paused", ""
+		if pause.EndedAt != nil {
+			left = timeCell(pause.EndedAt)
+			duration = timeWords(pause.EndedAt.Sub(pause.StartedAt))
+		}
+		listed = append(listed, visitRow{pause.StartedAt, []string{timeCell(&pause.StartedAt), left, duration, "", pauseSpanWords(pause), ""}})
+	}
+	sort.SliceStable(listed, func(left, right int) bool { return listed[left].startedAt.After(listed[right].startedAt) })
+	rows := make([][]string, 0, len(listed))
+	for _, row := range listed {
+		rows = append(rows, row.cells)
 	}
 	if err := printTable([]string{"arrived", "left", "duration", "photo count", "place", "place id"}, rows); err != nil {
 		return err
 	}
 	noteNextPage(page.NextOffset, first)
+	return nil
+}
+
+// visitStartedAt is when a visit began as far as is known: its arrival, or its
+// departure when the phone reported only that.
+func visitStartedAt(visit *client.PlaceVisit) time.Time {
+	switch {
+	case visit.ArrivedAt != nil:
+		return *visit.ArrivedAt
+	case visit.DepartedAt != nil:
+		return *visit.DepartedAt
+	}
+	return time.Time{}
+}
+
+// listPausesAmongVisits reads the pauses that belong beside a page of visits:
+// those in the range asked for, or else those from when the oldest visit of the
+// page began to now (to when the newest began, on a later page, so that one
+// pause is not listed on every page). A pause between the last visit of one
+// page and the first of the next is on neither; --from and --until give a
+// range of one's own.
+func listPausesAmongVisits(ctx context.Context, connection *client.Client, userId string, from, until *time.Time, page *client.PlaceVisitPage, offset int) ([]*client.LocationPause, error) {
+	rangeEnd := time.Now()
+	switch {
+	case until != nil:
+		rangeEnd = *until
+	case offset > 0 && len(page.PlaceVisits) > 0:
+		rangeEnd = visitStartedAt(page.PlaceVisits[0])
+	}
+	var rangeStart time.Time
+	switch {
+	case from != nil:
+		rangeStart = *from
+	case len(page.PlaceVisits) > 0:
+		rangeStart = visitStartedAt(page.PlaceVisits[len(page.PlaceVisits)-1])
+	default:
+		rangeStart = rangeEnd.AddDate(0, 0, -30)
+	}
+	if !rangeStart.Before(rangeEnd) {
+		return nil, nil
+	}
+	return client.ListLocationPauses(ctx, connection, userId, rangeStart, rangeEnd)
+}
+
+// runLocationPause pauses recording now, for as long as --for says, until the
+// moment --until says, or until the person resumes.
+func runLocationPause(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 0 {
+		return usage("usage: teanode location pause [--for 1h30m | --until 2026-10-23T08:00]")
+	}
+	if command.IsSet("for") && command.IsSet("until") {
+		return usage("give --for or --until, not both")
+	}
+	var endedAt *time.Time
+	switch {
+	case command.IsSet("for"):
+		duration, err := parsePauseLength(command.String("for"))
+		if err != nil {
+			return usage("--for: " + err.Error())
+		}
+		moment := time.Now().Add(duration)
+		endedAt = &moment
+	case command.IsSet("until"):
+		moment, err := locationMoment(command, "until")
+		if err != nil {
+			return err
+		}
+		if moment == nil {
+			return usage("--until needs a moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM")
+		}
+		if !moment.After(time.Now()) {
+			return usage("--until must be in the future")
+		}
+		endedAt = moment
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	pause, err := client.PauseLocation(ctx, connection, endedAt)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(pause)
+	}
+	fmt.Println("paused " + pauseEndWords(pause.EndedAt, time.Now()))
+	return nil
+}
+
+// parsePauseLength reads how long to pause for: Go's own lengths such as
+// 1h30m, or a number of days such as 2d, which it does not know.
+func parsePauseLength(text string) (time.Duration, error) {
+	text = strings.TrimSpace(text)
+	if days, isDays := strings.CutSuffix(text, "d"); isDays {
+		var count int
+		if _, err := fmt.Sscanf(days, "%d", &count); err == nil && count > 0 {
+			return time.Duration(count) * 24 * time.Hour, nil
+		}
+	}
+	if duration, err := time.ParseDuration(text); err == nil && duration > 0 {
+		return duration, nil
+	}
+	return 0, fmt.Errorf("%q is not a length of time; try 90m, 1h30m or 2d", text)
+}
+
+func runLocationResume(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	isResumed, err := client.ResumeLocation(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]bool{"isResumed": isResumed})
+	}
+	if !isResumed {
+		fmt.Println("your location was not paused")
+		return nil
+	}
+	fmt.Println("recording again")
 	return nil
 }
 
@@ -953,6 +1154,10 @@ func runLocationPeople(ctx context.Context, command *cli.Command) error {
 	rows := make([][]string, 0, len(people))
 	for _, each := range people {
 		where, since := "no position yet", ""
+		if each.Pause != nil {
+			rows = append(rows, []string{each.Username, each.ShareLevel, "Location paused " + pauseEndWords(each.Pause.EndedAt, time.Now()), "", ""})
+			continue
+		}
 		if each.OpenVisit != nil {
 			where = placeLine(each.OpenVisit.Place)
 			if each.OpenVisit.ArrivedAt != nil {
