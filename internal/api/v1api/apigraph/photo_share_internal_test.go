@@ -529,10 +529,15 @@ func TestSavingASharedPhotoToTheLibrary(test *testing.T) {
 		if savedWithout, err = world.graph.SavePhotoToLibrary(ctx, PhotoArguments{PhotoID: photo.ID}); err != nil {
 			test.Fatal(err)
 		}
-		if savedWithout.UserID != benId || savedWithout.PhotoSource != models.PhotoSourceShared || savedWithout.ClientPhotoID != "shared:"+originalDigest ||
+		if savedWithout.UserID != benId || savedWithout.PhotoSource != models.PhotoSourceShared || savedWithout.ClientPhotoID != "shared-preview:"+photo.ID ||
 			savedWithout.Latitude != nil || savedWithout.PlaceName != "" || savedWithout.OriginalFilename != "photo-"+photo.ID+".jpg" || !savedWithout.IsOwnedByCaller ||
 			savedWithout.PhotoProcessingState != models.PhotoProcessingWaiting {
 			test.Fatalf("%+v", savedWithout)
+		}
+		// The copy is not named by the digest of the original, which the reader
+		// was kept from.
+		if strings.Contains(savedWithout.ClientPhotoID, originalDigest) {
+			test.Fatalf("the copy is named by the original's digest: %q", savedWithout.ClientPhotoID)
 		}
 		again, err := world.graph.SavePhotoToLibrary(ctx, PhotoArguments{PhotoID: photo.ID})
 		if err != nil || again.ID != savedWithout.ID {
@@ -844,6 +849,60 @@ func TestAReaderWithoutPlacesGetsNoTextThatCouldNameThePlace(test *testing.T) {
 		}
 		if found, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AlbumID: albumId, SearchText: "quayside"}); err != nil || len(found) != 1 {
 			test.Fatalf("%v %v", found, err)
+		}
+	})
+}
+
+// The offset from UTC that a photo was taken at says which part of the world it
+// was taken in, so it goes with the place: a reader whose share does not
+// include places gets the instant and no offset, in the listing, in the photo
+// and in the copy they keep, and has it once the share includes places.
+func TestTheOffsetFromUTCIsHeldBackWithThePlace(test *testing.T) {
+	world := newPhotoWorld(test)
+	adaId := world.person("offset-ada", models.PermissionPhotosUse)
+	benId := world.person("offset-ben", models.PermissionPhotosUse)
+	world.circleOf("Home", adaId, benId)
+	photo := world.storePhoto(adaId, "quay", "IMG_0003.HEIC", []byte("original"), map[models.PhotoPreviewSize][]byte{models.PhotoPreviewLarge: []byte("large"), models.PhotoPreviewSmall: []byte("small")})
+	dbtest.Exec(test, world.database, `UPDATE photo SET taken_at = '2030-05-01T10:00:00Z', taken_at_offset_minutes = 330 WHERE id = '`+photo.ID+`'`)
+	var albumId, shareId string
+	world.ask(adaId, photosAllowed, func(ctx context.Context) {
+		album, err := world.graph.CreatePhotoAlbum(ctx, CreatePhotoAlbumArguments{AlbumTitle: "Trip", PhotoIDs: []string{photo.ID}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		albumId = album.ID
+		share, err := world.graph.SharePhotoAlbum(ctx, SharePhotoAlbumArguments{PhotoAlbumID: albumId, GranteeUserID: benId, ShareLevel: "view"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		shareId = share.ID
+		if view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photo.ID}); err != nil || view.Photo.TakenAtOffsetMinutes == nil || *view.Photo.TakenAtOffsetMinutes != 330 {
+			test.Fatalf("the owner keeps her offset: %+v %v", view, err)
+		}
+	})
+	world.ask(benId, photosAllowed, func(ctx context.Context) {
+		listed, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AlbumID: albumId})
+		if err != nil || len(listed) != 1 || listed[0].TakenAt == nil || listed[0].TakenAtOffsetMinutes != nil {
+			test.Fatalf("a listing shows the instant and no offset: %+v %v", listed, err)
+		}
+		view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photo.ID})
+		if err != nil || view.Photo.TakenAt == nil || view.Photo.TakenAtOffsetMinutes != nil {
+			test.Fatalf("a photo shows the instant and no offset: %+v %v", view, err)
+		}
+		saved, err := world.graph.SavePhotoToLibrary(ctx, PhotoArguments{PhotoID: photo.ID})
+		if err != nil || saved.TakenAtOffsetMinutes != nil {
+			test.Fatalf("the copy keeps the offset the reader was not given: %+v %v", saved, err)
+		}
+	})
+	world.ask(adaId, photosAllowed, func(ctx context.Context) {
+		if _, err := world.graph.UpdatePhotoAlbumShare(ctx, UpdatePhotoAlbumShareArguments{PhotoAlbumShareID: shareId, ShareLevel: "view", IsLocationIncluded: true}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	world.ask(benId, photosAllowed, func(ctx context.Context) {
+		view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photo.ID})
+		if err != nil || view.Photo.TakenAtOffsetMinutes == nil || *view.Photo.TakenAtOffsetMinutes != 330 {
+			test.Fatalf("with places the reader has the offset: %+v %v", view, err)
 		}
 	})
 }

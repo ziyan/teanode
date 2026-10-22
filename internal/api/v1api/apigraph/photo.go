@@ -299,8 +299,9 @@ func (self *graph) requirePhotosPerson(ctx context.Context) (*api.Principal, err
 // have it: no favorite mark, no uploader's name for it, and, unless the share
 // that lets the caller in includes where photos were taken, and the photo is
 // the album owner's whose share it is (placeShownOfUserId), no place, no file
-// name, no description and none of the words read in the picture, and the
-// original files stand for by the preview that carries none.
+// name, no description, none of the words read in the picture and no offset
+// from UTC (which, with the date, says which part of the world it was taken
+// in), and the original files stand for by the preview that carries none.
 func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string, photos []*models.Photo, placeShownOfUserId string) error {
 	photoIdsOfOwner := map[string][]string{}
 	for _, found := range photos {
@@ -353,6 +354,7 @@ func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string
 				// street). The reader's own assistant reads these too, so they
 				// are held back from it as well.
 				found.OriginalFilename = ""
+				found.TakenAtOffsetMinutes = nil
 				found.PhotoDescription, found.DescriptionVisibleText, found.DescribedAt, found.IsDescriptionRequested = "", "", nil, false
 				found.PhotoFileRoles = nil
 				hasPreview := func(photoPreviewSize models.PhotoPreviewSize) bool { return madeSizes[found.ID][photoPreviewSize] }

@@ -126,9 +126,10 @@ func TestSharedPhotoReferenceHoldsBackWhatNamesThePlace(t *testing.T) {
 		}
 		create := func(clientPhotoId, placeName, filename string) *models.Photo {
 			latitude, longitude := 10.5, 20.25
+			offsetMinutes := 330
 			created, _, err := tx.CreatePhoto(&models.Photo{
 				UserID: sharer.ID, ClientPhotoID: clientPhotoId, PhotoKind: models.PhotoKindPicture, PhotoSource: models.PhotoSourceCommandLine,
-				TakenAt: &takenAt, PlaceName: placeName, Latitude: &latitude, Longitude: &longitude, OriginalFilename: filename,
+				TakenAt: &takenAt, TakenAtOffsetMinutes: &offsetMinutes, PlaceName: placeName, Latitude: &latitude, Longitude: &longitude, OriginalFilename: filename,
 			})
 			if err != nil {
 				t.Fatalf("CreatePhoto: %s", err)
@@ -165,11 +166,20 @@ func TestSharedPhotoReferenceHoldsBackWhatNamesThePlace(t *testing.T) {
 	if len(settings.References) != 2 {
 		t.Fatalf("references: %+v", settings.References)
 	}
+	// The photo was taken at 17:00 at an offset of +05:30. The offset says what
+	// part of the world it was, so it goes with the place: without places the
+	// time is told on the UTC clock.
 	if settings.References[0].PhotoTitle != "2025-03-04" {
 		t.Errorf("the chip of a photo shared without places is %q", settings.References[0].PhotoTitle)
 	}
 	if settings.References[1].PhotoTitle != "Samplestown · 2025-03-04" {
 		t.Errorf("the chip of a photo shared with places is %q", settings.References[1].PhotoTitle)
+	}
+	if !strings.Contains(settings.References[0].PhotoContext, "taken at: 2025-03-04 11:30 +00:00") || strings.Contains(settings.References[0].PhotoContext, "+05:30") {
+		t.Errorf("the model is told the offset of a photo shared without places:\n%s", settings.References[0].PhotoContext)
+	}
+	if !strings.Contains(settings.References[1].PhotoContext, "taken at: 2025-03-04 17:00 +05:30") {
+		t.Errorf("the model is not told the offset of a photo shared with places:\n%s", settings.References[1].PhotoContext)
 	}
 	for _, held := range []string{"Exampleville", "exampleville-harbor", "file name: "} {
 		if strings.Contains(settings.References[0].PhotoContext, held) {
