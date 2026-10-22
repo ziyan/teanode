@@ -25,13 +25,15 @@ func newAgentPageShareCommands() []*cli.Command {
 			Description: "They read your page as it is now, never a copy, and lose it the moment you take\n" +
 				"the share back or one of you leaves the circle you share. What the agent read a\n" +
 				"fact in (your mail, documents) stays private unless you say --with-quotes; what it\n" +
-				"read in a chat is other people's words too, and is never shown.\n" +
+				"read in a chat or a recording is other people's words too, and is never shown, and\n" +
+				"a fact read only in finance, recordings, location or a private calendar event\n" +
+				"stays private, since those have a sharing of their own.\n" +
 				"Sharing again changes whether the quotes are shared. --preview shows exactly\n" +
-				"what they would see, and shares nothing.",
+				"what they would see and which pages it reaches, and shares nothing.",
 			Flags: []cli.Flag{
 				JSONFlag(),
 				&cli.BoolFlag{Name: "with-quotes", Usage: "show the words each fact was read in as well"},
-				&cli.BoolFlag{Name: "preview", Usage: "show what they would see and how many pages it reaches, and share nothing"},
+				&cli.BoolFlag{Name: "preview", Usage: "show what they would see, which pages it reaches and how many facts stay private, and share nothing"},
 			},
 			Action: runAgentMemoryShare,
 		},
