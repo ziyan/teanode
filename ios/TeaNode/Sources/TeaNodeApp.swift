@@ -544,6 +544,13 @@ struct SettingsForm: View {
                                 }
                                 .accessibilityElement(children: .combine)
                             }
+                            // Everything the person shares and is shared with, next to the people it is shared among.
+                            NavigationLink {
+                                SharingView(connection: connection)
+                            } label: {
+                                Label("Sharing", systemImage: "square.and.arrow.up")
+                                    .foregroundStyle(.primary)
+                            }
                         }
                         NavigationLink {
                             ChangePasswordView(connection: connection)
@@ -798,6 +805,7 @@ struct SettingsForm: View {
                 case "agent-usage": AgentUsageView(connection: connection)
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
                 case "circles": CirclesView(connection: connection)
+                case "sharing": SharingView(connection: connection)
                 case "circle-detail", "circle-detail-operator": CircleDetailDemoScreen(connection: connection)
                 case "circle-join-offer": CircleJoinOfferDemoScreen(connection: connection)
                 case "circle-relationship": CircleRelationshipDemoScreen(connection: connection)
@@ -898,7 +906,7 @@ struct NotificationKindToggle: View {
         case "approval": String(localized: "Approvals waiting for you")
         case "question": String(localized: "Questions for you")
         case "answer": String(localized: "Answers that come after you have left")
-        case "circle": String(localized: "Invitations to circles")
+        case "circle": String(localized: "Invitations to circles, and what is shared with you")
         case "chat": String(localized: "Messages from people in your chats")
         case "skill_share_call": String(localized: "Skill calls waiting for your approval")
         case "location": String(localized: "People who share their location arriving at and leaving places")

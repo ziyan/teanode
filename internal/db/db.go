@@ -229,6 +229,7 @@ type Transaction interface {
 	PhotoOperation
 	PhotoAlbumOperation
 	PhotoAlbumShareOperation
+	SharingOperation
 	PhotoFaceOperation
 	PhotoUploadOperation
 	RecordingRetryOperation

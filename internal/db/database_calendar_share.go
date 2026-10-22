@@ -122,7 +122,8 @@ func (self *calendarShareModel) toModel() *models.CalendarShare {
 // the events calendar of a person is ever reached this way; reminders are
 // never shared.
 const reachingSharesQuery = `
-SELECT share.calendar_id AS calendar_id, share.share_level AS share_level
+SELECT share.id AS share_id, share.calendar_id AS calendar_id, share.share_level AS share_level,
+  share.grantee_user_id AS grantee_user_id, share.grantee_circle_id AS grantee_circle_id, share.created_at AS created_at
 FROM "calendar_share" share
 JOIN "calendar" shared ON shared.id = share.calendar_id
 JOIN "user" owner_user ON owner_user.id = shared.user_id AND owner_user.disabled_at IS NULL
@@ -142,8 +143,12 @@ WHERE shared.user_id IS NOT NULL
   )`
 
 type reachingShareRow struct {
-	CalendarID string `gorm:"column:calendar_id"`
-	ShareLevel string `gorm:"column:share_level"`
+	ShareID         string    `gorm:"column:share_id"`
+	CalendarID      string    `gorm:"column:calendar_id"`
+	ShareLevel      string    `gorm:"column:share_level"`
+	GranteeUserID   *string   `gorm:"column:grantee_user_id"`
+	GranteeCircleID *string   `gorm:"column:grantee_circle_id"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
 }
 
 // reachingShares is the highest level each calendar is shared with the person

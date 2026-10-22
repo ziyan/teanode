@@ -30,6 +30,7 @@ type Query interface {
 	AddressBookQuery
 	CalendarQuery
 	CircleQuery
+	SharingQuery
 	LocationQuery
 	HealthQuery
 	PasswordsQuery
@@ -116,6 +117,7 @@ type Mutation interface {
 	AddressBookMutation
 	CalendarMutation
 	CircleMutation
+	SharingMutation
 	LocationMutation
 	HealthMutation
 	PasswordsMutation

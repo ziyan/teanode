@@ -46,6 +46,8 @@ The first segment of a path says whose the page is, and the rail follows it:
   Their rows are in the mailbox's rail. Circles (`/circles`, the people you
   share the server with) is one too, but has no row: it is reached from the
   account menu, where a badge counts the invitations waiting for an answer.
+  Sharing (`/sharing`, everything shared by you and with you, in two tabs that
+  are paths) is reached the same way, from the account menu and from Circles.
 
 A page that moves does not leave a redirect behind: every link to it in the
 code moves with it, and the old path is not found.

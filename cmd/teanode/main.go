@@ -91,6 +91,7 @@ func main() {
 			cmd.NewHealthCommand(),
 			cmd.NewPasswordsCommand(),
 			cmd.NewCircleCommand(),
+			cmd.NewSharingCommand(),
 			cmd.NewReminderCommand(),
 			cmd.NewNoteCommand(),
 			cmd.NewFinanceCommand(),

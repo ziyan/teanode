@@ -181,6 +181,9 @@ const CirclesPage = lazyPage(async () => ({
 const CirclePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/circles')).CirclePage,
 }))
+const SharingPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/sharing')).SharingPage,
+}))
 const PersonPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/person')).PersonPage,
 }))
@@ -679,6 +682,11 @@ export function App() {
                       from the account menu rather than the rail. */}
                       <Route path="/circles" element={<CirclesPage />} />
                       <Route path="/circles/:circleId" element={<CirclePage />} />
+                      {/* Everything this person shares and everything shared
+                      with them, in tabs; reached from Circles and the account
+                      menu, so no row in the rail. */}
+                      <Route path="/sharing" element={<SharingPage />} />
+                      <Route path="/sharing/:tab" element={<SharingPage />} />
                       {/* A person's card, opened from a chat's author, a row of
                       Circles or Location and a contact: an account that
                       shares a circle with this person, or one of their own

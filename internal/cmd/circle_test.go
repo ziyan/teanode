@@ -26,7 +26,8 @@ func TestCircleParity(test *testing.T) {
 	test.Parallel()
 
 	operations := map[string]bool{}
-	for _, kind := range []reflect.Type{reflect.TypeFor[apigraph.CircleQuery](), reflect.TypeFor[apigraph.CircleMutation](), reflect.TypeFor[apigraph.PersonCardQuery]()} {
+	for _, kind := range []reflect.Type{reflect.TypeFor[apigraph.CircleQuery](), reflect.TypeFor[apigraph.CircleMutation](), reflect.TypeFor[apigraph.PersonCardQuery](),
+		reflect.TypeFor[apigraph.SharingQuery](), reflect.TypeFor[apigraph.SharingMutation]()} {
 		for index := 0; index < kind.NumMethod(); index++ {
 			operations[kind.Method(index).Name] = true
 		}
@@ -54,6 +55,13 @@ func TestCircleParity(test *testing.T) {
 		"RemoveCircleMember":       {[]string{"remove"}, []string{"remove"}},
 		"LeaveCircle":              {[]string{"leave"}, []string{"leave"}},
 		"AddCircleMember":          {[]string{"add"}, []string{"add"}},
+
+		// Everything shared, in one place: the command line has its own
+		// group for it ("teanode sharing", see TestSharingParity), and the
+		// agent reads and declines under its circle tool. The action is
+		// decline_share because decline answers an invitation.
+		"ListSharing":  {nil, []string{"sharing"}},
+		"DeclineShare": {nil, []string{"decline_share"}},
 
 		// What somebody is to the person: the words are listed by
 		// "teanode circle relate --help" and offered by the tool's

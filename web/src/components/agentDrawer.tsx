@@ -1388,12 +1388,26 @@ const NOTE_WORDS: Record<string, { plain: Key; withDetail?: Key }> = {
   circle_invited: { plain: 'agentDrawer.note.circleInvited' },
   relationship_set: { plain: 'agentDrawer.note.relationshipSet' },
   relationship_removed: { plain: 'agentDrawer.note.relationshipRemoved' },
+  // Worded by kind below, from a detail that is JSON; plain is the sentence
+  // of the kind most often told.
+  share_received: { plain: 'agentDrawer.note.shareReceivedCalendar' },
+  share_reached: { plain: 'agentDrawer.note.shareReached' },
   chat_agent_owner_only: {
     plain: 'agentDrawer.note.chatAgentOwnerOnly',
     withDetail: 'agentDrawer.note.chatAgentOwnerOnlyNamed',
   },
   chat_agent_off: { plain: 'agentDrawer.note.chatAgentOff', withDetail: 'agentDrawer.note.chatAgentOffNamed' },
   chat_agent_absent: { plain: 'agentDrawer.note.chatAgentAbsent' },
+}
+
+// The sentence of a share_received note for each kind of thing shared.
+const SHARE_RECEIVED_WORDS: Record<string, Key> = {
+  calendar: 'agentDrawer.note.shareReceivedCalendar',
+  location: 'agentDrawer.note.shareReceivedLocation',
+  health: 'agentDrawer.note.shareReceivedHealth',
+  memory_page: 'agentDrawer.note.shareReceivedMemoryPage',
+  skill: 'agentDrawer.note.shareReceivedSkill',
+  photo_album: 'agentDrawer.note.shareReceivedPhotoAlbum',
 }
 
 // LEGACY_NOTES is the English each kind was written in before notes had
@@ -1447,6 +1461,40 @@ function noteWords(
       const invitation = JSON.parse(noteDetail) as { invitedByName?: string; circleName?: string }
       if (invitation.circleName) {
         return t(words.plain, { invitedByName: invitation.invitedByName ?? '', circleName: invitation.circleName })
+      }
+    } catch {
+      // Not JSON: fall through to the prose.
+    }
+    return prose
+  }
+  if (noteKind === 'share_received') {
+    // Who shared what, as JSON, worded here by kind; one this drawer has no
+    // words for is shown as the server's own English.
+    try {
+      const shared = JSON.parse(noteDetail) as {
+        sharerName?: string
+        shareKind?: string
+        shareLevel?: string
+        shareSubject?: string
+      }
+      const key = SHARE_RECEIVED_WORDS[shared.shareKind ?? '']
+      if (shared.sharerName && key) {
+        const level = shared.shareLevel ? t(`agentDrawer.note.shareLevel.${shared.shareLevel}` as Key) : ''
+        return t(key, { sharerName: shared.sharerName, subject: shared.shareSubject ?? '', level })
+      }
+    } catch {
+      // Not JSON: fall through to the prose.
+    }
+    return prose
+  }
+  if (noteKind === 'share_reached') {
+    try {
+      const reached = JSON.parse(noteDetail) as { memberName?: string; circleName?: string; shareKinds?: string[] }
+      if (reached.memberName && reached.circleName && reached.shareKinds?.length) {
+        const kinds = reached.shareKinds
+          .map((shareKind) => t(`agentDrawer.note.shareKind.${shareKind}` as Key))
+          .join(t('agentDrawer.note.shareKindSeparator'))
+        return t(words.plain, { memberName: reached.memberName, circleName: reached.circleName, kinds })
       }
     } catch {
       // Not JSON: fall through to the prose.

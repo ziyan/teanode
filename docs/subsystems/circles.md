@@ -131,8 +131,8 @@ subcommands are. Reading (`list`, `show`, `people`, `person`) is a read. `create
 `rename` and `withdraw` (taking back an invitation nobody has answered, which
 the admin can send again) are writes. `invite`, `add`, `accept`, `decline` and
 `role` are granting, in both directions of a role change, because each gives
-or takes away somebody's way in. `delete`, `remove` and `leave` are
-destructive. Each of the risky ones shows the person a card that names the
+or takes away somebody's way in. `delete`, `remove`, `leave` and `decline_share` (see
+"Sharing, in one place") are destructive; `sharing` is a read. Each of the risky ones shows the person a card that names the
 circle, as above, and the member by name and username, looked up when the card
 is drawn. Removing and changing a role take a username, as the command line
 does, and look up the account id the schema wants in the circle's own members.
@@ -274,6 +274,70 @@ Each section keeps `itemLimit` items (3 by default, 10 at most) and says whether
 there are more. Health keeps at least four kinds, since a day's summary is a
 few words. "Today" is the caller's day in their own time zone.
 
+## Sharing, in one place
+
+Each kind of thing is shared by its own table and managed on its own page, so
+nothing showed a person everything they had given out or been given.
+`ListSharing` does: for the caller, **what they share** and **what is shared
+with them**, across calendar, location, Health, memory pages, photo albums,
+skills and passwords. A row says the kind, the thing (the calendar's or album's
+name, the page's name, the skill), who it is shared with or by, the level or
+scope (a calendar's `busy` to `edit`, a location's `current` or `history`, an
+album's `view` or `contribute`, the Health categories, the skill's tools, and
+`quotes` or `location` where a page or an album is shared with them), and since
+when. A share of passwords is counted, never named, because an item's title is
+sealed: "3 items", not which. A share through a circle names the circle; one
+made to the person by name says so (`isDirect`).
+
+It decides nothing about who may see what. Each kind is read through its own
+listing and its own reach query (`reachingSharesQuery`,
+`reachingLocationSharesQuery`, `photoAlbumReachQuery`, `passwordReachSQL`, the
+page, skill and Health listings), with the share's identifier added to the
+columns, so the list cannot disagree with the check. A kind the caller may not
+use (no `health:use`, the calendar service off) is left out.
+
+**Stopping** a share is the kind's own operation: `UnshareCalendar`,
+`UnshareLocation`, `SetHealthShare` with no categories, `UnshareAgentPage`,
+`UnshareSkill` and `RemovePhotoAlbumShare`. The Sharing page and the iPhone
+screen call those. Passwords are stopped on the Passwords page, item by item.
+
+**Declining** is the other side: `DeclineShare(shareKind, shareId)` ends a share
+that was made to the caller by name, and only that. The row must have the caller
+as its grantee, so the owner, a stranger and a member of the circle a share went
+to all find it not found. A share to a circle cannot be declined; it ends when
+the person leaves the circle (the row says so). Passwords shared with a person
+are removed by their owner, who must give the item a new key, so they cannot be
+declined. The owner is not told. Declining an album takes out the photos the
+person added to it, as taking the share back does.
+
+**Being told.** When a share is made, or widened, the people it now reaches
+are told, and the sharer is not. Widened is a higher calendar, location or
+album level, a Health category added, a page's quotes newly shared, an album's
+location newly included, or a skill's tools or limits raised. The person gets a
+note in the main conversation of their agent when it is on (`share_received`,
+written in the same transaction as the share: "Alex shared their calendar with
+you (titles)") and a notification of kind `circle` on their phones, so no new
+kind of notification was needed. A share to a circle tells every member of it
+except the sharer; a person who may not use that kind is not told. The same
+share at the same level, by the same sharer, is not told to the same person
+twice within ten minutes, so changing a level back and forth is one notice, not
+one for each tap. That memory is the server's (`shareNoticeCache`), so a restart
+forgets it. Passwords are not told: the owner's device seals a key for each
+recipient, and the waiting list already shows who is still without one.
+
+When somebody joins a circle (`AnswerCircleInvitation`, `AddCircleMember`), each
+other member who has shared something with it is told once, in one note
+(`share_reached`): "Sam joined Family and can now see your calendar and
+location". The kinds are the ones the circle's shares hold, less any the new
+member may not use, so Health is not named for somebody without `health:use`.
+Skills (shared with one person) and passwords (waiting for a key) are not listed.
+
+The command line is `teanode sharing`, with `teanode sharing decline <kind>
+<share-id>`; the agent's circle tool has `sharing` and `decline_share` (not
+`decline`, which answers an invitation); the dashboard page is `/sharing`, from
+the Circles page and the account menu; the iPhone screen is Sharing, from
+Circles.
+
 ## The circle chat
 
 Every circle has one chat (`chat.circle_id`, migration 0194), made with the
@@ -293,8 +357,9 @@ and read is in `conversations.md`.
 | The permission `circle:use` | `internal/models/permission.go`; held by the Administrator, Operator and Member roles |
 | The operations | `internal/api/v1api/apigraph/circle.go`; the helpers `requireCirclePerson`, `requireCircleMember` and `requireCircleAdmin` are in `authorize.go` |
 | The invitation note and phone notification | `internal/agent/circle_invitation.go` |
+| Everything shared, declining, and the notes about shares | `internal/api/v1api/apigraph/sharing.go`, `sharing_notice.go`, `internal/db/database_sharing.go`, `internal/models/sharing.go`, `internal/agent/sharing_note.go`; `internal/cmd/sharing.go`, `internal/client/sharing.go` |
 | Command line | `internal/cmd/circle.go`, `internal/client/circle.go`; `--circle` on `teanode user create` is in `internal/cmd/user.go` |
 | The agent's tool | `internal/agent/tools/circle` |
 | A person's card | `internal/api/v1api/apigraph/person_card.go`, `internal/db/database_person_card.go` (the mail), `internal/client/person_card.go`, `internal/cmd/circle_person.go` |
 | Relationships and pronouns | `internal/models/relationship.go`, `internal/db/database_relationship.go`, `internal/api/v1api/apigraph/relationship.go`, the notes in `internal/agent/relationship_note.go` |
-| Dashboard and phone | `web/src/pages/circles.tsx`, `ios/TeaNode/Sources/CirclesView.swift` |
+| Dashboard and phone | `web/src/pages/circles.tsx`, `ios/TeaNode/Sources/CirclesView.swift`; the Sharing page `web/src/pages/sharing.tsx`, the screen `ios/TeaNode/Sources/SharingView.swift` |

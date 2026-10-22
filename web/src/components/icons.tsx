@@ -137,6 +137,19 @@ export function PeopleIcon(props: IconProps) {
   )
 }
 
+// Something given out: three points joined, as the platforms' share menus draw it.
+export function ShareIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="m8.59 13.51 6.83 3.98" />
+      <path d="m15.41 6.51-6.82 3.98" />
+    </Icon>
+  )
+}
+
 export function ArrowUpIcon(props: IconProps) {
   return (
     <Icon {...props}>
