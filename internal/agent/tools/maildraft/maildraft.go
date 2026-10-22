@@ -79,8 +79,9 @@ type mailDraftArguments struct {
 // ownFiles refuses anything that is not a file of this conversation, and
 // answers the names of those that are drawings (SVG), which most mail
 // clients refuse.
-func ownFiles(ctx context.Context, run tools.Run, ids []string) (drawingNames []string, err error) {
-	return drawingNames, run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+func ownFiles(ctx context.Context, run tools.Run, ids []string) ([]string, error) {
+	var drawingNames []string
+	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		for _, id := range ids {
 			attachment, err := tx.GetAgentAttachment(strings.TrimSpace(id))
 			if err != nil {
@@ -99,6 +100,7 @@ func ownFiles(ctx context.Context, run tools.Run, ids []string) (drawingNames []
 		}
 		return nil
 	})
+	return drawingNames, err
 }
 
 func runMailDraft(ctx context.Context, call *tools.Call) (*tools.Result, error) {
