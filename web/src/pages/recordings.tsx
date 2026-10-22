@@ -22,6 +22,8 @@ import { RecordingFloatingPlayer } from '../recording/floatingPlayer'
 import { useCaptureSnapshot } from '../recording/captureSnapshot'
 import { RecordingDetailsDrawer } from '../recording/detailsDrawer'
 import { RecordingEditDialog, type ProcessingDialog } from '../recording/editDialog'
+import { RecordingShareDialog } from '../recording/shareDialog'
+import { SharedRecordingsSection } from '../recording/sharedList'
 import { formatRecordingLength, readRecordingStatusEvidence, recordingStatus } from '../recording/library'
 import { RecordedAtText, RecordingLibraryTable, RecordingStatusTag } from '../recording/libraryList'
 import {
@@ -58,11 +60,13 @@ function AccountRecordingsPage() {
   const passagePlayback = useRef(new RecordingPassagePlayback())
   const [conversationReloadToken, setConversationReloadToken] = useState(0),
     [isShowingDetails, setIsShowingDetails] = useState(false),
+    [isSharing, setIsSharing] = useState(false),
     [editDialog, setEditDialog] = useState<ProcessingDialog | null>(null),
     [speakerCount, setSpeakerCount] = useState(0)
   useEffect(() => {
     const playback = passagePlayback.current
     setIsShowingDetails(false)
+    setIsSharing(false)
     setSpeakerCount(0)
     return () => playback.stop()
   }, [recordingId])
@@ -282,6 +286,16 @@ function AccountRecordingsPage() {
           >
             {t('common.rename')}
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close()
+              setIsSharing(true)
+            }}
+          >
+            {t('recordings.share')}
+          </button>
           {completeMedia[0] ? (
             <a
               role="menuitem"
@@ -416,6 +430,7 @@ function AccountRecordingsPage() {
               }
             />
           )}
+          <SharedRecordingsSection userId={session.userId ?? ''} />
         </>
       ) : detail.loading && !view ? (
         <Loading />
@@ -570,6 +585,9 @@ function AccountRecordingsPage() {
             }}
           />
         </RecordingDetailsDrawer>
+      )}
+      {view && isSharing && (
+        <RecordingShareDialog recordingId={view.recording.id} onClose={() => setIsSharing(false)} />
       )}
       {editDialog && (
         <RecordingEditDialog

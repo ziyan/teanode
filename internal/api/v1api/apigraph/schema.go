@@ -69,6 +69,7 @@ type Query interface {
 	RecordingTextCorrectionQuery
 	RecordingSpeakerQuery
 	RecordingQuery
+	RecordingShareQuery
 	PhotoQuery
 	PhotoAlbumQuery
 	PhotoFaceQuery
@@ -135,6 +136,7 @@ type Mutation interface {
 	RecordingTextCorrectionMutation
 	RecordingSpeakerMutation
 	RecordingMutation
+	RecordingShareMutation
 	PhotoMutation
 	PhotoAlbumMutation
 	PhotoFaceMutation

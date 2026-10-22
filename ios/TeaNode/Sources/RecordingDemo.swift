@@ -31,6 +31,52 @@
         static let recordingMediaFixture =
             #"{"id":"media-a","recordingId":"recording-a","clientMediaId":"original-a","originalFilename":"meeting.caf","originalContentType":"audio/x-caf","originalSizeBytes":19200000,"originalSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","timelineStartMS":0,"mediaDurationMS":600000,"partCount":3,"recordingUploadState":"complete","verifiedAt":"2030-01-02T03:04:05Z"}"#
 
+        // MARK: Recordings others shared with the person
+
+        static func sharedRecordingJSON(
+            _ id: String, ownerId: String, ownerName: String, title: String, summary: String, recordedAt: String, durationMS: Int,
+            level: String
+        ) -> String {
+            #"{"recordingId":"\#(id)","ownerUserId":"\#(ownerId)","ownerUsername":"\#(ownerId)","ownerName":"\#(ownerName)","recordingTitle":"\#(title)","createdAt":"\#(recordedAt)","recordedAt":"\#(recordedAt)","timelineDurationMS":\#(durationMS),"recordingSummary":"\#(summary)","recordingShareLevel":"\#(level)"}"#
+        }
+
+        /// Two recordings shared with the person: one at the transcript level and one at the summary level.
+        static var sharedRecordingFixtures: [String] {
+            [
+                sharedRecordingJSON(
+                    "shared-a", ownerId: "sam", ownerName: "Sam", title: "Planning the harbor walk",
+                    summary: "Sam and Alex picked Saturday for the harbor walk. Sam will bring lunch and Alex the umbrellas.",
+                    recordedAt: "2030-01-02T08:00:00Z", durationMS: 1_380_000, level: "transcript"),
+                sharedRecordingJSON(
+                    "shared-b", ownerId: "alex", ownerName: "Alex", title: "Book club: chapter four",
+                    summary: "The club liked the second half best and chose the next book for March.",
+                    recordedAt: "2029-12-30T19:00:00Z", durationMS: 3_120_000, level: "summary"),
+            ]
+        }
+
+        /// What a read of one gives: the speakers who were named, and at the transcript level a page of the words.
+        static func sharedRecordingReadJSON(for id: String) -> String {
+            let listing = sharedRecordingFixtures.first { $0.contains(#""recordingId":"\#(id)""#) } ?? sharedRecordingFixtures[0]
+            let fields = String(listing.dropLast())
+            if listing.contains(#""recordingShareLevel":"summary""#) {
+                return fields + #","speakerNames":["Alex","Casey"],"passages":[],"passageCount":0,"hasMorePassages":false}"#
+            }
+            let passages = [
+                (0, 9000, "Sam", "Saturday looks dry, so the harbor walk is on."),
+                (9000, 15000, "Sam", "I can bring lunch for everyone."),
+                (15000, 16000, "Alex", "Mm-hmm."),
+                (16000, 25000, "Alex", "Then I will bring the umbrellas, just in case."),
+                (25000, 31000, "Speaker 1", "Can I come along too?"),
+            ].map { start, end, speaker, text in
+                #"{"segmentStartMS":\#(start),"segmentEndMS":\#(end),"speakerName":"\#(speaker)","transcriptText":"\#(text)","isFiller":\#(text == "Mm-hmm.")}"#
+            }
+            return fields + #","speakerNames":["Sam","Alex"],"passages":[\#(passages.joined(separator: ","))],"passageCount":5,"hasMorePassages":false}"#
+        }
+
+        /// Who the recording is shared with: a person at the transcript level and a circle at the summary level.
+        static let recordingSharesFixture =
+            #"[{"id":"share-a","recordingId":"recording-a","granteeUserId":"sam","granteeUsername":"sam","granteeName":"Sam","granteeCircleId":null,"granteeCircleName":null,"recordingShareLevel":"transcript"},{"id":"share-b","recordingId":"recording-a","granteeUserId":null,"granteeUsername":null,"granteeName":null,"granteeCircleId":"home","granteeCircleName":"Home","recordingShareLevel":"summary"}]"#
+
         static func conversationSegmentJSON(
             _ id: String, speaker: String, startMS: Int, endMS: Int, text: String, identityId: String? = nil, name: String? = nil,
             isAccountOwner: Bool = false, temporaryLabel: String? = nil, mergedLabel: String? = nil
@@ -312,6 +358,17 @@
                 return
                     "{\"data\":{\"ReadRecordingLearning\":{\"sourceGeneration\":4,\"hasAgent\":true,\"knowledgeSource\":\(recordingSourceFixture),\"pendingDocumentCount\":2,\"digestedDocumentCount\":5,\"lastPublishedSourceGeneration\":4,\"isCurationPending\":true}}}"
             }
+            if query.contains("ListRecordingShares") { return "{\"data\":{\"ListRecordingShares\":\(recordingSharesFixture)}}" }
+            if query.contains("ShareRecording(") { return #"{"data":{"ShareRecording":{"id":"share-c"}}}"# }
+            if query.contains("UnshareRecording(") { return #"{"data":{"UnshareRecording":true}}"# }
+            if query.contains("ReadSharedRecording") {
+                return "{\"data\":{\"ReadSharedRecording\":\(sharedRecordingReadJSON(for: requestedRecordingId(query)))}}"
+            }
+            if query.contains("ListSharedRecordings") {
+                // Only the screens about them are shown any, so the library's own screenshots keep their rows where they were.
+                let shown = ["recording-shared", "recording-library-shared"].contains(Self.screen ?? "") ? sharedRecordingFixtures : []
+                return "{\"data\":{\"ListSharedRecordings\":[\(shown.joined(separator: ","))]}}"
+            }
             if query.contains("ReadRecording(") {
                 return "{\"data\":{\"ReadRecording\":\(recordingViewJSON(for: requestedRecordingId(query)))}}"
             }
@@ -372,6 +429,12 @@
                         connection: connection, recording: recording,
                         initial: DemoServer.recordingObject(DemoServer.recordingSpeakersFixture, as: RecordingSpeakersView.self))
                 case "recording-text-history": RecordingTextHistoryScreen(connection: connection, recordingId: recording.id)
+                case "recording-share": RecordingShareScreen(connection: connection, recordingId: recording.id)
+                case "recording-shared": SharedRecordingsScreen(connection: connection)
+                case "recording-library-shared": RecordingsScreen(connection: connection)
+                case "recording-shared-reading":
+                    SharedRecordingScreen(
+                        connection: connection, recording: DemoServer.recordingObject(DemoServer.sharedRecordingFixtures[0], as: SharedRecording.self))
                 case "recording-text-editor": RecordingTextEditor(connection: connection, recordingId: recording.id, segment: segment, didSave: {})
                 default: RecordingsScreen(connection: connection)
                 }

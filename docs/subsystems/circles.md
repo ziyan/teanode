@@ -4,9 +4,10 @@ A server often has people on it who know each other: a household, some
 friends, colleagues. A circle is the list of who belongs together. It decides
 nothing by itself; the features that share something between people (chats,
 calendars, where a person is, Health, passwords, pages of the agent's memory,
-photo albums and lent skills) are shared with a circle or with one person in
-one, and each of them asks this list who is in it. "What can be shared" below
-lists every kind, to whom, at what levels, and where it is managed.
+photo albums, recordings and lent skills) are shared with a circle or with one
+person in one, and each of them asks this list who is in it. "What can be
+shared" below lists every kind, to whom, at what levels, and where it is
+managed.
 
 The reasons for the shape are in
 `docs/decisions/20261016-people-on-one-server-meet-in-circles.md`.
@@ -161,9 +162,10 @@ both and takes no new message until they share a circle again.
 
 The same transaction ends what two people said to each other and what one noted
 about the other: relationships, shares of calendars, locations, Health,
-passwords, pages, skills and albums, and a contact one linked to the other's
-account (`endContactAccountsOutsideCircles`, see `docs/subsystems/contacts.md`).
-A `CircleMember` carries `linkedContactId`, the caller's own contact linked to
+passwords, pages, skills, recordings and albums, and a contact one linked to the
+other's account (`endContactAccountsOutsideCircles`, see
+`docs/subsystems/contacts.md`). A `CircleMember` carries `linkedContactId`, the
+caller's own contact linked to
 that person; it is for the caller alone and is empty in everybody else's view.
 
 What it ends is deleted, not paused. Leaving, being removed and a circle's

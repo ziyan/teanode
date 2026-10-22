@@ -53,6 +53,23 @@ func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 		{RecordingActionArguments{Operation: "temporary-speaker-name", RecordingID: "fixture-recording", SpeakerLabel: "Speaker 1", ConfirmedName: "Speaker Fixture", AddressBookID: "fixture-book", ContactID: "fixture-contact"}, true, "NameRecordingTemporarySpeaker"},
 		{RecordingActionArguments{Operation: "text-edit", RecordingID: "fixture-recording", RecordingTranscriptSegmentID: "fixture-segment", CorrectedTranscriptText: "Exact user edit", ExpectedSourceGeneration: &generation}, false, ""},
 		{RecordingActionArguments{Operation: "text-edit", RecordingID: "fixture-recording", RecordingTranscriptSegmentID: "fixture-segment", CorrectedTranscriptText: "Exact user edit", ExpectedSourceGeneration: &generation, ClientCorrectionID: "stable-edit-key"}, true, "CorrectRecordingTranscriptText"},
+		{RecordingActionArguments{Operation: "share", RecordingID: "fixture-recording", GranteeUserID: "fixture-user", RecordingShareLevel: "summary"}, true, "ShareRecording"},
+		{RecordingActionArguments{Operation: "share", RecordingID: "fixture-recording", GranteeCircleID: "fixture-circle", RecordingShareLevel: " Transcript "}, true, "ShareRecording"},
+		{RecordingActionArguments{Operation: "share", RecordingID: "fixture-recording", GranteeUserID: "fixture-user"}, false, ""},
+		{RecordingActionArguments{Operation: "share", RecordingID: "fixture-recording", GranteeUserID: "fixture-user", RecordingShareLevel: "audio"}, false, ""},
+		{RecordingActionArguments{Operation: "share", RecordingID: "fixture-recording", RecordingShareLevel: "summary"}, false, ""},
+		{RecordingActionArguments{Operation: "share", RecordingID: "fixture-recording", GranteeUserID: "fixture-user", GranteeCircleID: "fixture-circle", RecordingShareLevel: "summary"}, false, ""},
+		{RecordingActionArguments{Operation: "share", GranteeUserID: "fixture-user", RecordingShareLevel: "summary"}, false, ""},
+		{RecordingActionArguments{Operation: "shares", RecordingID: "fixture-recording"}, true, "ListRecordingShares"},
+		{RecordingActionArguments{Operation: "shares"}, false, ""},
+		{RecordingActionArguments{Operation: "unshare", RecordingShareID: "fixture-share"}, true, "UnshareRecording"},
+		{RecordingActionArguments{Operation: "unshare"}, false, ""},
+		{RecordingActionArguments{Operation: "shared"}, true, "ListSharedRecordings"},
+		{RecordingActionArguments{Operation: "shared", PageSize: 101}, false, ""},
+		{RecordingActionArguments{Operation: "read-shared", RecordingID: "fixture-recording", SegmentOffset: 50, PageSize: 250}, true, "ReadSharedRecording"},
+		{RecordingActionArguments{Operation: "read-shared", RecordingID: "fixture-recording", PageSize: 251}, false, ""},
+		{RecordingActionArguments{Operation: "read-shared", RecordingID: "fixture-recording", SegmentOffset: -1}, false, ""},
+		{RecordingActionArguments{Operation: "read-shared"}, false, ""},
 		{RecordingActionArguments{Operation: "activate-microphone"}, false, ""},
 		{RecordingActionArguments{Operation: "retry", RecordingTranscriptRunID: "fixture-run"}, true, "RetryRecordingTranscription"},
 	}
@@ -81,6 +98,15 @@ func TestRecordingActionRequiresExplicitEditsAndStableKeys(test *testing.T) {
 		}
 		if fixture.arguments.Operation == "metadata" && variables["recordedAt"] != nil {
 			test.Fatal("unknown occurrence became an upload date")
+		}
+		if fixture.arguments.Operation == "share" {
+			hasPerson := fixture.arguments.GranteeUserID != ""
+			if (variables["granteeUserId"] != nil) != hasPerson || (variables["granteeCircleId"] != nil) == hasPerson {
+				test.Fatalf("a share is for the person or the circle, not both: %v", variables)
+			}
+			if level := variables["recordingShareLevel"]; level != "summary" && level != "transcript" {
+				test.Fatalf("the level is sent as the server reads it: %v", level)
+			}
 		}
 	}
 }
