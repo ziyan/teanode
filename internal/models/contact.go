@@ -2,15 +2,21 @@ package models
 
 import "time"
 
-// AddressBook is a person's own collection of contacts. It belongs to the
-// account rather than to a mailbox: somebody with two mailboxes has one
-// address book, and reaches it through either of them.
+// AddressBook is a collection of contacts: a person's own, or a circle's.
 //
-// An account is given one named "Contacts" the first time it looks, so that
-// nobody has to create one before they can keep a contact.
+// A person's own belongs to the account rather than to a mailbox: somebody
+// with two mailboxes has one address book, and reaches it through either of
+// them. An account is given one named "Contacts" the first time it looks, so
+// that nobody has to create one before they can keep a contact. It is never
+// shared.
+//
+// A circle's belongs to the circle (CircleID set, UserID empty): every member
+// reads and edits it, and it goes when the circle goes. Exactly one of the two
+// is set.
 type AddressBook struct {
 	ID         string    `json:"id"`
 	UserID     string    `json:"userId"`
+	CircleID   string    `json:"circleId,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 
@@ -21,6 +27,30 @@ type AddressBook struct {
 	// False until they do: nothing from a source the person has not granted
 	// is ever sent to a model.
 	AgentGranted bool `json:"agentGranted"`
+}
+
+// AddressBookAccess is what a person may do with one address book, answered
+// by the database's AddressBookAccess and asked by every door into a book.
+type AddressBookAccess struct {
+	// CanEdit is that the person may read the book and add, change and remove
+	// the contacts in it: the owner of a personal book, any member of the
+	// circle whose book it is.
+	CanEdit bool
+	// CanManage is that the person may rename the book and delete it: its
+	// owner, or an admin of its circle.
+	CanManage bool
+	// IsOwner is that the book is the person's own. Everything that is owner
+	// only (the account link, the agent's grant, the ties from recordings and
+	// photos) asks for this and never for CanEdit.
+	IsOwner bool
+}
+
+// ReachableAddressBook is an address book a person can use with what they may
+// do with it, and the name of the circle when it is a circle's.
+type ReachableAddressBook struct {
+	Book       *AddressBook
+	CircleName string
+	Access     AddressBookAccess
 }
 
 // Contact is one person in an address book.

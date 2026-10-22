@@ -20,8 +20,11 @@ import (
 // somebody chose to keep.
 
 type addressBookModel struct {
-	ID          string    `gorm:"column:id;primaryKey"`
-	UserID      string    `gorm:"column:user_id"`
+	ID string `gorm:"column:id;primaryKey"`
+	// Exactly one of UserID and CircleID is set: a book is a person's own, or
+	// a circle's, which every member of the circle reads and edits.
+	UserID      *string   `gorm:"column:user_id"`
+	CircleID    *string   `gorm:"column:circle_id"`
 	CreatedAt   time.Time `gorm:"column:created_at"`
 	ModifiedAt  time.Time `gorm:"column:modified_at"`
 	Name        string    `gorm:"column:name"`
@@ -34,8 +37,8 @@ func (addressBookModel) TableName() string { return "addressbook" }
 
 func (self *addressBookModel) toModel() *models.AddressBook {
 	return &models.AddressBook{
-		ID: self.ID, UserID: self.UserID, CreatedAt: self.CreatedAt,
-		ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
+		ID: self.ID, UserID: stringOrEmpty(self.UserID), CircleID: stringOrEmpty(self.CircleID),
+		CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
 		AgentGranted: self.AgentGranted,
 	}
 }
@@ -82,8 +85,12 @@ func splitLines(value string) []string {
 	return strings.Split(value, "\n")
 }
 
-// ListAddressBooks are one account's, oldest first, which is the order they
-// were made in and so the order somebody expects to see them.
+// ListAddressBooks are one account's own, oldest first, which is the order
+// they were made in and so the order somebody expects to see them. A circle's
+// book is not among them: everything that asks for "the person's address
+// books" (the known-sender check, completion, the ties from recordings and
+// photos, the agent's grants) means the person's own, and only the doors that
+// say so use ListReachableAddressBooks.
 func (self *transaction) ListAddressBooks(userId string) ([]*models.AddressBook, error) {
 	var found []addressBookModel
 	if err := self.tx.Where("\"user_id\" = ?", userId).Order("\"created_at\" ASC").Find(&found).Error; err != nil {
@@ -94,6 +101,124 @@ func (self *transaction) ListAddressBooks(userId string) ([]*models.AddressBook,
 		books = append(books, found[index].toModel())
 	}
 	return books, nil
+}
+
+// ListReachableAddressBooks are the books the person can use: their own, oldest
+// first, then the books of the circles they are in, oldest first. The join on
+// circle_member is the access: a person who leaves a circle stops reaching its
+// book in that transaction, with no row to clean up.
+func (self *transaction) ListReachableAddressBooks(userId string) ([]*models.ReachableAddressBook, error) {
+	reachable := []*models.ReachableAddressBook{}
+	if userId == "" {
+		return reachable, nil
+	}
+	owned, err := self.ListAddressBooks(userId)
+	if err != nil {
+		return nil, err
+	}
+	for _, book := range owned {
+		reachable = append(reachable, &models.ReachableAddressBook{
+			Book: book, Access: models.AddressBookAccess{CanEdit: true, CanManage: true, IsOwner: true},
+		})
+	}
+	var rows []struct {
+		Book       addressBookModel `gorm:"embedded"`
+		CircleName string           `gorm:"column:circle_name"`
+		MemberRole string           `gorm:"column:member_role"`
+	}
+	if err := self.tx.Raw(`SELECT addressbook.*, circle.name AS circle_name, member.member_role AS member_role FROM "addressbook" addressbook
+		JOIN "circle_member" member ON member.circle_id = addressbook.circle_id AND member.user_id = ?
+		JOIN "circle" circle ON circle.id = addressbook.circle_id
+		ORDER BY addressbook.created_at ASC, addressbook.id ASC`, userId).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		reachable = append(reachable, &models.ReachableAddressBook{
+			Book: rows[index].Book.toModel(), CircleName: rows[index].CircleName,
+			Access: models.AddressBookAccess{CanEdit: true, CanManage: rows[index].MemberRole == string(models.MemberRoleAdmin)},
+		})
+	}
+	return reachable, nil
+}
+
+// AddressBookAccess is what the person may do with the book. Every door into
+// an address book asks it: the dashboard's API, the picture route, CardDAV and
+// the agent's tool. A person's own book is theirs alone; a circle's is edited
+// by each member and renamed or deleted by an admin; anybody else gets nothing,
+// which the door answers as "not found".
+func (self *transaction) AddressBookAccess(userId string, book *models.AddressBook) (models.AddressBookAccess, error) {
+	if book == nil || userId == "" {
+		return models.AddressBookAccess{}, nil
+	}
+	if book.UserID != "" {
+		if book.UserID == userId {
+			return models.AddressBookAccess{CanEdit: true, CanManage: true, IsOwner: true}, nil
+		}
+		return models.AddressBookAccess{}, nil
+	}
+	if book.CircleID == "" {
+		return models.AddressBookAccess{}, nil
+	}
+	var members []circleMemberModel
+	if err := self.tx.Where("\"circle_id\" = ? AND \"user_id\" = ?", book.CircleID, userId).Limit(1).Find(&members).Error; err != nil {
+		return models.AddressBookAccess{}, err
+	}
+	if len(members) == 0 {
+		return models.AddressBookAccess{}, nil
+	}
+	return models.AddressBookAccess{CanEdit: true, CanManage: members[0].MemberRole == string(models.MemberRoleAdmin)}, nil
+}
+
+// GetCircleAddressBook is the circle's book, or nil.
+func (self *transaction) GetCircleAddressBook(circleId string) (*models.AddressBook, error) {
+	if circleId == "" {
+		return nil, nil
+	}
+	var found []addressBookModel
+	if err := self.tx.Where("\"circle_id\" = ?", circleId).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return found[0].toModel(), nil
+}
+
+// CreateCircleAddressBook makes the book a circle keeps for itself. The caller
+// has checked that the person asking is in the circle.
+func (self *transaction) CreateCircleAddressBook(circleId, name string) (*models.AddressBook, error) {
+	// The circle membership lock comes before the circle's row, as in every
+	// change to circles (see circleMembershipLockKey), and as in
+	// CreateCircleCalendar.
+	if err := lockCircleMembership(self.tx); err != nil {
+		return nil, err
+	}
+	var locked circleModel
+	if err := lockRow(self.tx, &locked, circleId); err != nil {
+		return nil, err
+	}
+	existing, err := self.GetCircleAddressBook(circleId)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrAlreadyExists
+	}
+	now := time.Now()
+	row := &addressBookModel{
+		ID: newID(), CircleID: &circleId, CreatedAt: now, ModifiedAt: now,
+		Name: truncateRunes(strings.TrimSpace(name), 200),
+	}
+	if row.Name == "" {
+		row.Name = locked.Name
+	}
+	if err := self.applyMutation(models.AuditResourceAddressBook, row.ID, models.AuditActionCreate,
+		nil, row.toModel(), func(tx *gorm.DB) error {
+			return tx.Create(row).Error
+		}); err != nil {
+		return nil, err
+	}
+	return row.toModel(), nil
 }
 
 func (self *transaction) GetAddressBook(addressBookId string) (*models.AddressBook, error) {
@@ -126,7 +251,7 @@ func (self *transaction) CreateAddressBook(book *models.AddressBook) (*models.Ad
 	}
 	now := time.Now()
 	row := &addressBookModel{
-		ID: newID(), UserID: book.UserID, CreatedAt: now, ModifiedAt: now,
+		ID: newID(), UserID: nullableText(book.UserID), CreatedAt: now, ModifiedAt: now,
 		Name: truncateRunes(strings.TrimSpace(book.Name), 200), Description: book.Description,
 	}
 	if row.Name == "" {
@@ -154,9 +279,12 @@ func (self *transaction) UpdateAddressBook(book *models.AddressBook) (*models.Ad
 		return nil, nil
 	}
 	row := &addressBookModel{
-		ID: book.ID, UserID: before.UserID, CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
+		ID: book.ID, UserID: nullableText(before.UserID), CircleID: nullableText(before.CircleID),
+		CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
 		Name: truncateRunes(strings.TrimSpace(book.Name), 200), Description: book.Description,
-		AgentGranted: book.AgentGranted,
+		// A circle's book is never given to anybody's agent: it is not one
+		// person's to give.
+		AgentGranted: book.AgentGranted && before.CircleID == "",
 	}
 	if row.Name == "" {
 		row.Name = before.Name
@@ -525,10 +653,10 @@ func (self *transaction) hideUnsharedAccounts(addressBookId, ownerUserId string,
 	}
 	if ownerUserId == "" {
 		var ownerUserIds []string
-		if err := self.tx.Model(&addressBookModel{}).Where("\"id\" = ?", addressBookId).Pluck("user_id", &ownerUserIds).Error; err != nil {
+		if err := self.tx.Model(&addressBookModel{}).Where("\"id\" = ?", addressBookId).Pluck("COALESCE(user_id, '')", &ownerUserIds).Error; err != nil {
 			return err
 		}
-		if len(ownerUserIds) == 0 {
+		if len(ownerUserIds) == 0 || ownerUserIds[0] == "" {
 			return nil
 		}
 		ownerUserId = ownerUserIds[0]
@@ -582,6 +710,11 @@ func (self *transaction) SetContactAccount(addressBookId, contactId, accountUser
 	if accountUserId == "" {
 		return self.tx.Model(&contactModel{}).Where("\"addressbook_id\" = ? AND \"id\" = ?", addressBookId, contactId).
 			Update("account_user_id", nil).Error
+	}
+	if book.UserID == "" {
+		// The link is the owner's private note about a person. A book that
+		// every member of a circle reads has no owner to hold it.
+		return fmt.Errorf("%w: a contact in a circle's address book cannot be linked to an account", ErrInvalidArguments)
 	}
 	if accountUserId == book.UserID {
 		return fmt.Errorf("%w: a contact cannot be linked to its owner's own account", ErrInvalidArguments)
