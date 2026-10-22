@@ -49,7 +49,14 @@ function listenerSet() {
 // there is one.
 async function load(
   tabs,
-  { current = tabs[0].id, opened = [], panel = { isOpen: false }, runPage = false, storedServer = serverOrigin, syncedServer } = {},
+  {
+    current = tabs[0].id,
+    opened = [],
+    panel = { isOpen: false },
+    runPage = false,
+    storedServer = serverOrigin,
+    syncedServer,
+  } = {},
 ) {
   FakeSocket.instances = []
   const byId = new Map(
