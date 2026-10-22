@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
@@ -468,8 +469,26 @@ func postOneClick(ctx context.Context, address string) error {
 	return nil
 }
 
-// mailUnsubscribe writes to the address the sender named, from this mailbox,
-// with the subject and body the address asked for.
+// unsubscribeSubject is the subject a mailto: address asked for, when it is
+// the kind a list server asks for: one short word, such as a command or a
+// token that names the subscriber. Anything else is the sender writing a
+// message in this person's name, which an Unsubscribe button does not say it
+// does, so those get the plain word.
+func unsubscribeSubject(requested string) string {
+	requested = strings.TrimSpace(requested)
+	if requested == "" || len(requested) > maximumUnsubscribeSubjectBytes || strings.ContainsFunc(requested, unicode.IsSpace) {
+		return "unsubscribe"
+	}
+	return requested
+}
+
+// maximumUnsubscribeSubjectBytes is long enough for a command and a token,
+// and too short to carry a sentence.
+const maximumUnsubscribeSubjectBytes = 100
+
+// mailUnsubscribe writes to the address the sender named, from this mailbox.
+// What the message says is ours, not the sender's: the subject may be the
+// short word the address asked for, and the body is always one word.
 func (self *graph) mailUnsubscribe(ctx context.Context, mailbox *models.Mailbox, address string) error {
 	target, err := url.Parse(address)
 	if err != nil {
@@ -482,17 +501,8 @@ func (self *graph) mailUnsubscribe(ctx context.Context, mailbox *models.Mailbox,
 	if to == "" {
 		return errors.New("the address to leave by is empty")
 	}
-	query := target.Query()
-	subject := strings.TrimSpace(query.Get("subject"))
-	if subject == "" {
-		// What senders that read these look for, and harmless to one that
-		// only reads the address.
-		subject = "unsubscribe"
-	}
-	text := strings.TrimSpace(query.Get("body"))
-	if text == "" {
-		text = "unsubscribe"
-	}
+	subject := unsubscribeSubject(target.Query().Get("subject"))
+	text := "unsubscribe"
 	from := ""
 	if len(mailbox.Addresses) > 0 {
 		from = mailbox.Addresses[0].Address
