@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -22,6 +23,10 @@ type pageShareWorld struct {
 func newPageShareWorld(t *testing.T, tx db.Transaction) *pageShareWorld {
 	t.Helper()
 	shared := newShareWorld(t, tx)
+	// The ordinary roles give people the permissions that sharing a page needs.
+	for _, person := range []*models.User{shared.ada, shared.ben, shared.cora, shared.dave} {
+		dbtest.GrantPermission(t, tx, person.ID, models.PermissionAgentUse, models.PermissionCircleUse)
+	}
 	world := &pageShareWorld{
 		ada: shared.ada, ben: shared.ben, cora: shared.cora, dave: shared.dave,
 		home: shared.home, club: shared.club,
@@ -340,6 +345,196 @@ func TestADisabledOwnersPagesStopReachingReaders(t *testing.T) {
 		disable(false)
 		if got := reachingPaths(t, tx, world.ben); len(got) != 2 {
 			t.Errorf("after switching the account back on: %v", got)
+		}
+	})
+}
+
+// Sharing pages needs agent:use and circle:use of the owner and of the reader,
+// and a reader whose account is disabled reads nothing. An operator who takes
+// either permission from a role has switched it off for those people, as
+// Health and Location do.
+func TestAPageShareNeedsThePermissionsOfBothSides(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newPageShareWorld(t, tx)
+		join := func(username string, permissions ...models.Permission) *models.User {
+			t.Helper()
+			person, err := tx.CreateUser(&models.User{Username: username})
+			if err != nil {
+				t.Fatalf("CreateUser %s: %s", username, err)
+			}
+			if _, err = tx.AddCircleMember(world.home.ID, person.ID, models.MemberRoleMember, world.ada.ID); err != nil {
+				t.Fatalf("AddCircleMember %s: %s", username, err)
+			}
+			if len(permissions) > 0 {
+				dbtest.GrantPermission(t, tx, person.ID, permissions...)
+			}
+			return person
+		}
+		withoutAgent := join("erin", models.PermissionCircleUse)
+		withoutCircle := join("finn", models.PermissionAgentUse)
+		withNeither := join("gwen")
+		disabled := join("hana", models.PermissionAgentUse, models.PermissionCircleUse)
+
+		if _, err := tx.SharePage(world.ada.ID, &models.AgentPageShare{Path: "people/a", GranteeCircleID: world.home.ID}); err != nil {
+			t.Fatalf("SharePage: %s", err)
+		}
+		if _, err := tx.UpdateUser(disabled.ID, func(person *models.User) error {
+			now := time.Now()
+			person.DisabledAt = &now
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateUser: %s", err)
+		}
+		if got := reachingPaths(t, tx, world.ben); len(got) != 1 {
+			t.Errorf("a reader with both permissions: %v", got)
+		}
+		for name, reader := range map[string]*models.User{
+			"without agent:use": withoutAgent, "without circle:use": withoutCircle, "with neither": withNeither, "disabled": disabled,
+		} {
+			if got := reachingPaths(t, tx, reader); len(got) != 0 {
+				t.Errorf("a reader %s is reached: %v", name, got)
+			}
+		}
+
+		// The same on the owner's side: a member of the circle who lacks
+		// either permission shares nothing with anybody.
+		for _, owner := range []*models.User{withoutAgent, withoutCircle} {
+			ownerAgent, err := tx.EnsureAgent(owner.ID)
+			if err != nil {
+				t.Fatalf("EnsureAgent: %s", err)
+			}
+			if err = tx.EnsureAgentRoots(ownerAgent.ID); err != nil {
+				t.Fatalf("EnsureAgentRoots: %s", err)
+			}
+			if _, err = tx.PutAgentNode(&models.AgentNode{AgentID: ownerAgent.ID, Path: "people/z", Kind: models.NodePerson, Name: "Z"}); err != nil {
+				t.Fatalf("PutAgentNode: %s", err)
+			}
+			if _, err = tx.SharePage(owner.ID, &models.AgentPageShare{Path: "people/z", GranteeCircleID: world.home.ID}); err != nil {
+				t.Fatalf("SharePage: %s", err)
+			}
+		}
+		if got := reachingPaths(t, tx, world.ben); len(got) != 1 || got[0] != "people/a" {
+			t.Errorf("shares of owners lacking a permission reach ben: %v", got)
+		}
+	})
+}
+
+// A share is a path, so it moves with the page it was made of, and so does a
+// share of a page under it. A page moved into a shared subtree is shared by
+// that share.
+func TestMovingASharedPageMovesItsShares(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newPageShareWorld(t, tx)
+		for _, path := range []string{"people/a", "people/a/x", "people/ab"} {
+			if _, err := tx.SharePage(world.ada.ID, &models.AgentPageShare{Path: path, GranteeUserID: world.ben.ID}); err != nil {
+				t.Fatalf("SharePage %s: %s", path, err)
+			}
+		}
+		if _, err := tx.MoveAgentNode(world.adaAgent.ID, "people/a", "friends"); err != nil {
+			t.Fatalf("MoveAgentNode: %s", err)
+		}
+		if got := reachingPaths(t, tx, world.ben); !slices.Equal(got, []string{"friends/a", "friends/a/x", "people/ab"}) {
+			t.Errorf("the shares after the move: %v", got)
+		}
+		// The page at the old path is not shared any more, and a page made
+		// there again is not either.
+		if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: world.adaAgent.ID, Path: "people/a", Kind: models.NodePerson, Name: "Another A"}); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		if got := reachingPaths(t, tx, world.ben); slices.Contains(got, "people/a") {
+			t.Errorf("a page made at the old path is shared: %v", got)
+		}
+		// Moved into a shared subtree, a page is shared with it.
+		if _, err := tx.MoveAgentNode(world.adaAgent.ID, "people/a", "friends/a"); err != nil {
+			t.Fatalf("MoveAgentNode: %s", err)
+		}
+		shares, err := tx.ListPageSharesReaching(world.ben.ID)
+		if err != nil {
+			t.Fatalf("ListPageSharesReaching: %s", err)
+		}
+		moved := false
+		for _, share := range shares {
+			moved = moved || share.Covers("friends/a/a")
+		}
+		if !moved {
+			t.Errorf("a page moved into a shared subtree is not covered: %+v", shares)
+		}
+	})
+}
+
+// A share ends with the page it was made of, whether the page is deleted or
+// merged into another, and a page made at its path later is not shared. So
+// does a share left behind by a page that was deleted before shares ended
+// with it.
+func TestDeletingASharedPageEndsItsShares(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var world *pageShareWorld
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world = newPageShareWorld(t, tx)
+		for _, path := range []string{"people/a", "people/a/x", "people/ab"} {
+			if _, err := tx.SharePage(world.ada.ID, &models.AgentPageShare{Path: path, GranteeUserID: world.ben.ID}); err != nil {
+				t.Fatalf("SharePage %s: %s", path, err)
+			}
+		}
+		if _, err := tx.DeleteAgentNode(world.adaAgent.ID, "people/a/x"); err != nil {
+			t.Fatalf("DeleteAgentNode: %s", err)
+		}
+		if got := reachingPaths(t, tx, world.ben); !slices.Equal(got, []string{"people/a", "people/ab"}) {
+			t.Errorf("after deleting the page of one share: %v", got)
+		}
+		if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: world.adaAgent.ID, Path: "people/a/x", Kind: models.NodePerson, Name: "A and X again"}); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		if got := reachingPaths(t, tx, world.ben); !slices.Equal(got, []string{"people/a", "people/ab"}) {
+			t.Errorf("a page made again at the path of a deleted one: %v", got)
+		}
+
+		// Merged away, a page takes its share with it.
+		if _, err := tx.MergeAgentNodes(world.adaAgent.ID, "people/ab", "people/a"); err != nil {
+			t.Fatalf("MergeAgentNodes: %s", err)
+		}
+		if got := reachingPaths(t, tx, world.ben); !slices.Equal(got, []string{"people/a"}) {
+			t.Errorf("after merging a shared page away: %v", got)
+		}
+
+		// A subtree deleted whole ends the shares inside it too.
+		if _, err := tx.DeleteAgentNode(world.adaAgent.ID, "people/a"); err != nil {
+			t.Fatalf("DeleteAgentNode: %s", err)
+		}
+		if mine, err := tx.ListPageSharesBy(world.ada.ID); err != nil || len(mine) != 0 {
+			t.Errorf("the owner's shares after deleting the subtree: %+v %v", mine, err)
+		}
+	})
+}
+
+func TestAPageMadeAtTheStalePathOfAShareIsNotShared(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var world *pageShareWorld
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world = newPageShareWorld(t, tx)
+		if _, err := tx.SharePage(world.ada.ID, &models.AgentPageShare{Path: "people/a/x", GranteeUserID: world.ben.ID}); err != nil {
+			t.Fatalf("SharePage: %s", err)
+		}
+	})
+	// The page goes without its share, as pages were deleted before shares
+	// ended with them.
+	dbtest.Exec(t, database, `DELETE FROM "agent_node" WHERE "path" = 'people/a/x' AND "agent_id" = '`+world.adaAgent.ID+`'`)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: world.adaAgent.ID, Path: "people/a/x", Kind: models.NodePerson, Name: "A and X again"}); err != nil {
+			t.Fatalf("PutAgentNode: %s", err)
+		}
+		if got := reachingPaths(t, tx, world.ben); len(got) != 0 {
+			t.Errorf("a new page at the stale path is shared: %v", got)
 		}
 	})
 }
