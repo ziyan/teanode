@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.193.5] - 2026-10-22
+
+### Fixed
+
+- Passwords: Show reveals a password even when pressed just as the item opens. (#629)
+
 ## [0.193.4] - 2026-10-22
 
 ### Fixed
