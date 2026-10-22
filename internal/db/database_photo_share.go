@@ -581,7 +581,7 @@ func (self *transaction) removeUnreachablePhotoAlbumItems(photoAlbumIds []string
 	return nil
 }
 
-// releasePhotoAlbumsOutsideCircles ends, for one person, what only a circle
+// endPhotoAlbumSharesOutsideCircles ends, for one person, what only a circle
 // made possible once they no longer have it, in the transaction that took
 // them out of it; the circle code calls it (endSharesOutsideCircles) beside
 // the same cleanup of calendars, pages and skills.
@@ -596,7 +596,7 @@ func (self *transaction) removeUnreachablePhotoAlbumItems(photoAlbumIds []string
 // photoAlbumReachQuery and needs no deleting; the photos are found by asking
 // who still reaches each album, which holds for a circle that was deleted as
 // well, and so needs no circle named.
-func releasePhotoAlbumsOutsideCircles(tx *gorm.DB, userId string) error {
+func endPhotoAlbumSharesOutsideCircles(tx *gorm.DB, userId string) error {
 	if err := tx.Exec(`DELETE FROM "photo_album_share" WHERE "id" IN (
 		SELECT share.id FROM "photo_album_share" share
 		JOIN "photo_album" album ON album.id = share.photo_album_id

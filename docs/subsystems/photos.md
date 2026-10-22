@@ -446,7 +446,7 @@ because the original's bytes would hand the place over. Either way the new
 photo is processed like any other.
 
 Leaving a circle ends what the circle made possible. The circles code calls
-`releasePhotoAlbumsOutsideCircles` (in `endSharesOutsideCircles`, inside the
+`endPhotoAlbumSharesOutsideCircles` (in `endSharesOutsideCircles`, inside the
 membership lock) for each person who left, deleting direct shares between
 people who no longer share any circle and the person's shares to circles they
 left, and then taking out of every album the person owns or added to the
